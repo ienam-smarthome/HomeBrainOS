@@ -1311,6 +1311,41 @@ def render_comprehensive_system_audit(
     return "\n".join(lines)
 
 
+def _complete_ai_advisory(content: str, *, max_chars: int = 1800) -> str:
+    """Bound advisory length at a complete thought, not mid-Markdown markup.
+
+    The full deterministic audit is always delivered; optional AI text should
+    never end with a dangling third finding or open bold marker.
+    """
+    text = str(content or "").strip()
+    if len(text) <= max_chars:
+        return text
+    suffix = "\n\n*(Further AI commentary omitted; audit evidence above is complete.)*"
+    head = text[: max(120, max_chars - len(suffix))]
+    paragraphs = [p.strip() for p in head.split("\n\n") if p.strip()]
+    # Prefer complete paragraphs for structured model outputs.
+    if len(paragraphs) > 1:
+        candidate = "\n\n".join(paragraphs[:-1]).strip()
+    else:
+        lines = head.splitlines()
+        candidate = "\n".join(lines[:-1]).strip() if len(lines) > 1 else ""
+    if len(candidate) < 100:
+        sentences = list(re.finditer(r"[.!?](?=\s|$)", head))
+        candidate = head[:sentences[-1].end()].strip() if sentences else head.rsplit(" ", 1)[0].rstrip()
+    # A final bare numbered finding or heading would still be misleading.
+    while candidate:
+        tail = candidate.splitlines()[-1].strip()
+        if re.match(r"^(?:\d+[.)]\s*)?(?:#{1,4}\s*)?\*{0,2}[^:]*\*{0,2}:?\s*$", tail) and (
+            tail.endswith(":") or re.match(r"^\d+[.)]\s", tail)
+        ):
+            candidate = "\n".join(candidate.splitlines()[:-1]).rstrip()
+            continue
+        break
+    if candidate.count("**") % 2:
+        candidate = "\n".join(candidate.splitlines()[:-1]).strip()
+    return (candidate + suffix) if candidate else text[:max_chars].rsplit(" ", 1)[0].rstrip() + suffix
+
+
 async def run_comprehensive_chat_audit(
     audit: Any,
     mcp: Any,
@@ -1648,6 +1683,13 @@ async def run_comprehensive_chat_audit(
             "read-only next check. Do not invent exact failed automations "
             "without an evidenced trigger/action dependency."
         )
+        if sensecap_known_unpowered:
+            system_prompt += (
+                " The add-on configuration explicitly says SenseCap D1 is "
+                "intentionally unpowered. Treat its reachability failures as "
+                "expected while switched off; do not speculate about unknown "
+                "network faults or failed dependent rules solely from those logs."
+            )
         try:
             response = await asyncio.wait_for(
                 analysis_chat([
@@ -1660,9 +1702,10 @@ async def run_comprehensive_chat_audit(
                 ], []),
                 timeout=12.0,
             )
-            advisory = str(
-                response.get("content") or "" if isinstance(response, dict) else ""
-            ).strip()[:1800]
+            advisory = _complete_ai_advisory(
+                response.get("content") or ""
+                if isinstance(response, dict) else ""
+            )
             if advisory:
                 message = render_comprehensive_system_audit(
                     snapshot, stats, performance_error=performance_error,
