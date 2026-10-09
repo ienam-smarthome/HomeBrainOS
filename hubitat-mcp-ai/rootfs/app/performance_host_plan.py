@@ -64,16 +64,41 @@ _ADAPTIVE_ROW_FIELDS = (
 )
 
 
+def is_whole_hub_optimization_request(text: str) -> bool:
+    """Prefer a performance review over a health-only audit for optimisation.
+
+    Requests to simply run System Check keep their existing deterministic path.
+    Whole-hub review must convey both an efficiency objective and broad scope,
+    so a targeted question about one rule or driver is not hijacked.
+    """
+    folded = " ".join(str(text or "").casefold().split())
+    goal = any(term in folded for term in (
+        "optimise", "optimize", "optimisation", "optimization",
+        "more efficient", "hub efficiency", "reduce hub overhead",
+        "reduce unnecessary work", "improve hub performance",
+    ))
+    scope = any(term in folded for term in (
+        "all devices", "all apps", "all rules", "all automations",
+        "whole hub", "entire hub", "hub performance",
+        "make the hub", "hub more efficient", "review all",
+        "review my hub",
+    ))
+    return goal and scope
+
+
 def is_broad_performance_request(text: str) -> bool:
     folded = " ".join(str(text or "").casefold().split())
-    return any(token in folded for token in _PERFORMANCE_TERMS) and any(
-        token in folded for token in _RECOMMENDATION_TERMS
+    return is_whole_hub_optimization_request(text) or (
+        any(token in folded for token in _PERFORMANCE_TERMS)
+        and any(token in folded for token in _RECOMMENDATION_TERMS)
     )
 
 
 def wants_scheduler_evidence(text: str) -> bool:
     folded = " ".join(str(text or "").casefold().split())
-    return any(token in folded for token in _SCHEDULER_TERMS)
+    return is_whole_hub_optimization_request(text) or any(
+        token in folded for token in _SCHEDULER_TERMS
+    )
 
 
 def _number(value: Any) -> float:
@@ -272,6 +297,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
 __all__ = [
     "collect_broad_performance_outcome",
     "is_broad_performance_request",
+    "is_whole_hub_optimization_request",
     "select_adaptive_log_targets",
     "wants_scheduler_evidence",
 ]
