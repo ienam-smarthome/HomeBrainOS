@@ -67,7 +67,7 @@ def test_observation_only_recommendation_becomes_source_specific_inspection():
     assert "Inspect Halo3000x socket power (ID 5383), ActivePower" in corrected
     assert "Recorded timing: Irregular observed intervals" in corrected
     assert "Trace the caller and arguments of the failed app-config" in corrected
-    assert "does not explain its performance share" in corrected
+    assert "do not explain its performance share" in corrected
     assert "4. LG webOS TV" in corrected
 
 
