@@ -11,6 +11,7 @@ from final_answer_coordinator import FinalAnswerCoordinator
 from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
+from performance_job_analysis import summarize_job_workload, render_job_workload_summary
 
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
 _METRICS_TOOL = "hub_get_metrics"
@@ -130,10 +131,21 @@ def _install_tool_executor_capture() -> None:
                 if isinstance(execution_arguments, dict)
                 else dict(arguments or {})
             )
-            _append_packet(
-                _capture_sub_tool(name, safe_arguments),
-                str(getattr(execution, "content", "") or ""),
-            )
+            sub_tool = _capture_sub_tool(name, safe_arguments)
+            packet_content = str(getattr(execution, "content", "") or "")
+            if sub_tool == _JOBS_TOOL:
+                payload = getattr(getattr(execution, "result", None), "data", None)
+                job_summary = summarize_job_workload(payload)
+                if job_summary.get("status") == "parsed":
+                    # Group from the full, structured response *before* the
+                    # existing 7,500-character packet limit discards rows.
+                    # Keep a small original excerpt for troubleshooting.
+                    packet_content = (
+                        "HOST_JOB_DIGEST:" + json.dumps(
+                            job_summary, ensure_ascii=False, default=str
+                        ) + "\nRAW_JOB_EXCERPT:\n" + packet_content[:1300]
+                    )
+            _append_packet(sub_tool, packet_content)
         return execution
 
     setattr(wrapped, "_homebrain_performance_packet_capture", True)
@@ -263,6 +275,17 @@ def _packet_map(rows: list[tuple[str, str]]) -> dict[str, str]:
         if name and text:
             packet[name] = text
     return packet
+
+
+def _job_digest_from_packet(content: str) -> dict[str, Any] | None:
+    first = str(content or "").split("\n", 1)[0]
+    if not first.startswith("HOST_JOB_DIGEST:"):
+        return None
+    try:
+        result = json.loads(first[len("HOST_JOB_DIGEST:"):])
+    except (ValueError, TypeError):
+        return None
+    return result if isinstance(result, dict) and result.get("status") == "parsed" else None
 
 
 def _latest_assistant_content(messages: list[dict[str, Any]], fallback: str) -> str:
@@ -864,6 +887,7 @@ async def finalize_performance_api_outcome(
     """
 
     captured = _packet_map(_consume_packet())
+    scheduled_digest = _job_digest_from_packet(captured.get(_JOBS_TOOL, ""))
     evidence = [
         dict(row)
         for row in (getattr(outcome, "evidence", None) or [])
@@ -1080,6 +1104,11 @@ async def finalize_performance_api_outcome(
 
     from performance_host_plan import is_whole_hub_optimization_request
     if is_whole_hub_optimization_request(user_prompt):
+        if scheduled_digest:
+            job_section = render_job_workload_summary(scheduled_digest)
+            if job_section:
+                guarded += "\n\n" + job_section
+                _counter(outcome, "performance_job_ownership_analyzed")
         coverage = _performance_review_coverage(evidence)
         if coverage:
             guarded += coverage
