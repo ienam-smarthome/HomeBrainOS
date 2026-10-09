@@ -45,7 +45,8 @@ def test_message_is_problem_first_and_includes_attention_count():
 
     message = AutomationStatusService._message(items)
 
-    assert message.startswith("Hubitat returned 4 automation items (2 app instances, 2 Rule Machine entries). 3 have configuration status flags requiring review.")
+    assert message.startswith("Hubitat returned 4 automation items. 3 need attention.")
+    assert "Inventory: 2 app instances, 2 Rule Machine entries." in message
     assert message.index("### Broken (1)") < message.index("### Paused (1)")
     assert message.index("### Paused (1)") < message.index("### Unknown (1)")
     assert message.index("### Unknown (1)") < message.index("### Active (1)")
@@ -97,11 +98,12 @@ def test_broken_name_marker_is_not_claimed_to_be_verified_runtime_failure():
         },
     ]
     message = AutomationStatusService._message(items)
-    assert "configuration status flags requiring review" in message
+    assert "configuration status flags requiring review" not in message
+    assert "need attention" in message
     assert "enabled/not-disabled does not prove" in message
     assert "invalid actions and missing dependencies were not verified" in message
-    assert "(app, ID 2957) [Hubitat name marker; cause unverified]" in message
-    assert "(app, ID 2958)" in message
+    assert "(app) [ID 2957] [Hubitat name marker; cause unverified]" in message
+    assert "(app) [ID 2958]" in message
     assert "ID 2597" not in message
 
 
@@ -113,5 +115,5 @@ def test_explicit_broken_signal_is_not_relabelled_as_weak_name_marker():
             "status_reason": "Hubitat reports broken=true.",
         },
     ])
-    assert "(app, ID 2957)" in message
+    assert "(app) [ID 2957]" in message
     assert "[Hubitat name marker; cause unverified]" not in message
