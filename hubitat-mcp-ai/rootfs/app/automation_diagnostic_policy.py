@@ -10,7 +10,7 @@ import re
 
 _SUBJECT = re.compile(r"\b(?:automations?|rules?|apps?|rule\s+machine)\b", re.I)
 _DIAGNOSTIC = re.compile(
-    r"\b(?:why|diagnos(?:e|is|tic)|investigat(?:e|ion)|troubleshoot|"
+    r"\b(?:why|audit|inspect|diagnos(?:e|is|tic)|investigat(?:e|ion)|troubleshoot|"
     r"fail(?:ed|ing|ure|s)?|fault(?:y|s)?|errors?|timeouts?|"
     r"broken\s+actions?|invalid\s+actions?|misfir(?:e|ing)|"
     r"dependencies?|missing\s+(?:device|target)|"
@@ -23,7 +23,7 @@ _DIAGNOSTIC = re.compile(
 _BROAD = re.compile(
     r"\b(?:all|every|entire|whole|across|any|which|"
     r"my\s+(?:automations|rules|apps)|"
-    r"system|hub|overall|full|comprehensive)\b", re.I
+    r"system|overall|full|comprehensive)\b", re.I
 )
 _MUTATION = re.compile(
     r"^\s*(?:please\s+)?(?:fix|repair|delete|remove|disable|enable|"
