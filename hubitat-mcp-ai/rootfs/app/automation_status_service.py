@@ -501,7 +501,7 @@ class AutomationStatusService:
             f"({app_count} app instances, {rule_count} Rule Machine entries)."
         )
         if attention_count:
-            summary += f" {attention_count} have configuration status flags requiring review."
+            summary += f" {attention_count} need attention."
         if conflict_count:
             summary += f" {conflict_count} have conflicting source-state signals."
         lines = [
@@ -510,7 +510,7 @@ class AutomationStatusService:
             "Configuration inventory only: enabled/not-disabled does not prove an "
             "automation ran successfully. Runtime errors, device availability, "
             "invalid actions and missing dependencies were not verified by this check. "
-            "A *BROKEN* name marker alone does not identify a failing action. "
+            "A Hubitat broken-name marker alone does not identify a failing action. "
             "For execution failures, run the comprehensive read-only System Check.",
         ]
         for status in ("broken", "paused", "unknown", "disabled", "active"):
@@ -519,7 +519,7 @@ class AutomationStatusService:
                 lines.append(f"\n### {status.title()} ({len(matching)})")
                 lines.extend(
                     f"- [{status.upper()}] {item.get('display_name') or item['name']} "
-                    f"({item['type']}, ID {item.get('id') or 'unknown'})"
+                    f"({item['type']})" + (f" [ID {item['id']}]" if item.get("id") else "")
                     + (" [Hubitat name marker; cause unverified]"
                        if status == "broken" and "marked the automation name" in
                        str(item.get("status_reason") or "") else "")
