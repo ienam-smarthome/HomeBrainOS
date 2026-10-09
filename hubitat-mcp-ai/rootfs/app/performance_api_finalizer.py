@@ -981,7 +981,9 @@ def _repair_scheduler_probe_history_inference(
         if heading:
             low = bare.casefold()
             in_rule_server_section = "mcp rule server" in low and any(
-                token in low for token in ("orphan", "missing", "device", "request", "error")
+                token in low for token in (
+                    "orphan", "missing", "device", "request", "error", "cleanup"
+                )
             )
             if in_rule_server_section and ("orphan" in low or "missing" in low):
                 line = re.sub(
@@ -1000,7 +1002,7 @@ def _repair_scheduler_probe_history_inference(
             bare.lstrip().startswith("|")
             and "mcp rule server" in low
             and any(token in low for token in (
-                "missing device", "orphan", "remove reference",
+                "missing device", "device not found", "orphan", "remove reference",
                 "remove references", "app configuration",
             ))
         )
@@ -1022,6 +1024,10 @@ def _repair_scheduler_probe_history_inference(
                 bare = line.rstrip("\\n")
                 low = bare.casefold()
 
+        # Labels such as "**Orphaned References:**" and cleanup actions
+        # can omit the actual probe IDs because the preceding paragraph already
+        # listed them. Within a Rule Server cleanup/error section they are still
+        # the same unsupported inference and must fail closed.
         unsupported_claim = (
             "orphan" in low
             or "no longer exist" in low
@@ -1053,6 +1059,10 @@ def _repair_scheduler_probe_history_inference(
         unsupported = (
             (in_rule_server_section and unsupported_claim)
             or global_probe_cleanup_claim
+            or (
+                ("orphaned references" in low or "orphan references" in low)
+                and ("mcp rule server" in low or "device" in low)
+            )
         )
         if unsupported:
             leader = re.match(r"^(\s*(?:[-*+]\s+|\*{0,2}(?:Observation|Diagnostic Hypothesis|Verification|Recommendation):?\*{0,2}\s*)?)", bare, re.I)
