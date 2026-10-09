@@ -39,7 +39,7 @@ def test_v016136_live_job_key_formats_are_separate_unverified_candidates():
     rendered = render_job_workload_summary(d)
     assert "7 of 7 rows contain strict, unverified owner candidates" in rendered
     assert "No authoritative owner IDs" in rendered
-    assert "NOT confirmed owners" in rendered
+    assert "not proof" in rendered
     assert "Only part of the reported job list" in rendered
 
 
