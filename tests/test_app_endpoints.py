@@ -352,8 +352,8 @@ def test_broad_automation_failure_uses_read_only_audit_with_model(monkeypatch, t
     module = load_app(monkeypatch, tmp_path)
     calls = []
 
-    async def fake_audit(audit, mcp, *, analysis_chat=None):
-        calls.append(analysis_chat)
+    async def fake_audit(audit, mcp, *, analysis_chat=None, analysis_focus=None):
+        calls.append((analysis_chat, analysis_focus))
         from automation_status_service import AutomationStatusOutcome
         return AutomationStatusOutcome(
             message="Audit: verified integration errors, follow-up steps.",
@@ -369,7 +369,7 @@ def test_broad_automation_failure_uses_read_only_audit_with_model(monkeypatch, t
     assert response.status_code == 200, response.text
     assert response.json()["route"] == "comprehensive-system-audit"
     assert len(calls) == 1
-    assert calls[0] is module.agent.transport.chat
+    assert calls[0] == (module.agent.transport.chat, "which automations are failing and why?")
 
 
 def test_targeted_rule_failure_uses_investigative_model_not_inventory(monkeypatch, tmp_path):
