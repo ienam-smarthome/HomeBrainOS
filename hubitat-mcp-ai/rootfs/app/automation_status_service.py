@@ -543,7 +543,7 @@ class AutomationStatusService:
         broken = [item for item in items if item.get("status") == "broken"]
         lines = [
             (
-                f"No broken markers detected among {len(items)} unique installed app instances."
+                f"No broken markers detected among {len(items)} installed app instances."
                 if not broken else
                 f"{len(broken)} unique automation instance(s) have broken configuration markers."
             ),
