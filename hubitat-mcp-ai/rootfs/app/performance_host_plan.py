@@ -86,9 +86,27 @@ def is_whole_hub_optimization_request(text: str) -> bool:
     return goal and scope
 
 
+def is_scheduler_optimization_request(text: str) -> bool:
+    """Route explicit job ownership/efficiency analyses to the host evidence plan.
+
+    Counting jobs alone remains a standard read and is not hijacked.
+    """
+    folded = " ".join(str(text or "").casefold().split())
+    scheduled = any(term in folded for term in (
+        "scheduled job", "scheduled task", "scheduler jobs",
+        "sessiontick", "autopoll", "scheduled work",
+    ))
+    analysis = any(term in folded for term in (
+        "analys", "analyz", "group", "owner", "handler",
+        "optimis", "optimiz", "efficien", "unnecessary work",
+        "reduce workload",
+    ))
+    return scheduled and analysis
+
+
 def is_broad_performance_request(text: str) -> bool:
     folded = " ".join(str(text or "").casefold().split())
-    return is_whole_hub_optimization_request(text) or (
+    return is_whole_hub_optimization_request(text) or is_scheduler_optimization_request(text) or (
         any(token in folded for token in _PERFORMANCE_TERMS)
         and any(token in folded for token in _RECOMMENDATION_TERMS)
     )
@@ -298,6 +316,7 @@ __all__ = [
     "collect_broad_performance_outcome",
     "is_broad_performance_request",
     "is_whole_hub_optimization_request",
+    "is_scheduler_optimization_request",
     "select_adaptive_log_targets",
     "wants_scheduler_evidence",
 ]
