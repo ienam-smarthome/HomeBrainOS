@@ -92,6 +92,8 @@ def load_options() -> dict[str, Any]:
         "ollama_local_connect_timeout_seconds": 3,
         "ollama_local_keep_alive_seconds": 120,
         "ollama_agent_timeout_seconds": 60,
+        "investigation_deadline_seconds": 90,
+        "performance_synthesis_timeout_seconds": 30,
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
         "mcp_device_cache_seconds": 12,
@@ -307,6 +309,9 @@ agent = UnifiedMCPAgent(
     semantic_default_temperature_step=float(
         OPTIONS.get("semantic_default_temperature_step") or 1.0
     ),
+)
+agent.performance_synthesis_timeout_seconds = float(
+    OPTIONS.get("performance_synthesis_timeout_seconds") or 30
 )
 
 
