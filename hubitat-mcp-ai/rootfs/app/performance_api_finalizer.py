@@ -282,6 +282,40 @@ def _packet_map(rows: list[tuple[str, str]]) -> dict[str, str]:
     return packet
 
 
+def _qualify_job_key_owner_labels(
+    message: str, scheduled_digest: dict[str, Any] | None,
+) -> tuple[str, bool]:
+    """Never present a model's scheduler-key candidate as verified ownership."""
+    if not scheduled_digest or scheduled_digest.get("ownerIdentifiedRows") != 0:
+        return message, False
+    changed = False
+    lines = []
+    key_pattern = re.compile(
+        r"(?:^|[\s|/\x60])(dev|app)([1-9][0-9]{0,8})"
+        r"(?:Once|Recur)\.[A-Za-z][A-Za-z0-9_$]{0,99}(?=[\s|/\x60]|$)",
+        re.I,
+    )
+    for line in str(message or "").splitlines(keepends=True):
+        cells = line.rstrip("\n").split("|")
+        if len(cells) >= 5 and cells[0].strip() == "" and cells[-1].strip() == "":
+            match = key_pattern.search(cells[1])
+            owner = re.fullmatch(
+                r"(Device|App)\s+([1-9][0-9]{0,8})",
+                cells[-2].strip(), re.I,
+            )
+            if match and owner and (
+                match.group(2) == owner.group(2)
+                and ("device" if match.group(1).casefold() == "dev" else "app")
+                    == owner.group(1).casefold()
+            ):
+                label = "device" if match.group(1).casefold() == "dev" else "app"
+                cells[-2] = f" Unverified candidate {label} {match.group(2)} "
+                line = "|".join(cells) + ("\n" if line.endswith("\n") else "")
+                changed = True
+        lines.append(line)
+    return "".join(lines), changed
+
+
 def _job_digest_from_packet(content: str) -> dict[str, Any] | None:
     first = str(content or "").split("\n", 1)[0]
     if not first.startswith("HOST_JOB_DIGEST:"):
@@ -1125,6 +1159,12 @@ async def finalize_performance_api_outcome(
         )
         if metric_denial_changed:
             _counter(outcome, "performance_api_metric_denial_repair")
+
+    guarded, owner_label_repaired = _qualify_job_key_owner_labels(
+        guarded, scheduled_digest
+    )
+    if owner_label_repaired:
+        _counter(outcome, "performance_job_candidate_labels_qualified")
 
     guarded, table_repaired = _normalize_recommendation_table(guarded)
     if table_repaired:
