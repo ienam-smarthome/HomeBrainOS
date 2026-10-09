@@ -23,6 +23,20 @@ DEVICE FRESHNESS SEMANTICS
 """
 
 
+_ROOM_STATUS_POLICY = """
+
+ROOM STATUS EVIDENCE
+- For a room-status/state question, preserve useful per-device observations instead of collapsing distinct sensor readings into an unattributed range.
+- Include relevant switch/level, motion/presence, temperature, humidity, illuminance, battery, and explicit health/connectivity states when current-turn evidence supplies them.
+- Name the source device for environmental readings when more than one device reports the same attribute.
+- Preserve source-supplied update/activity timestamps when they materially qualify a cached state. Never invent a timestamp.
+- A sensor reporting motion=active or presence=present is a reported state. If its only supporting timestamp is old, do not call that fresh detection; apply DEVICE FRESHNESS SEMANTICS.
+- Keep switch power, sensor health/status, transport diagnostics, and root cause separate. An MQTT error string can establish the observed diagnostic, not a definitive hardware/network cause by itself.
+- Do not infer a missing room device from count differences unless current-turn evidence establishes comparable inventory scopes and the missing numeric ID.
+- Do not pull a nearby/out-of-room sensor into the room summary unless it is clearly labelled as contextual.
+"""
+
+
 _INTERNET_ACCESS_POLICY = """
 
 INTERNET ACCESS SWITCH SEMANTICS
@@ -47,7 +61,7 @@ def build_system_prompt(
         app_manifest_section,
         now=now,
     )
-    return base + _FRESHNESS_POLICY + _INTERNET_ACCESS_POLICY
+    return base + _FRESHNESS_POLICY + _ROOM_STATUS_POLICY + _INTERNET_ACCESS_POLICY
 
 
 __all__ = [

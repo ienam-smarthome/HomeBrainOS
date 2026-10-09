@@ -33,3 +33,17 @@ def test_performance_prompt_requires_component_local_investigation():
     assert "inspect that same component's schedules" in prompt
     assert "discover and call the relevant scheduled-job diagnostic" in prompt
     assert "secondary observations" in prompt
+
+
+def test_room_status_prompt_preserves_provenance_and_freshness_boundaries():
+    prompt = build_system_prompt(
+        "Device manifest omitted or unavailable.",
+        now=datetime(2026, 10, 9, 22, 55, tzinfo=timezone.utc),
+    )
+
+    assert "ROOM STATUS EVIDENCE" in prompt
+    assert "unattributed range" in prompt
+    assert "Never invent a timestamp" in prompt
+    assert "do not call that fresh detection" in prompt
+    assert "root cause separate" in prompt
+    assert "missing numeric ID" in prompt

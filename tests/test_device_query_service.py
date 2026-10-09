@@ -694,3 +694,50 @@ async def test_resolve_device_exact_label_match_bypasses_bare_attribute_guard():
 
     assert result.data["matched"] is True
     assert result.data["label"] == "Temperature"
+
+
+@pytest.mark.asyncio
+async def test_room_filter_preserves_relevant_states_and_source_timestamps():
+    living = device(
+        "Living Meter",
+        "Living Room",
+        ["MotionSensor", "IlluminanceMeasurement", "RelativeHumidityMeasurement"],
+        motion="active",
+        humidity=49,
+        illuminance=3,
+    )
+    living["lastActivity"] = "2026-10-09T22:52:00+00:00"
+    service = DeviceQueryService(QueryMCP([living]), lambda *args, **kwargs: None)
+
+    result = await service.filter_devices({
+        "attribute": "room",
+        "operator": "eq",
+        "value": "Living Room",
+    })
+
+    assert result.data["count"] == 1
+    match = result.data["matches"][0]
+    assert match["states"] == {
+        "motion": "active",
+        "humidity": 49,
+        "illuminance": 3,
+    }
+    assert match["timestamps"] == {
+        "lastActivity": "2026-10-09T22:52:00+00:00"
+    }
+
+
+@pytest.mark.asyncio
+async def test_non_room_filter_keeps_compact_result_shape():
+    service = DeviceQueryService(
+        QueryMCP([device("Meter", "Living Room", ["RelativeHumidityMeasurement"], humidity=49)]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.filter_devices({
+        "attribute": "humidity", "operator": "eq", "value": 49
+    })
+
+    match = result.data["matches"][0]
+    assert "states" not in match
+    assert "timestamps" not in match

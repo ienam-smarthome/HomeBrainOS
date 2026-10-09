@@ -207,6 +207,42 @@ class DeviceQueryService:
         "temperature": ("temperature", "temperatureC"),
     }
 
+    _ROOM_STATUS_ATTRIBUTES = frozenset({
+        "switch", "level", "motion", "presence", "temperature", "humidity",
+        "illuminance", "battery", "power", "energy", "contact", "lock",
+        "sensorstatus", "healthstatus", "status", "mqttstatus",
+    })
+
+    @classmethod
+    def _room_status_evidence(cls, device: dict[str, Any]) -> dict[str, Any]:
+        """Return bounded per-device room-state evidence without inventing freshness.
+
+        Room filtering used to return only the matched room value, which made
+        synthesis rediscover device state and could collapse several sensors into
+        an unattributed range. Preserve relevant states and any source-supplied
+        activity/update timestamps. Timestamps are observations only; freshness
+        semantics remain governed by the shared prompt policy.
+        """
+
+        attributes = cls._device_attributes(device)
+        states = {
+            str(key): value
+            for key, value in attributes.items()
+            if value is not None
+            and cls._normalized_attribute(str(key)) in cls._ROOM_STATUS_ATTRIBUTES
+        }
+        timestamps: dict[str, Any] = {}
+        for key, value in device.items():
+            normalized = cls._normalized_attribute(str(key))
+            if value not in (None, "") and normalized in {
+                "lastactivity", "lastevent", "lastseen", "lastcheckin",
+                "lastupdate", "lastupdated", "updatedat",
+            }:
+                timestamps[str(key)] = value
+        result: dict[str, Any] = {"states": states}
+        if timestamps:
+            result["timestamps"] = timestamps
+        return result
     @classmethod
     def _attribute_value(
         cls,
@@ -940,6 +976,11 @@ class DeviceQueryService:
                         "capabilities": capabilities,
                         "attribute": attribute,
                         "value": actual,
+                        **(
+                            self._room_status_evidence(device)
+                            if normalized_attribute == "room"
+                            else {}
+                        ),
                     }
                 )
                 # A complete filter result already establishes stable device
