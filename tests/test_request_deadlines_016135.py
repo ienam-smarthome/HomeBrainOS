@@ -109,6 +109,8 @@ def _real_observed_outcome():
             evidence=[
                 {"tool": "hub_manage_logs", "sub_tool": "hub_get_jobs",
                  "success": True, "mutates": False, "effect": "read"},
+                {"tool": "hub_manage_logs", "sub_tool": "hub_get_performance_stats",
+                 "success": True, "mutates": False, "effect": "read"},
                 {"tool": "hub_manage_logs", "sub_tool": "hub_get_logs",
                  "success": False, "mutates": False, "effect": "read"},
             ],
