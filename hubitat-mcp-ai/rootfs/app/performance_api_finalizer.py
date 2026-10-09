@@ -549,6 +549,92 @@ def _normalize_recommendation_table(message: str) -> tuple[str, bool]:
     return "".join(repaired), True
 
 
+def _repair_unattributed_performance_recommendations(
+    message: str, evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Keep an observed signal's timing out of an anonymous remediation step.
+
+    A semantic guard may faithfully correct cadence numbers but accidentally
+    leave a numbered 'Device Reporting' recommendation with no named source
+    or actual inspection action. Source-link the measured timing when uniquely
+    identified by the host timing evidence, else mark the source unresolved.
+    """
+    text = str(message or "")
+    facts: list[dict[str, Any]] = []
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is False:
+            continue
+        details = receipt.get("details") or {}
+        if not isinstance(details, dict):
+            continue
+        timing = details.get("hostDerivedTiming") or {}
+        if isinstance(timing, dict) and isinstance(timing.get("cadence"), list):
+            facts.extend(row for row in timing["cadence"] if isinstance(row, dict))
+    def replace(match: re.Match[str]) -> str:
+        prefix = match.group("prefix")
+        observation = match.group("observation").strip()
+        nums = re.search(r"\bmedian(?:\s+interval)?\s+(\d+(?:\.\d+)?)\s+seconds?\b", observation, re.I)
+        matches: list[dict[str, Any]] = []
+        if nums:
+            observed = float(nums.group(1))
+            for fact in facts:
+                try:
+                    recorded = float(fact.get("medianIntervalSeconds"))
+                except (ValueError, TypeError):
+                    continue
+                if abs(recorded - observed) <= max(.2, observed * .02):
+                    matches.append(fact)
+        unique = {
+            (str(row.get("sourceRef") or ""), str(row.get("signal") or "")): row
+            for row in matches
+        }
+        if len(unique) == 1:
+            fact = next(iter(unique.values()))
+            source = str(fact.get("source") or "device").strip()
+            ref = str(fact.get("sourceRef") or "")
+            identifier = ref.split("|", 1)[1] if "|" in ref else ""
+            signal = str(fact.get("signal") or "reporting").strip()
+            subject = f"{source} (ID {identifier}), {signal}" if identifier else f"{source}, {signal}"
+            return (
+                f"{prefix}**Device reporting:** Inspect {subject} and its "
+                "configured report threshold/interval and dependencies before "
+                "considering a change. Recorded timing: " + observation
+            )
+        return (
+            f"{prefix}**Device reporting:** Identify the exact device and signal "
+            "from a targeted read before changing reporting settings. "
+            "Unattributed sampled timing: " + observation
+        )
+
+    rule = re.compile(
+        r"(?im)^(?P<prefix>\s*\d+[.)]\s+)(?:\*{0,2})?"
+        r"Device Reporting(?:\*{0,2})?\s*:\s*"
+        r"(?P<observation>(?:Irregular observed intervals|"
+        r"Regular observed intervals|Observed intervals)[^\n]*)$"
+    )
+    corrected = rule.sub(replace, text)
+    # A failed admin lookup in a server log establishes a request failure,
+    # not a persistent reference retained in the server's configuration.
+    if not _has_configuration_evidence(evidence):
+        old = re.compile(
+            r"(?im)^(?P<prefix>\s*\d+[.)]\s+)"
+            r"(?:\*{0,2})?MCP Rule Server(?:\*{0,2})?\s*:\s*"
+            r"Inspect (?:the )?configuration of (?:the )?MCP Rule Server "
+            r"to determine if it is referencing (?P<objects>[^\n.]+)\."
+        )
+        corrected = old.sub(
+            lambda match: (
+                f"{match.group('prefix')}**MCP Rule Server:** Trace the caller "
+                "and arguments of the failed app-config and validation requests "
+                "before concluding that the server retains obsolete app "
+                "references. The logged errors alone do not explain its "
+                "performance share."
+            ),
+            corrected,
+        )
+    return corrected, corrected != text
+
+
 async def finalize_performance_api_outcome(
     agent: Any,
     mcp: Any,
@@ -769,6 +855,12 @@ async def finalize_performance_api_outcome(
     guarded, table_repaired = _normalize_recommendation_table(guarded)
     if table_repaired:
         _counter(outcome, "performance_api_markdown_table_repaired")
+
+    guarded, recommendation_repaired = _repair_unattributed_performance_recommendations(
+        guarded, evidence
+    )
+    if recommendation_repaired:
+        _counter(outcome, "performance_api_recommendation_attribution_repaired")
 
     outcome.message = guarded
     outcome.evidence = evidence
