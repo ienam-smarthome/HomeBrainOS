@@ -488,6 +488,67 @@ def _repair_metric_denial(
     return repaired, repaired != message
 
 
+def _normalize_recommendation_table(message: str) -> tuple[str, bool]:
+    """Keep guard-generated prose between table rows from breaking Markdown.
+
+    Semantic guards sometimes replace an unsupported row-level claim with a
+    standalone sentence. This is valuable uncertainty, but Markdown ends the
+    table at that sentence and renders the remaining data rows as plain text.
+    Move *only interleaved* non-row material after the table, explicitly
+    detached from any particular target; do not drop diagnostic caveats.
+    """
+    original = str(message or "")
+    lines = original.splitlines(keepends=True)
+    header_at: int | None = None
+    for index, line in enumerate(lines):
+        low = line.casefold()
+        if line.lstrip().startswith("|") and "| priority" in low and (
+            "| target" in low or "| app" in low or "| device" in low
+        ):
+            header_at = index
+            break
+    if header_at is None or header_at + 1 >= len(lines):
+        return original, False
+    separator = lines[header_at + 1].strip()
+    if not (separator.startswith("|") and separator.endswith("|") and
+            re.match(r"^\|\s*:?-{3,}", separator)):
+        return original, False
+    expected_columns = lines[header_at].count("|")
+    ending = header_at + 2
+    while ending < len(lines) and not re.match(r"^\s*#{1,6}\s+", lines[ending]):
+        ending += 1
+    table_indices = [
+        idx for idx in range(header_at + 2, ending)
+        if lines[idx].strip().startswith("|")
+        and lines[idx].strip().endswith("|")
+        and lines[idx].count("|") == expected_columns
+    ]
+    if len(table_indices) < 2:
+        return original, False
+    last_row = table_indices[-1]
+    table_rows = []
+    displaced_notes = []
+    for idx in range(header_at + 2, last_row + 1):
+        if idx in table_indices:
+            table_rows.append(lines[idx])
+        elif lines[idx].strip():
+            displaced_notes.append(lines[idx].strip())
+    if not displaced_notes:
+        return original, False
+    notes = [
+        "\n**Additional qualifications (not tied to individual table rows):**\n",
+        *[f"- {note}\n" for note in displaced_notes],
+    ]
+    repaired = (
+        lines[:header_at + 2]
+        + table_rows
+        + ["\n"]
+        + notes
+        + lines[last_row + 1:]
+    )
+    return "".join(repaired), True
+
+
 async def finalize_performance_api_outcome(
     agent: Any,
     mcp: Any,
@@ -704,6 +765,10 @@ async def finalize_performance_api_outcome(
         )
         if metric_denial_changed:
             _counter(outcome, "performance_api_metric_denial_repair")
+
+    guarded, table_repaired = _normalize_recommendation_table(guarded)
+    if table_repaired:
+        _counter(outcome, "performance_api_markdown_table_repaired")
 
     outcome.message = guarded
     outcome.evidence = evidence
