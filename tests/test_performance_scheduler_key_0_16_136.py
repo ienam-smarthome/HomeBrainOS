@@ -47,7 +47,7 @@ def test_encoded_job_id_is_only_unverified_candidate():
 def test_scheduler_dict_key_is_preserved_and_decoded_without_guessing():
     summary = summarize_job_workload({"scheduledJobs": {
         "count": 3,
-        "dev7334Once": {"handler": "watchdogCheck"},
+        "dev7334Once": {"id": "unrelated-job-id", "handler": "watchdogCheck"},
         "app4151Once": {"handler": "sessionTick"},
         "dev7334OnceExtra": {"handler": "other"},
     }})
