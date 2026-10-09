@@ -466,3 +466,51 @@ def test_host_scheduler_workflow_probes_context_absent_ids_without_confirming_ow
     assert second["source"] == "hub_read_devices/hub_get_device"
     assert len(agent.executor.evidence.rows) == 3
     assert all(row[2]["mutates"] is False for row in agent.executor.evidence.rows)
+
+
+def test_targeted_scheduler_probe_runs_after_adaptive_diagnostic_logs():
+    """Probe-generated not-found logs must not contaminate diagnostic evidence."""
+    from performance_host_plan import collect_broad_performance_outcome
+
+    class _Context:
+        async def get_live_context(self):
+            return {"devices": [{"id": 1089, "name": "Hub Info"}],
+                    "totalDevices": 1, "idsComplete": True}
+
+    class _OrderingExecutor(_Executor):
+        async def execute(self, gateway, arguments, **kwargs):
+            result = await super().execute(gateway, arguments, **kwargs)
+            tool = arguments["tool"]
+            if tool == "hub_get_jobs":
+                jobs = result.result.data["scheduledJobs"]
+                jobs["count"] = 3
+                jobs["jobs"].append({
+                    "id": "dev2065Once.checkEventInterval",
+                    "method": "checkEventInterval",
+                })
+            elif tool == "hub_get_performance_stats":
+                result.result.data["appStats"] = [{
+                    "id": 4151, "name": "MCP Rule Server",
+                    "pctBusy": 24.2, "pctTotal": 1.955,
+                    "averageMs": 675.8, "count": 3329,
+                }]
+            return result
+
+    agent = _Agent()
+    agent.executor = _OrderingExecutor()
+    agent.executor.mcp = _Context()
+    outcome = asyncio.run(collect_broad_performance_outcome(
+        agent, "Analyse all scheduled jobs by owning app and handler. Read-only."
+    ))
+
+    tools = [call[0] for call in agent.executor.calls]
+    adaptive_index = next(
+        i for i, call in enumerate(agent.executor.calls)
+        if call[0] == "hub_get_logs"
+        and call[1].get("args", {}).get("appId") == "4151"
+    )
+    probe_index = next(i for i, tool in enumerate(tools) if tool == "hub_get_device")
+    assert adaptive_index < probe_index
+    second = outcome.metrics["scheduler_inventory_crosscheck"]["secondaryDeviceSource"]
+    assert second["ranAfterDiagnosticLogReads"] is True
+    assert second["probeMayEmitExpectedNotFoundLogs"] is True

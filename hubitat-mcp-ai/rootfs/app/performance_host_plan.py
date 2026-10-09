@@ -408,23 +408,6 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                     performance=performance_data,
                 )
 
-                # The compact context may exclude devices exposed by a
-                # different MCP inventory route. Corroborate context-absent
-                # candidate identities via a separate, capped read-only path.
-                # This NEVER upgrades scheduler-key ownership to verified.
-                device_inventory = inventories.get("device")
-                if (isinstance(device_inventory, dict)
-                        and device_inventory.get("identitySource") == "hubitat://context"
-                        and (identity_report.get("device") or {}).get("inventory", {}).get("complete")):
-                    set_request_stage("Checking context-absent device IDs against secondary source")
-                    secondary = await probe_secondary_device_inventory(
-                        agent.executor,
-                        candidate_ids.get("device") or [],
-                        device_inventory,
-                    )
-                    if secondary is not None:
-                        identity_report["secondaryDeviceSource"] = secondary
-
         targets = _select_adaptive_log_target_records(performance_data)
         if targets:
             agent.request_metrics.increment("performance_adaptive_expansion")
@@ -471,6 +454,30 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                 )
             if not execution.success:
                 agent.request_metrics.increment("performance_adaptive_read_failures")
+
+        # Run scheduler candidate probes only AFTER all diagnostic log reads.
+        # A failed hub_get_device lookup can itself emit a Rule Server
+        # "Device not found" log row. Running the probe earlier allowed the
+        # adaptive app-log read to ingest HomeBrain's own diagnostic side
+        # effect and misdescribe it as a pre-existing error loop.
+        #
+        # This ordering is a provenance boundary: baseline/adaptive logs must
+        # describe hub activity that existed before the targeted probes.
+        if identity_report is not None and job_data is not None:
+            device_inventory = inventories.get("device") if "inventories" in locals() else None
+            if (isinstance(device_inventory, dict)
+                    and device_inventory.get("identitySource") == "hubitat://context"
+                    and (identity_report.get("device") or {}).get("inventory", {}).get("complete")):
+                set_request_stage("Checking context-absent device IDs against secondary source")
+                secondary = await probe_secondary_device_inventory(
+                    agent.executor,
+                    (job_digest.get("candidateIdsByType") or {}).get("device") or [],
+                    device_inventory,
+                )
+                if secondary is not None:
+                    secondary["ranAfterDiagnosticLogReads"] = True
+                    secondary["probeMayEmitExpectedNotFoundLogs"] = True
+                    identity_report["secondaryDeviceSource"] = secondary
 
         if failed:
             return "Host-planned performance evidence collection completed with failed sources: " + ", ".join(failed) + "."

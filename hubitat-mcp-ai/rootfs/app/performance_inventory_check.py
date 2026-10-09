@@ -229,6 +229,12 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
             "Neither an additional match nor an unconfirmed ID proves job ownership, "
             "deletion, a redundant schedule, or a Hubitat-wide census.",
         ])
+        if secondary.get("probeMayEmitExpectedNotFoundLogs"):
+            lines.append(
+                "Targeted hub_get_device probes can themselves emit expected MCP Rule Server "
+                "'Device not found' log rows for unresolved IDs. These probe-generated rows "
+                "must not be diagnosed as a pre-existing Rule Server error loop."
+            )
         present_examples = secondary.get("presentExamples") or []
         if present_examples:
             lines.append(
