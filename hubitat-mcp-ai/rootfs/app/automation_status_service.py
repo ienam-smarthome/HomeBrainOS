@@ -547,8 +547,8 @@ class AutomationStatusService:
             f"{counts['disabled']} disabled, {counts['paused']} paused, "
             f"{counts['unknown']} unknown.",
             f"Separate Rule Machine inventory: {rule_coverage}. "
-            "App entries may include Rule Machine instances; these counts "
-            "do not verify individual rule execution.",
+            "The installed-app inventory may include Rule Machine instances; "
+            "no individual rule execution was verified.",
         ]
         if broken:
             lines.append("Flagged entries:")
@@ -590,10 +590,11 @@ class AutomationStatusService:
                 found = self._items_from_result(result, item_type=item_type, source=tool)
                 items.extend(found)
                 if item_type == "rule":
-                    rule_coverage = (f"{len(found)} entries returned" if found else
-                                     "0 entries returned; completeness unverified")
+                    rule_coverage = (f"{len(found)} structured entries returned" if found else
+                                     "no structured rule entries in hub_read_rules response; "
+                                     "coverage unavailable (not evidence of zero rules)")
             elif item_type == "rule":
-                rule_coverage = "unavailable (tool failed)"
+                rule_coverage = "unavailable (hub_read_rules tool failed)"
         unique = {(i["type"], i.get("id") or "", i["name"].casefold()): i for i in items}
         ordered = sorted(
             unique.values(),
