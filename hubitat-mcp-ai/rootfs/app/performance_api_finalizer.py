@@ -325,8 +325,28 @@ def _qualify_job_key_owner_labels(
         r"(?:Once|Recur)\.[A-Za-z][A-Za-z0-9_$]{0,99}(?=[\s|/\x60]|$)",
         re.I,
     )
+    owner_grouping_table = False
     for line in str(message or "").splitlines(keepends=True):
         cells = line.rstrip("\n").split("|")
+        if "| Owner Type |" in line and (
+            "Owner ID" in line or "Owner / ID" in line
+        ):
+            owner_grouping_table = True
+        if owner_grouping_table and (
+            not line.lstrip().startswith("|") or len(cells) < 5
+        ):
+            owner_grouping_table = False
+        if (owner_grouping_table and len(cells) >= 6
+                and cells[0].strip() == "" and cells[-1].strip() == ""):
+            kind = cells[1].strip().casefold()
+            if kind in ("app", "device"):
+                cells[1] = f" Candidate {kind} (unverified) "
+                line = "|".join(cells) + ("\n" if line.endswith("\n") else "")
+                changed = True
+            elif kind == "unattributed":
+                cells[1] = " Handler aggregate (owner unverified) "
+                line = "|".join(cells) + ("\n" if line.endswith("\n") else "")
+                changed = True
         if len(cells) >= 5 and cells[0].strip() == "" and cells[-1].strip() == "":
             match = key_pattern.search(cells[1])
             owner = re.fullmatch(
