@@ -226,8 +226,12 @@ async def test_attribute_outside_context_contract_uses_complete_inventory() -> N
                     "devices": [
                         {
                             "id": "9",
-                            "label": "Offline Sensor",
-                            "attributes": {"healthStatus": "offline"},
+                            "label": "Diagnostic Sensor",
+                            # Deliberately outside LIVE_CONTEXT_ATTRIBUTES. This
+                            # test verifies fallback-to-complete-inventory, not
+                            # the healthStatus contract (healthStatus became a
+                            # compact live-context field in 0.16.155).
+                            "attributes": {"diagnosticCode": "E42"},
                         }
                     ]
                 }
@@ -238,11 +242,11 @@ async def test_attribute_outside_context_contract_uses_complete_inventory() -> N
     service = DeviceQueryService(client, lambda *_a, **_k: None)
 
     result = await service.filter_devices(
-        {"attribute": "healthStatus", "operator": "eq", "value": "offline"}
+        {"attribute": "diagnosticCode", "operator": "eq", "value": "E42"}
     )
 
     assert result.data["count"] == 1
-    assert result.data["matches"][0]["label"] == "Offline Sensor"
+    assert result.data["matches"][0]["label"] == "Diagnostic Sensor"
     assert [post["method"] for post in posts] == ["tools/call"]
 
     await client.close()
