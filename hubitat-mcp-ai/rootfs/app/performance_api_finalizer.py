@@ -142,13 +142,19 @@ def _install_tool_executor_capture() -> None:
                 payload = getattr(getattr(execution, "result", None), "data", None)
                 job_summary = summarize_job_workload(payload)
                 if job_summary.get("status") == "parsed":
-                    # Group from the full, structured response *before* the
-                    # existing 7,500-character packet limit discards rows.
-                    # Keep a small original excerpt for troubleshooting.
+                    # The full job set has already been counted above. The
+                    # packet contains only small, independently ranked samples
+                    # for app/device candidates, never arbitrary raw rows.
+                    # Drop redundant legacy groups so the *JSON first line*
+                    # survives the hard 7,500-character source limit.
+                    digest_json = _compact_job_digest(job_summary)
+                    excerpt_length = max(0, min(
+                        650, _CAPTURE_LIMITS[_JOBS_TOOL] - len(digest_json) - 40
+                    ))
                     packet_content = (
-                        "HOST_JOB_DIGEST:" + json.dumps(
-                            job_summary, ensure_ascii=False, default=str
-                        ) + "\nRAW_JOB_EXCERPT:\n" + packet_content[:1300]
+                        "HOST_JOB_DIGEST:" + digest_json
+                        + "\nRAW_JOB_EXCERPT:\n"
+                        + packet_content[:excerpt_length]
                     )
             _append_packet(sub_tool, packet_content)
         return execution
@@ -295,8 +301,28 @@ def _qualify_job_key_owner_labels(
         r"(?:Once|Recur)\.[A-Za-z][A-Za-z0-9_$]{0,99}(?=[\s|/\x60]|$)",
         re.I,
     )
+    owner_grouping_table = False
     for line in str(message or "").splitlines(keepends=True):
         cells = line.rstrip("\n").split("|")
+        if "| Owner Type |" in line and (
+            "Owner ID" in line or "Owner / ID" in line
+        ):
+            owner_grouping_table = True
+        if owner_grouping_table and (
+            not line.lstrip().startswith("|") or len(cells) < 5
+        ):
+            owner_grouping_table = False
+        if (owner_grouping_table and len(cells) >= 6
+                and cells[0].strip() == "" and cells[-1].strip() == ""):
+            kind = cells[1].strip().casefold()
+            if kind in ("app", "device"):
+                cells[1] = f" Candidate {kind} (unverified) "
+                line = "|".join(cells) + ("\n" if line.endswith("\n") else "")
+                changed = True
+            elif kind == "unattributed":
+                cells[1] = " Handler aggregate (owner unverified) "
+                line = "|".join(cells) + ("\n" if line.endswith("\n") else "")
+                changed = True
         if len(cells) >= 5 and cells[0].strip() == "" and cells[-1].strip() == "":
             match = key_pattern.search(cells[1])
             owner = re.fullmatch(
@@ -314,6 +340,42 @@ def _qualify_job_key_owner_labels(
                 changed = True
         lines.append(line)
     return "".join(lines), changed
+
+
+def _compact_job_digest(summary: dict[str, Any]) -> str:
+    """Fit a verified full-job tally into the fixed scheduler source budget."""
+    digest = dict(summary)
+    for redundant in (
+        "topCandidateOwnerMethods",
+        "topCandidateDeviceOwners",
+        "topCandidateAppOwners",
+        "keyPatternCandidateExamples",
+    ):
+        digest.pop(redundant, None)
+    candidate_methods = digest.get("topCandidateMethodsByType") or {}
+    for size in (6, 4, 2, 0):
+        trial = dict(digest)
+        for group in ("topCandidateDeviceMethods", "topCandidateAppMethods"):
+            trial[group] = (digest.get(group) or [])[:size]
+        trial["topCandidateMethodsByType"] = {
+            kind: (candidate_methods.get(kind) or [])[:min(4, size)]
+            for kind in ("device", "app")
+        }
+        encoded = json.dumps(trial, ensure_ascii=False, default=str, separators=(",", ":"))
+        if len(encoded) + len("HOST_JOB_DIGEST:") + 1 < _CAPTURE_LIMITS[_JOBS_TOOL]:
+            return encoded
+    # Even with an exceptional payload, preserve exact high-level counts and
+    # completeness instead of accidentally truncating syntactically valid JSON.
+    keys = (
+        "status", "reportedJobs", "rowsExamined", "completeRows",
+        "ownerIdentifiedRows", "unattributedRows", "rowsWithoutOwnerCandidate",
+        "keyPatternCandidateRows", "keyPatternCandidateTypes",
+        "keyPatternUniqueOwners", "topMethods", "sameNextRunGroups",
+    )
+    return json.dumps(
+        {key: digest[key] for key in keys if key in digest},
+        ensure_ascii=False, default=str, separators=(",", ":"),
+    )
 
 
 def _job_digest_from_packet(content: str) -> dict[str, Any] | None:
