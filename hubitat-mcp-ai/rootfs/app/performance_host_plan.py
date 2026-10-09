@@ -65,6 +65,7 @@ _ADAPTIVE_TOTAL_PCT = 15.0
 _ADAPTIVE_AVERAGE_MS = 2500.0
 _ADAPTIVE_SINCE = "6h"
 _ADAPTIVE_LIMIT = 120
+_SCHEDULER_INVENTORY_TIMEOUT_SECONDS = 6.0
 _ADAPTIVE_ROW_FIELDS = (
     "id", "name", "pctBusy", "pctTotal", "averageMs", "count", "stateSize", "totalMs"
 )
@@ -301,7 +302,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                                 evidence_kind="host_planned_scheduler_inventory",
                                 record_evidence=False,
                             ),
-                            timeout=6.0,
+                            timeout=_SCHEDULER_INVENTORY_TIMEOUT_SECONDS,
                         )
                         success = bool(execution.success)
                         if success and execution.result is not None:
@@ -309,7 +310,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                         summary = ("Identity inventory read succeeded" if success
                                    else "Identity inventory read failed")
                     except asyncio.TimeoutError:
-                        summary = "Identity inventory read exceeded 6-second limit"
+                        summary = "Identity inventory read exceeded configured short time limit"
                         agent.request_metrics.increment(
                             "scheduler_inventory_timeout"
                         )
