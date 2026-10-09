@@ -52,6 +52,72 @@ _RECORDED_EVENT_ESTIMATE_RE = re.compile(
 )
 
 
+def guard_bounded_log_absence_claim(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Do not promote a latest-N log sample into a complete no-failure verdict.
+
+    This is deliberately source-agnostic: any read of hub_get_logs that returns
+    its full requested limit has unknown earlier-event coverage, even when its
+    transport succeeded and a model sees recent INFO/online observations.
+    """
+    bounded: list[tuple[int, str]] = []
+    for row in evidence:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        args = row.get("arguments")
+        if not isinstance(args, dict):
+            continue
+        operation = str(row.get("sub_tool") or args.get("tool") or "")
+        if operation != "hub_get_logs":
+            continue
+        request = args.get("args") if isinstance(args.get("args"), dict) else args
+        details = row.get("details")
+        if not isinstance(details, dict):
+            continue
+        try:
+            limit = int(request.get("limit") or 0)
+            count = int(details.get("logCount") or len(details.get("logs") or []))
+        except (TypeError, ValueError):
+            continue
+        if limit > 0 and count >= limit:
+            bounded.append((limit, str(request.get("since") or "requested window")))
+    if not bounded:
+        return str(message or ""), False
+
+    draft = str(message or "")
+    # Scope only strong absence / continuous-health claims, not sensible
+    # prose such as 'no evidence in the returned 100-row sample'.
+    no_fail = re.compile(
+        r"(?i)\bthere\s+(?:is|was)\s+\*{0,2}no\s+evidence\s+of\s+"
+        r"(?:any\s+)?(?:polling\s+)?(?:failures?|errors?|timeouts?)\*{0,2}"
+    )
+    unqualified_health = re.compile(
+        r"(?i)\b(?:integration\s+is\s+currently\s+healthy\s+and\s+polling\s+normally"
+        r"|no\s+polling\s+failures\s+in\s+the\s+(?:last|past)\s+\d+\s*hours?)\b"
+    )
+    if not no_fail.search(draft) and not unqualified_health.search(draft):
+        return draft, False
+    corrected = no_fail.sub(
+        "recent successful activity, but the sampled logs cannot rule out earlier failures",
+        draft,
+    )
+    corrected = unqualified_health.sub(
+        "integration has recent successful telemetry, with full-window health unverified",
+        corrected,
+    )
+    limit, window = min(bounded, key=lambda item: item[0])
+    qualifier = (
+        f"**Log coverage limitation:** The {limit}-row log request for {window} "
+        "reached its limit. Recent successes do not prove that no earlier "
+        "polling or integration failures occurred during that period."
+    )
+    if "log coverage limitation" not in corrected.casefold():
+        corrected = qualifier + "\n\n" + corrected
+    return corrected, corrected != draft
+
+
 def _record_performance_repair_issues(issues: list[str]) -> None:
     current = list(_PERFORMANCE_REPAIR_TRACE.get())
     seen = set(current)
@@ -87,6 +153,12 @@ def validate_synthesis(
 
     corrected = str(message or "")
     issues: list[str] = []
+
+    corrected, log_coverage_changed = guard_bounded_log_absence_claim(
+        corrected, evidence
+    )
+    if log_coverage_changed:
+        issues.append("bounded_log_absence_claim")
 
     corrected, cardinality = guard_history_interval_cardinality(corrected, evidence)
     if cardinality:
