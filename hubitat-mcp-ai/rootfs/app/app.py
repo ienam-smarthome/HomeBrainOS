@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 from api_response_builder import build_agent_response
 from automation_ideas_service import suggest_new_automations
 from automation_status_service import AutomationStatusService
+from automation_diagnostic_policy import is_broad_automation_runtime_diagnostic
 from device_read_contract import live_context_devices, live_context_is_complete
 from device_state_summary import (
     active_non_light_switches,
@@ -122,6 +123,7 @@ def load_options() -> dict[str, Any]:
         "health_check_log_hours": 24,
         "sensecap_d1_intentionally_powered_off": False,
         "comprehensive_audit_ai_analysis_enabled": False,
+        "automation_diagnostic_ai_analysis_enabled": True,
         "health_check_low_battery": 20,
         "health_check_stale_hours": 24,
         "health_check_long_stale_hours": 168,
@@ -446,11 +448,25 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
-        if is_comprehensive_system_audit_request(request.message):
-            # Reuse the existing full System Check instead of stopping after a
-            # brief performance/log snapshot. This route is read-only, even if
-            # a broad request also asks to "fix" discovered problems.
-            if _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False):
+        broad_automation_diagnostic = is_broad_automation_runtime_diagnostic(
+            request.message
+        )
+        if (is_comprehensive_system_audit_request(request.message)
+                or broad_automation_diagnostic):
+            # Broad failures receive the existing evidence-rich read-only
+            # System Check, plus an optional tool-free AI synthesis. This is
+            # separate from the manual audit's existing opt-in setting.
+            reasoned = (
+                _bool(OPTIONS.get("automation_diagnostic_ai_analysis_enabled"), True)
+                if broad_automation_diagnostic else
+                _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False)
+            )
+            if reasoned:
+                if broad_automation_diagnostic:
+                    return await run_comprehensive_chat_audit(
+                        health_audit, mcp, analysis_chat=agent.transport.chat,
+                        analysis_focus=request.message,
+                    )
                 return await run_comprehensive_chat_audit(
                     health_audit, mcp, analysis_chat=agent.transport.chat,
                 )
@@ -479,6 +495,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         if (
             automation_status.matches_request(request.message)
             and not is_comprehensive_system_audit_request(request.message)
+            and not is_broad_automation_runtime_diagnostic(request.message)
         ):
             if automation_status.is_advisory_request(
                 request.message

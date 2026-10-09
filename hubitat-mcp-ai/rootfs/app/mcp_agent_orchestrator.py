@@ -99,6 +99,10 @@ from request_classification import (
     routine_control_arguments as _routine_control_arguments,
 )
 from reasoning_policy import set_reasoning_profile
+from automation_diagnostic_policy import (
+    AUTOMATION_DIAGNOSTIC_INSTRUCTION,
+    is_automation_runtime_diagnostic,
+)
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
@@ -2018,6 +2022,8 @@ class UnifiedMCPAgent:
             len(system_prompt),
             self._include_identity_manifest(user_prompt),
         )
+        if is_automation_runtime_diagnostic(user_prompt):
+            system_prompt += AUTOMATION_DIAGNOSTIC_INSTRUCTION
         messages = [
             {"role": "system", "content": system_prompt},
             *self._history(conversation_history),
@@ -2032,7 +2038,10 @@ class UnifiedMCPAgent:
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
         causal_request = is_causal_investigation(user_prompt)
-        investigative_request = is_history_investigation(user_prompt)
+        investigative_request = (
+            is_history_investigation(user_prompt)
+            or is_automation_runtime_diagnostic(user_prompt)
+        )
         set_reasoning_profile(
             "investigative" if investigative_request else "standard"
         )

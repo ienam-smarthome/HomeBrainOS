@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from automation_diagnostic_policy import is_automation_runtime_diagnostic
 from mcp_client import HubitatMCPClient, MCPToolResult
 
 _STATUSES = ("active", "disabled", "paused", "broken", "unknown")
@@ -77,6 +78,8 @@ class AutomationStatusService:
         """
 
         value = " ".join(str(prompt).casefold().split())
+        if is_automation_runtime_diagnostic(prompt):
+            return False
         if any(word in value for word in ("enable ", "disable ", "pause ", "resume ")):
             return False
         subject = any(word in value for word in ("automation", "automations", "rule", "rules", "apps"))
@@ -304,7 +307,15 @@ class AutomationStatusService:
                     "broken": signals["broken"],
                     "paused": signals["paused"],
                     "disabled": signals["disabled"],
-                    "active": signals["active"],
+                    # 'active' now describes the normalized CONFIGURATION
+                    # category rather than an absent source active flag.
+                    "active": cls.normalise_status(row) == "active",
+                    "explicit_active_signal": signals["active"],
+                    "runtime_verified": False,
+                    "status_basis": (
+                        "explicit_status" if signals["active"] else
+                        "inferred_from_non_disabled_configuration"
+                    ),
                     "status_conflict": bool(conflicts),
                     "conflicting_statuses": conflicts,
                     "status_reason": status_reason,

@@ -1314,7 +1314,7 @@ def render_comprehensive_system_audit(
 async def run_comprehensive_chat_audit(
     audit: Any,
     mcp: Any,
-    *, analysis_chat: Any = None,
+    *, analysis_chat: Any = None, analysis_focus: str | None = None,
 ) -> Any:
     """Reuse the full System Check, then inspect performance outliers safely."""
     from automation_status_service import AutomationStatusOutcome
@@ -1640,13 +1640,23 @@ async def run_comprehensive_chat_audit(
             "verified device evidence. Do not invent IP addresses, missing tools, "
             "diagnoses or repairs. Never request or execute a state change. "
             "If the SenseCap device is intentionally unpowered, say that is "
-            "the user-reported explanation for its transport failures."
+            "the user-reported explanation for its transport failures. "
+            "Distinguish confirmed broken actions, runtime integration errors, "
+            "and healthy configuration markers. Do not equate an enabled rule "
+            "with successful execution. For each of up to three priorities, "
+            "explain the observed evidence, impact, uncertainty, and safest "
+            "read-only next check. Do not invent exact failed automations "
+            "without an evidenced trigger/action dependency."
         )
         try:
             response = await asyncio.wait_for(
                 analysis_chat([
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message[:7000]},
+                    {"role": "user", "content": (
+                        ("User's investigation question: "
+                         + analysis_focus.strip()[:400] + "\n\n")
+                        if analysis_focus and analysis_focus.strip() else ""
+                    ) + message[:7000]},
                 ], []),
                 timeout=12.0,
             )
