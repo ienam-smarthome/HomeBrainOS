@@ -38,10 +38,10 @@ def test_encoded_job_id_is_only_unverified_candidate():
             "method": "sessionTick", "jobs": 1,
             "attribution": "scheduler-key-pattern"} in d["topCandidateOwnerMethods"]
     output = render_job_workload_summary(d)
-    assert "Unverified owner candidates decoded from job keys" in output
-    assert "NOT confirmed owners" in output
+    assert "Scheduler-key owner candidates — not verified" in output
+    assert "not proof" in output
     assert "Exact owner IDs were present for 1 of 4" in output
-    assert "| device | 7334 | deviceHealthCheck | 1 |" in output
+    assert "| 7334 | deviceHealthCheck | 1 |" in output
 
 
 def test_scheduler_dict_key_is_preserved_and_decoded_without_guessing():
