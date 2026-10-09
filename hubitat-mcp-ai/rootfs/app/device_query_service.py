@@ -982,7 +982,15 @@ class DeviceQueryService:
                     )
                     for item in room_devices
                 )
-                if missing_health:
+                # Preserve the zero-extra-call structural room path. Only a
+                # device explicitly advertising MQTT/status diagnostics needs
+                # enrichment; missing fields on ordinary sensors are normal.
+                diagnostic_candidates = [
+                    item for item in room_devices
+                    if any(token in str(item.get("label") or item.get("name") or "").casefold()
+                           for token in ("mqtt", "mr60bha"))
+                ]
+                if missing_health and diagnostic_candidates and callable(getattr(self._mcp, "call_tool", None)):
                     detailed_source, detailed_devices = await self._live_devices(enrich_identity=True)
                     if self._tool_succeeded(detailed_source):
                         detailed_by_id = {
