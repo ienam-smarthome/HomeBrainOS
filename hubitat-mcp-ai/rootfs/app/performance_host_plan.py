@@ -21,6 +21,12 @@ selection rationale are auditable without re-resolving a name.
 from __future__ import annotations
 
 from typing import Any
+import asyncio
+import time
+
+from performance_job_analysis import summarize_job_workload
+from performance_inventory_check import reconcile_scheduler_candidates
+from request_runtime import set_request_stage
 
 
 _PERFORMANCE_TERMS = (
@@ -59,6 +65,7 @@ _ADAPTIVE_TOTAL_PCT = 15.0
 _ADAPTIVE_AVERAGE_MS = 2500.0
 _ADAPTIVE_SINCE = "6h"
 _ADAPTIVE_LIMIT = 120
+_SCHEDULER_INVENTORY_TIMEOUT_SECONDS = 6.0
 _ADAPTIVE_ROW_FIELDS = (
     "id", "name", "pctBusy", "pctTotal", "averageMs", "count", "stateSize", "totalMs"
 )
@@ -225,7 +232,10 @@ def _adaptive_target_details(target: dict[str, Any]) -> dict[str, Any]:
 
 
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
+    identity_report: dict[str, Any] | None = None
+
     async def collect() -> str:
+        nonlocal identity_report
         agent.request_metrics.increment("broad_performance_host_plan")
         source_specs: list[tuple[str, dict[str, Any]]] = [
             ("hub_read_diagnostics", {"tool": "hub_get_metrics"}),
@@ -241,6 +251,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
 
         failed: list[str] = []
         performance_data: Any = None
+        job_data: Any = None
         for gateway, arguments in source_specs:
             execution = await agent.executor.execute(
                 gateway,
@@ -254,6 +265,81 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             result = getattr(execution, "result", None)
             if arguments.get("tool") == "hub_get_performance_stats" and result is not None:
                 performance_data = getattr(result, "data", None)
+            if arguments.get("tool") == "hub_get_jobs" and result is not None:
+                job_data = getattr(result, "data", None)
+
+        # At most two compact, read-only inventory reads, concurrently bounded
+        # to six seconds. Avoid triggering an unbounded detail-state scan:
+        # device fields contain *identities only*. No model round is added.
+        if job_data is not None:
+            job_digest = summarize_job_workload(job_data)
+            candidate_ids = job_digest.get("candidateIdsByType") or {}
+            if candidate_ids.get("app") or candidate_ids.get("device"):
+                set_request_stage("Cross-checking scheduled-job entity IDs")
+                agent.request_metrics.increment("scheduler_inventory_crosscheck")
+                checks = (
+                    ("app", "hub_read_apps_code",
+                     {"tool": "hub_list_apps", "args": {"scope": "instances"}}),
+                    ("device", "hub_read_devices",
+                     {"tool": "hub_list_devices", "args": {
+                         "detailed": False, "fields": ["id", "name", "label", "room"],
+                         "limit": 450, "offset": 0
+                     }}),
+                )
+
+                async def read_inventory(
+                    kind: str, gateway: str, arguments: dict[str, Any],
+                ) -> tuple[str, Any]:
+                    started = time.monotonic()
+                    data = None
+                    success = False
+                    summary = "Read timed out or failed"
+                    try:
+                        execution = await asyncio.wait_for(
+                            agent.executor.execute(
+                                gateway, arguments,
+                                supports_live_claim=True,
+                                evidence_kind="host_planned_scheduler_inventory",
+                                record_evidence=False,
+                            ),
+                            timeout=_SCHEDULER_INVENTORY_TIMEOUT_SECONDS,
+                        )
+                        success = bool(execution.success)
+                        if success and execution.result is not None:
+                            data = getattr(execution.result, "data", None)
+                        summary = ("Identity inventory read succeeded" if success
+                                   else "Identity inventory read failed")
+                    except asyncio.TimeoutError:
+                        summary = "Identity inventory read exceeded configured short time limit"
+                        agent.request_metrics.increment(
+                            "scheduler_inventory_timeout"
+                        )
+                    except Exception:
+                        summary = "Identity inventory read unavailable"
+                        agent.request_metrics.increment(
+                            "scheduler_inventory_read_failure"
+                        )
+                    recorder = getattr(agent.executor, "evidence", None)
+                    if callable(getattr(recorder, "record", None)):
+                        recorder.record(
+                            gateway, arguments, success=success,
+                            elapsed_ms=round((time.monotonic() - started) * 1000),
+                            summary=summary, supports_live_claim=success,
+                            evidence_kind="host_planned_scheduler_inventory",
+                            mutates=False, effect="read",
+                        )
+                    return kind, data
+
+                results = await asyncio.gather(
+                    *(read_inventory(*check) for check in checks)
+                )
+                inventories = dict(results)
+                identity_report = reconcile_scheduler_candidates(
+                    job_digest,
+                    apps=inventories.get("app"),
+                    devices=inventories.get("device"),
+                    performance=performance_data,
+                )
 
         targets = _select_adaptive_log_target_records(performance_data)
         if targets:
@@ -309,7 +395,11 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
     async def direct_outcome() -> Any:
         return await agent.direct_outcomes.run(collect, request_class="live-read")
 
-    return await agent.request_observation.run(direct_outcome)
+    outcome = await agent.request_observation.run(direct_outcome)
+    if identity_report is not None and isinstance(getattr(outcome, "metrics", None), dict):
+        # Bounded digest only: no raw home inventory or auth information.
+        outcome.metrics["scheduler_inventory_crosscheck"] = identity_report
+    return outcome
 
 
 __all__ = [
