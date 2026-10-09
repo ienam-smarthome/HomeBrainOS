@@ -219,3 +219,81 @@ def test_slow_identity_read_is_bounded_and_retains_other_inventory(monkeypatch):
     assert agent.request_metrics.counters["scheduler_inventory_timeout"] == 1
     assert len(agent.executor.evidence.rows) == 2
     assert any(not receipt[2]["success"] for receipt in agent.executor.evidence.rows)
+
+
+def test_real_metrics_registry_supports_all_scheduler_inventory_paths():
+    """Exercise the production allowlist, not only the permissive _Metrics stub."""
+    from request_metrics import RequestMetrics
+
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        for name in (
+            "scheduler_inventory_crosscheck",
+            "scheduler_inventory_timeout",
+            "scheduler_inventory_read_failure",
+        ):
+            metrics.increment(name)
+        snapshot = metrics.snapshot()
+        assert all(snapshot["counters"][name] == 1 for name in (
+            "scheduler_inventory_crosscheck",
+            "scheduler_inventory_timeout",
+            "scheduler_inventory_read_failure",
+        ))
+    finally:
+        metrics.reset(token)
+
+
+def test_host_scheduler_inventory_path_runs_with_real_request_metrics():
+    """Regression: v0.16.139 live request failed before either inventory read."""
+    from performance_host_plan import collect_broad_performance_outcome
+    from request_metrics import RequestMetrics
+
+    agent = _Agent()
+    agent.request_metrics = RequestMetrics()
+    token = agent.request_metrics.begin()
+    try:
+        outcome = asyncio.run(collect_broad_performance_outcome(
+            agent, "Analyse all scheduled jobs on my Hubitat hub, "
+                   "group them by owning app and handler. Read-only."
+        ))
+        snapshot = agent.request_metrics.snapshot()
+    finally:
+        agent.request_metrics.reset(token)
+
+    assert snapshot["counters"]["scheduler_inventory_crosscheck"] == 1
+    assert outcome.metrics["scheduler_inventory_crosscheck"]["app"][
+        "presentInReturnedInventory"
+    ] == 1
+    assert outcome.metrics["scheduler_inventory_crosscheck"]["device"][
+        "presentInReturnedInventory"
+    ] == 1
+    assert len([call for call in agent.executor.calls
+                if call[0] in ("hub_list_apps", "hub_list_devices")]) == 2
+
+
+def test_host_scheduler_inventory_timeout_runs_with_real_request_metrics(monkeypatch):
+    """Also covers the runtime-only metrics branch on an inventory deadline."""
+    import performance_host_plan as plan
+    from request_metrics import RequestMetrics
+
+    monkeypatch.setattr(plan, "_SCHEDULER_INVENTORY_TIMEOUT_SECONDS", 0.03)
+    agent = _Agent(slow_device=True)
+    agent.request_metrics = RequestMetrics()
+    token = agent.request_metrics.begin()
+    try:
+        outcome = asyncio.run(plan.collect_broad_performance_outcome(
+            agent, "Analyse scheduled jobs by owning app and handler. Read-only."
+        ))
+        snapshot = agent.request_metrics.snapshot()
+    finally:
+        agent.request_metrics.reset(token)
+
+    assert snapshot["counters"]["scheduler_inventory_crosscheck"] == 1
+    assert snapshot["counters"]["scheduler_inventory_timeout"] == 1
+    assert outcome.metrics["scheduler_inventory_crosscheck"]["app"][
+        "presentInReturnedInventory"
+    ] == 1
+    assert outcome.metrics["scheduler_inventory_crosscheck"]["device"][
+        "inventory"
+    ]["status"] == "unavailable"
