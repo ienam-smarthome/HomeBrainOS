@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.133**.
+Current add-on version: **0.16.134**.
 
 ## Architecture
+
+0.16.134: For whole-hub optimisation requests, the scheduled-job MCP payload is analysed before the 7,500-character model packet limit is applied. Where the hub provides structured owner IDs and handlers, the app reports per-owner scheduled-entry counts and top method groups, with explicit totals, unmapped ownership and partial-return flags. This is a read-only scheduler inventory, not CPU profiling or proof of avoidable work. If the backend does not return structured job rows, the existing fallback and coverage warnings remain.
 
 v0.16.133 adds a final consistency check for performance investigations: failed reads against deleted app IDs 2954/2597 are treated as requests that need caller provenance, not automatic stale MCP Rule Server dependencies or cleanup opportunities, unless actual configuration was inspected. A scoped log read returning zero rows is explicitly reported as an observed absence in that sample rather than falsely described as no tool read. Performance optimisations remain read-only and require independently verified configuration and dependency evidence before recommending changes.
 
