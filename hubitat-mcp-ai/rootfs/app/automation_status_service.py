@@ -526,13 +526,55 @@ class AutomationStatusService:
                 )
         return "\n".join(lines)
 
-    async def snapshot(self, *, advisory: bool = False) -> AutomationStatusOutcome:
+    @classmethod
+    def _brief_message(
+        cls,
+        items: list[dict[str, Any]],
+        *,
+        rule_coverage: str = "unverified",
+    ) -> str:
+        """Problem-first configuration summary without an unrelated full app dump."""
+        counts = cls.status_counts(items)
+        app_count = sum(item.get("type") == "app" for item in items)
+        broken = [item for item in items if item.get("status") == "broken"]
+        lines = [
+            (
+                f"No broken markers detected among {app_count} installed app instances."
+                if not broken else
+                f"{len(broken)} automation item(s) have broken configuration markers."
+            ),
+            f"Inventory status: {counts['active']} not disabled, "
+            f"{counts['disabled']} disabled, {counts['paused']} paused, "
+            f"{counts['unknown']} unknown.",
+            f"Separate Rule Machine inventory: {rule_coverage}. "
+            "App entries may include Rule Machine instances; these counts "
+            "do not verify individual rule execution.",
+        ]
+        if broken:
+            lines.append("Flagged entries:")
+            for item in broken[:15]:
+                lines.append(
+                    f"- {item.get('display_name') or item['name']} "
+                    f"({item['type']}" +
+                    (f", ID {item['id']}" if item.get("id") else "") +
+                    ") — configuration marker; exact failure not verified."
+                )
+            if len(broken) > 15:
+                lines.append(f"...and {len(broken) - 15} more flagged entries.")
+        lines.append(
+            "Runtime logs, commands, devices and dependencies were not checked. "
+            "Use the comprehensive read-only System Check for execution failures."
+        )
+        return "\n".join(lines)
+
+    async def snapshot(self, *, advisory: bool = False, brief: bool = False) -> AutomationStatusOutcome:
         calls = (
             ("hub_read_apps_code", {"tool": "hub_list_apps", "args": {"scope": "instances"}}, "app"),
             ("hub_read_rules", {}, "rule"),
         )
         items: list[dict[str, Any]] = []
         evidence: list[dict[str, Any]] = []
+        rule_coverage = "not checked"
         for tool, arguments, item_type in calls:
             started = time.monotonic()
             result = await self.mcp.call_tool(tool, arguments)
@@ -545,7 +587,13 @@ class AutomationStatusService:
                 )
             )
             if not getattr(result, "is_error", False):
-                items.extend(self._items_from_result(result, item_type=item_type, source=tool))
+                found = self._items_from_result(result, item_type=item_type, source=tool)
+                items.extend(found)
+                if item_type == "rule":
+                    rule_coverage = (f"{len(found)} entries returned" if found else
+                                     "0 entries returned; completeness unverified")
+            elif item_type == "rule":
+                rule_coverage = "unavailable (tool failed)"
         unique = {(i["type"], i.get("id") or "", i["name"].casefold()): i for i in items}
         ordered = sorted(
             unique.values(),
@@ -572,7 +620,10 @@ class AutomationStatusService:
                     if isinstance(item, dict)
                 ]
         message = (
-            self._advisory_message(ordered, devices) if advisory else self._message(ordered)
+            self._advisory_message(ordered, devices) if advisory else (
+                self._brief_message(ordered, rule_coverage=rule_coverage)
+                if brief else self._message(ordered)
+            )
         )
         return AutomationStatusOutcome(
             message=message,
