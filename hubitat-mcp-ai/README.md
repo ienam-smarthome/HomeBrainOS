@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.135**.
+Current add-on version: **0.16.136**.
 
 ## Architecture
+
+v0.16.136 extends the scheduled-job analyser to preserve scheduler map keys and label narrowly decoded `devNNNOnce` / `appNNNOnce` keys as **unverified owner candidates**. These are never counted as confirmed owners without explicit deviceId/appId evidence. Explicit scheduler efficiency / grouping questions now use the host performance evidence route automatically instead of general model guesswork. The performance finalizer also corrects the contradiction between successful empty LG webOS scoped log reads and model text claiming no diagnostic read occurred.
+
 
 v0.16.135 adds a bounded lifecycle for read-only comprehensive performance/automation investigations: a configurable 90-second overall deadline, a separate 30-second final synthesis deadline, and a safe source-receipt-only partial response if analysis stalls after evidence collection. The UI polls minimal, session/request-ID-scoped stage updates while the request runs; disconnects and superseding questions cancel the in-flight task. HTTP request URL logs redact access tokens. Configurable options: investigation_deadline_seconds (default 90) and performance_synthesis_timeout_seconds (default 30). Rotating previously exported/leaked credentials is still necessary.
 
