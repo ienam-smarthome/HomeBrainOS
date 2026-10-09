@@ -947,6 +947,35 @@ def _repair_scheduler_probe_history_inference(
         low = bare.casefold()
         ids_on_line = set(re.findall(r"\b\d{3,9}\b", bare))
         probe_overlap = bool(ids_on_line & probe_ids)
+        # Recommendation tables are self-contained rows, not heading sections.
+        # The v0.16.147 live proof used this exact shape, so protect a Rule
+        # Server cleanup row even when no per-target heading set section state.
+        rule_server_row = (
+            bare.lstrip().startswith("|")
+            and "mcp rule server" in low
+            and any(token in low for token in (
+                "missing device", "orphan", "remove reference",
+                "remove references", "app configuration",
+            ))
+        )
+        if rule_server_row:
+            cells = [cell.strip() for cell in bare.strip().strip("|").split("|")]
+            if len(cells) >= 3:
+                cells[1] = (
+                    "Historical `Device not found` rows overlap IDs used by "
+                    "HomeBrain scheduler diagnostics; the lookup failures are "
+                    "unresolved and do not prove orphaned devices or persisted "
+                    "Rule Server references."
+                )
+                cells[2] = (
+                    "Do not remove references from this evidence. Establish "
+                    "independent request provenance or configuration evidence "
+                    "before considering any cleanup."
+                )
+                line = "| " + " | ".join(cells) + " |" + ("\\n" if line.endswith("\\n") else "")
+                bare = line.rstrip("\\n")
+                low = bare.casefold()
+
         unsupported = (
             in_rule_server_section
             and (
