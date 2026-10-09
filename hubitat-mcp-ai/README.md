@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.134**.
+Current add-on version: **0.16.135**.
 
 ## Architecture
+
+v0.16.135 adds a bounded lifecycle for read-only comprehensive performance/automation investigations: a configurable 90-second overall deadline, a separate 30-second final synthesis deadline, and a safe source-receipt-only partial response if analysis stalls after evidence collection. The UI polls minimal, session/request-ID-scoped stage updates while the request runs; disconnects and superseding questions cancel the in-flight task. HTTP request URL logs redact access tokens. Configurable options: investigation_deadline_seconds (default 90) and performance_synthesis_timeout_seconds (default 30). Rotating previously exported/leaked credentials is still necessary.
+
 
 0.16.134: For whole-hub optimisation requests, the scheduled-job MCP payload is analysed before the 7,500-character model packet limit is applied. Where the hub provides structured owner IDs and handlers, the app reports per-owner scheduled-entry counts and top method groups, with explicit totals, unmapped ownership and partial-return flags. This is a read-only scheduler inventory, not CPU profiling or proof of avoidable work. If the backend does not return structured job rows, the existing fallback and coverage warnings remain.
 

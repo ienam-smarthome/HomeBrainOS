@@ -46,6 +46,11 @@ from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationEr
 from mcp_client import HubitatMCPClient
 from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
+from request_runtime import (
+    RequestProgress, begin_progress, end_progress,
+    set_request_stage, remember_verified_outcome, safe_partial_outcome,
+    install_sensitive_log_redaction,
+)
 from performance_host_plan import (
     collect_broad_performance_outcome,
     is_broad_performance_request,
@@ -56,6 +61,7 @@ from webui import render_page
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HomeBrainOS.App")
+install_sensitive_log_redaction()
 
 OPTIONS_PATH = Path(os.getenv("CONFIG_PATH", "/data/options.json"))
 VERSION_PATH = Path("/app/.homebrain-build-version")
@@ -86,6 +92,8 @@ def load_options() -> dict[str, Any]:
         "ollama_local_connect_timeout_seconds": 3,
         "ollama_local_keep_alive_seconds": 120,
         "ollama_agent_timeout_seconds": 60,
+        "investigation_deadline_seconds": 90,
+        "performance_synthesis_timeout_seconds": 30,
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
         "mcp_device_cache_seconds": 12,
@@ -302,6 +310,9 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("semantic_default_temperature_step") or 1.0
     ),
 )
+agent.performance_synthesis_timeout_seconds = float(
+    OPTIONS.get("performance_synthesis_timeout_seconds") or 30
+)
 
 
 class RequestCoordinator:
@@ -310,6 +321,13 @@ class RequestCoordinator:
     def __init__(self) -> None:
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._lock = asyncio.Lock()
+        self._progress: dict[str, RequestProgress] = {}
+
+    def progress(self, key: str, request_id: str) -> dict[str, Any]:
+        state = self._progress.get(key)
+        if state is None or state.request_id != request_id:
+            return {"stage": "Waiting for request", "completed": False}
+        return state.public()
 
     async def run(
         self,
@@ -317,26 +335,56 @@ class RequestCoordinator:
         operation: Awaitable[Any],
         *,
         connection: Request | None = None,
+        request_id: str = "",
+        deadline_seconds: float | None = None,
     ) -> Any:
-        task = asyncio.create_task(operation, name=f"homebrain-request:{key}")
+        progress = RequestProgress(request_id=request_id or uuid.uuid4().hex)
+
+        async def tracked() -> Any:
+            token = begin_progress(progress)
+            try:
+                return await operation
+            finally:
+                end_progress(token)
+
+        task = asyncio.create_task(tracked(), name=f"homebrain-request:{key}")
         async with self._lock:
             previous = self._tasks.get(key)
             self._tasks[key] = task
+            self._progress[key] = progress
 
         if previous is not None and previous is not task and not previous.done():
             previous.cancel("superseded by a newer request")
-            with suppress(asyncio.CancelledError):
-                await previous
+            with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(previous, timeout=2.0)
 
         try:
             while True:
                 done, _ = await asyncio.wait({task}, timeout=0.1)
                 if task in done:
+                    progress.completed = True
                     return task.result()
+                if (deadline_seconds is not None and
+                        time.monotonic() - progress.started >= deadline_seconds):
+                    progress.stage = "Investigation reached its time limit"
+                    task.cancel("investigation deadline exceeded")
+                    with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                        await asyncio.wait_for(task, timeout=2.0)
+                    progress.completed = True
+                    if progress.checkpoint is not None:
+                        return safe_partial_outcome(
+                            progress.checkpoint,
+                            reason=f"{deadline_seconds:g}s time limit",
+                        )
+                    raise HTTPException(
+                        status_code=504,
+                        detail="Investigation exceeded its time limit before verified results were collected. Please retry a smaller question.",
+                    )
                 if connection is not None and await connection.is_disconnected():
+                    progress.stage = "Cancelled: browser disconnected"
                     task.cancel("client disconnected")
-                    with suppress(asyncio.CancelledError):
-                        await task
+                    with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                        await asyncio.wait_for(task, timeout=2.0)
                     raise HTTPException(status_code=499, detail="Client disconnected")
         except asyncio.CancelledError:
             if not task.done():
@@ -348,11 +396,13 @@ class RequestCoordinator:
             async with self._lock:
                 if self._tasks.get(key) is task:
                     self._tasks.pop(key, None)
+                    self._progress.pop(key, None)
 
     async def close(self) -> None:
         async with self._lock:
             tasks = list(self._tasks.values())
             self._tasks.clear()
+            self._progress.clear()
         for task in tasks:
             if not task.done():
                 task.cancel("application shutdown")
@@ -474,13 +524,18 @@ async def _agent_request(request: ChatRequest) -> Any:
                 )
             return await run_comprehensive_chat_audit(health_audit, mcp)
         if is_broad_performance_request(request.message):
+            set_request_stage("Collecting Hubitat performance and scheduled jobs")
             outcome = await collect_broad_performance_outcome(agent, request.message)
+            remember_verified_outcome(outcome)
+            set_request_stage("Analysing scheduled jobs and evidence")
         else:
+            set_request_stage("Gathering Hubitat MCP evidence")
             outcome = await agent.process_user_request_result(
                 request.message,
                 request.history,
                 session_id=request.session_id,
             )
+        set_request_stage("Preparing evidence-based answer")
         return await finalize_performance_api_outcome(
             agent,
             mcp,
@@ -516,10 +571,19 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
                 raise HTTPException(status_code=503, detail="Ollama Online is disabled")
             operation = _agent_request(request)
+        comprehensive = (
+            is_broad_performance_request(request.message)
+            or is_comprehensive_system_audit_request(request.message)
+            or is_broad_automation_runtime_diagnostic(request.message)
+        )
         return await request_coordinator.run(
             request.coordination_key,
             operation,
             connection=connection,
+            request_id=request.request_id or "",
+            deadline_seconds=max(10.0, float(
+                OPTIONS.get("investigation_deadline_seconds") or 90
+            )) if comprehensive else None,
         )
     except HTTPException:
         raise
@@ -565,6 +629,11 @@ async def health() -> dict[str, Any]:
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     return await health()
+
+@app.get("/api/request-progress")
+async def request_progress(session_id: str, request_id: str) -> dict[str, Any]:
+    """Current progress only. No prompts, credentials or evidence in this endpoint."""
+    return request_coordinator.progress(session_id, request_id)
 
 
 def _normalized_values(device: dict[str, Any]) -> dict[str, Any]:
