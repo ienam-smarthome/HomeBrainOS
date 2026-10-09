@@ -84,6 +84,7 @@ The repository drift test compares this table directly with the live directory. 
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |
 | `pushover_notifier.py` | Formats and sends optional bounded scheduled System Check summaries through the Pushover Message API. |
 | `reasoning_policy.py` | Tracks native tool-round shape, selected-device clarification constraints, and generic evidence-review/synthesis contracts without question-specific routing. |
+| `request_runtime.py` | Tracks in-flight read-only investigation stages, retains verified-source checkpoints for bounded timeouts, and redacts URL tokens in HTTP logs. |
 | `request_classification.py` | Provides non-authoritative presentation and manifest hints. |
 | `request_metrics.py` | Collects fixed privacy-safe counters and timings. |
 | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
