@@ -131,11 +131,11 @@ def test_brief_broken_automation_reply_avoids_full_inventory():
         for i in range(136, 154)
     ]
     message = AutomationStatusService._brief_message(
-        items, rule_coverage="0 entries returned; completeness unverified"
+        items, rule_coverage="no structured rule entries in hub_read_rules response; coverage unavailable (not evidence of zero rules)"
     )
     assert "No broken markers detected among 154 installed app instances" in message
     assert "136 not disabled, 18 disabled" in message
-    assert "completeness unverified" in message
+    assert "not evidence of zero rules" in message
     assert "App 1" not in message
 
 
@@ -148,3 +148,13 @@ def test_brief_broken_automation_reply_identifies_current_ids():
     assert "ID 2957" in message
     assert "unavailable (tool failed)" in message
     assert "ID 2597" not in message
+
+
+def test_absent_rule_result_does_not_imply_hub_has_zero_rules():
+    message = AutomationStatusService._brief_message(
+        [{"id": "169", "name": "Rule Machine", "display_name": "Rule Machine",
+          "type": "app", "status": "active"}],
+        rule_coverage="no structured rule entries in hub_read_rules response; coverage unavailable (not evidence of zero rules)",
+    )
+    assert "not evidence of zero rules" in message
+    assert "no individual rule execution was verified" in message
