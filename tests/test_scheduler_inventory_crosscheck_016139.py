@@ -514,3 +514,59 @@ def test_targeted_scheduler_probe_runs_after_adaptive_diagnostic_logs():
     second = outcome.metrics["scheduler_inventory_crosscheck"]["secondaryDeviceSource"]
     assert second["ranAfterDiagnosticLogReads"] is True
     assert second["probeMayEmitExpectedNotFoundLogs"] is True
+
+
+def test_scheduler_schema_discovery_reports_names_not_arbitrary_values():
+    digest = summarize_job_workload({
+        "scheduledJobs": {"count": 3, "jobs": [
+            {
+                "id": "app1418Once.timeHandler",
+                "handler": "timeHandler",
+                "owner": {"id": "SECRET-OWNER-VALUE", "type": "app"},
+                "sourceType": "application",
+            },
+            {
+                "id": "dev1089Recur.poll1",
+                "handler": "poll1",
+                "parentApp": {"id": 999, "label": "PRIVATE-LABEL"},
+            },
+            {
+                "id": "other",
+                "handler": "sendEventReminder",
+                "appId": 1234,
+            },
+        ]}
+    })
+    schema = digest["ownershipSchema"]
+    assert schema["recognizedExplicitOwnerFields"]["appId"] == 1
+    assert schema["recognizedExplicitOwnerFields"]["deviceId"] == 0
+    assert schema["valuesCaptured"] is False
+    fields = {item["field"] for item in schema["observedTopLevelFields"]}
+    assert {"id", "handler", "owner", "sourceType", "parentApp", "appId"} <= fields
+    owner_like = {item["field"] for item in schema["ownerLikeFields"]}
+    assert {"owner", "owner.id", "parentApp", "parentApp.id", "appId"} <= owner_like
+    rendered = __import__("performance_job_analysis").render_job_workload_summary(digest)
+    assert "Scheduler ownership metadata discovery (schema only)" in rendered
+    assert "appId=1 row(s); deviceId=0 row(s)" in rendered
+    assert "SECRET-OWNER-VALUE" not in rendered
+    assert "PRIVATE-LABEL" not in rendered
+    assert "authoritative ownership" in rendered
+
+
+def test_compact_job_digest_retains_bounded_ownership_schema():
+    digest = summarize_job_workload({
+        "scheduledJobs": {"count": 1, "jobs": [{
+            "id": "app1418Once.timeHandler",
+            "handler": "timeHandler",
+            "sourceAppId": 1418,
+        }]}
+    })
+    compact = _compact_job_digest(digest)
+    import json
+    parsed = json.loads(compact)
+    assert "ownershipSchema" in parsed
+    assert parsed["ownershipSchema"]["valuesCaptured"] is False
+    assert any(
+        item["field"] == "sourceAppId"
+        for item in parsed["ownershipSchema"]["ownerLikeFields"]
+    )

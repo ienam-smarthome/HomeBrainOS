@@ -105,7 +105,28 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
     next_runs: Counter[str] = Counter()
     unattributed = 0
     unknown_method = 0
+
+    # Discover only the *shape* of the live scheduler payload. This lets us
+    # determine whether hub_get_jobs exposes stronger ownership metadata than
+    # the currently recognized appId/deviceId fields without retaining
+    # arbitrary values from scheduler rows.
+    row_field_counts: Counter[str] = Counter()
+    nested_field_counts: Counter[str] = Counter()
+    owner_like_field_counts: Counter[str] = Counter()
+    owner_tokens = ("owner", "app", "device", "parent", "source", "installed")
     for row in rows:
+        for field, value in row.items():
+            field_name = str(field)[:100]
+            row_field_counts[field_name] += 1
+            if any(token in field_name.casefold() for token in owner_tokens):
+                owner_like_field_counts[field_name] += 1
+            if isinstance(value, dict):
+                for nested in value:
+                    nested_name = f"{field_name}.{str(nested)[:80]}"
+                    nested_field_counts[nested_name] += 1
+                    if any(token in nested_name.casefold() for token in owner_tokens):
+                        owner_like_field_counts[nested_name] += 1
+
         owner_type = ""
         owner_id = ""
         for id_field, kind in _OWNER_FIELDS:
@@ -257,6 +278,35 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         "topCandidateOwnerMethods": inferred_groups,
         "unknownMethodRows": unknown_method,
         "topOwnerMethods": grouped,
+        "ownershipSchema": {
+            "recognizedExplicitOwnerFields": {
+                field: row_field_counts.get(field, 0)
+                for field, _kind in _OWNER_FIELDS
+            },
+            "observedTopLevelFields": [
+                {"field": field, "rows": count}
+                for field, count in sorted(
+                    row_field_counts.items(), key=lambda item: (-item[1], item[0])
+                )
+            ][:24],
+            "observedNestedFields": [
+                {"field": field, "rows": count}
+                for field, count in sorted(
+                    nested_field_counts.items(), key=lambda item: (-item[1], item[0])
+                )
+            ][:24],
+            "ownerLikeFields": [
+                {"field": field, "rows": count}
+                for field, count in sorted(
+                    owner_like_field_counts.items(), key=lambda item: (-item[1], item[0])
+                )
+            ][:16],
+            "valuesCaptured": False,
+            "interpretation": (
+                "Field-name discovery only. An owner-like field name is not "
+                "authoritative ownership until its semantics are independently verified."
+            ),
+        },
         "topMethods": [
             {"method": method, "jobs": n} for method, n in methods.most_common(8)
         ],
@@ -376,6 +426,40 @@ def render_job_workload_summary(summary: dict[str, Any]) -> str:
             "These entries lack an ID usable for entity cross-checking. "
             "Method names alone cannot identify an owning app or device."
         )
+
+    schema = summary.get("ownershipSchema") or {}
+    if schema:
+        explicit = schema.get("recognizedExplicitOwnerFields") or {}
+        owner_like = schema.get("ownerLikeFields") or []
+        fields = schema.get("observedTopLevelFields") or []
+        lines.extend([
+            "",
+            "**Scheduler ownership metadata discovery (schema only)**",
+            "This reports field names/counts from returned scheduler rows, not "
+            "arbitrary field values. It is a discovery aid, not an ownership inference.",
+            f"Recognized explicit owner fields present: appId="
+            f"{int(explicit.get('appId') or 0)} row(s); deviceId="
+            f"{int(explicit.get('deviceId') or 0)} row(s).",
+        ])
+        if owner_like:
+            lines.append(
+                "Owner-like field names observed: "
+                + ", ".join(
+                    f"{item['field']} ({item['rows']})" for item in owner_like[:12]
+                )
+                + ". These names are not treated as authoritative ownership "
+                  "without independent semantic verification."
+            )
+        else:
+            lines.append(
+                "No additional owner-like field names were observed in the returned rows."
+            )
+        if fields:
+            lines.append(
+                "Observed scheduler row fields: "
+                + ", ".join(item["field"] for item in fields[:18])
+                + "."
+            )
 
     methods = summary.get("topMethods") or []
     if methods:
