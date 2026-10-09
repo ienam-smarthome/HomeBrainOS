@@ -68,3 +68,34 @@ async def test_snapshot_does_not_fabricate_rules():
     assert isinstance(outcome, AutomationStatusOutcome)
     assert any(item["name"] == "Test App" and item["status"] == "active" for item in outcome.automation_items)
     assert all(item["type"] != "rule" for item in outcome.automation_items)
+
+@pytest.mark.asyncio
+async def test_snapshot_uses_real_rule_listing_contract_and_preserves_coverage():
+    class RecordingMCP:
+        def __init__(self):
+            self.calls = []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_apps_code":
+                return MCPToolResult(name=name, arguments=arguments, raw={}, text="ok", data={"apps": [{"id": "169", "name": "Rule Machine", "disabled": False}]})
+            return MCPToolResult(name=name, arguments=arguments, raw={}, text="ok", data={"rules": [{"id": "4206", "name": "Night Light", "disabled": False}]})
+
+    client = RecordingMCP()
+    outcome = await AutomationStatusService(client).snapshot(brief=True)
+    assert ("hub_read_rules", {"tool": "hub_list_rules", "args": {}}) in client.calls
+    assert "1 structured entries returned" in outcome.message
+    assert "completeness not independently verified" in outcome.message
+    assert any(item["id"] == "4206" and item["type"] == "rule" for item in outcome.automation_items)
+
+
+@pytest.mark.asyncio
+async def test_rule_listing_tool_error_cannot_establish_live_rule_coverage():
+    service = AutomationStatusService(FakeMCPClient({
+        "hub_read_apps_code": MCPToolResult(name="hub_read_apps_code", arguments={}, raw={}, text="ok", data={"apps": [{"id": "169", "label": "Rule Machine"}]}),
+        "hub_read_rules": MCPToolResult(name="hub_read_rules", arguments={}, raw={}, text="failed", data={"success": False, "error": "not available"}),
+    }))
+    outcome = await service.snapshot(brief=True)
+    assert "unavailable (hub_list_rules returned a tool error)" in outcome.message
+    assert all(item["type"] != "rule" for item in outcome.automation_items)
+    assert outcome.evidence[-1]["supports_live_claim"] is False
