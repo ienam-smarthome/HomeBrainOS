@@ -50,3 +50,20 @@ def test_unrelated_rule_server_error_is_preserved():
     fixed, changed = _repair_scheduler_probe_history_inference(draft, _report())
     assert fixed == draft
     assert changed is False
+
+
+def test_repairs_live_016147_recommendation_table_shape():
+    draft = """### Efficiency Recommendations
+
+| Target | Observation | Recommended Inspection Step |
+| :--- | :--- | :--- |
+| **MCP Rule Server (4151)** | Repeated `[ERROR]` logs for missing devices; highest app `pctTotal` (1.981%). | Inspect app configuration to remove references to the six missing device IDs. |
+The target-scoped diagnostic read returned 13 non-diagnostic log observation(s).
+| **Unattributed Jobs** | 42 instances of `sendEventReminder`. | Inspect source. |
+"""
+    fixed, changed = _repair_scheduler_probe_history_inference(draft, _report())
+    assert changed is True
+    assert "Inspect app configuration to remove references" not in fixed
+    assert "do not prove orphaned devices" in fixed
+    assert "Do not remove references from this evidence" in fixed
+    assert "| **Unattributed Jobs**" in fixed
