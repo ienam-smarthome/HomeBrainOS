@@ -990,7 +990,8 @@ def _repair_scheduler_probe_history_inference(
         # under generic recommendation headings. Catch those self-contained
         # lines too instead of relying on section state.
         global_probe_cleanup_claim = (
-            unsupported_claim
+            not rule_server_row
+            and unsupported_claim
             and (
                 "mcp rule server" in low
                 or "missing device" in low
