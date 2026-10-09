@@ -117,3 +117,34 @@ def test_explicit_broken_signal_is_not_relabelled_as_weak_name_marker():
     ])
     assert "(app) [ID 2957]" in message
     assert "[Hubitat name marker; cause unverified]" not in message
+
+
+def test_brief_broken_automation_reply_avoids_full_inventory():
+    items = [
+        {"id": str(i), "name": f"App {i}", "display_name": f"App {i}",
+         "type": "app", "status": "active"}
+        for i in range(136)
+    ]
+    items += [
+        {"id": str(i), "name": f"Disabled {i}", "display_name": f"Disabled {i}",
+         "type": "app", "status": "disabled"}
+        for i in range(136, 154)
+    ]
+    message = AutomationStatusService._brief_message(
+        items, rule_coverage="0 entries returned; completeness unverified"
+    )
+    assert "No broken markers detected among 154 installed app instances" in message
+    assert "136 not disabled, 18 disabled" in message
+    assert "completeness unverified" in message
+    assert "App 1" not in message
+
+
+def test_brief_broken_automation_reply_identifies_current_ids():
+    items = [{"id": "2957", "name": "Button 3 *BROKEN*",
+              "display_name": "Button 3", "type": "app", "status": "broken"}]
+    message = AutomationStatusService._brief_message(
+        items, rule_coverage="unavailable (tool failed)"
+    )
+    assert "ID 2957" in message
+    assert "unavailable (tool failed)" in message
+    assert "ID 2597" not in message

@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.123**.
+Current add-on version: **0.16.124**.
 
 ## Architecture
+
+0.16.124 provides a brief configuration-only summary for requests to show broken automations, avoiding the full healthy app list. It qualifies empty Rule Machine tool results as incomplete coverage, distinguishes tool failure, preserves exact IDs for flagged entries, and does not equate enabled apps with verified runtime success. Other automation inventory requests retain the detailed presentation.
 
 0.16.123 clarifies the fast automation-status inventory: it separates app and Rule Machine population counts, keeps legacy status headings and summary wording, displays available app IDs, and warns that enablement or a Hubitat broken-name marker is not proof of successful runtime execution. It recommends the existing comprehensive read-only System Check for runtime faults. This release does not yet add automatic per-action target verification or retire any Roborock rules.
 
