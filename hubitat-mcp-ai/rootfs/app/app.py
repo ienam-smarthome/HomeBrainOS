@@ -486,7 +486,9 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                 operation = _creative_automation_recommendation()
             else:
                 operation = automation_status.snapshot(
-                    advisory=automation_status.is_advisory_request(request.message)
+                    advisory=automation_status.is_advisory_request(request.message),
+                    brief=("broken" in request.message.casefold() and
+                           not automation_status.is_advisory_request(request.message)),
                 )
         else:
             if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
