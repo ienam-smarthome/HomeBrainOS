@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.136**.
+Current add-on version: **0.16.137**.
 
 ## Architecture
+
+v0.16.137 supports the live Hubitat scheduled-job key formats `devNNNOnce.method` and `devNNNRecur.method` (and corresponding app-prefixed forms). Key-derived IDs remain **unverified owner candidates** until a separate identity lookup confirms the association. It also prevents AI-generated sample tables from labelling key-derived IDs as confirmed owners when the scheduler digest has no explicit owner IDs. This remains read-only; scheduled-entry alignment does not establish CPU contention or guaranteed savings.
+
 
 v0.16.136 extends the scheduled-job analyser to preserve scheduler map keys and label narrowly decoded `devNNNOnce` / `appNNNOnce` keys as **unverified owner candidates**. These are never counted as confirmed owners without explicit deviceId/appId evidence. Explicit scheduler efficiency / grouping questions now use the host performance evidence route automatically instead of general model guesswork. The performance finalizer also corrects the contradiction between successful empty LG webOS scoped log reads and model text claiming no diagnostic read occurred.
 
