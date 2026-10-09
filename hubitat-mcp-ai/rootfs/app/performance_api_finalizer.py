@@ -142,14 +142,44 @@ def _install_tool_executor_capture() -> None:
                 payload = getattr(getattr(execution, "result", None), "data", None)
                 job_summary = summarize_job_workload(payload)
                 if job_summary.get("status") == "parsed":
-                    # Group from the full, structured response *before* the
-                    # existing 7,500-character packet limit discards rows.
-                    # Keep a small original excerpt for troubleshooting.
-                    packet_content = (
-                        "HOST_JOB_DIGEST:" + json.dumps(
-                            job_summary, ensure_ascii=False, default=str
-                        ) + "\nRAW_JOB_EXCERPT:\n" + packet_content[:1300]
+                    # The full job set has already been counted above. The
+                    # packet contains only small, independently ranked samples
+                    # for app/device candidates, never arbitrary raw rows.
+                    # Drop redundant legacy groups so the *JSON first line*
+                    # survives the hard 7,500-character source limit.
+                    digest = dict(job_summary)
+                    for redundant in (
+                        "topCandidateOwnerMethods",
+                        "topCandidateDeviceOwners",
+                        "topCandidateAppOwners",
+                        "keyPatternCandidateExamples",
+                    ):
+                        digest.pop(redundant, None)
+                    for group_name in ("topCandidateDeviceMethods", "topCandidateAppMethods"):
+                        digest[group_name] = (digest.get(group_name) or [])[:6]
+                    for kind in ("device", "app"):
+                        methods = (digest.get("topCandidateMethodsByType") or {}).get(kind, [])
+                        digest.setdefault("topCandidateMethodsByType", {})[kind] = methods[:4]
+                    digest_json = json.dumps(
+                        digest, ensure_ascii=False, default=str,
+                        separators=(",", ":"),
                     )
+                    if len(digest_json) + 20 < _CAPTURE_LIMITS[_JOBS_TOOL]:
+                        excerpt_length = min(
+                            650, _CAPTURE_LIMITS[_JOBS_TOOL] - len(digest_json) - 40
+                        )
+                        packet_content = (
+                            "HOST_JOB_DIGEST:" + digest_json
+                            + "\nRAW_JOB_EXCERPT:\n"
+                            + packet_content[:max(0, excerpt_length)]
+                        )
+                    else:
+                        # Never emit a truncated JSON prefix masquerading as
+                        # authoritative parsed data. Preserve honest coverage.
+                        packet_content = (
+                            "Scheduled jobs parsed but host-derived grouping "
+                            "exceeded the safe evidence packet budget."
+                        )
             _append_packet(sub_tool, packet_content)
         return execution
 
