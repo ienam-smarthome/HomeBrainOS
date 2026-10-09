@@ -762,3 +762,41 @@ async def test_room_filter_marks_offline_state_as_activity_reliability_warning()
         {"attribute": "sensorStatus", "value": "offline"}
     ]
     assert match["activity_state_reliability"] == "qualified_by_explicit_health_failure"
+    assert match["environment_state_reliability"] == "qualified_by_explicit_health_failure"
+    assert match["health"]["online"] is False
+    assert match["health"]["activityReliable"] is False
+    assert match["health"]["environmentReliable"] is False
+
+
+@pytest.mark.asyncio
+async def test_room_filter_normalizes_seeed_7304_offline_diagnostics():
+    sensor = device(
+        "Seeed Studio MR60BHA2 MQTT", "Living Room",
+        ["MotionSensor", "PresenceSensor", "IlluminanceMeasurement", "Switch"],
+        switch="on", motion="inactive", presence="not present", illuminance=8.7,
+        sensorStatus="offline", mqttStatus="connecting", lastMessage="offline",
+        lastError="MQTT connect failed: MqttException",
+    )
+    sensor["id"] = 7304
+    service = DeviceQueryService(QueryMCP([sensor]), lambda *args, **kwargs: None)
+
+    result = await service.filter_devices({
+        "attribute": "room", "operator": "eq", "value": "Living Room"
+    })
+
+    match = result.data["matches"][0]
+    assert match["states"]["switch"] == "on"
+    assert match["states"]["motion"] == "inactive"
+    assert match["states"]["presence"] == "not present"
+    assert match["states"]["illuminance"] == 8.7
+    assert match["states"]["sensorStatus"] == "offline"
+    assert match["states"]["mqttStatus"] == "connecting"
+    assert match["states"]["lastMessage"] == "offline"
+    assert match["states"]["lastError"] == "MQTT connect failed: MqttException"
+    assert match["health"]["severity"] == "warning"
+    assert match["health"]["online"] is False
+    assert match["health"]["activityReliable"] is False
+    assert match["health"]["environmentReliable"] is False
+    assert {item["attribute"] for item in match["health"]["alerts"]} == {
+        "sensorStatus", "lastMessage", "lastError"
+    }
