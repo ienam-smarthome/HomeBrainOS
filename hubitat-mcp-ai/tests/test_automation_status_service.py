@@ -142,5 +142,5 @@ async def test_snapshot_reconciles_38_rule_rows_already_in_154_installed_apps():
     }))
     outcome = await service.snapshot(brief=True)
     assert len(outcome.automation_items) == 154
-    assert "154 unique installed app instances" in outcome.message
+    assert "154 installed app instances" in outcome.message
     assert "38 structured entries" in outcome.message
