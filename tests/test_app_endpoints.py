@@ -346,3 +346,53 @@ def test_review_existing_automations_request_still_uses_plain_status_route(
     assert body["message"] == "Review message."
     assert calls["snapshot_advisory"] is True
     assert calls["chat_called"] is False
+
+
+def test_broad_automation_failure_uses_read_only_audit_with_model(monkeypatch, tmp_path):
+    module = load_app(monkeypatch, tmp_path)
+    calls = []
+
+    async def fake_audit(audit, mcp, *, analysis_chat=None):
+        calls.append(analysis_chat)
+        from automation_status_service import AutomationStatusOutcome
+        return AutomationStatusOutcome(
+            message="Audit: verified integration errors, follow-up steps.",
+            route="comprehensive-system-audit",
+        )
+
+    monkeypatch.setattr(module, "run_comprehensive_chat_audit", fake_audit)
+    with TestClient(module.app) as client:
+        response = client.post(
+            "/api/ask",
+            json={"query": "which automations are failing and why?", "session_id": "web"},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["route"] == "comprehensive-system-audit"
+    assert len(calls) == 1
+    assert calls[0] is module.agent.transport.chat
+
+
+def test_targeted_rule_failure_uses_investigative_model_not_inventory(monkeypatch, tmp_path):
+    module = load_app(monkeypatch, tmp_path)
+    calls = []
+
+    async def fake_agent(prompt, history, *, session_id):
+        calls.append(prompt)
+        return SimpleNamespace(
+            message="Targeted rule analysis requires execution evidence.",
+            request_class="live-read", evidence=[],
+        )
+
+    async def forbidden_snapshot(**kwargs):
+        raise AssertionError("Specific runtime failure cannot use status inventory")
+
+    monkeypatch.setattr(module.agent, "process_user_request_result", fake_agent)
+    monkeypatch.setattr(module.automation_status, "snapshot", forbidden_snapshot)
+    with TestClient(module.app) as client:
+        response = client.post(
+            "/api/ask",
+            json={"query": "why is rule 2957 not working?", "session_id": "web"},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["route"] == "unified-mcp-agent"
+    assert calls == ["why is rule 2957 not working?"]
