@@ -396,6 +396,7 @@ class RequestCoordinator:
             async with self._lock:
                 if self._tasks.get(key) is task:
                     self._tasks.pop(key, None)
+                    self._progress.pop(key, None)
 
     async def close(self) -> None:
         async with self._lock:
