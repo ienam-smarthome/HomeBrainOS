@@ -92,7 +92,7 @@ The repository drift test compares this table directly with the live directory. 
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
-| `scheduler_secondary_inventory.py` | Performs a second, bounded, identity-only read through the device-list MCP route for scheduler candidates absent from the context resource; preserves source-scoped presence and incomplete/timeout evidence without claiming ownership. |
+| `scheduler_secondary_inventory.py` | Performs a bounded sample of targeted `hub_get_device` reads for scheduler candidates absent from the context resource; exact returned-ID matches prove source-scoped entity presence only, while failures/timeouts remain unresolved and never imply deletion or ownership. |
 | `scheduler_report_sanitizer.py` | Replaces recognized model-authored scheduled-job and log-cadence tables with source-derived counts and source-labelled observations; leaves unrelated AI interpretation intact. |
 | `semantic_agent_core.py` | Converts fast or model-derived semantic control plans into deterministic HomeBrain device-control arguments and policy defaults. |
 | `semantic_fast_path.py` | Parses narrow unambiguous brightness/heating wording into typed semantic plans without a provider round; host grounding and deterministic execution remain authoritative. |
