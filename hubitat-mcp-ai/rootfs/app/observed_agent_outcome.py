@@ -26,6 +26,7 @@ def build_observed_agent_outcome(
         choices=outcome.choices,
         confirmation_required=outcome.confirmation_required,
         confirmation_count=outcome.confirmation_count,
+        route=outcome.route,
         metrics=metrics,
     )
 
