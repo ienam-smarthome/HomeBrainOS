@@ -22,6 +22,14 @@ LIVE_CONTEXT_ATTRIBUTES = frozenset(
         "battery",
         "power",
         "energy",
+        # Health/transport diagnostics are live state too. Room-status queries
+        # need these in the compact context or an offline sensor can be reduced
+        # to its retained motion/presence value.
+        "sensorStatus",
+        "healthStatus",
+        "mqttStatus",
+        "lastMessage",
+        "lastError",
         "thermostatMode",
         "thermostatOperatingState",
         "heatingSetpoint",
