@@ -46,6 +46,7 @@ def test_message_is_problem_first_and_includes_attention_count():
     message = AutomationStatusService._message(items)
 
     assert message.startswith("Hubitat returned 4 automation items. 3 need attention.")
+    assert "Inventory: 2 app instances, 2 Rule Machine entries." in message
     assert message.index("### Broken (1)") < message.index("### Paused (1)")
     assert message.index("### Paused (1)") < message.index("### Unknown (1)")
     assert message.index("### Unknown (1)") < message.index("### Active (1)")
@@ -80,3 +81,39 @@ def test_normalised_item_preserves_broken_status_reason_and_evidence():
     assert item["status"] == "broken"
     assert item["status_reason"] == "Referenced device no longer exists"
     assert item["status_evidence"]["broken"] == "True"
+
+
+def test_broken_name_marker_is_not_claimed_to_be_verified_runtime_failure():
+    items = [
+        {
+            "id": "2957", "name": "Tuya Button: button 3 pushed *BROKEN*",
+            "display_name": "Tuya Button: button 3 pushed", "type": "app",
+            "status": "broken",
+            "status_reason": "Hubitat marked the automation name *BROKEN*.",
+        },
+        {
+            "id": "2958", "name": "Tuya Button: button 4 pushed",
+            "display_name": "Tuya Button: button 4 pushed", "type": "app",
+            "status": "active",
+        },
+    ]
+    message = AutomationStatusService._message(items)
+    assert "configuration status flags requiring review" not in message
+    assert "need attention" in message
+    assert "enabled/not-disabled does not prove" in message
+    assert "invalid actions and missing dependencies were not verified" in message
+    assert "(app) [ID 2957] [Hubitat name marker; cause unverified]" in message
+    assert "(app) [ID 2958]" in message
+    assert "ID 2597" not in message
+
+
+def test_explicit_broken_signal_is_not_relabelled_as_weak_name_marker():
+    message = AutomationStatusService._message([
+        {
+            "id": "2957", "name": "Button 3", "display_name": "Button 3",
+            "type": "app", "status": "broken",
+            "status_reason": "Hubitat reports broken=true.",
+        },
+    ])
+    assert "(app) [ID 2957]" in message
+    assert "[Hubitat name marker; cause unverified]" not in message
