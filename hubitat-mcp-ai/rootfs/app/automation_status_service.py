@@ -543,15 +543,15 @@ class AutomationStatusService:
         broken = [item for item in items if item.get("status") == "broken"]
         lines = [
             (
-                f"No broken markers detected among {app_count} installed app instances."
+                f"No broken markers detected among {len(items)} unique installed app instances."
                 if not broken else
-                f"{len(broken)} automation item(s) have broken configuration markers."
+                f"{len(broken)} unique automation instance(s) have broken configuration markers."
             ),
             f"Inventory status: {counts['active']} not disabled, "
             f"{counts['disabled']} disabled, {counts['paused']} paused, "
             f"{counts['unknown']} unknown.",
-            f"Separate Rule Machine inventory: {rule_coverage}. "
-            "The installed-app inventory may include Rule Machine instances; "
+            f"Rule Machine inventory: {rule_coverage}. "
+            "Rule Machine entries are reconciled against installed apps by ID; "
             "no individual rule execution was verified.",
         ]
         if broken:
@@ -570,6 +570,46 @@ class AutomationStatusService:
             "Use the comprehensive read-only System Check for execution failures."
         )
         return "\n".join(lines)
+
+    @staticmethod
+    def _merge_inventory(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Reconcile the same Hubitat instance returned by both MCP inventories.
+
+        Rule Machine items are also installed apps. Keep a single entry by
+        stable ID, preserve the stronger attention state and both sources.
+        Unknown IDs stay separate to avoid merging unrelated same-name apps.
+        """
+        combined: dict[tuple[str, str], dict[str, Any]] = {}
+        rank = {"broken": 5, "paused": 4, "disabled": 3, "unknown": 2, "active": 1}
+        for item in items:
+            identifier = str(item.get("id") or "").strip()
+            key = ("id", identifier) if identifier else ("anonymous", str(len(combined)))
+            previous = combined.get(key)
+            if previous is None:
+                entry = dict(item)
+                entry["sources"] = [item.get("source")] if item.get("source") else []
+                combined[key] = entry
+                continue
+            # Prefer the dedicated rule inventory when otherwise equally
+            # healthy; a broken marker in either source must not be lost.
+            chosen = item if (
+                rank.get(str(item.get("status")), 0) > rank.get(str(previous.get("status")), 0)
+                or (
+                    rank.get(str(item.get("status")), 0) == rank.get(str(previous.get("status")), 0)
+                    and item.get("type") == "rule"
+                    and previous.get("type") != "rule"
+                )
+            ) else previous
+            entry = dict(chosen)
+            entry["type"] = "rule" if "rule" in (item.get("type"), previous.get("type")) else "app"
+            entry["sources"] = list(dict.fromkeys(
+                [*previous.get("sources", []), *([item["source"]] if item.get("source") else [])]
+            ))
+            entry["status_conflict"] = bool(
+                previous.get("status_conflict") or item.get("status_conflict")
+            )
+            combined[key] = entry
+        return list(combined.values())
 
     async def snapshot(self, *, advisory: bool = False, brief: bool = False) -> AutomationStatusOutcome:
         calls = (
@@ -602,9 +642,8 @@ class AutomationStatusService:
                                      "coverage unavailable (not evidence of zero rules)")
             elif item_type == "rule":
                 rule_coverage = "unavailable (hub_list_rules returned a tool error)"
-        unique = {(i["type"], i.get("id") or "", i["name"].casefold()): i for i in items}
         ordered = sorted(
-            unique.values(),
+            self._merge_inventory(items),
             key=lambda item: (_STATUSES.index(item["status"]), item["name"].casefold()),
         )
         counts = self.status_counts(ordered)
