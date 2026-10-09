@@ -343,6 +343,10 @@ class AgentOutcome:
     choices: list[str]
     confirmation_required: bool = False
     confirmation_count: int = 0
+    # The API response and bounded-timeout fallback use a stable route field.
+    # Defining it on the slotted base outcome prevents AttributeError when
+    # safe_partial_outcome marks an investigation as timed out.
+    route: str = "unified-mcp-agent"
 
 
 class UnifiedMCPAgent:
