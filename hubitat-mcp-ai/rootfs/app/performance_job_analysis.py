@@ -98,6 +98,8 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
     candidate_key_examples: list[str] = []
     candidate_rows = 0
     candidate_types: Counter[str] = Counter()
+    candidate_methods: Counter[tuple[str, str]] = Counter()
+    candidate_owner_totals: Counter[tuple[str, str]] = Counter()
     methods: Counter[str] = Counter()
     next_runs: Counter[str] = Counter()
     unattributed = 0
@@ -161,6 +163,8 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         groups[(owner_type or "unknown", owner_id or "unknown", method)] += 1
         if candidate_id:
             candidate_groups[(candidate_kind, candidate_id, method)] += 1
+            candidate_methods[(candidate_kind, method)] += 1
+            candidate_owner_totals[(candidate_kind, candidate_id)] += 1
         next_run = _pick(row, _NEXT_FIELDS)
         if next_run:
             next_runs[next_run] += 1
@@ -177,6 +181,30 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
             candidate_groups.items(), key=lambda item: (-item[1], item[0])
         )
     ][:max_groups]
+    # The globally capped list can contain only tied app entries. Rank the
+    # types independently from the *full* grouped set to represent both.
+    def _top_kind_methods(kind: str) -> list[dict[str, Any]]:
+        return [
+            {"ownerType": key[0], "candidateOwnerId": key[1],
+             "method": key[2], "jobs": value,
+             "attribution": "scheduler-key-pattern"}
+            for key, value in sorted(
+                ((key, value) for key, value in candidate_groups.items()
+                 if key[0] == kind),
+                key=lambda item: (-item[1], item[0]),
+            )[:max_groups]
+        ]
+
+    def _top_kind_owners(kind: str) -> list[dict[str, Any]]:
+        return [
+            {"candidateOwnerId": key[1], "jobs": count}
+            for key, count in sorted(
+                ((key, count) for key, count in candidate_owner_totals.items()
+                 if key[0] == kind),
+                key=lambda item: (-item[1], item[0]),
+            )[:max_groups]
+        ]
+
     observed_count = len(rows)
     reported = total if total is not None else observed_count
     return {
@@ -189,6 +217,26 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         "keyPatternCandidateRows": candidate_rows,
         "keyPatternCandidateExamples": candidate_key_examples,
         "keyPatternCandidateTypes": dict(candidate_types),
+        "rowsWithoutOwnerCandidate": unattributed - candidate_rows,
+        "keyPatternUniqueOwners": {
+            kind: sum(1 for key in candidate_owner_totals if key[0] == kind)
+            for kind in ("device", "app")
+        },
+        "topCandidateDeviceMethods": _top_kind_methods("device"),
+        "topCandidateAppMethods": _top_kind_methods("app"),
+        "topCandidateDeviceOwners": _top_kind_owners("device"),
+        "topCandidateAppOwners": _top_kind_owners("app"),
+        "topCandidateMethodsByType": {
+            kind: [
+                {"method": key[1], "jobs": count}
+                for key, count in sorted(
+                    ((key, count) for key, count in candidate_methods.items()
+                     if key[0] == kind),
+                    key=lambda item: (-item[1], item[0]),
+                )[:6]
+            ]
+            for kind in ("device", "app")
+        },
         "topCandidateOwnerMethods": inferred_groups,
         "unknownMethodRows": unknown_method,
         "topOwnerMethods": grouped,
@@ -238,29 +286,63 @@ def render_job_workload_summary(summary: dict[str, Any]) -> str:
             "No authoritative owner IDs were available in these rows; "
             "job ownership cannot yet be ranked."
         )
-    candidates = summary.get("topCandidateOwnerMethods") or []
     candidate_count = int(summary.get("keyPatternCandidateRows") or 0)
+    without_candidate = int(summary.get(
+        "rowsWithoutOwnerCandidate",
+        max(0, int(summary.get("unattributedRows") or 0) - candidate_count),
+    ))
     if candidate_count:
         breakdown = summary.get("keyPatternCandidateTypes") or {}
         lines.append(
-            f"{candidate_count} of {examined} rows contain strict, unverified "
-            "owner candidates in scheduler job keys "
-            f"(device: {breakdown.get('device', 0)}, app: {breakdown.get('app', 0)})."
+            f"Of {examined} rows: {owner_rows} confirmed from explicit IDs; "
+            f"{candidate_count} unverified scheduler-key owner candidates "
+            f"(device: {breakdown.get('device', 0)}, "
+            f"app: {breakdown.get('app', 0)}); "
+            f"{without_candidate} have no owner candidate."
         )
-    if candidates:
+
         lines.extend([
             "",
-            "**Unverified owner candidates decoded from job keys**",
-            "These are NOT confirmed owners. Verify each candidate against "
-            "the current app/device inventory before changing schedules.",
-            "| Candidate type | Candidate ID | Handler | Job entries |",
-            "| --- | --- | --- | ---: |",
+            "**Scheduler-key owner candidates — not verified**",
+            "A matching device/app prefix is not proof that the referenced "
+            "entity owns or executes the scheduled task. Validate IDs and "
+            "dependencies before recommending modifications.",
         ])
-        for row in candidates:
-            lines.append(
-                f"| {row['ownerType']} | {row['candidateOwnerId']} | "
-                f"{str(row['method']).replace('|', '/')} | {row['jobs']} |"
+        for kind in ("device", "app"):
+            records = summary.get(
+                "topCandidateDeviceMethods" if kind == "device"
+                else "topCandidateAppMethods"
             )
+            if records is None:
+                records = [
+                    item for item in (summary.get("topCandidateOwnerMethods") or [])
+                    if item.get("ownerType") == kind
+                ]
+            unique = (summary.get("keyPatternUniqueOwners") or {}).get(kind)
+            lines.append(
+                f"**{kind.capitalize()} candidate jobs:** "
+                f"{breakdown.get(kind, 0)}"
+                + (f" across {unique} distinct candidate IDs" if unique is not None else "")
+            )
+            if not records:
+                lines.append("No individually attributable candidate records available.")
+                continue
+            lines.extend([
+                "| Candidate ID | Handler | Scheduled entries |",
+                "| --- | --- | ---: |",
+            ])
+            for record in records:
+                lines.append(
+                    f"| {record['candidateOwnerId']} | "
+                    f"{str(record['method']).replace('|', '/')} | "
+                    f"{record['jobs']} |"
+                )
+            lines.append("")
+        lines.append(
+            "These two candidate tables are separately ranked and show only "
+            "the most frequent owner/method combinations, not all matched rows."
+        )
+
     methods = summary.get("topMethods") or []
     if methods:
         lines.extend([
