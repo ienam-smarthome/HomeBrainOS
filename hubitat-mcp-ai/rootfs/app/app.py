@@ -49,6 +49,7 @@ from performance_api_finalizer import finalize_performance_api_outcome
 from performance_host_plan import (
     collect_broad_performance_outcome,
     is_broad_performance_request,
+    is_whole_hub_optimization_request,
 )
 from pushover_notifier import PushoverNotifier
 from webui import render_page
@@ -451,8 +452,9 @@ async def _agent_request(request: ChatRequest) -> Any:
         broad_automation_diagnostic = is_broad_automation_runtime_diagnostic(
             request.message
         )
-        if (is_comprehensive_system_audit_request(request.message)
-                or broad_automation_diagnostic):
+        if (not is_whole_hub_optimization_request(request.message)
+                and (is_comprehensive_system_audit_request(request.message)
+                     or broad_automation_diagnostic)):
             # Broad failures receive the existing evidence-rich read-only
             # System Check, plus an optional tool-free AI synthesis. This is
             # separate from the manual audit's existing opt-in setting.
@@ -496,6 +498,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             automation_status.matches_request(request.message)
             and not is_comprehensive_system_audit_request(request.message)
             and not is_broad_automation_runtime_diagnostic(request.message)
+            and not is_whole_hub_optimization_request(request.message)
         ):
             if automation_status.is_advisory_request(
                 request.message
