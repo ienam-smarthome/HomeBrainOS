@@ -496,16 +496,14 @@ class AutomationStatusService:
         conflict_count = sum(bool(item.get("status_conflict")) for item in items)
         app_count = sum(item.get("type") == "app" for item in items)
         rule_count = sum(item.get("type") == "rule" for item in items)
-        summary = (
-            f"Hubitat returned {len(items)} automation items "
-            f"({app_count} app instances, {rule_count} Rule Machine entries)."
-        )
+        summary = f"Hubitat returned {len(items)} automation items."
         if attention_count:
             summary += f" {attention_count} need attention."
         if conflict_count:
             summary += f" {conflict_count} have conflicting source-state signals."
         lines = [
             summary,
+            f"Inventory: {app_count} app instances, {rule_count} Rule Machine entries.",
             "",
             "Configuration inventory only: enabled/not-disabled does not prove an "
             "automation ran successfully. Runtime errors, device availability, "
