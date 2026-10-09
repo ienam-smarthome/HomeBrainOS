@@ -18,16 +18,14 @@ from performance_job_analysis import summarize_job_workload, render_job_workload
 
 
 class _Evidence:
-    def __init__(self):
-        self.rows = []
-
+    def __init__(self): self.rows = []
     def record(self, gateway, arguments, **kwargs):
         self.rows.append((gateway, arguments, kwargs))
 
 
 class _Executor:
-    def __init__(self, pages=None, *, pause=False):
-        self.pages = pages or {}
+    def __init__(self, devices=None, *, pause=False):
+        self.devices = {str(k): v for k, v in (devices or {}).items()}
         self.pause = pause
         self.calls = []
         self.evidence = _Evidence()
@@ -36,8 +34,8 @@ class _Executor:
         self.calls.append((gateway, arguments, kwargs))
         if self.pause:
             await asyncio.sleep(3)
-        offset = arguments["args"]["offset"]
-        data = self.pages.get(offset)
+        identifier = str(arguments["args"]["deviceId"])
+        data = self.devices.get(identifier)
         return SimpleNamespace(
             success=data is not None,
             result=SimpleNamespace(data=data),
@@ -56,55 +54,63 @@ def test_context_absent_candidates_ignore_arbitrary_label_or_invalid_ids():
     assert context_absent_candidates([1089], None) == set()
 
 
-def test_secondary_pagination_can_verify_additional_presence_not_job_ownership():
+def test_targeted_probe_confirms_only_exact_returned_id_and_not_ownership():
     executor = _Executor({
-        0: {"devices": [{"id": 1089}, {"id": 2065, "name": "Legacy"}],
-            "hasMore": True, "nextOffset": 2, "total": 3},
-        2: {"devices": [{"id": 6000}], "hasMore": False, "total": 3},
+        2065: {"device": {"id": 2065, "name": "Legacy"}},
+        6910: {"device": {"id": 9999, "name": "Wrong device"}},
     })
     result = asyncio.run(probe_secondary_device_inventory(
-        executor, [1089, 2065, 6910], _context(),
-        page_size=2, max_pages=3, budget_seconds=1,
+        executor, [1089, 2065, 6910], _context(), budget_seconds=1,
     ))
-    assert result["status"] == "complete"
+    assert result["status"] == "sampled"
+    assert result["attemptedCandidateIds"] == 2
     assert result["foundInSecondarySource"] == 1
     assert result["unresolvedCandidateIds"] == 1
+    assert result["unattemptedCandidateIds"] == 0
     assert result["presentExamples"] == [{"id": "2065", "name": "Legacy"}]
     assert result["ownershipVerified"] is False
     assert result["hubWideCensusVerified"] is False
-    assert [c[1]["args"]["offset"] for c in executor.calls] == [0, 2]
-    assert all(c[1]["args"]["fields"] == ["id", "name", "label"]
-               for c in executor.calls)
+    assert {c[1]["tool"] for c in executor.calls} == {"hub_get_device"}
+    assert {c[1]["args"]["deviceId"] for c in executor.calls} == {"2065", "6910"}
     assert all(c[2]["record_evidence"] is False for c in executor.calls)
     assert all(row[2]["mutates"] is False and row[2]["effect"] == "read"
                for row in executor.evidence.rows)
 
 
-def test_partial_and_duplicate_results_never_claim_complete_inventory():
-    executor = _Executor({
-        0: {"devices": [{"id": 2065}, {"id": 2065}],
-            "hasMore": False, "total": 2},
-    })
+def test_target_limit_is_six_and_unprobed_candidates_remain_unresolved():
+    executor = _Executor({str(i): {"id": i} for i in range(2000, 2010)})
     result = asyncio.run(probe_secondary_device_inventory(
-        executor, [2065, 6910], _context(), page_size=2, budget_seconds=1
+        executor, list(range(2000, 2010)), _context(),
+        budget_seconds=1, max_targets=99,
     ))
-    assert result["status"] == "partial"
-    assert result["foundInSecondarySource"] == 1
-    assert result["unresolvedCandidateIds"] == 1
+    assert result["attemptedCandidateIds"] == 6
+    assert result["foundInSecondarySource"] == 6
+    assert result["unattemptedCandidateIds"] == 4
+    assert result["unresolvedCandidateIds"] == 4
+    assert len(executor.calls) == 6
+
+
+def test_failure_or_not_found_never_becomes_deleted():
+    executor = _Executor()
+    result = asyncio.run(probe_secondary_device_inventory(
+        executor, [2065, 6910], _context(), budget_seconds=1
+    ))
+    assert result["status"] == "unresolved"
+    assert result["foundInSecondarySource"] == 0
+    assert result["unresolvedCandidateIds"] == 2
     assert result["ownershipVerified"] is False
+    assert result["hubWideCensusVerified"] is False
 
 
-def test_timeout_is_bounded_and_missing_id_stays_unresolved():
+def test_timeout_is_bounded_and_missing_ids_stay_unresolved():
     executor = _Executor(pause=True)
     result = asyncio.run(probe_secondary_device_inventory(
-        executor, [2065], _context(), budget_seconds=.025
+        executor, [2065, 6910], _context(), budget_seconds=.025
     ))
-    assert result["status"] == "timed_out"
+    assert result["status"] in {"timed_out", "partial"}
     assert result["foundInSecondarySource"] == 0
-    assert result["unresolvedCandidateIds"] == 1
-    assert result["pageCount"] == 0
-    assert len(executor.calls) == 1
-    assert executor.evidence.rows[0][2]["success"] is False
+    assert result["unresolvedCandidateIds"] == 2
+    assert result["attemptedCandidateIds"] <= 2
 
 
 def test_no_missing_candidates_produces_no_extra_tool_request():
@@ -136,25 +142,27 @@ def test_no_candidate_handlers_are_ranked_only_within_unattributed_jobs():
     assert "Method names alone cannot identify" in text
 
 
-def test_second_source_report_explicitly_refuses_ownership_inference():
+def test_second_source_report_discloses_sample_scope_and_refuses_ownership():
     report = {
         "status": "compared",
         "app": {"candidateIds": 0, "inventory": {"status": "unavailable"}},
-        "device": {"candidateIds": 2, "presentInReturnedInventory": 1,
-                   "notListedInReturnedInventory": 1,
+        "device": {"candidateIds": 43, "presentInReturnedInventory": 51,
+                   "notListedInReturnedInventory": 43,
                    "inventory": {"status": "available", "complete": True,
-                                 "reportedTotal": 1, "rowsReturned": 1,
+                                 "reportedTotal": 181, "rowsReturned": 181,
                                  "source": "hubitat://context"}},
         "secondaryDeviceSource": {
-            "source": "hub_read_devices/hub_list_devices", "pageCount": 1,
-            "rowsReturned": 2, "status": "complete",
-            "candidateIdsAbsentFromContext": 1,
-            "foundInSecondarySource": 1, "unresolvedCandidateIds": 0,
+            "source": "hub_read_devices/hub_get_device",
+            "attemptedCandidateIds": 6, "targetLimit": 6, "status": "sampled",
+            "candidateIdsAbsentFromContext": 43,
+            "foundInSecondarySource": 1, "unresolvedCandidateIds": 42,
+            "unattemptedCandidateIds": 37,
             "presentExamples": [{"id": "2065", "name": "Legacy Sensor"}],
         },
     }
     rendered = render_scheduler_inventory_crosscheck(report)
-    assert "Second-source device-ID check" in rendered
+    assert "6 targeted ID read(s) attempted (limit 6)" in rendered
+    assert "37 not sampled" in rendered
     assert "2065 (Legacy Sensor)" in rendered
     assert "Neither an additional match nor an unconfirmed ID proves job ownership" in rendered
     assert "hub-wide census" in rendered
