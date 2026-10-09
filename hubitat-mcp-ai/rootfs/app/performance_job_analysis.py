@@ -124,7 +124,7 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         if not owner_id:
             job_keys = [
                 str(row[key]).strip()
-                for key in (*_JOB_KEY_FIELDS, "jobName", "name")
+                for key in (*_JOB_KEY_FIELDS, "jobName")
                 if isinstance(row.get(key), (str, int))
                 and str(row[key]).strip()
             ]
