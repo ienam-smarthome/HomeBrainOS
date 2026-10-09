@@ -147,39 +147,15 @@ def _install_tool_executor_capture() -> None:
                     # for app/device candidates, never arbitrary raw rows.
                     # Drop redundant legacy groups so the *JSON first line*
                     # survives the hard 7,500-character source limit.
-                    digest = dict(job_summary)
-                    for redundant in (
-                        "topCandidateOwnerMethods",
-                        "topCandidateDeviceOwners",
-                        "topCandidateAppOwners",
-                        "keyPatternCandidateExamples",
-                    ):
-                        digest.pop(redundant, None)
-                    for group_name in ("topCandidateDeviceMethods", "topCandidateAppMethods"):
-                        digest[group_name] = (digest.get(group_name) or [])[:6]
-                    for kind in ("device", "app"):
-                        methods = (digest.get("topCandidateMethodsByType") or {}).get(kind, [])
-                        digest.setdefault("topCandidateMethodsByType", {})[kind] = methods[:4]
-                    digest_json = json.dumps(
-                        digest, ensure_ascii=False, default=str,
-                        separators=(",", ":"),
+                    digest_json = _compact_job_digest(job_summary)
+                    excerpt_length = max(0, min(
+                        650, _CAPTURE_LIMITS[_JOBS_TOOL] - len(digest_json) - 40
+                    ))
+                    packet_content = (
+                        "HOST_JOB_DIGEST:" + digest_json
+                        + "\nRAW_JOB_EXCERPT:\n"
+                        + packet_content[:excerpt_length]
                     )
-                    if len(digest_json) + 20 < _CAPTURE_LIMITS[_JOBS_TOOL]:
-                        excerpt_length = min(
-                            650, _CAPTURE_LIMITS[_JOBS_TOOL] - len(digest_json) - 40
-                        )
-                        packet_content = (
-                            "HOST_JOB_DIGEST:" + digest_json
-                            + "\nRAW_JOB_EXCERPT:\n"
-                            + packet_content[:max(0, excerpt_length)]
-                        )
-                    else:
-                        # Never emit a truncated JSON prefix masquerading as
-                        # authoritative parsed data. Preserve honest coverage.
-                        packet_content = (
-                            "Scheduled jobs parsed but host-derived grouping "
-                            "exceeded the safe evidence packet budget."
-                        )
             _append_packet(sub_tool, packet_content)
         return execution
 
@@ -364,6 +340,42 @@ def _qualify_job_key_owner_labels(
                 changed = True
         lines.append(line)
     return "".join(lines), changed
+
+
+def _compact_job_digest(summary: dict[str, Any]) -> str:
+    """Fit a verified full-job tally into the fixed scheduler source budget."""
+    digest = dict(summary)
+    for redundant in (
+        "topCandidateOwnerMethods",
+        "topCandidateDeviceOwners",
+        "topCandidateAppOwners",
+        "keyPatternCandidateExamples",
+    ):
+        digest.pop(redundant, None)
+    candidate_methods = digest.get("topCandidateMethodsByType") or {}
+    for size in (6, 4, 2, 0):
+        trial = dict(digest)
+        for group in ("topCandidateDeviceMethods", "topCandidateAppMethods"):
+            trial[group] = (digest.get(group) or [])[:size]
+        trial["topCandidateMethodsByType"] = {
+            kind: (candidate_methods.get(kind) or [])[:min(4, size)]
+            for kind in ("device", "app")
+        }
+        encoded = json.dumps(trial, ensure_ascii=False, default=str, separators=(",", ":"))
+        if len(encoded) + len("HOST_JOB_DIGEST:") + 1 < _CAPTURE_LIMITS[_JOBS_TOOL]:
+            return encoded
+    # Even with an exceptional payload, preserve exact high-level counts and
+    # completeness instead of accidentally truncating syntactically valid JSON.
+    keys = (
+        "status", "reportedJobs", "rowsExamined", "completeRows",
+        "ownerIdentifiedRows", "unattributedRows", "rowsWithoutOwnerCandidate",
+        "keyPatternCandidateRows", "keyPatternCandidateTypes",
+        "keyPatternUniqueOwners", "topMethods", "sameNextRunGroups",
+    )
+    return json.dumps(
+        {key: digest[key] for key in keys if key in digest},
+        ensure_ascii=False, default=str, separators=(",", ":"),
+    )
 
 
 def _job_digest_from_packet(content: str) -> dict[str, Any] | None:
