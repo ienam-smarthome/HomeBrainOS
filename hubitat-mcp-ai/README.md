@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.131**.
+Current add-on version: **0.16.132**.
 
 ## Architecture
+
+0.16.132 adds an evidence coverage summary to broad whole-hub efficiency reports. These reports now disclose top-N performance limits, capped recent logs, the difference between shared job timestamps and actual contention, and the fact that the existing performance planner does not independently inspect every app/rule dependency. It also catches additional variants of model-generated recommendations that incorrectly infer MCP Rule Server persistent references to deleted apps from failed lookup requests. All operations remain read-only.
 
 v0.16.131 displays model-authored Markdown tables as native, safely constructed, horizontally scrollable HTML tables in the Home Assistant ingress UI. Numbered inspection steps are rendered as ordered lists. Evidence repair also ties generic timing-only reporting recommendations to uniquely matching measured source/signal identities where possible, and avoids attributing failed queries against deleted apps to permanent MCP Rule Server configuration when no such configuration was read. Hubitat configuration remains unchanged.
 
