@@ -14,6 +14,7 @@ from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
+from performance_inventory_check import render_scheduler_inventory_crosscheck
 from request_runtime import set_request_stage, safe_partial_outcome
 
 logger = logging.getLogger("HomeBrainOS.PerformanceFinalizer")
@@ -350,6 +351,7 @@ def _compact_job_digest(summary: dict[str, Any]) -> str:
         "topCandidateDeviceOwners",
         "topCandidateAppOwners",
         "keyPatternCandidateExamples",
+        "candidateIdsByType",
     ):
         digest.pop(redundant, None)
     candidate_methods = digest.get("topCandidateMethodsByType") or {}
@@ -998,6 +1000,11 @@ async def finalize_performance_api_outcome(
 
     captured = _packet_map(_consume_packet())
     scheduled_digest = _job_digest_from_packet(captured.get(_JOBS_TOOL, ""))
+    metrics = getattr(outcome, "metrics", None) or {}
+    inventory_report = (
+        metrics.get("scheduler_inventory_crosscheck")
+        if isinstance(metrics, dict) else None
+    )
     evidence = [
         dict(row)
         for row in (getattr(outcome, "evidence", None) or [])
@@ -1105,6 +1112,20 @@ async def finalize_performance_api_outcome(
                 ),
             }
         )
+
+    if isinstance(inventory_report, dict):
+        messages.append({
+            "role": "user",
+            "content": (
+                "HOST SCHEDULER ENTITY CROSS-CHECK (read-only)\n"
+                "A matched candidate ID proves only that a matching entity "
+                "was listed in the returned inventory, NOT that the entity "
+                "owns, scheduled, or executed the job. Do not call unlisted "
+                "candidate IDs orphaned or deleted. Treat sampled performance "
+                "pctTotal overlap as investigation priority only, not savings.\n"
+                + json.dumps(inventory_report, ensure_ascii=False, default=str)[:5500]
+            ),
+        })
 
     if log_content:
         messages.append(
@@ -1255,6 +1276,11 @@ async def finalize_performance_api_outcome(
             if job_section:
                 guarded += "\n\n" + job_section
                 _counter(outcome, "performance_job_ownership_analyzed")
+        if isinstance(inventory_report, dict):
+            inventory_section = render_scheduler_inventory_crosscheck(inventory_report)
+            if inventory_section:
+                guarded += "\n\n" + inventory_section
+                _counter(outcome, "scheduler_inventory_evidence_reconciled")
         coverage = _performance_review_coverage(evidence)
         if coverage:
             guarded += coverage
