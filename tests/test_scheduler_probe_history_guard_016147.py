@@ -4,7 +4,10 @@ from pathlib import Path
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
-from performance_api_finalizer import (\n    _repair_scheduler_probe_history_inference,\n    _repair_scheduler_unverified_absence_labels,\n)
+from performance_api_finalizer import (
+    _repair_scheduler_probe_history_inference,
+    _repair_scheduler_unverified_absence_labels,
+)
 
 
 def _report():
