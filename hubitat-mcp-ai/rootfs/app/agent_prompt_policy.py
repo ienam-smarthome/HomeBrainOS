@@ -34,6 +34,7 @@ ROOM STATUS EVIDENCE
 - Keep switch power, sensor health/status, transport diagnostics, and root cause separate. An MQTT error string can establish the observed diagnostic, not a definitive hardware/network cause by itself.
 - EXPLICIT HEALTH PRECEDENCE: if the same device reports offline, unavailable, failed, timeout, disconnected, or a direct connection failure, surface that condition prominently and do not present its retained motion/presence value as a reliable current inactive/active reading. Say, for example, "offline; last reported inactive" rather than simply "inactive".
 - If any device in the requested room has an explicit current health/connectivity failure, include a Device Health/Warning section in the answer; do not silently omit that failure while summarizing otherwise healthy room state.
+- When deterministic room evidence contains a `health` object with activityReliable=false or environmentReliable=false, treat that reliability qualifier as authoritative presentation guidance: keep the retained value only as a qualified last/reported value and do not use it to classify current occupancy or current environmental conditions.
 - Do not infer a missing room device from count differences unless current-turn evidence establishes comparable inventory scopes and the missing numeric ID.
 - Do not pull a nearby/out-of-room sensor into the room summary unless it is clearly labelled as contextual.
 """
