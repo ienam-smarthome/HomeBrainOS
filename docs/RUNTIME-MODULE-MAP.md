@@ -90,6 +90,7 @@ The repository drift test compares this table directly with the live directory. 
 | `request_metrics.py` | Collects fixed privacy-safe counters and timings. |
 | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
+| `room_status_snapshot.py` | Parses explicit room-state requests and renders a deterministic detailed inventory summary with offline-sensor health precedence. |
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
 | `scheduler_secondary_inventory.py` | Performs a bounded sample of targeted `hub_get_device` reads for scheduler candidates absent from the context resource; exact returned-ID matches prove source-scoped entity presence only, while failures/timeouts remain unresolved and never imply deletion or ownership. |
