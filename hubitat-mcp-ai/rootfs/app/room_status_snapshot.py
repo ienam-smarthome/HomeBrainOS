@@ -15,7 +15,7 @@ from device_state_summary import device_attributes, is_light_device, room_name
 _ROOM_REQUEST = re.compile(
     r"^\s*(?:check|show|report)\s+(?:the\s+)?"
     r"(?P<room>[a-z\d][a-z\d\s_-]{1,80}?)\s+"
-    r"(?:status(?:\s+and\s+states)?|states)\s*[?.!]*\s*$",
+    r"(?:status\s+and\s+states|states)\s*[?.!]*\s*$",
     re.IGNORECASE,
 )
 _HEALTH_NAMES = frozenset({
