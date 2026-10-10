@@ -48,7 +48,7 @@ def _fixtures():
 
 def test_room_status_parser_is_narrow_and_resolves_name_alias():
     assert parse_room_status_request("check livingroom status and states") == "livingroom"
-    assert parse_room_status_request("show the Living Room status") == "Living Room"
+    assert parse_room_status_request("show the Living Room states") == "Living Room"\n    assert parse_room_status_request("check hub health status") is None\n    assert parse_room_status_request("check the firmware status") is None
     assert parse_room_status_request("why did the livingroom light turn on?") is None
     assert resolve_room("livingroom", _fixtures()) == "Living Room"
     assert resolve_room("unknown room", _fixtures()) is None
