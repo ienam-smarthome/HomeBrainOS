@@ -967,30 +967,26 @@ class DeviceQueryService:
             source, devices = await self._bulk_live_devices({context_attribute})
         elif normalized_attribute in _CONTEXT_STRUCTURAL_FIELDS:
             source, devices = await self._bulk_live_devices(set())
-            if normalized_attribute == "room" and self._tool_succeeded(source):
-                # Inventory completeness does not establish health coverage.
-                room_key = str(expected).strip().casefold()
-                room_devices = [
-                    item for item in devices
-                    if str(item.get("room") or item.get("roomName") or "").strip().casefold() == room_key
-                ]
+            if normalized_attribute == "room" and operator in {"eq", "contains"} and self._tool_succeeded(source):
+                # Health coverage must be verified from actual source attributes,
+                # not inferred from device names or a complete context inventory.
+                # Reconcile only if the context has a room device whose explicit
+                # health status indicates trouble but diagnostic detail is absent.
+                room_key = str(expected or "").strip().casefold()
+                def in_room(item: dict[str, Any]) -> bool:
+                    room = str(item.get("room") or item.get("roomName") or "").strip().casefold()
+                    return room == room_key if operator == "eq" else room_key in room
                 health_keys = {"sensorstatus", "healthstatus", "mqttstatus", "lastmessage", "lasterror"}
-                missing_health = any(
-                    not any(
+                room_devices = [item for item in devices if in_room(item)]
+                needs_detail = any(
+                    any(
                         self._normalized_attribute(str(key)) in health_keys
-                        for key in self._device_attributes(item)
+                        and str(value).strip().casefold() in {"offline", "connecting", "failed", "disconnected"}
+                        for key, value in self._device_attributes(item).items()
                     )
                     for item in room_devices
                 )
-                # Preserve the zero-extra-call structural room path. Only a
-                # device explicitly advertising MQTT/status diagnostics needs
-                # enrichment; missing fields on ordinary sensors are normal.
-                diagnostic_candidates = [
-                    item for item in room_devices
-                    if any(token in str(item.get("label") or item.get("name") or "").casefold()
-                           for token in ("mqtt", "mr60bha"))
-                ]
-                if missing_health and diagnostic_candidates and callable(getattr(self.mcp, "call_tool", None)):
+                if needs_detail and callable(getattr(self.mcp, "call_tool", None)):
                     detailed_source, detailed_devices = await self._live_devices(enrich_identity=True)
                     if self._tool_succeeded(detailed_source):
                         detailed_by_id = {
@@ -1005,7 +1001,7 @@ class DeviceQueryService:
                             for item in devices
                         ]
                     else:
-                        logger.warning("Room health reconciliation unavailable; using partial context")
+                        logger.warning("Room health reconciliation unavailable; context health may be partial")
         else:
             source, devices = await self._live_devices(enrich_identity=False)
         if not self._tool_succeeded(source):
