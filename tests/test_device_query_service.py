@@ -756,7 +756,9 @@ async def test_room_filter_marks_offline_state_as_activity_reliability_warning()
     })
 
     match = result.data["matches"][0]
-    assert match["states"]["motion"] == "inactive"
+    assert "motion" not in match["states"]
+    assert match["stale_states"]["motion"] == "inactive"
+    assert "motion" in match["current_state_unavailable"]
     assert match["states"]["sensorStatus"] == "offline"
     assert match["health_alerts"] == [
         {"attribute": "sensorStatus", "value": "offline"}
@@ -786,9 +788,9 @@ async def test_room_filter_normalizes_seeed_7304_offline_diagnostics():
 
     match = result.data["matches"][0]
     assert match["states"]["switch"] == "on"
-    assert match["states"]["motion"] == "inactive"
-    assert match["states"]["presence"] == "not present"
-    assert match["states"]["illuminance"] == 8.7
+    assert all(key not in match["states"] for key in ("motion", "presence", "illuminance"))
+    assert match["stale_states"] == {"motion": "inactive", "presence": "not present", "illuminance": 8.7}
+    assert set(match["current_state_unavailable"]) == {"motion", "presence", "illuminance"}
     assert match["states"]["sensorStatus"] == "offline"
     assert match["states"]["mqttStatus"] == "connecting"
     assert match["states"]["lastMessage"] == "offline"

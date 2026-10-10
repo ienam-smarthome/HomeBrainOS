@@ -262,6 +262,17 @@ class DeviceQueryService:
                 "offline", "unavailable", "failed", "disconnected",
             }:
                 explicit_offline = True
+        if explicit_offline:
+            # Never present cached occupancy or environment readings as current.
+            # Keep original attributes available only in diagnostic stale_states.
+            unreliable = {"motion", "presence", "illuminance", "temperature", "humidity",
+                          "heartrate", "respiratoryrate", "detectiondistance"}
+            stale = {key: value for key, value in states.items()
+                     if cls._normalized_attribute(str(key)) in unreliable}
+            for key in stale:
+                states.pop(key, None)
+            result["stale_states"] = stale
+            result["current_state_unavailable"] = sorted(stale)
         if health_values:
             # Produce a normalized, model-visible health object. This is stronger
             # than prompt-only precedence: activity/environment readings from the
