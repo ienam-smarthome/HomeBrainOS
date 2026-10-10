@@ -68,6 +68,7 @@ from request_classification import (
     parse_immediate_internet_access_intent,
 )
 from request_metrics import RequestMetrics
+from room_status_snapshot import format_room_status, parse_room_status_request, resolve_room
 from rule_authoring_service import RuleAuthoringService
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
@@ -259,6 +260,84 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         return await self.direct_outcomes.run(operation, request_class=request_class)
+
+    async def _room_status_outcome(self, requested_room: str) -> AgentOutcome:
+        """One detailed room read, with deterministic health precedence.
+
+        The ordinary AI path has repeatedly treated a retained offline-sensor
+        motion/lux value as live. This narrow read-only intent bypasses free-form
+        model synthesis while retaining normal request evidence.
+        """
+
+        async def operation() -> str:
+            candidates: list[dict[str, Any]] = []
+            peek = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek):
+                try:
+                    candidates = [
+                        item for item in (peek() or []) if isinstance(item, dict)
+                    ]
+                except Exception:
+                    candidates = []
+            if not candidates:
+                getter = getattr(self.mcp, "get_cached_devices", None)
+                if callable(getter):
+                    try:
+                        candidates = [
+                            item for item in (await getter() or [])
+                            if isinstance(item, dict)
+                        ]
+                    except Exception:
+                        candidates = []
+            room = resolve_room(requested_room, candidates)
+            if not room:
+                return (
+                    f"I could not verify a Hubitat room named **{requested_room}** "
+                    "against the available room inventory. No room-state claims "
+                    "were made."
+                )
+            args = {
+                "tool": "hub_list_devices",
+                "args": {"detailed": True, "roomFilter": room},
+            }
+            started = time.monotonic()
+            try:
+                source = await self.mcp.call_tool("hub_read_devices", args)
+            except Exception as exc:
+                self.evidence.record(
+                    "hub_read_devices", args, success=False,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"{type(exc).__name__}: {str(exc)[:120]}",
+                    evidence_kind="authoritative_state_snapshot",
+                )
+                return f"Could not verify current device states for **{room}**."
+            success = self._tool_succeeded(source)
+            data = source.data if isinstance(source.data, dict) else {}
+            from mcp_client import HubitatMCPClient
+
+            devices = [
+                item for item in (HubitatMCPClient._find_device_list(source.data) or [])
+                if isinstance(item, dict)
+            ]
+            self.evidence.record(
+                "hub_read_devices",
+                args,
+                success=success,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(devices)} detailed room records for {room}",
+                evidence_kind="authoritative_state_snapshot",
+            )
+            if not success:
+                return f"The detailed Hubitat room read for **{room}** failed."
+            if not devices:
+                return f"No detailed device states were returned for **{room}**."
+            return format_room_status(
+                room, devices,
+                has_more=data.get("hasMore") is True,
+                read_incomplete=data.get("partial") is True or data.get("truncated") is True,
+            )
+
+        return await self._direct_outcome(operation, request_class="live-read")
 
     async def _current_time_outcome(self) -> AgentOutcome:
         async def operation() -> str:
@@ -1486,6 +1565,10 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             )
             if pending_confirmation is not None:
                 return pending_confirmation
+
+            room_request = parse_room_status_request(user_prompt)
+            if room_request is not None:
+                return await self._room_status_outcome(room_request)
 
             if parse_current_time_intent(user_prompt):
                 return await self._current_time_outcome()
