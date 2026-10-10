@@ -68,7 +68,7 @@ from request_classification import (
     parse_immediate_internet_access_intent,
 )
 from request_metrics import RequestMetrics
-from room_status_snapshot import format_room_status, parse_room_status_request, resolve_room
+from room_status_snapshot import format_room_status, linked_parent_ids, parse_room_status_request, resolve_room
 from rule_authoring_service import RuleAuthoringService
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
@@ -331,10 +331,57 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 return f"The detailed Hubitat room read for **{room}** failed."
             if not devices:
                 return f"No detailed device states were returned for **{room}**."
+
+            # A detailed room list contains the authoritative parentDeviceId
+            # of child devices, but a parent assigned to no room may be absent.
+            # Probe ONLY those IDs, never guess from an FP2-style name. Hubitat
+            # enforces MCP authorisation for a direct parent read.
+            parents = linked_parent_ids(devices)
+            checked = parents[:4]
+            skipped = set(parents[4:])
+            parent_records: dict[str, dict[str, Any] | None] = {}
+            parent_failures: set[str] = set()
+            for parent_id in checked:
+                request = {
+                    "tool": "hub_get_device",
+                    "args": {"deviceId": parent_id},
+                }
+                parent_started = time.monotonic()
+                try:
+                    parent_source = await self.mcp.call_tool("hub_read_devices", request)
+                    parent_data = (
+                        parent_source.data
+                        if isinstance(parent_source.data, dict) else {}
+                    )
+                    parent_success = (
+                        self._tool_succeeded(parent_source)
+                        and str(parent_data.get("id") or parent_data.get("deviceId") or "") == parent_id
+                    )
+                    if parent_success:
+                        parent_records[parent_id] = parent_data
+                    else:
+                        parent_failures.add(parent_id)
+                except Exception:
+                    parent_success = False
+                    parent_failures.add(parent_id)
+                self.evidence.record(
+                    "hub_read_devices",
+                    request,
+                    success=parent_success,
+                    elapsed_ms=round((time.monotonic() - parent_started) * 1000),
+                    summary=(
+                        f"Linked parent {parent_id} health read "
+                        + ("available" if parent_success else "unavailable")
+                    ),
+                    evidence_kind="targeted_device_lookup",
+                )
             return format_room_status(
                 room, devices,
                 has_more=data.get("hasMore") is True,
                 read_incomplete=data.get("partial") is True or data.get("truncated") is True,
+                parent_records=parent_records,
+                parent_read_failures=parent_failures,
+                parents_not_checked=skipped,
             )
 
         return await self._direct_outcome(operation, request_class="live-read")

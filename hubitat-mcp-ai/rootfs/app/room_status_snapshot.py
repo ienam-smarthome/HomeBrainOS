@@ -68,16 +68,18 @@ def _device_health(attributes: dict[str, Any]) -> tuple[str | None, list[str]]:
 
     state = {
         name: _state(attributes, name)
-        for name in ("sensorstatus", "healthstatus", "mqttstatus", "lastmessage", "lasterror")
+        for name in ("sensorstatus", "healthstatus", "mqttstatus", "hapstatus", "lastmessage", "lasterror")
     }
     offline = any(
         str(state.get(name) or "").casefold() in _UNAVAILABLE
         for name in ("sensorstatus", "healthstatus", "lastmessage")
     )
     mqtt = str(state.get("mqttstatus") or "").casefold()
+    hap = str(state.get("hapstatus") or "").casefold()
     last_error = str(state.get("lasterror") or "")
     connection_problem = bool(
         mqtt in {"connecting", "disconnected", "offline", "failed", "error"}
+        or any(token in hap for token in ("connecting", "disconnected", "offline", "failed", "error"))
         or any(token in last_error.casefold() for token in (
             "connect fail", "connection fail", "mqttexception", "mqtt fail"
         ))
@@ -89,6 +91,7 @@ def _device_health(attributes: dict[str, Any]) -> tuple[str | None, list[str]]:
             ("sensorstatus", "sensorStatus"),
             ("healthstatus", "healthStatus"),
             ("mqttstatus", "mqttStatus"),
+            ("hapstatus", "hapStatus"),
             ("lastmessage", "lastMessage"),
             ("lasterror", "lastError"),
         )
@@ -97,12 +100,62 @@ def _device_health(attributes: dict[str, Any]) -> tuple[str | None, list[str]]:
     return status, reasons
 
 
+def linked_parent_ids(devices: list[dict[str, Any]]) -> list[str]:
+    """Return deduplicated authoritative parent IDs absent from a room read.
+
+    The MCP server exposes parentDeviceId on authorized detailed device rows.
+    Never infer relationships from labels, capabilities, room names, or the
+    numeric IDs of unrelated devices.
+    """
+
+    present = {
+        str(item.get("id") or item.get("deviceId"))
+        for item in devices if isinstance(item, dict)
+        and (item.get("id") or item.get("deviceId")) is not None
+    }
+    parents = set()
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        parent = str(device.get("parentDeviceId") or "").strip()
+        if parent.isdecimal() and parent not in present:
+            parents.add(parent)
+    return sorted(parents, key=lambda value: int(value))
+
+
+def _parent_reliability(parent: dict[str, Any] | None) -> tuple[str, list[str]]:
+    """Classify parent connectivity as known-offline, verified, or unknown.
+
+    No state container or missing health fields means *unknown*, not online.
+    A parent connection warning always overrides an optimistic 'online' field.
+    """
+
+    if parent is None:
+        return "unverified", ["Parent device not accessible in the MCP read."]
+    states = _attrs(parent)
+    health, reasons = _device_health(states)
+    if health is not None:
+        return ("offline" if health == "Offline" else "unverified"), reasons
+    health_state = str(_state(states, "healthStatus") or "").casefold()
+    hap = str(_state(states, "hapStatus") or "").casefold()
+    if health_state in {"online", "healthy", "connected"} and not (
+        hap and any(word in hap for word in ("connecting", "disconnected", "offline", "failed"))
+    ):
+        return "verified", ["healthStatus: " + str(_state(states, "healthStatus"))]
+    if hap in {"connected", "connected (live)", "online", "live"}:
+        return "verified", ["hapStatus: " + str(_state(states, "hapStatus"))]
+    return "unverified", ["Parent record has no affirmative usable connection-health state."]
+
+
 def format_room_status(
     room: str,
     devices: list[dict[str, Any]],
     *,
     has_more: bool = False,
     read_incomplete: bool = False,
+    parent_records: dict[str, dict[str, Any] | None] | None = None,
+    parent_read_failures: set[str] | None = None,
+    parents_not_checked: set[str] | None = None,
 ) -> str:
     """Format one successful detailed, room-scoped inventory read.
 
@@ -119,6 +172,39 @@ def format_room_status(
     }
     seen_ids: set[str] = set()
     included = 0
+    parent_records = parent_records or {}
+    parent_read_failures = parent_read_failures or set()
+    parents_not_checked = parents_not_checked or set()
+    room_parent_rows = {
+        str(row.get("id") or row.get("deviceId")): row
+        for row in devices
+        if isinstance(row, dict) and (row.get("id") or row.get("deviceId"))
+    }
+    parent_status: dict[str, tuple[str, list[str], str]] = {}
+    referenced = {
+        str(item.get("parentDeviceId"))
+        for item in devices
+        if isinstance(item, dict)
+        and str(item.get("parentDeviceId") or "").isdecimal()
+    }
+    for parent_id in sorted(referenced):
+        parent = room_parent_rows.get(parent_id, parent_records.get(parent_id))
+        status, reasons = _parent_reliability(parent)
+        name = str((parent or {}).get("label") or (parent or {}).get("name") or
+                   f"Device {parent_id}")
+        if parent_id in parents_not_checked:
+            status, reasons = "unverified", ["Parent health lookup was limited."]
+        elif parent_id in parent_read_failures:
+            status, reasons = "unverified", [
+                "Parent is not readable via MCP. Check device selection in MCP Rule Server."
+            ]
+        parent_status[parent_id] = (status, reasons, name)
+        if parent_id not in room_parent_rows and status != "verified":
+            state_label = "Offline" if status == "offline" else "Connection unverified"
+            grouped["Device health"].append(
+                f"- **Linked parent {name} (ID {parent_id}): {state_label}.** " +
+                "; ".join(reasons)
+            )
     for device in devices:
         if not isinstance(device, dict):
             continue
@@ -134,6 +220,17 @@ def format_room_status(
         label = str(device.get("label") or device.get("name") or device_id or "Unlabelled device")
         attributes = _attrs(device)
         health, diagnostics = _device_health(attributes)
+        parent_id = str(device.get("parentDeviceId") or "")
+        parent_info = parent_status.get(parent_id)
+        parent_problem = parent_info is not None and parent_info[0] != "verified"
+        if parent_problem and health is None:
+            parent_state, parent_reasons, parent_name = parent_info
+            reason = "offline" if parent_state == "offline" else "not verified"
+            diagnostics = [
+                f"Linked parent {parent_name} (ID {parent_id}) is {reason}",
+                *parent_reasons,
+            ]
+            health = "Parent connection offline" if parent_state == "offline" else "Parent health unverified"
         if health is not None:
             # Switch/on is reported power or software state, NOT proof the
             # offline sensor has functioning presence/illuminance telemetry.
@@ -148,6 +245,8 @@ def format_room_status(
                 details = (details + "; " if details else "") + f"switch={state_switch}"
             if retained:
                 details += f". Last reported, freshness unverified: {', '.join(retained)}"
+            if parent_problem and not retained:
+                details += ". State freshness cannot be verified while parent connectivity is uncertain."
             grouped["Device health"].append(
                 f"- **{label}: {health}.** {details}"
             )
@@ -200,4 +299,4 @@ def format_room_status(
     return "\n\n".join(sections)
 
 
-__all__ = ["parse_room_status_request", "resolve_room", "format_room_status"]
+__all__ = ["parse_room_status_request", "resolve_room", "linked_parent_ids", "format_room_status"]

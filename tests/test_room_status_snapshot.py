@@ -138,3 +138,181 @@ async def test_agent_room_status_direct_path_reads_once_and_keeps_offline_separa
     assert "Seeed Studio" not in message.split("### Device health")[0]
     assert any(item.get("tool") == "hub_read_devices" and item.get("success") for item in outcome.evidence)
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+
+
+def _linked_fp2_devices():
+    """Native MCP detailed devices advertise the child's parentDeviceId."""
+    return _fixtures() + [
+        {
+            **_device(200, "FP2 Livingroom sensor (homekit)", "Living Room", {
+                "motion": "active", "presence": "present", "lastActivity": "2026-10-10T14:55:00Z",
+            }, ["MotionSensor", "PresenceSensor"]),
+            "parentDeviceId": "7334",
+        },
+        {
+            **_device(201, "FP2 Livingroom Lux (homekit)", "Living Room", {
+                "illuminance": 0,
+            }, ["IlluminanceMeasurement"]),
+            "parentDeviceId": "7334",
+        },
+    ]
+
+
+def _fp2_parent(*, health="offline", hap="connecting (live)"):
+    return _device(7334, "FP2 Livingroom", "Unassigned", {
+        "healthStatus": health,
+        "hapStatus": hap,
+        "firmware": "1.3.6",
+    })
+
+
+def test_parent_id_link_comes_from_native_metadata_not_labels():
+    from room_status_snapshot import linked_parent_ids
+
+    linked = _linked_fp2_devices()
+    assert linked_parent_ids(linked) == ["7334"]
+    assert linked_parent_ids(linked + [_fp2_parent()]) == []
+    # A coincidentally named device with no parent ID is not a dependency.
+    assert linked_parent_ids(_fixtures()) == []
+
+
+def test_parent_offline_qualifies_all_dependent_child_telemetry():
+    devices = _linked_fp2_devices()
+    output = format_room_status(
+        "Living Room", devices, parent_records={"7334": _fp2_parent()}
+    )
+    current, health = output.split("### Device health")
+    assert "FP300 Livingroom sensor" in current
+    assert "FP2 Livingroom sensor" not in current
+    assert "FP2 Livingroom Lux" not in current
+    assert "motion: active" in current  # Unrelated FP300 remains trustworthy
+    assert "illuminance: 0 lux" not in current
+    assert "Linked parent FP2 Livingroom (ID 7334): Offline" in health
+    assert "healthStatus: offline" in health
+    assert "hapStatus: connecting (live)" in health
+    assert "FP2 Livingroom sensor (homekit): Parent connection offline" in health
+    assert "presence=present" in health
+    assert "FP2 Livingroom Lux (homekit): Parent connection offline" in health
+    assert "illuminance=0" in health
+    assert "freshness unverified" in health
+
+
+def test_missing_parent_access_never_claims_offline_as_proven():
+    output = format_room_status(
+        "Living Room", _linked_fp2_devices(),
+        parent_read_failures={"7334"},
+    )
+    current, health = output.split("### Device health")
+    assert "FP2 Livingroom sensor" not in current
+    assert "FP2 Livingroom Lux" not in current
+    assert "Linked parent Device 7334 (ID 7334): Connection unverified" in health
+    assert "Check device selection in MCP Rule Server" in health
+    assert "FP2 Livingroom sensor (homekit): Parent health unverified" in health
+    assert "Parent connection offline" not in health
+    assert "healthStatus: offline" not in health
+
+
+def test_recovered_parent_restores_child_activity_without_guessing():
+    output = format_room_status(
+        "Living Room", _linked_fp2_devices(),
+        parent_records={"7334": _fp2_parent(health="online", hap="connected (live)")},
+    )
+    current = output.split("### Device health")[0]
+    assert "FP2 Livingroom sensor (homekit)** — motion: active" in current
+    assert "FP2 Livingroom sensor (homekit)** — presence: present" in current
+    assert "FP2 Livingroom Lux (homekit)** — illuminance: 0 lux" in current
+    assert "Parent connection offline" not in output
+    assert "Linked parent" not in output
+
+
+def test_missing_parent_health_fields_cannot_be_assumed_healthy():
+    unknown = _device(7334, "FP2 Livingroom", "Unassigned", {})
+    output = format_room_status(
+        "Living Room", _linked_fp2_devices(),
+        parent_records={"7334": unknown},
+    )
+    current, health = output.split("### Device health")
+    assert "FP2 Livingroom sensor" not in current
+    assert "FP2 Livingroom sensor (homekit): Parent health unverified" in health
+    assert "Linked parent FP2 Livingroom (ID 7334): Connection unverified" in health
+
+
+def test_parent_in_room_devices_is_not_queried_separately():
+    from room_status_snapshot import linked_parent_ids
+
+    devices = _linked_fp2_devices() + [_fp2_parent()]
+    assert linked_parent_ids(devices) == []
+    output = format_room_status("Living Room", devices)
+    assert "Parent connection offline" in output
+    assert "FP2 Livingroom sensor (homekit)** — motion: active" not in output
+
+
+class _ParentRoomMCP(_DetailedRoomMCP):
+    def __init__(self, parent=None, *, unauthorized=False):
+        super().__init__()
+        self.parent = parent
+        self.unauthorized = unauthorized
+
+    async def get_cached_devices(self):
+        return _linked_fp2_devices()
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        assert name == "hub_read_devices"
+        if arguments["tool"] == "hub_list_devices":
+            assert arguments["args"] == {"detailed": True, "roomFilter": "Living Room"}
+            return MCPToolResult(
+                name, arguments, {}, "ok",
+                {"devices": _linked_fp2_devices(), "count": 8, "total": 8},
+            )
+        assert arguments == {
+            "tool": "hub_get_device", "args": {"deviceId": "7334"}
+        }
+        if self.unauthorized:
+            return MCPToolResult(
+                name, arguments, {}, "Device not found",
+                {"success": False, "error": "Device not found: 7334"},
+                is_error=True,
+            )
+        return MCPToolResult(name, arguments, {}, "ok", self.parent)
+
+
+@pytest.mark.asyncio
+async def test_agent_probes_only_authoritative_parent_and_surfaces_offline():
+    mcp = _ParentRoomMCP(_fp2_parent())
+    agent = UnifiedMCPAgent(mcp, "key")
+    result = await agent.process_user_request_result(
+        "check livingroom status and states", session_id="parent-offline-test"
+    )
+    assert len(mcp.calls) == 2
+    assert mcp.calls[1][1]["args"]["deviceId"] == "7334"
+    current, health = result.message.split("### Device health")
+    assert "FP2 Livingroom sensor" not in current
+    assert "FP2 Livingroom Lux" not in current
+    assert "Linked parent FP2 Livingroom (ID 7334): Offline" in health
+    assert any(
+        entry.get("tool") == "hub_read_devices"
+        and entry.get("arguments", {}).get("tool") == "hub_get_device"
+        and entry.get("success") is True
+        for entry in result.evidence
+    )
+    assert result.metrics["counters"].get("model_rounds", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_unreadable_parent_preserves_evidence_without_false_offline():
+    mcp = _ParentRoomMCP(unauthorized=True)
+    agent = UnifiedMCPAgent(mcp, "key")
+    result = await agent.process_user_request_result(
+        "check livingroom status and states", session_id="parent-not-selected"
+    )
+    assert len(mcp.calls) == 2
+    assert "Connection unverified" in result.message
+    assert "Check device selection in MCP Rule Server" in result.message
+    assert "FP2 Livingroom sensor (homekit): Parent health unverified" in result.message
+    assert "Linked parent Device 7334 (ID 7334): Offline" not in result.message
+    assert any(
+        row.get("arguments", {}).get("tool") == "hub_get_device"
+        and row.get("success") is False
+        for row in result.evidence
+    )
