@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from causal_investigation_engine import render_ranked_clue
 from known_automation_topology import (
     match_known_automations,
     render_composite_sensor_summary,
@@ -932,6 +933,9 @@ def render_reporting_source_secondary_summary(
         return None
 
     lines: list[str] = []
+    clue = render_ranked_clue(analysis)
+    if clue:
+        lines.append("- " + clue)
     transition_count = int(analysis.get("transitionCount") or 0)
     subject = str(analysis.get("subject") or "the device").strip()
     requested_time = _timestamp(analysis.get("requestedBoundary"))
@@ -1183,6 +1187,30 @@ def render_reporting_source_secondary_summary(
                 "automation or action outside Hubitat remains possible."
             )
 
+    coverage = analysis.get("discoveryCoverage")
+    if isinstance(coverage, dict):
+        extra = int(coverage.get("outsideRoomAttempted") or 0)
+        remaining = int(coverage.get("unexaminedIndexedCandidates") or 0)
+        if extra:
+            lines.append(
+                "- **Adaptive search:** Examined " + str(extra)
+                + " additional capability-grounded occupancy candidate(s)"
+                + " outside the initial room-ranked selection."
+            )
+        if remaining:
+            lines.append(
+                "- **Coverage limit:** "
+                + str(remaining)
+                + " indexed cross-integration candidate(s) were not examined "
+                "within the per-request read budget. This is not evidence "
+                "that they did not activate."
+            )
+        if not coverage.get("crossIntegrationInventoryAvailable"):
+            lines.append(
+                "- **Coverage limit:** No fresh cross-integration candidate "
+                "inventory was available; external/bridge sensors outside "
+                "the selected room remain unchecked."
+            )
     if not lines:
         return None
     return "\n".join(lines)
