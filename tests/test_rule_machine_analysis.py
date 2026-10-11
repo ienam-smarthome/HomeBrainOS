@@ -27,8 +27,9 @@ def _device(id_, label, *, attrs=None, parent=None):
 
 def _identities():
     return [
-        _device("7339", "FP2 Livingroom Lux (homekit)", parent="7334"),
-        _device("7340", "FP2 Livingroom sensor (homekit)", parent="7334"),
+        # Cached identities deliberately omit parentDeviceId, as observed live.
+        _device("7339", "FP2 Livingroom Lux (homekit)"),
+        _device("7340", "FP2 Livingroom sensor (homekit)"),
         _device("7334", "FP2 Livingroom"),
     ]
 
@@ -49,10 +50,11 @@ def _config():
 
 
 class _RuleMCP:
-    def __init__(self, *, fail_config=False, absent_parent=False):
+    def __init__(self, *, fail_config=False, absent_parent=False, missing_relationships=False):
         self.calls = []
         self.fail_config = fail_config
         self.absent_parent = absent_parent
+        self.missing_relationships = missing_relationships
 
     async def get_cached_devices(self):
         return _identities()
@@ -88,6 +90,39 @@ class _RuleMCP:
             ),
         }
         result = payloads[device_id]
+        if device_id in {"7339", "7340"}:
+            assert arguments["args"] == {
+                "deviceId": device_id,
+                "mode": "details",
+                "sections": ["attributes", "relationships"],
+            }
+            states = {
+                key: {"value": value}
+                for key, value in result["attributes"].items()
+            }
+            result = {
+                "id": device_id,
+                "label": result["label"],
+                "mode": "details",
+                "sections": {
+                    "attributes": {"currentStates": states},
+                    "relationships": (
+                        {} if self.missing_relationships else
+                        {"device": {"parentDeviceId": "7334"}}
+                    ),
+                },
+                "sectionRead": {
+                    "attributes": {"status": "complete"},
+                    "relationships": {
+                        "status": (
+                            "unavailable" if self.missing_relationships
+                            else "complete"
+                        ),
+                    },
+                },
+            }
+        else:
+            assert arguments["args"] == {"deviceId": "7334"}
         if self.absent_parent and device_id == "7334":
             return MCPToolResult(
                 name, arguments, {}, "unavailable",
@@ -119,11 +154,16 @@ async def test_agent_rule_analysis_single_direct_config_read_and_parent_health()
     assert "Lighting: livingroom low light" in msg
     assert "Mode changes to Afternoon" in msg
     assert "IF (FP2 Livingroom" in msg
-    assert "FP2 Livingroom (ID 7334): Offline" in msg
+    assert "FP2 Livingroom (ID 7334): Offline" in msg, msg
     assert "healthStatus: offline" in msg
     assert "hapStatus: connecting (live)" in msg
     assert "FP2 Livingroom Lux (homekit) (ID 7339)" in msg
     assert "FP2 Livingroom sensor (homekit) (ID 7340)" in msg
+    assert "FP2 Livingroom Lux (homekit) (ID 7339): Parent offline" in msg
+    assert "FP2 Livingroom sensor (homekit) (ID 7340): Parent offline" in msg
+    assert "Linked parent FP2 Livingroom (ID 7334): Offline" in msg
+    assert "Requested parent" not in msg
+    assert "Reported now" not in msg
     assert "Last reported, freshness unverified: illuminance=0" in msg
     assert "Last reported, freshness unverified: motion=active, presence=present" in msg
     assert "Possibly" in msg
@@ -136,6 +176,7 @@ async def test_agent_rule_analysis_single_direct_config_read_and_parent_health()
         for _, a in mcp.calls if a["tool"] == "hub_get_device"
     ) == ["7334", "7339", "7340"]
     assert answer.metrics["counters"].get("model_rounds", 0) == 0
+    assert answer.metrics["outcome"] == "success"
     assert len(answer.evidence) == 4
     assert all(entry["effect"] == "read" for entry in answer.evidence)
 
@@ -156,6 +197,8 @@ async def test_missing_app_config_is_partial_and_does_not_invent_rule_logic():
     assert len(mcp.calls) == 2
     assert answer.evidence[0]["success"] is False
     assert answer.metrics["counters"].get("model_rounds", 0) == 0
+    assert answer.metrics["outcome"] == "unresolved"
+    assert answer.metrics["counters"]["rule_analysis_partial"] == 1
 
 
 @pytest.mark.asyncio
@@ -171,6 +214,7 @@ async def test_unreadable_parent_is_unknown_not_offline_and_children_qualified()
     assert "Investigation status: PARTIAL" in answer.message
     assert "Linked parent Device 7334 (ID 7334): Offline" not in answer.message
     assert answer.metrics["counters"].get("model_rounds", 0) == 0
+    assert answer.metrics["outcome"] == "unresolved"
 
 
 def test_no_config_never_proves_any_specific_rule_trigger():
@@ -181,3 +225,99 @@ def test_no_config_never_proves_any_specific_rule_trigger():
     assert "Mode changes" not in result
     assert "PARTIAL" in result
     assert "could" not in result.lower() or "Possibly" in result
+
+
+
+@pytest.mark.asyncio
+async def test_detail_read_without_authoritative_parent_link_does_not_infer_relationship():
+    mcp = _RuleMCP(missing_relationships=True)
+    agent = UnifiedMCPAgent(mcp, "key")
+    outcome = await agent.process_user_request_result(
+        "Analyse Rule Machine app 3602 and verify parent device ID 7334",
+        session_id="missing-relationship-test",
+    )
+    msg = outcome.message
+    assert "Requested parent FP2 Livingroom (ID 7334): Offline" in msg
+    assert "Linked parent FP2 Livingroom (ID 7334): Offline" not in msg
+    assert "Connection status unverified" in msg
+    assert "Last reported, freshness unverified: illuminance=0" in msg
+    assert "Reported now" not in msg
+    assert outcome.metrics["outcome"] == "unresolved"
+
+
+@pytest.mark.asyncio
+async def test_health_parent_relationship_can_be_partial_section_but_parent_id_verified():
+    mcp = _RuleMCP()
+    original = mcp.call_tool
+
+    async def partial_section(name, arguments):
+        result = await original(name, arguments)
+        if (
+            arguments["tool"] == "hub_get_device"
+            and arguments["args"].get("mode") == "details"
+        ):
+            result.data["sectionRead"]["relationships"]["status"] = "partial"
+        return result
+
+    mcp.call_tool = partial_section
+    agent = UnifiedMCPAgent(mcp, "key")
+    outcome = await agent.process_user_request_result(
+        "Analyse Rule Machine app 3602 and verify parent device ID 7334",
+        session_id="partial-relationships-test",
+    )
+    assert "FP2 Livingroom Lux (homekit) (ID 7339): Parent offline" in outcome.message
+    assert "Linked parent FP2 Livingroom (ID 7334): Offline" in outcome.message
+    assert "Reported now" not in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_no_parent_id_requested_still_uses_authoritative_relationship():
+    mcp = _RuleMCP()
+    agent = UnifiedMCPAgent(mcp, "key")
+    outcome = await agent.process_user_request_result(
+        "Analyse Rule Machine app 3602. Read-only.",
+        session_id="no-explicit-parent",
+    )
+    assert "Linked parent FP2 Livingroom (ID 7334): Offline" in outcome.message
+    assert sorted(
+        arguments["args"]["deviceId"]
+        for _, arguments in mcp.calls if arguments["tool"] == "hub_get_device"
+    ) == ["7334", "7339", "7340"]
+
+
+def test_detail_projection_rejects_summary_and_preserves_nested_native_states():
+    from rule_machine_analysis import _normalize_detail_device
+
+    assert _normalize_detail_device({
+        "id": "7339", "attributes": [{"name": "illuminance", "value": 0}],
+        "parentDeviceId": "7334",
+    }, "7339") is None
+    projected = _normalize_detail_device({
+        "id": "7339", "label": "Lux", "mode": "details",
+        "sections": {
+            "relationships": {"device": {"parentDeviceId": "7334"}},
+            "attributes": {"currentStates": {"illuminance": {"value": 0}}},
+        },
+        "sectionRead": {
+            "relationships": {"status": "complete"},
+            "attributes": {"status": "complete"},
+        },
+    }, "7339")
+    assert projected["parentDeviceId"] == "7334"
+    assert projected["attributes"]["illuminance"] == 0
+    assert projected["_relationship_unverified"] is False
+
+
+def test_overlapping_device_labels_do_not_select_parent_as_configured_sensor():
+    from rule_machine_analysis import _precise_referenced_sensors
+
+    candidates = _identities()
+    prompt = (
+        "IF FP2 Livingroom sensor (homekit) motion active AND "
+        "FP2 Livingroom Lux (homekit) illuminance <= 40"
+    )
+    selected = _precise_referenced_sensors(prompt, candidates)
+    assert {_id for item in selected if (_id := item["id"])} == {"7339", "7340"}
+    assert {_id for item in _precise_referenced_sensors(
+        prompt + " AND FP2 Livingroom online", candidates
+    ) if (_id := item["id"])} == {"7334", "7339", "7340"}

@@ -69,6 +69,7 @@ class RequestMetrics:
         "broad_performance_log_host_retry",
         "broad_performance_log_host_unavailable",
         "broad_performance_log_host_failed",
+        "rule_analysis_partial",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",
