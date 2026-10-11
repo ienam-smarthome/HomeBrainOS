@@ -11,6 +11,7 @@ No Hubitat mutations, broad event scans, or invented source readings.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from device_state_summary import capability_names, device_attributes
@@ -188,6 +189,16 @@ def plan_cross_integration_candidates(
     return [row for _, row in ranked[:max(1, max_candidates)]]
 
 
+def _parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        result = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        return result if result.tzinfo is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def rank_causal_hypotheses(analysis: dict[str, Any]) -> list[dict[str, Any]]:
     """Sort actual candidate evidence; never upgrade correlation to causation.
 
@@ -198,6 +209,7 @@ def rank_causal_hypotheses(analysis: dict[str, Any]) -> list[dict[str, Any]]:
     """
 
     hypotheses: list[dict[str, Any]] = []
+    requested_time = _parse_time(analysis.get("requestedBoundary"))
     requested_role = "end" if analysis.get("transition") == "off" else "start"
     for sensor in analysis.get("sensors") or []:
         if not isinstance(sensor, dict):
@@ -220,14 +232,11 @@ def rank_causal_hypotheses(analysis: dict[str, Any]) -> list[dict[str, Any]]:
                 preceding.append(event)
             else:
                 following.append(event)
+            event_time = _parse_time(event.get("subjectTransition"))
             if (
-                event.get("subjectTransition") == analysis.get("requestedBoundary")
-                or (
-                    isinstance(event.get("subjectTransition"), str)
-                    and isinstance(analysis.get("requestedBoundary"), str)
-                    and event["subjectTransition"][:19] ==
-                    analysis["requestedBoundary"][:19]
-                )
+                requested_time is not None
+                and event_time is not None
+                and abs((event_time - requested_time).total_seconds()) <= 0.25
             ):
                 requested = event
         requested_delta: float | None = None
