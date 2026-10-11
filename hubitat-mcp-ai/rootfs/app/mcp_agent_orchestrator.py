@@ -33,6 +33,13 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
     trigger_sensor_history_candidates,
 )
+from causal_investigation_engine import (
+    MAX_EXTRA_SENSOR_READS,
+    SENSOR_BATCH_SIZE,
+    has_strong_requested_correlated_candidate,
+    plan_cross_integration_candidates,
+    rank_causal_hypotheses,
+)
 from causal_rule_decision_context import (
     app_log_window,
     configuration_text,
@@ -1004,6 +1011,7 @@ class UnifiedMCPAgent:
         # prove occupancy attribute exposure, fall back to the existing live
         # room filter.
         filter_data: dict[str, Any] = {}
+        candidate_inventory: list[dict[str, Any]] = []
         cached_candidate_plan = False
         peek_identities = getattr(self.mcp, "peek_device_identities", None)
         if callable(peek_identities):
@@ -1016,6 +1024,7 @@ class UnifiedMCPAgent:
             except Exception:
                 identities = []
             if identities:
+                candidate_inventory = identities
                 cached_hints = DeviceQueryService.cached_room_event_source_hints(
                     identities,
                     room_arguments.get("value"),
@@ -1052,6 +1061,7 @@ class UnifiedMCPAgent:
                                 context_devices,
                             )
                         )
+                        candidate_inventory = enriched_identities
                         cached_hints = (
                             DeviceQueryService.cached_room_event_source_hints(
                                 enriched_identities,
@@ -1252,6 +1262,93 @@ class UnifiedMCPAgent:
             subject_event_history=subject_event_data,
             known_automations=self.known_automations,
         )
+        # Adaptive evidence selection: when a device change came through a
+        # reporting bridge and room-based sensors do not give a strong lead,
+        # test bounded, capability-grounded candidates across integrations.
+        # This is discovery and temporal comparison, never command provenance.
+        initial_sensor_attempts = len(sensor_specs)
+        expanded_sensor_attempts = 0
+        all_candidate_specs: list[dict[str, Any]] = []
+        if not has_strong_requested_correlated_candidate(analysis):
+            tried_ids = {
+                str((spec.get("candidate") or {}).get("id") or "")
+                for spec in sensor_specs if isinstance(spec, dict)
+            }
+            tried_ids.add(subject_id)
+            all_candidate_specs = plan_cross_integration_candidates(
+                candidate_inventory,
+                subject=subject_label,
+                subject_room=str(subject_history.get("room") or ""),
+                transition=transition,
+                tried_ids=tried_ids,
+                known_automations=self.known_automations,
+            )
+            for batch_start in range(
+                0, min(len(all_candidate_specs), MAX_EXTRA_SENSOR_READS), SENSOR_BATCH_SIZE
+            ):
+                batch = all_candidate_specs[
+                    batch_start: min(batch_start + SENSOR_BATCH_SIZE, MAX_EXTRA_SENSOR_READS)
+                ]
+                expanded_sensor_attempts += len(batch)
+                increment_active_metric("causal_adaptive_expansion")
+                increment_active_metric("causal_adaptive_sensor_reads", len(batch))
+                extra_pending = [
+                    (spec, *grounded_history_arguments(spec))
+                    for spec in batch
+                ]
+                extra_executions = await asyncio.gather(*(
+                    read_history(arguments)
+                    for _spec, arguments, _candidate in extra_pending
+                ))
+                for (_spec, arguments, candidate), execution in zip(
+                    extra_pending, extra_executions
+                ):
+                    completed_calls.add(json.dumps(
+                        [_LOCAL_DEVICE_HISTORY_TOOL, {
+                            key: value for key, value in arguments.items()
+                            if not str(key).startswith("_")
+                        }],
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        default=str,
+                    ))
+                    if (
+                        execution.result is None
+                        or not isinstance(execution.result.data, dict)
+                        or not execution.success
+                    ):
+                        continue
+                    data = dict(execution.result.data)
+                    data["candidateMatchBasis"] = candidate.get("matchBasis")
+                    data["candidateRoom"] = candidate.get("room")
+                    sensor_data.append(data)
+                analysis = build_reporting_source_secondary_analysis(
+                    subject_history,
+                    transition=transition,
+                    requested_boundary=boundary_match.get("stateBoundary"),
+                    controller_histories=controller_data,
+                    sensor_histories=sensor_data,
+                    subject_event_history=subject_event_data,
+                    known_automations=self.known_automations,
+                )
+                if has_strong_requested_correlated_candidate(analysis):
+                    increment_active_metric("causal_adaptive_sufficient_stop")
+                    break
+        if expanded_sensor_attempts:
+            increment_active_metric("causal_adaptive_candidate_plans")
+        analysis["hypotheses"] = rank_causal_hypotheses(analysis)
+        analysis["discoveryCoverage"] = {
+            "roomFirstAttempted": initial_sensor_attempts,
+            "outsideRoomAttempted": expanded_sensor_attempts,
+            "indexedCandidatesOutsideRoom": len(all_candidate_specs),
+            "unexaminedIndexedCandidates": max(
+                0, len(all_candidate_specs) - expanded_sensor_attempts
+            ),
+            "crossIntegrationInventoryAvailable": bool(candidate_inventory),
+            "historicalExternalAutomationTraceVerified": False,
+        }
+        if len(all_candidate_specs) > expanded_sensor_attempts:
+            increment_active_metric("causal_adaptive_unexamined_candidates")
         if topology_sensor_visibility:
             analysis["knownAutomationSensorVisibility"] = (
                 topology_sensor_visibility
@@ -1332,7 +1429,9 @@ class UnifiedMCPAgent:
                 f"level_recoveries={int(recovery.get('matchCount') or 0)}, "
                 f"known_automation_matches={len(known_matches)}, "
                 f"composite_sensor_matches={composite_sensor_matches}, "
-                f"topology_sensor_fallbacks={topology_sensor_fallbacks}"
+                f"topology_sensor_fallbacks={topology_sensor_fallbacks}, "
+                f"adaptive_reads={expanded_sensor_attempts}, "
+                f"adaptive_candidates_unexamined={max(0, len(all_candidate_specs) - expanded_sensor_attempts)}"
             ),
             supports_live_claim=True,
             evidence_kind="deterministic_causal_secondary_correlation",
