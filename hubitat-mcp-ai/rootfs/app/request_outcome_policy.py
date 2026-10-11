@@ -14,6 +14,7 @@ _OUTCOME_COUNTER_PRECEDENCE: tuple[tuple[str, str], ...] = (
     ("confirmation_expired", "unresolved"),
     ("device_resolution_ambiguous", "unresolved"),
     ("device_resolution_missing", "unresolved"),
+    ("rule_analysis_partial", "unresolved"),
 )
 
 
