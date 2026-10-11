@@ -198,12 +198,13 @@ def rank_causal_hypotheses(analysis: dict[str, Any]) -> list[dict[str, Any]]:
     """
 
     hypotheses: list[dict[str, Any]] = []
+    requested_role = "end" if analysis.get("transition") == "off" else "start"
     for sensor in analysis.get("sensors") or []:
         if not isinstance(sensor, dict):
             continue
         events = [
             e for e in sensor.get("relevantCorrelations") or []
-            if isinstance(e, dict) and e.get("boundaryRole") == "start"
+            if isinstance(e, dict) and e.get("boundaryRole") == requested_role
         ]
         if not events or not sensor.get("label"):
             continue
@@ -306,9 +307,10 @@ def render_ranked_clue(analysis: dict[str, Any]) -> str | None:
         return None
     repeated = int(upstream.get("precedingMatches") or 0)
     time = f"{abs(delta):.2f}".rstrip("0").rstrip(".")
+    state = "occupancy activity" if analysis.get("transition") == "on" else "occupancy inactivity"
     preface = (
         "**Best-supported upstream clue:** "
-        f"{label} reported an occupancy event about {time}s before "
+        f"{label} reported {state} about {time}s before "
         "the requested device transition."
     )
     if repeated > 1:
