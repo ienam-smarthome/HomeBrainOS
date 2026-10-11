@@ -769,7 +769,6 @@ class UnifiedMCPAgent:
                         health_lines = linked_sensor_health_warning(
                             referenced, rows
                         )
-        increment_active_metric("causal_rule_decision_followup")
         return (
             base_answer + "\n\n" + render_rule_decision_context(
                 app_name=app_name,
