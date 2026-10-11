@@ -70,6 +70,7 @@ from request_classification import (
 from request_metrics import RequestMetrics
 from room_status_snapshot import format_room_status, linked_parent_ids, parse_room_status_request, resolve_room
 from rule_authoring_service import RuleAuthoringService
+from rule_machine_analysis import RuleMachineAnalysisService, parse_rule_analysis_request
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
 from semantic_planner import SemanticPlanner, is_semantic_control_candidate
@@ -260,6 +261,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         return await self.direct_outcomes.run(operation, request_class=request_class)
+
+    async def _rule_analysis_outcome(
+        self, app_id: str, parent_id: str | None
+    ) -> AgentOutcome:
+        """Verify app configuration and linked sensor IDs without model planning."""
+
+        return await self._direct_outcome(
+            lambda: RuleMachineAnalysisService(self.mcp, self.evidence).analyse(
+                app_id, parent_id
+            ),
+            request_class="live-read",
+        )
 
     async def _room_status_outcome(self, requested_room: str) -> AgentOutcome:
         """One detailed room read, with deterministic health precedence.
@@ -1612,6 +1625,10 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             )
             if pending_confirmation is not None:
                 return pending_confirmation
+
+            rule_request = parse_rule_analysis_request(user_prompt)
+            if rule_request is not None:
+                return await self._rule_analysis_outcome(*rule_request)
 
             room_request = parse_room_status_request(user_prompt)
             if room_request is not None:
