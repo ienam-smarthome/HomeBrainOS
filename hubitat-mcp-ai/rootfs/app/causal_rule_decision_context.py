@@ -190,6 +190,25 @@ def referenced_sensor_identities(
             continue
         if label.casefold() not in config_search_text:
             continue
+        capabilities = {
+            re.sub(r"[^a-z]", "", str(cap).casefold())
+            for cap in item.get("capabilities") or []
+        }
+        observed = {
+            re.sub(r"[^a-z]", "", str(key).casefold())
+            for key in device_attributes(item)
+        }
+        if not (
+            capabilities.intersection({
+                "motionsensor", "presencesensor", "illuminancemeasurement",
+                "contactsensor", "temperaturesensor", "relativehumiditymeasurement",
+            })
+            or observed.intersection({
+                "motion", "presence", "illuminance", "contact",
+                "temperature", "humidity",
+            })
+        ):
+            continue
         if device_id not in seen:
             seen.add(device_id)
             matches.append(dict(item))
