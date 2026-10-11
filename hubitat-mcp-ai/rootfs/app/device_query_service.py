@@ -1249,6 +1249,106 @@ class DeviceQueryService:
                 data,
             )
 
+        # An all-digit requested name is a Hubitat device ID, not label text.
+        # Never labelFilter("7334") and subsequently declare a parent missing:
+        # labelFilter is a substring of the human label, not an ID selector.
+        if requested.isdecimal():
+            source_arguments = {
+                "tool": "hub_get_device",
+                "args": {"deviceId": requested},
+            }
+            started = time.monotonic()
+            try:
+                source = await self.mcp.call_tool(
+                    "hub_read_devices", source_arguments
+                )
+            except Exception as exc:
+                self._record_evidence(
+                    "hub_read_devices", source_arguments,
+                    success=False,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"Direct device ID {requested} lookup unavailable: {type(exc).__name__}",
+                    supports_live_claim=False,
+                    evidence_kind="targeted_device_lookup",
+                )
+                return MCPToolResult(
+                    DEVICE_RESOLVE_TOOL, arguments, {},
+                    "Device ID could not be verified",
+                    {
+                        "requested": requested,
+                        "matched": False,
+                        "deviceId": requested,
+                        "target": None,
+                        "confidence": 0.0,
+                        "reason": "Direct device ID lookup failed; existence and health are unverified.",
+                        "alternatives": [],
+                        "attempts": [{"source": "device_id_direct", "count": 0}],
+                        "complete": False,
+                    },
+                )
+            valid_source = self._tool_succeeded(source)
+            target = source.data if isinstance(source.data, dict) else {}
+            device_id = str(target.get("id") or target.get("deviceId") or "")
+            direct_match = valid_source and device_id == requested
+            self._record_evidence(
+                "hub_read_devices", source_arguments,
+                success=valid_source,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=(
+                    f"Device ID {requested} verified"
+                    if direct_match
+                    else f"Device ID {requested} not verified by direct read"
+                ),
+                supports_live_claim=direct_match,
+                evidence_kind="targeted_device_lookup",
+            )
+            if direct_match:
+                commands = device_commands(target)
+                if required_command and required_command.casefold() not in commands:
+                    direct_match = False
+                wanted_caps = {
+                    re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                    for value in (required_capabilities or set())
+                    if str(value).strip()
+                }
+                advertised = {
+                    re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                    for value in self._capability_names(target)
+                }
+                if wanted_caps and advertised and not advertised & wanted_caps:
+                    direct_match = False
+            data = {
+                "requested": requested,
+                "matched": direct_match,
+                "target": target if direct_match else None,
+                "deviceId": requested,
+                "label": (
+                    target.get("label") or target.get("name")
+                    if direct_match else None
+                ),
+                "confidence": 1.0 if direct_match else 0.0,
+                "reason": (
+                    "Authoritative Hubitat numeric device ID read."
+                    if direct_match
+                    else (
+                        "Device returned but does not meet the required capability/command."
+                        if valid_source and device_id == requested
+                        else "Device ID is not verified by an authorised direct MCP read; do not infer deletion or absence."
+                    )
+                ),
+                "alternatives": [],
+                "attempts": [
+                    {"source": "device_id_direct", "count": 1 if direct_match else 0}
+                ],
+                "complete": bool(direct_match),
+                "requestCacheHit": False,
+            }
+            if direct_match:
+                self._cache_resolution_target(requested, target)
+            return MCPToolResult(
+                DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data
+            )
+
         attribute_key = self._normalized_attribute(
             self._strip_leading_article(requested)
         )
