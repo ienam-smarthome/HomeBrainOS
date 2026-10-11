@@ -154,7 +154,7 @@ async def test_agent_rule_analysis_single_direct_config_read_and_parent_health()
     assert "Lighting: livingroom low light" in msg
     assert "Mode changes to Afternoon" in msg
     assert "IF (FP2 Livingroom" in msg
-    assert "FP2 Livingroom (ID 7334): Offline" in msg
+    assert "FP2 Livingroom (ID 7334): Offline" in msg, msg
     assert "healthStatus: offline" in msg
     assert "hapStatus: connecting (live)" in msg
     assert "FP2 Livingroom Lux (homekit) (ID 7339)" in msg
