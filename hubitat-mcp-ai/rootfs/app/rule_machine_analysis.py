@@ -1,0 +1,296 @@
+"""Deterministic read-only Rule Machine investigation with bounded verified IDs."""
+from __future__ import annotations
+
+import re
+import time
+from typing import Any
+
+from causal_rule_decision_context import configuration_text, referenced_sensor_identities
+from device_state_summary import device_attributes
+from mcp_client import tool_succeeded
+from room_status_snapshot import _device_health, _parent_reliability
+
+_APP_ID = re.compile(r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
+_PARENT_ID = re.compile(r"\bparent\s+(?:device\s+)?(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
+_INTENT = re.compile(r"\b(?:analy[sz]e|inspect|audit|review|investigate|verify|check)\b", re.I)
+_WRITES = re.compile(
+    r"\b(?:change|modify|update|enable|disable|delete|remove|create|edit|pause|resume|turn\s+on|turn\s+off)\b", re.I
+)
+
+
+def parse_rule_analysis_request(prompt: str) -> tuple[str, str | None] | None:
+    """Intercept only non-mutating requests about a named Rule Machine app."""
+    value = str(prompt or "")
+    if not _INTENT.search(value) or _WRITES.search(value):
+        return None
+    match = _APP_ID.search(value)
+    if match is None:
+        return None
+    parent = _PARENT_ID.search(value)
+    return match.group(1), (parent.group(1) if parent else None)
+
+
+def _id(item: dict[str, Any]) -> str:
+    return str(item.get("id") or item.get("deviceId") or "").strip()
+
+
+def _name(item: dict[str, Any] | None, fallback: str) -> str:
+    return str((item or {}).get("label") or (item or {}).get("name") or fallback)
+
+
+def _states(item: dict[str, Any]) -> dict[str, str]:
+    return {
+        re.sub(r"[^a-z0-9]", "", str(key).casefold()): str(value)
+        for key, value in device_attributes(item).items()
+        if value is not None
+    }
+
+
+def render_rule_analysis(
+    app_id: str,
+    config: dict[str, Any] | None,
+    references: list[dict[str, Any]],
+    reads: dict[str, dict[str, Any] | None],
+    *,
+    explicit_parent_id: str | None = None,
+    inventory_unavailable: bool = False,
+    coverage_limited: bool = False,
+) -> str:
+    valid = bool(
+        isinstance(config, dict)
+        and isinstance(config.get("app"), dict)
+        and str(config["app"].get("id") or "") == app_id
+    )
+    excerpts, _ = configuration_text(config) if valid else ([], "")
+    name = _name(config["app"], f"App {app_id}") if valid else f"App {app_id}"
+    incomplete = not valid or not excerpts or inventory_unavailable or coverage_limited
+    lines = [f"### Rule Machine investigation — {name} (app {app_id})"]
+
+    if excerpts:
+        lines.append("**Verified current configuration (not execution history):**")
+        for entry in excerpts:
+            kind = (
+                "Trigger" if re.search(r"\bmode\s+(?:changes?|becomes?|switched)", entry, re.I)
+                else "Condition/action" if re.search(r"\b(?:if|then|required expression)\b", entry, re.I)
+                else "Rule detail"
+            )
+            lines.append(f"- **{kind}:** {entry}")
+        required = any(re.search(r"\brequired\s+expression\s*:", e, re.I) for e in excerpts)
+        lines.append(
+            "**Required expression:** "
+            + ("Listed above; whether it evaluated true at a historical event is unknown."
+               if required else
+               "Not verified from this configuration view; an editor checkbox is not proof it is enabled.")
+        )
+    elif valid:
+        lines.append(
+            "**Configuration incomplete:** The app identity was verified, but its "
+            "trigger/condition configuration was not available in usable form."
+        )
+    else:
+        lines.append(
+            "**Configuration unavailable:** The direct app configuration read "
+            "did not verify this app's triggers, IF conditions or actions."
+        )
+
+    parent_reported: set[str] = set()
+    if references or explicit_parent_id:
+        lines.append("**Referenced sensor states and connectivity (now, not at execution time):**")
+    else:
+        lines.append(
+            "**Sensor dependencies unverified:** No configured sensor identities "
+            "were resolved; this does not prove the rule has no dependencies."
+        )
+
+    for identity in references:
+        id_ = _id(identity)
+        label = _name(identity, f"Device {id_}")
+        child = reads.get(id_)
+        if not isinstance(child, dict):
+            lines.append(f"- **{label} (ID {id_}): Health unverified.** Detailed device read unavailable.")
+            incomplete = True
+            continue
+        attrs = _states(child)
+        own_health, own_details = _device_health(attrs)
+        parent_id = str(child.get("parentDeviceId") or identity.get("parentDeviceId") or "")
+        parent = reads.get(parent_id) if parent_id.isdecimal() else None
+        parent_health, reasons = (
+            _parent_reliability(parent) if parent_id.isdecimal() else ("unknown", [])
+        )
+        unhealthy = own_health is not None or (
+            parent_id.isdecimal() and parent_health != "verified"
+        )
+        status = own_health or (
+            "Parent offline" if parent_health == "offline" else "Parent health unverified"
+        ) if parent_id.isdecimal() else (own_health or "Connection status unverified")
+        if not own_health and (not parent_id.isdecimal() or parent_health != "verified"):
+            incomplete = True
+        retained = ", ".join(
+            f"{key}={attrs[key]}" for key in ("motion", "presence", "illuminance")
+            if key in attrs
+        )
+        note = (
+            f" Last reported, freshness unverified: {retained}."
+            if retained and unhealthy else
+            f" Reported now; not historical evidence: {retained}."
+            if retained else ""
+        )
+        lines.append(
+            f"- **{label} (ID {id_}): {status}.**"
+            + (f" Parent ID {parent_id}." if parent_id.isdecimal() else "")
+            + (f" {'; '.join(own_details)}." if own_details else "")
+            + note
+        )
+        if parent_id.isdecimal() and parent_id not in parent_reported:
+            parent_reported.add(parent_id)
+            parent_label = _name(parent, f"Device {parent_id}")
+            state = (
+                "Offline" if parent_health == "offline" else
+                "Connection reported healthy" if parent_health == "verified" else
+                "Connection unverified"
+            )
+            if parent_health == "unverified":
+                incomplete = True
+            lines.append(
+                f"  - **Linked parent {parent_label} (ID {parent_id}): {state}.**"
+                + (f" {'; '.join(reasons)}." if reasons else "")
+            )
+
+    if explicit_parent_id and explicit_parent_id not in parent_reported:
+        parent = reads.get(explicit_parent_id)
+        state, reasons = _parent_reliability(parent)
+        display = (
+            "Offline" if state == "offline" else
+            "Connection reported healthy" if state == "verified" else
+            "Connection unverified"
+        )
+        if state == "unverified":
+            incomplete = True
+        lines.append(
+            f"- **Requested parent {_name(parent, f'Device {explicit_parent_id}')} "
+            f"(ID {explicit_parent_id}): {display}.**"
+            + (f" {'; '.join(reasons)}." if reasons else "")
+            + " An explicit parentDeviceId on a configured child is required to "
+              "verify a dependency on this rule."
+        )
+    if inventory_unavailable:
+        lines.append("**Coverage limit:** Cached sensor identities unavailable; named dependencies may be missing.")
+    if coverage_limited:
+        lines.append("**Coverage limit:** Bounded device reads do not cover every candidate dependency.")
+    lines.append(
+        "**Could retained sensor values cause an action?** Possibly. A Hubitat "
+        "Rule Machine IF condition can evaluate the last stored attribute value "
+        "when a separate trigger fires. This alone does not show that a specific "
+        "historical run evaluated the IF condition using stale readings."
+    )
+    lines.append(
+        "**Historical cause remains unverified:** Current offline status and "
+        "old last-activity timestamps do not establish what was evaluated during "
+        "a past rule execution. Adding motion as a trigger alone cannot guarantee "
+        "a fresh illuminance value."
+    )
+    lines.insert(1, (
+        "**Investigation status: PARTIAL — some source evidence is unavailable.**"
+        if incomplete else
+        "**Investigation status: current configuration and device-health reads complete; "
+        "past execution still unverified.**"
+    ))
+    return "\n\n".join(lines)
+
+
+class RuleMachineAnalysisService:
+    """Bounded Hubitat MCP reads; no AI model calls or device writes."""
+
+    def __init__(self, mcp: Any, evidence: Any) -> None:
+        self.mcp, self.evidence = mcp, evidence
+
+    async def _read(
+        self, gateway: str, tool: str, args: dict[str, Any],
+        *, live: bool = False,
+    ) -> dict[str, Any] | None:
+        request = {"tool": tool, "args": args}
+        start = time.monotonic()
+        try:
+            result = await self.mcp.call_tool(gateway, request)
+            ok = tool_succeeded(result)
+            data = result.data if isinstance(result.data, dict) else {}
+            if data.get("status") in ("pending", "in_progress"):
+                ok = False
+        except Exception:
+            ok, data = False, {}
+        self.evidence.record(
+            gateway, request, success=ok,
+            elapsed_ms=round((time.monotonic() - start) * 1000),
+            summary=f"{tool}: {'read available' if ok else 'read unavailable'}",
+            evidence_kind="targeted_device_lookup" if live else "tool_result",
+            supports_live_claim=bool(live and ok),
+            mutates=False, effect="read",
+        )
+        return data if ok else None
+
+    async def analyse(self, app_id: str, explicit_parent: str | None) -> str:
+        config = await self._read(
+            "hub_read_apps_code", "hub_get_app_config",
+            {"appId": app_id, "includeSettings": False},
+        )
+        valid = bool(
+            isinstance(config, dict)
+            and isinstance(config.get("app"), dict)
+            and str(config["app"].get("id") or "") == app_id
+        )
+        _, config_text = configuration_text(config) if valid else ([], "")
+        identities: list[dict[str, Any]] = []
+        if valid:
+            peek = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek):
+                try:
+                    identities = [x for x in (peek() or []) if isinstance(x, dict)]
+                except Exception:
+                    identities = []
+            if not identities:
+                get = getattr(self.mcp, "get_cached_devices", None)
+                if callable(get):
+                    try:
+                        identities = [x for x in (await get() or []) if isinstance(x, dict)]
+                    except Exception:
+                        identities = []
+
+        references = (
+            referenced_sensor_identities(config_text, identities, "") if valid else []
+        )
+        reads: dict[str, dict[str, Any] | None] = {}
+        for ref in references[:4]:
+            device_id = _id(ref)
+            if not device_id.isdecimal() or device_id in reads:
+                continue
+            result = await self._read(
+                "hub_read_devices", "hub_get_device",
+                {"deviceId": device_id}, live=True,
+            )
+            reads[device_id] = result if isinstance(result, dict) and _id(result) == device_id else None
+
+        parents = set()
+        for ref in references:
+            record = reads.get(_id(ref))
+            parent_id = str(
+                (record or {}).get("parentDeviceId") or ref.get("parentDeviceId") or ""
+            )
+            if parent_id.isdecimal():
+                parents.add(parent_id)
+        if explicit_parent:
+            parents.add(explicit_parent)
+        for parent_id in sorted(parents, key=int)[:4]:
+            if parent_id not in reads:
+                result = await self._read(
+                    "hub_read_devices", "hub_get_device",
+                    {"deviceId": parent_id}, live=True,
+                )
+                reads[parent_id] = (
+                    result if isinstance(result, dict) and _id(result) == parent_id else None
+                )
+        return render_rule_analysis(
+            app_id, config if valid else None, references, reads,
+            explicit_parent_id=explicit_parent,
+            inventory_unavailable=bool(valid and config_text and not identities),
+            coverage_limited=len(parents) > 4,
+        )
