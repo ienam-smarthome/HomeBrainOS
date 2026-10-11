@@ -70,6 +70,9 @@ class RequestMetrics:
         "broad_performance_log_host_unavailable",
         "broad_performance_log_host_failed",
         "rule_analysis_partial",
+        "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
+        "causal_adaptive_sufficient_stop", "causal_adaptive_candidate_plans",
+        "causal_adaptive_unexamined_candidates",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",
