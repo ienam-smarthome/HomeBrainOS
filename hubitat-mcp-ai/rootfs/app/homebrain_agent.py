@@ -267,12 +267,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     ) -> AgentOutcome:
         """Verify app configuration and linked sensor IDs without model planning."""
 
-        return await self._direct_outcome(
-            lambda: RuleMachineAnalysisService(self.mcp, self.evidence).analyse(
-                app_id, parent_id
-            ),
-            request_class="live-read",
-        )
+        async def operation() -> str:
+            report = await RuleMachineAnalysisService(
+                self.mcp, self.evidence
+            ).analyse(app_id, parent_id)
+            if report.partial:
+                self.metrics.increment("rule_analysis_partial")
+            return report.message
+
+        return await self._direct_outcome(operation, request_class="live-read")
 
     async def _room_status_outcome(self, requested_room: str) -> AgentOutcome:
         """One detailed room read, with deterministic health precedence.
