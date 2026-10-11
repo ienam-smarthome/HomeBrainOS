@@ -1333,7 +1333,7 @@ class DeviceQueryService:
                     else (
                         "Device returned but does not meet the required capability/command."
                         if valid_source and device_id == requested
-                        else "Device ID is not verified by an authorised direct MCP read; do not infer deletion or absence."
+                        else "Device ID is unverified: an authorised direct MCP read did not establish the device; do not infer deletion or absence."
                     )
                 ),
                 "alternatives": [],
