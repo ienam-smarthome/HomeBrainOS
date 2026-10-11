@@ -127,7 +127,7 @@ def _mode_is_observed(message: str, mode: str) -> bool:
 
     escaped = re.escape(mode)
     patterns = (
-        rf"\bmode\s+(?:changed|changes|switched|set)\s+to\s+{escaped}\b",
+        rf"\bmode\s+(?:changed|changes|switched|set)\s+(?:from\s+.+?\s+)?to\s+{escaped}\b",
         rf"\bmode\s+(?:became|becomes)\s+{escaped}\b",
         rf"\bis\s+now\s+in\s+{escaped}\s+mode\b",
     )
