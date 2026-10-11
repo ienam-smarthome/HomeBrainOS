@@ -33,6 +33,15 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
     trigger_sensor_history_candidates,
 )
+from causal_rule_decision_context import (
+    app_log_window,
+    configuration_text,
+    execution_log_lines,
+    linked_sensor_health_warning,
+    proven_lighting_command,
+    referenced_sensor_identities,
+    render_rule_decision_context,
+)
 from causal_command_provenance import (
     boundary_producer_transition_kind,
     boundary_producer_transition_match,
@@ -633,6 +642,144 @@ class UnifiedMCPAgent:
         arguments: dict[str, Any],
     ) -> MCPToolResult:
         return await HubInfoService(self.mcp).snapshot(arguments)
+    async def _lighting_rule_decision_followup(
+        self,
+        base_answer: str,
+        *,
+        transition: str = "on",
+    ) -> str:
+        """Enrich a proven lighting command with bounded read-only rule evidence.
+
+        No result from configuration can override command producer provenance.
+        Rule logs are scoped by the producer app ID and event time; present-day
+        sensor health cannot prove the historical rule condition was true.
+        """
+
+        if transition != "on":
+            return base_answer
+        focus = proven_lighting_command(
+            self.evidence.receipts(), transition=transition
+        )
+        if not focus:
+            return base_answer
+        producer = focus.get("producer") or {}
+        app_id = str(producer.get("id") or "")
+        app_name = str(producer.get("label") or "").strip()
+        window = app_log_window(focus)
+        if not window:
+            return base_answer
+
+        async def bounded_read(
+            gateway: str,
+            leaf: str,
+            args: dict[str, Any],
+            kind: str,
+            live: bool,
+        ) -> dict[str, Any] | None:
+            request = {"tool": leaf, "args": args}
+            start = time.monotonic()
+            try:
+                result = await self.mcp.call_tool(gateway, request)
+                ok = self._tool_succeeded(result)
+                data = result.data if isinstance(result.data, dict) else {}
+                if data.get("status") in {"pending", "in_progress"}:
+                    ok = False
+            except Exception as error:
+                ok = False
+                data = {}
+                logger.debug(
+                    "Lighting rule follow-up %s failed: %s", leaf, error
+                )
+            self.evidence.record(
+                gateway,
+                request,
+                success=ok,
+                elapsed_ms=round((time.monotonic() - start) * 1000),
+                summary=(
+                    f"Scoped {leaf} for command-producing app {app_id}: "
+                    + ("read available" if ok else "read unavailable")
+                ),
+                supports_live_claim=live and ok,
+                evidence_kind=kind,
+                mutates=False,
+                effect="read",
+            )
+            return data if ok else None
+
+        app_data = await bounded_read(
+            "hub_read_apps_code",
+            "hub_get_app_config",
+            {"appId": app_id, "includeSettings": False},
+            "tool_result",
+            False,
+        )
+        config_items: list[str] = []
+        config_search = ""
+        if isinstance(app_data, dict):
+            actual = app_data.get("app") or {}
+            if str(actual.get("id") or "") == app_id:
+                config_items, config_search = configuration_text(app_data)
+
+        log_data = await bounded_read(
+            "hub_read_diagnostics",
+            "hub_get_logs",
+            window,
+            "native_log_history",
+            True,
+        )
+        execution = (
+            execution_log_lines(log_data, focus)
+            if isinstance(log_data, dict) else []
+        )
+
+        health_lines: list[str] = []
+        if config_search:
+            try:
+                identities = list(await self.mcp.get_device_identities() or [])
+            except Exception:
+                identities = []
+            subject = str(focus.get("subject") or "").casefold()
+            subject_record = next(
+                (
+                    item for item in identities
+                    if isinstance(item, dict)
+                    and str(item.get("label") or item.get("name") or "").casefold() == subject
+                ),
+                None,
+            )
+            room = str(
+                (subject_record or {}).get("room")
+                or (subject_record or {}).get("roomName")
+                or ""
+            ).strip()
+            referenced = referenced_sensor_identities(
+                config_search, identities, room
+            )
+            if referenced and room:
+                detail = await bounded_read(
+                    "hub_read_devices",
+                    "hub_list_devices",
+                    {"detailed": True, "roomFilter": room},
+                    "authoritative_state_snapshot",
+                    True,
+                )
+                if isinstance(detail, dict):
+                    rows = HubitatMCPClient._find_device_list(detail)
+                    if isinstance(rows, list):
+                        health_lines = linked_sensor_health_warning(
+                            referenced, rows
+                        )
+        increment_active_metric("causal_rule_decision_followup")
+        return (
+            base_answer + "\n\n" + render_rule_decision_context(
+                app_name=app_name,
+                app_id=app_id,
+                configured=config_items,
+                logs=execution,
+                sensor_warnings=health_lines,
+            )
+        )
+
     async def _prefetch_explicit_causal_subject(
         self,
         user_prompt: str,
@@ -2092,6 +2239,10 @@ class UnifiedMCPAgent:
                     else None
                 )
                 if deterministic_answer:
+                    deterministic_answer = await self._lighting_rule_decision_followup(
+                        deterministic_answer,
+                        transition=prefetched_transition or "on",
+                    )
                     increment_active_metric(
                         "causal_deterministic_finalization"
                     )
@@ -2819,6 +2970,10 @@ class UnifiedMCPAgent:
                             else None
                         )
                         if deterministic_command_answer:
+                            deterministic_command_answer = await self._lighting_rule_decision_followup(
+                                deterministic_command_answer,
+                                transition=requested_transition,
+                            )
                             increment_active_metric(
                                 "causal_deterministic_finalization"
                             )
