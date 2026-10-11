@@ -306,3 +306,18 @@ def test_detail_projection_rejects_summary_and_preserves_nested_native_states():
     assert projected["parentDeviceId"] == "7334"
     assert projected["attributes"]["illuminance"] == 0
     assert projected["_relationship_unverified"] is False
+
+
+def test_overlapping_device_labels_do_not_select_parent_as_configured_sensor():
+    from rule_machine_analysis import _precise_referenced_sensors
+
+    candidates = _identities()
+    prompt = (
+        "IF FP2 Livingroom sensor (homekit) motion active AND "
+        "FP2 Livingroom Lux (homekit) illuminance <= 40"
+    )
+    selected = _precise_referenced_sensors(prompt, candidates)
+    assert {_id for item in selected if (_id := item["id"])} == {"7339", "7340"}
+    assert {_id for item in _precise_referenced_sensors(
+        prompt + " AND FP2 Livingroom online", candidates
+    ) if (_id := item["id"])} == {"7334", "7339", "7340"}
