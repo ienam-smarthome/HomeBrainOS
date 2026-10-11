@@ -747,7 +747,7 @@ class UnifiedMCPAgent:
                 "since": window["since"],
                 "until": window["until"],
                 "limit": 40,
-                "pattern": r"(?i)\\bmode\\b",
+                "pattern": r"(?i)\bmode\b",
             }
             mode_data = await bounded_read(
                 "hub_read_diagnostics",
