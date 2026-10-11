@@ -11,8 +11,10 @@ sys.path.insert(0, str(APP_DIR))
 from causal_rule_decision_context import (  # noqa: E402
     app_log_window,
     configuration_text,
+    configured_mode_triggers,
     execution_log_lines,
     linked_sensor_health_warning,
+    mode_transition_correlations,
     proven_lighting_command,
     referenced_sensor_identities,
     render_rule_decision_context,
@@ -177,10 +179,11 @@ def test_health_is_qualified_only_for_config_referenced_sensors():
 
 
 class _MCP:
-    def __init__(self, *, fail_config=False, fail_logs=False):
+    def __init__(self, *, fail_config=False, fail_logs=False, mode_logs=None):
         self.calls = []
         self.fail_config = fail_config
         self.fail_logs = fail_logs
+        self.mode_logs = mode_logs if mode_logs is not None else []
 
     async def list_tools(self):
         return [
@@ -218,8 +221,15 @@ class _MCP:
 
         if name == "hub_read_diagnostics":
             assert leaf == "hub_get_logs"
-            assert args["appId"] == "3602"
             assert args["since"] == "2026-10-11T10:59:51.035Z"
+            if "appId" not in args:
+                assert args["until"] == "2026-10-11T11:00:09.035Z"
+                assert args["limit"] == 40
+                assert args["pattern"] == r"(?i)\bmode\b"
+                return MCPToolResult(
+                    name, arguments, {}, "ok", {"logs": self.mode_logs}
+                )
+            assert args["appId"] == "3602"
             if self.fail_logs:
                 return MCPToolResult(name, arguments, {}, "no logs", {"logs": []})
             return MCPToolResult(name, arguments, {}, "ok", _logs())
@@ -323,3 +333,119 @@ async def test_unavailable_config_and_logs_never_invent_trigger():
         and r.get("sub_tool") == "hub_get_app_config"
         for r in outcome.evidence
     )
+
+
+def test_config_rendering_removes_ui_serialization_and_ephemeral_truth_values():
+    config = _config()
+    config["page"]["sections"][0]["paragraphs"].extend([
+        "Mode becomes Afternoon, Late afternoon, Sunset",
+        "IF (FP2 Livingroom sensor (homekit) motion is active(T) AND "
+        "Illuminance of FP2 Livingroom Lux (homekit)(0) is <= 40(T) [TRUE]) "
+        "THEN On: Livingroom Light 1 END-IF",
+        "NameTypeValuePrivate BooleanBooleantrue%device%DeviceHub C8 Pro"
+        "%value%ValueAfternoon%text%TextHub C8 Pro is now in Afternoon mode",
+    ])
+    config["page"]["sections"][0]["inputs"].append({
+        "title": "NameTypeValuePrivate BooleanBooleantrue%device%Device",
+        "description": "%value%ValueAfternoon",
+    })
+    excerpts, search_text = configuration_text(config)
+    answer = render_rule_decision_context(
+        app_name="Lighting: livingroom low light",
+        app_id="3602",
+        configured=excerpts,
+        logs=[], sensor_warnings=[],
+    )
+    assert "Mode becomes Afternoon" in answer
+    assert "motion is active" in answer
+    assert "is <= 40" in answer
+    for raw in ("NameTypeValue", "%device%", "(T)", "(0)", "[TRUE]"):
+        assert raw not in answer
+        assert raw.casefold() not in search_text
+    assert "**Trigger:**" in answer
+    assert "**Condition/action:**" in answer
+
+
+def test_mode_log_correlation_is_bounded_timezone_safe_and_not_condition_proof():
+    current, _ = configuration_text(_config())
+    assert configured_mode_triggers(current) == [
+        "Afternoon", "Late afternoon", "Sunset"
+    ]
+    events = {
+        "logs": [
+            {"time": "2026-10-11T12:00:02.000+0100",
+             "message": "Mode changed from Morning to Afternoon"},
+            {"time": "2026-10-11T11:00:01Z",
+             "message": "Hub C8 Pro is now in Sunset mode"},
+            {"time": "2026-10-11T12:00:02.000",
+             "message": "Mode changed to Afternoon"},  # no offset
+            {"time": "2026-10-11T12:00:04+0100",
+             "message": "Mode changed to Late afternoon"},  # after command
+            {"time": "2026-10-11T11:59:20+0100",
+             "message": "Mode changed to Afternoon"},  # too old
+            {"time": "2026-10-11T12:00:02+0100",
+             "message": "Afternoon mode is configured but unchanged"},
+        ]
+    }
+    correlated = mode_transition_correlations(events, _command_focus(), current)
+    assert len(correlated) == 2
+    assert any("12:00:02" in row and "Afternoon mode" in row for row in correlated)
+    assert any("12:00:01" in row and "Sunset mode" in row for row in correlated)
+    explanation = render_rule_decision_context(
+        app_name="Lighting: livingroom low light",
+        app_id="3602", configured=current,
+        logs=[], sensor_warnings=[], mode_events=correlated,
+    )
+    assert "Independent mode-change correlation" in explanation
+    assert "not independently prove the rule's condition values" in explanation
+    assert "Trigger not independently verified" in explanation
+    assert mode_transition_correlations(
+        {"logs": [{"time": "2026-10-11T11:00:02Z",
+                   "message": "A mode-change rule was configured yesterday"}]},
+        _command_focus(), current
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_agent_checks_independent_mode_logs_only_when_app_trigger_missing():
+    mcp = _MCP(
+        fail_logs=True,
+        mode_logs=[{
+            "time": "2026-10-11T12:00:02+0100",
+            "message": "Mode changed to Afternoon",
+        }],
+    )
+    agent = UnifiedMCPAgent(
+        mcp, "key", "model", ai_client=_NoProvider(),
+        require_sensitive_confirmation=False,
+    )
+    result = await agent.process_user_request_result(
+        "why did livingroom light 1 turn on?"
+    )
+    assert "Lighting: livingroom low light issued the ON command" in result.message
+    assert "Independent mode-change correlation" in result.message
+    assert "12:00:02" in result.message
+    assert "Trigger not independently verified" in result.message
+    assert "currently offline/connecting" in result.message
+    mode_reads = [
+        args for name, args in mcp.calls
+        if name == "hub_read_diagnostics" and
+        args["tool"] == "hub_get_logs" and "appId" not in args["args"]
+    ]
+    assert len(mode_reads) == 1
+    assert result.metrics["counters"].get("model_rounds", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_no_native_mode_events_remains_explicitly_unverified():
+    mcp = _MCP(fail_logs=True)
+    agent = UnifiedMCPAgent(
+        mcp, "key", "model", ai_client=_NoProvider(),
+        require_sensitive_confirmation=False,
+    )
+    result = await agent.process_user_request_result(
+        "why did livingroom light 1 turn on?"
+    )
+    assert "Trigger not independently verified" in result.message
+    assert "Independent mode-change correlation" not in result.message
+    assert result.metrics["counters"].get("model_rounds", 0) == 0

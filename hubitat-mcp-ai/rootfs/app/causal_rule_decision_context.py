@@ -83,6 +83,100 @@ def app_log_window(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _clean_configuration_entry(raw: str) -> str | None:
+    """Hide editor-only evaluation flags and corrupt UI form serialization."""
+
+    text = re.sub(r"\s+", " ", str(raw or "")).strip()
+    if not text or len(text) > 500:
+        return None
+    if re.search(
+        r"nametypevalue|%device%|%value%|%text%|private\s+booleanboolean",
+        text, re.I,
+    ):
+        return None
+    # (T), [TRUE], and the "(0)" value next to a lux threshold are
+    # *displayed editor state*, never proof of an event-time evaluation.
+    text = re.sub(r"\s*\[(?:TRUE|FALSE)\]", "", text, flags=re.I)
+    text = re.sub(r"(?<=\w)\([TF]\)(?=\W|$)", "", text, flags=re.I)
+    text = re.sub(
+        r"\(-?\d+(?:\.\d+)?\)(?=\s+is\s*(?:<=|>=|<|>|=))",
+        "", text,
+    )
+    return re.sub(r"\s+", " ", text).strip() or None
+
+
+def configured_mode_triggers(configured: list[str]) -> list[str]:
+    """Parse only actual mode-trigger phrases from the current configuration."""
+
+    for line in configured:
+        match = re.search(
+            r"\bmode\s+(?:changes?\s+to|becomes?|switched\s+to)\s+"
+            r"([A-Za-z][A-Za-z ,'-]{0,120})",
+            str(line), re.I,
+        )
+        if not match:
+            continue
+        raw = re.sub(r"\s+or\s+", ",", match.group(1), flags=re.I)
+        modes = [item.strip(" ,.") for item in raw.split(",")]
+        return list(dict.fromkeys(item for item in modes if len(item) >= 3))[:8]
+    return []
+
+
+def _mode_is_observed(message: str, mode: str) -> bool:
+    """Require a real change-shaped log statement, not a generic mode mention."""
+
+    escaped = re.escape(mode)
+    patterns = (
+        rf"\bmode\s+(?:changed|changes|switched|set)\s+(?:from\s+.+?\s+)?to\s+{escaped}\b",
+        rf"\bmode\s+(?:became|becomes)\s+{escaped}\b",
+        rf"\bis\s+now\s+in\s+{escaped}\s+mode\b",
+    )
+    return any(re.search(pattern, message, re.I) for pattern in patterns)
+
+
+def mode_transition_correlations(
+    data: dict[str, Any],
+    command_row: dict[str, Any],
+    configured: list[str],
+) -> list[str]:
+    """Correlate independently logged mode changes; never claim rule execution.
+
+    Reject native log times lacking timezone offsets, which can mean UTC or
+    local clock depending on Hubitat firmware.
+    """
+
+    modes = configured_mode_triggers(configured)
+    command_time = _timestamp((command_row.get("command") or {}).get("date"))
+    if not modes or command_time is None:
+        return []
+    logs = data.get("logs")
+    if not isinstance(logs, list):
+        return []
+    matched: list[tuple[datetime, str]] = []
+    for event in logs:
+        if not isinstance(event, dict):
+            continue
+        raw_stamp = str(
+            event.get("time") or event.get("timestamp") or event.get("date") or ""
+        ).strip()
+        if not re.search(r"(?:Z|[+-]\d{2}:?\d{2})$", raw_stamp):
+            continue
+        stamp = _timestamp(raw_stamp)
+        if stamp is None or not 0 <= (command_time - stamp).total_seconds() <= 12:
+            continue
+        message = str(event.get("message") or "")
+        for mode in modes:
+            if _mode_is_observed(message, mode):
+                matched.append((stamp, mode))
+                break
+    matched.sort(key=lambda item: item[0])
+    return list(dict.fromkeys(
+        f"- {stamp.astimezone(command_time.tzinfo).strftime('%H:%M:%S')} — "
+        f"Hub log recorded a change to {mode} mode."
+        for stamp, mode in matched
+    ))[:3]
+
+
 def configuration_text(data: dict[str, Any]) -> tuple[list[str], str]:
     """Extract human-readable rule sections; never return raw app settings."""
 
@@ -99,8 +193,8 @@ def configuration_text(data: dict[str, Any]) -> tuple[list[str], str]:
         for paragraph in section.get("paragraphs") or []:
             if not isinstance(paragraph, str):
                 continue
-            item = re.sub(r"\s+", " ", paragraph).strip()
-            if not item or len(item) > 500:
+            item = _clean_configuration_entry(paragraph)
+            if item is None:
                 continue
             searchable.append(item)
             if (
@@ -123,8 +217,8 @@ def configuration_text(data: dict[str, Any]) -> tuple[list[str], str]:
                 piece for piece in (label, description, str(value) if value is not None else "")
                 if piece
             )
-            input_text = re.sub(r"\s+", " ", input_text).strip()
-            if input_text and len(input_text) <= 400:
+            input_text = _clean_configuration_entry(input_text)
+            if input_text is not None and len(input_text) <= 400:
                 searchable.append(input_text)
                 if re.search(r"\b(?:trigger|event|condition|mode|motion|presence|illuminance|lux)\b", input_text, re.I) and len(snippets) < 5:
                     snippets.append(f"{title}: {input_text}" if title else input_text)
@@ -276,6 +370,7 @@ def render_rule_decision_context(
     configured: list[str],
     logs: list[str],
     sensor_warnings: list[str],
+    mode_events: list[str] | None = None,
 ) -> str:
     lines = ["### Why the automation decided to act"]
     if logs:
@@ -289,12 +384,30 @@ def render_rule_decision_context(
             "**Trigger not independently verified:** No timestamp-aligned "
             "rule-execution or condition-evaluation log was obtained."
         )
+    if mode_events:
+        lines.append(
+            "**Independent mode-change correlation (event-time hub logs):**"
+        )
+        lines.extend(mode_events)
+        lines.append(
+            "This matches a configured mode trigger in time, but does not "
+            "independently prove the rule's condition values at that moment."
+        )
     if configured:
         lines.append(
             "**Configured triggers/conditions (current configuration, not proof "
             "of the historical evaluation):**"
         )
-        lines.extend(f"- {text}" for text in configured)
+        for entry in configured:
+            kind = (
+                "Trigger" if re.search(
+                    r"\bmode\s+(?:changes?|becomes?|switched)",
+                    entry, re.I,
+                ) else "Condition/action" if re.search(
+                    r"\b(?:if|then|required expression)\b", entry, re.I,
+                ) else "Rule detail"
+            )
+            lines.append(f"- **{kind}:** {entry}")
     else:
         lines.append(
             "The app's trigger/condition details could not be verified from "

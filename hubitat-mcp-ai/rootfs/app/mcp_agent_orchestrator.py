@@ -36,8 +36,10 @@ from causal_evidence_planner import (
 from causal_rule_decision_context import (
     app_log_window,
     configuration_text,
+    configured_mode_triggers,
     execution_log_lines,
     linked_sensor_health_warning,
+    mode_transition_correlations,
     proven_lighting_command,
     referenced_sensor_identities,
     render_rule_decision_context,
@@ -732,6 +734,33 @@ class UnifiedMCPAgent:
             if isinstance(log_data, dict) else []
         )
 
+        # A scope-to-rule log can prove its own trigger, if retained. When it
+        # cannot, one bounded hub-wide mode-log check may corroborate a matching
+        # configured mode transition. Correlation is NOT proof that the Rule
+        # Machine conditions were true, and unavailable logs remain unknown.
+        mode_events: list[str] = []
+        if (
+            configured_mode_triggers(config_items)
+            and not any("mode" in line.casefold() for line in execution)
+        ):
+            mode_args = {
+                "since": window["since"],
+                "until": window["until"],
+                "limit": 40,
+                "pattern": r"(?i)\bmode\b",
+            }
+            mode_data = await bounded_read(
+                "hub_read_diagnostics",
+                "hub_get_logs",
+                mode_args,
+                "native_log_history",
+                True,
+            )
+            if isinstance(mode_data, dict):
+                mode_events = mode_transition_correlations(
+                    mode_data, focus, config_items
+                )
+
         health_lines: list[str] = []
         if config_search:
             try:
@@ -776,6 +805,7 @@ class UnifiedMCPAgent:
                 configured=config_items,
                 logs=execution,
                 sensor_warnings=health_lines,
+                mode_events=mode_events,
             )
         )
 
