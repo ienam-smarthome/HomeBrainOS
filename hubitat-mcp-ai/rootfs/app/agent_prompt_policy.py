@@ -43,6 +43,37 @@ ROOM STATUS EVIDENCE
 """
 
 
+_RULE_INVESTIGATION_EVIDENCE_POLICY = """
+
+AUTOMATION AND RULE MACHINE INVESTIGATION EVIDENCE
+- A numeric Hubitat device reference (e.g. 7334) is a device ID, not a label.
+  Read it using hub_read_devices -> hub_get_device(deviceId=...), or use
+  homebrain_resolve_device(name="7334") which performs the verified ID read.
+  Never use hub_list_devices(labelFilter="7334") to determine whether device
+  7334 exists. A labelFilter miss proves only that the *label* did not match.
+- Respect explicit parentDeviceId links from detailed device records. If a
+  dependent sensor's parent is offline, qualify its values as retained and
+  current freshness unverified. Do not claim the parent is absent based on
+  an unrelated list/filter result or the age of a child's last activity.
+- Rule Machine can evaluate conditions against the hub's retained reported
+  state when no new sensor events arrive. This creates a POTENTIAL risk of
+  actions on stale state; a configuration read alone does NOT establish that
+  a rule executed on stale values or that a particular historical condition
+  evaluated true. State conditional risks as 'could' or 'may', never 'will',
+  unless timestamp-aligned execution and evaluation evidence supports it.
+- Show configured triggers, ordinary IF conditions, required expressions,
+  and actions as different concepts. Do not assume a required expression is
+  absent merely because an editor has an 'Use Required Expression' control.
+  Say 'not verified from this configuration view' when ambiguous.
+- A device showing no activity for N hours does not prove it is offline,
+  and a current offline observation is NOT proof of its historical status.
+  Report historical causes only when app/event logs substantiate them.
+- Safe recommendations are hypothetical until supported by the platform's
+  actual Rule Machine capabilities. A motion trigger alone does not make
+  an offline/retained lux reading fresh.
+"""
+
+
 _INTERNET_ACCESS_POLICY = """
 
 INTERNET ACCESS SWITCH SEMANTICS
@@ -67,7 +98,13 @@ def build_system_prompt(
         app_manifest_section,
         now=now,
     )
-    return base + _FRESHNESS_POLICY + _ROOM_STATUS_POLICY + _INTERNET_ACCESS_POLICY
+    return (
+        base
+        + _FRESHNESS_POLICY
+        + _ROOM_STATUS_POLICY
+        + _RULE_INVESTIGATION_EVIDENCE_POLICY
+        + _INTERNET_ACCESS_POLICY
+    )
 
 
 __all__ = [
