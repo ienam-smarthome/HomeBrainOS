@@ -54,6 +54,38 @@ class RuleAnalysisReport:
     partial: bool
 
 
+def _precise_referenced_sensors(
+    config_text: str, candidates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Prevent a parent label from falsely matching inside its child's label.
+
+    A configured "FP2 Livingroom sensor (homekit)" must not automatically
+    select a separate device labelled "FP2 Livingroom". Match longest full
+    labels first and consume their spans before considering shorter labels.
+    A genuinely separate occurrence of the parent label remains selectable.
+    """
+
+    remaining = str(config_text or "")
+    matched = []
+    seen = set()
+    for candidate in sorted(
+        candidates, key=lambda item: len(_name(item, "")), reverse=True
+    ):
+        label = _name(candidate, "")
+        device_id = _id(candidate)
+        if not label or not device_id or device_id in seen:
+            continue
+        pattern = re.compile(
+            r"(?<![A-Za-z0-9])" + re.escape(label) + r"(?![A-Za-z0-9])",
+            re.I,
+        )
+        if pattern.search(remaining):
+            matched.append(candidate)
+            seen.add(device_id)
+            remaining = pattern.sub(" ", remaining)
+    return matched
+
+
 def _normalize_detail_device(data: dict[str, Any], expected_id: str) -> dict[str, Any] | None:
     """Project actual hub_get_device(mode=details) sections to canonical states.
 
@@ -320,7 +352,11 @@ class RuleMachineAnalysisService:
                         identities = []
 
         references = (
-            referenced_sensor_identities(config_text, identities, "") if valid else []
+            _precise_referenced_sensors(
+                config_text,
+                referenced_sensor_identities(config_text, identities, ""),
+            )
+            if valid else []
         )
         reads: dict[str, dict[str, Any] | None] = {}
         for ref in references[:4]:
