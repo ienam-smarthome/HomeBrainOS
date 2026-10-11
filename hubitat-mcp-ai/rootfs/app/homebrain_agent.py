@@ -272,7 +272,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 self.mcp, self.evidence
             ).analyse(app_id, parent_id)
             if report.partial:
-                self.metrics.increment("rule_analysis_partial")
+                self.request_metrics.increment("rule_analysis_partial")
             return report.message
 
         return await self._direct_outcome(operation, request_class="live-read")
