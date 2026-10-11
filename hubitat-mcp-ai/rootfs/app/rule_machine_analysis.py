@@ -250,7 +250,7 @@ def build_rule_analysis(
         "**Investigation status: current configuration and device-health reads complete; "
         "past execution still unverified.**"
     ))
-    return RuleAnalysisReport("\\n\\n".join(lines), incomplete)
+    return RuleAnalysisReport("\n\n".join(lines), incomplete)
 
 
 def render_rule_analysis(*args: Any, **kwargs: Any) -> str:
