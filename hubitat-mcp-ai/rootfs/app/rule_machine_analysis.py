@@ -94,7 +94,10 @@ def _normalize_detail_device(data: dict[str, Any], expected_id: str) -> dict[str
         "label": data.get("label") or data.get("name") or f"Device {expected_id}",
         "attributes": states,
         "parentDeviceId": parent_id if parent_id.isdecimal() else None,
-        "_relationship_unverified": not isinstance(relation_device, dict) or relation_status in {"unavailable", "partial", "failed"},
+        "_relationship_unverified": (
+            not isinstance(relation_device, dict)
+            or (relation_status in {"unavailable", "partial", "failed"} and not parent_id.isdecimal())
+        ),
         "_attributes_unverified": not isinstance(native, (dict, list)) or attr_status in {"unavailable", "partial", "failed"},
     }
 
@@ -180,7 +183,7 @@ def build_rule_analysis(
         status = own_health or (
             "Parent offline" if parent_health == "offline" else "Parent health unverified"
         ) if parent_id.isdecimal() else (own_health or "Connection status unverified")
-        if not own_health and (not parent_id.isdecimal() or parent_health != "verified"):
+        if not own_health and (not parent_id.isdecimal() or parent_health == "unverified"):
             incomplete = True
         retained = ", ".join(
             f"{key}={attrs[key]}" for key in ("motion", "presence", "illuminance")
