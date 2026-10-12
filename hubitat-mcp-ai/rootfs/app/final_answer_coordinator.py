@@ -11,7 +11,7 @@ from causal_native_logs import (
     correlate_native_log_boundaries,
     render_native_log_correlation,
 )
-from causal_timeline import render_causal_timeline
+from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
 from investigation_policy import (
     is_causal_investigation,
@@ -162,7 +162,7 @@ def _broad_performance_recommendation_request(text: str) -> bool:
     return performance and recommendations
 
 
-def _synthesis_instruction(original_user: str) -> str:
+def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -> str:
     """Build the shared final reasoning contract from request class."""
 
     causal = is_causal_investigation(original_user)
@@ -179,10 +179,17 @@ def _synthesis_instruction(original_user: str) -> str:
         text += (
             "This is a causal investigation. Lead with the best-supported "
             "explanation and calibrate confidence. Reconstruct the important "
-            "timeline by correlating timestamps across sources. Account for every "
-            "MATERIAL row in the HOST CAUSAL TIMELINE; adjacent short minor "
-            "unresolved rows may be grouped, but do not omit a material interval "
-            "with aligned provenance. Separate a likely trigger/provenance event "
+            "timeline by correlating timestamps across sources. "
+            + (
+                "The user identified one specific recorded event. Analyse that "
+                "event only; do not require a full-day table or describe other "
+                "intervals as unexplained unless asked. "
+                if focused_event else
+                "Account for every MATERIAL row in the HOST CAUSAL TIMELINE; "
+                "adjacent short minor unresolved rows may be grouped, but do "
+                "not omit a material interval with aligned provenance. "
+            )
+            + "Separate a likely trigger/provenance event "
             "from downstream automation effects. A controller event aligned to an "
             "interval END is end/turn-off-adjacent evidence and must not be cited "
             "as the cause of that interval's earlier turn-on. If an OPEN timeline "
@@ -224,9 +231,15 @@ def _synthesis_instruction(original_user: str) -> str:
         "integrity uncertainty applies to completeness and continuity. If the "
         "original user explicitly asks how long, for a duration, or for total time, "
         "lead with the deterministic temporal duration when current-turn evidence "
-        "provides it. When several bounded intervals are available, prefer a compact "
-        "Markdown table with start state/time, end state/time, and duration. "
-        "When the retained page reaches the requested window start, avoid routine "
+        "provides it. "
+        + (
+            "Present the requested focal event in plain language rather than "
+            "reporting whole-day totals or unrelated historical intervals. "
+            if focused_event else
+            "When several bounded intervals are available, prefer a compact "
+            "Markdown table with start state/time, end state/time, and duration. "
+        )
+        + "When the retained page reaches the requested window start, avoid routine "
         "boilerplate about an unverified event stream if the duration is already "
         "qualified as about/estimated; instead add one short practical context sentence "
         "covering the window start and latest recorded state/event. Say a device is "
@@ -370,7 +383,13 @@ class FinalAnswerCoordinator:
         if performance_semantic_validation:
             current_turn = _performance_evidence_only_messages(current_turn)
         brief = build_current_turn_evidence_ledger(evidence)
-        causal_timeline = render_causal_timeline(evidence) if causal else None
+        focused_event = bool(
+            explicitly_focused_event_rows(evidence, original_user)
+        ) if causal else False
+        causal_timeline = (
+            render_causal_timeline(evidence, original_user=original_user)
+            if causal else None
+        )
         native_log_correlation = (
             render_native_log_correlation(
                 correlate_native_log_boundaries(evidence)
@@ -406,7 +425,9 @@ class FinalAnswerCoordinator:
             })
         final_messages.append({
             "role": "user",
-            "content": _synthesis_instruction(original_user),
+            "content": _synthesis_instruction(
+                original_user, focused_event=focused_event
+            ),
         })
 
         response = await self._chat(final_messages, [])

@@ -84,6 +84,7 @@ from causal_native_logs import (
 )
 from causal_timeline import (
     causal_log_windows,
+    explicitly_focused_event_rows,
     render_command_source_followup,
     unresolved_material_timeline_rows,
 )
@@ -193,6 +194,8 @@ def _normalize_causal_log_call(
     tool_name: str,
     arguments: dict[str, Any],
     evidence: list[dict[str, Any]],
+    *,
+    original_user: str = "",
 ) -> dict[str, Any]:
     """Force native log reads onto observed causal boundary timestamps.
 
@@ -208,7 +211,8 @@ def _normalize_causal_log_call(
     if not (direct or gateway):
         return arguments
 
-    windows = causal_log_windows(evidence)
+    focused = explicitly_focused_event_rows(evidence, original_user)
+    windows = causal_log_windows(evidence, original_user=original_user)
     if not windows:
         return arguments
 
@@ -222,7 +226,10 @@ def _normalize_causal_log_call(
             or str(receipt.get("sub_tool") or "") == "hub_get_logs"
         )
     )
-    window = windows[min(prior_log_reads, len(windows) - 1)]
+    # A scoped one-event investigation always reads that same event, even
+    # after a host-side app-log prefetch. Rotating to the next interval was
+    # silently changing the question from 07:53 to 07:08.
+    window = windows[0] if focused else windows[min(prior_log_reads, len(windows) - 1)]
     normalized = dict(arguments)
     if direct:
         normalized["since"] = window["since"]
@@ -704,6 +711,26 @@ class UnifiedMCPAgent:
                 logger.debug(
                     "Lighting rule follow-up %s failed: %s", leaf, error
                 )
+            # Preserve the *content* of host-prefetched facts in bounded
+            # receipts. Previously the deep model saw "read available" only,
+            # prompting it to repeat configuration/log requests and potentially
+            # drift to an unrelated historical window.
+            scoped_details: dict[str, Any] = {}
+            if ok and leaf == "hub_get_app_config":
+                config_excerpts, _ = configuration_text(data)
+                scoped_details = {
+                    "appId": app_id,
+                    "configured": config_excerpts[:12],
+                }
+            elif ok and leaf == "hub_get_logs":
+                log_rows = data.get("logs")
+                scoped_details = {
+                    "appId": app_id,
+                    "logCount": len(log_rows) if isinstance(log_rows, list) else None,
+                    "scopedSince": str(args.get("since") or ""),
+                    "scopedUntil": str(args.get("until") or ""),
+                    "execution": execution_log_lines(data, focus)[:8],
+                }
             self.evidence.record(
                 gateway,
                 request,
@@ -717,6 +744,7 @@ class UnifiedMCPAgent:
                 evidence_kind=kind,
                 mutates=False,
                 effect="read",
+                details=scoped_details,
             )
             return data if ok else None
 
@@ -2472,13 +2500,31 @@ class UnifiedMCPAgent:
                     # command producer is verified. Give the model the observed
                     # baseline plus the live capability search/guide workflow to
                     # decide whether additional upstream evidence is required.
+                    prechecked = [
+                        {
+                            "source": r.get("sub_tool"),
+                            "arguments": r.get("arguments"),
+                            "result": r.get("details"),
+                            "status": "available" if r.get("success") else "failed",
+                        }
+                        for r in self.evidence.receipts()
+                        if r.get("sub_tool") in {"hub_get_app_config", "hub_get_logs"}
+                        and isinstance(r.get("details"), dict)
+                    ]
+                    prechecked_brief = json.dumps(
+                        prechecked[:4], ensure_ascii=False, default=str
+                    )[:4800]
                     messages.append({
                         "role": "user",
                         "content": (
                             "HOST VERIFIED CAUSAL BASELINE (not a completed "
                             "deep investigation):\n"
                             + deterministic_answer
-                            + "\nReview the user's full investigative objective. "
+                            + "\nHOST ALREADY CHECKED APP/LOG FACTS: "
+                            + prechecked_brief
+                            + "\nDo not repeat these already-completed reads "
+                            "unless a specific missing field requires it. "
+                            + "Review the user's full investigative objective. "
                             "The producer, historical trigger, conditions and "
                             "alternatives are distinct. If the existing evidence "
                             "does not support a material requested part, discover "
@@ -2856,6 +2902,7 @@ class UnifiedMCPAgent:
                         name,
                         arguments,
                         self.evidence.receipts(),
+                        original_user=user_prompt,
                     )
                 signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
