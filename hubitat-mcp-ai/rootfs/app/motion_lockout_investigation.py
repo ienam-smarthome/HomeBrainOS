@@ -217,10 +217,30 @@ async def prefetch_motion_lockout(
     config_search = ""
     async def remote(gateway: str, leaf: str, args: dict[str, Any]) -> dict[str, Any] | None:
         try:
-            result = await host.mcp.call_tool(gateway, {"tool": leaf, "args": args})
-            if not host._tool_succeeded(result):
+            declared = catalog.declared_tool(gateway)
+            if declared is not None:
+                # Use the standard tool budget/metrics path, but avoid copying
+                # unfiltered app-log message text into evidence receipts.
+                execution = await host.executor.execute(
+                    gateway, {"tool": leaf, "args": args},
+                    tool=declared, supports_live_claim=leaf == "hub_get_logs",
+                    record_evidence=False,
+                )
+                if not execution.success or execution.result is None:
+                    return None
+                data = execution.result.data
+            else:
+                result = await host.mcp.call_tool(
+                    gateway, {"tool": leaf, "args": args}
+                )
+                if not host._tool_succeeded(result):
+                    return None
+                data = result.data
+            if not isinstance(data, dict) or data.get("status") in (
+                "pending", "in_progress",
+            ):
                 return None
-            return result.data if isinstance(result.data, dict) else None
+            return data
         except Exception:
             return None
     if app_id:
