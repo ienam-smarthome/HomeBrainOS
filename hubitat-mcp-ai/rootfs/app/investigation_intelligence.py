@@ -11,6 +11,7 @@ recognition separate from claim/evidence logic.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import re
 from typing import Any
@@ -163,6 +164,22 @@ def _events(row: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _instant(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _within_seconds(a: datetime, b: datetime, *, earliest: float,
+                    latest: float) -> bool:
+    delta = (a - b).total_seconds()
+    return earliest <= delta <= latest
+
+
 def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]) -> dict[str, Any]:
     """Score evidence by *what it actually observed*, not tool success.
 
@@ -174,6 +191,13 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
     found: set[str] = set()
     checked: set[str] = set()
     notes: list[str] = []
+    # Cross-source event linking must require actual time alignment. Otherwise
+    # a button from yesterday and current motion could produce a false claim
+    # that a manual OFF lockout was investigated.
+    off_times: list[datetime] = []
+    button_times: list[datetime] = []
+    motion_times: list[datetime] = []
+    lockout_times: list[datetime] = []
     for row in source:
         leaf, args, events = _leaf(row), _args(row), _events(row)
         if plan.domain == "manual_motion_lockout":
@@ -184,17 +208,22 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                 for event in events:
                     attr = str(event.get("name") or event.get("attribute") or "").casefold()
                     value = str(event.get("value") or "").casefold()
-                    if attr in ("switch", "contact") and value == "off":
-                        found.add("target_off")
+                    stamp = _instant(event.get("date") or event.get("timestamp"))
+                    if stamp is None:
+                        continue
+                    if attr == "switch" and value == "off":
+                        off_times.append(stamp)
                     if attr in ("button", "pushed", "held", "released"):
-                        found.add("controller")
+                        button_times.append(stamp)
                     if attr in ("motion", "presence", "occupancy"):
-                        found.add("motion")
+                        motion_times.append(stamp)
             if leaf == "hub_get_logs" and args.get("appId") not in (None, ""):
                 checked.add("execution")
-                if any("lockout" in str(x.get("message") or "").casefold()
-                       for x in events):
-                    found.add("execution")
+                for event in events:
+                    log = str(event.get("message") or "").casefold()
+                    time = _instant(event.get("date") or event.get("timestamp"))
+                    if time and ("lockout" in log or "lock out" in log):
+                        lockout_times.append(time)
         elif plan.domain == "device_telemetry":
             if leaf in ("hub_get_device", "hub_list_devices", "homebrain_resolve_device"):
                 checked.add("status")
@@ -225,6 +254,29 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
             if leaf == "hub_get_performance_stats":
                 checked.add("execution")
                 found.add("execution")
+    if plan.domain == "manual_motion_lockout":
+        if off_times:
+            found.add("target_off")
+        if off_times and any(
+            _within_seconds(button, off, earliest=-5, latest=5)
+            for off in off_times for button in button_times
+        ):
+            found.add("controller")
+        if off_times and any(
+            _within_seconds(motion, off, earliest=0, latest=180)
+            for off in off_times for motion in motion_times
+        ):
+            found.add("motion")
+        if off_times and any(
+            _within_seconds(logged, off, earliest=0, latest=180)
+            for off in off_times for logged in lockout_times
+        ):
+            found.add("execution")
+        if off_times and not lockout_times:
+            notes.append(
+                "OFF may be observed, but past lockout engagement requires "
+                "a time-linked execution/decision record"
+            )
     requirements = []
     for item in plan.requirements:
         state = ("observed" if item.key in found else
