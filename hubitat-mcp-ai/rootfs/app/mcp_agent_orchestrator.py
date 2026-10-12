@@ -132,6 +132,7 @@ from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
+from mcp_skill_guidance import build_mcp_skill_guidance, wants_deep_investigation
 from tool_catalog_assembly import build_request_tool_catalog
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
@@ -2100,7 +2101,8 @@ class UnifiedMCPAgent:
             # provenance registry later only when subject evidence warrants it.
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
-        return build_system_prompt(manifest, app_section)
+        return (build_system_prompt(manifest, app_section)
+                + "\n\n" + build_mcp_skill_guidance(user_prompt))
 
     @staticmethod
     def _tool_schema(tool: MCPTool) -> dict[str, Any]:
@@ -2270,7 +2272,10 @@ class UnifiedMCPAgent:
         session_id: str = "default",
     ) -> str:
         request_started = time.monotonic()
-        all_tools = (await self.mcp.list_tools())[: self.tool_limit]
+        # Keep the full live registry searchable; tool_limit bounds *declared*
+        # model functions, not the server capabilities retained for discovery.
+        # The initial model view remains small and permission-filtered by MCP.
+        all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
@@ -2332,7 +2337,7 @@ class UnifiedMCPAgent:
                 record_evidence=False,
             )
             capability_additions = (
-                catalog.expand(discovery.result)
+                catalog.expand(discovery.result, query=user_prompt)
                 if discovery.result is not None
                 else []
             )
@@ -2422,6 +2427,7 @@ class UnifiedMCPAgent:
         causal_completion_retry_used = False
         causal_completion_mode = False
 
+        deep_causal_request = causal_request and wants_deep_investigation(user_prompt)
         if causal_request:
             causal_prefetch, prefetched_subject_key, prefetched_transition = (
                 await self._prefetch_explicit_causal_subject(
@@ -2455,13 +2461,42 @@ class UnifiedMCPAgent:
                         deterministic_answer,
                         transition=prefetched_transition or "on",
                     )
-                    increment_active_metric(
-                        "causal_deterministic_finalization"
+                    if not deep_causal_request:
+                        increment_active_metric(
+                            "causal_deterministic_finalization"
+                        )
+                        increment_active_metric("investigative_finalization")
+                        return deterministic_answer
+                    # A deep investigation is not completed merely because a
+                    # command producer is verified. Give the model the observed
+                    # baseline plus the live capability search/guide workflow to
+                    # decide whether additional upstream evidence is required.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST VERIFIED CAUSAL BASELINE (not a completed "
+                            "deep investigation):\n"
+                            + deterministic_answer
+                            + "\nReview the user's full investigative objective. "
+                            "The producer, historical trigger, conditions and "
+                            "alternatives are distinct. If the existing evidence "
+                            "does not support a material requested part, discover "
+                            "and read the relevant permitted MCP tool. Do not "
+                            "redo proven history or make unrelated scans."
+                        ),
+                    })
+                    # The current registered app/rule/log read gateways are
+                    # available without fuzzy search and without enabling writes.
+                    catalog.expose_read_gateways(
+                        ("hub_read_apps_code", "hub_read_rules",
+                         "hub_read_diagnostics"),
+                        max_declared=self.tool_limit,
                     )
-                    increment_active_metric("investigative_finalization")
-                    return deterministic_answer
-                increment_active_metric("investigative_finalization")
-                return await self._final_answer(messages)
+                    tools = catalog.schemas()
+                else:
+                    if not deep_causal_request:
+                        increment_active_metric("investigative_finalization")
+                        return await self._final_answer(messages)
             if causal_prefetch == "empty":
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
@@ -2560,7 +2595,7 @@ class UnifiedMCPAgent:
                             supports_live_claim=False,
                         )
                         additions = (
-                            catalog.expand(execution.result)
+                            catalog.expand(execution.result, query=user_prompt)
                             if execution.result is not None
                             else []
                         )
@@ -2987,7 +3022,9 @@ class UnifiedMCPAgent:
                         round_tool_failure = True
                     if result is not None:
                         if name == "hub_search_tools":
-                            additions = catalog.expand(result)
+                            additions = catalog.expand(
+                                result, query=str(arguments.get("query") or "")
+                            )
                             if additions:
                                 tools = catalog.schemas()
                                 logger.info("Tool search expanded registry with: %s", ", ".join(item.name for item in additions))
