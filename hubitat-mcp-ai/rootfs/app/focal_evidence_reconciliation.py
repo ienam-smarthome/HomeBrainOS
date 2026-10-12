@@ -294,7 +294,7 @@ def ensure_archived_sensor_source_disclosure(
         return "(?:" + "|".join(variants) + ")"
 
     journal_numbered = journal_named and bool(re.search(
-        rf"\b{number_pattern(count)}\b.{0,55}?"
+        rf"\b{number_pattern(count)}\b.{{0,55}}?"
         r"(?:archived|journal|sensor|motion|observation|event)",
         lowered,
     ))
@@ -302,12 +302,12 @@ def ensure_archived_sensor_source_disclosure(
     mcp_rows = evidence.get("verifiedMcpReturnedEventCount", 0)
     mcp_counted = (
         "mcp" in lowered and bool(re.search(
-            rf"\b{number_pattern(mcp_windows)}\b.{0,65}?"
+            rf"\b{number_pattern(mcp_windows)}\b.{{0,65}}?"
             r"(?:mcp|verified|window)", lowered,
         ))
     )
     mcp_rows_counted = "mcp" in lowered and bool(re.search(
-        rf"\b{number_pattern(mcp_rows)}\b.{0,45}?"
+        rf"\b{number_pattern(mcp_rows)}\b.{{0,45}}?"
         r"(?:rows?|events?)", lowered,
     ))
     if (journal_numbered and timestamp_qualified
