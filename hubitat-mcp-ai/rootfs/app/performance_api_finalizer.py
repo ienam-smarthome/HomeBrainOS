@@ -10,6 +10,7 @@ from functools import wraps
 from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
+from investigation_intelligence import plan_investigation, assess_investigation
 from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
@@ -1506,6 +1507,32 @@ async def finalize_performance_api_outcome(
 
     outcome.message = guarded
     outcome.evidence = evidence
+    contract = plan_investigation(user_prompt)
+    if contract is not None and hasattr(outcome, "investigation_coverage"):
+        completeness = assess_investigation(contract, evidence)
+        if contract.domain == "scheduler_ownership" and scheduled_digest:
+            # Full job rows are held in the privacy-bounded synthesis packet,
+            # not in public tool receipts. Expose aggregate source integrity,
+            # without upgrading scheduler-key guesses into real owners.
+            examined = int(scheduled_digest.get("rowsExamined") or 0)
+            proven = int(scheduled_digest.get("ownerIdentifiedRows") or 0)
+            completeness["schedulerSourceSummary"] = {
+                "rowsExamined": examined,
+                "verifiedOwnerRows": proven,
+                "candidateRowsUnverified": int(
+                    scheduled_digest.get("keyPatternCandidateRows") or 0
+                ),
+            }
+            for req in completeness["requirements"]:
+                if req["key"] == "owners" and proven > 0:
+                    req["state"] = "observed-partial" if proven < examined else "observed"
+            completeness["evidenceComplete"] = all(
+                req["state"] == "observed"
+                for req in completeness["requirements"] if req["necessary"]
+            )
+            if not completeness["evidenceComplete"]:
+                completeness["status"] = "partial-evidence"
+        outcome.investigation_coverage = completeness
     set_request_stage("Finalising recommendations")
     _set_timing(
         outcome,
