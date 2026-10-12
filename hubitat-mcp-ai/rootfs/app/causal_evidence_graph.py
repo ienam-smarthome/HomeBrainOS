@@ -612,6 +612,43 @@ def build_causal_evidence_graph(
     end_sensor_correlations = _end_sensor_correlations(evidence, focus)
     config = _configuration(evidence, app_id) if app_id else {"checked": False}
     logs = _logs(evidence, app_id, (start_command or {}).get("time") or "") if app_id else {"checked": False}
+    notified = (physical_boundary or {}).get("listenersNotified") or []
+    reactive_app_id = next((
+        str(row.get("appId") or "")
+        for row in notified
+        if isinstance(row, dict) and (
+            "light" in str(row.get("handler") or "").casefold()
+            or "switch" in str(row.get("handler") or "").casefold()
+        )
+    ), "")
+    reactive_config = (
+        _configuration(evidence, reactive_app_id)
+        if reactive_app_id else {"checked": False}
+    )
+    reactive_logs = (
+        _logs(evidence, reactive_app_id, focus.get("start") or "")
+        if reactive_app_id else {"checked": False}
+    )
+    post_on_history_checked = any(
+        _working(item)
+        and _tool(item) == "hub_list_device_events"
+        and str(_args(item).get("attribute") or "") == "command-setLevel"
+        for item in evidence
+    )
+    alternate_sensors_checked = any(
+        _working(item)
+        and item.get("tool") == "homebrain_causal_secondary_correlation"
+        for item in evidence
+    )
+    physical_evidence_complete = bool(
+        (physical_boundary or {}).get("eventType") == "physical"
+        and (controller_candidate or {}).get("status") == "repeated-temporal-association"
+        and reactive_config.get("checked")
+        and reactive_config.get("excerpts")
+        and reactive_logs.get("checked")
+        and post_on_history_checked
+        and alternate_sensors_checked
+    )
     mode = _mode(evidence, focus)
     missing = []
     if not start_command:
@@ -642,6 +679,16 @@ def build_causal_evidence_graph(
         "initiatorCandidate": sensor,
         "configuration": config,
         "executionLogs": logs,
+        "reactiveApp": {
+            "appId": reactive_app_id,
+            "wasNotified": bool(reactive_app_id),
+            "notificationIsNotDirectCommand": True,
+            "configuration": reactive_config,
+            "executionLogs": reactive_logs,
+        },
+        "postOnCommandHistoryChecked": post_on_history_checked,
+        "otherSensorEvidenceChecked": alternate_sensors_checked,
+        "physicalEvidenceComplete": physical_evidence_complete,
         "locationMode": mode,
         "offCommand": end_command,
         "offAttribution": (
@@ -683,6 +730,8 @@ def needs_mode_history(graph: dict[str, Any], original_user: str) -> bool:
     if not re.search(r"\b(?:alternativ(?:e|es)|mode|other causes|other triggers)\b", prompt):
         return False
     config = graph.get("configuration") or {}
+    if not config.get("checked"):
+        config = ((graph.get("reactiveApp") or {}).get("configuration") or {})
     return config.get("checked") is True and any(
         "mode" in str(item).casefold() for item in config.get("excerpts") or []
     )
@@ -699,7 +748,10 @@ def supports_one_pass_deep_synthesis(
     This gate does NOT declare other upstream causes impossible; it declares
     that available evidence is sufficient for a calibrated answer.
     """
-    if not graph.get("ready"):
+    # Two distinct source-complete paths: Hubitat app-command initiation
+    # and externally/bridge-reported physical ON with repeated controller
+    # events plus checked downstream app configuration and log evidence.
+    if not graph.get("ready") and not graph.get("physicalEvidenceComplete"):
         return False
     prompt = str(original_user or "").casefold()
     requirements = (
@@ -713,6 +765,8 @@ def supports_one_pass_deep_synthesis(
         return False
     if needs_mode_history(graph, original_user):
         return False
+    if graph.get("physicalEvidenceComplete"):
+        return True
     candidate = graph.get("initiatorCandidate") or {}
     return (
         candidate.get("configured") is True
