@@ -56,9 +56,51 @@ def test_history_pages_without_off_or_lockout_do_not_complete_investigation():
     states = {x["key"]: x["state"] for x in a["requirements"]}
     assert states["target_off"] == "checked-unverified"
     assert states["controller"] == "checked-unverified"
-    assert states["motion"] == "observed"
+    assert states["motion"] == "checked-unverified"
     assert states["execution"] == "checked-unverified"
     assert not a["evidenceComplete"]
+
+
+def test_manual_lockout_requires_linked_historical_off_button_motion_and_execution():
+    p = plan_investigation(
+        "Investigate manual OFF followed by motion three-minute lockout"
+    )
+    receipts = [
+        _read("hub_list_device_events", {"deviceId": "4010"},
+              details={"events": [
+                  {"name": "switch", "value": "off",
+                   "date": "2026-10-12T20:00:00+01:00"},
+              ]}),
+        _read("hub_list_device_events", {"deviceId": "4020"},
+              details={"events": [
+                  {"name": "button", "value": "pushed",
+                   "date": "2026-10-12T20:00:01+01:00"},
+                  {"name": "motion", "value": "active",
+                   "date": "2026-10-12T20:00:35+01:00"},
+              ]}),
+        _read("hub_get_logs", {"appId": "4019"},
+              details={"logs": [
+                  {"message": "Motion lockout enabled",
+                   "date": "2026-10-12T20:00:01+01:00"},
+              ]}),
+    ]
+    result = assess_investigation(p, receipts)
+    assert result["evidenceComplete"]
+    assert result["status"] == "evidence-acquired"
+    unrelated = [dict(row) for row in receipts]
+    unrelated[0] = _read(
+        "hub_list_device_events", {"deviceId": "4010"},
+        details={"events": [{"name": "switch", "value": "off",
+                             "date": "2026-10-11T08:00:00+01:00"}]}
+    )
+    rejected = assess_investigation(p, unrelated)
+    assert not rejected["evidenceComplete"]
+    assert {r["key"]: r["state"] for r in rejected["requirements"]} == {
+        "target_off": "observed",
+        "controller": "checked-unverified",
+        "motion": "checked-unverified",
+        "execution": "checked-unverified",
+    }
 
 
 def test_device_health_separates_stale_telemetry_from_command_reachability():
