@@ -38,6 +38,7 @@ from causal_investigation_engine import (
     MAX_EXTRA_SENSOR_READS,
     SENSOR_BATCH_SIZE,
     has_strong_requested_correlated_candidate,
+    has_repeated_requested_controller_candidate,
     plan_cross_integration_candidates,
     rank_causal_hypotheses,
 )
@@ -1537,7 +1538,17 @@ class UnifiedMCPAgent:
         initial_sensor_attempts = len(sensor_specs)
         expanded_sensor_attempts = 0
         all_candidate_specs: list[dict[str, Any]] = []
-        if not has_strong_requested_correlated_candidate(analysis):
+        # Room-local occupancy alternatives have already been inspected.
+        # A unique repeated controller pattern at the requested ON boundary
+        # is sufficient to stop *unrelated* cross-room exploratory reads,
+        # without proving a native Hue/button mapping.
+        repeated_controller = has_repeated_requested_controller_candidate(analysis)
+        if repeated_controller:
+            increment_active_metric("causal_controller_sufficient_stop")
+        if not (
+            repeated_controller
+            or has_strong_requested_correlated_candidate(analysis)
+        ):
             tried_ids = {
                 str((spec.get("candidate") or {}).get("id") or "")
                 for spec in sensor_specs if isinstance(spec, dict)
