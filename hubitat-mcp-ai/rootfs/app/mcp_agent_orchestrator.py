@@ -39,6 +39,7 @@ from causal_investigation_engine import (
     SENSOR_BATCH_SIZE,
     has_strong_requested_correlated_candidate,
     has_repeated_requested_controller_candidate,
+    has_local_requested_off_correlation,
     plan_cross_integration_candidates,
     rank_causal_hypotheses,
 )
@@ -1766,8 +1767,15 @@ class UnifiedMCPAgent:
         repeated_controller = has_repeated_requested_controller_candidate(analysis)
         if repeated_controller:
             increment_active_metric("causal_controller_sufficient_stop")
+        local_off_evidence = has_local_requested_off_correlation(analysis)
+        if local_off_evidence:
+            # The room-local OFF hypothesis is investigated, but *not*
+            # verified. No unrelated cross-room exploration is needed to
+            # conclude safely that OFF command ownership remains unknown.
+            increment_active_metric("causal_local_off_evidence_stop")
         if not (
             repeated_controller
+            or local_off_evidence
             or has_strong_requested_correlated_candidate(analysis)
         ):
             tried_ids = {
@@ -1845,6 +1853,8 @@ class UnifiedMCPAgent:
                 0, len(all_candidate_specs) - expanded_sensor_attempts
             ),
             "crossIntegrationInventoryAvailable": bool(candidate_inventory),
+            "crossRoomSkippedForLocalOffEvidence": bool(local_off_evidence),
+            "localOffEvidenceIsNotCausalProof": True,
             "historicalExternalAutomationTraceVerified": False,
         }
         if len(all_candidate_specs) > expanded_sensor_attempts:
@@ -2960,6 +2970,13 @@ class UnifiedMCPAgent:
                         # One evidence-grounded final model pass replaces
                         # redundant exploratory/re-read/model-repair rounds.
                         increment_active_metric("causal_graph_sufficient")
+                        if (
+                            (graph.get("transitionEvidence") or {})
+                            .get("off", {}).get("observed")
+                            and not ((graph.get("transitionEvidence") or {})
+                                     .get("off", {}).get("directCommand"))
+                        ):
+                            increment_active_metric("causal_completed_unresolved")
                         increment_active_metric("investigative_finalization")
                         return await self._final_answer(messages)
 
