@@ -568,7 +568,7 @@ def unresolved_material_timeline_rows(
     ]
 
 
-_FOCAL_CLOCK = re.compile(r"(?<![\\d:])([01]?\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?![\\d:])")
+_FOCAL_CLOCK = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d):([0-5]\d)(?![\d:])")
 
 
 def explicitly_focused_event_rows(
