@@ -241,7 +241,17 @@ def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -
             "returned for the searched window. Preserve signed timestamps: "
             "when one occupancy sensor became inactive before OFF and another "
             "after OFF, state their individual order, never collapse both into "
-            "one earlier sensor event. "
+            "one earlier sensor event. A bounded ON interval contains two "
+            "independently investigated transitions. Use the separate ON and "
+            "OFF objects in transitionEvidence: OFF requires its own compatible "
+            "command producer, scoped app logs, potential sensor inputs and "
+            "uncertainty. A sensor reporting inactive milliseconds before OFF "
+            "does not establish the OFF trigger or execution of a configured "
+            "inactivity timer. Even if the same app handled ON, do not transfer "
+            "its command ownership or initiating logic to OFF. A successful "
+            "zero-row command-off history lookup is a bounded negative "
+            "observation, not proof that the bridge or an external automation "
+            "could not switch the light off. Keep an unknown OFF actor unknown. "
         )
     elif investigative:
         text += (
@@ -501,7 +511,7 @@ class FinalAnswerCoordinator:
             "configuration_only_causal_attribution",
             "causal_controller_history_coverage",
             "causal_action_ownership", "causal_empty_log_inference",
-            "causal_sensor_event_order",
+            "causal_sensor_event_order", "causal_off_trigger_overclaim", "causal_off_trigger_overclaim",
         }
         if (
             causal
