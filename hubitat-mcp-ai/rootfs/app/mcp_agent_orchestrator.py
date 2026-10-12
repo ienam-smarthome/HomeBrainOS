@@ -54,6 +54,13 @@ from causal_rule_decision_context import (
     proven_lighting_command,
     referenced_sensor_identities,
 )
+from causal_evidence_graph import (
+    build_causal_evidence_graph,
+    needs_mode_history,
+    render_causal_evidence_graph,
+    select_focal_sensor_events,
+    supports_one_pass_deep_synthesis,
+)
 from causal_command_provenance import (
     boundary_producer_transition_kind,
     boundary_producer_transition_match,
@@ -730,6 +737,22 @@ class UnifiedMCPAgent:
                     "scopedSince": str(args.get("since") or ""),
                     "scopedUntil": str(args.get("until") or ""),
                     "execution": execution_log_lines(data, focus)[:8],
+                }
+            elif ok and leaf == "hub_list_device_events":
+                # Keep bounded actual sensor edges and triggered[] handler
+                # notifications near the requested ON and OFF boundaries.
+                # A summary-only receipt previously forced the model to
+                # repeat this MCP read to inspect a fact the host already had.
+                scoped_details = {
+                    "deviceId": str(args.get("deviceId") or ""),
+                    "attribute": str(args.get("attribute") or ""),
+                    "events": select_focal_sensor_events(
+                        data,
+                        {
+                            "start": focus.get("stateBoundary"),
+                            "end": focus.get("intervalEnd"),
+                        },
+                    ),
                 }
             self.evidence.record(
                 gateway,
@@ -2496,33 +2519,89 @@ class UnifiedMCPAgent:
                         )
                         increment_active_metric("investigative_finalization")
                         return deterministic_answer
+
+                    # A normalized request-scoped causal graph knows what the
+                    # host has *already* checked, and what remains a hypothesis.
+                    # When a user explicitly requests alternatives involving
+                    # mode-dependent app logic, one focused location-event read
+                    # is cheaper and more reliable than a model-discovery round.
+                    graph = build_causal_evidence_graph(
+                        self.evidence.receipts(), user_prompt
+                    )
+                    if (
+                        needs_mode_history(graph, user_prompt)
+                        and catalog.available_tool("hub_read_devices") is not None
+                    ):
+                        args = {"hoursBack": 24, "limit": 20}
+                        request = {
+                            "tool": "hub_list_device_events", "args": args
+                        }
+                        start = time.monotonic()
+                        try:
+                            result = await self.mcp.call_tool(
+                                "hub_read_devices", request
+                            )
+                            ok = self._tool_succeeded(result)
+                            location_data = (
+                                result.data if isinstance(result.data, dict) else {}
+                            )
+                        except Exception as error:
+                            ok = False
+                            location_data = {}
+                            logger.debug("Causal mode history read failed: %s", error)
+                        mode_events = location_data.get("events")
+                        self.evidence.record(
+                            "hub_read_devices",
+                            request,
+                            success=ok,
+                            elapsed_ms=round((time.monotonic() - start) * 1000),
+                            summary=(
+                                "Scoped location/mode event history"
+                                if ok else "Location/mode history unavailable"
+                            ),
+                            supports_live_claim=ok,
+                            evidence_kind="authoritative_location_event_history",
+                            mutates=False,
+                            effect="read",
+                            details=(
+                                {
+                                    "count": location_data.get("count"),
+                                    "events": mode_events[:20],
+                                }
+                                if ok and isinstance(mode_events, list) else None
+                            ),
+                        )
+                        increment_active_metric("causal_graph_mode_reads")
+                        graph = build_causal_evidence_graph(
+                            self.evidence.receipts(), user_prompt
+                        )
+
+                    if supports_one_pass_deep_synthesis(graph, user_prompt):
+                        # The requested source classes have been checked and
+                        # source limitations are explicitly represented.
+                        # One evidence-grounded final model pass replaces
+                        # redundant exploratory/re-read/model-repair rounds.
+                        increment_active_metric("causal_graph_sufficient")
+                        increment_active_metric("investigative_finalization")
+                        return await self._final_answer(messages)
+
                     # A deep investigation is not completed merely because a
                     # command producer is verified. Give the model the observed
                     # baseline plus the live capability search/guide workflow to
                     # decide whether additional upstream evidence is required.
-                    prechecked = [
-                        {
-                            "source": r.get("sub_tool"),
-                            "arguments": r.get("arguments"),
-                            "result": r.get("details"),
-                            "status": "available" if r.get("success") else "failed",
-                        }
-                        for r in self.evidence.receipts()
-                        if r.get("sub_tool") in {"hub_get_app_config", "hub_get_logs"}
-                        and isinstance(r.get("details"), dict)
-                    ]
-                    prechecked_brief = json.dumps(
-                        prechecked[:4], ensure_ascii=False, default=str
-                    )[:4800]
+                    evidence_graph_brief = (
+                        render_causal_evidence_graph(
+                            self.evidence.receipts(), user_prompt
+                        ) or ""
+                    )[:6500]
                     messages.append({
                         "role": "user",
                         "content": (
                             "HOST VERIFIED CAUSAL BASELINE (not a completed "
                             "deep investigation):\n"
                             + deterministic_answer
-                            + "\nHOST ALREADY CHECKED APP/LOG FACTS: "
-                            + prechecked_brief
-                            + "\nDo not repeat these already-completed reads "
+                            + "\n" + evidence_graph_brief
+                            + "\nDo not repeat already-completed reads "
                             "unless a specific missing field requires it. "
                             + "Review the user's full investigative objective. "
                             "The producer, historical trigger, conditions and "
