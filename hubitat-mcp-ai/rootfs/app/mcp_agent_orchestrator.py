@@ -1774,6 +1774,7 @@ class UnifiedMCPAgent:
                     )
                     archive_rows.append({
                         "deviceId": scope["deviceId"],
+                        "label": str(spec.get("name") or ""),
                         "attribute": scope["attribute"],
                         "status": "unavailable", "eventCount": 0,
                     })
@@ -1790,6 +1791,7 @@ class UnifiedMCPAgent:
                 ]
                 archive_rows.append({
                     "deviceId": scope["deviceId"],
+                    "label": str(spec.get("name") or ""),
                     "attribute": scope["attribute"],
                     "status": "archived-partial-observations",
                     "eventCount": len(observations),
