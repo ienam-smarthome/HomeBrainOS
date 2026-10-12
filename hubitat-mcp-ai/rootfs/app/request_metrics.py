@@ -74,6 +74,7 @@ class RequestMetrics:
         "causal_adaptive_sufficient_stop", "causal_adaptive_candidate_plans",
         "causal_adaptive_unexamined_candidates",
         "causal_graph_mode_reads", "causal_graph_sufficient",
+        "causal_local_off_evidence_stop", "causal_completed_unresolved",
         "causal_physical_response_reads",
         "causal_off_provenance_reads", "causal_off_command_reused",
         "causal_off_app_log_reads", "causal_off_app_config_reads",
