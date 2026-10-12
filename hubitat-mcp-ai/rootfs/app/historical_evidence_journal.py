@@ -397,7 +397,7 @@ class HistoricalEvidenceJournal:
                     ) if candidate.exists()
                 )
                 snapshot.update(
-                    rows=count, first_received=first, last_received=last,
+                    rows=count, first_received=first, last_retained=last,
                     event_rows=int(counts.get("events", 0)),
                     app_log_rows=int(counts.get("logs", 0)),
                     last_persisted_device_event=last_event_received,
