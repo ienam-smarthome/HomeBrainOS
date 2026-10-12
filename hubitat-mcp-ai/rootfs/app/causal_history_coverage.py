@@ -151,11 +151,7 @@ def guard_history_gap_claims(
         output.append(line + ending)
     source = "".join(output)
 
-    if not re.search(
-        r"(?i)(?:local\s+sensor\s+history|historical\s+sensor\s+(?:coverage|history))"
-        r".{0,100}(?:focal|boundary|historical|time|reach|cover)",
-        source,
-    ):
+    if "**Historical sensor coverage:**" not in source:
         note = (
             "**Historical sensor coverage:** The returned local sensor-event "
             "pages do not reach the requested OFF timestamp. Their missing "
