@@ -25,6 +25,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_windowed_source.py` | Verifies MCP absolute `since`/`until` device-event reads and merges bounded sensor evidence only when the installed server confirms the window. |
 | `causal_history_coverage.py` | Detects unavailable focal sensor prehistory in returned newest-N pages and prevents causal exclusion from history gaps. |
 | `focal_evidence_reconciliation.py` | Reconciles verified bounded MCP history, private-message-free archived app-log coverage, and ON button-causality claims before synthesis without treating partial archives as command evidence. |
+| `investigation_intelligence.py` | Reusable goal-driven source plans and evidence-sufficiency contracts for historical lockouts, stale device telemetry and scheduler ownership; distinguishes successful reads from historically observed and time-correlated evidence, with no hub polling. |
 | `causal_hypothesis_evaluation.py` | Evaluates typed OFF actor hypotheses and configured timer feasibility without inferring executions. |
 | `causal_investigation_engine.py` | Ranks cross-integration causal candidates using cached topology, bounded histories, directional timestamps, and stated coverage limits. |
 | `causal_evidence_planner.py` | Derives exact subject-room provenance discovery, one ranked controller history read, and deterministic controller-to-subject boundary alignments (start versus end) for causal investigations without authoring the causal answer. |
