@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from investigation_intelligence import plan_investigation
+from investigation_policy import is_history_investigation
 from causal_rule_decision_context import configuration_text, referenced_sensor_identities
 from device_state_summary import device_attributes
 from mcp_client import tool_succeeded
@@ -23,6 +25,12 @@ def parse_rule_analysis_request(prompt: str) -> tuple[str, str | None] | None:
     """Intercept only non-mutating requests about a named Rule Machine app."""
     value = str(prompt or "")
     if not _INTENT.search(value) or _WRITES.search(value):
+        return None
+    # This fast path reads current configuration and referenced-device health.
+    # It cannot satisfy questions about a past event, motion-lockout decision,
+    # command provenance or real execution. Let the shared investigation
+    # planner route those questions to bounded historical evidence collection.
+    if plan_investigation(value) is not None or is_history_investigation(value):
         return None
     match = _APP_ID.search(value)
     if match is None:
