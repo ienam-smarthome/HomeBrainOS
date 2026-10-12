@@ -230,7 +230,7 @@ def guard_causal_answer_claim_boundaries(
             r".{0,65}?\b(?:returned|showed|contained)\s+(?:zero|no|0)\s+entries\b"
         )
         source, replaced = erroneous_zero.subn(
-            f"The bounded command history returned {number} recorded "
+            f"bounded command history returned {number} recorded 
             "command events but no direct command was linked to the focal OFF",
             source,
         )
