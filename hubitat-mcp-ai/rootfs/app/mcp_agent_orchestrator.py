@@ -35,6 +35,9 @@ from causal_evidence_planner import (
     trigger_sensor_history_candidates,
 )
 from causal_history_coverage import assess_local_sensor_history_coverage
+from motion_lockout_investigation import (
+    is_motion_lockout_investigation, prefetch_motion_lockout,
+)
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
@@ -3200,6 +3203,18 @@ class UnifiedMCPAgent:
         )
         if is_automation_runtime_diagnostic(user_prompt):
             system_prompt += AUTOMATION_DIAGNOSTIC_INSTRUCTION
+        if is_motion_lockout_investigation(user_prompt):
+            system_prompt += (
+                "\n\nHISTORICAL MOTION LOCKOUT INVESTIGATION\n"
+                "Do not substitute current configuration or sensor health for "
+                "the requested past manual-OFF sequence. Match an actual OFF "
+                "with controller/button observations and later motion plus "
+                "subsequent light states; inspect allowlisted historical app "
+                "logs and journal before evaluating any lockout. Configuration "
+                "alone cannot prove lockout activation, and the absence of an "
+                "ON event cannot prove successful inhibition. Never claim a "
+                "manual OFF without independent controller evidence."
+            )
         if is_integration_runtime_diagnostic(user_prompt):
             system_prompt += INTEGRATION_DIAGNOSTIC_INSTRUCTION
         messages = [
@@ -3215,9 +3230,17 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
+        lockout_intent = is_motion_lockout_investigation(user_prompt)
+        lockout_prefetch = (
+            await prefetch_motion_lockout(
+                self, user_prompt, catalog=catalog, messages=messages
+            )
+            if lockout_intent else False
+        )
         causal_request = is_causal_investigation(user_prompt)
         investigative_request = (
             is_history_investigation(user_prompt)
+            or lockout_intent
             or is_automation_runtime_diagnostic(user_prompt)
             or is_integration_runtime_diagnostic(user_prompt)
         )
@@ -3235,7 +3258,7 @@ class UnifiedMCPAgent:
         causal_completion_mode = False
 
         deep_causal_request = causal_request and wants_deep_investigation(user_prompt)
-        if causal_request:
+        if causal_request and not lockout_prefetch:
             causal_prefetch, prefetched_subject_key, prefetched_transition = (
                 await self._prefetch_explicit_causal_subject(
                     user_prompt,
