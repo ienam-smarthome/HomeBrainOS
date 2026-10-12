@@ -282,3 +282,84 @@ def test_no_sensor_history_does_not_invent_specific_trigger():
     )
     assert "exact event that triggered it isn't confirmed" in answer
     assert "LWR01" not in answer
+
+
+
+def test_configured_sensor_without_room_or_capabilities_still_gets_history_probes():
+    """Regression for app 4013 saying LWR01 configured without reading events."""
+    identities = [
+        {"id": "7818", "label": "Bathroom Light 1", "capabilities": ["SwitchLevel"]},
+        {"id": "7899", "label": "LWR01 Bathroom Occupancy", "capabilities": []},
+    ]
+    planned = choose_occupancy_event_sources(
+        identities,
+        config_search="The app is configured to respond to LWR01 Bathroom Occupancy",
+        subject_room="",
+    )
+    assert [(item["id"], attribute, configured)
+            for item, attribute, configured in planned] == [
+        ("7899", "occupancy", True), ("7899", "motion", True)
+    ]
+
+
+def test_configured_sensor_with_occupancysensor_capability_is_read():
+    candidate = {
+        "id": "7899", "label": "LWR01 Bathroom Occupancy",
+        "room": "Bathroom", "capabilities": [{"name": "OccupancySensor"}],
+        "attributes": {},
+    }
+    planned = choose_occupancy_event_sources(
+        [candidate], subject_room="Bathroom",
+        config_search="Trigger: LWR01 Bathroom Occupancy"
+    )
+    assert len(planned) == 1
+    assert planned[0][1] == "occupancy"
+    assert planned[0][2] is True
+
+
+def test_configured_contact_sensor_matches_only_real_open_transition():
+    candidate = {
+        "id": "7899", "label": "LWR01 Bathroom Occupancy",
+        "room": "Bathroom", "capabilities": ["ContactSensor"],
+        "attributes": {"contact": "closed"},
+    }
+    plan = choose_occupancy_event_sources(
+        [candidate], subject_room="Bathroom",
+        config_search="LWR01 Bathroom Occupancy contact is open"
+    )
+    assert plan == [(candidate, "contact", True)]
+    focus = _focus()
+    match = matched_occupancy_edge(
+        focus, label=candidate["label"], attribute="contact",
+        event_data={"events": [{
+            "name": "contact", "value": "open",
+            "date": "2026-10-12T07:08:06.050+0100",
+        }]}, configured=True,
+    )
+    assert match is not None and match["signedDeltaSeconds"] < 0
+    result = render_concise_lighting_answer(
+        _evidence(), focus, logs=[],
+        config_search="LWR01 Bathroom Occupancy contact is open",
+        referenced_sensors=[candidate],
+        occupancy_matches=[match], mode_events=[],
+    )
+    assert "reported its contact opening" in result
+    assert "likely triggered" in result
+    assert matched_occupancy_edge(
+        focus, label=candidate["label"], attribute="contact",
+        event_data={"events": [{
+            "name": "contact", "value": "closed",
+            "date": "2026-10-12T07:08:06.050+0100",
+        }]}, configured=True,
+    ) is None
+
+
+def test_no_cross_room_or_unconfigured_sensor_guesses():
+    rows = [
+        {"id": "7001", "label": "Hallway Motion", "room": "Hallway",
+         "capabilities": ["MotionSensor"]},
+        {"id": "7002", "label": "Bathroom PIR", "capabilities": []},
+    ]
+    assert choose_occupancy_event_sources(
+        rows, config_search="", subject_room="Bathroom"
+    ) == []

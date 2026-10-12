@@ -445,3 +445,61 @@ async def test_agent_no_native_mode_events_remains_explicitly_unverified():
     assert "couldn't be confirmed" in result.message
     assert "Independent mode-change correlation" not in result.message
     assert result.metrics["counters"].get("model_rounds", 0) == 0
+
+
+
+class _MCPMissingLightRoom(_MCP):
+    """Live-context identities may omit room even when device history has it."""
+
+    async def get_device_identities(self):
+        rows = _identities()
+        rows[0].pop("room")
+        return rows
+
+    async def call_tool(self, name, arguments):
+        leaf, args = arguments["tool"], arguments.get("args") or {}
+        if name == "hub_read_diagnostics" and "appId" in args:
+            self.calls.append((name, arguments))
+            return MCPToolResult(name, arguments, {}, "ok", {"logs": []})
+        if (
+            name == "hub_read_devices" and leaf == "hub_list_device_events"
+            and args.get("deviceId") == "7771" and args.get("attribute") == "motion"
+        ):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name, arguments, {}, "ok",
+                {"events": [{
+                    "name": "motion", "value": "active",
+                    "date": "2026-10-11T12:00:02.975+0100",
+                }], "count": 1},
+            )
+        return await super().call_tool(name, arguments)
+
+
+@pytest.mark.asyncio
+async def test_agent_reads_configured_motion_history_even_without_subject_room():
+    mcp = _MCPMissingLightRoom()
+    agent = UnifiedMCPAgent(
+        mcp, "key", "model", ai_client=_NoProvider(),
+        require_sensitive_confirmation=False,
+    )
+    outcome = await agent.process_user_request_result(
+        "why did livingroom light 1 turn on?"
+    )
+    assert "Lighting: livingroom low light (app 3602)" in outcome.message
+    assert "FP2 Livingroom sensor (homekit) detected activity" in outcome.message
+    assert "likely triggered the automation" in outcome.message
+    queries = [
+        args["args"] for name, args in mcp.calls
+        if name == "hub_read_devices" and
+        args["tool"] == "hub_list_device_events" and
+        args["args"].get("deviceId") == "7771"
+    ]
+    assert len(queries) == 1
+    assert queries[0]["attribute"] == "motion"
+    assert any(
+        record.get("tool") == "homebrain_causal_trigger_correlation"
+        and record.get("details", {}).get("signedDeltaSeconds") < 0
+        for record in outcome.evidence
+    )
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0

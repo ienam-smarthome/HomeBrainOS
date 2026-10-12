@@ -146,6 +146,57 @@ def render_level_command_pattern(
     return "\n".join(lines) if lines else None
 
 
+def _identity_attributes(item: dict[str, Any]) -> set[str]:
+    """Recognise capability attributes even in compact identity manifests."""
+    attributes = {str(key).strip().casefold() for key in device_attributes(item)}
+    for field in ("attributeNames", "supportedAttributes", "attribute_names"):
+        values = item.get(field)
+        for value in values if isinstance(values, (list, tuple)) else []:
+            if isinstance(value, dict):
+                value = value.get("name") or value.get("attribute")
+            if value:
+                attributes.add(str(value).strip().casefold())
+    return attributes
+
+
+def _identity_capabilities(item: dict[str, Any]) -> set[str]:
+    raw = item.get("capabilities") or []
+    if isinstance(raw, dict):
+        raw = list(raw.keys())
+    return {
+        re.sub(r"[^a-z]", "", str(
+            value.get("name") or value.get("capability") or ""
+            if isinstance(value, dict) else value
+        ).casefold())
+        for value in raw if value
+    }
+
+
+def _configured_attribute_hints(
+    label: str, configuration: str
+) -> list[str]:
+    """Offer bounded event-history probes for exactly named configured sensors.
+
+    These are *read attempts*, not assumptions that the driver implements
+    the attribute. Never infer a trigger unless an event is actually returned.
+    """
+    lower = label.casefold()
+    snippet = configuration.casefold()
+    pos = snippet.find(lower)
+    near = snippet[max(0, pos - 90):pos + len(lower) + 90] if pos >= 0 else ""
+    candidates: list[str] = []
+    for name in ("motion", "occupancy", "presence", "contact"):
+        if re.search(r"\b" + name + r"\b", near):
+            candidates.append(name)
+    if "occupancy" in lower:
+        candidates.extend(("occupancy", "motion"))
+    elif "motion" in lower or "pir" in lower:
+        candidates.append("motion")
+    elif "presence" in lower:
+        candidates.append("presence")
+    return list(dict.fromkeys(candidates))[:2]
+
+
 def choose_occupancy_event_sources(
     identities: list[dict[str, Any]],
     *,
@@ -153,10 +204,14 @@ def choose_occupancy_event_sources(
     subject_room: str,
     limit: int = 2,
 ) -> list[tuple[dict[str, Any], str, bool]]:
-    """Prefer exact configured occupancy references; otherwise one unambiguous
-    same-room, explicitly named occupancy device. Never scan arbitrary sensors.
+    """Plan read-only sensor histories from specific app references first.
+
+    Compact identity responses sometimes omit room/capability shape entirely;
+    this must not prevent an exact configured sensor from being investigated.
+    Unconfigured sensors still require the same-room, unambiguous safeguard.
     """
-    eligible: list[tuple[dict[str, Any], str, bool]] = []
+    configured_sources: list[tuple[dict[str, Any], str, bool]] = []
+    fallback_sources: list[tuple[dict[str, Any], str, bool]] = []
     for item in identities:
         if not isinstance(item, dict):
             continue
@@ -164,35 +219,48 @@ def choose_occupancy_event_sources(
         name = str(item.get("label") or item.get("name") or "").strip()
         if not device_id.isdecimal() or not name:
             continue
-        room = room_name(item)
-        if not subject_room or not room or room.casefold() != subject_room.casefold():
-            continue
-        cap = {re.sub(r"[^a-z]", "", str(c).casefold())
-               for c in item.get("capabilities") or []}
-        attrs = {str(a).casefold() for a in device_attributes(item)}
-        attribute = next(
-            (a for a in ("occupancy", "motion", "presence") if a in attrs),
-            None,
-        )
-        if attribute is None:
-            if "motionsensor" in cap:
-                attribute = "motion"
-            elif "presencesensor" in cap:
-                attribute = "presence"
-        if attribute is None:
-            continue
         configured = bool(config_search and name.casefold() in config_search.casefold())
-        named_occupancy = bool(
-            re.search(r"\b(?:occupancy|motion|presence|pir)\b", name, re.I)
+        room = room_name(item)
+        same_room = bool(
+            subject_room and room and room.casefold() == subject_room.casefold()
         )
-        if configured or named_occupancy:
-            eligible.append((item, attribute, configured))
-    configured_sources = [item for item in eligible if item[2]]
+        if not configured and not same_room:
+            continue
+        attrs = _identity_attributes(item)
+        caps = _identity_capabilities(item)
+        options = [
+            attribute for attribute in ("motion", "occupancy", "presence")
+            if attribute in attrs
+        ]
+        for capability, attribute in (
+            ("motionsensor", "motion"),
+            ("occupancysensor", "occupancy"),
+            ("presencesensor", "presence"),
+        ):
+            if capability in caps and attribute not in options:
+                options.append(attribute)
+        # Contact reports are meaningful only when the app's configuration
+        # explicitly references this sensor and a contact event/condition.
+        if configured and (
+            "contact" in attrs or "contactsensor" in caps
+        ) and "contact" in config_search.casefold():
+            options.append("contact")
+
+        if configured:
+            if not options:
+                options = _configured_attribute_hints(name, config_search)
+            for attribute in dict.fromkeys(options):
+                configured_sources.append((item, attribute, True))
+        elif re.search(r"\b(?:occupancy|motion|presence|pir)\b", name, re.I):
+            if options:
+                fallback_sources.append((item, options[0], False))
+
     if configured_sources:
+        # A configured identity is authoritative as a read target; probe only
+        # two supported or context-plausible attributes across all candidates.
         return configured_sources[:max(0, limit)]
-    # Without configuration, multiple plausible sensors cannot be ranked
-    # solely from their labels. Leave the precise trigger unidentified.
-    return eligible[:1] if len(eligible) == 1 and limit > 0 else []
+    # Do not pick arbitrarily from several unconfigured room sensors.
+    return fallback_sources[:1] if len(fallback_sources) == 1 and limit > 0 else []
 
 
 def render_occupancy_edge_correlation(
@@ -209,7 +277,8 @@ def render_occupancy_edge_correlation(
     active = {
         "motion": {"active"},
         "presence": {"present"},
-        "occupancy": {"occupied", "active", "true"},
+        "occupancy": {"occupied", "active", "true", "present", "on", "1"},
+        "contact": {"open"},
     }.get(attribute, set())
     candidates = []
     for item in event_data["events"]:
@@ -259,7 +328,8 @@ def matched_occupancy_edge(
     active = {
         "motion": {"active"},
         "presence": {"present"},
-        "occupancy": {"occupied", "active", "true"},
+        "occupancy": {"occupied", "active", "true", "present", "on", "1"},
+        "contact": {"open"},
     }.get(attribute, set())
     candidates: list[tuple[float, float, datetime]] = []
     for row in event_data["events"]:
@@ -416,8 +486,13 @@ def render_concise_lighting_answer(
                 if matched.get("configured")
                 else "may have triggered the automation"
             )
+            observation = (
+                "reported its contact opening"
+                if matched.get("attribute") == "contact"
+                else "detected activity"
+            )
             explanation = (
-                f"{name} detected activity around "
+                f"{name} {observation} around "
                 f"{_short_clock(matched['when'], boundary)}, which {relation}."
             )
         elif occupancy_matches:
