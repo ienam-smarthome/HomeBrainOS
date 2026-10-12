@@ -14,6 +14,7 @@ from causal_native_logs import (
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
 from causal_answer_plan import render_causal_answer_plan
+from motion_lockout_investigation import is_motion_lockout_investigation
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     render_causal_evidence_graph,
@@ -410,8 +411,10 @@ class FinalAnswerCoordinator:
             messages,
         )
         causal = is_causal_investigation(original_user)
+        lockout_request = is_motion_lockout_investigation(original_user)
         investigative = (
-            is_history_investigation(original_user)
+            lockout_request
+            or is_history_investigation(original_user)
             or is_automation_runtime_diagnostic(original_user)
             or is_integration_runtime_diagnostic(original_user)
         )
@@ -466,6 +469,34 @@ class FinalAnswerCoordinator:
             final_messages.append({"role": "user", "content": causal_timeline})
         if causal_graph_brief:
             final_messages.append({"role": "user", "content": causal_graph_brief})
+        if lockout_request:
+            lockout_rows = [
+                row.get("details") or {}
+                for row in evidence
+                if row.get("tool") == "homebrain_motion_lockout_investigation"
+            ]
+            final_messages.append({
+                "role": "user",
+                "content": (
+                    "TEMPORAL LOCKOUT EVIDENCE CONTRACT: The task is to "
+                    "investigate a historical manual-OFF, motion and "
+                    "three-minute inhibition sequence, NOT to describe "
+                    "present device health or Rule Machine required expressions. "
+                    "Report the selected OFF timestamp and whether its manual "
+                    "source was verified, contemporaneous button and motion "
+                    "observations, subsequent light ON/OFF observations, "
+                    "bounded app-log results and gaps, and separately label "
+                    "whether a lockout execution or failure was proven. "
+                    "Absence of light ON and current 'lockout inactive' status "
+                    "cannot establish past lockout activation. If any essential "
+                    "event stream is unavailable, explicitly state which "
+                    "verification is still needed. "
+                    + ("Focal sequence status: " + str(
+                        lockout_rows[-1].get("status")
+                    ) if lockout_rows else
+                       "No historical sequence evidence receipt was available.")
+                ),
+            })
         if causal_answer_plan:
             # Highest-priority causal synthesis guidance: typed precomputed
             # relationships before the model authors its one final answer.
