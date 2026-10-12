@@ -15,6 +15,7 @@ from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
 from performance_inventory_check import render_scheduler_inventory_crosscheck
+from performance_host_plan import is_scheduler_only_evidence_request
 from scheduler_report_sanitizer import sanitize_scheduler_overview
 from request_runtime import set_request_stage, safe_partial_outcome
 
@@ -1215,10 +1216,17 @@ async def finalize_performance_api_outcome(
 
     # Prefer the compact evidence-log details when they are already available;
     # fall back to the bounded private packet otherwise.
-    log_content = _existing_log_content(evidence) or captured.get(_LOG_TOOL, "")
+    scheduler_only = is_scheduler_only_evidence_request(user_prompt)
+    # Collection-phase evidence budgets also apply at API finalisation.
+    # An unrelated log read does not prove the owner of a scheduler entry.
+    required_logs = not scheduler_only
+    log_content = (
+        (_existing_log_content(evidence) or captured.get(_LOG_TOOL, ""))
+        if required_logs else ""
+    )
     log_attempts = 0
 
-    if not _successful(evidence, _LOG_TOOL):
+    if required_logs and not _successful(evidence, _LOG_TOOL):
         _counter(outcome, "broad_performance_log_api_attempt")
         for gateway in ("hub_manage_logs", "hub_read_diagnostics"):
             log_attempts += 1
@@ -1331,7 +1339,7 @@ async def finalize_performance_api_outcome(
                 ),
             }
         )
-    elif not _successful(evidence, _LOG_TOOL):
+    elif required_logs and not _successful(evidence, _LOG_TOOL):
         messages.append(
             {
                 "role": "user",
