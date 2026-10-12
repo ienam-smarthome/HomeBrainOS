@@ -21,6 +21,7 @@ import re
 import time
 from typing import Any, Callable
 
+from causal_command_semantics import command_actions_for_history
 from device_query_service import DeviceQueryService
 from history_temporal_analysis import (
     analyze_state_intervals,
@@ -389,7 +390,7 @@ class DeviceHistoryService:
             rows = [
                 row
                 for row in rows
-                if str(row.get("name") or "").casefold() == event_name
+                if str(row.get("name") or "").casefold() == event_name.casefold()
             ]
             self._record_evidence(
                 DEVICE_GATEWAY,
@@ -412,9 +413,18 @@ class DeviceHistoryService:
             "causal_command_producer_reads",
             len(actions),
         )
-        batches = await asyncio.gather(
-            *(read_one(action) for action in actions)
-        )
+        # Keep the existing two-stream causal prefetch concurrency: switch
+        # history overlaps the primary on/off command read, while any added
+        # dimmer-command family is read afterwards. This avoids creating a
+        # third simultaneous upstream request just for command semantics.
+        if "setLevel" in actions and len(actions) > 1:
+            primary = [action for action in actions if action != "setLevel"]
+            batches = await asyncio.gather(*(read_one(action) for action in primary))
+            batches.append(await read_one("setLevel"))
+        else:
+            batches = await asyncio.gather(
+                *(read_one(action) for action in actions)
+            )
         rows = [item for batch in batches for item in batch]
         rows.sort(
             key=lambda item: (
@@ -882,7 +892,9 @@ class DeviceHistoryService:
                     device_id=str(device_id),
                     label=label,
                     hours_back=hours_back,
-                    actions=(requested_transition,),
+                    actions=command_actions_for_history(
+                        target, (requested_transition,),
+                    ),
                 ),
                 name=f"command-provenance-{device_id}-{requested_transition}",
             )
@@ -1086,7 +1098,9 @@ class DeviceHistoryService:
                     device_id=str(device_id),
                     label=label,
                     hours_back=hours_back,
-                    actions=command_actions,
+                    actions=command_actions_for_history(
+                        target, command_actions,
+                    ),
                 )
 
         # Preserve event rows close to deterministic interval boundaries from

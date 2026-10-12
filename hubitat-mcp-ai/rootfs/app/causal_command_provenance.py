@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from causal_command_semantics import classify_state_command, command_family_description
 from causal_timeline import build_causal_timeline_rows
 from natural_datetime import normalize_iso_offset
 
@@ -378,9 +379,8 @@ def correlate_command_producers(
                 continue
 
             candidates: list[
-                tuple[float, datetime, dict[str, Any], bool]
+                tuple[float, datetime, dict[str, Any], bool, dict[str, Any]]
             ] = []
-            event_name = f"command-{action}"
             boundary_event = _matching_boundary_event(
                 evidence,
                 subject=subject,
@@ -393,7 +393,8 @@ def correlate_command_producers(
                 else None
             )
             for event in command_events:
-                if str(event.get("name") or "").casefold() != event_name:
+                semantics = classify_state_command(event, action)
+                if not semantics or not semantics.get("compatible"):
                     continue
                 producer = event.get("producedBy")
                 if not (
@@ -406,7 +407,7 @@ def correlate_command_producers(
                     continue
                 delta = (boundary - event_time).total_seconds()
                 if 0.0 <= delta <= max(0.1, float(max_delta_seconds)):
-                    candidates.append((delta, event_time, event, False))
+                    candidates.append((delta, event_time, event, False, semantics))
                     continue
 
                 # Some Hubitat integrations record the state event a few
@@ -421,13 +422,42 @@ def correlate_command_producers(
                     and producer_type == "app"
                     and _same_producer(producer, boundary_producer)
                 ):
-                    candidates.append((abs(delta), event_time, event, True))
+                    candidates.append((abs(delta), event_time, event, True, semantics))
             if not candidates:
                 continue
 
-            candidates.sort(key=lambda item: item[0])
-            _distance, command_time, event, inverted = candidates[0]
+            # Prefer the closest aligned compatible command; a direct on/off
+            # call wins a distance tie, but cannot silently override a
+            # different app's aligned level command.
+            candidates.sort(key=lambda item: (
+                item[0],
+                0 if item[4].get("semantics") == "explicit-switch-command" else 1,
+            ))
+            _distance, command_time, event, inverted, semantics = candidates[0]
             producer = dict(event.get("producedBy") or {})
+            independent: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for _, when, alternative, reversed_order, meaning in candidates:
+                other = alternative.get("producedBy") or {}
+                source_type, source_id, source_label = _producer_key(other)
+                # Native Hubitat app IDs are stronger identifiers than display
+                # labels, which may have changed between event records.
+                key = (
+                    source_type,
+                    source_id,
+                    "" if source_id else source_label,
+                )
+                if not (source_id or source_label) or key in independent:
+                    continue
+                independent[key] = {
+                    "producer": dict(other),
+                    "command": str(meaning.get("display") or ""),
+                    "date": when.isoformat(),
+                    "commandToStateMs": round(
+                        (boundary - when).total_seconds() * 1000, 1
+                    ),
+                    "recordingOrderInverted": reversed_order,
+                }
+            competing = list(independent.values()) if len(independent) > 1 else []
             correlations.append({
                 "timelineId": str(timeline.get("id") or ""),
                 "boundaryRole": role,
@@ -438,9 +468,16 @@ def correlate_command_producers(
                 "stateBoundary": boundary.isoformat(),
                 "action": action,
                 "command": {
-                    "name": event_name,
+                    "name": str(event.get("name") or ""),
                     "date": command_time.isoformat(),
-                    "description": str(event.get("description") or "").strip(),
+                    "description": str(
+                        event.get("description")
+                        or event.get("descriptionText") or ""
+                    ).strip(),
+                    "display": semantics.get("display"),
+                    "method": semantics.get("method"),
+                    "semantics": semantics.get("semantics"),
+                    "level": semantics.get("level"),
                     "type": str(event.get("type") or "").strip(),
                     "source": str(event.get("source") or "").strip(),
                     "commandToStateMs": round(
@@ -449,6 +486,7 @@ def correlate_command_producers(
                     ),
                     "recordingOrderInverted": inverted,
                 },
+                "competingCommands": competing,
                 "boundaryProducer": (
                     dict(boundary_producer)
                     if isinstance(boundary_producer, dict)
@@ -456,9 +494,10 @@ def correlate_command_producers(
                 ),
                 "producer": producer,
                 "provenanceStrength": (
+                    "ambiguous-multiple-command-producers"
+                    if competing else
                     "authoritative-command-producer-boundary-corroborated"
-                    if inverted
-                    else "authoritative-command-producer"
+                    if inverted else "authoritative-command-producer"
                 ),
             })
     return correlations
@@ -492,6 +531,7 @@ def command_producer_transition_sufficient(
         and isinstance(row.get("producer"), dict)
         and str(row["producer"].get("label") or "").strip()
         and isinstance(row.get("command"), dict)
+        and not row.get("competingCommands")
         for row in correlations
     )
 
@@ -671,6 +711,11 @@ def render_command_producer_answer(
         reverse=True,
     )
     focus = matches[0]
+    if (focus.get("command") or {}).get("semantics") == "level-switch-command":
+        # Use one command-aware renderer rather than describe setLevel as
+        # an on() or off() method in the longer legacy narrative.
+        return render_command_producer_summary(evidence, transition=action)
+
     timeline_id = str(focus.get("timelineId") or "")
     subject = str(focus.get("subject") or "the device").strip()
     producer = focus.get("producer") or {}
@@ -921,6 +966,7 @@ def render_command_producer_summary(
             or _same_boundary(row.get("stateBoundary"), requested_boundary)
         )
         and isinstance(row.get("producer"), dict)
+        and not row.get("competingCommands")
     ]
     if not matches:
         return None
@@ -940,8 +986,26 @@ def render_command_producer_summary(
     delay = command.get("commandToStateMs")
     inverted = bool(command.get("recordingOrderInverted"))
     action_upper = action.upper()
-
-    if inverted:
+    semantics = command.get("semantics")
+    if semantics == "level-switch-command":
+        command_display = str(command.get("display") or "setLevel(?)")
+        if inverted:
+            timing = (
+                f"{subject} reported {action_upper} at {state_time}; "
+                f"the matching {command_display} from {producer_label} "
+                f"was recorded at {command_time} "
+                f"({abs(float(delay or 0)):g} ms later, recording-order inversion)."
+            )
+        else:
+            timing = (
+                f"{producer_label} issued {command_display} for {subject} "
+                f"at {command_time}; the device reported {action_upper} "
+                f"at {state_time}"
+            )
+            if delay not in {None, ""}:
+                timing += f" ({abs(float(delay)):g} ms later)"
+            timing += "."
+    elif inverted:
         timing = (
             f"{subject} reported {action_upper} at {state_time}; the matching "
             f"command from {producer_label} was recorded "
@@ -957,7 +1021,14 @@ def render_command_producer_summary(
             timing += f" ({abs(float(delay)):g} ms later)"
         timing += "."
 
-    lines = [f"**Cause:** {timing}"]
+    lines = [
+        f"**Command evidence:** {timing}" if semantics == "level-switch-command"
+        else f"**Cause:** {timing}"
+    ]
+    if semantics == "level-switch-command":
+        explanation = command_family_description(command)
+        if explanation:
+            lines.append(f"- **Command semantics:** {explanation}")
 
     if action == "on":
         if focus.get("open"):
@@ -979,9 +1050,60 @@ def render_command_producer_summary(
 
     lines.append(
         "- **Note:** The Hubitat producer identifies the app/action that issued "
-        "the command; it does not identify the person who initiated it."
+        "the command; it does not identify the person who initiated it, and "
+        "a compatible command does not rule out another controller."
     )
     return "\n".join(lines)
+
+
+def render_competing_command_summary(
+    evidence: list[dict[str, Any]],
+    *,
+    transition: str,
+) -> str | None:
+    """Explain conflicting compatible command producers without false certainty."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return None
+    focal = focal_transition_boundary(evidence, action)
+    rows = [
+        row for row in correlate_command_producers(evidence)
+        if str(row.get("boundaryRole") or "") == role
+        and row.get("competingCommands")
+        and (focal in {None, ""} or _same_boundary(row.get("stateBoundary"), focal))
+    ]
+    if not rows:
+        return None
+    rows.sort(
+        key=lambda row: _parse_time(row.get("stateBoundary"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    row = rows[0]
+    subject = str(row.get("subject") or "the device")
+    descriptions = []
+    for candidate in (row.get("competingCommands") or [])[:4]:
+        producer = candidate.get("producer") or {}
+        label = str(producer.get("label") or "").strip()
+        method = str(candidate.get("command") or "").strip()
+        if label and method:
+            descriptions.append(
+                f"{label} ({method} at {_clock_text(candidate.get('date'))})"
+            )
+    if len(descriptions) < 2:
+        return None
+    return (
+        f"**Main finding:** {subject} reported {action.upper()} at "
+        f"{_clock_text(row.get('stateBoundary'))}, with multiple compatible "
+        "Hubitat command producers in the preceding event window. "
+        "No single initiating app is uniquely established.\n"
+        "- **Competing commands:** " + "; ".join(descriptions) + ". "
+        "A command producer is verified for each logged call, but these "
+        "records alone do not determine which call won or exclude an external "
+        "controller. Treat any sensor timing only as supporting correlation."
+    )
 
 
 def render_command_producer_evidence(
@@ -1002,7 +1124,8 @@ def render_command_producer_evidence(
         command = row.get("command") or {}
         lines.append(
             f"- {row.get('timelineId')} {row.get('boundaryRole')}: "
-            f"command-{row.get('action')} at {command.get('date')} was produced by "
+            f"{command.get('display') or command.get('name') or ('command-' + str(row.get('action')))} "
+            f"at {command.get('date')} was produced by "
             f"{producer.get('label')} -> state boundary {row.get('stateBoundary')} "
             f"(command-to-state {command.get('commandToStateMs')} ms)."
         )
@@ -1020,5 +1143,6 @@ __all__ = [
     "focal_transition_boundary",
     "render_boundary_producer_answer",
     "render_command_producer_answer",
+    "render_competing_command_summary",
     "render_command_producer_evidence",
 ]
