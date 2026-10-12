@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from causal_answer_plan import guard_causal_answer_claim_boundaries
+from causal_history_coverage import guard_history_gap_claims
 from causal_certainty_contract import guard_off_certainty_contract
 from off_hypothesis_synthesis_guard import guard_off_hypothesis_summary
 from causal_evidence_graph import build_causal_evidence_graph
@@ -531,6 +532,9 @@ def verify_causal_claims(
     )
     if changed:
         issues.append("causal_answer_claim_boundaries")
+    corrected, changed = guard_history_gap_claims(corrected, graph)
+    if changed:
+        issues.append("causal_history_gap_claims")
     return corrected, issues
 
 
