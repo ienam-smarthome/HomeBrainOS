@@ -18,6 +18,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from focal_evidence_reconciliation import reconcile_focal_archived_sensor_evidence
 from causal_completion_policy import evaluate_causal_completion
 from causal_hypothesis_evaluation import evaluate_off_hypotheses
 from causal_command_provenance import correlate_command_producers
@@ -789,6 +790,10 @@ def _off_provenance(
         if isinstance(details, dict):
             archived_app_logs = dict(details)
         break
+    archived_sensors = reconcile_focal_archived_sensor_evidence(
+        evidence, subject=str(focus.get("subject") or ""),
+        off_time=str(focus.get("end") or ""),
+    )
     if competing:
         certainty = "ambiguous-multiple-command-producers"
     elif command:
@@ -808,6 +813,7 @@ def _off_provenance(
         "sensorHistoryCoverage": local_sensor_history_coverage,
         "windowedSensorRetrieval": windowed_sensor_retrieval,
         "archivedAppLogReconciliation": archived_app_logs,
+        "archivedSensorEvidence": archived_sensors,
         "appProducerContext": {
             "appId": source_id,
             "configuration": app_config,
