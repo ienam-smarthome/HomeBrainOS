@@ -146,11 +146,16 @@ def _leaf(row: dict[str, Any]) -> str:
 
 
 def _args(row: dict[str, Any]) -> dict[str, Any]:
-    args = row.get("arguments") or {}
-    if not isinstance(args, dict):
-        return {}
-    inner = args.get("args")
-    return inner if isinstance(inner, dict) else args
+    """Unwrap gateway envelopes without inventing omitted filter parameters."""
+    current = row.get("arguments") or {}
+    for _ in range(3):
+        if not isinstance(current, dict):
+            return {}
+        inner = current.get("args")
+        if not isinstance(inner, dict):
+            break
+        current = inner
+    return current if isinstance(current, dict) else {}
 
 
 def _events(row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -201,6 +206,47 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
     for row in source:
         leaf, args, events = _leaf(row), _args(row), _events(row)
         if plan.domain == "manual_motion_lockout":
+            if row.get("tool") == "homebrain_motion_lockout_investigation":
+                detail = row.get("details") or {}
+                if isinstance(detail, dict):
+                    sources = detail.get("sources") or []
+                    if any(isinstance(x, dict)
+                           and x.get("source") == "bounded-light-device-history"
+                           for x in sources):
+                        checked.add("target_off")
+                    off = _instant(detail.get("focalOff"))
+                    if off is not None:
+                        found.add("target_off")
+                    journal = detail.get("journal") or []
+                    if isinstance(journal, list):
+                        for entry in journal:
+                            if not isinstance(entry, dict):
+                                continue
+                            kind = entry.get("kind")
+                            if kind == "button":
+                                checked.add("controller")
+                            if kind == "sensor":
+                                checked.add("motion")
+                            if kind == "sensor" and off is not None:
+                                for ev in entry.get("observations") or []:
+                                    stamp = _instant(ev.get("observedAt"))
+                                    if (stamp is not None
+                                            and str(ev.get("value") or "").casefold()
+                                            == "active"
+                                            and _within_seconds(
+                                                stamp, off, earliest=0,
+                                                latest=180)):
+                                        found.add("motion")
+                    if detail.get("nearbyButtonEvents"):
+                        found.add("controller")
+                    if any(isinstance(x, dict)
+                           and x.get("source") == "bounded-app-execution-logs"
+                           and x.get("readSucceeded")
+                           for x in sources):
+                        checked.add("execution")
+                    if detail.get("lockoutExecutionVerified") is True:
+                        found.add("execution")
+                continue
             if leaf == "hub_get_app_config":
                 notes.append("Current configuration is context only, not historic execution")
             if leaf in ("hub_list_device_events", "homebrain_device_history"):
@@ -236,7 +282,12 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                     found.add("freshness")
             if leaf == "hub_get_logs" and args.get("deviceId") not in (None, ""):
                 checked.add("watchdog")
-                if events:
+                target = str(args["deviceId"])
+                if any(
+                    str(event.get("deviceId") or "") == target
+                    or ("dev|" + target + "|") in str(event.get("message") or "")
+                    for event in events
+                ):
                     found.add("watchdog")
         elif plan.domain == "scheduler_ownership":
             if leaf == "hub_get_jobs":

@@ -119,7 +119,7 @@ def test_device_health_separates_stale_telemetry_from_command_reachability():
               ]}),
         _read("hub_get_logs", {"deviceId": "7103"},
               details={"logs": [
-                  {"message": "Watchdog reconnecting after 70000s"}
+                  {"message": "dev|7103|Bedroom 3 Mesh|Watchdog reconnecting after 70000s"}
               ]}),
         _read("hub_get_logs", {"since": "30m"}, details={"logs": [
             {"message": "unrelated TV power logs"}
@@ -181,7 +181,9 @@ def test_rendered_assessment_is_structured_no_private_tool_payload():
     assert "PRIVATE_TOKEN_DO_NOT_ECHO" not in raw
     assert "HOST EVIDENCE SUFFICIENCY ASSESSMENT" in raw
     data = json.loads(raw.splitlines()[1])
-    assert data["status"] == "partial-evidence"
+    # A generic log message without device provenance cannot itself
+    # establish the queried device's watchdog, regardless of log-read success.
+    assert data["status"] == "not-established"
     assert data["requirements"][0]["state"] == "not-checked"
 
 

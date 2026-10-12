@@ -10,11 +10,13 @@ from functools import wraps
 from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
+from investigation_intelligence import plan_investigation, assess_investigation
 from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
 from performance_inventory_check import render_scheduler_inventory_crosscheck
+from performance_host_plan import is_scheduler_only_evidence_request
 from scheduler_report_sanitizer import sanitize_scheduler_overview
 from request_runtime import set_request_stage, safe_partial_outcome
 
@@ -1215,10 +1217,17 @@ async def finalize_performance_api_outcome(
 
     # Prefer the compact evidence-log details when they are already available;
     # fall back to the bounded private packet otherwise.
-    log_content = _existing_log_content(evidence) or captured.get(_LOG_TOOL, "")
+    scheduler_only = is_scheduler_only_evidence_request(user_prompt)
+    # Collection-phase evidence budgets also apply at API finalisation.
+    # An unrelated log read does not prove the owner of a scheduler entry.
+    required_logs = not scheduler_only
+    log_content = (
+        (_existing_log_content(evidence) or captured.get(_LOG_TOOL, ""))
+        if required_logs else ""
+    )
     log_attempts = 0
 
-    if not _successful(evidence, _LOG_TOOL):
+    if required_logs and not _successful(evidence, _LOG_TOOL):
         _counter(outcome, "broad_performance_log_api_attempt")
         for gateway in ("hub_manage_logs", "hub_read_diagnostics"):
             log_attempts += 1
@@ -1331,7 +1340,7 @@ async def finalize_performance_api_outcome(
                 ),
             }
         )
-    elif not _successful(evidence, _LOG_TOOL):
+    elif required_logs and not _successful(evidence, _LOG_TOOL):
         messages.append(
             {
                 "role": "user",
@@ -1498,6 +1507,32 @@ async def finalize_performance_api_outcome(
 
     outcome.message = guarded
     outcome.evidence = evidence
+    contract = plan_investigation(user_prompt)
+    if contract is not None and hasattr(outcome, "investigation_coverage"):
+        completeness = assess_investigation(contract, evidence)
+        if contract.domain == "scheduler_ownership" and scheduled_digest:
+            # Full job rows are held in the privacy-bounded synthesis packet,
+            # not in public tool receipts. Expose aggregate source integrity,
+            # without upgrading scheduler-key guesses into real owners.
+            examined = int(scheduled_digest.get("rowsExamined") or 0)
+            proven = int(scheduled_digest.get("ownerIdentifiedRows") or 0)
+            completeness["schedulerSourceSummary"] = {
+                "rowsExamined": examined,
+                "verifiedOwnerRows": proven,
+                "candidateRowsUnverified": int(
+                    scheduled_digest.get("keyPatternCandidateRows") or 0
+                ),
+            }
+            for req in completeness["requirements"]:
+                if req["key"] == "owners" and proven > 0:
+                    req["state"] = "observed-partial" if proven < examined else "observed"
+            completeness["evidenceComplete"] = all(
+                req["state"] == "observed"
+                for req in completeness["requirements"] if req["necessary"]
+            )
+            if not completeness["evidenceComplete"]:
+                completeness["status"] = "partial-evidence"
+        outcome.investigation_coverage = completeness
     set_request_stage("Finalising recommendations")
     _set_timing(
         outcome,

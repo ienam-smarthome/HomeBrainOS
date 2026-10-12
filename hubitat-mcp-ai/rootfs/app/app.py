@@ -36,6 +36,7 @@ from health_audit_service import (
     is_comprehensive_system_audit_request,
     run_comprehensive_chat_audit,
 )
+from investigation_intelligence import plan_investigation, assess_investigation
 from history_time_windows import (
     parse_history_window_request,
     reset_history_window_request,
@@ -555,6 +556,19 @@ async def _agent_request(request: ChatRequest) -> Any:
                 request.history,
                 session_id=request.session_id,
             )
+        # A direct/specialized completion may have bypassed its own evidence
+        # assessment. Preserve the original investigative goal at the API
+        # boundary rather than disguising an incomplete read as an answer.
+        goal = plan_investigation(request.message)
+        if (
+            goal is not None
+            and getattr(outcome, "request_class", "") == "live-read"
+            and getattr(outcome, "investigation_coverage", None) is None
+            and hasattr(outcome, "investigation_coverage")
+        ):
+            outcome.investigation_coverage = assess_investigation(
+                goal, list(getattr(outcome, "evidence", []) or [])
+            )
         set_request_stage("Preparing evidence-based answer")
         return await finalize_performance_api_outcome(
             agent,
@@ -571,6 +585,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         operation: Awaitable[Any]
         if (
             automation_status.matches_request(request.message)
+            and plan_investigation(request.message) is None
             and not is_comprehensive_system_audit_request(request.message)
             and not is_broad_automation_runtime_diagnostic(request.message)
             and not is_whole_hub_optimization_request(request.message)
