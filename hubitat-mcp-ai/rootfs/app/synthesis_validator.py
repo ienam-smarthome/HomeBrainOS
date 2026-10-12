@@ -6,6 +6,7 @@ from contextvars import ContextVar
 import re
 from typing import Any
 
+from causal_claim_verification import verify_causal_claims
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
     guard_configuration_only_causal_claim,
@@ -266,6 +267,11 @@ def validate_synthesis(
             issues.append("performance_evidence_first")
 
     if causal:
+        corrected, claim_issues = verify_causal_claims(
+            corrected, evidence, original_user
+        )
+        issues.extend(claim_issues)
+
         corrected, coverage_changed = guard_causal_controller_history_coverage(
             corrected, evidence, original_user
         )
