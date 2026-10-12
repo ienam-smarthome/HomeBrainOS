@@ -233,24 +233,30 @@ def _adaptive_target_details(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def is_scheduler_only_evidence_request(prompt: str) -> bool:
+    """One routing contract for collector, synthesis and final API boundary.
+
+    Scheduler-only analysis needs job rows and performance measurements, not
+    unrelated global log windows. A request also asking to optimise the whole
+    hub retains broad log coverage. This check runs before any tools.
+    """
+    folded = " ".join(str(prompt or "").casefold().split())
+    hub_wide = is_whole_hub_optimization_request(prompt) or any(
+        term in folded for term in (
+            "hubitat performance", "hub performance",
+            "whole hub", "entire hub",
+        )
+    )
+    return is_scheduler_optimization_request(prompt) and not hub_wide
+
+
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
     identity_report: dict[str, Any] | None = None
     # Scheduler-first investigations do not require unrelated broad device
     # logs, ping sweeps or candidate-owner probes. If the scheduler omits
     # authoritative owner IDs, further device lookups cannot manufacture
     # a verified job-to-entity ownership relationship.
-    folded_goal = " ".join(str(user_prompt or "").casefold().split())
-    explicitly_hub_wide_performance = any(
-        phrase in folded_goal for phrase in (
-            "hubitat performance", "hub performance",
-            "whole hub", "entire hub",
-        )
-    )
-    scheduler_first = (
-        is_scheduler_optimization_request(user_prompt)
-        and not is_whole_hub_optimization_request(user_prompt)
-        and not explicitly_hub_wide_performance
-    )
+    scheduler_first = is_scheduler_only_evidence_request(user_prompt)
 
     async def collect() -> str:
         nonlocal identity_report
@@ -529,6 +535,7 @@ __all__ = [
     "is_broad_performance_request",
     "is_whole_hub_optimization_request",
     "is_scheduler_optimization_request",
+    "is_scheduler_only_evidence_request",
     "select_adaptive_log_targets",
     "wants_scheduler_evidence",
 ]
