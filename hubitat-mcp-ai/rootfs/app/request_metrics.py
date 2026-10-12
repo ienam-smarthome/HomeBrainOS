@@ -75,6 +75,8 @@ class RequestMetrics:
         "causal_adaptive_unexamined_candidates",
         "causal_graph_mode_reads", "causal_graph_sufficient",
         "causal_physical_response_reads",
+        "causal_off_provenance_reads", "causal_off_command_reused",
+        "causal_off_app_log_reads", "causal_off_app_config_reads",
         "causal_controller_sufficient_stop", "causal_physical_command_reused",
         "synthesis_validation_issues", "synthesis_localized_corrections",
         "synthesis_repair_rounds", "synthesis_repair_causal_coverage",

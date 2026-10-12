@@ -56,6 +56,11 @@ from causal_rule_decision_context import (
     proven_lighting_command,
     referenced_sensor_identities,
 )
+from causal_transition_provenance import (
+    focal_closed_transition,
+    positive_off_command_already_recorded,
+    scoped_off_history_receipt,
+)
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     needs_mode_history,
@@ -1051,6 +1056,15 @@ class UnifiedMCPAgent:
             })
             return "empty", subject_key, seed.transition
 
+        # A completed ON interval has an independent OFF boundary.
+        # Inspect its command history before either ON fast path returns.
+        if wants_deep_investigation(user_prompt) and seed.transition in {"on", "off"}:
+            await self._collect_focal_off_provenance(
+                user_prompt=user_prompt,
+                resolved_device_id=str(seed.target.get("id") or ""),
+                requested_transition=seed.transition,
+                catalog=catalog,
+            )
         current_evidence = self.evidence.receipts()
         command_correlations = correlate_command_producers(current_evidence)
         requested_boundary = focal_transition_boundary(
@@ -1117,6 +1131,188 @@ class UnifiedMCPAgent:
             if sufficient
             else ("partial", subject_key, seed.transition)
         )
+
+
+    async def _collect_focal_off_provenance(
+        self,
+        *,
+        user_prompt: str,
+        resolved_device_id: str,
+        requested_transition: str = "on",
+        catalog: ToolDiscoveryCatalog,
+    ) -> None:
+        """Read the focal OFF command and app context independently of ON.
+
+        Bounded, read-only, and no assumption that the notified OFF listener
+        produced the observed state. Failed or empty reads are not evidence of
+        a missing command or an absent external automation.
+        """
+        focus = focal_closed_transition(
+            self.evidence.receipts(), user_prompt,
+            resolved_device_id=resolved_device_id,
+        )
+        if not focus:
+            return
+        prior_off = scoped_off_history_receipt(self.evidence.receipts(), focus)
+        proven = positive_off_command_already_recorded(
+            self.evidence.receipts(), focus
+        )
+        if proven:
+            increment_active_metric("causal_off_command_reused")
+        elif prior_off is None and catalog.available_tool("hub_read_devices") is not None:
+            request = {
+                "tool": "hub_list_device_events",
+                "args": {
+                    "deviceId": focus["deviceId"], "attribute": "command-off",
+                    "hoursBack": 168, "limit": 50,
+                },
+            }
+            started = time.monotonic()
+            try:
+                result = await self.mcp.call_tool("hub_read_devices", request)
+                ok = self._tool_succeeded(result)
+                data = result.data if ok and isinstance(result.data, dict) else {}
+            except Exception as exc:
+                logger.debug("Focal OFF command-history unavailable: %s", exc)
+                ok, data = False, {}
+            events = data.get("events")
+            details = (
+                {
+                    "label": focus["subject"],
+                    "deviceId": focus["deviceId"],
+                    "eventName": "command-off",
+                    "events": [
+                        row for row in events[:50] if isinstance(row, dict)
+                    ] if isinstance(events, list) else [],
+                    "eventCount": len(events) if isinstance(events, list) else None,
+                    "focalBoundary": focus["end"],
+                    "historyScope": "bounded-returned-event-page",
+                }
+                if ok else None
+            )
+            self.evidence.record(
+                "hub_read_devices", request, success=ok,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary="Focal OFF command page checked" if ok else
+                "Focal OFF command page unavailable",
+                supports_live_claim=ok,
+                evidence_kind="authoritative_command_event_history",
+                effect="read", mutates=False, details=details,
+            )
+            increment_active_metric("causal_off_provenance_reads")
+
+        command_matches = [
+            row for row in correlate_command_producers(self.evidence.receipts())
+            if row.get("boundaryRole") == "end"
+            and row.get("subject") == focus["subject"]
+            and str(row.get("stateBoundary") or "")[:19] == focus["end"][:19]
+            and not row.get("competingCommands")
+        ]
+        direct_app_id = next((
+            str((row.get("producer") or {}).get("id") or "")
+            for row in command_matches
+            if str((row.get("producer") or {}).get("type") or "").casefold() == "app"
+            and str((row.get("producer") or {}).get("id") or "")
+        ), "")
+        listeners = [
+            item for item in (focus["offStateEvent"].get("triggered") or [])
+            if isinstance(item, dict) and item.get("appId")
+            and ("light" in str(item.get("handler") or "").casefold()
+                 or "switch" in str(item.get("handler") or "").casefold())
+        ]
+        notified_app_id = str(listeners[0]["appId"]) if listeners else ""
+        log_app_id = direct_app_id or notified_app_id
+        if not log_app_id or catalog.available_tool("hub_read_diagnostics") is None:
+            return
+        off_time = datetime.fromisoformat(str(focus["end"]).replace("Z", "+00:00"))
+        if off_time.tzinfo is None:
+            return
+        since = (off_time - timedelta(seconds=12)).astimezone(
+            timezone.utc
+        ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        until = (off_time + timedelta(seconds=6)).astimezone(
+            timezone.utc
+        ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        log_args = {"appId": log_app_id, "since": since, "until": until, "limit": 60}
+        log_exists = any(
+            row.get("success") is True and row.get("sub_tool") == "hub_get_logs"
+            and str(((row.get("arguments") or {}).get("args") or {}).get("appId") or "")
+                == log_app_id
+            and ((row.get("arguments") or {}).get("args") or {}).get("since") == since
+            for row in self.evidence.receipts()
+        )
+        if not log_exists:
+            request = {"tool": "hub_get_logs", "args": log_args}
+            started = time.monotonic()
+            try:
+                result = await self.mcp.call_tool("hub_read_diagnostics", request)
+                ok = self._tool_succeeded(result)
+                data = result.data if ok and isinstance(result.data, dict) else {}
+            except Exception as exc:
+                logger.debug("Focal OFF app logs unavailable: %s", exc)
+                ok, data = False, {}
+            rows = data.get("logs")
+            self.evidence.record(
+                "hub_read_diagnostics", request, success=ok,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary="Focal OFF app logs checked" if ok
+                    else "Focal OFF app logs unavailable",
+                supports_live_claim=ok, evidence_kind="native_log_history",
+                effect="read", mutates=False,
+                details=({
+                    "appId": log_app_id,
+                    "logCount": len(rows) if isinstance(rows, list) else None,
+                    "scopedSince": since, "scopedUntil": until,
+                    "execution": execution_log_lines(
+                        data, {"command": {"date": focus["end"]}}
+                    )[:8],
+                } if ok else None),
+            )
+            increment_active_metric("causal_off_app_log_reads")
+
+        # An explicit why-OFF request also needs the observed OFF listener's
+        # current settings when no direct OFF command producer is identified.
+        # That app remains a listener candidate, never a proven actor.
+        context_app_id = (
+            direct_app_id
+            or (notified_app_id if requested_transition == "off" else "")
+        )
+        if not context_app_id or catalog.available_tool("hub_read_apps_code") is None:
+            return
+        checked = any(
+            row.get("success") is True and row.get("sub_tool") == "hub_get_app_config"
+            and str(((row.get("arguments") or {}).get("args") or {}).get("appId") or "")
+                == context_app_id
+            for row in self.evidence.receipts()
+        )
+        if checked:
+            return
+        request = {
+            "tool": "hub_get_app_config",
+            "args": {"appId": context_app_id, "includeSettings": False},
+        }
+        started = time.monotonic()
+        try:
+            result = await self.mcp.call_tool("hub_read_apps_code", request)
+            ok = self._tool_succeeded(result)
+            data = result.data if ok and isinstance(result.data, dict) else {}
+        except Exception as exc:
+            logger.debug("Focal OFF app config unavailable: %s", exc)
+            ok, data = False, {}
+        excerpts, _ = configuration_text(data) if ok else ([], "")
+        self.evidence.record(
+            "hub_read_apps_code", request, success=ok,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary="Focal OFF producer config read" if ok
+                else "Focal OFF producer config unavailable",
+            supports_live_claim=False, evidence_kind="tool_result",
+            effect="read", mutates=False,
+            details=({
+                "appId": context_app_id, "configured": excerpts[:8],
+                "historicalExecutionNotProven": True,
+            } if ok else None),
+        )
+        increment_active_metric("causal_off_app_config_reads")
 
 
     async def _collect_physical_response_evidence(
