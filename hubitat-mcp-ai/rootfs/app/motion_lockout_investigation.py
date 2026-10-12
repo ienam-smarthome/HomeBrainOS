@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from causal_rule_decision_context import configuration_text
+from investigation_intelligence import plan_investigation
 
 _APP_ID = re.compile(r"\b(?:app|rule)\s*(?:#|id\s*)?(\d{3,6})\b", re.I)
 _LOCKOUT = re.compile(r"\b(?:lock[- ]?out|inhibit(?:ion|ed)?|suppres(?:s|sed|sion))\b", re.I)
@@ -31,6 +32,10 @@ _INVESTIGATE = re.compile(
 
 
 def is_motion_lockout_investigation(prompt: str) -> bool:
+    """Agree with the shared investigation goal, not just legacy phrasing."""
+    contract = plan_investigation(prompt)
+    if contract is not None and contract.domain == "manual_motion_lockout":
+        return True
     text = str(prompt or "")
     return bool(
         _LOCKOUT.search(text) and _MANUAL_OFF.search(text)
