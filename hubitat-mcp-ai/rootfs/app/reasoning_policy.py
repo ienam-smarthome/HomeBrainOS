@@ -75,6 +75,10 @@ DEFAULT_MAX_READ_TOOL_ROUNDS = 3
 # budget but still far below the outer agent limit.
 INVESTIGATIVE_MAX_READ_TOOL_CALLS = 12
 INVESTIGATIVE_MAX_READ_TOOL_ROUNDS = 5
+# Explicit deep investigations may need multiple MCP evidence classes. The
+# ordinary investigative budget remains unchanged to avoid slow/runaway reads.
+DEEP_MAX_READ_TOOL_CALLS = 18
+DEEP_MAX_READ_TOOL_ROUNDS = 7
 _REASONING_PROFILE: ContextVar[str] = ContextVar(
     "homebrain_reasoning_profile", default="standard"
 )
@@ -85,7 +89,8 @@ def set_reasoning_profile(profile: str) -> None:
 
     normalized = str(profile or "standard").strip().casefold()
     _REASONING_PROFILE.set(
-        "investigative" if normalized == "investigative" else "standard"
+        normalized if normalized in {"standard", "investigative", "deep"}
+        else "standard"
     )
 
 
@@ -94,6 +99,8 @@ def reasoning_profile() -> str:
 
 
 def _budget_limits() -> tuple[int, int]:
+    if reasoning_profile() == "deep":
+        return DEEP_MAX_READ_TOOL_ROUNDS, DEEP_MAX_READ_TOOL_CALLS
     if reasoning_profile() == "investigative":
         return INVESTIGATIVE_MAX_READ_TOOL_ROUNDS, INVESTIGATIVE_MAX_READ_TOOL_CALLS
     return DEFAULT_MAX_READ_TOOL_ROUNDS, DEFAULT_MAX_READ_TOOL_CALLS

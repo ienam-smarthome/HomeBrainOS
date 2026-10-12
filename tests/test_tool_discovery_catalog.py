@@ -269,3 +269,71 @@ def test_tool_schema_supplies_default_object_parameters():
             "parameters": {"type": "object", "properties": {}},
         },
     }
+
+
+def test_explicit_operation_search_chooses_correct_gateway_even_below_fuzzy_top_two():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"), tool("hub_manage_rooms"),
+        tool("hub_read_rooms"), tool("hub_read_apps_code"),
+    ])
+    result = search_result({"results": [
+        {"tool": "hub_set_room", "gateway": "hub_manage_rooms"},
+        {"tool": "hub_list_rooms", "gateway": "hub_read_rooms"},
+        {"tool": "hub_get_app_config", "gateway": "hub_read_apps_code"},
+    ]})
+    added = catalog.expand(result, query="hub_get_app_config")
+    assert [item.name for item in added] == ["hub_read_apps_code"]
+    assert catalog.declared_tool("hub_read_rooms") is None
+    assert catalog.declared_tool("hub_manage_rooms") is None
+
+
+def test_explicit_tool_discovery_can_follow_multiple_stages_without_expanding_everything():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"), tool("hub_read_apps_code"),
+        tool("hub_read_rules"), tool("hub_read_devices"),
+        tool("hub_manage_code"),
+    ])
+    first = search_result({"results": [
+        {"tool": "hub_get_app_config", "gateway": "hub_read_apps_code"},
+        {"tool": "hub_update_app", "gateway": "hub_manage_code"},
+    ]})
+    second = search_result({"results": [
+        {"tool": "hub_list_rules", "gateway": "hub_read_rules"},
+        {"tool": "hub_list_devices", "gateway": "hub_read_devices"},
+    ]})
+    assert [x.name for x in catalog.expand(first, query="hub_get_app_config")] == ["hub_read_apps_code"]
+    assert [x.name for x in catalog.expand(second, query="hub_list_rules")] == ["hub_read_rules"]
+    assert "hub_manage_code" not in catalog.declared_names
+    assert "hub_read_devices" not in catalog.declared_names
+
+
+def test_complete_registry_keeps_gateway_beyond_old_forty_eight_tool_limit():
+    from tool_catalog_assembly import build_request_tool_catalog
+
+    remote = [tool(f"remote_irrelevant_{i}") for i in range(55)]
+    remote += [tool("hub_search_tools"), tool("hub_read_rare_domain")]
+    catalog = build_request_tool_catalog(remote)
+    assert catalog.declared_tool("hub_read_rare_domain") is None
+    assert "hub_read_rare_domain" in catalog.available_names
+    match = search_result({"results": [
+        {"tool": "hub_get_rare_domain", "gateway": "hub_read_rare_domain"}
+    ]})
+    assert [t.name for t in catalog.expand(match, query="hub_get_rare_domain")] == [
+        "hub_read_rare_domain"
+    ]
+
+
+def test_read_gateway_exposure_respects_registry_and_never_exposes_manage_tools():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"), tool("hub_read_apps_code"),
+        tool("hub_read_rules"), tool("hub_manage_rule_machine"),
+    ])
+    additions = catalog.expose_read_gateways([
+        "hub_manage_rule_machine", "hub_read_apps_code",
+        "hub_read_disabled_gateway", "hub_read_rules",
+    ])
+    assert [tool.name for tool in additions] == [
+        "hub_read_apps_code", "hub_read_rules"
+    ]
+    assert "hub_manage_rule_machine" not in catalog.declared_names
+    assert "hub_read_disabled_gateway" not in catalog.declared_names
