@@ -503,3 +503,51 @@ async def test_agent_reads_configured_motion_history_even_without_subject_room()
         for record in outcome.evidence
     )
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+
+
+
+class _CapturedDeepReasoningAgent(UnifiedMCPAgent):
+    async def _chat(self, messages, tools):
+        self.deep_model_calls = getattr(self, "deep_model_calls", [])
+        self.deep_model_calls.append((messages, tools))
+        return {
+            "role": "assistant",
+            "content": (
+                "The recorded switch-on came from Lighting: livingroom low "
+                "light (app 3602); the app log identifies the Afternoon mode "
+                "trigger. Configuration is not independently historical."
+            ),
+            "tool_calls": [],
+        }
+
+
+@pytest.mark.asyncio
+async def test_explicit_deep_causal_request_reaches_model_with_verified_baseline():
+    mcp = _MCP()
+    agent = _CapturedDeepReasoningAgent(
+        mcp, "key", "model", ai_client=_NoProvider(),
+        require_sensitive_confirmation=False,
+    )
+    result = await agent.process_user_request_result(
+        "Investigate thoroughly why did Livingroom Light 1 turn on?"
+    )
+    assert "Lighting: livingroom low light" in result.message
+    assert agent.deep_model_calls
+    all_text = "\n".join(
+        str(message.get("content") or "")
+        for messages, _tools in agent.deep_model_calls
+        for message in messages
+    )
+    assert "HOST VERIFIED CAUSAL BASELINE" in all_text
+    assert "MCP SKILL WORKFLOW" in all_text
+    assert "hub_search_tools" in all_text
+    assert any(
+        any(tool["function"]["name"] == "hub_read_apps_code" for tool in tools)
+        for _messages, tools in agent.deep_model_calls
+    )
+    assert not any(
+        any(tool["function"]["name"].startswith("hub_manage_") for tool in tools)
+        for _messages, tools in agent.deep_model_calls
+    )
+    # The ordinary proven-source question still follows the verified fast
+    # path and never spends a model round; see test_agent_preserves_command...
