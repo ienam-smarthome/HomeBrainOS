@@ -329,6 +329,8 @@ agent = UnifiedMCPAgent(
 agent.performance_synthesis_timeout_seconds = float(
     OPTIONS.get("performance_synthesis_timeout_seconds") or 30
 )
+# Read-only journal evidence is optional; do not affect ordinary MCP requests.
+agent.historical_journal = historical_journal
 
 
 class RequestCoordinator:
