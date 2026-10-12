@@ -131,7 +131,7 @@ def _candidate_devices(
             len(light_prefix) >= 6
             and name.casefold().startswith(light_prefix + " ")
         )
-        exact_config_name = bool(config and name.casefold() in config)
+        exact_config_name = bool(config and name.casefold() in config.casefold())
         if _attribute(row, "motion") and (exact_config_name or same_room):
             sensors.append((0 if exact_config_name else 1, row))
         if (
