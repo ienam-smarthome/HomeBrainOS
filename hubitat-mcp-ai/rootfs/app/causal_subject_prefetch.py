@@ -341,14 +341,31 @@ def _best_prompt_match(
 
     ranked = sorted(
         by_identity.values(),
-        key=lambda item: (-item[0], str(_names(item[2])[:1]).casefold()),
+        key=lambda item: (
+            -item[0],
+            -len(_tokens(item[1])),
+            str(_names(item[2])[:1]).casefold(),
+        ),
     )
     best_score, matched, best_device = ranked[0]
-    second_score = ranked[1][0] if len(ranked) > 1 else 0.0
     if best_score < 0.90:
         return None
-    if len(ranked) > 1 and best_score - second_score < 0.12:
-        return None
+
+    # Exact canonical longer names must beat exact room/group prefixes.
+    # Previously "Bedroom 1 Light" tied "Bedroom 1", and the entire
+    # deterministic prefetch failed into repeated model-resolution calls.
+    # Preserve the existing fail-closed rule for two equally specific labels
+    # and for close fuzzy scores (a wrong numbered device is never guessed).
+    best_length = len(_tokens(matched))
+    if len(ranked) > 1:
+        second_score, second_match, _second = ranked[1]
+        second_length = len(_tokens(second_match))
+        if best_score - second_score < 0.12 and not (
+            best_score == 1.0
+            and second_score == 1.0
+            and best_length > second_length
+        ):
+            return None
     return best_device, matched, best_score
 
 
