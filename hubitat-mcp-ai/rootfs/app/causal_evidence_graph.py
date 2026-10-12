@@ -478,6 +478,119 @@ def _controller_candidate(
     return best
 
 
+
+def _post_on_commands(
+    evidence: list[dict[str, Any]], focus: dict[str, Any],
+    *, max_after_seconds: float = 5.0,
+) -> list[dict[str, Any]]:
+    """Identify commands issued AFTER the physical ON-state report.
+
+    An app calling setLevel after a bridge-reported ON is a response/adjustment,
+    not evidence that the app initiated the earlier ON transition. Timestamp
+    order and command producer are retained, even if no level value was read.
+    """
+    boundary = _time(focus.get("start"))
+    if boundary is None:
+        return []
+    commands = []
+    for receipt in evidence:
+        if not _working(receipt):
+            continue
+        details = receipt.get("details") or {}
+        if not isinstance(details, dict):
+            continue
+        if receipt.get("tool") == "homebrain_device_history":
+            if str(details.get("label") or "") != str(focus.get("subject") or ""):
+                continue
+            events = details.get("commandEvents") or []
+        elif _tool(receipt) == "hub_list_device_events":
+            if str(_args(receipt).get("attribute") or "") != "command-setLevel":
+                continue
+            events = details.get("events") or []
+        else:
+            continue
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            when = _time(event.get("date"))
+            if when is None:
+                continue
+            try:
+                delta = (when - boundary).total_seconds()
+            except TypeError:
+                continue
+            name = str(event.get("name") or "")
+            if not (0 <= delta <= max_after_seconds and name == "command-setLevel"):
+                continue
+            producer = event.get("producedBy") or {}
+            commands.append({
+                "time": when.isoformat(),
+                "afterOnMs": round(delta * 1000, 1),
+                "command": str(event.get("description") or ""),
+                "producer": dict(producer) if isinstance(producer, dict) else {},
+                "relationship": "post-on-brightness-command",
+                "notTheOriginalOnCommand": True,
+                "source": "Hubitat command-setLevel event",
+            })
+    unique = {}
+    for item in commands:
+        unique[(item["time"], item["command"])] = item
+    return sorted(unique.values(), key=lambda item: item["afterOnMs"])[:5]
+
+
+def _end_sensor_correlations(
+    evidence: list[dict[str, Any]], focus: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Describe inactive-sensor timings at OFF without assigning the OFF actor."""
+    if not focus.get("end"):
+        return []
+    output = []
+    seen = set()
+    for receipt in evidence:
+        if (
+            not _working(receipt)
+            or receipt.get("tool") != "homebrain_causal_secondary_correlation"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        if str(details.get("subject") or "") != str(focus.get("subject") or ""):
+            continue
+        for sensor in details.get("sensors") or []:
+            if not isinstance(sensor, dict):
+                continue
+            for row in [
+                *(sensor.get("oppositeCorrelations") or []),
+                *(sensor.get("relevantCorrelations") or []),
+            ]:
+                if (
+                    not isinstance(row, dict)
+                    or row.get("boundaryRole") != "end"
+                    or not _eq_time(row.get("subjectTransition"), focus["end"], .002)
+                ):
+                    continue
+                try:
+                    signed = float(row.get("signedDeltaSeconds"))
+                except (TypeError, ValueError):
+                    continue
+                fingerprint = (str(sensor.get("label")), row.get("sensorEvent"))
+                if fingerprint in seen:
+                    continue
+                seen.add(fingerprint)
+                output.append({
+                    "sensor": sensor.get("label"),
+                    "attribute": row.get("attribute"),
+                    "value": row.get("eventValue"),
+                    "time": row.get("sensorEvent"),
+                    "signedDeltaMs": round(signed * 1000, 1),
+                    "producer": row.get("producedBy"),
+                    "relationship": "inactive-sensor-off-temporal-correlation",
+                    "offCommandProducerEstablished": False,
+                    "externalAutomationIdentityEstablished": False,
+                })
+    output.sort(key=lambda row: abs(row["signedDeltaMs"]))
+    return output[:4]
+
+
 def build_causal_evidence_graph(
     evidence: list[dict[str, Any]], original_user: str
 ) -> dict[str, Any]:
@@ -495,6 +608,8 @@ def build_causal_evidence_graph(
     sensor = _sensor_fact(evidence, focus, start_command)
     physical_boundary = _physical_boundary(evidence, focus)
     controller_candidate = _controller_candidate(evidence, focus)
+    post_on_commands = _post_on_commands(evidence, focus)
+    end_sensor_correlations = _end_sensor_correlations(evidence, focus)
     config = _configuration(evidence, app_id) if app_id else {"checked": False}
     logs = _logs(evidence, app_id, (start_command or {}).get("time") or "") if app_id else {"checked": False}
     mode = _mode(evidence, focus)
@@ -522,6 +637,8 @@ def build_causal_evidence_graph(
         "directCommand": start_command,
         "physicalStateBoundary": physical_boundary,
         "controllerCandidate": controller_candidate,
+        "postOnCommands": post_on_commands,
+        "offSensorCorrelations": end_sensor_correlations,
         "initiatorCandidate": sensor,
         "configuration": config,
         "executionLogs": logs,
@@ -540,6 +657,10 @@ def build_causal_evidence_graph(
             "without OFF command provenance it does not prove the rule's OFF logic.",
             "Listener metadata proves app notification, not that a handler's "
             "conditions passed or issued a command.",
+            "An app's setLevel command recorded AFTER the physical ON report "
+            "is a brightness correction/reaction candidate, not an originating "
+            "ON command. Sensor inactivity near OFF does not identify an Aqara, "
+            "Hue, Hubitat or other external automation without its own logs.",
             "A reporting bridge's producedBy on the physical state event proves "
             "where the state report came from, not who pressed the control.",
             "A button event reported *after* the light state cannot be proven "
