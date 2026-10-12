@@ -120,6 +120,7 @@ def build_causal_answer_plan(
             "offCommand": command_observation,
             "sensorEdges": sensor_evidence,
             "sensorHistoryCoverage": off.get("sensorHistoryCoverage") or {},
+            "windowedSensorRetrieval": off.get("windowedSensorRetrieval") or [],
             "timerComparisons": timer_assessments,
             "appConfiguration": {
                 "checked": bool(
