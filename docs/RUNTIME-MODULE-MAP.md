@@ -68,6 +68,7 @@ The repository drift test compares this table directly with the live directory. 
 | `log_evidence_compactor.py` | Keeps log evidence receipts bounded while preserving compact full-result Rule Machine threshold samples for final causality validation. |
 | `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. |
 | `mcp_client.py` | Implements Hubitat MCP JSON-RPC transport and tool access. |
+| `mcp_skill_guidance.py` | Provides general, Claude-skill-inspired live-MCP discovery, progressive evidence investigation, rule semantics and safety context, with explicit deep-investigation selection. |
 | `mcp_retry_metrics.py` | Records actual retry attempts begun at the MCP transport boundary. |
 | `model_context_policy.py` | Bounds copied provider conversation and tool-result context. |
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
