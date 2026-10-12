@@ -58,6 +58,7 @@ from causal_command_provenance import (
     command_producer_transition_sufficient,
     correlate_boundary_producers,
     correlate_command_producers,
+    render_competing_command_summary,
     focal_transition_boundary,
     render_boundary_producer_summary,
     render_command_producer_summary,
@@ -2171,8 +2172,20 @@ class UnifiedMCPAgent:
             evidence,
             transition=transition,
         )
-        if base is None:
+        competing = render_competing_command_summary(
+            evidence, transition=transition,
+        )
+        if base is None and competing is None:
             return None
+        if competing:
+            # A bridge-produced switch state can coexist with actual Hubitat
+            # command calls from multiple apps. Never say "no direct command"
+            # merely because no *unique* command producer can be selected.
+            if base is not None:
+                base_lines = base.splitlines()
+                base = "\n".join([competing, *base_lines[1:]])
+            else:
+                base = competing
         secondary = render_reporting_source_secondary_summary_evidence(evidence)
         if not secondary:
             return base
