@@ -9,6 +9,7 @@ phrases such as "all three recent button-aligned events".
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from causal_evidence_graph import build_causal_evidence_graph
@@ -30,6 +31,33 @@ def guard_causal_controller_history_coverage(
     evidence: list[dict[str, Any]],
     original_user: str = "",
 ) -> tuple[str, bool]:
+    if not original_user:
+        # API serialization has no original user message. Recover the focal
+        # event only from the host-verified requested boundary receipt, never
+        # from arbitrary model prose that could mention many times.
+        candidates = []
+        for item in evidence:
+            if (
+                isinstance(item, dict)
+                and item.get("success") is True
+                and item.get("tool") == "homebrain_causal_secondary_correlation"
+            ):
+                details = item.get("details") or {}
+                date_text = str(details.get("requestedBoundary") or "")
+                subject = str(details.get("subject") or "")
+                if date_text and subject:
+                    try:
+                        moment = datetime.fromisoformat(
+                            date_text.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        continue
+                    candidates.append(
+                        f"Why did {subject} turn on at "
+                        f"{moment:%H:%M:%S} on {moment.day} {moment:%B %Y}?"
+                    )
+        if len(set(candidates)) == 1:
+            original_user = candidates[0]
     graph = build_causal_evidence_graph(evidence, original_user)
     coverage = graph.get("controllerCoverage") or {}
     observed = coverage.get("observedStartCount")
