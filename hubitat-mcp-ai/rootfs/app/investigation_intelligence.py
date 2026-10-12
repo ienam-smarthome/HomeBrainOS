@@ -231,6 +231,9 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                             if kind == "sensor":
                                 checked.add("motion")
                             if kind == "sensor" and off is not None:
+                                activation_eligible = (
+                                    entry.get("activationSourceVerified") is True
+                                )
                                 for ev in entry.get("observations") or []:
                                     stamp = _instant(ev.get("observedAt"))
                                     if (stamp is not None
@@ -239,7 +242,14 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                                             and _within_seconds(
                                                 stamp, off, earliest=0,
                                                 latest=180)):
-                                        found.add("motion")
+                                        if activation_eligible:
+                                            found.add("motion")
+                                        else:
+                                            notes.append(
+                                                "Nearby motion was observed, but "
+                                                "eligibility as a light activation "
+                                                "source was not verified"
+                                            )
                     if detail.get("nearbyButtonEvents"):
                         found.add("controller")
                     if any(isinstance(x, dict)
