@@ -5,6 +5,7 @@ The 0.17.7 live test of the Bathroom Light 1 event at 07:53:36 correctly retaine
 ## General corrections
 
 - **Separate validation domains:** Performance-statistics, scheduler and diagnostic validators run only for actual performance requests or supported performance-evidence receipts. A normal lighting/device causal investigation that happens to check logs cannot be rewritten into a performance analysis.
+- **Final API serialization boundary:** The post-agent `/api/ask` response builder now uses the same evidence-based performance domain gate; its final source and log-causality guards can no longer append performance diagnostics to an ordinary device-causal response.
 - **Differentiate checked from populated sources:** A successful, empty bounded native-log read is a genuine zero-row observation. It is not missing logs or grounds for a performance-data refusal repair. Performance-specific source checks remain enabled for genuine performance investigations.
 - **Separate immediate command source from upstream initiator:** App-produced device commands do not prove that a human/manual action was absent upstream. The generic causal confidence guard recalibrates an unsupported “Manual Control: Ruled out” assertion while preserving the verified app command.
 - **Correct focal elapsed time:** For one unambiguously requested, observed completed state interval, validate a lone minutes+seconds duration against its recorded integer durationSeconds. Leave broad histories, open intervals and multiple duration mentions untouched.
