@@ -1098,6 +1098,7 @@ class UnifiedMCPAgent:
             catalog=catalog,
             completed_calls=completed_calls,
             messages=messages,
+            original_user=user_prompt,
         )
         return (
             ("sufficient", subject_key, seed.transition)
@@ -1569,6 +1570,7 @@ class UnifiedMCPAgent:
         catalog: ToolDiscoveryCatalog,
         completed_calls: set[str],
         messages: list[dict[str, Any]],
+        original_user: str = "",
     ) -> bool:
         """Collect both subject boundaries from native logs before weaker evidence.
 
@@ -1585,6 +1587,7 @@ class UnifiedMCPAgent:
         windows = causal_boundary_log_windows(
             self.evidence.receipts(),
             max_intervals=1,
+            original_user=original_user,
         )
         if not windows:
             return False
