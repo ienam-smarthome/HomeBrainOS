@@ -17,7 +17,9 @@ from causal_completion_policy import requested_transition_scope
 
 _LIST_PREFIX = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+))")
 _OFF_TOPIC = re.compile(
-    r"\b(?:off|turn(?:ed|ing)?\s+off|switch(?:ed|ing)?\s+off)\b", re.I
+    r"\b(?:turn(?:ed|ing)?|switch(?:ed|ing)?|went)\s+off\b"
+    r"|\boff\s+(?:transition|event|state|cause|actor|action)\b",
+    re.I
 )
 _PROOF_EXCLUSION = re.compile(
     r"\b(?:prov(?:e|es|ed|ing)|confirm(?:s|ed|ing)?|establish(?:es|ed|ing)?|"
@@ -216,8 +218,15 @@ def guard_off_certainty_contract(
             result.append(raw)
             continue
 
+        # "Does not prove/exclude X" is properly calibrated uncertainty,
+        # not an exclusion claim. Do not rewrite that sentence.
+        epistemic_caution = bool(re.search(
+            r"(?i)\b(?:does|do|did|cannot|can't)\s+not?\s*"
+            r"(?:prove|confirm|establish|exclude|rule\s+out)\b",
+            line,
+        ))
         unsupported_absence = bool(
-            not has_direct
+            not has_direct and not epistemic_caution
             and (
                 (_PROOF_EXCLUSION.search(line) and _NO_HUB_CAUSE.search(line))
                 or _FALSE_LOG_INFERENCE.search(line)
