@@ -311,8 +311,8 @@ def _category(text: str) -> str:
 def _calibrated_exclusion(category: str, evidence: list[dict[str, Any]]) -> str:
     if category == "manual":
         return (
-            "The automation issued the direct device command; "
-            "an upstream manual input was not independently excluded."
+            "The automation issued the device command; manual input upstream "
+            "of that automation was not independently excluded."
         )
     if category == "other_apps":
         return (
