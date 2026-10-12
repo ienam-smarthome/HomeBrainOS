@@ -275,6 +275,35 @@ inactivity**. Archived records are presented separately from MCP command
 provenance during causal investigations. They do not, alone, identify the
 initiating automation or confirm a timer fired.
 
+### Mobile Historical Journal panel (v0.17.26)
+
+The main HomeBrain dashboard now has a compact **Historical Journal** panel,
+including on the Home Assistant mobile-app ingress view. It displays the event
+and optional app-log WebSocket connection states, retained device-event and
+app-log counts, SQLite disk usage (main file plus WAL/SHM), total and open
+connection gaps, last received event and any storage errors. Expand the details
+to see the earliest/latest retained reception timestamps, selected app-ID
+log counts (e.g., app **4015**), recent collection gaps and up to 12 newest
+device observations. A **Refresh journal** button reloads these values;
+otherwise status refreshes alongside the ordinary dashboard (every 30 s).
+No app-log message text is shown in the recent event list.
+
+**Verifying app 4015:** With `historical_journal_capture_logs: true` and
+`historical_journal_log_app_ids: "4015"`, check **App 4015: N stored** under
+**Recent events and collection details**. The log WebSocket being *connected*
+proves only transport availability, not that app 4015 has emitted any logs.
+A count of zero can be normal if logging is disabled or no relevant app event
+occurred; it must not be interpreted as proof the app never ran. Use a permitted,
+normal user action to trigger the existing automation before refreshing and
+checking its count. No HomeBrain diagnostic should trigger device changes itself.
+
+`GET /api/evidence-journal/recent?limit=12` returns a read-only, bounded,
+**device-events-only** sample. Raw captured application log messages remain
+available only through the existing exact app-ID and time-bounded journal query,
+not in the overview. Journal timestamps may be collector-received and
+continuous event coverage is never guaranteed. The collector still requires
+explicit enablement: the new UI does not enable any live socket implicitly.
+
 ## System Check and Pushover
 
 `HealthAuditService` performs read-only Hub/MCP/device/battery/automation/log health checks and stores the latest snapshot under `/data`. The dashboard exposes the latest result, new/resolved findings, a manual **Run system check now** action, and **Send report to Pushover** when Pushover is configured.
