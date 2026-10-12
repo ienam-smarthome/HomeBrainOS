@@ -67,9 +67,9 @@ _SUBSTANTIVE_PERFORMANCE_CONTENT = re.compile(
 # A successful log request can legitimately return zero entries. That is a
 # negative *result*, not an assertion that the logs were never consulted.
 _EMPTY_LOG_OBSERVATION = re.compile(
-    r"(?i)(?:\\b(?:no|zero|0)\\s+(?:matching\\s+)?(?:log\\s+)?(?:entries|rows|messages)\\b"
-    r"|\\b(?:log\\s+)?(?:query|search|read)\\b[^.!?\\n]{0,90}"
-    r"\\b(?:returned|found|contained|showed)\\s+(?:no|zero|0)\\b)"
+    r"(?i)(?:\b(?:no|zero|0)\s+(?:matching\s+)?(?:log\s+)?(?:entries|rows|messages)\b"
+    r"|\b(?:log\s+)?(?:query|search|read)\b[^.!?\n]{0,90}"
+    r"\b(?:returned|found|contained|showed)\s+(?:no|zero|0)\b)"
 )
 
 _POSITIVE_LOG_ATTRIBUTION = re.compile(
