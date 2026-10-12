@@ -291,6 +291,21 @@ class HistoricalEvidenceJournal:
                 ) as socket:
                     await asyncio.to_thread(self._mark_connected, stream)
                     self._connected[stream] = True
+                    # A recovered transport error must not keep the mobile
+                    # status panel in "Attention" forever. Never clear
+                    # storage or queue-overflow errors on socket recovery.
+                    streams_ready = self._connected["events"] and (
+                        not self.capture_logs or not self.log_app_ids
+                        or self._connected["logs"]
+                    )
+                    if (
+                        streams_ready and isinstance(self.error, str)
+                        and self.error.startswith((
+                            "events stream disconnected:",
+                            "logs stream disconnected:",
+                        ))
+                    ):
+                        self.error = None
                     delay = 2
                     async for frame in socket:
                         try:
@@ -346,6 +361,7 @@ class HistoricalEvidenceJournal:
             "dropped_this_run": self._dropped,
             "retention_days": self.retention_days, "max_rows": self.max_rows,
             "capture_logs": self.capture_logs and bool(self.log_app_ids),
+            "tracked_app_ids": sorted(self.log_app_ids) if self.capture_logs else [],
             "coverage_complete": False, "error": self.error,
         }
         if self._started:
@@ -354,11 +370,69 @@ class HistoricalEvidenceJournal:
                     count, first, last = db.execute(
                         "SELECT COUNT(*), MIN(received_at), MAX(received_at) FROM journal_events"
                     ).fetchone()
+                    counts = dict(db.execute(
+                        "SELECT stream, COUNT(*) FROM journal_events GROUP BY stream"
+                    ).fetchall())
+                    app_counts = dict(db.execute(
+                        "SELECT app_id, COUNT(*) FROM journal_events "
+                        "WHERE stream='logs' GROUP BY app_id"
+                    ).fetchall())
                     gaps = db.execute("SELECT COUNT(*) FROM journal_gaps").fetchone()[0]
-                snapshot.update(rows=count, first_received=first, last_received=last, gaps=gaps)
-            except sqlite3.Error:
+                    open_gaps = db.execute(
+                        "SELECT COUNT(*) FROM journal_gaps WHERE ended_at IS NULL"
+                    ).fetchone()[0]
+                    last_gaps = db.execute(
+                        "SELECT stream, started_at, ended_at, reason "
+                        "FROM journal_gaps ORDER BY id DESC LIMIT 5"
+                    ).fetchall()
+                bytes_used = sum(
+                    candidate.stat().st_size
+                    for candidate in (
+                        self.path, Path(str(self.path) + "-wal"),
+                        Path(str(self.path) + "-shm")
+                    ) if candidate.exists()
+                )
+                snapshot.update(
+                    rows=count, first_received=first, last_received=last,
+                    event_rows=int(counts.get("events", 0)),
+                    app_log_rows=int(counts.get("logs", 0)),
+                    captured_app_log_counts={
+                        app_id: int(app_counts.get(app_id, 0))
+                        for app_id in sorted(self.log_app_ids)
+                    } if self.capture_logs else {},
+                    db_bytes=bytes_used, gaps=gaps, open_gaps=open_gaps,
+                    recent_gaps=[
+                        dict(zip(("stream", "started_at", "ended_at", "reason"), row))
+                        for row in last_gaps
+                    ],
+                )
+            except (sqlite3.Error, OSError):
                 snapshot["storage_unavailable"] = True
         return snapshot
+
+    def recent_events(self, limit: int = 12) -> dict[str, Any]:
+        """Read-only dashboard sample: device events only, no app-log text.
+
+        Never imply that these recent rows cover a continuous time window.
+        """
+        if not self.enabled or not self._started:
+            return {"events": [], "coverage_complete": False, "unavailable": True}
+        with self._connect() as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                "SELECT device_id,attribute,value,display_name,source,"
+                "observed_at,received_at,timestamp_basis "
+                "FROM journal_events WHERE stream='events' "
+                "ORDER BY id DESC LIMIT ?",
+                (max(1, min(20, int(limit))),),
+            )
+            events = [dict(row) for row in rows]
+        return {
+            "events": events,
+            "count": len(events),
+            "coverage_complete": False,
+            "empty_means_inactivity": False,
+        }
 
     def query(
         self, *, since: str, until: str,

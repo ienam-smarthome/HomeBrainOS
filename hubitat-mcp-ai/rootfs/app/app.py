@@ -657,6 +657,18 @@ async def evidence_journal_status() -> dict[str, Any]:
     return historical_journal.status()
 
 
+@app.get("/api/evidence-journal/recent")
+async def evidence_journal_recent(limit: int = 12) -> dict[str, Any]:
+    """Recent non-log device observations; no private app message content."""
+    if not historical_journal.enabled or not historical_journal._started:
+        raise HTTPException(status_code=503, detail="Historical journal is not running")
+    try:
+        return await asyncio.to_thread(historical_journal.recent_events, limit)
+    except (OSError, ValueError) as exc:
+        logger.warning("Journal recent events unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Journal storage unavailable") from exc
+
+
 @app.get("/api/evidence-journal/events")
 async def evidence_journal_events(
     since: str, until: str, device_id: str = "", attribute: str = "",
