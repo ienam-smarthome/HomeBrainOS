@@ -305,7 +305,17 @@ async def test_complete_explicit_deep_question_uses_one_final_model_synthesis():
         "sensor events, app execution logs and possible alternative causes. Read-only."
     )
     assert "Lighting: livingroom low light" in outcome.message
-    assert len(agent.chat_calls) == 1  # no prior model tool-discovery round
+    post_graph = build_causal_evidence_graph(outcome.evidence, (
+        "Investigate thoroughly why Livingroom Light 1 turned on at 12:00:03 "
+        "on 11 October. Check the controlling app, configured triggers, actual "
+        "sensor events, app execution logs and possible alternative causes. Read-only."
+    ))
+    assert supports_one_pass_deep_synthesis(post_graph, (
+        "Investigate thoroughly why Livingroom Light 1 turned on at 12:00:03 "
+        "on 11 October. Check the controlling app, configured triggers, actual "
+        "sensor events, app execution logs and possible alternative causes. Read-only."
+    )), {"graph": post_graph, "mcp_calls": mcp.calls}
+    assert len(agent.chat_calls) == 1, {"model": [bool(t) for _, t in agent.chat_calls]}
     assert agent.chat_calls[0][1] == []  # final synthesis, not tool planning
     assert any(
         "HOST STRUCTURED CAUSAL EVIDENCE GRAPH" in str(m.get("content") or "")
