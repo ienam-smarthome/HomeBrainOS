@@ -333,7 +333,9 @@ async def test_explicit_off_question_checks_its_own_listener_settings_and_can_sy
     assert not off["appProducerContext"]["configuration"]["checked"]
     assert graph["otherSensorEvidenceChecked"]
     assert supports_one_pass_deep_synthesis(graph, OFF_QUESTION)
-    assert metrics["causal_off_app_config_reads"] == 1
+    # Configuration was already checked during the prior ON investigation;
+    # the OFF context must reuse it, not issue a redundant app-config read.
+    assert metrics.get("causal_off_app_config_reads", 0) == 0
     assert metrics["causal_off_provenance_reads"] == 1
 
 
