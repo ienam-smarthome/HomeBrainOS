@@ -34,6 +34,9 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
     trigger_sensor_history_candidates,
 )
+from investigation_intelligence import (
+    plan_investigation, render_investigation_plan,
+)
 from causal_history_coverage import assess_local_sensor_history_coverage
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
@@ -3167,6 +3170,14 @@ class UnifiedMCPAgent:
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(user_prompt, conversation_history)
+        investigation_contract = plan_investigation(user_prompt)
+        if investigation_contract is not None:
+            system_prompt += (
+                "\n\n" + render_investigation_plan(investigation_contract)
+                + "\nPrioritise the specified targeted evidence sources, avoiding "
+                  "unrelated hub-wide scans. Check real observed events and "
+                  "execution evidence before declaring an investigation complete."
+            )
         if capability_discovery:
             system_prompt += (
                 "\n\nHOST ORIGINAL-REQUEST CAPABILITY DISCOVERY\n"
