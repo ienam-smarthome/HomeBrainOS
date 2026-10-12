@@ -87,16 +87,16 @@ def test_prefetch_reaches_app_logs_after_native_completed_off():
             return [identity]
 
     class Executor:
-        async def execute(self, tool, args, **kwargs):
-            calls.append((tool, args))
-            if tool == "homebrain_device_history":
+        async def execute(self, name, args, **kwargs):
+            calls.append((name, args))
+            if name == "homebrain_device_history":
                 data = _native_history()
             elif args.get("tool") == "hub_get_app_config":
                 data = {"app": {"id": 4019, "name": "Livingroom Light 1"}}
             elif args.get("tool") == "hub_get_logs":
                 data = {"logs": []}
             else:
-                raise AssertionError(f"Unexpected tool: {tool} {args!r}")
+                raise AssertionError(f"Unexpected tool: {name} {args!r}")
             return SimpleNamespace(
                 success=True, result=SimpleNamespace(data=data))
 
