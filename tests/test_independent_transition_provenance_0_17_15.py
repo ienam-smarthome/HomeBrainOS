@@ -180,7 +180,8 @@ def _MCP_unused_calls(rows):
     return [
         (row["tool"], row["arguments"])
         for row in rows
-        if row.get("sub_tool") in {
+        if isinstance(row.get("arguments"), dict)
+        and row.get("sub_tool") in {
             "hub_list_device_events", "hub_get_logs", "hub_get_app_config",
         }
     ]
