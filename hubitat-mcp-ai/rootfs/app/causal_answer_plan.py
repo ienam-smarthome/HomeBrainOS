@@ -228,12 +228,21 @@ def render_causal_answer_plan(
 
 
 _UNBOUNDED_COMMAND_NEGATIVE = re.compile(
-    r"(?ix)\b(?:no|zero)\s+(?:\x60?off\x60?\s+)?"
-    r"(?:hubitat\s+|hub[- ]side\s+)?commands?\s+"
-    r"(?:was|were|has\s+been|had\s+been)?\s*"
-    r"(?:issued|sent|executed)\s+(?:by\s+(?:the\s+)?(?:hub|hubitat))?"
-    r"|\b(?:the\s+hub|hubitat)\s+(?:issued|sent|executed)\s+no\s+"
-    r"(?:\x60?off\x60?\s+)?commands?\b"
+    # Only correct a *globally scoped Hubitat* negative. The old pattern
+    # matched the substring "no command was issued" inside a scoped sentence
+    # such as "...by this app ... in bounded history", inserting a complete
+    # sentence and leaving "by this app" orphaned. Preserve such source-scoped
+    # observations rather than fragmenting them.
+    r"(?ix)\b(?:"
+    r"(?:no|zero)\s+(?:off\s+)?(?:hubitat|hub[- ]side)\s+commands?\s+"
+    r"(?:was|were|has\s+been|have\s+been)\s+"
+    r"(?:issued|sent|executed)"
+    r"|(?:the\s+hub|hubitat)\s+(?:issued|sent|executed)\s+"
+    r"no\s+(?:off\s+)?commands?"
+    r"|(?:no|zero)\s+(?:off\s+)?commands?\s+"
+    r"(?:was|were|has\s+been|have\s+been)\s+"
+    r"(?:issued|sent|executed)\s+by\s+(?:the\s+hub|hubitat)"
+    r")\b"
 )
 
 
@@ -252,12 +261,17 @@ def guard_causal_answer_claim_boundaries(
     if command["kind"] == "verified-direct-command":
         return str(message or ""), False
     source = str(message or "")
-    message_line = (
-        "No command producer is established for the focal OFF transition in "
-        "the returned Hubitat history; this does not prove that the hub "
-        "issued no command."
+    # A bounded source-aware clause can appear mid-sentence. Do not insert a
+    # capitalized standalone sentence (with a period) into that clause.
+    def _replace_global_negative(match: re.Match[str]) -> str:
+        scoped = ("no matching focal OFF command was established in "
+                  "the returned bounded Hubitat command history")
+        return scoped[0].upper() + scoped[1:] if (
+            match.group(0)[:1].isupper()
+        ) else scoped
+    source, count = _UNBOUNDED_COMMAND_NEGATIVE.subn(
+        _replace_global_negative, source
     )
-    source, count = _UNBOUNDED_COMMAND_NEGATIVE.subn(message_line, source)
     changed = count > 0
 
     # A positive number of older command rows must not become a zero-row
