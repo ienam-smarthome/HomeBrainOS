@@ -15,7 +15,7 @@ from device_state_summary import device_attributes, room_name
 
 def _time(value: Any) -> datetime | None:
     raw = str(value or "").strip()
-    if re.search(r"[+-]\\d{4}$", raw):
+    if re.search(r"[+-]\d{4}$", raw):
         raw = raw[:-5] + raw[-5:-2] + ":" + raw[-2:]
     if raw.endswith("Z"):
         raw = raw[:-1] + "+00:00"
@@ -83,7 +83,7 @@ def render_level_command_pattern(
         if str(producer.get("id") or "") != source_id:
             continue
         match = re.search(
-            r"\\bsetLevel\\(\\s*(\\d+(?:\\.\\d+)?)",
+            r"\bsetLevel\(\s*(\d+(?:\.\d+)?)",
             str(event.get("description") or ""),
             re.I,
         )
@@ -143,7 +143,7 @@ def render_level_command_pattern(
             f" issued setLevel({level:g}) during the observed ON interval;"
             " this is not another switch-on."
         )
-    return "\\n".join(lines) if lines else None
+    return "\n".join(lines) if lines else None
 
 
 def choose_occupancy_event_sources(
@@ -183,7 +183,7 @@ def choose_occupancy_event_sources(
             continue
         configured = bool(config_search and name.casefold() in config_search)
         named_occupancy = bool(
-            re.search(r"\\b(?:occupancy|motion|presence|pir)\\b", name, re.I)
+            re.search(r"\b(?:occupancy|motion|presence|pir)\b", name, re.I)
         )
         if configured or named_occupancy:
             eligible.append((item, attribute, configured))
