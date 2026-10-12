@@ -181,7 +181,7 @@ def choose_occupancy_event_sources(
                 attribute = "presence"
         if attribute is None:
             continue
-        configured = bool(config_search and name.casefold() in config_search)
+        configured = bool(config_search and name.casefold() in config_search.casefold())
         named_occupancy = bool(
             re.search(r"\b(?:occupancy|motion|presence|pir)\b", name, re.I)
         )
