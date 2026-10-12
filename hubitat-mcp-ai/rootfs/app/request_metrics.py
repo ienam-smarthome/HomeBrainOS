@@ -73,6 +73,7 @@ class RequestMetrics:
         "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
         "causal_adaptive_sufficient_stop", "causal_adaptive_candidate_plans",
         "causal_adaptive_unexamined_candidates",
+        "causal_graph_mode_reads", "causal_graph_sufficient",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",

@@ -13,6 +13,10 @@ from causal_native_logs import (
 )
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
+from causal_evidence_graph import (
+    build_causal_evidence_graph,
+    render_causal_evidence_graph,
+)
 from investigation_policy import (
     is_causal_investigation,
     is_history_investigation,
@@ -219,7 +223,12 @@ def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -
             "strongest initiating-control candidate rather than dismissing it as "
             "an unrelated coincidence. Keep the explicit caveat that repeated "
             "timestamp correlation does not independently prove the configured "
-            "button-to-device mapping. A Hubitat event's triggered[] list names "
+            "button-to-device mapping. An observed OFF state immediately after "
+            "sensor inactivity is not proof that the same app issued an OFF "
+            "command or that its configured inactivity timer executed. If "
+            "the structured causal graph lacks an OFF-command source, call "
+            "the OFF linkage temporally consistent only and keep its actor "
+            "unverified. A Hubitat event's triggered[] list names "
             "listeners invoked by that state event; if the event is physical and "
             "producedBy names a bridge/device, an app appearing only in triggered[] "
             "must be described as downstream, never as the initiating trigger. "
@@ -400,6 +409,15 @@ class FinalAnswerCoordinator:
             render_causal_timeline(evidence, original_user=original_user)
             if causal else None
         )
+        causal_graph = (
+            build_causal_evidence_graph(evidence, original_user)
+            if causal else {}
+        )
+        causal_graph_brief = (
+            render_causal_evidence_graph(evidence, original_user)
+            if causal_graph.get("scope") == "single-observed-event"
+            else None
+        )
         native_log_correlation = (
             render_native_log_correlation(
                 correlate_native_log_boundaries(evidence)
@@ -421,6 +439,8 @@ class FinalAnswerCoordinator:
             final_messages.append({"role": "user", "content": brief})
         if causal_timeline:
             final_messages.append({"role": "user", "content": causal_timeline})
+        if causal_graph_brief:
+            final_messages.append({"role": "user", "content": causal_graph_brief})
         if native_log_correlation:
             final_messages.append({
                 "role": "user",
@@ -456,6 +476,22 @@ class FinalAnswerCoordinator:
         )
         if not issues:
             return draft
+
+        # When a fully scoped event graph exists and every issue was already
+        # corrected by an evidence-backed, localized deterministic guard,
+        # another provider round can only repeat the evidence or reintroduce
+        # the original error. Keep the corrected answer, not a new rewrite.
+        deterministic_causal_repairs = {
+            "focal_interval_duration", "upstream_manual_exclusion",
+            "causal_source_attribution", "checked_source_consistency",
+            "positive_source_attribution",
+        }
+        if (
+            causal
+            and causal_graph.get("ready")
+            and set(issues).issubset(deterministic_causal_repairs)
+        ):
+            return corrected
 
         performance_repair = ""
         if performance_semantic_validation:
