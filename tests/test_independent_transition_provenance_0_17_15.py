@@ -18,7 +18,9 @@ sys.path.insert(0, str(APP_DIR))
 from causal_claim_verification import (  # noqa: E402
     guard_off_trigger_attribution, verify_causal_claims,
 )
-from causal_evidence_graph import build_causal_evidence_graph  # noqa: E402
+from causal_evidence_graph import (  # noqa: E402
+    build_causal_evidence_graph, supports_one_pass_deep_synthesis,
+)
 from causal_transition_provenance import (  # noqa: E402
     focal_closed_transition, positive_off_command_already_recorded,
     scoped_off_history_receipt,
@@ -116,7 +118,7 @@ class _MCP:
         return SimpleNamespace(data=data)
 
 
-async def _run(rows, mcp):
+async def _run(rows, mcp, *, question=QUESTION, transition="on"):
     records = _Recorder(rows)
     host = SimpleNamespace(
         evidence=records, mcp=mcp,
@@ -126,8 +128,8 @@ async def _run(rows, mcp):
     token = metrics.begin()
     try:
         await UnifiedMCPAgent._collect_focal_off_provenance(
-            host, user_prompt=QUESTION, resolved_device_id="7840",
-            catalog=_Tools(),
+            host, user_prompt=question, resolved_device_id="7840",
+            requested_transition=transition, catalog=_Tools(),
         )
         counters = metrics.snapshot()["counters"]
     finally:
@@ -307,3 +309,76 @@ def test_insufficient_or_ambiguous_focal_off_does_not_invent_provenance():
     })
     fixed, issues = verify_causal_claims(draft, rows, QUESTION)
     assert not issues and fixed == draft
+
+
+OFF_QUESTION = (
+    "Investigate thoroughly why Example Room Light turned off at 08:18:23 "
+    "on 12 October. Check the controlling app, configured triggers, actual "
+    "sensor events, app execution logs and possible alternative causes. Read-only."
+)
+
+
+@pytest.mark.asyncio
+async def test_explicit_off_question_checks_its_own_listener_settings_and_can_synthesize():
+    rows, metrics = await _run(
+        _records(), _MCP(off_events=[]),
+        question=OFF_QUESTION, transition="off",
+    )
+    graph = build_causal_evidence_graph(rows, OFF_QUESTION)
+    off = graph["transitionEvidence"]["off"]
+    assert off["observed"]
+    assert off["commandHistory"]["checked"]
+    assert off["notifiedListenerContext"]["configuration"]["checked"]
+    assert off["notifiedListenerContext"]["executionLogs"]["checked"]
+    assert not off["appProducerContext"]["configuration"]["checked"]
+    assert graph["otherSensorEvidenceChecked"]
+    assert supports_one_pass_deep_synthesis(graph, OFF_QUESTION)
+    assert metrics["causal_off_app_config_reads"] == 1
+    assert metrics["causal_off_provenance_reads"] == 1
+
+
+def test_targeted_command_events_are_merged_without_cross_device_contamination():
+    from causal_command_provenance import correlate_command_producers
+    rows = _records()
+    rows.append({
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True,
+        "arguments": {"tool": "hub_list_device_events",
+                      "args": {"deviceId": "7840", "attribute": "command-off"}},
+        "details": {
+            "label": "Example Room Light",
+            "events": [{
+                "name": "command-off",
+                "date": "2026-10-12T08:18:23.720+0100",
+                "description": "Command called: off()",
+                "producedBy": {
+                    "type": "app", "id": "8888", "label": "Own OFF App",
+                },
+            }],
+        },
+    })
+    rows.append({
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True,
+        "arguments": {"tool": "hub_list_device_events",
+                      "args": {"deviceId": "other", "attribute": "command-off"}},
+        "details": {
+            "label": "Another Room Light",
+            "events": [{
+                "name": "command-off",
+                "date": "2026-10-12T08:18:23.825+0100",
+                "description": "Command called: off()",
+                "producedBy": {
+                    "type": "app", "id": "9999", "label": "Wrong Light OFF",
+                },
+            }],
+        },
+    })
+    matches = [
+        row for row in correlate_command_producers(rows)
+        if row.get("boundaryRole") == "end"
+        and row.get("intervalStart") == "2026-10-12T08:16:10.861+0100"
+    ]
+    assert len(matches) == 1
+    assert matches[0]["producer"]["id"] == "8888"
+    assert not matches[0]["competingCommands"]
