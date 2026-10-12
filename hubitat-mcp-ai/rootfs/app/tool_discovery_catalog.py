@@ -239,14 +239,34 @@ class ToolDiscoveryCatalog:
         cls,
         result: MCPToolResult,
         available: dict[str, MCPTool],
+        *,
+        query: str = "",
     ) -> list[MCPTool]:
-        """Resolve explicit search-hit gateway names against known tools."""
+        """Resolve search hits; prioritize exact requested sub-operations.
+
+        Generic fuzzy requests keep a two-gateway cap. When a model searches
+        an explicit hub_* operation, the matching operation's gateway must be
+        selected even if upstream ranks unrelated fuzzy hits above it.
+        """
 
         if result.is_error:
             return []
+        matches = cls._match_items(result.data)
+        explicit_operations = set(
+            re.findall(r"\bhub_[a-z0-9_]+\b", str(query).casefold())
+        )
+        exact_matches = [
+            item for item in matches
+            if isinstance(item.get("tool"), str)
+            and item["tool"].casefold() in explicit_operations
+        ]
+        # Exact operation discovery should not expose unrelated gateways.
+        # When no exact operation matches, retain the established bounded
+        # fuzzy top-two behavior for broad user-language searches.
+        ordered_matches = exact_matches if exact_matches else matches
         names: list[str] = []
         seen: set[str] = set()
-        for item in cls._match_items(result.data):
+        for item in ordered_matches:
             operation = item.get("tool")
             wrapper = (
                 LOCAL_OPERATION_WRAPPERS.get(operation)
@@ -300,8 +320,10 @@ class ToolDiscoveryCatalog:
         }
         return [name for name in requested if name not in self._available]
 
-    def expand(self, result: MCPToolResult) -> list[MCPTool]:
-        """Add newly discovered known gateways, preserving result order."""
+    def expand(
+        self, result: MCPToolResult, *, query: str = ""
+    ) -> list[MCPTool]:
+        """Add gateways from live discovery, prioritizing exact operations."""
 
         learned = self._result_operation_gateways(result)
         for operation, gateways in learned.items():
@@ -309,11 +331,37 @@ class ToolDiscoveryCatalog:
 
         additions = [
             tool
-            for tool in self.discovered_tools(result, self._available)
+            for tool in self.discovered_tools(result, self._available, query=query)
             if tool.name not in self._declared
         ]
         self._declared.update({tool.name: tool for tool in additions})
         return additions
+
+    def expose_read_gateways(
+        self,
+        names: Iterable[str],
+        *,
+        max_declared: int = 48,
+    ) -> list[MCPTool]:
+        """Expose already advertised read gateways, never guessed write tools.
+
+        Used only for a model-led deep follow-up after verified baseline data.
+        The MCP live tool list has already applied Read/Write master gates and
+        per-tool deny overrides. This helper cannot re-enable a missing tool.
+        """
+        added: list[MCPTool] = []
+        limit = max(1, int(max_declared))
+        for name in dict.fromkeys(str(item) for item in names):
+            if len(self._declared) >= limit:
+                break
+            if not name.startswith("hub_read_"):
+                continue
+            tool = self._available.get(name)
+            if tool is None or name in self._declared:
+                continue
+            self._declared[name] = tool
+            added.append(tool)
+        return added
 
     @staticmethod
     def _causal_provenance_read_tool(tool: MCPTool) -> bool:
