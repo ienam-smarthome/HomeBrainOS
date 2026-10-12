@@ -933,6 +933,33 @@ def render_reporting_source_secondary_summary(
         return None
 
     lines: list[str] = []
+    journal = analysis.get("historicalJournal")
+    if isinstance(journal, dict):
+        for sensor in (journal.get("sensors") or [])[:2]:
+            if not isinstance(sensor, dict):
+                continue
+            label = str(sensor.get("attribute") or "sensor")
+            device_id = str(sensor.get("deviceId") or "?")
+            rows = [r for r in (sensor.get("events") or []) if isinstance(r, dict)]
+            if rows:
+                examples = ", ".join(
+                    f"{row.get('value')} at {row.get('observedAt')} "
+                    f"(timestamp: {row.get('timestampBasis')})"
+                    for row in rows[:3]
+                )
+                lines.append(
+                    f"- **Journal archive:** device {device_id} {label}: "
+                    f"{len(rows)} collected observation(s), including {examples}. "
+                    "The source stream's coverage is unverified; collection "
+                    "time may differ from actual device event time. These "
+                    "observations do NOT prove the OFF command issuer."
+                )
+            else:
+                lines.append(
+                    f"- **Journal archive:** no collected {label} observation "
+                    f"for device {device_id} in the requested interval. "
+                    "This does NOT establish inactivity or continuous coverage."
+                )
     clue = render_ranked_clue(analysis)
     if clue:
         lines.append("- " + clue)
