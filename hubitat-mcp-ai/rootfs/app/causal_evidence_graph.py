@@ -629,7 +629,10 @@ def build_causal_evidence_graph(
         _logs(evidence, reactive_app_id, focus.get("start") or "")
         if reactive_app_id else {"checked": False}
     )
-    post_on_history_checked = any(
+    # Positive, source-tagged command evidence from the subject's prefetched
+    # history is enough; it need not be fetched again under an event sub-tool.
+    # Negative findings still require an actual scoped command-history read.
+    post_on_history_checked = bool(post_on_commands) or any(
         _working(item)
         and _tool(item) == "hub_list_device_events"
         and str(_args(item).get("attribute") or "") == "command-setLevel"
