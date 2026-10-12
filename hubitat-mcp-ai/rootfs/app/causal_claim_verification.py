@@ -126,7 +126,10 @@ def _action_value(text: str) -> str:
     match = _LEVEL_CLAIM.search(text)
     if not match:
         return ""
-    return str(match.group(1) or match.group(2) or "").rstrip("0").rstrip(".")
+    try:
+        return f"{float(match.group(1) or match.group(2)):g}"
+    except (ValueError, TypeError):
+        return ""
 
 
 def _listeners(graph: dict[str, Any], owner_id: str) -> list[dict[str, str]]:
@@ -160,6 +163,7 @@ def guard_causal_action_ownership(
     message: str,
     evidence: list[dict[str, Any]],
     original_user: str = "",
+    *, graph: dict[str, Any] | None = None,
 ) -> tuple[str, bool]:
     """Do not attribute a verified post-ON command to a listener/other app.
 
@@ -168,7 +172,7 @@ def guard_causal_action_ownership(
     when there are zero or multiple possible producers.
     """
     source = str(message or "")
-    graph = _graph(evidence, original_user)
+    graph = graph if graph is not None else _graph(evidence, original_user)
     if graph.get("scope") != "single-observed-event":
         return source, False
     owner = _verified_level_action(graph)
@@ -269,10 +273,11 @@ def guard_causal_empty_log_inference(
     message: str,
     evidence: list[dict[str, Any]],
     original_user: str = "",
+    *, graph: dict[str, Any] | None = None,
 ) -> tuple[str, bool]:
     """A successful 0-row app-log query cannot prove the app did not execute."""
     source = str(message or "")
-    graph = _graph(evidence, original_user)
+    graph = graph if graph is not None else _graph(evidence, original_user)
     if graph.get("scope") != "single-observed-event" or not _checked_empty_logs(graph):
         return source, False
     changed = False
@@ -358,10 +363,11 @@ def guard_causal_sensor_event_order(
     message: str,
     evidence: list[dict[str, Any]],
     original_user: str = "",
+    *, graph: dict[str, Any] | None = None,
 ) -> tuple[str, bool]:
     """Never report a sensor event occurring *after* OFF as *before* it."""
     source = str(message or "")
-    graph = _graph(evidence, original_user)
+    graph = graph if graph is not None else _graph(evidence, original_user)
     if graph.get("scope") != "single-observed-event":
         return source, False
     rows = _off_sensor_events(graph)
@@ -375,7 +381,8 @@ def guard_causal_sensor_event_order(
         # Preserve unrelated paragraphs and already correct mixed-order
         # analyses. Apply only to a sentence that wrongly places a measured
         # *after*-OFF sensor before OFF.
-        fragments = re.split(r"(?<=[.!?])\s+", line)
+        # Avoid splitting the abbreviation "approx. 69ms" mid-claim.
+        fragments = re.split(r"(?<=[.!?])\s+(?=[A-Z*])", line)
         fixed_fragments: list[str] = []
         for part in fragments:
             after_rows = [
@@ -413,13 +420,16 @@ def verify_causal_claims(
 ) -> tuple[str, list[str]]:
     """One shared validation boundary for all three source/claim relations."""
     corrected = str(message or "")
+    graph = _graph(evidence, original_user)
     issues: list[str] = []
     for checker, code in (
         (guard_causal_action_ownership, "causal_action_ownership"),
         (guard_causal_empty_log_inference, "causal_empty_log_inference"),
         (guard_causal_sensor_event_order, "causal_sensor_event_order"),
     ):
-        corrected, changed = checker(corrected, evidence, original_user)
+        corrected, changed = checker(
+            corrected, evidence, original_user, graph=graph
+        )
         if changed:
             issues.append(code)
     return corrected, issues
