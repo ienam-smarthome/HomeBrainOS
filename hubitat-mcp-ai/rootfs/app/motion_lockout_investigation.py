@@ -110,12 +110,27 @@ def resolve_named_light(prompt: str, identities: list[dict[str, Any]]) -> dict[s
     return matches[0][1]
 
 
-def last_observed_off(subject: dict[str, Any]) -> datetime | None:
+def completed_light_intervals(subject: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize history producer and compact evidence-receipt representations.
+
+    The native DeviceHistoryService returns temporalAnalysis.intervals; the
+    privacy-bounded evidence renderer calls the same rows observedIntervals.
+    Treat either as an observed interval. A tool call succeeded even when
+    no observed transitions exist, so never synthesize missing intervals.
+    """
     temporal = subject.get("temporalAnalysis") or {}
+    if not isinstance(temporal, dict):
+        return []
+    for field in ("intervals", "observedIntervals"):
+        rows = temporal.get(field)
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+def last_observed_off(subject: dict[str, Any]) -> datetime | None:
     candidates: list[datetime] = []
-    for row in (temporal.get("observedIntervals") or []):
-        if not isinstance(row, dict):
-            continue
+    for row in completed_light_intervals(subject):
         end = _time(row.get("end"))
         if end is not None and not row.get("clippedAtWindowEnd"):
             candidates.append(end)
@@ -127,6 +142,49 @@ def last_observed_off(subject: dict[str, Any]) -> datetime | None:
             if stamp:
                 candidates.append(stamp)
     return max(candidates) if candidates else None
+
+
+def focal_command_provenance(
+    subject: dict[str, Any], *, off: datetime,
+    tolerance_seconds: float = 2.0,
+) -> list[dict[str, Any]]:
+    """Match independently retained command rows to an observed OFF edge.
+
+    Command provenance identifies the source that sent a command; a producer
+    named 'button 1 pushed' is not itself a separately captured hardware
+    button event. Keep these epistemic levels distinct.
+    """
+    matched = []
+    for row in subject.get("commandEvents") or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("name") or "").casefold() != "command-off":
+            continue
+        stamp = _time(row.get("date") or row.get("timestamp"))
+        if stamp is None:
+            continue
+        delta = (off - stamp).total_seconds()
+        if delta < 0 or delta > tolerance_seconds:
+            continue
+        producer = row.get("producedBy") or {}
+        if not isinstance(producer, dict):
+            producer = {}
+        matched.append({
+            "command": "off",
+            "commandAt": stamp.isoformat(),
+            "stateAt": off.isoformat(),
+            "commandPrecedesStateMs": round(delta * 1000, 1),
+            "producer": {
+                "id": str(producer.get("id") or ""),
+                "type": str(producer.get("type") or ""),
+                "label": str(producer.get("label") or "")[:100],
+            },
+            "source": "retained device command history",
+            "commandProducerVerified": bool(producer.get("id")),
+            "hardwareButtonPressVerified": False,
+            "lockoutExecutionVerified": False,
+        })
+    return sorted(matched, key=lambda row: row["commandPrecedesStateMs"])[:3]
 
 
 def _candidate_devices(
@@ -228,12 +286,18 @@ async def prefetch_motion_lockout(
         findings["sources"].append({
             "source": "bounded-light-device-history", "success": bool(result.success),
             "observedIntervals": len(
-                ((subject_data.get("temporalAnalysis") or {}).get("observedIntervals") or [])
+                completed_light_intervals(subject_data)
             ),
         })
     off = last_observed_off(subject_data)
     if off is not None:
         findings["focalOff"] = off.isoformat()
+        findings["focalCommandProvenance"] = focal_command_provenance(
+            subject_data, off=off
+        )
+        findings["manualOffVerified"] = False  # command producer != hardware press
+        findings["latestFocalOffBasis"] = "newest observed completed OFF boundary"
+
     config_search = ""
     async def remote(gateway: str, leaf: str, args: dict[str, Any]) -> dict[str, Any] | None:
         try:
@@ -395,5 +459,6 @@ async def prefetch_motion_lockout(
 
 __all__ = [
     "is_motion_lockout_investigation", "resolve_named_light",
-    "last_observed_off", "prefetch_motion_lockout",
+    "completed_light_intervals", "last_observed_off",
+    "focal_command_provenance", "prefetch_motion_lockout",
 ]
