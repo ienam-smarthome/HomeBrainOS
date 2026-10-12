@@ -121,16 +121,17 @@ def guard_unproven_on_button_initiation(
         r"(?:\*\*)?([^,.;\n|]{3,100})",
         re.I,
     )
-    replacement = (
-        "was closely associated with a physical button push "
-        "(the reporting order does not prove it initiated ON)"
-    )
     changed = False
 
     def sub(match: re.Match[str]) -> str:
         nonlocal changed
         changed = True
-        return replacement
+        label = str(match.group(1) or "").strip()
+        return (
+            "was closely associated with a physical button push"
+            + (f" of {label}" if label else "")
+            + " (the reporting order does not prove it initiated ON)"
+        )
 
     return pattern.sub(sub, original), changed
 
