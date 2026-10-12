@@ -238,8 +238,8 @@ _UNBOUNDED_COMMAND_NEGATIVE = re.compile(
     r"(?:was|were|has\s+been|have\s+been)\s+"
     r"(?:issued|sent|executed)"
     r"|(?:the\s+hub|hubitat)\s+(?:issued|sent|executed)\s+"
-    r"no\s+(?:off\s+)?commands?"
-    r"|(?:no|zero)\s+(?:off\s+)?commands?\s+"
+    r"no\s+(?:\x60?off\x60?\s+)?commands?"
+    r"|(?:no|zero)\s+(?:\x60?off\x60?\s+)?commands?\s+"
     r"(?:was|were|has\s+been|have\s+been)\s+"
     r"(?:issued|sent|executed)\s+by\s+(?:the\s+hub|hubitat)"
     r")\b"
@@ -265,7 +265,8 @@ def guard_causal_answer_claim_boundaries(
     # capitalized standalone sentence (with a period) into that clause.
     def _replace_global_negative(match: re.Match[str]) -> str:
         scoped = ("no matching focal OFF command was established in "
-                  "the returned bounded Hubitat command history")
+                  "the returned bounded Hubitat command history; this does "
+                  "not prove that the hub issued no command")
         return scoped[0].upper() + scoped[1:] if (
             match.group(0)[:1].isupper()
         ) else scoped
