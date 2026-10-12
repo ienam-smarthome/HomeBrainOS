@@ -10,6 +10,7 @@ from causal_attribution_guard import (
     guard_configuration_only_causal_claim,
     guard_triggered_listener_causal_claim,
     guard_unproven_upstream_manual_exclusion,
+    guard_causal_sensor_source_attribution,
 )
 from causal_timeline import missing_material_timeline_rows, guard_focal_interval_duration
 from controller_correlation_guard import guard_controller_boundary_claim
@@ -275,6 +276,12 @@ def validate_synthesis(
         )
         if upstream_changed:
             issues.append("upstream_manual_exclusion")
+
+        corrected, source_changed = guard_causal_sensor_source_attribution(
+            corrected, evidence
+        )
+        if source_changed:
+            issues.append("causal_source_attribution")
 
         corrected, controller_boundary_changed = guard_controller_boundary_claim(corrected, evidence)
         if controller_boundary_changed:
