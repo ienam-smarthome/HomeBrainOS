@@ -20,11 +20,42 @@ _DIAGNOSTIC = re.compile(
     r"runtime|execution|not\s+responding)\b",
     re.I,
 )
-_BROAD = re.compile(
-    r"\b(?:all|every|entire|whole|across|any|which|"
-    r"my\s+(?:automations|rules|apps)|"
-    r"system|overall|full|comprehensive)\b", re.I
+# Broad scope must apply to the automation population or whole-hub
+# diagnostics, not to an unrelated word elsewhere in the question.
+# In particular, 'which history source supports ...' is NOT permission
+# to replace a named light-event investigation with a whole-hub audit.
+_BROAD_AUTOMATION_COLLECTION = re.compile(
+    r"\b(?:all|every|any|which|my|our|entire|whole|full|comprehensive)"
+    r"\s+(?:of\s+)?(?:(?:my|our|the|installed|existing|active|paused|"
+    r"running|broken|failed|failing|current)\s+){0,4}"
+    r"(?:automations|rules|apps)\b",
+    re.I,
 )
+_BROAD_AUTOMATION_LOGS = re.compile(
+    r"\b(?:all|every|entire|whole|full|comprehensive)\s+"
+    r"(?:(?:my|the|our)\s+)?(?:automation|rule|app)\s+"
+    r"(?:logs?|executions?|statuses?|failures?|errors?)\b",
+    re.I,
+)
+_BROAD_HUB_SCOPE = re.compile(
+    r"\b(?:system[- ]wide|across\s+(?:(?:my|our|the|all)\s+)?(?:hub|system)|"
+    r"(?:whole|entire|full|comprehensive)\s+(?:hub|system))\b",
+    re.I,
+)
+
+
+def has_broad_automation_scope(prompt: str) -> bool:
+    """Require grammatical broad *automation* scope, not isolated words.
+
+    'Any', 'which', 'system', 'all' and 'my' are ubiquitous in targeted
+    questions and must not independently trigger a 200-device System Check.
+    """
+    text = str(prompt or "").strip()
+    return bool(
+        _BROAD_AUTOMATION_COLLECTION.search(text)
+        or _BROAD_AUTOMATION_LOGS.search(text)
+        or _BROAD_HUB_SCOPE.search(text)
+    )
 _MUTATION = re.compile(
     r"^\s*(?:please\s+)?(?:fix|repair|delete|remove|disable|enable|"
     r"rebuild|reset|change|update)\s+", re.I
@@ -47,7 +78,7 @@ def is_broad_automation_runtime_diagnostic(prompt: str) -> bool:
     text = str(prompt or "").strip()
     return bool(
         is_automation_runtime_diagnostic(text)
-        and _BROAD.search(text)
+        and has_broad_automation_scope(text)
         and not _MUTATION.search(text)
     )
 
