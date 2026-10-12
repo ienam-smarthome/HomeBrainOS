@@ -526,6 +526,10 @@ class FinalAnswerCoordinator:
             "causal_off_certainty_contract", "off_hypothesis_summary",
             "causal_history_gap_claims",
             "causal_answer_claim_boundaries",
+            "archived_sensor_not_absent",
+            "archived_sensor_source_disclosure",
+            "causal_on_button_initiation_not_proven",
+            "unsupported_math_status_notation",
         }
         if (
             causal
