@@ -48,6 +48,15 @@ def test_every_literal_runtime_metric_name_is_registered() -> None:
         "observe_active_metric_max": RequestMetrics.ALLOWED_COUNTERS,
         "add_active_metric_ms": RequestMetrics.ALLOWED_TIMINGS,
     }
+    # The initial 0.17.31 scan only checked free functions. The production
+    # 0.17.38 failure used self.request_metrics.increment(...), so the
+    # scanner must also inspect metrics INSTANCE method calls.
+    instance_method_allowlist = {
+        "increment": RequestMetrics.ALLOWED_COUNTERS,
+        "observe_counter_max": RequestMetrics.ALLOWED_COUNTERS,
+        "observe_ms": RequestMetrics.ALLOWED_TIMINGS,
+        "add_ms": RequestMetrics.ALLOWED_TIMINGS,
+    }
     missing: list[str] = []
     scanned = 0
     for path in APP_DIR.rglob("*.py"):
@@ -61,19 +70,49 @@ def test_every_literal_runtime_metric_name_is_registered() -> None:
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
+            if not node.args:
+                continue
             name = func.id if isinstance(func, ast.Name) else None
-            if name not in call_to_allowlist or not node.args:
+            allowed = call_to_allowlist.get(name) if name else None
+            if isinstance(func, ast.Attribute):
+                receiver = func.value
+                # Production sites use self.request_metrics.increment(...),
+                # while metrics is the conventional local RequestMetrics ref.
+                is_request_metrics = (
+                    isinstance(receiver, ast.Attribute)
+                    and receiver.attr == "request_metrics"
+                ) or (
+                    isinstance(receiver, ast.Name)
+                    and receiver.id in {"metrics", "request_metrics"}
+                )
+                if is_request_metrics:
+                    name = func.attr
+                    allowed = instance_method_allowlist.get(name)
+            if allowed is None:
                 continue
             first = node.args[0]
             if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
                 continue
-            if first.value not in call_to_allowlist[name]:
+            if first.value not in allowed:
                 missing.append(
                     f"{path.relative_to(APP_DIR)}:{node.lineno}: "
                     f"{name}({first.value!r})"
                 )
     assert scanned > 10, "Expected installed runtime source tree"
     assert not missing, "Unregistered runtime metrics:\n" + "\n".join(missing)
+
+
+def test_investigation_snapshot_bypass_is_supported_on_instance_api() -> None:
+    """The 0.17.38 live lockout route cannot fail at the counter increment."""
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.increment("investigation_snapshot_shortcut_bypassed")
+        assert metrics.snapshot()["counters"]["investigation_snapshot_shortcut_bypassed"] == 1
+        with pytest.raises(ValueError, match="Unsupported metric counter"):
+            metrics.increment("private-unregistered-route")
+    finally:
+        metrics.reset(token)
 
 
 def test_metric_contract_still_rejects_arbitrary_names() -> None:
