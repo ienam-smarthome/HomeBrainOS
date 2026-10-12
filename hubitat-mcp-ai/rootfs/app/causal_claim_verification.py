@@ -15,6 +15,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from focal_evidence_reconciliation import guard_unproven_on_button_initiation
 from causal_answer_plan import guard_causal_answer_claim_boundaries
 from causal_history_coverage import guard_history_gap_claims
 from causal_certainty_contract import guard_off_certainty_contract
@@ -532,6 +533,17 @@ def verify_causal_claims(
     )
     if changed:
         issues.append("causal_answer_claim_boundaries")
+    corrected, changed = guard_unproven_on_button_initiation(corrected, graph)
+    if changed:
+        issues.append("causal_on_button_initiation_not_proven")
+    # Mathematical status glyphs should be readable as literal text in the
+    # HomeBrain UI, which renders a Markdown subset rather than MathJax.
+    for marker, symbol in (
+        (r"$\\times$", "✗"), (r"$\\checkmark$", "✓"), (r"$\\sim$", "~")
+    ):
+        if marker in corrected:
+            corrected = corrected.replace(marker, symbol)
+            issues.append("unsupported_math_status_notation")
     corrected, changed = guard_history_gap_claims(corrected, graph)
     if changed:
         issues.append("causal_history_gap_claims")
