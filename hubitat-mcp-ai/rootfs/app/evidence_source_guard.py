@@ -83,6 +83,26 @@ def _sentence_pieces(text: str) -> list[str]:
     return re.split(r"(?<=[.!?])(?P<space>\s+)", str(text or ""))
 
 
+def has_performance_evidence(evidence: list[dict[str, Any]]) -> bool:
+    """Evidence-level domain gate shared by synthesis and API serialization.
+
+    A native log read alone does not prove this is a performance investigation.
+    Explicit performance-statistics/job receipts or trusted diagnostic evidence
+    kinds do. The API serializer has no original user prompt, so it must
+    avoid inferring performance intent from model-authored prose.
+    """
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        leaf = str(receipt.get("sub_tool") or receipt.get("tool") or "")
+        kind = str(receipt.get("evidence_kind") or "").casefold()
+        if leaf in {"hub_get_metrics", "hub_get_performance_stats", "hub_get_jobs"}:
+            return True
+        if "performance" in kind:
+            return True
+    return False
+
+
 def _successful_performance_sources(evidence: list[dict[str, Any]]) -> list[str]:
     found: list[str] = []
     for receipt in evidence:
@@ -239,6 +259,7 @@ def guard_positive_source_attribution(
 
 
 __all__ = [
+    "has_performance_evidence",
     "guard_checked_source_absence_claim",
     "guard_positive_source_attribution",
 ]
