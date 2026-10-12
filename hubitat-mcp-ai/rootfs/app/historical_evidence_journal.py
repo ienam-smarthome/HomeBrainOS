@@ -373,6 +373,10 @@ class HistoricalEvidenceJournal:
                     counts = dict(db.execute(
                         "SELECT stream, COUNT(*) FROM journal_events GROUP BY stream"
                     ).fetchall())
+                    last_event_received = db.execute(
+                        "SELECT MAX(received_at) FROM journal_events "
+                        "WHERE stream='events'"
+                    ).fetchone()[0]
                     app_counts = dict(db.execute(
                         "SELECT app_id, COUNT(*) FROM journal_events "
                         "WHERE stream='logs' GROUP BY app_id"
@@ -393,9 +397,10 @@ class HistoricalEvidenceJournal:
                     ) if candidate.exists()
                 )
                 snapshot.update(
-                    rows=count, first_received=first, last_received=last,
+                    rows=count, first_received=first, last_retained=last,
                     event_rows=int(counts.get("events", 0)),
                     app_log_rows=int(counts.get("logs", 0)),
+                    last_persisted_device_event=last_event_received,
                     captured_app_log_counts={
                         app_id: int(app_counts.get(app_id, 0))
                         for app_id in sorted(self.log_app_ids)

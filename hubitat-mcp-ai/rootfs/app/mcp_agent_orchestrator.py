@@ -1688,6 +1688,179 @@ class UnifiedMCPAgent:
                 arguments["_resolved_target"] = candidate
             return arguments, candidate
 
+        journal_summary: dict[str, Any] | None = None
+        # A local journal may preserve real-time Hubitat observations that
+        # have rotated out of the MCP server's native event history. It is
+        # deliberately a distinct, WEAKER evidence source: many Hubitat
+        # socket frames contain no original event timestamp, so their
+        # collector-reception time must not be treated as exact provenance.
+        archive = getattr(self, "historical_journal", None)
+        archive_rows: list[dict[str, Any]] = []
+        if (
+            transition == "off"
+            and archive is not None
+            and getattr(archive, "enabled", False)
+            and getattr(archive, "_started", False)
+        ):
+            for spec in sensor_specs[:2]:
+                scope = build_focal_sensor_window_probe(
+                    spec, boundary_match.get("stateBoundary")
+                )
+                if scope is None:
+                    continue
+                try:
+                    retrieved = await asyncio.to_thread(
+                        archive.query,
+                        since=scope["since"], until=scope["until"],
+                        device_id=scope["deviceId"],
+                        attribute=scope["attribute"], limit=40,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Historical journal window read unavailable: %s",
+                        type(exc).__name__,
+                    )
+                    archive_rows.append({
+                        "deviceId": scope["deviceId"],
+                        "attribute": scope["attribute"],
+                        "status": "unavailable", "eventCount": 0,
+                    })
+                    continue
+                observations = [
+                    {
+                        "value": item.get("value"),
+                        "observedAt": item.get("observed_at"),
+                        "timestampBasis": item.get("timestamp_basis"),
+                        "captureSource": item.get("source"),
+                    }
+                    for item in (retrieved.get("events") or [])[:40]
+                    if isinstance(item, dict) and item.get("stream") == "events"
+                ]
+                archive_rows.append({
+                    "deviceId": scope["deviceId"],
+                    "attribute": scope["attribute"],
+                    "status": "archived-partial-observations",
+                    "eventCount": len(observations),
+                    "events": observations,
+                    "coverageComplete": False,
+                    "gapCount": len(retrieved.get("gaps") or []),
+                    "emptyProvesNoMotion": False,
+                })
+            if archive_rows:
+                journal_summary = {
+                    "status": "partial-archive-not-causal-proof",
+                    "sensors": archive_rows,
+                    "timestampBasis": "source timestamp if available, otherwise collector received",
+                    "historicalCompletenessVerified": False,
+                    "archivedSensorEventsAreNotOffCommandProvenance": True,
+                    "lookupOrder": "journal-before-mcp",
+                }
+
+
+        async def read_focal_window(spec, args):
+            started_window = time.monotonic()
+            request = {"tool": "hub_list_device_events", "args": args}
+            try:
+                result = await self.mcp.call_tool("hub_read_devices", request)
+                ok = self._tool_succeeded(result)
+                data = result.data if ok and isinstance(result.data, dict) else {}
+            except Exception as error:
+                logger.debug("Focal sensor history window unavailable: %s", error)
+                ok, data = False, {}
+            verified = verify_windowed_sensor_reply(args, data if ok else None)
+            details = {
+                "label": str(spec.get("name") or ""),
+                "deviceId": args["deviceId"],
+                "attribute": args["attribute"],
+                "windowVerified": verified.get("status") == "verified-window",
+                "events": verified.get("events") or [],
+                "eventCount": len(verified.get("events") or []),
+                "historyScope": "bounded-absolute-window",
+                "sourceHistoryComplete": False,
+            }
+            self.evidence.record(
+                "hub_read_devices", request, success=ok,
+                elapsed_ms=round((time.monotonic() - started_window) * 1000),
+                summary=(
+                    "Focal sensor absolute window: " +
+                    str(verified.get("status") or "unavailable")
+                ),
+                supports_live_claim=verified.get("status") == "verified-window",
+                evidence_kind="authoritative_device_event_history",
+                effect="read", mutates=False, details=details,
+            )
+            return spec, verified
+
+
+        # When the journal is available, check focal archived observations
+        # FIRST, then ask MCP for one verified absolute window. Do not read
+        # a newest-N sensor page first and then ask the same server for the
+        # requested historical window. The journal is not command provenance.
+        journal_first = bool(
+            transition == "off"
+            and archive is not None
+            and getattr(archive, "enabled", False)
+            and getattr(archive, "_started", False)
+        )
+        direct_attempted_ids: set[str] = set()
+        direct_sensor_data: list[dict[str, Any]] = []
+        focal_window_probes: list[dict[str, Any]] = []
+        if (
+            journal_first
+            and callable(getattr(catalog, "available_tool", None))
+            and catalog.available_tool("hub_read_devices") is not None
+        ):
+            selections = []
+            for spec in sensor_specs[:2]:
+                args = build_focal_sensor_window_probe(
+                    spec, boundary_match.get("stateBoundary")
+                )
+                if args and args["deviceId"] not in direct_attempted_ids:
+                    direct_attempted_ids.add(args["deviceId"])
+                    selections.append((spec, args))
+            if selections:
+                results = await asyncio.gather(*(
+                    read_focal_window(spec, args)
+                    for spec, args in selections
+                ))
+                for (spec, args), (_source_spec, reply) in zip(selections, results):
+                    outcome = str(reply.get("status") or "unavailable")
+                    rows = list(reply.get("events") or [])
+                    focal_window_probes.append({
+                        "deviceId": args["deviceId"],
+                        "label": str(spec.get("name") or ""),
+                        "status": outcome,
+                        "eventCount": len(rows),
+                        "retrievalOrder": "journal-first-direct-window",
+                    })
+                    if outcome != "verified-window":
+                        continue
+                    candidate = spec.get("candidate") or {}
+                    direct_sensor_data.append({
+                        "label": str(spec.get("name") or ""),
+                        "deviceId": args["deviceId"],
+                        "attribute": args["attribute"],
+                        "room": candidate.get("room") or subject_history.get("room"),
+                        "candidateMatchBasis": candidate.get("matchBasis"),
+                        "candidateRoom": candidate.get("room"),
+                        "events": rows,
+                        "observedEvents": rows,
+                        "sourceHistoryComplete": False,
+                        "windowedEvidenceVerified": True,
+                        "historyScope": "bounded-absolute-window",
+                    })
+                increment_active_metric(
+                    "causal_focal_window_reads", len(selections)
+                )
+                if any(
+                    item["status"] == "verified-window"
+                    and item["eventCount"] > 0
+                    for item in focal_window_probes
+                ):
+                    increment_active_metric(
+                        "causal_focal_window_evidence_recovered"
+                    )
+
         pending: list[
             tuple[str, dict[str, Any], dict[str, Any]]
         ] = []
@@ -1696,6 +1869,14 @@ class UnifiedMCPAgent:
             increment_active_metric("causal_provenance_read")
             pending.append(("controller", arguments, candidate))
         for spec in sensor_specs:
+            candidate = spec.get("candidate") or {}
+            device_id = str(candidate.get("id") or "")
+            if any(
+                str(row.get("deviceId") or "") == device_id
+                for row in direct_sensor_data
+            ):
+                # Confirmed absolute MCP window: newest-N would be redundant.
+                continue
             arguments, candidate = grounded_history_arguments(spec)
             increment_active_metric("causal_sensor_read")
             pending.append(("sensor", arguments, candidate))
@@ -1743,7 +1924,7 @@ class UnifiedMCPAgent:
         )
 
         controller_data: list[dict[str, Any]] = []
-        sensor_data: list[dict[str, Any]] = []
+        sensor_data: list[dict[str, Any]] = list(direct_sensor_data)
         subject_event_data: dict[str, Any] | None = None
         for (kind, arguments, metadata), execution in zip(pending, executions):
             completed_calls.add(json.dumps(
@@ -1792,7 +1973,6 @@ class UnifiedMCPAgent:
         initial_coverage = assess_local_sensor_history_coverage(
             sensor_data, boundary_match.get("stateBoundary")
         ) if transition == "off" else {}
-        focal_window_probes: list[dict[str, Any]] = []
         if (
             transition == "off"
             and initial_coverage.get("status") ==
@@ -1801,7 +1981,7 @@ class UnifiedMCPAgent:
             and catalog.available_tool("hub_read_devices") is not None
         ):
             selections = []
-            seen_ids: set[str] = set()
+            seen_ids: set[str] = set(direct_attempted_ids)
             for spec in sensor_specs:
                 args = build_focal_sensor_window_probe(
                     spec, boundary_match.get("stateBoundary")
@@ -1812,52 +1992,19 @@ class UnifiedMCPAgent:
                 if len(selections) >= 2:
                     break
 
-            async def read_focal_window(spec, args):
-                started_window = time.monotonic()
-                request = {"tool": "hub_list_device_events", "args": args}
-                try:
-                    result = await self.mcp.call_tool("hub_read_devices", request)
-                    ok = self._tool_succeeded(result)
-                    data = result.data if ok and isinstance(result.data, dict) else {}
-                except Exception as error:
-                    logger.debug("Focal sensor history window unavailable: %s", error)
-                    ok, data = False, {}
-                verified = verify_windowed_sensor_reply(args, data if ok else None)
-                details = {
-                    "label": str(spec.get("name") or ""),
-                    "deviceId": args["deviceId"],
-                    "attribute": args["attribute"],
-                    "windowVerified": verified.get("status") == "verified-window",
-                    "events": verified.get("events") or [],
-                    "eventCount": len(verified.get("events") or []),
-                    "historyScope": "bounded-absolute-window",
-                    "sourceHistoryComplete": False,
-                }
-                self.evidence.record(
-                    "hub_read_devices", request, success=ok,
-                    elapsed_ms=round((time.monotonic() - started_window) * 1000),
-                    summary=(
-                        "Focal sensor absolute window: " +
-                        str(verified.get("status") or "unavailable")
-                    ),
-                    supports_live_claim=verified.get("status") == "verified-window",
-                    evidence_kind="authoritative_device_event_history",
-                    effect="read", mutates=False, details=details,
-                )
-                return spec, verified
 
             if selections:
-                focal_window_probes = [
+                late_probes = [
                     {"deviceId": args["deviceId"], "label": str(spec.get("name") or ""),
-                     "status": "attempted"}
+                     "status": "attempted", "retrievalOrder": "recent-page-fallback"}
                     for spec, args in selections
                 ]
                 recovered = await asyncio.gather(*(
                     read_focal_window(spec, args) for spec, args in selections
                 ))
                 for index, (spec, reply) in enumerate(recovered):
-                    focal_window_probes[index]["status"] = reply.get("status")
-                    focal_window_probes[index]["eventCount"] = len(
+                    late_probes[index]["status"] = reply.get("status")
+                    late_probes[index]["eventCount"] = len(
                         reply.get("events") or []
                     )
                     if reply.get("status") != "verified-window":
@@ -1868,6 +2015,7 @@ class UnifiedMCPAgent:
                                 history, reply
                             )
                             break
+                focal_window_probes.extend(late_probes)
                 increment_active_metric(
                     "causal_focal_window_reads", len(selections)
                 )
@@ -1991,72 +2139,18 @@ class UnifiedMCPAgent:
             increment_active_metric("causal_adaptive_candidate_plans")
         if focal_window_probes:
             analysis["focalWindowRetrieval"] = focal_window_probes
-
-        # A local journal may preserve real-time Hubitat observations that
-        # have rotated out of the MCP server's native event history. It is
-        # deliberately a distinct, WEAKER evidence source: many Hubitat
-        # socket frames contain no original event timestamp, so their
-        # collector-reception time must not be treated as exact provenance.
-        archive = getattr(self, "historical_journal", None)
-        archive_rows: list[dict[str, Any]] = []
-        if (
-            transition == "off"
-            and archive is not None
-            and getattr(archive, "enabled", False)
-            and getattr(archive, "_started", False)
-        ):
-            for spec in sensor_specs[:2]:
-                scope = build_focal_sensor_window_probe(
-                    spec, boundary_match.get("stateBoundary")
-                )
-                if scope is None:
-                    continue
-                try:
-                    retrieved = await asyncio.to_thread(
-                        archive.query,
-                        since=scope["since"], until=scope["until"],
-                        device_id=scope["deviceId"],
-                        attribute=scope["attribute"], limit=40,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Historical journal window read unavailable: %s",
-                        type(exc).__name__,
-                    )
-                    archive_rows.append({
-                        "deviceId": scope["deviceId"],
-                        "attribute": scope["attribute"],
-                        "status": "unavailable", "eventCount": 0,
-                    })
-                    continue
-                observations = [
-                    {
-                        "value": item.get("value"),
-                        "observedAt": item.get("observed_at"),
-                        "timestampBasis": item.get("timestamp_basis"),
-                        "captureSource": item.get("source"),
-                    }
-                    for item in (retrieved.get("events") or [])[:40]
-                    if isinstance(item, dict) and item.get("stream") == "events"
-                ]
-                archive_rows.append({
-                    "deviceId": scope["deviceId"],
-                    "attribute": scope["attribute"],
-                    "status": "archived-partial-observations",
-                    "eventCount": len(observations),
-                    "events": observations,
-                    "coverageComplete": False,
-                    "gapCount": len(retrieved.get("gaps") or []),
-                    "emptyProvesNoMotion": False,
-                })
-            if archive_rows:
-                analysis["historicalJournal"] = {
-                    "status": "partial-archive-not-causal-proof",
-                    "sensors": archive_rows,
-                    "timestampBasis": "source timestamp if available, otherwise collector received",
-                    "historicalCompletenessVerified": False,
-                    "archivedSensorEventsAreNotOffCommandProvenance": True,
-                }
+        if journal_summary:
+            analysis["historicalJournal"] = journal_summary
+            analysis["journalFirstPlan"] = {
+                "journalSensorsChecked": len(archive_rows),
+                "directWindowReads": len(direct_attempted_ids),
+                "directWindowVerified": len(direct_sensor_data),
+                "recentPageSensorFallbacks": sum(
+                    1 for kind, _args, _meta in pending if kind == "sensor"
+                ),
+                "archivedRowsNeverPromotedToMcpFacts": True,
+                "journalEmptyDoesNotProveInactivity": True,
+            }
 
         if local_history_coverage:
             analysis["localSensorHistoryCoverage"] = local_history_coverage

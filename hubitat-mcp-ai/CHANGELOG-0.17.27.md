@@ -1,0 +1,11 @@
+# HomeBrain 0.17.27 — Archive-first focal investigation and persisted latest-event display
+
+- For exact historical **OFF** investigations where the Historical Journal is running, query the at-most-two selected room-local sensor archive windows **before** choosing native history reads. This is a bounded local SQLite read on Home Assistant; it makes no additional Hubitat polling.
+- Seek an authoritative, verified MCP `hub_list_device_events` absolute `since`/`until` window for each selected sensor immediately, rather than first requesting a newest-50 page that is often later than the event. A verified window replaces the redundant newest-N sensor read. If the upstream MCP server does not confirm both bounds or the request fails, restore the original recent-page fallback.
+- Keep journal records distinct from MCP evidence. Collector-received times remain indicative observations and are never promoted into verified command provenance, continuous sensor inactivity, or causal proof.
+- The secondary trace includes `journalFirstPlan` counts for archive scopes, direct authoritative reads, verified windows and recent-page fallbacks. Unmatched focal events remain unresolved; no newer OFF is substituted.
+- The Historical Journal panel now displays **Latest saved event** from SQLite across restarts, rather than showing a blank `Last received` marker when the current collector process has not observed an event in memory.
+- Adds isolated regression tests for exact-window routing, unverified-window fallback, disabled-journal compatibility and persisted last-event status.
+- No hub rules, devices, automation configurations or retention settings are modified. The user's existing 7-day / 200,000-row journal configuration continues unchanged.
+
+**Live verification:** Ask HomeBrain why a real previously recorded Bedroom 1 Light OFF event occurred after journal collection began. Inspect the `historicalJournal`, `journalFirstPlan`, and `focalWindowRetrieval` sections. Confirm the selected time bounds, that verified sensor windows avoid duplicate newest-N reads, and that zero archived rows never become evidence of inactivity. Confirm Latest saved event remains populated after a HomeBrain restart.
