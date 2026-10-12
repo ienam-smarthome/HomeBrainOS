@@ -62,6 +62,39 @@ _MUTATION = re.compile(
 )
 
 
+_TARGETED_EVENT_INTENT = re.compile(
+    r"\b(?:why|investigat(?:e|ion)|explain|trace|caus(?:e|ed))\b", re.I
+)
+_TARGETED_DEVICE = re.compile(
+    r"\b(?:lights?|lamps?|bulbs?|switch(?:es)?|sockets?|plugs?|"
+    r"fans?|outlets?|thermostats?|devices?)\b", re.I
+)
+_TARGETED_STATE_CHANGE = re.compile(
+    r"\b(?:turn(?:ed)?|switch(?:ed)?|went|came|power(?:ed)?)\s+"
+    r"(?:on|off)\b", re.I
+)
+_SINGLE_EVENT_ANCHOR = re.compile(
+    r"\b(?:at|around|about|before|after)\s+(?:approximately\s+)?"
+    r"\d{1,2}:\d{2}|\b(?:today|yesterday|last\s+night)\b", re.I
+)
+
+
+def is_targeted_device_transition_investigation(prompt: str) -> bool:
+    """Keep a timed, named ON/OFF event out of whole-hub audit shortcuts.
+
+    An automation can be mentioned as a possible cause without making a
+    single-light forensic investigation a request to audit all automations.
+    These terms establish routing *scope*, not a causal claim.
+    """
+    text = str(prompt or "").strip()
+    return bool(
+        _TARGETED_EVENT_INTENT.search(text)
+        and _TARGETED_DEVICE.search(text)
+        and _TARGETED_STATE_CHANGE.search(text)
+        and _SINGLE_EVENT_ANCHOR.search(text)
+    )
+
+
 def is_automation_runtime_diagnostic(prompt: str) -> bool:
     """Investigate automation failures, not ordinary marker/inventory requests."""
     text = str(prompt or "").strip()
@@ -79,6 +112,7 @@ def is_broad_automation_runtime_diagnostic(prompt: str) -> bool:
     return bool(
         is_automation_runtime_diagnostic(text)
         and has_broad_automation_scope(text)
+        and not is_targeted_device_transition_investigation(text)
         and not _MUTATION.search(text)
     )
 
@@ -133,6 +167,8 @@ __all__ = [
     "AUTOMATION_DIAGNOSTIC_INSTRUCTION",
     "is_automation_runtime_diagnostic",
     "is_broad_automation_runtime_diagnostic",
+    "has_broad_automation_scope",
+    "is_targeted_device_transition_investigation",
     "is_integration_runtime_diagnostic",
     "INTEGRATION_DIAGNOSTIC_INSTRUCTION",
 ]
