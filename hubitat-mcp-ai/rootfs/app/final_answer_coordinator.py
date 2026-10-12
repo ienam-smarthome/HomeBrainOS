@@ -524,6 +524,7 @@ class FinalAnswerCoordinator:
             "causal_action_ownership", "causal_empty_log_inference",
             "causal_sensor_event_order", "causal_off_trigger_overclaim",
             "causal_off_certainty_contract", "off_hypothesis_summary",
+            "causal_history_gap_claims",
             "causal_answer_claim_boundaries",
         }
         if (
@@ -552,6 +553,7 @@ class FinalAnswerCoordinator:
                 "causal_action_ownership", "causal_empty_log_inference",
                 "causal_sensor_event_order", "causal_off_trigger_overclaim",
                 "causal_off_certainty_contract", "off_hypothesis_summary",
+            "causal_history_gap_claims",
             }
             for issue in issues
         ):
