@@ -40,6 +40,11 @@ from causal_investigation_engine import (
     plan_cross_integration_candidates,
     rank_causal_hypotheses,
 )
+from causal_lighting_context import (
+    choose_occupancy_event_sources,
+    render_level_command_pattern,
+    render_occupancy_edge_correlation,
+)
 from causal_rule_decision_context import (
     app_log_window,
     configuration_text,
@@ -769,53 +774,99 @@ class UnifiedMCPAgent:
                     mode_data, focus, config_items
                 )
 
+        # Producer attribution is already proved. Only now investigate the
+        # automation's decision context, with a small read-only budget.
+        try:
+            identities = [
+                item for item in (await self.mcp.get_device_identities() or [])
+                if isinstance(item, dict)
+            ]
+        except Exception:
+            identities = []
+        subject = str(focus.get("subject") or "").casefold()
+        subject_record = next(
+            (
+                item for item in identities
+                if str(item.get("label") or item.get("name") or "").casefold() == subject
+            ),
+            None,
+        )
+        room = str(
+            (subject_record or {}).get("room")
+            or (subject_record or {}).get("roomName")
+            or ""
+        ).strip()
+
         health_lines: list[str] = []
-        if config_search:
-            try:
-                identities = list(await self.mcp.get_device_identities() or [])
-            except Exception:
-                identities = []
-            subject = str(focus.get("subject") or "").casefold()
-            subject_record = next(
-                (
-                    item for item in identities
-                    if isinstance(item, dict)
-                    and str(item.get("label") or item.get("name") or "").casefold() == subject
-                ),
-                None,
+        referenced = (
+            referenced_sensor_identities(config_search, identities, room)
+            if config_search else []
+        )
+        if referenced and room:
+            detail = await bounded_read(
+                "hub_read_devices",
+                "hub_list_devices",
+                {"detailed": True, "roomFilter": room},
+                "authoritative_state_snapshot",
+                True,
             )
-            room = str(
-                (subject_record or {}).get("room")
-                or (subject_record or {}).get("roomName")
-                or ""
-            ).strip()
-            referenced = referenced_sensor_identities(
-                config_search, identities, room
+            if isinstance(detail, dict):
+                rows = HubitatMCPClient._find_device_list(detail)
+                if isinstance(rows, list):
+                    health_lines = linked_sensor_health_warning(referenced, rows)
+
+        # A direct app log that actually names its trigger has precedence.
+        # Otherwise test only configured occupancy sources or one unambiguous
+        # room occupancy device; never search every motion sensor on the hub.
+        occupancy_context: str | None = None
+        if room and not any("triggered" in row.casefold() for row in execution):
+            candidates = choose_occupancy_event_sources(
+                identities,
+                config_search=config_search,
+                subject_room=room,
             )
-            if referenced and room:
-                detail = await bounded_read(
+            for candidate, attribute, _configured in candidates:
+                device_id = str(candidate.get("id") or candidate.get("deviceId") or "")
+                events = await bounded_read(
                     "hub_read_devices",
-                    "hub_list_devices",
-                    {"detailed": True, "roomFilter": room},
-                    "authoritative_state_snapshot",
+                    "hub_list_device_events",
+                    {
+                        "deviceId": device_id,
+                        "hoursBack": 24,
+                        "limit": 50,
+                        "attribute": attribute,
+                    },
+                    "authoritative_device_event_history",
                     True,
                 )
-                if isinstance(detail, dict):
-                    rows = HubitatMCPClient._find_device_list(detail)
-                    if isinstance(rows, list):
-                        health_lines = linked_sensor_health_warning(
-                            referenced, rows
-                        )
-        return (
-            base_answer + "\n\n" + render_rule_decision_context(
+                if not isinstance(events, dict):
+                    continue
+                occupancy_context = render_occupancy_edge_correlation(
+                    focus,
+                    label=str(candidate.get("label") or candidate.get("name") or ""),
+                    attribute=attribute,
+                    event_data=events,
+                )
+                if occupancy_context:
+                    increment_active_metric("causal_occupancy_context_match")
+                    break
+            if candidates:
+                increment_active_metric("causal_occupancy_context_checks", len(candidates))
+
+        explanation = [
+            base_answer,
+            render_level_command_pattern(self.evidence.receipts(), focus),
+            occupancy_context,
+            render_rule_decision_context(
                 app_name=app_name,
                 app_id=app_id,
                 configured=config_items,
                 logs=execution,
                 sensor_warnings=health_lines,
                 mode_events=mode_events,
-            )
-        )
+            ),
+        ]
+        return "\n\n".join(part for part in explanation if part)
 
     async def _prefetch_explicit_causal_subject(
         self,
