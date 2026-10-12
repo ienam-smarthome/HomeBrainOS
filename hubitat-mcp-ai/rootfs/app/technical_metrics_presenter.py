@@ -64,6 +64,8 @@ _COUNTER_LABELS = (
     ("causal_native_app_execution_provenance", "Native app execution provenance"),
     ("causal_repeated_controller_pattern", "Repeated controller patterns"),
     ("causal_controller_sufficient_stop", "Controller evidence discovery stops"),
+    ("causal_local_off_evidence_stop", "Room-local OFF evidence exploration stops"),
+    ("causal_completed_unresolved", "Completed unresolved causal investigations"),
     ("causal_physical_command_reused", "Known brightness commands reused"),
     ("causal_off_provenance_reads", "Independent OFF command reads"),
     ("causal_off_command_reused", "Already-proven OFF commands reused"),
