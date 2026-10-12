@@ -132,7 +132,7 @@ def guard_history_gap_claims(
                     "* **External control:** Possible but unverified. A state "
                     "report from a bridge does not establish the command issuer."
                 )
-            elif re.search(r"(?i)\bConclusion\s*:", line):
+            elif re.search(r"(?i)\bConclusion\b\*{0,2}\s*:", line):
                 line = (
                     "**Conclusion:** The OFF command producer remains "
                     "unidentified. The returned local sensor history does not "
