@@ -4,6 +4,10 @@ from copy import deepcopy
 import re
 from typing import Any
 
+from causal_attribution_guard import (
+    guard_unproven_upstream_manual_exclusion,
+    guard_causal_sensor_source_attribution,
+)
 from evidence_source_guard import (
     guard_checked_source_absence_claim,
     has_performance_evidence,
@@ -389,6 +393,11 @@ def build_agent_response(
         evidence,
     )
     message, _ = guard_location_correlation_claim(message, evidence)
+    # Post-synthesis API serialization enforces the same causal claim
+    # integrity contract: model revisions must not restore unsupported
+    # exclusions or misattribute recorded sensor events to empty app logs.
+    message, _ = guard_unproven_upstream_manual_exclusion(message, evidence)
+    message, _ = guard_causal_sensor_source_attribution(message, evidence)
     performance_scope = has_performance_evidence(evidence)
     message, _ = guard_checked_source_absence_claim(
         message, evidence, performance_request=performance_scope
