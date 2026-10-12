@@ -106,6 +106,7 @@ from causal_native_logs import (
 from causal_timeline import (
     causal_log_windows,
     explicitly_focused_event_rows,
+    has_explicit_focal_clock,
     render_command_source_followup,
     unresolved_material_timeline_rows,
 )
@@ -1073,10 +1074,31 @@ class UnifiedMCPAgent:
                 catalog=catalog,
             )
         current_evidence = self.evidence.receipts()
+        explicit_off = (
+            seed.transition == "off"
+            and has_explicit_focal_clock(user_prompt)
+        )
+        focused_off = (
+            focal_closed_transition(
+                current_evidence, user_prompt,
+                resolved_device_id=str(seed.target.get("id") or ""),
+            )
+            if explicit_off else None
+        )
+        if explicit_off and focused_off is None:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "An exact OFF time was requested, but no unique observed "
+                    "OFF boundary was established at that timestamp. Do not "
+                    "substitute a newer OFF event or infer its cause."
+                ),
+            })
+            return "partial", subject_key, seed.transition
         command_correlations = correlate_command_producers(current_evidence)
-        requested_boundary = focal_transition_boundary(
-            current_evidence,
-            seed.transition,
+        requested_boundary = (
+            focused_off["end"] if focused_off else
+            focal_transition_boundary(current_evidence, seed.transition)
         )
         if command_producer_transition_sufficient(
             command_correlations,
@@ -1097,15 +1119,18 @@ class UnifiedMCPAgent:
         if boundary_producer_transition_sufficient(
             boundary_correlations,
             seed.transition,
+            requested_boundary=requested_boundary if explicit_off else None,
         ):
             increment_active_metric("causal_boundary_producer_provenance")
             boundary_kind = boundary_producer_transition_kind(
                 boundary_correlations,
                 seed.transition,
+                requested_boundary=requested_boundary if explicit_off else None,
             )
             boundary_match = boundary_producer_transition_match(
                 boundary_correlations,
                 seed.transition,
+                requested_boundary=requested_boundary if explicit_off else None,
             )
             if boundary_kind == "reporting_source" and boundary_match is not None:
                 await self._collect_reporting_source_secondary_correlation(

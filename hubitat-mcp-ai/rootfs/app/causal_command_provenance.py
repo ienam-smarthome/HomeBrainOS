@@ -276,12 +276,17 @@ def correlate_boundary_producers(
 def boundary_producer_transition_match(
     correlations: list[dict[str, Any]],
     transition: str,
+    *,
+    requested_boundary: str | None = None,
 ) -> dict[str, Any] | None:
     """Return the newest non-self producer row for the requested boundary."""
 
     action = str(transition or "").strip().casefold()
     role = {"on": "start", "off": "end"}.get(action)
     if role is None:
+        return None
+    anchor = _parse_time(requested_boundary) if requested_boundary else None
+    if requested_boundary and anchor is None:
         return None
     candidates: list[dict[str, Any]] = []
     for row in correlations:
@@ -291,6 +296,10 @@ def boundary_producer_transition_match(
             continue
         if str(row.get("action") or "") != action:
             continue
+        if anchor is not None:
+            observed = _parse_time(row.get("stateBoundary"))
+            if observed is None or abs((observed - anchor).total_seconds()) > 0.003:
+                continue
         producer = row.get("producer")
         if not isinstance(producer, dict):
             continue
@@ -312,8 +321,12 @@ def boundary_producer_transition_match(
 def boundary_producer_transition_kind(
     correlations: list[dict[str, Any]],
     transition: str,
+    *,
+    requested_boundary: str | None = None,
 ) -> str | None:
-    row = boundary_producer_transition_match(correlations, transition)
+    row = boundary_producer_transition_match(
+        correlations, transition, requested_boundary=requested_boundary,
+    )
     if row is None:
         return None
     producer = row.get("producer") or {}
@@ -324,9 +337,15 @@ def boundary_producer_transition_kind(
 def boundary_producer_transition_sufficient(
     correlations: list[dict[str, Any]],
     transition: str,
+    *,
+    requested_boundary: str | None = None,
 ) -> bool:
     """Return whether a non-self producer is recorded on the requested boundary."""
 
+    if requested_boundary is not None:
+        return boundary_producer_transition_match(
+            correlations, transition, requested_boundary=requested_boundary,
+        ) is not None
     action = str(transition or "").strip().casefold()
     role = {"on": "start", "off": "end"}.get(action)
     if role is None:
