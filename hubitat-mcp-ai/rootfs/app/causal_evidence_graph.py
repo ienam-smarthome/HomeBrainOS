@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any
 
 from causal_completion_policy import evaluate_causal_completion
+from causal_hypothesis_evaluation import evaluate_off_hypotheses
 from causal_command_provenance import correlate_command_producers
 from causal_timeline import (
     build_causal_timeline_rows,
@@ -880,7 +881,7 @@ def build_causal_evidence_graph(
     if app_id and not logs.get("checked"):
         missing.append("focal-app-execution-log-window")
 
-    return {
+    graph = {
         "schema": "causal-evidence-graph/v1",
         "scope": "single-observed-event",
         "focus": {
@@ -961,6 +962,9 @@ def build_causal_evidence_graph(
         "missing": missing,
         "ready": bool(start_command and sensor and config.get("checked") and logs.get("checked")),
     }
+
+    graph["offHypotheses"] = evaluate_off_hypotheses(graph)
+    return graph
 
 
 def needs_mode_history(graph: dict[str, Any], original_user: str) -> bool:
