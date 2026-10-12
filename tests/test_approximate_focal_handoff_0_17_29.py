@@ -6,6 +6,7 @@ No real hub, journal database, devices or network calls are used.
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -125,5 +126,5 @@ async def test_approximate_focal_off_is_handed_to_secondary_sensor_investigation
         metrics.reset(token)
     assert result[0] == "sufficient"
     assert len(selected) == 1
-    assert selected[0]["stateBoundary"] == OLD
+    assert datetime.fromisoformat(selected[0]["stateBoundary"]) == datetime.fromisoformat(OLD)
     assert selected[0]["producer"]["id"] == "7790"
