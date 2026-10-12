@@ -780,6 +780,10 @@ def _off_provenance(
             "appId": listener_id,
             "notified": bool(listener_id),
             "notNecessarilyProducer": True,
+            "configuration": (
+                _configuration(evidence, listener_id)
+                if listener_id else {"checked": False}
+            ),
             "executionLogs": listener_logs,
         },
         "internalTimerExecutionVerified": False,
@@ -986,12 +990,44 @@ def supports_one_pass_deep_synthesis(
     This gate does NOT declare other upstream causes impossible; it declares
     that available evidence is sufficient for a calibrated answer.
     """
-    # Two distinct source-complete paths: Hubitat app-command initiation
-    # and externally/bridge-reported physical ON with repeated controller
-    # events plus checked downstream app configuration and log evidence.
-    if not graph.get("ready") and not graph.get("physicalEvidenceComplete"):
-        return False
+    # Three independently scoped paths: app-initiated ON, bridge-reported
+    # physical ON, and explicitly requested OFF. Never require proof of an
+    # unrelated ON origin merely to explain an OFF boundary.
     prompt = str(original_user or "").casefold()
+    requested_off = bool(re.search(
+        r"\b(?:turn(?:ed|ing)?|switch(?:ed|ing)?|went|go(?:es)?)\s+off\b",
+        prompt,
+    ))
+    requested_on = bool(re.search(
+        r"\b(?:turn(?:ed|ing)?|switch(?:ed|ing)?|went|go(?:es)?)\s+on\b",
+        prompt,
+    ))
+    explicit_off_only = requested_off and not requested_on
+    off = (graph.get("transitionEvidence") or {}).get("off") or {}
+    if explicit_off_only:
+        producing = off.get("appProducerContext") or {}
+        notified = off.get("notifiedListenerContext") or {}
+        log_checked = (
+            (producing.get("executionLogs") or {}).get("checked")
+            or (notified.get("executionLogs") or {}).get("checked")
+        )
+        app_config_checked = (
+            (producing.get("configuration") or {}).get("checked")
+            or (notified.get("configuration") or {}).get("checked")
+        )
+        off_complete = bool(
+            off.get("observed")
+            and (
+                off.get("directCommand")
+                or (off.get("commandHistory") or {}).get("checked")
+            )
+            and log_checked and app_config_checked
+            and graph.get("otherSensorEvidenceChecked")
+        )
+        if not off_complete:
+            return False
+    elif not graph.get("ready") and not graph.get("physicalEvidenceComplete"):
+        return False
     requirements = (
         re.search(r"\b(?:investigat|analy[sz]|diagnos|thorough|deep)\w*\b", prompt),
         re.search(r"\b(?:app|rule|automation|controll)\w*\b", prompt),
@@ -1003,6 +1039,8 @@ def supports_one_pass_deep_synthesis(
         return False
     if needs_mode_history(graph, original_user):
         return False
+    if explicit_off_only:
+        return True
     if graph.get("physicalEvidenceComplete"):
         return True
     candidate = graph.get("initiatorCandidate") or {}
