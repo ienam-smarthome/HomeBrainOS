@@ -336,6 +336,261 @@ def _command(
     return project(start), project(end)
 
 
+
+def _physical_boundary(
+    evidence: list[dict[str, Any]], focus: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Identify the bridge/reporting device and downstream event listeners.
+
+    Device state event producedBy identifies the reporting origin, not the
+    controller or human who initiated the action. The triggered[] field lists
+    notified apps only and cannot be promoted into command ownership.
+    """
+    for receipt in evidence:
+        if not _working(receipt) or receipt.get("tool") != "homebrain_device_history":
+            continue
+        details = receipt.get("details") or {}
+        if str(details.get("label") or "") != str(focus.get("subject") or ""):
+            continue
+        for event in [
+            *(details.get("boundaryEvents") or []),
+            *(details.get("observedEvents") or []),
+        ]:
+            if (
+                not isinstance(event, dict)
+                or str(event.get("name") or "") != "switch"
+                or str(event.get("value") or "").casefold() != "on"
+                or not _eq_time(event.get("date"), focus.get("start"), tolerance=.002)
+            ):
+                continue
+            producer = event.get("producedBy") or {}
+            if not isinstance(producer, dict):
+                producer = {}
+            return {
+                "event": str(event.get("date") or ""),
+                "eventType": str(event.get("type") or ""),
+                "reporter": {
+                    "id": str(producer.get("id") or ""),
+                    "label": str(producer.get("label") or ""),
+                    "type": str(producer.get("type") or ""),
+                },
+                "listenersNotified": [
+                    {
+                        "appId": str(row.get("appId") or ""),
+                        "handler": str(row.get("handler") or ""),
+                    }
+                    for row in (event.get("triggered") or [])
+                    if isinstance(row, dict)
+                ][:8],
+                "status": "observed-state-boundary",
+                "reporterNotNecessarilyInitiator": True,
+                "listenersNotNecessarilyCommandIssuers": True,
+            }
+    return None
+
+
+def _controller_candidate(
+    evidence: list[dict[str, Any]], focus: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Project controller correlations without erasing *signed* event order."""
+    requested = _time(focus.get("start"))
+    if requested is None:
+        return None
+    matched = []
+    for receipt in evidence:
+        if (
+            not _working(receipt)
+            or receipt.get("tool") != "homebrain_causal_secondary_correlation"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        if not isinstance(details, dict):
+            continue
+        if str(details.get("subject") or "") != str(focus.get("subject") or ""):
+            continue
+        for controller in details.get("controllers") or []:
+            if not isinstance(controller, dict):
+                continue
+            relevant = controller.get("relevantAlignments") or []
+            requested_rows = [
+                row for row in relevant
+                if isinstance(row, dict)
+                and row.get("boundaryRole") == "start"
+                and _eq_time(row.get("subjectTransition"), focus.get("start"), .002)
+            ]
+            if not requested_rows:
+                continue
+            requested_row = min(
+                requested_rows,
+                key=lambda item: abs(float(item.get("signedDeltaSeconds") or 0)),
+            )
+            try:
+                delta = float(requested_row.get("signedDeltaSeconds"))
+            except (ValueError, TypeError):
+                continue
+            # One controller can correlate repeatedly over different starts.
+            # Repeated near-time associations increase the strength of a
+            # hypothesis but cannot prove the upstream button->light mapping.
+            repeats = len({
+                str(row.get("subjectTransition") or "")
+                for row in relevant if isinstance(row, dict)
+                and row.get("boundaryRole") == "start"
+            })
+            matched.append({
+                "label": str(controller.get("label") or ""),
+                "attribute": str(controller.get("attribute") or ""),
+                "event": str(requested_row.get("controllerEvent") or ""),
+                "eventValue": requested_row.get("eventValue"),
+                "signedDeltaMs": round(delta * 1000, 1),
+                "recordedOrder": (
+                    "controller-event-after-light-state"
+                    if delta > 0 else
+                    "controller-event-before-light-state"
+                    if delta < 0 else "simultaneous-within-clock-resolution"
+                ),
+                "repeatedAlignedStarts": repeats,
+                "source": "homebrain_causal_secondary_correlation",
+                "status": (
+                    "repeated-temporal-association" if repeats >= 2
+                    else "single-temporal-association"
+                ),
+                "directControllerToDeviceMappingProven": False,
+                "clockOrTransportSkewNotExcluded": True,
+            })
+    if not matched:
+        return None
+    # Competing equally aligned controllers are ambiguous, not a unique
+    # initiating event; do not select a winner based on mere milliseconds.
+    matched.sort(key=lambda item: (
+        -item["repeatedAlignedStarts"],
+        abs(item["signedDeltaMs"]),
+    ))
+    best = matched[0]
+    if len(matched) > 1 and (
+        best["repeatedAlignedStarts"] == matched[1]["repeatedAlignedStarts"]
+        and abs(best["signedDeltaMs"] - matched[1]["signedDeltaMs"]) <= 100
+    ):
+        return {
+            "status": "ambiguous-multiple-controller-candidates",
+            "candidates": matched[:3],
+            "directControllerToDeviceMappingProven": False,
+        }
+    return best
+
+
+
+def _post_on_commands(
+    evidence: list[dict[str, Any]], focus: dict[str, Any],
+    *, max_after_seconds: float = 5.0,
+) -> list[dict[str, Any]]:
+    """Identify commands issued AFTER the physical ON-state report.
+
+    An app calling setLevel after a bridge-reported ON is a response/adjustment,
+    not evidence that the app initiated the earlier ON transition. Timestamp
+    order and command producer are retained, even if no level value was read.
+    """
+    boundary = _time(focus.get("start"))
+    if boundary is None:
+        return []
+    commands = []
+    for receipt in evidence:
+        if not _working(receipt):
+            continue
+        details = receipt.get("details") or {}
+        if not isinstance(details, dict):
+            continue
+        if receipt.get("tool") == "homebrain_device_history":
+            if str(details.get("label") or "") != str(focus.get("subject") or ""):
+                continue
+            events = details.get("commandEvents") or []
+        elif _tool(receipt) == "hub_list_device_events":
+            if str(_args(receipt).get("attribute") or "") != "command-setLevel":
+                continue
+            events = details.get("events") or []
+        else:
+            continue
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            when = _time(event.get("date"))
+            if when is None:
+                continue
+            try:
+                delta = (when - boundary).total_seconds()
+            except TypeError:
+                continue
+            name = str(event.get("name") or "")
+            if not (0 <= delta <= max_after_seconds and name == "command-setLevel"):
+                continue
+            producer = event.get("producedBy") or {}
+            commands.append({
+                "time": when.isoformat(),
+                "afterOnMs": round(delta * 1000, 1),
+                "command": str(event.get("description") or ""),
+                "producer": dict(producer) if isinstance(producer, dict) else {},
+                "relationship": "post-on-brightness-command",
+                "notTheOriginalOnCommand": True,
+                "source": "Hubitat command-setLevel event",
+            })
+    unique = {}
+    for item in commands:
+        unique[(item["time"], item["command"])] = item
+    return sorted(unique.values(), key=lambda item: item["afterOnMs"])[:5]
+
+
+def _end_sensor_correlations(
+    evidence: list[dict[str, Any]], focus: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Describe inactive-sensor timings at OFF without assigning the OFF actor."""
+    if not focus.get("end"):
+        return []
+    output = []
+    seen = set()
+    for receipt in evidence:
+        if (
+            not _working(receipt)
+            or receipt.get("tool") != "homebrain_causal_secondary_correlation"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        if str(details.get("subject") or "") != str(focus.get("subject") or ""):
+            continue
+        for sensor in details.get("sensors") or []:
+            if not isinstance(sensor, dict):
+                continue
+            for row in [
+                *(sensor.get("oppositeCorrelations") or []),
+                *(sensor.get("relevantCorrelations") or []),
+            ]:
+                if (
+                    not isinstance(row, dict)
+                    or row.get("boundaryRole") != "end"
+                    or not _eq_time(row.get("subjectTransition"), focus["end"], .002)
+                ):
+                    continue
+                try:
+                    signed = float(row.get("signedDeltaSeconds"))
+                except (TypeError, ValueError):
+                    continue
+                fingerprint = (str(sensor.get("label")), row.get("sensorEvent"))
+                if fingerprint in seen:
+                    continue
+                seen.add(fingerprint)
+                output.append({
+                    "sensor": sensor.get("label"),
+                    "attribute": row.get("attribute"),
+                    "value": row.get("eventValue"),
+                    "time": row.get("sensorEvent"),
+                    "signedDeltaMs": round(signed * 1000, 1),
+                    "producer": row.get("producedBy"),
+                    "relationship": "inactive-sensor-off-temporal-correlation",
+                    "offCommandProducerEstablished": False,
+                    "externalAutomationIdentityEstablished": False,
+                })
+    output.sort(key=lambda row: abs(row["signedDeltaMs"]))
+    return output[:4]
+
+
 def build_causal_evidence_graph(
     evidence: list[dict[str, Any]], original_user: str
 ) -> dict[str, Any]:
@@ -351,8 +606,49 @@ def build_causal_evidence_graph(
     start_command, end_command = _command(evidence, focus)
     app_id = str(((start_command or {}).get("producer") or {}).get("id") or "")
     sensor = _sensor_fact(evidence, focus, start_command)
+    physical_boundary = _physical_boundary(evidence, focus)
+    controller_candidate = _controller_candidate(evidence, focus)
+    post_on_commands = _post_on_commands(evidence, focus)
+    end_sensor_correlations = _end_sensor_correlations(evidence, focus)
     config = _configuration(evidence, app_id) if app_id else {"checked": False}
     logs = _logs(evidence, app_id, (start_command or {}).get("time") or "") if app_id else {"checked": False}
+    notified = (physical_boundary or {}).get("listenersNotified") or []
+    reactive_app_id = next((
+        str(row.get("appId") or "")
+        for row in notified
+        if isinstance(row, dict) and (
+            "light" in str(row.get("handler") or "").casefold()
+            or "switch" in str(row.get("handler") or "").casefold()
+        )
+    ), "")
+    reactive_config = (
+        _configuration(evidence, reactive_app_id)
+        if reactive_app_id else {"checked": False}
+    )
+    reactive_logs = (
+        _logs(evidence, reactive_app_id, focus.get("start") or "")
+        if reactive_app_id else {"checked": False}
+    )
+    post_on_history_checked = any(
+        _working(item)
+        and _tool(item) == "hub_list_device_events"
+        and str(_args(item).get("attribute") or "") == "command-setLevel"
+        for item in evidence
+    )
+    alternate_sensors_checked = any(
+        _working(item)
+        and item.get("tool") == "homebrain_causal_secondary_correlation"
+        for item in evidence
+    )
+    physical_evidence_complete = bool(
+        (physical_boundary or {}).get("eventType") == "physical"
+        and (controller_candidate or {}).get("status") == "repeated-temporal-association"
+        and reactive_config.get("checked")
+        and reactive_config.get("excerpts")
+        and reactive_logs.get("checked")
+        and post_on_history_checked
+        and alternate_sensors_checked
+    )
     mode = _mode(evidence, focus)
     missing = []
     if not start_command:
@@ -376,9 +672,23 @@ def build_causal_evidence_graph(
             "sourceCoverage": "bounded-recorded-events",
         },
         "directCommand": start_command,
+        "physicalStateBoundary": physical_boundary,
+        "controllerCandidate": controller_candidate,
+        "postOnCommands": post_on_commands,
+        "offSensorCorrelations": end_sensor_correlations,
         "initiatorCandidate": sensor,
         "configuration": config,
         "executionLogs": logs,
+        "reactiveApp": {
+            "appId": reactive_app_id,
+            "wasNotified": bool(reactive_app_id),
+            "notificationIsNotDirectCommand": True,
+            "configuration": reactive_config,
+            "executionLogs": reactive_logs,
+        },
+        "postOnCommandHistoryChecked": post_on_history_checked,
+        "otherSensorEvidenceChecked": alternate_sensors_checked,
+        "physicalEvidenceComplete": physical_evidence_complete,
         "locationMode": mode,
         "offCommand": end_command,
         "offAttribution": (
@@ -394,6 +704,16 @@ def build_causal_evidence_graph(
             "without OFF command provenance it does not prove the rule's OFF logic.",
             "Listener metadata proves app notification, not that a handler's "
             "conditions passed or issued a command.",
+            "An app's setLevel command recorded AFTER the physical ON report "
+            "is a brightness correction/reaction candidate, not an originating "
+            "ON command. Sensor inactivity near OFF does not identify an Aqara, "
+            "Hue, Hubitat or other external automation without its own logs.",
+            "A reporting bridge's producedBy on the physical state event proves "
+            "where the state report came from, not who pressed the control.",
+            "A button event reported *after* the light state cannot be proven "
+            "as the earlier Hubitat-side trigger by timestamp correlation alone; "
+            "transport/report ordering may differ, so label repeated short-skew "
+            "matches as a likely association, not confirmed causality.",
         ],
         "missing": missing,
         "ready": bool(start_command and sensor and config.get("checked") and logs.get("checked")),
@@ -410,6 +730,8 @@ def needs_mode_history(graph: dict[str, Any], original_user: str) -> bool:
     if not re.search(r"\b(?:alternativ(?:e|es)|mode|other causes|other triggers)\b", prompt):
         return False
     config = graph.get("configuration") or {}
+    if not config.get("checked"):
+        config = ((graph.get("reactiveApp") or {}).get("configuration") or {})
     return config.get("checked") is True and any(
         "mode" in str(item).casefold() for item in config.get("excerpts") or []
     )
@@ -426,7 +748,10 @@ def supports_one_pass_deep_synthesis(
     This gate does NOT declare other upstream causes impossible; it declares
     that available evidence is sufficient for a calibrated answer.
     """
-    if not graph.get("ready"):
+    # Two distinct source-complete paths: Hubitat app-command initiation
+    # and externally/bridge-reported physical ON with repeated controller
+    # events plus checked downstream app configuration and log evidence.
+    if not graph.get("ready") and not graph.get("physicalEvidenceComplete"):
         return False
     prompt = str(original_user or "").casefold()
     requirements = (
@@ -440,6 +765,8 @@ def supports_one_pass_deep_synthesis(
         return False
     if needs_mode_history(graph, original_user):
         return False
+    if graph.get("physicalEvidenceComplete"):
+        return True
     candidate = graph.get("initiatorCandidate") or {}
     return (
         candidate.get("configured") is True
@@ -458,9 +785,12 @@ def render_causal_evidence_graph(
         "HOST STRUCTURED CAUSAL EVIDENCE GRAPH (authoritative for fact "
         "provenance, not a pre-decided causal verdict):\n"
         + json.dumps(graph, ensure_ascii=False, default=str, separators=(",", ":"))
-        + "\nEvidence rules: distinguish direct device command, upstream sensor "
-        "correlation, observed handler notification, current configuration, "
-        "native app logs and mere OFF-state timing. Never promote a sensor "
+        + "\nEvidence rules: distinguish direct device command, physical "
+        "bridge reporting, upstream sensor/controller correlation, app-handler "
+        "notification, current configuration and native app logs. Preserve "
+        "signed event ordering and treat controller events recorded after the "
+        "state change as probable association ONLY when repeated, never as "
+        "a confirmed Hubitat-side earlier command. Never promote a sensor "
         "timestamp or an app's listener into a proven rule-branch execution. "
         "Report unavailable sources as gaps; if a configured inactive timer "
         "and OFF event timing appear inconsistent, do not invent an OFF cause."

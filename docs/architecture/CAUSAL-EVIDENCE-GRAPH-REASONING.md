@@ -34,3 +34,21 @@ The **shared causal graph** is a bounded, pure normalization step between live M
 The graph is deliberately bounded and currently normalizes one switch/dimmer transition; it should eventually accept a general typed event domain and full provenance DAG for Rule Machine actions, manual controls, delays and cancelable jobs. Add dynamic objective-to-tool planning for other investigations and confidence evaluation against a fixed multi-domain test corpus. Compare Claude and HomeBrain with the **same** installed MCP access, timestamps and read-only permissions.
 
 Do not use an OFF-state change or the sensor's later inactivity as direct evidence of the OFF command producer unless a separate compatible command receipt exists. Do not infer the historical rule branch from current configuration. A single successful negative log read is evidence that a bounded window was checked, not a proof that the app did not execute.
+
+## v0.17.12: externally reported physical events and downstream responses
+
+A bridge-reported `switch=on` and a Hubitat app-issued `setLevel` are separate causal events. For a named unique HH:MM (with optional date), focal selection outranks earlier long intervals; ambiguity still fails closed.
+
+The generic graph includes these additional fact classes:
+
+| Graph field | Grounded source | Meaning and limits |
+| --- | --- | --- |
+| `physicalStateBoundary` | switch-state event `type`, `producedBy`, `triggered[]` | Hue/Aqara/Matter bridge may be the reporting origin; apps in `triggered[]` are listeners, not necessarily initiators |
+| `controllerCandidate` | Bounded controller history and aligned light boundaries | Signed delta and repeated pairing; a recorded button report **after** ON cannot be claimed as an earlier Hubitat command |
+| `postOnCommands` | Targeted `command-setLevel` history for the subject | Later level changes with precise ordering and actual app producer; not the original ON cause |
+| `reactiveApp` | One relevant notified light-switch handler, current app config and scoped logs | Evidence the app could react to external ON; current settings and a zero-row log search cannot prove execution history |
+| `offSensorCorrelations` | Correlated inactive occupancy events near OFF | Relevant pattern only; never uniquely attributes OFF to Aqara, Hue, Hubitat or an unidentified controller |
+
+For deep physical-source investigations, HomeBrain checks a bounded post-ON command page and the relevant subscribed lighting app’s configuration/logs without issuing device commands. The graph-complete fast path requires the reported physical boundary, multiple aligned controller events, actual reviewed sensor evidence, command-setLevel history, app configuration, event-time logs, and mode history if configured and requested. Otherwise general MCP discovery remains available.
+
+A Hue-native controller mapping or Aqara external automation history is outside the Hubitat MCP read surface. Even when three button/ON pairs are within ~150 ms, the relationship is a strongly supported hypothesis, not a verified native binding. Likewise, the app’s brightness adjustment after ON is observable without inferring the exact code branch unless app source or execution logs support it.

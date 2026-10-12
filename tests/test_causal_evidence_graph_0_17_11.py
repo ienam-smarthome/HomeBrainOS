@@ -235,7 +235,14 @@ def test_ambiguous_multi_interval_history_does_not_become_single_focal_certainty
         "end": "2026-10-11T08:10:58.185+0100",
         "durationSeconds": 1041,
     })
-    graph = build_causal_evidence_graph(receipts, QUESTION)
+    # A named calendar day disambiguates otherwise identical local clocks.
+    named_day = build_causal_evidence_graph(receipts, QUESTION)
+    assert named_day["scope"] == "single-observed-event"
+    assert named_day["focus"]["on"].startswith("2026-10-12T07:53:36")
+
+    # Without a calendar day, two identical clock times must not be guessed.
+    undated = QUESTION.replace(" on 12 October", "")
+    graph = build_causal_evidence_graph(receipts, undated)
     assert graph["scope"] == "ambiguous-or-unobserved-event"
     assert not graph["ready"]
 

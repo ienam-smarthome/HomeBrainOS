@@ -569,33 +569,80 @@ def unresolved_material_timeline_rows(
 
 
 _FOCAL_CLOCK = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d):([0-5]\d)(?![\d:])")
+_FOCAL_MINUTE = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![:\d])")
+_FOCAL_DATE = re.compile(
+    r"\b(?:on\s+)?([0-3]?\d)\s+"
+    r"(January|February|March|April|May|June|July|August|September|"
+    r"October|November|December)\b(?:\s+(20\d{2}))?",
+    re.I,
+)
+_MONTH_NAMES = {
+    name.casefold(): month
+    for month, name in enumerate((
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ), 1)
+}
+
+
+def _focal_clock_parts(original_user: str) -> tuple[int, ...] | None:
+    """Use exact seconds when provided, or unique minute-level event matching."""
+    prompt = str(original_user or "")
+    seconds = list(_FOCAL_CLOCK.finditer(prompt))
+    if len(seconds) == 1:
+        return tuple(int(part) for part in seconds[0].groups())
+    if seconds:
+        return None
+    minutes = list(_FOCAL_MINUTE.finditer(prompt))
+    if len(minutes) != 1:
+        return None
+    return tuple(int(part) for part in minutes[0].groups())
 
 
 def explicitly_focused_event_rows(
     evidence: list[dict[str, Any]], original_user: str
 ) -> list[dict[str, Any]]:
-    """One exact user clock time must map to one observed device boundary.
+    """Select one observed boundary at a specified clock time.
 
-    If absent or ambiguous, do not silently select the latest run or hide
-    other intervals. A matching time is evidence-based, not a model guess.
+    HH:MM:SS preserves sub-minute specificity; HH:MM is acceptable only when
+    exactly one observed row matches that whole minute. An explicit calendar
+    date narrows both cases, never overrides timestamp ambiguity. For repeated
+    events at the same clock minute on different days without a named date,
+    remain unresolved rather than silently selecting the newest interval.
     """
-    matches = list(_FOCAL_CLOCK.finditer(str(original_user or "")))
-    if len(matches) != 1:
+    parts = _focal_clock_parts(original_user)
+    if parts is None:
         return []
-    clock = tuple(int(v) for v in matches[0].groups())
+    date_match = _FOCAL_DATE.search(str(original_user or ""))
+    requested_date = (
+        (
+            int(date_match.group(1)),
+            _MONTH_NAMES[date_match.group(2).casefold()],
+            int(date_match.group(3)) if date_match.group(3) else None,
+        )
+        if date_match else None
+    )
     selected = []
     for row in build_causal_timeline_rows(evidence):
-        if any(
-            (moment.hour, moment.minute, moment.second) == clock
-            for edge in ("start", "end")
-            if (moment := _parse_time(row.get(edge))) is not None
-        ):
+        for edge in ("start", "end"):
+            moment = _parse_time(row.get(edge))
+            if moment is None:
+                continue
+            if tuple((moment.hour, moment.minute, moment.second)[:len(parts)]) != parts:
+                continue
+            if requested_date and (
+                moment.day != requested_date[0]
+                or moment.month != requested_date[1]
+                or (requested_date[2] is not None and moment.year != requested_date[2])
+            ):
+                continue
             selected.append(row)
+            break
     return selected if len(selected) == 1 else []
 
 
 def has_explicit_focal_clock(original_user: str) -> bool:
-    return len(_FOCAL_CLOCK.findall(str(original_user or ""))) == 1
+    return _focal_clock_parts(original_user) is not None
 
 
 def missing_material_timeline_rows(
