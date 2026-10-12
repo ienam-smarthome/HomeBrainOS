@@ -539,7 +539,7 @@ def verify_causal_claims(
     # Mathematical status glyphs should be readable as literal text in the
     # HomeBrain UI, which renders a Markdown subset rather than MathJax.
     for marker, symbol in (
-        (r"$\\times$", "✗"), (r"$\\checkmark$", "✓"), (r"$\\sim$", "~")
+        (r"$\times$", "✗"), (r"$\checkmark$", "✓"), (r"$\sim$", "~")
     ):
         if marker in corrected:
             corrected = corrected.replace(marker, symbol)
