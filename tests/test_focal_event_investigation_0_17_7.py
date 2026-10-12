@@ -103,6 +103,6 @@ def test_single_event_synthesis_does_not_require_full_day_timeline_table():
     assert "Analyse that event only" in focal
     assert "unrelated historical intervals" not in focal or "unexplained" in focal
     assert "prefer a compact Markdown table" not in focal
-    broad = _synthesis_instruction("Analyze all light activations")
+    broad = _synthesis_instruction("Why did the light turn on throughout today?")
     assert "Account for every MATERIAL row" in broad
     assert "prefer a compact Markdown table" in broad
