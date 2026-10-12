@@ -34,6 +34,7 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
     trigger_sensor_history_candidates,
 )
+from causal_history_coverage import assess_local_sensor_history_coverage
 from causal_investigation_engine import (
     MAX_EXTRA_SENSOR_READS,
     SENSOR_BATCH_SIZE,
@@ -1753,6 +1754,18 @@ class UnifiedMCPAgent:
             subject_event_history=subject_event_data,
             known_automations=self.known_automations,
         )
+        # For a historical OFF event, room-local newest-N pages can lose
+        # the event that prompted the question. Do not broaden to unrelated
+        # sensors when the primary historical evidence is no longer visible.
+        local_history_coverage = assess_local_sensor_history_coverage(
+            sensor_data, boundary_match.get("stateBoundary")
+        ) if transition == "off" else {}
+        focal_history_gap = bool(
+            local_history_coverage.get("status") ==
+            "pre-focal-not-observed-in-returned-pages"
+        )
+        if focal_history_gap:
+            increment_active_metric("causal_focal_history_gap_stop")
         # Adaptive evidence selection: when a device change came through a
         # reporting bridge and room-based sensors do not give a strong lead,
         # test bounded, capability-grounded candidates across integrations.
@@ -1776,6 +1789,7 @@ class UnifiedMCPAgent:
         if not (
             repeated_controller
             or local_off_evidence
+            or focal_history_gap
             or has_strong_requested_correlated_candidate(analysis)
         ):
             tried_ids = {
@@ -1844,6 +1858,8 @@ class UnifiedMCPAgent:
                     break
         if expanded_sensor_attempts:
             increment_active_metric("causal_adaptive_candidate_plans")
+        if local_history_coverage:
+            analysis["localSensorHistoryCoverage"] = local_history_coverage
         analysis["hypotheses"] = rank_causal_hypotheses(analysis)
         analysis["discoveryCoverage"] = {
             "roomFirstAttempted": initial_sensor_attempts,
@@ -1854,6 +1870,7 @@ class UnifiedMCPAgent:
             ),
             "crossIntegrationInventoryAvailable": bool(candidate_inventory),
             "crossRoomSkippedForLocalOffEvidence": bool(local_off_evidence),
+            "crossRoomSkippedForFocalHistoryGap": bool(focal_history_gap),
             "localOffEvidenceIsNotCausalProof": True,
             "historicalExternalAutomationTraceVerified": False,
         }

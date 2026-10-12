@@ -700,6 +700,17 @@ def _off_provenance(
             "commandHistory": {"checked": False, "result": "not-applicable"},
         }
     reported = _observed_state_boundary(evidence, focus, transition="off")
+    local_sensor_history_coverage: dict[str, Any] = {}
+    for receipt in reversed(evidence):
+        if (
+            receipt.get("tool") == "homebrain_causal_secondary_correlation"
+            and str((receipt.get("details") or {}).get("subject") or "")
+                == str(focus.get("subject") or "")
+        ):
+            local_sensor_history_coverage = dict(
+                (receipt.get("details") or {}).get("localSensorHistoryCoverage") or {}
+            )
+            break
     history: dict[str, Any] = {
         "checked": False, "result": "not-checked",
         "scope": "bounded-returned-event-page",
@@ -772,6 +783,7 @@ def _off_provenance(
         "commandHistory": history,
         "status": certainty,
         "sensorCorrelations": correlations,
+        "sensorHistoryCoverage": local_sensor_history_coverage,
         "appProducerContext": {
             "appId": source_id,
             "configuration": app_config,
