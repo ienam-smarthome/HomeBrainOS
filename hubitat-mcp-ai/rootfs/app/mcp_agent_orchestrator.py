@@ -743,9 +743,7 @@ class UnifiedMCPAgent:
                     "logCount": len(log_rows) if isinstance(log_rows, list) else None,
                     "scopedSince": str(args.get("since") or ""),
                     "scopedUntil": str(args.get("until") or ""),
-                    "execution": execution_log_lines(
-                        data, {"command": {"date": focus["end"]}}
-                    )[:8],
+                    "execution": execution_log_lines(data, focus)[:8],
                 }
             elif ok and leaf == "hub_list_device_events":
                 # Keep bounded actual sensor edges and triggered[] handler
@@ -1263,7 +1261,9 @@ class UnifiedMCPAgent:
                     "appId": log_app_id,
                     "logCount": len(rows) if isinstance(rows, list) else None,
                     "scopedSince": since, "scopedUntil": until,
-                    "execution": execution_log_lines(data, focus)[:8],
+                    "execution": execution_log_lines(
+                        data, {"command": {"date": focus["end"]}}
+                    )[:8],
                 } if ok else None),
             )
             increment_active_metric("causal_off_app_log_reads")
