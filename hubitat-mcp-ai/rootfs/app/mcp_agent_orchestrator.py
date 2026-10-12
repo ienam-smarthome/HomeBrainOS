@@ -2416,7 +2416,8 @@ class UnifiedMCPAgent:
             or is_integration_runtime_diagnostic(user_prompt)
         )
         set_reasoning_profile(
-            "investigative" if investigative_request else "standard"
+            "deep" if investigative_request and wants_deep_investigation(user_prompt)
+            else "investigative" if investigative_request else "standard"
         )
         investigative_subject_history_key: str | None = None
         causal_subject_evidence_expanded = False
