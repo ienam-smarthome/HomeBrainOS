@@ -221,12 +221,12 @@ def test_plain_english_answer_names_app_sensor_trigger_and_followup_levels():
         occupancy_matches=[detection],
         mode_events=[],
     )
-    assert "Bathroom Light 1 turned on at 07:08 at 30%" in answer
+    assert "Bathroom Light 1 turned on at 07:08:06 at 30%" in answer
     assert "Bathroom (app 4013)" in answer
-    assert "LWR01 Bathroom Occupancy detected activity" in answer
+    assert "LWR01 Bathroom Occupancy detected motion at 07:08:06" in answer
     assert "likely triggered the automation" in answer
-    assert "50% at 07:15" in answer
-    assert "light went off at 07:25" in answer
+    assert "50% at 07:15:02" in answer
+    assert "The light switched off at 07:25:16 (after 17m 9s)" in answer
     assert "**" not in answer
     assert "Command semantics" not in answer
     assert "provenance" not in answer
@@ -363,3 +363,73 @@ def test_no_cross_room_or_unconfigured_sensor_guesses():
     assert choose_occupancy_event_sources(
         rows, config_search="", subject_room="Bathroom"
     ) == []
+
+
+
+def test_exact_0753_sensor_light_off_timestamps_and_duration_are_readable():
+    """Regression for the real 12 Oct Bathroom activation: keep seconds,
+    not milliseconds, while preserving the event-time ordering in receipts.
+    """
+    focus = _focus()
+    focus["stateBoundary"] = "2026-10-12T07:53:36.721+0100"
+    focus["command"]["date"] = "2026-10-12T07:53:36.621+0100"
+    focus["command"]["level"] = 50
+    focus["intervalEnd"] = "2026-10-12T08:10:58.185+0100"
+    focus["open"] = False
+    aligned = matched_occupancy_edge(
+        focus,
+        label="LWR01 Bathroom Occupancy",
+        attribute="motion",
+        event_data={"events": [{
+            "name": "motion",
+            "value": "active",
+            "date": "2026-10-12T07:53:36.542+0100",
+        }]},
+        configured=True,
+    )
+    assert aligned is not None
+    assert round(aligned["signedDeltaSeconds"], 3) == -0.179
+    answer = render_concise_lighting_answer(
+        _evidence(),
+        focus,
+        logs=[],
+        config_search="LWR01 Bathroom Occupancy",
+        referenced_sensors=[],
+        occupancy_matches=[aligned],
+        mode_events=[],
+    )
+    assert "turned on at 07:53:36 at 50% brightness" in answer
+    assert "Bathroom (app 4013)" in answer
+    assert "detected motion at 07:53:36" in answer
+    assert "likely triggered the automation" in answer
+    assert "The light switched off at 08:10:58 (after 17m 21s)." in answer
+    assert "07:53:36.721" not in answer
+    assert "08:10:58.185" not in answer
+    assert "the light went off" not in answer
+
+
+def test_concise_timestamps_preserve_event_local_timezone_not_utc():
+    focus = _focus()
+    focus["stateBoundary"] = "2026-10-12T07:53:36.721+0100"
+    focus["command"]["date"] = "2026-10-12T07:53:36.621+0100"
+    # End in UTC corresponds to 08:10:58.185 in local event timezone.
+    focus["intervalEnd"] = "2026-10-12T07:10:58.185+0000"
+    focus["open"] = False
+    answer = render_concise_lighting_answer(
+        _evidence(), focus, logs=[], config_search="",
+        referenced_sensors=[], occupancy_matches=[], mode_events=[],
+    )
+    assert "at 07:53:36" in answer
+    assert "off at 08:10:58 (after 17m 21s)" in answer
+    assert "off at 07:10:58" not in answer
+
+
+def test_open_interval_does_not_invent_an_off_time():
+    focus = _focus()
+    focus["intervalEnd"] = None
+    focus["open"] = True
+    answer = render_concise_lighting_answer(
+        _evidence(), focus, logs=[], config_search="",
+        referenced_sensors=[], occupancy_matches=[], mode_events=[],
+    )
+    assert "The light switched off" not in answer

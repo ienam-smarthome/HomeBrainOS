@@ -487,7 +487,7 @@ async def test_agent_reads_configured_motion_history_even_without_subject_room()
         "why did livingroom light 1 turn on?"
     )
     assert "Lighting: livingroom low light (app 3602)" in outcome.message
-    assert "FP2 Livingroom sensor (homekit) detected activity" in outcome.message
+    assert "FP2 Livingroom sensor (homekit) detected motion at 12:00:02" in outcome.message
     assert "likely triggered the automation" in outcome.message
     queries = [
         args["args"] for name, args in mcp.calls
