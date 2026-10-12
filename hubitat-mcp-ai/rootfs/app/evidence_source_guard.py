@@ -64,6 +64,14 @@ _SUBSTANTIVE_PERFORMANCE_CONTENT = re.compile(
     r"\breporting\b[^.!?\n]{0,80}\bevery\s+\d+)"
 )
 
+# A successful log request can legitimately return zero entries. That is a
+# negative *result*, not an assertion that the logs were never consulted.
+_EMPTY_LOG_OBSERVATION = re.compile(
+    r"(?i)(?:\\b(?:no|zero|0)\\s+(?:matching\\s+)?(?:log\\s+)?(?:entries|rows|messages)\\b"
+    r"|\\b(?:log\\s+)?(?:query|search|read)\\b[^.!?\\n]{0,90}"
+    r"\\b(?:returned|found|contained|showed)\\s+(?:no|zero|0)\\b)"
+)
+
 _POSITIVE_LOG_ATTRIBUTION = re.compile(
     r"\b(?P<article>the\s+)?logs?\s+"
     r"(?P<verb>show(?:s|ed)?|indicat(?:e|es|ed)|record(?:s|ed)?|contain(?:s|ed)?)\b",
@@ -119,6 +127,10 @@ def _guard_performance_source_absence(
     rendered_correction = False
     for index in range(0, len(pieces), 2):
         sentence = pieces[index]
+        if _EMPTY_LOG_OBSERVATION.search(sentence):
+            # 'The app log search returned no entries' is compatible with a
+            # successful, empty read. Never rewrite it into performance advice.
+            continue
         if not _PERFORMANCE_SOURCE_ABSENCE.search(sentence):
             continue
         comparable = sentence.casefold()
@@ -156,11 +168,18 @@ def _guard_performance_source_absence(
 def guard_checked_source_absence_claim(
     message: str,
     evidence: list[dict[str, Any]],
+    *,
+    performance_request: bool = True,
 ) -> tuple[str, bool]:
     """Replace only claims that a successfully checked source was not supplied."""
 
     text = str(message or "")
-    text, performance_changed = _guard_performance_source_absence(text, evidence)
+    # The performance-only refusal repair must never run during a device or
+    # rule causal investigation. Both domains can read hub_get_logs, but a
+    # checked empty log window is not performance evidence.
+    performance_changed = False
+    if performance_request:
+        text, performance_changed = _guard_performance_source_absence(text, evidence)
     categories = checked_source_categories(evidence)
     if not categories or not _SOURCE_WAS_MISSING.search(text):
         return text, performance_changed
