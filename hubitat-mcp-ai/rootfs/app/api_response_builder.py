@@ -432,6 +432,9 @@ def build_agent_response(
         "confirmation_count": int(getattr(outcome, "confirmation_count", 0) or 0),
         "automation_items": list(getattr(outcome, "automation_items", []) or []),
         "evidence": evidence,
+        "investigation_coverage": deepcopy(
+            getattr(outcome, "investigation_coverage", None)
+        ),
         "metrics": deepcopy(metrics),
         "metric_rows": present_request_metrics(metrics),
         "outcome_presentation": deepcopy(outcome_presentation),
