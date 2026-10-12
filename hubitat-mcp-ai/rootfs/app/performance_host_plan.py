@@ -235,21 +235,38 @@ def _adaptive_target_details(target: dict[str, Any]) -> dict[str, Any]:
 
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
     identity_report: dict[str, Any] | None = None
+    # Scheduler-first investigations do not require unrelated broad device
+    # logs, ping sweeps or candidate-owner probes. If the scheduler omits
+    # authoritative owner IDs, further device lookups cannot manufacture
+    # a verified job-to-entity ownership relationship.
+    scheduler_first = (
+        is_scheduler_optimization_request(user_prompt)
+        and not is_whole_hub_optimization_request(user_prompt)
+    )
 
     async def collect() -> str:
         nonlocal identity_report
         agent.request_metrics.increment("broad_performance_host_plan")
-        source_specs: list[tuple[str, dict[str, Any]]] = [
-            ("hub_read_diagnostics", {"tool": "hub_get_metrics"}),
-            (
-                "hub_manage_logs",
-                {"tool": "hub_get_performance_stats", "args": {"limit": 20, "sortBy": "pct", "type": "both"}},
-            ),
-        ]
-        if wants_scheduler_evidence(user_prompt):
+        if scheduler_first:
+            source_specs: list[tuple[str, dict[str, Any]]] = [
+                ("hub_manage_logs", {"tool": "hub_get_jobs"}),
+                ("hub_manage_logs", {"tool": "hub_get_performance_stats",
+                                      "args": {"limit": 20, "sortBy": "pct",
+                                               "type": "both"}}),
+            ]
             agent.request_metrics.increment("broad_performance_host_plan_jobs")
-            source_specs.append(("hub_manage_logs", {"tool": "hub_get_jobs"}))
-        source_specs.append(("hub_manage_logs", {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}}))
+        else:
+            source_specs = [
+                ("hub_read_diagnostics", {"tool": "hub_get_metrics"}),
+                ("hub_manage_logs", {"tool": "hub_get_performance_stats",
+                                      "args": {"limit": 20, "sortBy": "pct",
+                                               "type": "both"}}),
+            ]
+            if wants_scheduler_evidence(user_prompt):
+                agent.request_metrics.increment("broad_performance_host_plan_jobs")
+                source_specs.append(("hub_manage_logs", {"tool": "hub_get_jobs"}))
+            source_specs.append(("hub_manage_logs", {"tool": "hub_get_logs",
+                                                     "args": {"since": "30m", "limit": 100}}))
 
         failed: list[str] = []
         performance_data: Any = None
@@ -276,7 +293,10 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
         if job_data is not None:
             job_digest = summarize_job_workload(job_data)
             candidate_ids = job_digest.get("candidateIdsByType") or {}
-            if candidate_ids.get("app") or candidate_ids.get("device"):
+            if (
+                (candidate_ids.get("app") or candidate_ids.get("device"))
+                and (not scheduler_first or job_digest.get("ownerIdentifiedRows", 0) > 0)
+            ):
                 set_request_stage("Cross-checking scheduled-job entity IDs")
                 agent.request_metrics.increment("scheduler_inventory_crosscheck")
                 checks = (
@@ -408,7 +428,10 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                     performance=performance_data,
                 )
 
-        targets = _select_adaptive_log_target_records(performance_data)
+        targets = (
+            [] if scheduler_first
+            else _select_adaptive_log_target_records(performance_data)
+        )
         if targets:
             agent.request_metrics.increment("performance_adaptive_expansion")
         for target in targets:
@@ -463,7 +486,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
         #
         # This ordering is a provenance boundary: baseline/adaptive logs must
         # describe hub activity that existed before the targeted probes.
-        if identity_report is not None and job_data is not None:
+        if not scheduler_first and identity_report is not None and job_data is not None:
             device_inventory = inventories.get("device") if "inventories" in locals() else None
             if (isinstance(device_inventory, dict)
                     and device_inventory.get("identitySource") == "hubitat://context"
