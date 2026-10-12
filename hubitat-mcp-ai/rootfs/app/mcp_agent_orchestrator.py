@@ -35,6 +35,9 @@ from causal_evidence_planner import (
     trigger_sensor_history_candidates,
 )
 from causal_history_coverage import assess_local_sensor_history_coverage
+from focal_evidence_reconciliation import (
+    reconcile_window_coverage, summarize_journal_app_logs,
+)
 from causal_windowed_source import (
     build_focal_sensor_window_probe,
     verify_windowed_sensor_reply,
@@ -1302,6 +1305,55 @@ class UnifiedMCPAgent:
             )
             increment_active_metric("causal_off_app_log_reads")
 
+        # Compare source-scoped native app logs with archived messages, if the
+        # app is explicitly allowlisted. Do not expose private log text or
+        # turn a zero-row response into a negative execution claim.
+        archive = getattr(self, "historical_journal", None)
+        if (
+            archive is not None
+            and getattr(archive, "enabled", False)
+            and getattr(archive, "_started", False)
+            and getattr(archive, "capture_logs", False)
+            and log_app_id in getattr(archive, "log_app_ids", set())
+        ):
+            stored = None
+            started_archive = time.monotonic()
+            try:
+                stored = await asyncio.to_thread(
+                    archive.query, app_id=log_app_id,
+                    since=since, until=until, limit=60,
+                )
+            except (OSError, ValueError, RuntimeError) as error:
+                logger.debug("Archived app-log evidence unavailable: %s", error)
+            native_rows = [
+                receipt.get("details") or {}
+                for receipt in self.evidence.receipts()
+                if receipt.get("sub_tool") == "hub_get_logs"
+                and str((receipt.get("details") or {}).get("appId") or "") == log_app_id
+                and (receipt.get("details") or {}).get("scopedSince") == since
+                and receipt.get("success") is True
+            ]
+            native_count = (
+                native_rows[-1].get("logCount")
+                if native_rows and isinstance(native_rows[-1].get("logCount"), int)
+                else None
+            )
+            self.evidence.record(
+                "homebrain_archived_app_log_reconciliation",
+                {"appId": log_app_id, "since": since, "until": until},
+                success=stored is not None,
+                elapsed_ms=round((time.monotonic() - started_archive) * 1000),
+                summary="Bounded native and archived app-log sources reconciled",
+                supports_live_claim=False,
+                evidence_kind="partial_archived_app_log_evidence",
+                effect="read", mutates=False,
+                details=summarize_journal_app_logs(
+                    stored, app_id=log_app_id, since=since, until=until,
+                    native_count=native_count,
+                ),
+            )
+            increment_active_metric("causal_archived_app_log_checks")
+
         # An explicit why-OFF request also needs the observed OFF listener's
         # current settings when no direct OFF command producer is identified.
         # That app remains a listener candidate, never a proven actor.
@@ -2153,7 +2205,9 @@ class UnifiedMCPAgent:
             }
 
         if local_history_coverage:
-            analysis["localSensorHistoryCoverage"] = local_history_coverage
+            analysis["localSensorHistoryCoverage"] = reconcile_window_coverage(
+                local_history_coverage, focal_window_probes
+            )
         analysis["hypotheses"] = rank_causal_hypotheses(analysis)
         analysis["discoveryCoverage"] = {
             "roomFirstAttempted": initial_sensor_attempts,
