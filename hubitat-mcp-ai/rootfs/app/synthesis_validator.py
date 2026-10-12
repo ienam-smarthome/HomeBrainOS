@@ -29,8 +29,8 @@ from performance_log_observation_guard import guard_performance_log_observations
 
 
 _PERFORMANCE_TASK_RE = re.compile(
-    r"\\b(?:performance|cpu|hub load|resource|slow hub|latency|memory|"
-    r"schedul(?:ed|er|ing)?|jobs?|busy percentage|execution time)\\b",
+    r"\b(?:performance|cpu|hub load|resource|slow hub|latency|memory|"
+    r"schedul(?:ed|er|ing)?|jobs?|busy percentage|execution time)\b",
     re.IGNORECASE,
 )
 
