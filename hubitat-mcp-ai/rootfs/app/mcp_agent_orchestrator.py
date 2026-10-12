@@ -1156,7 +1156,32 @@ class UnifiedMCPAgent:
         ]
         app_id = str(lighting_listeners[0].get("appId") or "") if lighting_listeners else ""
         requests: list[tuple[str, str, dict[str, Any], str]] = []
-        if subject_id and catalog.available_tool("hub_read_devices") is not None:
+        # Earlier subject-prefetch history may already contain the precise
+        # post-ON command and producer. Re-reading its 168-hour event page
+        # cannot strengthen that positive provenance fact.
+        post_on_already_observed = False
+        for event in subject_history.get("commandEvents") or []:
+            if (
+                not isinstance(event, dict)
+                or str(event.get("name") or "") != "command-setLevel"
+                or not isinstance(event.get("producedBy"), dict)
+            ):
+                continue
+            try:
+                command_time = datetime.fromisoformat(
+                    str(event.get("date") or "").replace("Z", "+00:00")
+                )
+                if command_time.tzinfo is None:
+                    continue
+                elapsed = (command_time - at).total_seconds()
+            except (TypeError, ValueError):
+                continue
+            if 0 <= elapsed <= 5:
+                post_on_already_observed = True
+                break
+        if post_on_already_observed:
+            increment_active_metric("causal_physical_command_reused")
+        elif subject_id and catalog.available_tool("hub_read_devices") is not None:
             requests.append((
                 "hub_read_devices", "hub_list_device_events",
                 {
