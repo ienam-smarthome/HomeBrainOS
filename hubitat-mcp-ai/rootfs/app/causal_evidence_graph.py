@@ -479,6 +479,81 @@ def _controller_candidate(
 
 
 
+
+def _controller_history_coverage(
+    evidence: list[dict[str, Any]],
+    focus: dict[str, Any],
+    candidate: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Compare one proposed controller against *all observed* ON boundaries.
+
+    Counts are about available evidence, not exhaustive real-world history.
+    A controller associated with three recent starts does not explain a fourth
+    start with independent confirmed command provenance.
+    """
+    if not candidate or candidate.get("status") != "repeated-temporal-association":
+        return None
+    intervals = build_causal_timeline_rows(evidence)
+    observed_starts = {
+        str(row.get("start") or "") for row in intervals if row.get("start")
+    }
+    if not observed_starts:
+        return None
+    match_times: set[str] = set()
+    for receipt in evidence:
+        if (
+            not _working(receipt)
+            or receipt.get("tool") != "homebrain_causal_secondary_correlation"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        if str(details.get("subject") or "") != str(focus.get("subject") or ""):
+            continue
+        for controller in details.get("controllers") or []:
+            if str(controller.get("label") or "") != candidate.get("label"):
+                continue
+            for event in controller.get("relevantAlignments") or []:
+                if not isinstance(event, dict) or event.get("boundaryRole") != "start":
+                    continue
+                try:
+                    delta = abs(float(event.get("signedDeltaSeconds")))
+                except (ValueError, TypeError):
+                    continue
+                if delta > .35 or str(event.get("eventValue")) != str(candidate.get("eventValue")):
+                    continue
+                start = _time(event.get("subjectTransition"))
+                if start is None:
+                    continue
+                match_times.update({
+                    key for key in observed_starts if _eq_time(key, start.isoformat(), .002)
+                })
+    alternatives = []
+    for item in correlate_command_producers(evidence):
+        if item.get("boundaryRole") != "start" or item.get("competingCommands"):
+            continue
+        interval = str(item.get("intervalStart") or "")
+        if interval not in observed_starts or interval in match_times:
+            continue
+        producer = item.get("producer") or {}
+        if str(producer.get("type") or "").casefold() == "app":
+            alternatives.append({
+                "on": interval,
+                "producer": str(producer.get("label") or ""),
+                "appId": str(producer.get("id") or ""),
+                "role": "confirmed-different-direct-command",
+            })
+    return {
+        "observedStartCount": len(observed_starts),
+        "alignedObservedStartCount": len(match_times),
+        "unmatchedObservedStartCount": len(observed_starts - match_times),
+        "confirmedOtherCommandStarts": alternatives[:5],
+        "scope": "returned-observed-intervals-only",
+        "notAnExhaustiveHistory": True,
+        "doesNotProveUnmatchedMeansNoControllerUse": True,
+    }
+
+
+
 def _post_on_commands(
     evidence: list[dict[str, Any]], focus: dict[str, Any],
     *, max_after_seconds: float = 5.0,
@@ -608,6 +683,9 @@ def build_causal_evidence_graph(
     sensor = _sensor_fact(evidence, focus, start_command)
     physical_boundary = _physical_boundary(evidence, focus)
     controller_candidate = _controller_candidate(evidence, focus)
+    controller_coverage = _controller_history_coverage(
+        evidence, focus, controller_candidate
+    )
     post_on_commands = _post_on_commands(evidence, focus)
     end_sensor_correlations = _end_sensor_correlations(evidence, focus)
     config = _configuration(evidence, app_id) if app_id else {"checked": False}
@@ -677,6 +755,7 @@ def build_causal_evidence_graph(
         "directCommand": start_command,
         "physicalStateBoundary": physical_boundary,
         "controllerCandidate": controller_candidate,
+        "controllerCoverage": controller_coverage,
         "postOnCommands": post_on_commands,
         "offSensorCorrelations": end_sensor_correlations,
         "initiatorCandidate": sensor,
@@ -713,6 +792,10 @@ def build_causal_evidence_graph(
             "Hue, Hubitat or other external automation without its own logs.",
             "A reporting bridge's producedBy on the physical state event proves "
             "where the state report came from, not who pressed the control.",
+            "Do not claim a controller matched ALL observed ON runs unless "
+            "controllerCoverage.alignedObservedStartCount equals the actual "
+            "observedStartCount; other confirmed command producers are material "
+            "exceptions to a universal initiating-button explanation.",
             "A button event reported *after* the light state cannot be proven "
             "as the earlier Hubitat-side trigger by timestamp correlation alone; "
             "transport/report ordering may differ, so label repeated short-skew "
