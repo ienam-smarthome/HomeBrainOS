@@ -60,8 +60,14 @@ def causal_boundary_log_windows(
     *,
     padding_seconds: int = 10,
     max_intervals: int = 2,
+    original_user: str = "",
 ) -> list[dict[str, str]]:
-    """Return UTC native-log windows for both start and end boundaries."""
+    """Return UTC native-log windows for the user's focal event first.
+
+    A short, explicitly requested event must outrank earlier long/material
+    intervals. Without a uniquely matched focal event, retain prior material
+    interval fallback and never guess a date/subject.
+    """
 
     pad = timedelta(seconds=max(1, min(60, int(padding_seconds))))
     windows: list[dict[str, str]] = []
@@ -75,8 +81,14 @@ def causal_boundary_log_windows(
         key=lambda row: _parse_time(row.get("start")) or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
+    from causal_timeline import explicitly_focused_event_rows
+    focused = (
+        explicitly_focused_event_rows(evidence, original_user)
+        if original_user else []
+    )
+    targets = focused if focused else material
 
-    for row in material[: max(1, min(2, int(max_intervals)))]:
+    for row in targets[: max(1, min(2, int(max_intervals)))]:
         for role, key in (("start", "start"), ("end", "end")):
             raw = str(row.get(key) or "").strip()
             boundary = _parse_time(raw)
