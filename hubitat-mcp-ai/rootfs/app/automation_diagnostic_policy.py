@@ -31,6 +31,12 @@ _BROAD_AUTOMATION_COLLECTION = re.compile(
     r"(?:automations|rules|apps)\b",
     re.I,
 )
+_BROAD_EVERY_SINGLE = re.compile(
+    r"\b(?:each|every)\s+"
+    r"(?:(?:my|our|the|installed|existing|active|running)\s+){0,3}"
+    r"(?:automation|rule|app)\b",
+    re.I,
+)
 _BROAD_AUTOMATION_LOGS = re.compile(
     r"\b(?:all|every|entire|whole|full|comprehensive)\s+"
     r"(?:(?:my|the|our)\s+)?(?:automation|rule|app)\s+"
@@ -53,6 +59,7 @@ def has_broad_automation_scope(prompt: str) -> bool:
     text = str(prompt or "").strip()
     return bool(
         _BROAD_AUTOMATION_COLLECTION.search(text)
+        or _BROAD_EVERY_SINGLE.search(text)
         or _BROAD_AUTOMATION_LOGS.search(text)
         or _BROAD_HUB_SCOPE.search(text)
     )
