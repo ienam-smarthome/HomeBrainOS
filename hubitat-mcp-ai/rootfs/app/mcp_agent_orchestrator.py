@@ -41,20 +41,18 @@ from causal_investigation_engine import (
     rank_causal_hypotheses,
 )
 from causal_lighting_context import (
+    matched_occupancy_edge,
+    render_concise_lighting_answer,
     choose_occupancy_event_sources,
-    render_level_command_pattern,
-    render_occupancy_edge_correlation,
 )
 from causal_rule_decision_context import (
     app_log_window,
     configuration_text,
     configured_mode_triggers,
     execution_log_lines,
-    linked_sensor_health_warning,
     mode_transition_correlations,
     proven_lighting_command,
     referenced_sensor_identities,
-    render_rule_decision_context,
 )
 from causal_command_provenance import (
     boundary_producer_transition_kind,
@@ -797,28 +795,15 @@ class UnifiedMCPAgent:
             or ""
         ).strip()
 
-        health_lines: list[str] = []
         referenced = (
             referenced_sensor_identities(config_search, identities, room)
             if config_search else []
         )
-        if referenced and room:
-            detail = await bounded_read(
-                "hub_read_devices",
-                "hub_list_devices",
-                {"detailed": True, "roomFilter": room},
-                "authoritative_state_snapshot",
-                True,
-            )
-            if isinstance(detail, dict):
-                rows = HubitatMCPClient._find_device_list(detail)
-                if isinstance(rows, list):
-                    health_lines = linked_sensor_health_warning(referenced, rows)
 
         # A direct app log that actually names its trigger has precedence.
         # Otherwise test only configured occupancy sources or one unambiguous
         # room occupancy device; never search every motion sensor on the hub.
-        occupancy_context: str | None = None
+        occupancy_matches: list[dict[str, Any]] = []
         if room and not any("triggered" in row.casefold() for row in execution):
             candidates = choose_occupancy_event_sources(
                 identities,
@@ -841,32 +826,30 @@ class UnifiedMCPAgent:
                 )
                 if not isinstance(events, dict):
                     continue
-                occupancy_context = render_occupancy_edge_correlation(
+                match = matched_occupancy_edge(
                     focus,
                     label=str(candidate.get("label") or candidate.get("name") or ""),
                     attribute=attribute,
                     event_data=events,
+                    configured=_configured,
                 )
-                if occupancy_context:
+                if match is not None:
+                    occupancy_matches.append(match)
                     increment_active_metric("causal_sensor_aligned")
-                    break
+                    if match["configured"] and match["signedDeltaSeconds"] <= 0:
+                        break
             if candidates:
                 increment_active_metric("causal_sensor_read", len(candidates))
 
-        explanation = [
-            base_answer,
-            render_level_command_pattern(self.evidence.receipts(), focus),
-            occupancy_context,
-            render_rule_decision_context(
-                app_name=app_name,
-                app_id=app_id,
-                configured=config_items,
-                logs=execution,
-                sensor_warnings=health_lines,
-                mode_events=mode_events,
-            ),
-        ]
-        return "\n\n".join(part for part in explanation if part)
+        return render_concise_lighting_answer(
+            self.evidence.receipts(),
+            focus,
+            logs=execution,
+            config_search=config_search,
+            referenced_sensors=referenced,
+            occupancy_matches=occupancy_matches,
+            mode_events=mode_events,
+        )
 
     async def _prefetch_explicit_causal_subject(
         self,
