@@ -168,7 +168,7 @@ def test_occupancy_edge_is_reported_as_correlation_not_certain_cause():
     )
     assert text and "LWR01 Bathroom Occupancy" in text
     assert "0.18s after" in text
-    assert "plausible trigger, not a verified cause" in text
+    assert "timing alone cannot establish" in text
     assert render_occupancy_edge_correlation(
         _focus(), label="LWR01 Bathroom Occupancy", attribute="motion",
         event_data={"events": [{
