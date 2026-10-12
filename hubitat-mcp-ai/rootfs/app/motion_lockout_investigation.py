@@ -448,10 +448,15 @@ async def prefetch_motion_lockout(
             + json.dumps(findings, ensure_ascii=False, default=str)
             + "\nExplain focal OFF, button evidence, motion and subsequent ON "
             "events, configured lockout versus actual execution, and data "
-            "coverage separately. Never infer lockout success just because "
-            "there was no ON, or claim manual OFF solely from a physical "
-            "light-state event. If history is missing, say investigation "
-            "is incomplete rather than replacing it with device health."
+            "coverage separately. When focalCommandProvenance contains a "
+            "matching command, explicitly disclose its actual app/controller "
+            "producer without confusing that command with an independently "
+            "recorded hardware button press. The newest completed OFF state "
+            "boundary takes priority over earlier OFF/ON transitions. Never "
+            "infer lockout success just because there was no ON, or claim a "
+            "hardware press solely from a labelled command producer. If history "
+            "is missing, say investigation is incomplete rather than replacing "
+            "it with device health."
         ),
     })
     return True
