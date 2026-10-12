@@ -703,6 +703,11 @@ def render_command_producer_answer(
         reverse=True,
     )
     focus = matches[0]
+    if (focus.get("command") or {}).get("semantics") == "level-switch-command":
+        # Use one command-aware renderer rather than describe setLevel as
+        # an on() or off() method in the longer legacy narrative.
+        return render_command_producer_summary(evidence, transition=action)
+
     timeline_id = str(focus.get("timelineId") or "")
     subject = str(focus.get("subject") or "the device").strip()
     producer = focus.get("producer") or {}
@@ -953,6 +958,7 @@ def render_command_producer_summary(
             or _same_boundary(row.get("stateBoundary"), requested_boundary)
         )
         and isinstance(row.get("producer"), dict)
+        and not row.get("competingCommands")
     ]
     if not matches:
         return None
@@ -972,8 +978,18 @@ def render_command_producer_summary(
     delay = command.get("commandToStateMs")
     inverted = bool(command.get("recordingOrderInverted"))
     action_upper = action.upper()
-
-    if inverted:
+    semantics = command.get("semantics")
+    if semantics == "level-switch-command":
+        command_display = str(command.get("display") or "setLevel(?)")
+        timing = (
+            f"{producer_label} issued {command_display} for {subject} "
+            f"at {command_time}; the device reported {action_upper} "
+            f"at {state_time}"
+        )
+        if delay not in {None, ""}:
+            timing += f" ({abs(float(delay)):g} ms later)"
+        timing += "."
+    elif inverted:
         timing = (
             f"{subject} reported {action_upper} at {state_time}; the matching "
             f"command from {producer_label} was recorded "
@@ -989,7 +1005,14 @@ def render_command_producer_summary(
             timing += f" ({abs(float(delay)):g} ms later)"
         timing += "."
 
-    lines = [f"**Cause:** {timing}"]
+    lines = [
+        f"**Command evidence:** {timing}" if semantics == "level-switch-command"
+        else f"**Cause:** {timing}"
+    ]
+    if semantics == "level-switch-command":
+        explanation = command_family_description(command)
+        if explanation:
+            lines.append(f"- **Command semantics:** {explanation}")
 
     if action == "on":
         if focus.get("open"):
@@ -1011,9 +1034,60 @@ def render_command_producer_summary(
 
     lines.append(
         "- **Note:** The Hubitat producer identifies the app/action that issued "
-        "the command; it does not identify the person who initiated it."
+        "the command; it does not identify the person who initiated it, and "
+        "a compatible command does not rule out another controller."
     )
     return "\n".join(lines)
+
+
+def render_competing_command_summary(
+    evidence: list[dict[str, Any]],
+    *,
+    transition: str,
+) -> str | None:
+    """Explain conflicting compatible command producers without false certainty."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return None
+    focal = focal_transition_boundary(evidence, action)
+    rows = [
+        row for row in correlate_command_producers(evidence)
+        if str(row.get("boundaryRole") or "") == role
+        and row.get("competingCommands")
+        and (focal in {None, ""} or _same_boundary(row.get("stateBoundary"), focal))
+    ]
+    if not rows:
+        return None
+    rows.sort(
+        key=lambda row: _parse_time(row.get("stateBoundary"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    row = rows[0]
+    subject = str(row.get("subject") or "the device")
+    descriptions = []
+    for candidate in (row.get("competingCommands") or [])[:4]:
+        producer = candidate.get("producer") or {}
+        label = str(producer.get("label") or "").strip()
+        method = str(candidate.get("command") or "").strip()
+        if label and method:
+            descriptions.append(
+                f"{label} ({method} at {_clock_text(candidate.get('date'))})"
+            )
+    if len(descriptions) < 2:
+        return None
+    return (
+        f"**Main finding:** {subject} reported {action.upper()} at "
+        f"{_clock_text(row.get('stateBoundary'))}, with multiple compatible "
+        "Hubitat command producers in the preceding event window. "
+        "No single initiating app is uniquely established.\n"
+        "- **Competing commands:** " + "; ".join(descriptions) + ". "
+        "A command producer is verified for each logged call, but these "
+        "records alone do not determine which call won or exclude an external "
+        "controller. Treat any sensor timing only as supporting correlation."
+    )
 
 
 def render_command_producer_evidence(
@@ -1034,7 +1108,8 @@ def render_command_producer_evidence(
         command = row.get("command") or {}
         lines.append(
             f"- {row.get('timelineId')} {row.get('boundaryRole')}: "
-            f"command-{row.get('action')} at {command.get('date')} was produced by "
+            f"{command.get('display') or command.get('name') or ('command-' + str(row.get('action')))} "
+            f"at {command.get('date')} was produced by "
             f"{producer.get('label')} -> state boundary {row.get('stateBoundary')} "
             f"(command-to-state {command.get('commandToStateMs')} ms)."
         )
@@ -1052,5 +1127,6 @@ __all__ = [
     "focal_transition_boundary",
     "render_boundary_producer_answer",
     "render_command_producer_answer",
+    "render_competing_command_summary",
     "render_command_producer_evidence",
 ]
