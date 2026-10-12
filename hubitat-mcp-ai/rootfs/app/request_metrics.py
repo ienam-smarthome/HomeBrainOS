@@ -75,6 +75,11 @@ class RequestMetrics:
         "causal_adaptive_unexamined_candidates",
         "causal_graph_mode_reads", "causal_graph_sufficient",
         "causal_physical_response_reads",
+        "causal_controller_sufficient_stop", "causal_physical_command_reused",
+        "synthesis_validation_issues", "synthesis_localized_corrections",
+        "synthesis_repair_rounds", "synthesis_repair_causal_coverage",
+        "synthesis_repair_causal_provenance", "synthesis_repair_performance",
+        "synthesis_repair_other", "synthesis_repair_failed",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",

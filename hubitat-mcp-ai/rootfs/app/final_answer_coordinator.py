@@ -477,6 +477,10 @@ class FinalAnswerCoordinator:
         if not issues:
             return draft
 
+        # Fixed categories only: telemetry must not include private query
+        # words, device names, event IDs or arbitrary validation issue text.
+        increment_active_metric("synthesis_validation_issues", len(issues))
+
         # When a fully scoped event graph exists and every issue was already
         # corrected by an evidence-backed, localized deterministic guard,
         # another provider round can only repeat the evidence or reintroduce
@@ -484,14 +488,39 @@ class FinalAnswerCoordinator:
         deterministic_causal_repairs = {
             "focal_interval_duration", "upstream_manual_exclusion",
             "causal_source_attribution", "checked_source_consistency",
-            "positive_source_attribution",
+            "positive_source_attribution", "controller_boundary_direction",
+            "triggered_listener_causal_attribution",
+            "configuration_only_causal_attribution",
+            "causal_controller_history_coverage",
         }
         if (
             causal
-            and causal_graph.get("ready")
+            and (
+                causal_graph.get("ready")
+                or causal_graph.get("physicalEvidenceComplete")
+            )
             and set(issues).issubset(deterministic_causal_repairs)
         ):
+            increment_active_metric("synthesis_localized_corrections")
             return corrected
+
+        # Attribute every additional provider round to one coarse, stable
+        # reason, rather than silently reporting model_rounds=2.
+        if any(str(issue).startswith("causal_timeline_coverage") for issue in issues):
+            increment_active_metric("synthesis_repair_causal_coverage")
+        elif any(str(issue).startswith("performance") for issue in issues):
+            increment_active_metric("synthesis_repair_performance")
+        elif causal and any(
+            issue in {
+                "controller_boundary_direction", "triggered_listener_causal_attribution",
+                "configuration_only_causal_attribution", "upstream_manual_exclusion",
+                "causal_source_attribution", "causal_controller_history_coverage",
+            }
+            for issue in issues
+        ):
+            increment_active_metric("synthesis_repair_causal_provenance")
+        else:
+            increment_active_metric("synthesis_repair_other")
 
         performance_repair = ""
         if performance_semantic_validation:
@@ -534,9 +563,11 @@ class FinalAnswerCoordinator:
                 ),
             },
         ]
+        increment_active_metric("synthesis_repair_rounds")
         repaired = await self._chat(repair_messages, [])
         repaired_content = str(repaired.get("content") or "").strip()
         if not repaired_content:
+            increment_active_metric("synthesis_repair_failed")
             return corrected
 
         repaired_corrected, remaining = validate_synthesis(
@@ -545,6 +576,8 @@ class FinalAnswerCoordinator:
             original_user=original_user,
             causal=causal,
         )
+        if remaining:
+            increment_active_metric("synthesis_repair_failed")
         return repaired_content if not remaining else repaired_corrected
 
 
