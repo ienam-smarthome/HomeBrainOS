@@ -261,7 +261,11 @@ def validate_synthesis(
         if configuration_causality_changed:
             issues.append("configuration_only_causal_attribution")
 
-    missing_rows = missing_material_timeline_rows(corrected, evidence) if causal else []
+    missing_rows = (
+        missing_material_timeline_rows(
+            corrected, evidence, original_user=original_user
+        ) if causal else []
+    )
     if missing_rows:
         missing_ids = ",".join(str(row.get("id") or "?") for row in missing_rows[:8])
         missing_starts = ",".join(
