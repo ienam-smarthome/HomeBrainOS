@@ -221,8 +221,9 @@ def guard_off_certainty_contract(
         # "Does not prove/exclude X" is properly calibrated uncertainty,
         # not an exclusion claim. Do not rewrite that sentence.
         epistemic_caution = bool(re.search(
-            r"(?i)\b(?:does|do|did|cannot|can't)\s+not?\s*"
-            r"(?:prove|confirm|establish|exclude|rule\s+out)\b",
+            r"(?i)\b(?:(?:does|do|did)\s+not|cannot|can't)\s+"
+            r"(?:independently\s+)?(?:prove|confirm|establish|exclude|"
+            r"rule\s+out|identify)\b",
             line,
         ))
         unsupported_absence = bool(
@@ -241,7 +242,8 @@ def guard_off_certainty_contract(
             not external_verified and _EXTERNAL_LIKELY.search(line)
         )
         unsupported_trigger = bool(
-            not trigger_proven and _OFF_TRIGGER.search(line)
+            not trigger_proven and not epistemic_caution
+            and _OFF_TRIGGER.search(line)
             and re.search(r"(?i)\b(?:likely|probably|triggered|caused|confirmed)\b", line)
             and not re.search(
                 r"(?i)\b(?:not\s+verified|not\s+confirmed|unverified|"
