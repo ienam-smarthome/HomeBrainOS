@@ -570,6 +570,14 @@ def unresolved_material_timeline_rows(
 
 _FOCAL_CLOCK = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d):([0-5]\d)(?![\d:])")
 _FOCAL_MINUTE = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![:\d])")
+_APPROXIMATE_FOCAL_CLOCK = re.compile(
+    r"\b(?:approximately|approx\.?|around|about|roughly)\s+"
+    r"(?:at\s+)?(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\b",
+    re.I,
+)
+# Only an explicitly approximate, second-resolution time is eligible for a
+# very small tolerance. An exact HH:MM:SS request remains second-strict.
+_APPROXIMATE_FOCAL_TOLERANCE_SECONDS = 2.0
 _FOCAL_DATE = re.compile(
     r"\b(?:on\s+)?([0-3]?\d)\s+"
     r"(January|February|March|April|May|June|July|August|September|"
@@ -605,14 +613,19 @@ def explicitly_focused_event_rows(
     """Select one observed boundary at a specified clock time.
 
     HH:MM:SS preserves sub-minute specificity; HH:MM is acceptable only when
-    exactly one observed row matches that whole minute. An explicit calendar
-    date narrows both cases, never overrides timestamp ambiguity. For repeated
-    events at the same clock minute on different days without a named date,
-    remain unresolved rather than silently selecting the newest interval.
+    exactly one observed row matches that whole minute. For a question that
+    *explicitly* says approximately/around/about HH:MM:SS, allow ±2 seconds
+    but still require exactly one observed interval and a matching date.
+    Exact timestamps remain strict. Never choose a nearby latest OFF when
+    multiple observations satisfy the tolerance.
     """
     parts = _focal_clock_parts(original_user)
     if parts is None:
         return []
+    approximate_seconds = (
+        len(parts) == 3
+        and _APPROXIMATE_FOCAL_CLOCK.search(str(original_user or "")) is not None
+    )
     date_match = _FOCAL_DATE.search(str(original_user or ""))
     requested_date = (
         (
@@ -628,7 +641,19 @@ def explicitly_focused_event_rows(
             moment = _parse_time(row.get(edge))
             if moment is None:
                 continue
-            if tuple((moment.hour, moment.minute, moment.second)[:len(parts)]) != parts:
+            if approximate_seconds:
+                # Compare a clock time in the event's own local timezone;
+                # the question's bare HH:MM:SS has no independent offset.
+                # This also handles rollover near a minute boundary.
+                requested_clock = moment.replace(
+                    hour=parts[0], minute=parts[1], second=parts[2],
+                    microsecond=0,
+                )
+                if abs((moment - requested_clock).total_seconds()) > (
+                    _APPROXIMATE_FOCAL_TOLERANCE_SECONDS
+                ):
+                    continue
+            elif tuple((moment.hour, moment.minute, moment.second)[:len(parts)]) != parts:
                 continue
             if requested_date and (
                 moment.day != requested_date[0]
