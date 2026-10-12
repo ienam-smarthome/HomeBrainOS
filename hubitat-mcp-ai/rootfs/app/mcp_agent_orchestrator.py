@@ -34,6 +34,9 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
     trigger_sensor_history_candidates,
 )
+from investigation_intelligence import (
+    plan_investigation, render_investigation_plan, assess_investigation,
+)
 from causal_history_coverage import assess_local_sensor_history_coverage
 from motion_lockout_investigation import (
     is_motion_lockout_investigation, prefetch_motion_lockout,
@@ -405,6 +408,7 @@ class AgentOutcome:
     # Defining it on the slotted base outcome prevents AttributeError when
     # safe_partial_outcome marks an investigation as timed out.
     route: str = "unified-mcp-agent"
+    investigation_coverage: dict[str, Any] | None = None
 
 
 class UnifiedMCPAgent:
@@ -3015,6 +3019,12 @@ class UnifiedMCPAgent:
             else:
                 request_class = "live-read"
             pending = self.confirmations.pending.get(str(session_id))
+            contract = plan_investigation(user_prompt)
+            coverage = (
+                assess_investigation(contract, evidence)
+                if contract is not None and request_class == "live-read"
+                else None
+            )
             return AgentOutcome(
                 message=message,
                 request_class=request_class,
@@ -3022,6 +3032,7 @@ class UnifiedMCPAgent:
                 choices=list(self._choices.get() or []),
                 confirmation_required=pending is not None,
                 confirmation_count=len(pending.actions) if pending is not None else 0,
+                investigation_coverage=coverage,
             )
         finally:
             self._request_class.reset(class_token)
@@ -3170,6 +3181,14 @@ class UnifiedMCPAgent:
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(user_prompt, conversation_history)
+        contract = plan_investigation(user_prompt)
+        if contract is not None:
+            system_prompt += (
+                "\n\n" + render_investigation_plan(contract)
+                + "\nPrioritise targeted historical evidence and test the "
+                  "actual goal; current configuration or successful reads "
+                  "alone cannot establish a past execution."
+            )
         if capability_discovery:
             system_prompt += (
                 "\n\nHOST ORIGINAL-REQUEST CAPABILITY DISCOVERY\n"
