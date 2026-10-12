@@ -445,6 +445,11 @@ async def prefetch_motion_lockout(
                     and isinstance(logs.get("logs"), list) else None
                 ),
                 "emptyDoesNotProveNoExecution": True,
+                # A numeric row count is not a semantic review of the row
+                # bodies. Keep the distinction explicit until an app-scoped
+                # execution/decision extractor is present.
+                "decisionContentReviewed": False,
+                "lockoutDecisionConfirmed": False,
             })
         archive = getattr(host, "historical_journal", None)
         if (
@@ -496,6 +501,11 @@ async def prefetch_motion_lockout(
             findings["sensorActivationEligibilityVerified"] = any(
                 item["eligibleActivationSourceVerified"]
                 for item in findings["motionCorrelations"]
+            )
+            findings["journalCaptureCompletenessVerified"] = False
+            findings["journalGapWindowsReported"] = max(
+                (int(item.get("gapCount") or 0) for item in journal),
+                default=0,
             )
             findings["sources"].append({
                 "source": "Historical Journal",
@@ -549,7 +559,11 @@ async def prefetch_motion_lockout(
             "sensor or keep-on sensor need not be an activation trigger. "
             "Use focalOffHubLocal as the human time when available, with "
             "its UTC offset, and preserve collector-received timestamp "
-            "qualifiers for journal observations. The newest completed OFF state "
+            "qualifiers for journal observations. If app logs expose only a "
+            "row count, do not claim their execution messages were inspected "
+            "or that they contain no lockout decision. Missing journal rows "
+            "with capture gaps cannot prove a sensor stayed inactive. "
+            "The newest completed OFF state "
             "boundary takes priority over earlier OFF/ON transitions. Never "
             "infer lockout success just because there was no ON, or claim a "
             "hardware press solely from a labelled command producer. If history "
