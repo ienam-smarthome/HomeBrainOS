@@ -41,6 +41,20 @@ def render_page(title: str, version: str) -> str:
 .answer-markdown-table th{background:#28282c;font-weight:700;position:sticky;top:0}
 .answer-markdown-table tbody tr:nth-child(even){background:#1b1b1e}
 .answer-markdown-table tbody tr:last-child td{border-bottom:0}
+.journal-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+.journal-stat{background:#111;border-radius:9px;padding:9px;min-width:0}
+.journal-stat .big{font-size:17px}
+.journal-streams{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}
+.journal-stream{padding:4px 8px;background:#242427;border-radius:7px}
+.journal-stream strong{font-weight:700}
+.journal-events,.journal-gaps{margin:7px 0 0;padding:0;list-style:none}
+.journal-events li,.journal-gaps li{border-bottom:1px solid #303035;padding:7px 0;overflow-wrap:anywhere;font-size:12px}
+.journal-events li:last-child,.journal-gaps li:last-child{border-bottom:0}
+.journal-small{font-size:12px;color:var(--muted);line-height:1.4}
+.journal-events strong{font-size:13px}
+.journal-actions{display:flex;align-items:center;gap:8px;margin-top:8px}
+.journal-actions button{width:auto;padding:7px 11px;margin:0;font-size:12px}
+@media(max-width:520px){.journal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.journal-stat{padding:7px}}
 </style>
 </head>
 <body><main class="wrap">
@@ -76,6 +90,31 @@ def render_page(title: str, version: str) -> str:
 </div>
 <div class="health-actions"><button id="runHealthAudit">🩺 Run system check now</button><button class="secondary" id="sendPushoverReport">📲 Send report to Pushover</button></div>
 <details class="health-details" id="healthAuditDetails"><summary>View system check details</summary><div id="healthAuditDetailsBody" class="muted">No audit has run yet.</div></details>
+</section>
+<section class="card" id="journalCard">
+<div class="health-heading"><strong>Historical Journal</strong><span class="health-status-chip health-neutral" id="journalHealth">Loading</span></div>
+<div class="muted" id="journalMeta">Checking persistent evidence collection…</div>
+<div class="journal-streams">
+<span class="journal-stream">Events: <strong id="journalEventsStream">—</strong></span>
+<span class="journal-stream">App logs: <strong id="journalLogsStream">—</strong></span>
+</div>
+<div class="journal-grid">
+<div class="journal-stat"><div class="big" id="journalEventRows">—</div><div class="muted">Events saved</div></div>
+<div class="journal-stat"><div class="big" id="journalLogRows">—</div><div class="muted">App logs saved</div></div>
+<div class="journal-stat"><div class="big" id="journalBytes">—</div><div class="muted">Disk usage</div></div>
+<div class="journal-stat"><div class="big" id="journalGapCount">—</div><div class="muted">Recorded gaps</div></div>
+</div>
+<div class="journal-small" id="journalCoverage">Journal records are partial evidence, not verified continuous history.</div>
+<div class="journal-actions"><button class="secondary" id="journalRefresh" type="button">↻ Refresh journal</button><span class="muted" id="journalUpdated"></span></div>
+<details class="health-details" id="journalDetails"><summary>Recent events and collection details</summary>
+<div class="journal-small" id="journalRetention"></div>
+<div class="journal-small" id="journalAppLogs"></div>
+<div class="journal-small" id="journalFirstLast"></div>
+<strong>Recent device observations</strong>
+<ul class="journal-events" id="journalRecentEvents"><li class="journal-small">Expand to load recent events.</li></ul>
+<strong>Connection gaps</strong>
+<ul class="journal-gaps" id="journalRecentGaps"><li class="journal-small">No gap details loaded.</li></ul>
+</details>
 </section>
 <section class="card" id="oneTimeCleanupCard">
 <div><div class="health-heading"><strong>One-time rule cleanup</strong><span class="health-status-chip health-neutral" id="cleanupStatus">Loading</span></div><div class="muted" id="cleanupMeta">Loading cleanup scheduler…</div></div>
