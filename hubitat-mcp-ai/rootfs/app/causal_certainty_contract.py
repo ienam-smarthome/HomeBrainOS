@@ -39,6 +39,12 @@ _EXTERNAL_LIKELY = re.compile(
 _CAUSAL_ARROW = re.compile(
     r"(?:→|⇒|-->|\\rightarrow|\u2192)", re.I
 )
+_ABSOLUTE_NO_COMMAND = re.compile(
+    r"\b(?:no|not\s+a\s+single)\s+(?:Hubitat[- ]side\s+)?"
+    r"(?:on|off\s+)?command\s+(?:was|had\s+been|could\s+be)\s+"
+    r"(?:issued|sent|executed)\b",
+    re.I,
+)
 _FALSE_LOG_INFERENCE = re.compile(
     r"\b(?:no\s+(?:entries|logs|rows)|empty\s+(?:logs|execution)|"
     r"logs?\s+(?:were|was|returned)\s+(?:empty|zero))\b"
@@ -209,6 +215,7 @@ def guard_off_certainty_contract(
             and (
                 (_PROOF_EXCLUSION.search(line) and _NO_HUB_CAUSE.search(line))
                 or _FALSE_LOG_INFERENCE.search(line)
+                or _ABSOLUTE_NO_COMMAND.search(line)
                 or re.search(
                     r"(?i)\bphysical\s+interaction\s*:\s*ruled\s+out\b",
                     line
