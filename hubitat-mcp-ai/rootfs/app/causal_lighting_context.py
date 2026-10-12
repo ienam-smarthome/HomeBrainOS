@@ -230,9 +230,15 @@ def render_occupancy_edge_correlation(
         else f"{abs(delta):.2f}s after" if delta > 0
         else "at the same instant as"
     )
+    interpretation = (
+        "It was reported after the light changed; this timing alone cannot"
+        " establish that the sensor event triggered the app."
+        if delta > 0 else
+        "This is consistent with a possible occupancy trigger, but only"
+        " the app's execution evidence can confirm the exact decision."
+    )
     return (
         f"**Occupancy correlation:** {label} reported {attribute} active at "
         f"{_clock(when, focus_time)}, {relation} the light's ON transition. "
-        "That makes occupancy a plausible trigger, not a verified cause;"
-        " only the app's execution evidence can confirm the exact decision."
+        + interpretation
     )
