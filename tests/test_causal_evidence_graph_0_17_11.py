@@ -258,6 +258,12 @@ async def test_complete_explicit_deep_question_uses_one_final_model_synthesis():
     class MCP(_MCP):
         async def call_tool(self, name, arguments):
             leaf, args = arguments["tool"], arguments.get("args") or {}
+            if name == "hub_read_diagnostics" and leaf == "hub_get_logs" and args.get("appId") == "3602":
+                # The live case had zero scoped app-log entries. When logs
+                # already prove a different trigger, the host must not pretend
+                # that missing sensor history has been examined.
+                self.calls.append((name, arguments))
+                return MCPToolResult(name, arguments, {}, "ok", {"logs": []})
             if name == "hub_read_devices" and leaf == "hub_list_device_events":
                 if args.get("deviceId") == "7771":
                     self.calls.append((name, arguments))
