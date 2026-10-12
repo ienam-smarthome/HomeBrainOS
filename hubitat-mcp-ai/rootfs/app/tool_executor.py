@@ -15,6 +15,9 @@ from aggregate_fallback_policy import (
     observe_aggregate_result,
 )
 from evidence_recorder import EvidenceRecorder
+from evidence_gateway_contract import (
+    normalize_gateway_read, missing_required_read_fields,
+)
 from history_result_enrichment import enrich_history_result, prepare_history_arguments
 from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
@@ -311,6 +314,7 @@ class ToolExecutor:
         model_arguments = deepcopy(arguments)
         reasoning_round_size = claim_model_tool_call(name, model_arguments)
         safe_arguments = prepare_history_arguments(name, model_arguments)
+        safe_arguments = normalize_gateway_read(name, safe_arguments)
         safe_arguments = _normalize_device_command_parameters(name, safe_arguments)
         receipt_arguments = deepcopy(safe_arguments)
         # Host-only execution hints may carry already-grounded structural
@@ -325,6 +329,31 @@ class ToolExecutor:
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
         remote = handler is None
+
+        missing = (
+            missing_required_read_fields(name, safe_arguments)
+            if not effect.mutates else ()
+        )
+        if missing:
+            reason = (
+                "Read was not executed: missing required input field(s): "
+                + ", ".join(missing)
+                + ". Use already-retrieved device details where possible "
+                  "or supply explicit required read parameters."
+            )
+            if record_evidence:
+                self.evidence.record(
+                    name, receipt_arguments, success=False, elapsed_ms=0,
+                    summary=reason, supports_live_claim=False,
+                    evidence_kind="read_input_preflight_failure",
+                    mutates=False, effect=effect,
+                )
+            return ToolExecution(
+                name=name, arguments=receipt_arguments, effect=effect,
+                success=False, elapsed_ms=0,
+                content=json.dumps({"error": reason}, ensure_ascii=False),
+                result=None,
+            )
 
         selection_reason = (
             blocked_selected_target(name, safe_arguments)
