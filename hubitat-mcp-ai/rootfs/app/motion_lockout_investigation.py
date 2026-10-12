@@ -16,6 +16,9 @@ import time
 from typing import Any
 
 from causal_rule_decision_context import configuration_text
+from scoped_execution_evidence import (
+    bounded_app_log_evidence, event_handler_associations, model_only_log_packet,
+)
 from investigation_intelligence import plan_investigation
 
 _APP_ID = re.compile(r"\b(?:app|rule)\s*(?:#|id\s*)?(\d{3,6})\b", re.I)
@@ -372,6 +375,10 @@ async def prefetch_motion_lockout(
         )
         findings["manualOffVerified"] = False  # command producer != hardware press
         findings["latestFocalOffBasis"] = "newest observed completed OFF boundary"
+        findings["associatedAppEventHandlers"] = event_handler_associations(
+            subject_data, focal_off=off, app_id=app_id,
+        )
+        findings["handlerReferenceIsNotExecutionProof"] = True
         findings["focalOffHubLocal"] = source_local_off_time(subject_data, off)
         findings["focalOffTimestampBasis"] = (
             "native Hubitat state-event clock with explicit UTC offset"
@@ -437,20 +444,25 @@ async def prefetch_motion_lockout(
                 "appId": app_id, "since": first.isoformat(),
                 "until": last.isoformat(), "limit": 60,
             })
+            # The model previously received only a count (two log rows
+            # in the live case), making any claimed content review unfounded.
+            # Bound model-only excerpts and publish only count/provenance
+            # metadata in the persistent technical evidence receipt.
+            app_log_rows, log_summary = bounded_app_log_evidence(logs, app_id)
             findings["sources"].append({
                 "source": "bounded-app-execution-logs", "appId": app_id,
                 "readSucceeded": logs is not None,
-                "returnedRows": (
-                    len(logs.get("logs")) if isinstance(logs, dict)
-                    and isinstance(logs.get("logs"), list) else None
-                ),
+                **log_summary,
                 "emptyDoesNotProveNoExecution": True,
-                # A numeric row count is not a semantic review of the row
-                # bodies. Keep the distinction explicit until an app-scoped
-                # execution/decision extractor is present.
+                "decisionContentProvidedToModel": bool(app_log_rows),
                 "decisionContentReviewed": False,
                 "lockoutDecisionConfirmed": False,
             })
+            if app_log_rows:
+                messages.append({
+                    "role": "user",
+                    "content": model_only_log_packet(app_log_rows, app_id),
+                })
         archive = getattr(host, "historical_journal", None)
         if (
             light and archive is not None
@@ -554,7 +566,12 @@ async def prefetch_motion_lockout(
             "coverage separately. When focalCommandProvenance contains a "
             "matching command, explicitly disclose its actual app/controller "
             "producer without confusing that command with an independently "
-            "recorded hardware button press. Distinguish observed sensor "
+            "recorded hardware button press. Treat associatedAppEventHandlers "
+            "as event-recipient metadata, not proof a handler executed a "
+            "lockout decision. Cite bounded app-log row IDs if they contain "
+            "actual decision evidence; otherwise state that the available "
+            "rows did not establish that decision, not that no action ran. "
+            "Distinguish observed sensor "
             "activity from VERIFIED motion-activation eligibility: a room "
             "sensor or keep-on sensor need not be an activation trigger. "
             "Use focalOffHubLocal as the human time when available, with "
