@@ -32,7 +32,7 @@ _NO_HUB_CAUSE = re.compile(
     re.I,
 )
 _EXTERNAL_LIKELY = re.compile(
-    r"\b(?:likely|probably|strongly\\s+suggests|most\s+likely|confirmed)\b.{0,45}"
+    r"\b(?:likely|probably|strongly\s+suggests|most\s+likely|confirmed)\b.{0,45}"
     r"\b(?:external|non[- ]Hubitat|motion[- ]based\s+automation)\b"
     r"|\b(?:external|motion[- ]based\s+automation)\b.{0,45}"
     r"\b(?:likely|probably|trigger(?:ed|ing)?)\b",
