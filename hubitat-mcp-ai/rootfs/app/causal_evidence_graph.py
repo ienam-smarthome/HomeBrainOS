@@ -377,6 +377,7 @@ def _physical_boundary(
                 "listenersNotified": [
                     {
                         "appId": str(row.get("appId") or ""),
+                        "label": str(row.get("name") or row.get("label") or ""),
                         "handler": str(row.get("handler") or ""),
                     }
                     for row in (event.get("triggered") or [])
