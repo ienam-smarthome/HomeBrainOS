@@ -128,7 +128,7 @@ def test_direct_app_does_not_exclude_manual_mode_or_other_upstream_causes():
     assert "**Mode Change:** **Ruled Out**" not in fixed
     assert "**Other Automations:** **Ruled Out**" not in fixed
     assert "| **Manual/Mode Cause** | **Not established** |" in fixed
-    assert "upstream manual" in fixed
+    assert "manual input upstream" in fixed
     assert "upstream automation" in fixed
     assert "Controlling App** | **Confirmed**" in fixed
 
