@@ -121,12 +121,22 @@ def _candidate_devices(
         if not name or not str(row.get("id") or "").isdecimal():
             continue
         same_room = bool(room and _room(row).casefold() == room)
+        # Button devices often belong to the virtual Button Controllers room.
+        # Match a distinctive physical room prefix from the light's label.
+        light_prefix = re.split(
+            r"\\b(?:lights?|lamps?|bulbs?|switch(?:es)?)\\b",
+            _label(light).casefold(), maxsplit=1,
+        )[0].strip()
+        named_room = bool(
+            len(light_prefix) >= 6
+            and name.casefold().startswith(light_prefix + " ")
+        )
         exact_config_name = bool(config and name.casefold() in config)
         if _attribute(row, "motion") and (exact_config_name or same_room):
             sensors.append((0 if exact_config_name else 1, row))
         if (
             (_attribute(row, "pushed") or re.search(r"\b(?:dimmer|button|remote)\b", name, re.I))
-            and (same_room or exact_config_name)
+            and (same_room or named_room or exact_config_name)
         ):
             buttons.append((0 if exact_config_name else 1, row))
     sensors.sort(key=lambda x: (x[0], _label(x[1]).casefold()))
