@@ -273,12 +273,30 @@ def guard_triggered_listener_causal_claim(
 
 
 _UNSUPPORTED_EXCLUSION = re.compile(r"\bruled\s+out\b|\bfully\s+excluded\b", re.I)
-_MANUAL_PROSE = re.compile(
-    r"\b(?:ruling|rules?)\s+out\s+(?:any\s+)?(?:direct\s+)?"
-    r"(?:manual\s+(?:physical\s+)?(?:interaction|input|control|action|activation)"
-    r"|physical\s+(?:switch|button)\s+(?:input|interaction))", re.I,
+# Command-producer attribution is a one-hop fact, not proof about the
+# upstream initiator. A model can overstate that distinction in free prose,
+# even when its alternatives table is correctly qualified. Detect the
+# *assertion* and its causal subject rather than matching one fixed sentence.
+_UPSTREAM_EXCLUSION_CLAUSE = re.compile(
+    r"\b(?:(?:ruling|rules?)\s+out|exclud(?:es|ing))\s+"
+    r"(?P<subject>[^,.;\n|]{1,110})", re.I,
 )
-_ALT_MANUAL = re.compile(r"\bmanual\b|\bphysical\s+(?:switch|button)\b", re.I)
+_UPSTREAM_PASSIVE_EXCLUSION = re.compile(
+    r"\b(?P<subject>(?:manual|human|physical|button|switch|user|"
+    r"other\s+automation|mode\s+change)[^,.;\n|]{1,90}?)\s+"
+    r"(?:was|were|is|has\s+been|have\s+been)\s+"
+    r"(?:ruled\s+out|excluded)\b", re.I,
+)
+_NEGATING_PREFIX = re.compile(
+    r"(?:\b(?:not|never|without|cannot|can't|doesn't|don't|do\s+not)"
+    r"(?:\s+(?:independently|fully|actually))?\s*)$", re.I,
+)
+_ALT_MANUAL = re.compile(
+    r"\b(?:manual|human|user\s+input)\b"
+    r"|\bphysical\s+(?:switch|button)\b"
+    r"|\b(?:switch|button)\s+(?:press|push|click|interaction|input)\b",
+    re.I,
+)
 _ALT_MODE = re.compile(r"\bmode\b", re.I)
 _ALT_APP = re.compile(r"\b(?:other|alternative)\s+(?:apps?|automations?|rules?)\b", re.I)
 
@@ -341,6 +359,48 @@ def _calibrated_exclusion(category: str, evidence: list[dict[str, Any]]) -> str:
     )
 
 
+def _rewrite_upstream_exclusion_prose(
+    line: str, evidence: list[dict[str, Any]]
+) -> tuple[str, bool]:
+    """Find unsupported exclusions independently of prose surface or wording.
+
+    Only act when a causal *subject* is an upstream/manual/alternative trigger.
+    Preserve a negated exclusion ("not ruling out") as already calibrated,
+    and never mistake a direct producer assertion for a root-cause claim.
+    """
+    changed = False
+
+    def rewrite_active(match: re.Match[str]) -> str:
+        nonlocal changed
+        prefix = line[max(0, match.start() - 32):match.start()]
+        if _NEGATING_PREFIX.search(prefix):
+            return match.group(0)
+        category = _category(match.group("subject"))
+        if not category:
+            return match.group(0)
+        changed = True
+        if category == "manual":
+            return "without independently excluding an upstream manual action"
+        if category == "other_apps":
+            return "without independently excluding upstream automations"
+        if category == "mode":
+            return "without independently excluding an upstream mode influence"
+        return "without independently excluding upstream manual or mode influences"
+
+    line = _UPSTREAM_EXCLUSION_CLAUSE.sub(rewrite_active, line)
+
+    def rewrite_passive(match: re.Match[str]) -> str:
+        nonlocal changed
+        category = _category(match.group("subject"))
+        if not category:
+            return match.group(0)
+        changed = True
+        return _calibrated_exclusion(category, evidence)
+
+    line = _UPSTREAM_PASSIVE_EXCLUSION.sub(rewrite_passive, line)
+    return line, changed
+
+
 def guard_unproven_upstream_manual_exclusion(
     message: str,
     evidence: list[dict[str, Any]],
@@ -381,10 +441,10 @@ def guard_unproven_upstream_manual_exclusion(
                         category, evidence
                     )
                     changed = True
-            updated, count = _MANUAL_PROSE.subn(
-                "without excluding upstream manual initiation", line
+            updated, prose_changed = _rewrite_upstream_exclusion_prose(
+                line, evidence
             )
-            if count:
+            if prose_changed:
                 line = updated
                 changed = True
         rendered.append(line + newline)
