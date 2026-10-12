@@ -32,7 +32,7 @@ _NO_HUB_CAUSE = re.compile(
     re.I,
 )
 _EXTERNAL_LIKELY = re.compile(
-    r"\b(?:likely|probably|most\s+likely|confirmed)\b.{0,45}"
+    r"\b(?:likely|probably|strongly\\s+suggests|most\s+likely|confirmed)\b.{0,45}"
     r"\b(?:external|non[- ]Hubitat|motion[- ]based\s+automation)\b"
     r"|\b(?:external|motion[- ]based\s+automation)\b.{0,45}"
     r"\b(?:likely|probably|trigger(?:ed|ing)?)\b",
@@ -256,7 +256,15 @@ def guard_off_certainty_contract(
             changed = True
         else:
             result.append(raw)
-    return "".join(result), changed
+    # Local repairs can collapse distinct unsupported claims into identical
+    # adjacent sentences. Preserve one instance and the original formatting.
+    compact: list[str] = []
+    for raw in result:
+        if compact and raw.strip() and raw.strip() == compact[-1].strip():
+            changed = True
+            continue
+        compact.append(raw)
+    return "".join(compact), changed
 
 
 __all__ = ["guard_off_certainty_contract"]
