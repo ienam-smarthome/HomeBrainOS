@@ -25,6 +25,7 @@ from investigation_policy import (
     is_history_investigation,
 )
 from investigation_intelligence import plan_investigation, render_investigation_assessment
+from performance_host_plan import is_scheduler_only_evidence_request
 from performance_causality_guard import performance_validation_needed
 from performance_evidence_first import build_performance_synthesis_contract
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
@@ -328,6 +329,8 @@ class FinalAnswerCoordinator:
         same request-scoped executor/evidence recorder remains authoritative here.
         """
 
+        if is_scheduler_only_evidence_request(original_user):
+            return evidence
         if not _broad_performance_recommendation_request(original_user):
             return evidence
         if not _successful_evidence(evidence, _PERFORMANCE_TOOL):
