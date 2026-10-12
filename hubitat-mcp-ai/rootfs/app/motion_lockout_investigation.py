@@ -76,23 +76,38 @@ def _attribute(item: dict[str, Any], attribute: str) -> bool:
 
 
 def resolve_named_light(prompt: str, identities: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Match a unique switch identity, not its ephemeral display-state badges."""
     normalized = " ".join(str(prompt).casefold().split())
-    matches = []
+    matches: list[tuple[int, dict[str, Any]]] = []
     for item in identities:
         if not isinstance(item, dict) or not _attribute(item, "switch"):
             continue
         label = _label(item)
         if len(label) < 7 or not str(item.get("id") or "").isdecimal():
             continue
-        if re.search(r"(?<!\w)" + re.escape(label.casefold()) + r"(?!\w)", normalized):
-            matches.append(item)
+        # Labels may append live states, e.g. "Light 1 (Lights On, Motion
+        # Active)". Driver name and the undecorated label are stable aliases.
+        # Uniqueness is mandatory; never replace an ambiguous light by a guess.
+        aliases = {
+            label,
+            str(item.get("name") or "").strip(),
+            re.sub(r"\s*\([^()]*\)\s*$", "", label).strip(),
+        }
+        matched = [
+            alias for alias in aliases
+            if len(alias) >= 7 and re.search(
+                r"(?<!\w)" + re.escape(alias.casefold()) + r"(?!\w)",
+                normalized,
+            )
+        ]
+        if matched:
+            matches.append((max(len(name) for name in matched), item))
     if not matches:
         return None
-    matches.sort(key=lambda row: -len(_label(row)))
-    if (len(matches) > 1
-            and len(_label(matches[0])) == len(_label(matches[1]))):
+    matches.sort(key=lambda row: -row[0])
+    if len(matches) > 1 and matches[0][0] == matches[1][0]:
         return None
-    return matches[0]
+    return matches[0][1]
 
 
 def last_observed_off(subject: dict[str, Any]) -> datetime | None:

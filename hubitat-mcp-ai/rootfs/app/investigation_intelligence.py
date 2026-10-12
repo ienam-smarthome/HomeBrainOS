@@ -139,10 +139,13 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
 
 
 def _leaf(row: dict[str, Any]) -> str:
+    """Identify the actual source in both gateway and local-tool receipts."""
     if row.get("sub_tool"):
         return str(row["sub_tool"])
     args = row.get("arguments") or {}
-    return str(args.get("tool") or "") if isinstance(args, dict) else ""
+    if isinstance(args, dict) and args.get("tool"):
+        return str(args["tool"])
+    return str(row.get("tool") or "")
 
 
 def _args(row: dict[str, Any]) -> dict[str, Any]:
