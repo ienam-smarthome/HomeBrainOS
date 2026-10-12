@@ -239,9 +239,17 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
     # logs, ping sweeps or candidate-owner probes. If the scheduler omits
     # authoritative owner IDs, further device lookups cannot manufacture
     # a verified job-to-entity ownership relationship.
+    folded_goal = " ".join(str(user_prompt or "").casefold().split())
+    explicitly_hub_wide_performance = any(
+        phrase in folded_goal for phrase in (
+            "hubitat performance", "hub performance",
+            "whole hub", "entire hub",
+        )
+    )
     scheduler_first = (
         is_scheduler_optimization_request(user_prompt)
         and not is_whole_hub_optimization_request(user_prompt)
+        and not explicitly_hub_wide_performance
     )
 
     async def collect() -> str:
