@@ -15,6 +15,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from causal_certainty_contract import guard_off_certainty_contract
 from causal_evidence_graph import build_causal_evidence_graph
 
 
@@ -515,6 +516,11 @@ def verify_causal_claims(
         )
         if changed:
             issues.append(code)
+    corrected, changed = guard_off_certainty_contract(
+        corrected, graph, original_user
+    )
+    if changed:
+        issues.append("causal_off_certainty_contract")
     return corrected, issues
 
 
