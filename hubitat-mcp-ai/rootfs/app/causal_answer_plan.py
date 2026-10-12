@@ -119,6 +119,7 @@ def build_causal_answer_plan(
             },
             "offCommand": command_observation,
             "sensorEdges": sensor_evidence,
+            "sensorHistoryCoverage": off.get("sensorHistoryCoverage") or {},
             "timerComparisons": timer_assessments,
             "appConfiguration": {
                 "checked": bool(
@@ -152,6 +153,11 @@ def build_causal_answer_plan(
         "hypotheses": hypotheses.get("hypotheses") or [],
         "answerObligations": [
             "Lead with the best-supported OFF verdict, not an ON explanation.",
+            "If sensorHistoryCoverage reports pre-focal-not-observed-in-returned-pages, "
+            "state that the returned local sensor history does not reach the "
+            "focal boundary. Do not infer absence of earlier inactivity or "
+            "claim new timer feasibility from missing edges. Stop broad "
+            "external speculation without concrete command provenance.",
             "State observed facts before interpretations; mark each proposed "
             "cause as verified, temporally correlated, inconsistent with the "
             "observed timing, or unresolved.",
