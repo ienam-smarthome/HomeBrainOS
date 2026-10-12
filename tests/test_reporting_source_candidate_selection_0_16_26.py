@@ -467,6 +467,14 @@ class _MorningBedroomMCP:
             events = _switch_events()
         elif device_id == "7840" and attribute == "command-on":
             events = []
+        elif device_id == "7840" and attribute == "command-setLevel":
+            # This bedroom controller only adjusts brightness after ON.
+            # The new scoped command-family read must NOT label those late
+            # recovery commands as the original light ON producers.
+            events = [
+                row for row in _subject_detail_events()
+                if row.get("name") == "command-setLevel"
+            ]
         elif device_id == "7840" and attribute is None:
             events = _subject_detail_events()
         elif device_id == "7901":
@@ -550,7 +558,8 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
         if name == "hub_read_devices"
         and args.get("tool") == "hub_list_device_events"
     ]
-    assert sum(1 for device_id, _attr in event_calls if device_id == "7840") == 3
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7840") == 4
+    assert ("7840", "command-setLevel") in event_calls
     assert sum(1 for device_id, _attr in event_calls if device_id == "7901") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7744") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7774") == 1
@@ -614,7 +623,8 @@ async def test_warm_context_shape_avoids_causal_room_refresh() -> None:
         if name == "hub_read_devices"
         and args.get("tool") == "hub_list_device_events"
     ]
-    assert sum(1 for device_id, _attr in event_calls if device_id == "7840") == 3
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7840") == 4
+    assert ("7840", "command-setLevel") in event_calls
     assert sum(1 for device_id, _attr in event_calls if device_id == "7901") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7744") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7774") == 1
