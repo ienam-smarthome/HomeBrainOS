@@ -50,7 +50,7 @@ def test_exact_device_transition_never_runs_a_whole_hub_audit(question):
 
 
 @pytest.mark.parametrize("question", [
-    "Which history source supports the Bedroom 1 automation evidence?",
+    "Investigate which history source supports the Bedroom 1 automation evidence?",
     "Investigate why a rule failed; which log entries explain it?",
     "Diagnose app 4015 not triggering; which device caused it?",
     "Review automation execution on the Bedroom 1 dimmer and which events matched.",
