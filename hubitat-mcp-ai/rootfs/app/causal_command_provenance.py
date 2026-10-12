@@ -145,6 +145,8 @@ def _subject_boundary_events(
     subject: str,
 ) -> list[dict[str, Any]]:
     wanted = str(subject or "").strip().casefold()
+    if not wanted:
+        return []
     for receipt in reversed(evidence):
         if (
             not isinstance(receipt, dict)
@@ -156,11 +158,36 @@ def _subject_boundary_events(
         if not isinstance(details, dict):
             continue
         label = str(details.get("label") or "").strip().casefold()
-        if wanted and label != wanted:
+        if label != wanted:
             continue
-        events = details.get("boundaryEvents")
-        if isinstance(events, list):
-            return [row for row in events if isinstance(row, dict)]
+
+        # boundaryEvents is a presentation-sized, newest-first subset.
+        # DeviceHistoryService preserves a separate correlationEvents page
+        # spanning older observed switches.  An exact historical OFF can be
+        # present there even when it has dropped out of boundaryEvents.
+        # Prefer the dedicated boundary record on duplicate timestamps,
+        # then accept older switch records only from this same subject's
+        # successful history receipt.  The caller still requires a matching
+        # interval and a sub-second exact boundary match.
+        selected: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for field in ("boundaryEvents", "correlationEvents"):
+            rows = details.get(field)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                name = str(row.get("name") or "").strip().casefold()
+                value = str(row.get("value") or "").strip().casefold()
+                date = str(row.get("date") or "").strip()
+                if name != "switch" or value not in {"on", "off"} or not date:
+                    continue
+                key = (date, name, value)
+                if key not in seen:
+                    seen.add(key)
+                    selected.append(row)
+        return selected
     return []
 
 
