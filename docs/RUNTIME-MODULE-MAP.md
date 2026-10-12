@@ -16,6 +16,7 @@ The repository drift test compares this table directly with the live directory. 
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
 | `causal_attribution_guard.py` | Prevents app/rule configuration-only evidence from being promoted into a specific causal trigger, and ensures stronger aligned controller provenance wins when present. |
 | `causal_command_semantics.py` | Declares driver/capability-gated state-changing command methods, checks level parameters, and separates reliable dimmer effects from driver-dependent possibilities. |
+| `causal_lighting_context.py` | Explains bounded level-command chronology and correlates specifically selected occupancy history with proven lighting activations without inventing a sensor trigger. |
 | `causal_command_provenance.py` | Correlates compatible ON/OFF/setLevel command rows to focal switch boundaries, keeps command producers distinct from bridge reporters and flags competing apps without inventing a unique initiator. |
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
 | `causal_rule_decision_context.py` | Separates confirmed lighting-app command provenance, scoped execution logs, current rule configuration, and present-day sensor-health evidence without inferring historical sensor truth. |
