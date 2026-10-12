@@ -13,6 +13,7 @@ from causal_native_logs import (
 )
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
+from causal_answer_plan import render_causal_answer_plan
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     render_causal_evidence_graph,
@@ -437,6 +438,11 @@ class FinalAnswerCoordinator:
             if causal_graph.get("scope") == "single-observed-event"
             else None
         )
+        causal_answer_plan = (
+            render_causal_answer_plan(causal_graph, original_user)
+            if causal_graph.get("scope") == "single-observed-event"
+            else None
+        )
         native_log_correlation = (
             render_native_log_correlation(
                 correlate_native_log_boundaries(evidence)
@@ -460,6 +466,10 @@ class FinalAnswerCoordinator:
             final_messages.append({"role": "user", "content": causal_timeline})
         if causal_graph_brief:
             final_messages.append({"role": "user", "content": causal_graph_brief})
+        if causal_answer_plan:
+            # Highest-priority causal synthesis guidance: typed precomputed
+            # relationships before the model authors its one final answer.
+            final_messages.append({"role": "user", "content": causal_answer_plan})
         if native_log_correlation:
             final_messages.append({
                 "role": "user",
@@ -514,6 +524,7 @@ class FinalAnswerCoordinator:
             "causal_action_ownership", "causal_empty_log_inference",
             "causal_sensor_event_order", "causal_off_trigger_overclaim",
             "causal_off_certainty_contract", "off_hypothesis_summary",
+            "causal_answer_claim_boundaries",
         }
         if (
             causal

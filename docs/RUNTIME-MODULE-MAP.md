@@ -14,6 +14,7 @@ The repository drift test compares this table directly with the live directory. 
 | `automation_ideas_service.py` | Asks the model for grounded, creative new-automation suggestions (never factual claims). |
 | `automation_status_service.py` | Reads and normalises Hubitat automation status. |
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
+| `causal_answer_plan.py` | Builds a source-scoped pre-synthesis OFF claim and hypothesis plan, and validates command-history claims against its evidence coverage. |
 | `causal_attribution_guard.py` | Prevents app/rule configuration-only evidence from being promoted into a specific causal trigger, and ensures stronger aligned controller provenance wins when present. |
 | `causal_command_semantics.py` | Declares driver/capability-gated state-changing command methods, checks level parameters, and separates reliable dimmer effects from driver-dependent possibilities. |
 | `causal_lighting_context.py` | Explains bounded level-command chronology and correlates specifically selected occupancy history with proven lighting activations without inventing a sensor trigger. |
