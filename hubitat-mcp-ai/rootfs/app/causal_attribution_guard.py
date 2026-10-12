@@ -272,47 +272,210 @@ def guard_triggered_listener_causal_claim(
 
 
 
-_MANUAL_EXCLUSION_LINE = re.compile(
-    r"(?im)^(?P<prefix>\s*(?:[-*]\s*)?(?:\*\*)?"
-    r"(?:manual\s+(?:control|input|activation|switch)|physical\s+switch)"
-    r"(?:\*\*)?\s*:\s*)"
-    r"(?:\*\*)?\s*(?:ruled\s+out|excluded|impossible|cannot\s+have\s+occurred)\b"
-    r"[^\n]*$"
+_UNSUPPORTED_EXCLUSION = re.compile(r"\bruled\s+out\b|\bfully\s+excluded\b", re.I)
+_MANUAL_PROSE = re.compile(
+    r"\b(?:ruling|rules?)\s+out\s+(?:any\s+)?(?:direct\s+)?"
+    r"(?:manual\s+(?:physical\s+)?(?:interaction|input|control|action|activation)"
+    r"|physical\s+(?:switch|button)\s+(?:input|interaction))", re.I,
 )
+_ALT_MANUAL = re.compile(r"\bmanual\b|\bphysical\s+(?:switch|button)\b", re.I)
+_ALT_MODE = re.compile(r"\bmode\b", re.I)
+_ALT_APP = re.compile(r"\b(?:other|alternative)\s+(?:apps?|automations?|rules?)\b", re.I)
+
+
+def _direct_app_proven(evidence: list[dict[str, Any]]) -> bool:
+    from causal_command_provenance import correlate_command_producers
+
+    return any(
+        str((row.get("producer") or {}).get("type") or "").casefold() == "app"
+        and not row.get("competingCommands")
+        for row in correlate_command_producers(evidence)
+    )
+
+
+def _category(text: str) -> str:
+    value = re.sub(r"[*_\x60]", "", text)
+    manual = bool(_ALT_MANUAL.search(value))
+    mode = bool(_ALT_MODE.search(value))
+    if manual and mode:
+        return "combined"
+    if manual:
+        return "manual"
+    if mode:
+        return "mode"
+    if _ALT_APP.search(value):
+        return "other_apps"
+    return ""
+
+
+def _calibrated_exclusion(category: str, evidence: list[dict[str, Any]]) -> str:
+    if category == "manual":
+        return (
+            "The automation issued the device command; manual input upstream "
+            "of that automation was not independently excluded."
+        )
+    if category == "other_apps":
+        return (
+            "No other automation is identified as the direct command producer. "
+            "An upstream automation was not independently excluded."
+        )
+    if category == "mode":
+        has_mode_history = any(
+            isinstance(row, dict) and row.get("success") is True
+            and (
+                row.get("evidence_kind") == "authoritative_location_event_history"
+                or row.get("tool") == "homebrain_location_events"
+            )
+            for row in evidence
+        )
+        return (
+            "No contemporaneous mode transition was identified in the checked "
+            "history; an earlier mode setting was not ruled out as background "
+            "logic."
+            if has_mode_history else
+            "A mode-related trigger was not independently excluded."
+        )
+    return (
+        "The app is the direct command producer; manual and mode-related "
+        "upstream causes have not been exhaustively excluded."
+    )
 
 
 def guard_unproven_upstream_manual_exclusion(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """An automation-owned final command does not exclude manual initiation.
+    """Use actual command provenance to calibrate alternative-cause claims.
 
-    The producedBy:app field proves the immediate command producer, not who
-    or what activated the app. No single command receipt proves exhaustive
-    absence of upstream human input. Preserve command provenance without
-    pretending the manual hypothesis was completely ruled out.
+    A direct app command cannot exclude earlier manual input or upstream
+    automations. Check every Markdown surface: prose, list and certainty table.
     """
-    from causal_command_provenance import correlate_command_producers
+    source = str(message or "")
+    if not _direct_app_proven(evidence):
+        return source, False
 
-    if not any(
-        str((row.get("producer") or {}).get("type") or "").casefold() == "app"
-        for row in correlate_command_producers(evidence)
-    ):
-        return str(message or ""), False
+    changed = False
+    rendered = []
+    for raw in source.splitlines(keepends=True):
+        newline = "\n" if raw.endswith("\n") else ""
+        line = raw[:-1] if newline else raw
 
-    def _replace(match: re.Match[str]) -> str:
-        return (
-            match.group("prefix")
-            + "No direct manual command was identified for this transition. "
-            "The automation issued the device command, but a manual input "
-            "upstream of that automation has not been excluded."
-        )
+        if line.lstrip().startswith("|") and line.rstrip().endswith("|"):
+            cells = line.split("|")
+            if len(cells) >= 5:
+                category = _category(cells[1])
+                if category and _UNSUPPORTED_EXCLUSION.search(cells[2]):
+                    cells[2] = " **Not established** "
+                    cells[3] = " " + _calibrated_exclusion(category, evidence) + " "
+                    line = "|".join(cells)
+                    changed = True
+        else:
+            colon = line.find(":")
+            if colon >= 0:
+                category = _category(line[:colon])
+                if category and _UNSUPPORTED_EXCLUSION.search(line[colon + 1:]):
+                    # Preserve the closing bold markers after a Markdown
+                    # category label such as **Manual Control:**.
+                    emphasis = "**" if line[colon + 1:].lstrip().startswith("**") else ""
+                    line = line[:colon + 1] + emphasis + " " + _calibrated_exclusion(
+                        category, evidence
+                    )
+                    changed = True
+            updated, count = _MANUAL_PROSE.subn(
+                "without excluding upstream manual initiation", line
+            )
+            if count:
+                line = updated
+                changed = True
+        rendered.append(line + newline)
+    return "".join(rendered), changed
 
-    return _MANUAL_EXCLUSION_LINE.subn(_replace, str(message or ""))
+
+
+_NATIVE_LOG_CLAIM = re.compile(
+    r"\b(?:hub|app|application|execution|native|system)\s+logs?\s+"
+    r"(?:show|shows|showed|confirm|confirms|confirmed|record|records|recorded|"
+    r"indicate|indicates|indicated)\b", re.I
+)
+
+
+def _sensor_in_native_log_rows(
+    evidence: list[dict[str, Any]], label: str, sensor_id: str
+) -> bool:
+    """A successful read is not evidence that its rows contain this sensor."""
+    normalized = label.strip().casefold()
+    device_marker = f"dev|{sensor_id}|" if sensor_id else ""
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        arguments = receipt.get("arguments") or {}
+        if (
+            receipt.get("sub_tool") != "hub_get_logs"
+            and arguments.get("tool") != "hub_get_logs"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        for key in ("logs", "execution"):
+            for item in details.get(key) or []:
+                if not isinstance(item, dict):
+                    continue
+                message = " ".join(
+                    str(item.get(field) or "") for field in
+                    ("message", "description", "source")
+                ).casefold()
+                if (normalized and normalized in message) or (
+                    device_marker and device_marker in message
+                ):
+                    return True
+    return False
+
+
+def guard_causal_sensor_source_attribution(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Do not mislabel sensor event history as a native execution log entry.
+
+    Event-history correlations and native app/system logs are different source
+    classes. A bounded log read with zero results still counts as checked.
+    """
+    source = str(message or "")
+    correlations = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("success") is True
+        and row.get("tool") == "homebrain_causal_trigger_correlation"
+        and isinstance(row.get("details"), dict)
+    ]
+    if not correlations or not _NATIVE_LOG_CLAIM.search(source):
+        return source, False
+    changed = False
+    lines = []
+    for line in source.splitlines(keepends=True):
+        if _NATIVE_LOG_CLAIM.search(line):
+            for receipt in correlations:
+                label = str(receipt["details"].get("label") or "").strip()
+                sensor_id = str(
+                    (receipt.get("arguments") or {}).get("deviceId") or ""
+                )
+                if (
+                    label and label.casefold() in line.casefold()
+                    and not _sensor_in_native_log_rows(evidence, label, sensor_id)
+                ):
+                    line, count = _NATIVE_LOG_CLAIM.subn(
+                        "Recorded sensor event history shows", line, count=1
+                    )
+                    changed = changed or bool(count)
+                    break
+        lines.append(line)
+    return "".join(lines), changed
+
+
 
 
 __all__ = [
     "guard_configuration_only_causal_claim",
     "guard_unproven_upstream_manual_exclusion",
+    "guard_causal_sensor_source_attribution",
     "guard_triggered_listener_causal_claim",
 ]
