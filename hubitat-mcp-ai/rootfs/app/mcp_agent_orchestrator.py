@@ -848,10 +848,10 @@ class UnifiedMCPAgent:
                     event_data=events,
                 )
                 if occupancy_context:
-                    increment_active_metric("causal_occupancy_context_match")
+                    increment_active_metric("causal_sensor_aligned")
                     break
             if candidates:
-                increment_active_metric("causal_occupancy_context_checks", len(candidates))
+                increment_active_metric("causal_sensor_read", len(candidates))
 
         explanation = [
             base_answer,
