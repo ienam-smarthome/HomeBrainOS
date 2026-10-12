@@ -71,6 +71,7 @@ class RequestMetrics:
         "broad_performance_log_host_failed",
         "rule_analysis_partial",
         "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
+        "causal_focal_window_reads", "causal_focal_window_evidence_recovered",
         "causal_adaptive_sufficient_stop", "causal_adaptive_candidate_plans",
         "causal_adaptive_unexamined_candidates",
         "causal_graph_mode_reads", "causal_graph_sufficient",
