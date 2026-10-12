@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from causal_command_semantics import classify_state_command, command_family_description
 from causal_timeline import build_causal_timeline_rows
 from natural_datetime import normalize_iso_offset
 
@@ -378,9 +379,8 @@ def correlate_command_producers(
                 continue
 
             candidates: list[
-                tuple[float, datetime, dict[str, Any], bool]
+                tuple[float, datetime, dict[str, Any], bool, dict[str, Any]]
             ] = []
-            event_name = f"command-{action}"
             boundary_event = _matching_boundary_event(
                 evidence,
                 subject=subject,
@@ -393,7 +393,8 @@ def correlate_command_producers(
                 else None
             )
             for event in command_events:
-                if str(event.get("name") or "").casefold() != event_name:
+                semantics = classify_state_command(event, action)
+                if not semantics or not semantics.get("compatible"):
                     continue
                 producer = event.get("producedBy")
                 if not (
@@ -406,7 +407,7 @@ def correlate_command_producers(
                     continue
                 delta = (boundary - event_time).total_seconds()
                 if 0.0 <= delta <= max(0.1, float(max_delta_seconds)):
-                    candidates.append((delta, event_time, event, False))
+                    candidates.append((delta, event_time, event, False, semantics))
                     continue
 
                 # Some Hubitat integrations record the state event a few
@@ -421,13 +422,35 @@ def correlate_command_producers(
                     and producer_type == "app"
                     and _same_producer(producer, boundary_producer)
                 ):
-                    candidates.append((abs(delta), event_time, event, True))
+                    candidates.append((abs(delta), event_time, event, True, semantics))
             if not candidates:
                 continue
 
-            candidates.sort(key=lambda item: item[0])
-            _distance, command_time, event, inverted = candidates[0]
+            # Prefer the closest aligned compatible command; a direct on/off
+            # call wins a distance tie, but cannot silently override a
+            # different app's aligned level command.
+            candidates.sort(key=lambda item: (
+                item[0],
+                0 if item[4].get("semantics") == "explicit-switch-command" else 1,
+            ))
+            _distance, command_time, event, inverted, semantics = candidates[0]
             producer = dict(event.get("producedBy") or {})
+            independent: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for _, when, alternative, reversed_order, meaning in candidates:
+                other = alternative.get("producedBy") or {}
+                key = _producer_key(other)
+                if not any(key) or key in independent:
+                    continue
+                independent[key] = {
+                    "producer": dict(other),
+                    "command": str(meaning.get("display") or ""),
+                    "date": when.isoformat(),
+                    "commandToStateMs": round(
+                        (boundary - when).total_seconds() * 1000, 1
+                    ),
+                    "recordingOrderInverted": reversed_order,
+                }
+            competing = list(independent.values()) if len(independent) > 1 else []
             correlations.append({
                 "timelineId": str(timeline.get("id") or ""),
                 "boundaryRole": role,
@@ -438,9 +461,15 @@ def correlate_command_producers(
                 "stateBoundary": boundary.isoformat(),
                 "action": action,
                 "command": {
-                    "name": event_name,
+                    "name": str(event.get("name") or ""),
                     "date": command_time.isoformat(),
-                    "description": str(event.get("description") or "").strip(),
+                    "description": str(
+                        event.get("description")
+                        or event.get("descriptionText") or ""
+                    ).strip(),
+                    "display": semantics.get("display"),
+                    "semantics": semantics.get("semantics"),
+                    "level": semantics.get("level"),
                     "type": str(event.get("type") or "").strip(),
                     "source": str(event.get("source") or "").strip(),
                     "commandToStateMs": round(
@@ -449,6 +478,7 @@ def correlate_command_producers(
                     ),
                     "recordingOrderInverted": inverted,
                 },
+                "competingCommands": competing,
                 "boundaryProducer": (
                     dict(boundary_producer)
                     if isinstance(boundary_producer, dict)
@@ -456,9 +486,10 @@ def correlate_command_producers(
                 ),
                 "producer": producer,
                 "provenanceStrength": (
+                    "ambiguous-multiple-command-producers"
+                    if competing else
                     "authoritative-command-producer-boundary-corroborated"
-                    if inverted
-                    else "authoritative-command-producer"
+                    if inverted else "authoritative-command-producer"
                 ),
             })
     return correlations
@@ -492,6 +523,7 @@ def command_producer_transition_sufficient(
         and isinstance(row.get("producer"), dict)
         and str(row["producer"].get("label") or "").strip()
         and isinstance(row.get("command"), dict)
+        and not row.get("competingCommands")
         for row in correlations
     )
 
