@@ -419,7 +419,7 @@ def build_agent_response(
     if performance_scope:
         message, _ = guard_performance_log_causality(message, evidence)
 
-    return {
+    result = {
         "success": True,
         "route": getattr(outcome, "route", "unified-mcp-agent"),
         "intent": "native-function-calling",
@@ -432,9 +432,6 @@ def build_agent_response(
         "confirmation_count": int(getattr(outcome, "confirmation_count", 0) or 0),
         "automation_items": list(getattr(outcome, "automation_items", []) or []),
         "evidence": evidence,
-        "investigation_coverage": deepcopy(
-            getattr(outcome, "investigation_coverage", None)
-        ),
         "metrics": deepcopy(metrics),
         "metric_rows": present_request_metrics(metrics),
         "outcome_presentation": deepcopy(outcome_presentation),
@@ -442,6 +439,10 @@ def build_agent_response(
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
     }
+    coverage = getattr(outcome, "investigation_coverage", None)
+    if isinstance(coverage, dict):
+        result["investigation_coverage"] = deepcopy(coverage)
+    return result
 
 
 __all__ = ["build_agent_response"]
