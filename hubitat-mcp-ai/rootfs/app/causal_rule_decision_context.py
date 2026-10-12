@@ -59,7 +59,7 @@ def proven_lighting_command(
                 re.search(r"\b(?:lighting|room lighting|low light)\b", label, re.I)
                 or (
                     (row.get("command") or {}).get("semantics") == "level-switch-command"
-                    and re.search(r"\b(?:lights?\s+on|motion\s+active|occupancy)\b", label, re.I)
+                    and re.search(r"\b(?:lights?\s+(?:on|off)|motion\s+(?:active|idle)|occupancy)\b", label, re.I)
                 )
             )
         ):

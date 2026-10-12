@@ -242,3 +242,232 @@ def render_occupancy_edge_correlation(
         f"{_clock(when, focus_time)}, {relation} the light's ON transition. "
         + interpretation
     )
+
+
+def matched_occupancy_edge(
+    focus: dict[str, Any],
+    *,
+    label: str,
+    attribute: str,
+    event_data: dict[str, Any],
+    configured: bool,
+) -> dict[str, Any] | None:
+    """Return a narrowly time-aligned observation, not causal proof."""
+    boundary = _time(focus.get("stateBoundary"))
+    if boundary is None or not isinstance(event_data.get("events"), list):
+        return None
+    active = {
+        "motion": {"active"},
+        "presence": {"present"},
+        "occupancy": {"occupied", "active", "true"},
+    }.get(attribute, set())
+    candidates: list[tuple[float, float, datetime]] = []
+    for row in event_data["events"]:
+        if not isinstance(row, dict):
+            continue
+        event_time = _time(row.get("date") or row.get("timestamp"))
+        if event_time is None or str(row.get("value") or "").casefold().strip() not in active:
+            continue
+        delta = (event_time - boundary).total_seconds()
+        if abs(delta) <= 2.0:
+            candidates.append((abs(delta), delta, event_time))
+    if not candidates:
+        return None
+    _distance, delta, when = min(candidates)
+    return {
+        "label": label,
+        "attribute": attribute,
+        "configured": configured,
+        "signedDeltaSeconds": delta,
+        "when": when,
+    }
+
+
+def _readable_app_name(label: str) -> str:
+    """Discard live status decoration without losing the producing app name."""
+    text = str(label or "").strip()
+    suffix = re.search(r"\s*\(([^()]*)\)\s*$", text)
+    if suffix and re.search(
+        r"\b(?:lights?\s+(?:on|off)|motion\s+(?:active|idle))\b",
+        suffix.group(1), re.I,
+    ):
+        text = text[:suffix.start()].strip()
+    return text
+
+
+def _short_clock(when: datetime, anchor: datetime) -> str:
+    return when.astimezone(anchor.tzinfo).strftime("%H:%M")
+
+
+def _level_changes_after(
+    evidence: list[dict[str, Any]], focus: dict[str, Any]
+) -> tuple[datetime, float] | None:
+    """Find a later dimming within the same observed ON interval."""
+    details = _relevant_details(evidence, str(focus.get("subject") or ""))
+    boundary = _time(focus.get("stateBoundary"))
+    end = _time(focus.get("intervalEnd"))
+    producer_id = str((focus.get("producer") or {}).get("id") or "")
+    if boundary is None or not producer_id:
+        return None
+    edges = details.get("correlationEvents") or details.get("observedEvents") or []
+    on_edges = [
+        _time(row.get("date"))
+        for row in edges
+        if isinstance(row, dict) and row.get("name") == "switch"
+        and row.get("value") == "on"
+    ]
+    off_edges = [
+        _time(row.get("date"))
+        for row in edges
+        if isinstance(row, dict) and row.get("name") == "switch"
+        and row.get("value") == "off"
+    ]
+    matches = []
+    for event in details.get("commandEvents") or []:
+        if not isinstance(event, dict):
+            continue
+        if str((event.get("producedBy") or {}).get("id") or "") != producer_id:
+            continue
+        when = _time(event.get("date"))
+        if when is None or (when - boundary).total_seconds() <= 2:
+            continue
+        if end and when >= end:
+            continue
+        if any(edge and boundary < edge <= when for edge in off_edges):
+            continue
+        if any(edge and abs((edge - when).total_seconds()) <= 2 for edge in on_edges):
+            continue
+        level = re.search(
+            r"\bsetLevel\(\s*(\d+(?:\.\d+)?)",
+            str(event.get("description") or ""),
+            re.I,
+        )
+        if level:
+            matches.append((when, float(level.group(1))))
+    return min(matches, default=None, key=lambda item: item[0])
+
+
+def _logged_trigger(logs: list[str]) -> str | None:
+    """Accept only timestamp-scoped, explicit 'Triggered:' app-log messages."""
+    for line in logs:
+        found = re.search(r"\bTriggered:\s*(.+)$", str(line), re.I)
+        if found:
+            trigger = re.sub(r"\s+", " ", found.group(1)).strip(" .")
+            if trigger:
+                return trigger
+    return None
+
+
+def render_concise_lighting_answer(
+    evidence: list[dict[str, Any]],
+    focus: dict[str, Any],
+    *,
+    logs: list[str],
+    config_search: str,
+    referenced_sensors: list[dict[str, Any]],
+    occupancy_matches: list[dict[str, Any]],
+    mode_events: list[str],
+) -> str:
+    """Answer WHO acted and WHAT triggered it, without exposing audit jargon.
+
+    Direct producer information is certain; the initiating event is stated
+    as confirmed only when retained app execution logs identify it.
+    """
+    subject = str(focus.get("subject") or "The light")
+    producer = focus.get("producer") or {}
+    app_id = str(producer.get("id") or "").strip()
+    app_label = _readable_app_name(str(producer.get("label") or "the automation"))
+    command = focus.get("command") or {}
+    boundary = _time(focus.get("stateBoundary"))
+    if boundary is None:
+        return f"{subject} was switched on by {app_label} (app {app_id})."
+
+    level = command.get("level")
+    level_text = ""
+    if level is not None:
+        try:
+            level_text = f" at {float(level):g}% brightness"
+        except (ValueError, TypeError):
+            pass
+    first = (
+        f"{subject} turned on at {_short_clock(boundary, boundary)}{level_text} "
+        f"because {app_label} (app {app_id}) switched it on."
+    )
+
+    trigger = _logged_trigger(logs)
+    if trigger:
+        explanation = f"The app log shows it was triggered by {trigger}."
+    else:
+        matched = next(
+            (row for row in occupancy_matches if row.get("configured")
+             and float(row.get("signedDeltaSeconds") or 0) <= 0),
+            None,
+        )
+        if matched is None:
+            matched = next(
+                (row for row in occupancy_matches
+                 if float(row.get("signedDeltaSeconds") or 0) <= 0),
+                None,
+            )
+        if matched is not None:
+            name = str(matched.get("label") or "An occupancy sensor")
+            relation = (
+                "likely triggered the automation"
+                if matched.get("configured")
+                else "may have triggered the automation"
+            )
+            explanation = (
+                f"{name} detected activity around "
+                f"{_short_clock(matched['when'], boundary)}, which {relation}."
+            )
+        elif occupancy_matches:
+            name = str(occupancy_matches[0].get("label") or "An occupancy sensor")
+            explanation = (
+                f"{name} also reported activity around "
+                f"{_short_clock(occupancy_matches[0]['when'], boundary)}, "
+                "but the exact trigger isn't confirmed."
+            )
+        elif mode_events:
+            explanation = (
+                "A hub mode change happened around the same time, "
+                "but the exact trigger isn't confirmed."
+            )
+        elif referenced_sensors:
+            names = [
+                str(row.get("label") or row.get("name") or "").strip()
+                for row in referenced_sensors
+            ]
+            names = [name for name in names if name]
+            if names:
+                explanation = (
+                    f"The app is configured to respond to {names[0]}, "
+                    "but its trigger at that moment couldn't be confirmed."
+                )
+            else:
+                explanation = "The exact event that triggered the app isn't confirmed."
+        elif re.search(r"\b(?:motion|occupancy|presence)\b", config_search, re.I):
+            explanation = (
+                "Occupancy or motion is configured in the automation, "
+                "but the exact event that triggered it isn't confirmed."
+            )
+        else:
+            explanation = "The event that triggered the app couldn't be confirmed."
+
+    last = []
+    later = _level_changes_after(evidence, focus)
+    if later:
+        when, value = later
+        last.append(
+            f"It later adjusted the brightness to {value:g}% at "
+            f"{_short_clock(when, boundary)}"
+        )
+    end = _time(focus.get("intervalEnd"))
+    if end:
+        last.append(f"the light went off at {_short_clock(end, boundary)}")
+    outcome = ""
+    if last:
+        outcome = ". ".join(last) + "."
+        if len(last) == 2:
+            outcome = last[0] + ", and " + last[1] + "."
+
+    return " ".join(part for part in (first, explanation, outcome) if part)

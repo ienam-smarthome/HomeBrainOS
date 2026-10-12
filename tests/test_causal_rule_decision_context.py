@@ -292,15 +292,12 @@ async def test_agent_preserves_command_provenance_and_explains_app_decision():
         "why did livingroom light 1 turn on?"
     )
     message = outcome.message
-    assert "**Cause:**" in message
-    assert "Lighting: livingroom low light issued the ON command" in message
-    assert "669 ms later" in message
-    assert "### Why the automation decided to act" in message
-    assert "mode changed to Afternoon" in message
-    assert "Required Expression: true" in message
-    assert "Configured triggers/conditions" in message
-    assert "currently offline/connecting" in message
-    assert "not necessarily at the event time" in message
+    assert "Livingroom Light 1 turned on at 12:00" in message
+    assert "Lighting: livingroom low light (app 3602)" in message
+    assert "triggered by mode changed to Afternoon" in message
+    assert "Command semantics" not in message
+    assert "Why the automation decided to act" not in message
+    assert "not necessarily at the event time" not in message
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
     assert [(name, args["tool"]) for name, args in mcp.calls].count(
         ("hub_read_apps_code", "hub_get_app_config")
@@ -310,7 +307,7 @@ async def test_agent_preserves_command_provenance_and_explains_app_decision():
     ) == 1
     assert [(name, args["tool"]) for name, args in mcp.calls].count(
         ("hub_read_devices", "hub_list_devices")
-    ) == 1
+    ) == 0
 
 
 @pytest.mark.asyncio
@@ -323,9 +320,9 @@ async def test_unavailable_config_and_logs_never_invent_trigger():
     outcome = await agent.process_user_request_result(
         "why did livingroom light 1 turn on?"
     )
-    assert "Lighting: livingroom low light issued the ON command" in outcome.message
-    assert "Trigger not independently verified" in outcome.message
-    assert "configuration page" in outcome.message
+    assert "Lighting: livingroom low light (app 3602)" in outcome.message
+    assert "couldn't be confirmed" in outcome.message
+    assert "configuration page" not in outcome.message
     assert "mode changed to Afternoon" not in outcome.message
     assert "FP2" not in outcome.message
     assert any(
@@ -422,11 +419,10 @@ async def test_agent_checks_independent_mode_logs_only_when_app_trigger_missing(
     result = await agent.process_user_request_result(
         "why did livingroom light 1 turn on?"
     )
-    assert "Lighting: livingroom low light issued the ON command" in result.message
-    assert "Independent mode-change correlation" in result.message
-    assert "12:00:02" in result.message
-    assert "Trigger not independently verified" in result.message
-    assert "currently offline/connecting" in result.message
+    assert "Lighting: livingroom low light (app 3602)" in result.message
+    assert "A hub mode change happened" in result.message
+    assert "exact trigger isn't confirmed" in result.message
+    assert "Independent mode-change correlation" not in result.message
     mode_reads = [
         args for name, args in mcp.calls
         if name == "hub_read_diagnostics" and
@@ -446,6 +442,6 @@ async def test_agent_no_native_mode_events_remains_explicitly_unverified():
     result = await agent.process_user_request_result(
         "why did livingroom light 1 turn on?"
     )
-    assert "Trigger not independently verified" in result.message
+    assert "couldn't be confirmed" in result.message
     assert "Independent mode-change correlation" not in result.message
     assert result.metrics["counters"].get("model_rounds", 0) == 0
