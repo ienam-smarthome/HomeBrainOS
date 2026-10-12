@@ -30,6 +30,7 @@ from device_state_summary import (
     room_name,
 )
 from health_audit_scheduler import MorningHealthScheduler
+from historical_evidence_journal import HistoricalEvidenceJournal
 from health_audit_service import (
     HealthAuditService,
     is_comprehensive_system_audit_request,
@@ -118,6 +119,12 @@ def load_options() -> dict[str, Any]:
         # behaviour without a code change.
         "deterministic_reads_enabled": False,
         "causal_subject_prefetch_enabled": True,
+        "historical_journal_enabled": False,
+        "historical_journal_hub_url": "",
+        "historical_journal_retention_days": 30,
+        "historical_journal_max_rows": 100000,
+        "historical_journal_capture_logs": False,
+        "historical_journal_log_app_ids": "",
         "causal_deterministic_final_enabled": True,
         "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
         "semantic_agent_enabled": True,
@@ -162,6 +169,15 @@ def load_options() -> dict[str, Any]:
 
 
 OPTIONS = load_options()
+historical_journal = HistoricalEvidenceJournal(
+    enabled=_bool(OPTIONS.get("historical_journal_enabled")),
+    hub_url=str(OPTIONS.get("historical_journal_hub_url") or ""),
+    path=Path(os.getenv("HISTORICAL_JOURNAL_PATH", "/data/homebrain-evidence-journal.sqlite3")),
+    retention_days=int(OPTIONS.get("historical_journal_retention_days") or 30),
+    max_rows=int(OPTIONS.get("historical_journal_max_rows") or 100000),
+    capture_logs=_bool(OPTIONS.get("historical_journal_capture_logs")),
+    log_app_ids=str(OPTIONS.get("historical_journal_log_app_ids") or ""),
+)
 mcp = HubitatMCPClient(
     endpoint_url=str(OPTIONS.get("hubitat_mcp_url") or ""),
     access_token=str(OPTIONS.get("hubitat_mcp_token") or ""),
@@ -313,6 +329,8 @@ agent = UnifiedMCPAgent(
 agent.performance_synthesis_timeout_seconds = float(
     OPTIONS.get("performance_synthesis_timeout_seconds") or 30
 )
+# Read-only journal evidence is optional; do not affect ordinary MCP requests.
+agent.historical_journal = historical_journal
 
 
 class RequestCoordinator:
@@ -416,11 +434,13 @@ request_coordinator = RequestCoordinator()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await historical_journal.start()
     health_scheduler.start()
     one_time_rule_cleanup_scheduler.start()
     try:
         yield
     finally:
+        await historical_journal.close()
         await one_time_rule_cleanup_scheduler.close()
         await health_scheduler.close()
         await request_coordinator.close()
@@ -623,12 +643,37 @@ async def health() -> dict[str, Any]:
         },
         "tts": home_assistant_tts.status(),
         "one_time_rule_cleanup": one_time_rule_cleanup_scheduler.status(),
+        "historical_journal": historical_journal.status(),
     }
 
 
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     return await health()
+
+@app.get("/api/evidence-journal/status")
+async def evidence_journal_status() -> dict[str, Any]:
+    """Collection health, never a claim that historical coverage is complete."""
+    return historical_journal.status()
+
+
+@app.get("/api/evidence-journal/events")
+async def evidence_journal_events(
+    since: str, until: str, device_id: str = "", attribute: str = "",
+    app_id: str = "", limit: int = 100,
+) -> dict[str, Any]:
+    """Bounded, read-only archived evidence; requires an exact device or app."""
+    if not historical_journal.enabled or not historical_journal._started:
+        raise HTTPException(status_code=503, detail="Historical journal is not running")
+    try:
+        return await asyncio.to_thread(
+            historical_journal.query,
+            since=since, until=until, device_id=device_id,
+            attribute=attribute, app_id=app_id, limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 @app.get("/api/request-progress")
 async def request_progress(session_id: str, request_id: str) -> dict[str, Any]:

@@ -1991,6 +1991,73 @@ class UnifiedMCPAgent:
             increment_active_metric("causal_adaptive_candidate_plans")
         if focal_window_probes:
             analysis["focalWindowRetrieval"] = focal_window_probes
+
+        # A local journal may preserve real-time Hubitat observations that
+        # have rotated out of the MCP server's native event history. It is
+        # deliberately a distinct, WEAKER evidence source: many Hubitat
+        # socket frames contain no original event timestamp, so their
+        # collector-reception time must not be treated as exact provenance.
+        archive = getattr(self, "historical_journal", None)
+        archive_rows: list[dict[str, Any]] = []
+        if (
+            transition == "off"
+            and archive is not None
+            and getattr(archive, "enabled", False)
+            and getattr(archive, "_started", False)
+        ):
+            for spec in sensor_specs[:2]:
+                scope = build_focal_sensor_window_probe(
+                    spec, boundary_match.get("stateBoundary")
+                )
+                if scope is None:
+                    continue
+                try:
+                    retrieved = await asyncio.to_thread(
+                        archive.query,
+                        since=scope["since"], until=scope["until"],
+                        device_id=scope["deviceId"],
+                        attribute=scope["attribute"], limit=40,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Historical journal window read unavailable: %s",
+                        type(exc).__name__,
+                    )
+                    archive_rows.append({
+                        "deviceId": scope["deviceId"],
+                        "attribute": scope["attribute"],
+                        "status": "unavailable", "eventCount": 0,
+                    })
+                    continue
+                observations = [
+                    {
+                        "value": item.get("value"),
+                        "observedAt": item.get("observed_at"),
+                        "timestampBasis": item.get("timestamp_basis"),
+                        "captureSource": item.get("source"),
+                    }
+                    for item in (retrieved.get("events") or [])[:40]
+                    if isinstance(item, dict) and item.get("stream") == "events"
+                ]
+                archive_rows.append({
+                    "deviceId": scope["deviceId"],
+                    "attribute": scope["attribute"],
+                    "status": "archived-partial-observations",
+                    "eventCount": len(observations),
+                    "events": observations,
+                    "coverageComplete": False,
+                    "gapCount": len(retrieved.get("gaps") or []),
+                    "emptyProvesNoMotion": False,
+                })
+            if archive_rows:
+                analysis["historicalJournal"] = {
+                    "status": "partial-archive-not-causal-proof",
+                    "sensors": archive_rows,
+                    "timestampBasis": "source timestamp if available, otherwise collector received",
+                    "historicalCompletenessVerified": False,
+                    "archivedSensorEventsAreNotOffCommandProvenance": True,
+                }
+
         if local_history_coverage:
             analysis["localSensorHistoryCoverage"] = local_history_coverage
         analysis["hypotheses"] = rank_causal_hypotheses(analysis)

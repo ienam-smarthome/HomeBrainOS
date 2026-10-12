@@ -1,0 +1,399 @@
+"""Opt-in persistent Hubitat live-event journal.
+
+Hubitat /eventsocket and /logsocket are unofficial read-only streams. This
+collector never assumes an uninterrupted event history: reception time is
+explicitly distinguished from hub event time and every connection gap is
+recorded. No device/app commands, polling or backfilling are performed.
+"""
+from __future__ import annotations
+
+import asyncio
+from contextlib import suppress
+from datetime import datetime, timedelta, timezone
+import hashlib
+import ipaddress
+import json
+import logging
+from pathlib import Path
+import re
+import sqlite3
+from typing import Any
+from urllib.parse import urlsplit
+
+from websockets.asyncio.client import connect
+
+logger = logging.getLogger(__name__)
+
+EVENT_NAMES = frozenset({
+    "switch", "motion", "presence", "occupancy", "level", "mode",
+    "pushed", "held", "released", "doubletapped", "double_tapped",
+})
+MAX_FRAME_BYTES = 65536
+MAX_ROWS_PER_QUERY = 200
+SENSITIVE = re.compile(
+    r"(?i)\b(password|token|secret|api[_-]?key|authorization|bearer)\b"
+    r"(\s*[:=]\s*|\s+)([^\s,;]+)"
+)
+
+
+def utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _aware_iso(raw: Any) -> str | None:
+    try:
+        value = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+        return value.astimezone(timezone.utc).isoformat(timespec="microseconds") if value.tzinfo else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _hub_base_url(raw: str) -> str:
+    """Reject credentials, arbitrary URL paths and Internet-facing endpoints."""
+    parsed = urlsplit(raw.strip())
+    if (parsed.scheme not in {"http", "https", "ws", "wss"}
+            or not parsed.hostname or parsed.username or parsed.password
+            or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
+        raise ValueError("Set a local Hubitat URL without a path, query or credentials")
+    try:
+        ip = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        host = parsed.hostname.casefold()
+        if not (host.endswith(".local") or "." not in host):
+            raise ValueError("Journal requires a LAN Hubitat IP or local hostname")
+    else:
+        if not (ip.is_private or ip.is_loopback):
+            raise ValueError("Journal refuses non-private Hubitat addresses")
+    protocol = "wss" if parsed.scheme in {"https", "wss"} else "ws"
+    port = f":{parsed.port}" if parsed.port else ""
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    return f"{protocol}://{host}{port}"
+
+
+def _limited(value: Any, length: int) -> str:
+    return str(value if value is not None else "")[:length]
+
+
+class HistoricalEvidenceJournal:
+    def __init__(
+        self, *, enabled: bool = False, hub_url: str = "",
+        path: Path | str = "/data/homebrain-evidence-journal.sqlite3",
+        retention_days: int = 30, max_rows: int = 100000,
+        capture_logs: bool = False, log_app_ids: str = "",
+    ) -> None:
+        self.enabled = bool(enabled)
+        self.path = Path(path)
+        self.retention_days = max(1, min(365, int(retention_days)))
+        self.max_rows = max(1000, min(500000, int(max_rows)))
+        self.capture_logs = bool(capture_logs)
+        self.log_app_ids = frozenset(
+            part.strip() for part in str(log_app_ids).split(",")
+            if part.strip().isdigit()
+        )
+        self.base_url = ""
+        self.error: str | None = None
+        if self.enabled:
+            try:
+                self.base_url = _hub_base_url(hub_url)
+            except (ValueError, OverflowError) as exc:
+                self.error = str(exc)
+        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2000)
+        self._tasks: list[asyncio.Task] = []
+        self._connected = {"events": False, "logs": False}
+        self._last_received: dict[str, str | None] = {"events": None, "logs": None}
+        self._dropped = 0
+        self._recorded = 0
+        self._started = False
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(str(self.path), timeout=5)
+        db.execute("PRAGMA busy_timeout=5000")
+        return db
+
+    def _initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""CREATE TABLE IF NOT EXISTS journal_events (
+                id INTEGER PRIMARY KEY,
+                stream TEXT NOT NULL,
+                device_id TEXT NOT NULL DEFAULT '',
+                app_id TEXT NOT NULL DEFAULT '',
+                attribute TEXT NOT NULL,
+                value TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                source TEXT NOT NULL,
+                source_time TEXT NOT NULL DEFAULT '',
+                observed_at TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                timestamp_basis TEXT NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
+                signature TEXT NOT NULL UNIQUE
+            )""")
+            db.execute("""CREATE INDEX IF NOT EXISTS journal_event_lookup
+                ON journal_events(device_id, attribute, observed_at)""")
+            db.execute("""CREATE INDEX IF NOT EXISTS journal_event_window
+                ON journal_events(observed_at)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS journal_gaps (
+                id INTEGER PRIMARY KEY,
+                stream TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                reason TEXT NOT NULL
+            )""")
+            db.execute("""CREATE INDEX IF NOT EXISTS journal_gap_lookup
+                ON journal_gaps(stream, started_at, ended_at)""")
+            self._prune(db)
+
+    def _prune(self, db: sqlite3.Connection) -> None:
+        cutoff = (datetime.now(timezone.utc) -
+                  timedelta(days=self.retention_days)).isoformat(timespec="microseconds")
+        db.execute("DELETE FROM journal_events WHERE received_at < ?", (cutoff,))
+        db.execute("""DELETE FROM journal_events WHERE id IN (
+            SELECT id FROM journal_events ORDER BY received_at DESC
+            LIMIT -1 OFFSET ?)""", (self.max_rows,))
+        db.execute("DELETE FROM journal_gaps WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,))
+
+    def _mark_disconnected(self, stream: str, reason: str) -> None:
+        with self._connect() as db:
+            exists = db.execute(
+                "SELECT 1 FROM journal_gaps WHERE stream=? AND ended_at IS NULL LIMIT 1",
+                (stream,),
+            ).fetchone()
+            if not exists:
+                db.execute(
+                    "INSERT INTO journal_gaps (stream,started_at,reason) VALUES (?,?,?)",
+                    (stream, utcnow(), reason[:120]),
+                )
+
+    def _mark_connected(self, stream: str) -> None:
+        with self._connect() as db:
+            db.execute(
+                "UPDATE journal_gaps SET ended_at=? WHERE stream=? AND ended_at IS NULL",
+                (utcnow(), stream),
+            )
+
+    @staticmethod
+    def _row(stream: str, packet: Any, received_at: str, app_ids: frozenset[str]) -> dict[str, Any] | None:
+        if not isinstance(packet, dict):
+            return None
+        if stream == "events":
+            attribute = _limited(packet.get("name"), 64).lower()
+            if attribute not in EVENT_NAMES:
+                return None
+            device_id = _limited(packet.get("deviceId"), 40)
+            source = _limited(packet.get("source"), 40)
+            if not device_id and not (attribute == "mode" and source.upper() == "LOCATION"):
+                return None
+            observed = _aware_iso(packet.get("date") or packet.get("timestamp"))
+            return {
+                "stream": stream, "device_id": device_id, "app_id": "",
+                "attribute": attribute, "value": _limited(packet.get("value"), 128),
+                "display_name": _limited(packet.get("displayName"), 128),
+                "source": source,
+                "source_time": _limited(packet.get("date") or packet.get("timestamp"), 64),
+                "observed_at": observed or received_at, "received_at": received_at,
+                "timestamp_basis": "source" if observed else "collector-received",
+                "message": "",
+            }
+        if stream == "logs":
+            if _limited(packet.get("type"), 12).lower() != "app":
+                return None
+            app_id = _limited(packet.get("id"), 40)
+            if not app_id or app_id not in app_ids:
+                return None
+            message = SENSITIVE.sub(lambda match: match.group(1) + "=REDACTED", _limited(packet.get("msg"), 512))
+            return {
+                "stream": stream, "device_id": "", "app_id": app_id,
+                "attribute": _limited(packet.get("level"), 24).lower(),
+                "value": "", "display_name": _limited(packet.get("name"), 128),
+                "source": "hubitat-logsocket",
+                "source_time": _limited(packet.get("time"), 64),
+                "observed_at": received_at, "received_at": received_at,
+                "timestamp_basis": "collector-received", "message": message,
+            }
+        return None
+
+    def _write_batch(self, rows: list[dict[str, Any]], prune: bool = False) -> int:
+        with self._connect() as db:
+            inserted = 0
+            for row in rows:
+                packed = json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                # A genuine source timestamp supports stable reconnect de-duplication.
+                # Frames without one can represent repeated real events, so
+                # keep collector-receive time in their signatures.
+                identity = dict(row)
+                if row["source_time"]:
+                    identity.pop("received_at", None)
+                    identity.pop("observed_at", None) if row["timestamp_basis"] == "collector-received" else None
+                stable = json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                signature = hashlib.sha256(stable.encode("utf-8")).hexdigest()
+                cursor = db.execute("""INSERT OR IGNORE INTO journal_events
+                    (stream,device_id,app_id,attribute,value,display_name,source,
+                     source_time,observed_at,received_at,timestamp_basis,message,signature)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (row["stream"], row["device_id"], row["app_id"],
+                     row["attribute"], row["value"], row["display_name"], row["source"],
+                     row["source_time"], row["observed_at"], row["received_at"],
+                     row["timestamp_basis"], row["message"], signature),
+                )
+                inserted += max(0, cursor.rowcount)
+            if prune:
+                self._prune(db)
+            return inserted
+
+    async def _writer(self) -> None:
+        tick = 0
+        while True:
+            batch = [await self._queue.get()]
+            while len(batch) < 100:
+                try:
+                    batch.append(self._queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+            try:
+                tick += 1
+                self._recorded += await asyncio.to_thread(
+                    self._write_batch, batch, tick % 10 == 0
+                )
+            except Exception as exc:
+                self.error = f"Journal storage unavailable: {type(exc).__name__}"
+                logger.warning("Historical journal write failed: %s", exc)
+                self._dropped += len(batch)
+            finally:
+                for _ in batch:
+                    self._queue.task_done()
+
+    async def ingest(self, stream: str, packet: Any) -> bool:
+        """Accept a single parsed socket message; never infer missing events."""
+        row = self._row(stream, packet, utcnow(), self.log_app_ids)
+        if row is None:
+            return False
+        try:
+            self._queue.put_nowait(row)
+        except asyncio.QueueFull:
+            self._dropped += 1
+            self.error = "Journal queue overflow; coverage has gaps"
+            await asyncio.to_thread(self._mark_disconnected, stream, "queue-overflow")
+            return False
+        self._last_received[stream] = row["received_at"]
+        return True
+
+    async def _stream(self, stream: str) -> None:
+        path = "/eventsocket" if stream == "events" else "/logsocket"
+        delay = 2
+        await asyncio.to_thread(self._mark_disconnected, stream, "collector-start")
+        while True:
+            try:
+                async with connect(
+                    self.base_url + path, open_timeout=8, close_timeout=5,
+                    ping_interval=20, ping_timeout=20, max_size=MAX_FRAME_BYTES,
+                ) as socket:
+                    await asyncio.to_thread(self._mark_connected, stream)
+                    self._connected[stream] = True
+                    delay = 2
+                    async for frame in socket:
+                        try:
+                            packet = json.loads(frame)
+                        except (ValueError, TypeError):
+                            continue
+                        await self.ingest(stream, packet)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.error = f"{stream} stream disconnected: {type(exc).__name__}"
+                logger.warning("Historical journal %s socket: %s", stream, type(exc).__name__)
+            finally:
+                self._connected[stream] = False
+                await asyncio.to_thread(self._mark_disconnected, stream, "socket-disconnected")
+            await asyncio.sleep(delay)
+            delay = min(60, delay * 2)
+
+    async def start(self) -> None:
+        if self._started or not self.enabled or self.error:
+            return
+        try:
+            await asyncio.to_thread(self._initialize)
+        except Exception as exc:
+            self.error = f"Could not initialize journal storage: {type(exc).__name__}"
+            return
+        self._started = True
+        self._tasks = [asyncio.create_task(self._writer(), name="journal-writer")]
+        self._tasks.append(asyncio.create_task(self._stream("events"), name="journal-events"))
+        if self.capture_logs and self.log_app_ids:
+            self._tasks.append(asyncio.create_task(self._stream("logs"), name="journal-logs"))
+
+    async def close(self) -> None:
+        for task in self._tasks[1:]:
+            task.cancel()
+        for task in self._tasks[1:]:
+            with suppress(asyncio.CancelledError):
+                await task
+        if self._tasks:
+            await self._queue.join()
+            self._tasks[0].cancel()
+            with suppress(asyncio.CancelledError):
+                await self._tasks[0]
+        self._tasks.clear()
+        self._started = False
+
+    def status(self) -> dict[str, Any]:
+        snapshot: dict[str, Any] = {
+            "enabled": self.enabled, "started": self._started,
+            "connected": dict(self._connected),
+            "last_received": dict(self._last_received),
+            "queued": self._queue.qsize(), "recorded_this_run": self._recorded,
+            "dropped_this_run": self._dropped,
+            "retention_days": self.retention_days, "max_rows": self.max_rows,
+            "capture_logs": self.capture_logs and bool(self.log_app_ids),
+            "coverage_complete": False, "error": self.error,
+        }
+        if self._started:
+            try:
+                with self._connect() as db:
+                    count, first, last = db.execute(
+                        "SELECT COUNT(*), MIN(received_at), MAX(received_at) FROM journal_events"
+                    ).fetchone()
+                    gaps = db.execute("SELECT COUNT(*) FROM journal_gaps").fetchone()[0]
+                snapshot.update(rows=count, first_received=first, last_received=last, gaps=gaps)
+            except sqlite3.Error:
+                snapshot["storage_unavailable"] = True
+        return snapshot
+
+    def query(
+        self, *, since: str, until: str,
+        device_id: str = "", attribute: str = "", app_id: str = "",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        start, end = _aware_iso(since), _aware_iso(until)
+        if not start or not end or start >= end:
+            raise ValueError("since and until must be ordered offset-aware ISO timestamps")
+        if (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days > 31:
+            raise ValueError("Journal query window cannot exceed 31 days")
+        if not (device_id or app_id):
+            raise ValueError("An exact device_id or app_id is required")
+        clauses = ["observed_at>=?", "observed_at<=?"]
+        params: list[Any] = [start, end]
+        for col, val in (("device_id", device_id), ("app_id", app_id), ("attribute", attribute)):
+            if val:
+                clauses.append(col + "=?")
+                params.append(val)
+        sql = ("SELECT stream,device_id,app_id,attribute,value,display_name,source,"
+               "source_time,observed_at,received_at,timestamp_basis,message "
+               "FROM journal_events WHERE " + " AND ".join(clauses)
+               + " ORDER BY observed_at ASC LIMIT ?")
+        params.append(max(1, min(MAX_ROWS_PER_QUERY, int(limit))))
+        with self._connect() as db:
+            db.row_factory = sqlite3.Row
+            events = [dict(row) for row in db.execute(sql, params)]
+            gaps = [dict(zip(("stream", "started_at", "ended_at", "reason"), row))
+                    for row in db.execute(
+                        "SELECT stream,started_at,ended_at,reason FROM journal_gaps "
+                        "WHERE started_at<=? AND (ended_at IS NULL OR ended_at>=?) "
+                        "ORDER BY started_at DESC LIMIT 100", (end, start))]
+        return {
+            "events": events, "count": len(events), "gaps": gaps,
+            "coverage_complete": False,
+            "empty_means_inactivity": False,
+            "timestamps": "source time if timezone-aware, otherwise collector reception time",
+        }
