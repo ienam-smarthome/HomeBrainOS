@@ -413,6 +413,88 @@ def guard_causal_sensor_event_order(
     return "".join(output), changed
 
 
+
+_OFF_TRIGGERS = re.compile(
+    r"\b(?:turn[- ]off|turning\s+off|turned\s+off|switch[- ]off|"
+    r"switching\s+off|switched\s+off|off\s+(?:event|transition|action))\b",
+    re.I,
+)
+_SENSOR_INPUT = re.compile(
+    r"\b(?:motion|occupancy|presence|sensor|inactiv\w*)\b", re.I
+)
+_CAUSAL_ASSERTION = re.compile(
+    r"\b(?:trigger(?:ed|ing|s)?|caus(?:e|ed|ing|es)|initiated?|"
+    r"because|responsible|result(?:ed|ing)?\s+(?:from|in)|due\s+to)\b",
+    re.I,
+)
+_SPECULATIVE_LINK = re.compile(
+    r"\b(?:likely|probably|most\s+likely|high(?:ly)?\s+confidence|"
+    r"consistent)\b", re.I,
+)
+
+
+def guard_off_trigger_attribution(
+    message: str,
+    evidence: list[dict[str, Any]],
+    original_user: str = "",
+    *, graph: dict[str, Any] | None = None,
+) -> tuple[str, bool]:
+    """An OFF-edge sensor correlation is not an OFF automation trigger.
+
+    Even a verified app-issued off() identifies the direct producer, *not*
+    the internal timer or upstream motion edge. Preserve the user's ON
+    attribution and already-cautious OFF hypotheses. A specific confirmed
+    log/decision receipt may later set internalTimerExecutionVerified=true.
+    """
+    text = str(message or "")
+    graph = graph if graph is not None else _graph(evidence, original_user)
+    off = (graph.get("transitionEvidence") or {}).get("off") or {}
+    if not off.get("observed") or off.get("internalTimerExecutionVerified"):
+        return text, False
+    corrected: list[str] = []
+    changed = False
+    for raw in text.splitlines(keepends=True):
+        newline = "\n" if raw.endswith("\n") else ""
+        line = raw[:-1] if newline else raw
+        if (
+            _OFF_TRIGGERS.search(line)
+            and _SENSOR_INPUT.search(line)
+            and _CAUSAL_ASSERTION.search(line)
+            and not re.search(
+                r"\b(?:not\s+(?:established|verified|confirmed|proven)"
+                r"|cannot\s+(?:confirm|prove)|unverified|unknown)\b",
+                line, re.I,
+            )
+        ):
+            # Preserve a table's metadata (e.g. Likely | Detail) and the
+            # original list formatting. Only replace the unsupported
+            # free-text causal attribution with an evidence-scoped statement.
+            result = (
+                "The OFF transition occurred near sensor inactivity, but "
+                "the sensor/timer trigger is unverified"
+                + (
+                    " and the OFF command producer is unidentified."
+                    if off.get("directCommand") is None else "."
+                )
+            )
+            if "|" in line and line.strip().startswith("|"):
+                parts = line.split("|")
+                for i in range(1, len(parts) - 1):
+                    if (
+                        _OFF_TRIGGERS.search(parts[i]) or
+                        (_SENSOR_INPUT.search(parts[i]) and _CAUSAL_ASSERTION.search(parts[i]))
+                    ):
+                        parts[i] = f" {result} "
+                line = "|".join(parts)
+            else:
+                prefix_match = _LIST_MARKER.match(line)
+                prefix = prefix_match.group(1) if prefix_match else ""
+                line = prefix + result
+            changed = True
+        corrected.append(line + newline)
+    return "".join(corrected), changed
+
+
 def verify_causal_claims(
     message: str,
     evidence: list[dict[str, Any]],
@@ -426,6 +508,7 @@ def verify_causal_claims(
         (guard_causal_action_ownership, "causal_action_ownership"),
         (guard_causal_empty_log_inference, "causal_empty_log_inference"),
         (guard_causal_sensor_event_order, "causal_sensor_event_order"),
+        (guard_off_trigger_attribution, "causal_off_trigger_overclaim"),
     ):
         corrected, changed = checker(
             corrected, evidence, original_user, graph=graph
@@ -439,5 +522,6 @@ __all__ = [
     "guard_causal_action_ownership",
     "guard_causal_empty_log_inference",
     "guard_causal_sensor_event_order",
+    "guard_off_trigger_attribution",
     "verify_causal_claims",
 ]
