@@ -73,7 +73,7 @@ def test_omitting_journal_facts_is_corrected_even_without_negative_claim():
 def test_correct_journal_source_and_timestamp_caveat_does_not_duplicate():
     drafted = (
         "The Historical Journal retained four partial sensor events, while "
-        ""two verified MCP windows returned zero rows. Collector reception time "
+        "two verified MCP windows returned zero rows. Collector reception time "
         "is not the original sensor event time or proof of an OFF command."
     )
     assert ensure_archived_sensor_source_disclosure(drafted, _graph()) == (
