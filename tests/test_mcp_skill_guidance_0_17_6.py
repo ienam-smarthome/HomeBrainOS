@@ -46,3 +46,21 @@ def test_deep_reasoning_is_explicit_and_fast_simple_causal_path_remains_availabl
     assert wants_deep_investigation("Trace the full cause of this automation")
     assert not wants_deep_investigation("Why did Bathroom Light 1 turn on?")
     assert not wants_deep_investigation("Turn on Bathroom Light 1")
+
+
+
+def test_explicit_deep_budget_is_larger_than_investigative_but_bounded():
+    from reasoning_policy import reasoning_budget_status, set_reasoning_profile
+
+    set_reasoning_profile("standard")
+    standard = reasoning_budget_status()
+    set_reasoning_profile("investigative")
+    investigative = reasoning_budget_status()
+    set_reasoning_profile("deep")
+    deep = reasoning_budget_status()
+    try:
+        assert standard["maxReadCalls"] < investigative["maxReadCalls"] < deep["maxReadCalls"]
+        assert deep["maxReadCalls"] <= 18
+        assert deep["maxToolRounds"] <= 7
+    finally:
+        set_reasoning_profile("standard")
