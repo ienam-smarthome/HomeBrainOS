@@ -438,8 +438,15 @@ def correlate_command_producers(
             independent: dict[tuple[str, str, str], dict[str, Any]] = {}
             for _, when, alternative, reversed_order, meaning in candidates:
                 other = alternative.get("producedBy") or {}
-                key = _producer_key(other)
-                if not any(key) or key in independent:
+                source_type, source_id, source_label = _producer_key(other)
+                # Native Hubitat app IDs are stronger identifiers than display
+                # labels, which may have changed between event records.
+                key = (
+                    source_type,
+                    source_id,
+                    "" if source_id else source_label,
+                )
+                if not (source_id or source_label) or key in independent:
                     continue
                 independent[key] = {
                     "producer": dict(other),
@@ -982,14 +989,22 @@ def render_command_producer_summary(
     semantics = command.get("semantics")
     if semantics == "level-switch-command":
         command_display = str(command.get("display") or "setLevel(?)")
-        timing = (
-            f"{producer_label} issued {command_display} for {subject} "
-            f"at {command_time}; the device reported {action_upper} "
-            f"at {state_time}"
-        )
-        if delay not in {None, ""}:
-            timing += f" ({abs(float(delay)):g} ms later)"
-        timing += "."
+        if inverted:
+            timing = (
+                f"{subject} reported {action_upper} at {state_time}; "
+                f"the matching {command_display} from {producer_label} "
+                f"was recorded at {command_time} "
+                f"({abs(float(delay or 0)):g} ms later, recording-order inversion)."
+            )
+        else:
+            timing = (
+                f"{producer_label} issued {command_display} for {subject} "
+                f"at {command_time}; the device reported {action_upper} "
+                f"at {state_time}"
+            )
+            if delay not in {None, ""}:
+                timing += f" ({abs(float(delay)):g} ms later)"
+            timing += "."
     elif inverted:
         timing = (
             f"{subject} reported {action_upper} at {state_time}; the matching "
