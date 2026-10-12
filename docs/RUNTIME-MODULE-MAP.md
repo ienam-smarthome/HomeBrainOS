@@ -22,6 +22,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
 | `causal_rule_decision_context.py` | Separates confirmed lighting-app command provenance, scoped execution logs, current rule configuration, and present-day sensor-health evidence without inferring historical sensor truth. |
 | `causal_subject_prefetch.py` | Conservatively matches one explicit known switch device and ON/OFF transition from a causal prompt so subject history can be gathered before the first provider round; ambiguous/broader causal questions fall through unchanged. |
+| `causal_windowed_source.py` | Verifies MCP absolute `since`/`until` device-event reads and merges bounded sensor evidence only when the installed server confirms the window. |
 | `causal_history_coverage.py` | Detects unavailable focal sensor prehistory in returned newest-N pages and prevents causal exclusion from history gaps. |
 | `causal_hypothesis_evaluation.py` | Evaluates typed OFF actor hypotheses and configured timer feasibility without inferring executions. |
 | `causal_investigation_engine.py` | Ranks cross-integration causal candidates using cached topology, bounded histories, directional timestamps, and stated coverage limits. |

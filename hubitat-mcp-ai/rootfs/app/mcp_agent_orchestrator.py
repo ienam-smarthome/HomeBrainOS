@@ -35,6 +35,11 @@ from causal_evidence_planner import (
     trigger_sensor_history_candidates,
 )
 from causal_history_coverage import assess_local_sensor_history_coverage
+from causal_windowed_source import (
+    build_focal_sensor_window_probe,
+    verify_windowed_sensor_reply,
+    merge_windowed_sensor_history,
+)
 from causal_investigation_engine import (
     MAX_EXTRA_SENSOR_READS,
     SENSOR_BATCH_SIZE,
@@ -1754,6 +1759,106 @@ class UnifiedMCPAgent:
             subject_event_history=subject_event_data,
             known_automations=self.known_automations,
         )
+        # The MCP Rule Server supports since/until on hub_list_device_events
+        # and filters its native event store before the returned result limit.
+        # Recover up to two room-local sensor windows if our recent-N reads
+        # never reached the requested historical OFF boundary. Confirm that
+        # the *installed* server echoes BOTH bounds before using any rows.
+        initial_coverage = assess_local_sensor_history_coverage(
+            sensor_data, boundary_match.get("stateBoundary")
+        ) if transition == "off" else {}
+        focal_window_probes: list[dict[str, Any]] = []
+        if (
+            transition == "off"
+            and initial_coverage.get("status") ==
+                "pre-focal-not-observed-in-returned-pages"
+            and callable(getattr(catalog, "available_tool", None))
+            and catalog.available_tool("hub_read_devices") is not None
+        ):
+            selections = []
+            seen_ids: set[str] = set()
+            for spec in sensor_specs:
+                args = build_focal_sensor_window_probe(
+                    spec, boundary_match.get("stateBoundary")
+                )
+                if args is not None and args["deviceId"] not in seen_ids:
+                    seen_ids.add(args["deviceId"])
+                    selections.append((spec, args))
+                if len(selections) >= 2:
+                    break
+
+            async def read_focal_window(spec, args):
+                started_window = time.monotonic()
+                request = {"tool": "hub_list_device_events", "args": args}
+                try:
+                    result = await self.mcp.call_tool("hub_read_devices", request)
+                    ok = self._tool_succeeded(result)
+                    data = result.data if ok and isinstance(result.data, dict) else {}
+                except Exception as error:
+                    logger.debug("Focal sensor history window unavailable: %s", error)
+                    ok, data = False, {}
+                verified = verify_windowed_sensor_reply(args, data if ok else None)
+                details = {
+                    "label": str(spec.get("name") or ""),
+                    "deviceId": args["deviceId"],
+                    "attribute": args["attribute"],
+                    "windowVerified": verified.get("status") == "verified-window",
+                    "events": verified.get("events") or [],
+                    "eventCount": len(verified.get("events") or []),
+                    "historyScope": "bounded-absolute-window",
+                    "sourceHistoryComplete": False,
+                }
+                self.evidence.record(
+                    "hub_read_devices", request, success=ok,
+                    elapsed_ms=round((time.monotonic() - started_window) * 1000),
+                    summary=(
+                        "Focal sensor absolute window: " +
+                        str(verified.get("status") or "unavailable")
+                    ),
+                    supports_live_claim=verified.get("status") == "verified-window",
+                    evidence_kind="authoritative_device_event_history",
+                    effect="read", mutates=False, details=details,
+                )
+                return spec, verified
+
+            if selections:
+                focal_window_probes = [
+                    {"deviceId": args["deviceId"], "label": str(spec.get("name") or ""),
+                     "status": "attempted"}
+                    for spec, args in selections
+                ]
+                recovered = await asyncio.gather(*(
+                    read_focal_window(spec, args) for spec, args in selections
+                ))
+                for index, (spec, reply) in enumerate(recovered):
+                    focal_window_probes[index]["status"] = reply.get("status")
+                    focal_window_probes[index]["eventCount"] = len(
+                        reply.get("events") or []
+                    )
+                    if reply.get("status") != "verified-window":
+                        continue
+                    for idx, history in enumerate(sensor_data):
+                        if str(history.get("label") or "") == str(spec.get("name") or ""):
+                            sensor_data[idx] = merge_windowed_sensor_history(
+                                history, reply
+                            )
+                            break
+                increment_active_metric(
+                    "causal_focal_window_reads", len(selections)
+                )
+                if any(row.get("status") == "verified-window"
+                       and row.get("eventCount") for row in focal_window_probes):
+                    increment_active_metric("causal_focal_window_evidence_recovered")
+                analysis = build_reporting_source_secondary_analysis(
+                    subject_history,
+                    transition=transition,
+                    requested_boundary=boundary_match.get("stateBoundary"),
+                    controller_histories=controller_data,
+                    sensor_histories=sensor_data,
+                    subject_event_history=subject_event_data,
+                    known_automations=self.known_automations,
+                )
+
         # For a historical OFF event, room-local newest-N pages can lose
         # the event that prompted the question. Do not broaden to unrelated
         # sensors when the primary historical evidence is no longer visible.
@@ -1790,6 +1895,7 @@ class UnifiedMCPAgent:
             repeated_controller
             or local_off_evidence
             or focal_history_gap
+            or bool(focal_window_probes)
             or has_strong_requested_correlated_candidate(analysis)
         ):
             tried_ids = {
@@ -1858,6 +1964,8 @@ class UnifiedMCPAgent:
                     break
         if expanded_sensor_attempts:
             increment_active_metric("causal_adaptive_candidate_plans")
+        if focal_window_probes:
+            analysis["focalWindowRetrieval"] = focal_window_probes
         if local_history_coverage:
             analysis["localSensorHistoryCoverage"] = local_history_coverage
         analysis["hypotheses"] = rank_causal_hypotheses(analysis)

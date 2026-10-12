@@ -701,6 +701,7 @@ def _off_provenance(
         }
     reported = _observed_state_boundary(evidence, focus, transition="off")
     local_sensor_history_coverage: dict[str, Any] = {}
+    windowed_sensor_retrieval: list[dict[str, Any]] = []
     for receipt in reversed(evidence):
         if (
             receipt.get("tool") == "homebrain_causal_secondary_correlation"
@@ -709,6 +710,9 @@ def _off_provenance(
         ):
             local_sensor_history_coverage = dict(
                 (receipt.get("details") or {}).get("localSensorHistoryCoverage") or {}
+            )
+            windowed_sensor_retrieval = list(
+                (receipt.get("details") or {}).get("focalWindowRetrieval") or []
             )
             break
     history: dict[str, Any] = {
@@ -784,6 +788,7 @@ def _off_provenance(
         "status": certainty,
         "sensorCorrelations": correlations,
         "sensorHistoryCoverage": local_sensor_history_coverage,
+        "windowedSensorRetrieval": windowed_sensor_retrieval,
         "appProducerContext": {
             "appId": source_id,
             "configuration": app_config,
