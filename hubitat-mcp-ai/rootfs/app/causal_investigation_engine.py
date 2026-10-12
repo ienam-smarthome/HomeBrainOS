@@ -296,6 +296,76 @@ def has_strong_requested_correlated_candidate(analysis: dict[str, Any]) -> bool:
     )
 
 
+
+def has_repeated_requested_controller_candidate(
+    analysis: dict[str, Any],
+    *,
+    max_abs_delta_seconds: float = 0.35,
+    min_repeated_starts: int = 2,
+) -> bool:
+    """Stop *unrelated* cross-room searches after a repeated button pattern.
+
+    Stop is discovery sufficiency, not proof of a native bridge binding.
+    A qualifying controller must align the specifically requested ON boundary,
+    match multiple distinct starts with the same button value, and be uniquely
+    stronger than competing controllers. The event may be reported after ON:
+    signed timestamp ordering is retained for synthesis and attribution.
+    Room-local occupancy histories are checked before calling this function.
+    """
+    if str(analysis.get("transition") or "") != "on":
+        return False
+    requested = _parse_time(analysis.get("requestedBoundary"))
+    if requested is None:
+        return False
+
+    qualifiers: list[tuple[int, float, str]] = []
+    for controller in analysis.get("controllers") or []:
+        if not isinstance(controller, dict):
+            continue
+        candidates = []
+        for event in controller.get("relevantAlignments") or []:
+            if not isinstance(event, dict) or event.get("boundaryRole") != "start":
+                continue
+            moment = _parse_time(event.get("subjectTransition"))
+            if moment is None:
+                continue
+            try:
+                delta = float(event["signedDeltaSeconds"])
+            except (ValueError, TypeError, KeyError):
+                continue
+            if abs(delta) > max_abs_delta_seconds:
+                continue
+            candidates.append((moment, delta, str(event.get("eventValue") or "")))
+
+        focal = [
+            (at, delta, value)
+            for at, delta, value in candidates
+            if abs((at - requested).total_seconds()) <= .25
+        ]
+        if not focal:
+            continue
+        focal.sort(key=lambda item: abs(item[1]))
+        _, focal_delta, focal_button = focal[0]
+        matching_boundaries = {
+            at.isoformat() for at, _, value in candidates
+            if value == focal_button
+        }
+        if len(matching_boundaries) >= min_repeated_starts:
+            qualifiers.append((
+                len(matching_boundaries),
+                abs(focal_delta),
+                str(controller.get("label") or ""),
+            ))
+
+    qualifiers.sort(key=lambda row: (-row[0], row[1]))
+    if not qualifiers:
+        return False
+    if len(qualifiers) > 1 and qualifiers[0][0] == qualifiers[1][0]:
+        # Two equally repeated button-controller candidates remain ambiguous.
+        return False
+    return True
+
+
 def render_ranked_clue(analysis: dict[str, Any]) -> str | None:
     """Prominent useful clue while keeping the exact initiator unverified."""
 
