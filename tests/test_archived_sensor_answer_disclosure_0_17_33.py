@@ -58,14 +58,14 @@ def test_omitting_journal_facts_is_corrected_even_without_negative_claim():
         draft, assembled_receipts(), QUESTION
     )
     assert "archived_sensor_source_disclosure" in issues
-    assert "Historical Journal (partial)" in corrected
-    assert "4 archived sensor observations" in corrected
+    assert "Historical source coverage:" in corrected
+    assert "4 partial sensor observations" in corrected
     assert "Example FP300: inactive, active" in corrected
     assert "Example Soft Sensor: inactive, active" in corrected
-    assert "2 verified bounded MCP sensor window(s) returned 0 event rows" in corrected
-    assert "collector-received" in corrected
-    assert "Neither a five-second timer execution nor the OFF command initiator" in corrected
-    assert corrected.index("Historical Journal (partial)") < corrected.index(
+    assert "2 verified bounded MCP sensor windows returned 0 event rows" in corrected
+    assert "collector reception" in corrected
+    assert "reception order does not prove original sensor-event timing or the OFF cause" in corrected
+    assert corrected.index("Historical source coverage:") < corrected.index(
         "### Summary of Findings"
     )
 
@@ -73,7 +73,7 @@ def test_omitting_journal_facts_is_corrected_even_without_negative_claim():
 def test_correct_journal_source_and_timestamp_caveat_does_not_duplicate():
     drafted = (
         "The Historical Journal retained four partial sensor events, while "
-        "verified MCP windows returned zero rows. Collector reception time "
+        ""two verified MCP windows returned zero rows. Collector reception time "
         "is not the original sensor event time or proof of an OFF command."
     )
     assert ensure_archived_sensor_source_disclosure(drafted, _graph()) == (
@@ -99,5 +99,5 @@ def test_journal_disclosure_is_required_when_model_mentions_it_without_caveat():
     )
     corrected, modified = ensure_archived_sensor_source_disclosure(text, _graph())
     assert modified
-    assert "collector-received" in corrected
-    assert corrected.count("Historical Journal (partial)") == 1
+    assert "collector reception" in corrected
+    assert corrected.count("Historical source coverage:") == 1
