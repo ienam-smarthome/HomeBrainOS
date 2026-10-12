@@ -223,6 +223,58 @@ ollama_local_timeout_seconds: 12
 ollama_local_keep_alive_seconds: 120
 ```
 
+## Persistent historical evidence journal (experimental, opt-in)
+
+Version 0.17.25 adds a bounded local SQLite journal for live Hubitat event frames.
+It is **disabled by default**. When enabled it connects read-only to the
+unofficial Hubitat LAN WebSocket endpoints `/eventsocket` and (optionally)
+`/logsocket`. There is no full-hub polling, Hubitat rule change, app install,
+or historical backfill. These sockets are **not a supported/public Hubitat API**
+and may change after hub firmware updates.
+
+Configure the add-on under **Configuration** and restart:
+
+```yaml
+historical_journal_enabled: true
+historical_journal_hub_url: "http://192.168.1.239"
+historical_journal_retention_days: 30
+historical_journal_max_rows: 100000
+historical_journal_capture_logs: false
+historical_journal_log_app_ids: ""
+```
+
+For example, set `historical_journal_capture_logs: true` and
+`historical_journal_log_app_ids: "4015"` to capture only app 4015's
+`/logsocket` messages in addition to selected live device events. App logs can
+contain private user text; capture only explicitly opted-in IDs. Connection
+errors, collection interruptions, and overflow are reported as coverage gaps.
+Use the local Hubitat host only. No token or password is accepted in the URL.
+
+Events are filtered to switch, motion/presence/occupancy, level, mode and button
+attributes. Raw high-volume power/temperature telemetry is not archived.
+The SQLite DB is `/data/homebrain-evidence-journal.sqlite3` inside the
+add-on's persistent data directory. It survives normal add-on restart/upgrades.
+Old entries are purged after the selected retention period and a row-count
+limit bounds growth; neither guarantees an exact disk-size limit. Back up the
+Home Assistant add-on if you need long-term preservation.
+
+Status (also included in `/api/status`):
+
+- `GET /api/evidence-journal/status` — connected streams, received timestamps,
+  dropped rows, DB row count, collector gaps and retention settings.
+- `GET /api/evidence-journal/events?device_id=7774&attribute=motion&since=2026-10-12T07:13:23Z&until=2026-10-12T07:20:23Z`
+  — bounded read-only evidence (max 200 rows, at most 31 days per request,
+  requires an exact device ID or app ID).
+
+**Evidence limitations:** Hubitat live socket event frames may lack an authoritative
+event timestamp; in that case the journal records UTC **collector reception time**,
+not a verified hub execution instant. Disconnects, add-on downtime, queue overflow,
+filtering and unsupported socket changes can all create unknown event gaps.
+No collection is retroactive, and an empty journal window **never proves
+inactivity**. Archived records are presented separately from MCP command
+provenance during causal investigations. They do not, alone, identify the
+initiating automation or confirm a timer fired.
+
 ## System Check and Pushover
 
 `HealthAuditService` performs read-only Hub/MCP/device/battery/automation/log health checks and stores the latest snapshot under `/data`. The dashboard exposes the latest result, new/resolved findings, a manual **Run system check now** action, and **Send report to Pushover** when Pushover is configured.
