@@ -160,3 +160,46 @@ def test_absent_or_multi_event_focus_does_not_rewrite_unrelated_durations():
     )
     assert not changed
     assert "10m 22s" in multiple
+
+
+
+def test_api_response_serializer_preserves_empty_logs_without_performance_leak():
+    from types import SimpleNamespace
+    from api_response_builder import build_agent_response
+
+    outcome = SimpleNamespace(
+        message=(
+            "The lighting automation produced the ON command. "
+            "A targeted app log search returned no entries."
+        ),
+        evidence=_evidence(),
+        metrics={"outcome": "success", "counters": {"model_rounds": 3}},
+        route="unified-mcp-agent",
+        request_class="live-read",
+    )
+    response = build_agent_response(
+        outcome, model="gemma4:31b", elapsed_ms=500, version="0.17.8"
+    )
+    assert "targeted app log search returned no entries" in response["message"]
+    assert "requested performance analysis" not in response["message"]
+    assert "Current-turn evidence did include successful logs" not in response["message"]
+
+
+def test_api_serializer_detects_performance_statistics_but_not_app_logs_as_domain():
+    from evidence_source_guard import has_performance_evidence
+
+    assert not has_performance_evidence(_evidence())
+    with_statistics = _evidence() + [{
+        "tool": "hub_read_diagnostics",
+        "sub_tool": "hub_get_performance_stats",
+        "success": True,
+        "evidence_kind": "tool_result",
+    }]
+    assert has_performance_evidence(with_statistics)
+    with_diagnostics = _evidence() + [{
+        "tool": "hub_read_diagnostics",
+        "sub_tool": "hub_get_logs",
+        "success": True,
+        "evidence_kind": "host_planned_performance_diagnostic",
+    }]
+    assert has_performance_evidence(with_diagnostics)
