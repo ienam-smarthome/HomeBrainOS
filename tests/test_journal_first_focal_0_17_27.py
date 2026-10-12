@@ -143,14 +143,15 @@ async def investigate(monkeypatch, verified, enable_journal=True):
     boundary = {"stateBoundary": FOCAL, "producer": {
         "id": "7790", "label": "Matter Hue Bridge Pro",
     }}
-    token = RequestMetrics().begin()
+    metrics = RequestMetrics()
+    token = metrics.begin()
     try:
         await UnifiedMCPAgent._collect_reporting_source_secondary_correlation(
             host, subject_history=subject, transition="off",
             boundary_match=boundary, catalog=Catalog(), completed_calls=set(),
         )
     finally:
-        RequestMetrics().reset(token)
+        metrics.reset(token)
     return mcp, executor, journal, evidence
 
 
