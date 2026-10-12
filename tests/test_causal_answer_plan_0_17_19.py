@@ -86,7 +86,7 @@ def test_plan_preserves_returned_command_count_without_claiming_no_hub_action():
 
 def test_guard_rejects_absolute_off_issuance_and_false_zero_history():
     draft = (
-        "No \`off\` command was issued by the hub.\n"
+        "No `off` command was issued by the hub.\n"
         "The command history for this specific transition returned zero entries.\n"
     )
     fixed, changed = guard_causal_answer_claim_boundaries(draft, _graph(), OFF_QUESTION)
@@ -104,7 +104,7 @@ def test_zero_matching_events_is_not_zero_returned_rows():
 
 
 def test_on_only_mixed_or_unknown_scope_not_rewritten():
-    draft = "No \`off\` command was issued by the hub."
+    draft = "No `off` command was issued by the hub."
     for question in (
         "Why did Example Light turn ON?",
         "Explain Example Light ON and OFF.",
