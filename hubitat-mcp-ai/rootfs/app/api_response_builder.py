@@ -4,7 +4,10 @@ from copy import deepcopy
 import re
 from typing import Any
 
-from evidence_source_guard import guard_checked_source_absence_claim
+from evidence_source_guard import (
+    guard_checked_source_absence_claim,
+    has_performance_evidence,
+)
 from evidence_ledger import checked_source_categories
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
@@ -386,8 +389,15 @@ def build_agent_response(
         evidence,
     )
     message, _ = guard_location_correlation_claim(message, evidence)
-    message, _ = guard_checked_source_absence_claim(message, evidence)
-    message, _ = guard_performance_log_causality(message, evidence)
+    performance_scope = has_performance_evidence(evidence)
+    message, _ = guard_checked_source_absence_claim(
+        message, evidence, performance_request=performance_scope
+    )
+    # This final serializer runs after model synthesis. A causal device answer
+    # may have read app logs; that alone does not make it a performance report.
+    # Never let performance-only repair instructions leak across that boundary.
+    if performance_scope:
+        message, _ = guard_performance_log_causality(message, evidence)
 
     return {
         "success": True,

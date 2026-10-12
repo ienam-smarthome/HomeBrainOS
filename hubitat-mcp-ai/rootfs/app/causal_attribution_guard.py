@@ -270,7 +270,49 @@ def guard_triggered_listener_causal_claim(
     return "".join(pieces), changed
 
 
+
+
+_MANUAL_EXCLUSION_LINE = re.compile(
+    r"(?im)^(?P<prefix>\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"(?:manual\s+(?:control|input|activation|switch)|physical\s+switch)"
+    r"(?:\*\*)?\s*:\s*)"
+    r"(?:\*\*)?\s*(?:ruled\s+out|excluded|impossible|cannot\s+have\s+occurred)\b"
+    r"[^\n]*$"
+)
+
+
+def guard_unproven_upstream_manual_exclusion(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """An automation-owned final command does not exclude manual initiation.
+
+    The producedBy:app field proves the immediate command producer, not who
+    or what activated the app. No single command receipt proves exhaustive
+    absence of upstream human input. Preserve command provenance without
+    pretending the manual hypothesis was completely ruled out.
+    """
+    from causal_command_provenance import correlate_command_producers
+
+    if not any(
+        str((row.get("producer") or {}).get("type") or "").casefold() == "app"
+        for row in correlate_command_producers(evidence)
+    ):
+        return str(message or ""), False
+
+    def _replace(match: re.Match[str]) -> str:
+        return (
+            match.group("prefix")
+            + "No direct manual command was identified for this transition. "
+            "The automation issued the device command, but a manual input "
+            "upstream of that automation has not been excluded."
+        )
+
+    return _MANUAL_EXCLUSION_LINE.subn(_replace, str(message or ""))
+
+
 __all__ = [
     "guard_configuration_only_causal_claim",
+    "guard_unproven_upstream_manual_exclusion",
     "guard_triggered_listener_causal_claim",
 ]

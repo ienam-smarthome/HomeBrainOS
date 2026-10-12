@@ -9,12 +9,14 @@ from typing import Any
 from causal_attribution_guard import (
     guard_configuration_only_causal_claim,
     guard_triggered_listener_causal_claim,
+    guard_unproven_upstream_manual_exclusion,
 )
-from causal_timeline import missing_material_timeline_rows
+from causal_timeline import missing_material_timeline_rows, guard_focal_interval_duration
 from controller_correlation_guard import guard_controller_boundary_claim
 from evidence_source_guard import (
     guard_checked_source_absence_claim,
     guard_positive_source_attribution,
+    has_performance_evidence,
 )
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
@@ -26,6 +28,12 @@ from performance_evidence_use_guard import guard_direct_performance_evidence_use
 from performance_live_semantic_guard import guard_live_performance_semantics
 from performance_log_observation_guard import guard_performance_log_observations
 
+
+_PERFORMANCE_TASK_RE = re.compile(
+    r"\b(?:performance|cpu|hub load|resource|slow hub|latency|memory|"
+    r"schedul(?:ed|er|ing)?|jobs?|busy percentage|execution time)\b",
+    re.IGNORECASE,
+)
 
 _PERFORMANCE_REPAIR_ISSUES = {
     "performance_log_causality",
@@ -199,7 +207,13 @@ def validate_synthesis(
     if correlation_changed:
         issues.append("location_correlation_consistency")
 
-    corrected, source_changed = guard_checked_source_absence_claim(corrected, evidence)
+    performance_scope = (
+        bool(_PERFORMANCE_TASK_RE.search(str(original_user or "")))
+        or has_performance_evidence(evidence)
+    )
+    corrected, source_changed = guard_checked_source_absence_claim(
+        corrected, evidence, performance_request=performance_scope
+    )
     if source_changed:
         issues.append("checked_source_consistency")
 
@@ -207,45 +221,61 @@ def validate_synthesis(
     if positive_source_changed:
         issues.append("positive_source_attribution")
 
-    corrected, log_observation_changed = guard_performance_log_observations(corrected, evidence)
-    if log_observation_changed:
-        issues.append("performance_log_observation")
+    # Performance diagnostics are not generic log validation. Keep their
+    # repairs out of causal device investigations unless the user requested
+    # performance work or actual performance statistics were retrieved.
+    if performance_scope:
+        corrected, log_observation_changed = guard_performance_log_observations(corrected, evidence)
+        if log_observation_changed:
+            issues.append("performance_log_observation")
 
-    # One format-independent adaptive diagnostic guard owns target context,
-    # semantic child roles, cadence/source integrity, cluster-rate boundaries and
-    # mechanism-specific action gating. The older numbered-heading guard is no
-    # longer chained afterwards, avoiding a second shape-dependent rewrite pass.
-    corrected, format_independent_changed = guard_format_independent_performance_diagnostics(
-        corrected,
-        evidence,
-    )
-    if format_independent_changed:
-        issues.append("performance_evidence_first")
+        # One format-independent adaptive diagnostic guard owns target context,
+        # semantic child roles, cadence/source integrity, cluster-rate boundaries and
+        # mechanism-specific action gating. The older numbered-heading guard is no
+        # longer chained afterwards, avoiding a second shape-dependent rewrite pass.
+        corrected, format_independent_changed = guard_format_independent_performance_diagnostics(
+            corrected,
+            evidence,
+        )
+        if format_independent_changed:
+            issues.append("performance_evidence_first")
 
-    corrected, performance_changed = guard_performance_log_causality(corrected, evidence)
-    if performance_changed:
-        issues.append("performance_log_causality")
+        corrected, performance_changed = guard_performance_log_causality(corrected, evidence)
+        if performance_changed:
+            issues.append("performance_log_causality")
 
-    corrected, live_performance_changed = guard_live_performance_semantics(corrected, evidence)
-    if live_performance_changed:
-        issues.append("performance_live_semantics")
+        corrected, live_performance_changed = guard_live_performance_semantics(corrected, evidence)
+        if live_performance_changed:
+            issues.append("performance_live_semantics")
 
-    corrected, evidence_first_changed = guard_evidence_first_performance(corrected, evidence)
-    if evidence_first_changed and "performance_evidence_first" not in issues:
-        issues.append("performance_evidence_first")
+        corrected, evidence_first_changed = guard_evidence_first_performance(corrected, evidence)
+        if evidence_first_changed and "performance_evidence_first" not in issues:
+            issues.append("performance_evidence_first")
 
-    # 0.16.86 final evidence-use integrity runs after the generic semantic stack so
-    # later repairs cannot erase literal WARN evidence, conflate a long-running
-    # operation with a connectivity failure, or turn a same-second cluster into a
-    # prescriptive staggering/frequency recommendation.
-    corrected, direct_evidence_changed = guard_direct_performance_evidence_use(
-        corrected,
-        evidence,
-    )
-    if direct_evidence_changed and "performance_evidence_first" not in issues:
-        issues.append("performance_evidence_first")
+        # 0.16.86 final evidence-use integrity runs after the generic semantic stack so
+        # later repairs cannot erase literal WARN evidence, conflate a long-running
+        # operation with a connectivity failure, or turn a same-second cluster into a
+        # prescriptive staggering/frequency recommendation.
+        corrected, direct_evidence_changed = guard_direct_performance_evidence_use(
+            corrected,
+            evidence,
+        )
+        if direct_evidence_changed and "performance_evidence_first" not in issues:
+            issues.append("performance_evidence_first")
 
     if causal:
+        corrected, focal_duration_changed = guard_focal_interval_duration(
+            corrected, evidence, original_user
+        )
+        if focal_duration_changed:
+            issues.append("focal_interval_duration")
+
+        corrected, upstream_changed = guard_unproven_upstream_manual_exclusion(
+            corrected, evidence
+        )
+        if upstream_changed:
+            issues.append("upstream_manual_exclusion")
+
         corrected, controller_boundary_changed = guard_controller_boundary_claim(corrected, evidence)
         if controller_boundary_changed:
             issues.append("controller_boundary_direction")
