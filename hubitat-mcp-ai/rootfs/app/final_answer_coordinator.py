@@ -16,6 +16,7 @@ from evidence_ledger import build_current_turn_evidence_ledger
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     render_causal_evidence_graph,
+    supports_one_pass_deep_synthesis,
 )
 from investigation_policy import (
     is_causal_investigation,
@@ -511,13 +512,15 @@ class FinalAnswerCoordinator:
             "configuration_only_causal_attribution",
             "causal_controller_history_coverage",
             "causal_action_ownership", "causal_empty_log_inference",
-            "causal_sensor_event_order", "causal_off_trigger_overclaim", "causal_off_trigger_overclaim",
+            "causal_sensor_event_order", "causal_off_trigger_overclaim",
+            "causal_off_certainty_contract",
         }
         if (
             causal
             and (
                 causal_graph.get("ready")
                 or causal_graph.get("physicalEvidenceComplete")
+                or supports_one_pass_deep_synthesis(causal_graph, original_user)
             )
             and set(issues).issubset(deterministic_causal_repairs)
         ):
@@ -536,7 +539,8 @@ class FinalAnswerCoordinator:
                 "configuration_only_causal_attribution", "upstream_manual_exclusion",
                 "causal_source_attribution", "causal_controller_history_coverage",
                 "causal_action_ownership", "causal_empty_log_inference",
-                "causal_sensor_event_order",
+                "causal_sensor_event_order", "causal_off_trigger_overclaim",
+                "causal_off_certainty_contract",
             }
             for issue in issues
         ):
