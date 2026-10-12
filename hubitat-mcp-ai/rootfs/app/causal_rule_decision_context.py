@@ -37,8 +37,9 @@ def proven_lighting_command(
 ) -> dict[str, Any] | None:
     """Select an exact command→switch boundary from a lighting app.
 
-    Restrict the extra work to explicit lighting automation producers. Button
-    rules and generic switches retain their existing sub-second fast path.
+    Restrict the extra work to proven lighting producers: named lighting rules
+    or apps whose setLevel command activated the light. Custom apps need not
+    be named 'Lighting'; generic button rules keep the existing fast path.
     """
 
     requested = focal_transition_boundary(evidence, transition)
@@ -54,7 +55,10 @@ def proven_lighting_command(
             and str(producer.get("type") or "").lower() == "app"
             and app_id.isdecimal()
             and "light" in subject.casefold()
-            and re.search(r"\b(?:lighting|room lighting|low light)\b", label, re.I)
+            and (
+                re.search(r"\b(?:lighting|room lighting|low light)\b", label, re.I)
+                or (row.get("command") or {}).get("semantics") == "level-switch-command"
+            )
         ):
             continue
         if requested and _timestamp(row.get("stateBoundary")) != _timestamp(requested):
@@ -200,7 +204,7 @@ def configuration_text(data: dict[str, Any]) -> tuple[list[str], str]:
             if (
                 re.search(
                     r"\b(?:trigger|event|require|condition|expression|mode|motion|presence|"
-                    r"illuminance|lux|action|sensor)\b", item, re.I
+                    r"illuminance|lux|action|sensor|brightness|dimmer|level|schedule|time)\b", item, re.I
                 )
                 and len(snippets) < 5
             ):
