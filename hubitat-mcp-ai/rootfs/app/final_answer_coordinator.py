@@ -24,6 +24,7 @@ from investigation_policy import (
     is_causal_investigation,
     is_history_investigation,
 )
+from investigation_intelligence import plan_investigation, render_investigation_assessment
 from performance_causality_guard import performance_validation_needed
 from performance_evidence_first import build_performance_synthesis_contract
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
@@ -405,6 +406,7 @@ class FinalAnswerCoordinator:
             else []
         )
         original_user = _original_user_request(messages)
+        contract = plan_investigation(original_user)
         evidence = await self._ensure_broad_performance_logs(
             original_user,
             evidence,
@@ -420,7 +422,9 @@ class FinalAnswerCoordinator:
         )
         performance_semantic_validation = _performance_semantic_validation_needed(evidence)
         performance_log_validation = performance_validation_needed(evidence)
-        evidence_scoped = investigative or performance_semantic_validation
+        evidence_scoped = (
+            investigative or performance_semantic_validation or contract is not None
+        )
         current_turn = _current_turn_messages(messages)
         if performance_semantic_validation:
             current_turn = _performance_evidence_only_messages(current_turn)
@@ -513,6 +517,11 @@ class FinalAnswerCoordinator:
                 "role": "user",
                 "content": build_performance_synthesis_contract(evidence),
             })
+        if contract is not None:
+            final_messages.append({
+                "role": "user",
+                "content": render_investigation_assessment(contract, evidence),
+            })
         final_messages.append({
             "role": "user",
             "content": _synthesis_instruction(
@@ -522,7 +531,7 @@ class FinalAnswerCoordinator:
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
-        if not investigative and not performance_semantic_validation:
+        if not investigative and not performance_semantic_validation and contract is None:
             # Ordinary simple answers keep their established one-pass behavior.
             # Any answer containing measured performance statistics enters the
             # semantic validator even when a log call failed or was rejected.
