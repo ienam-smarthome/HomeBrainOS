@@ -291,6 +291,21 @@ class HistoricalEvidenceJournal:
                 ) as socket:
                     await asyncio.to_thread(self._mark_connected, stream)
                     self._connected[stream] = True
+                    # A recovered transport error must not keep the mobile
+                    # status panel in "Attention" forever. Never clear
+                    # storage or queue-overflow errors on socket recovery.
+                    streams_ready = self._connected["events"] and (
+                        not self.capture_logs or not self.log_app_ids
+                        or self._connected["logs"]
+                    )
+                    if (
+                        streams_ready and isinstance(self.error, str)
+                        and self.error.startswith((
+                            "events stream disconnected:",
+                            "logs stream disconnected:",
+                        ))
+                    ):
+                        self.error = None
                     delay = 2
                     async for frame in socket:
                         try:
