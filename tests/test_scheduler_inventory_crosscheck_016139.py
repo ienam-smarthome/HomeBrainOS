@@ -178,7 +178,7 @@ def test_host_plan_inventory_only_for_real_job_candidates_and_publishes_digest()
     from performance_host_plan import collect_broad_performance_outcome
     agent = _Agent()
     outcome = asyncio.run(collect_broad_performance_outcome(
-        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+        agent, "Optimise the whole hub and analyse scheduled jobs by owning app and handler for efficiency."
     ))
     calls = [r[0] for r in agent.executor.calls]
     assert calls.count("hub_list_apps") == 1
@@ -214,7 +214,7 @@ def test_slow_identity_read_is_bounded_and_retains_other_inventory(monkeypatch):
     import time
     started = time.monotonic()
     outcome = asyncio.run(plan.collect_broad_performance_outcome(
-        agent, "Analyse scheduled jobs and group by owning app and handler for efficiency."
+        agent, "Optimise the whole hub and analyse scheduled jobs and group by owning app and handler for efficiency."
     ))
     assert time.monotonic() - started < 1.0
     result = outcome.metrics["scheduler_inventory_crosscheck"]
@@ -259,7 +259,7 @@ def test_host_scheduler_inventory_path_runs_with_real_request_metrics():
     token = agent.request_metrics.begin()
     try:
         outcome = asyncio.run(collect_broad_performance_outcome(
-            agent, "Analyse all scheduled jobs on my Hubitat hub, "
+            agent, "Optimise the whole hub and analyse all scheduled jobs on my Hubitat hub, "
                    "group them by owning app and handler. Read-only."
         ))
         snapshot = agent.request_metrics.snapshot()
@@ -288,7 +288,7 @@ def test_host_scheduler_inventory_timeout_runs_with_real_request_metrics(monkeyp
     token = agent.request_metrics.begin()
     try:
         outcome = asyncio.run(plan.collect_broad_performance_outcome(
-            agent, "Analyse scheduled jobs by owning app and handler. Read-only."
+            agent, "Optimise the whole hub and analyse scheduled jobs by owning app and handler. Read-only."
         ))
         snapshot = agent.request_metrics.snapshot()
     finally:
@@ -334,7 +334,7 @@ def test_complete_compact_context_skips_slow_device_list_and_proves_identity():
     agent = _Agent(slow_device=True)
     agent.executor.mcp = _Context()
     outcome = asyncio.run(collect_broad_performance_outcome(
-        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+        agent, "Optimise the whole hub and analyse scheduled jobs by owning app and handler for efficiency."
     ))
     device = outcome.metrics["scheduler_inventory_crosscheck"]["device"]
     assert device["presentInReturnedInventory"] == 1
@@ -365,7 +365,7 @@ def test_incomplete_compact_context_is_not_promoted_to_complete_when_fallback_ti
     agent = _Agent(slow_device=True)
     agent.executor.mcp = _PartialContext()
     outcome = asyncio.run(plan.collect_broad_performance_outcome(
-        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+        agent, "Optimise the whole hub and analyse scheduled jobs by owning app and handler for efficiency."
     ))
     section = outcome.metrics["scheduler_inventory_crosscheck"]["device"]
     assert section["presentInReturnedInventory"] == 1
@@ -386,7 +386,7 @@ def test_compact_context_reader_failure_uses_bounded_list_fallback():
     agent = _Agent()
     agent.executor.mcp = _UnavailableContext()
     outcome = asyncio.run(collect_broad_performance_outcome(
-        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+        agent, "Optimise the whole hub and analyse scheduled jobs by owning app and handler for efficiency."
     ))
     section = outcome.metrics["scheduler_inventory_crosscheck"]["device"]
     assert section["presentInReturnedInventory"] == 1
@@ -449,7 +449,7 @@ def test_host_scheduler_workflow_probes_context_absent_ids_without_confirming_ow
     agent.executor = _SecondaryExecutor()
     agent.executor.mcp = _Context()
     outcome = asyncio.run(collect_broad_performance_outcome(
-        agent, "Analyse all scheduled jobs by owning app and handler. Read-only."
+        agent, "Optimise the whole hub and analyse all scheduled jobs by owning app and handler. Read-only."
     ))
     summary = outcome.metrics["scheduler_inventory_crosscheck"]
     assert summary["device"]["presentInReturnedInventory"] == 1
@@ -500,7 +500,7 @@ def test_targeted_scheduler_probe_runs_after_adaptive_diagnostic_logs():
     agent.executor = _OrderingExecutor()
     agent.executor.mcp = _Context()
     outcome = asyncio.run(collect_broad_performance_outcome(
-        agent, "Analyse all scheduled jobs by owning app and handler. Read-only."
+        agent, "Optimise the whole hub and analyse all scheduled jobs by owning app and handler. Read-only."
     ))
 
     tools = [call[0] for call in agent.executor.calls]
