@@ -59,7 +59,7 @@ _PERFORMANCE_SOURCE_ABSENCE = re.compile(
 
 _SUBSTANTIVE_PERFORMANCE_CONTENT = re.compile(
     r"(?i)(?:\b\d[\d,.]*\s*(?:%|ms|mb|kb|°c)\b|\bcall count\b|"
-    r"\bresource consumers?\b|\bperformance analysis\b|"
+    r"\bresource consumers?\b|"
     r"\blogs?\s+(?:show|shows|showed|indicate|indicates|indicated|record|records|recorded|contain|contains|contained)\b|"
     r"\breporting\b[^.!?\n]{0,80}\bevery\s+\d+)"
 )
