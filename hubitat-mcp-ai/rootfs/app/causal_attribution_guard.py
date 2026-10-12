@@ -388,8 +388,91 @@ def guard_unproven_upstream_manual_exclusion(
     return "".join(rendered), changed
 
 
+
+_NATIVE_LOG_CLAIM = re.compile(
+    r"\b(?:hub|app|application|execution|native|system)\s+logs?\s+"
+    r"(?:show|shows|showed|confirm|confirms|confirmed|record|records|recorded|"
+    r"indicate|indicates|indicated)\b", re.I
+)
+
+
+def _sensor_in_native_log_rows(
+    evidence: list[dict[str, Any]], label: str, sensor_id: str
+) -> bool:
+    """A successful read is not evidence that its rows contain this sensor."""
+    normalized = label.strip().casefold()
+    device_marker = f"dev|{sensor_id}|" if sensor_id else ""
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        arguments = receipt.get("arguments") or {}
+        if (
+            receipt.get("sub_tool") != "hub_get_logs"
+            and arguments.get("tool") != "hub_get_logs"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        for key in ("logs", "execution"):
+            for item in details.get(key) or []:
+                if not isinstance(item, dict):
+                    continue
+                message = " ".join(
+                    str(item.get(field) or "") for field in
+                    ("message", "description", "source")
+                ).casefold()
+                if (normalized and normalized in message) or (
+                    device_marker and device_marker in message
+                ):
+                    return True
+    return False
+
+
+def guard_causal_sensor_source_attribution(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Do not mislabel sensor event history as a native execution log entry.
+
+    Event-history correlations and native app/system logs are different source
+    classes. A bounded log read with zero results still counts as checked.
+    """
+    source = str(message or "")
+    correlations = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("success") is True
+        and row.get("tool") == "homebrain_causal_trigger_correlation"
+        and isinstance(row.get("details"), dict)
+    ]
+    if not correlations or not _NATIVE_LOG_CLAIM.search(source):
+        return source, False
+    changed = False
+    lines = []
+    for line in source.splitlines(keepends=True):
+        if _NATIVE_LOG_CLAIM.search(line):
+            for receipt in correlations:
+                label = str(receipt["details"].get("label") or "").strip()
+                sensor_id = str(
+                    (receipt.get("arguments") or {}).get("deviceId") or ""
+                )
+                if (
+                    label and label.casefold() in line.casefold()
+                    and not _sensor_in_native_log_rows(evidence, label, sensor_id)
+                ):
+                    line, count = _NATIVE_LOG_CLAIM.subn(
+                        "Recorded sensor event history shows", line, count=1
+                    )
+                    changed = changed or bool(count)
+                    break
+        lines.append(line)
+    return "".join(lines), changed
+
+
+
+
 __all__ = [
     "guard_configuration_only_causal_claim",
     "guard_unproven_upstream_manual_exclusion",
+    "guard_causal_sensor_source_attribution",
     "guard_triggered_listener_causal_claim",
 ]
