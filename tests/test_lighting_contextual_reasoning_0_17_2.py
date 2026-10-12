@@ -74,6 +74,7 @@ def _evidence() -> list[dict]:
                 ],
                 "openActiveStart": "2026-10-12T07:08:06.273+0100",
                 "openActiveInterval": True,
+                "unboundedActiveInterval": True,
             },
             "commandEvents": [
                 _command("setLevel(50)", "2026-10-12T07:15:02.086+0100"),
