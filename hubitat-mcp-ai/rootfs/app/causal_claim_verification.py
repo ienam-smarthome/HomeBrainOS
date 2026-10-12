@@ -18,6 +18,7 @@ from typing import Any
 from focal_evidence_reconciliation import (
     guard_unproven_on_button_initiation,
     guard_sensor_history_source_contradiction,
+    ensure_archived_sensor_source_disclosure,
 )
 from causal_answer_plan import guard_causal_answer_claim_boundaries
 from causal_history_coverage import guard_history_gap_claims
@@ -555,6 +556,11 @@ def verify_causal_claims(
     )
     if changed:
         issues.append("archived_sensor_not_absent")
+    corrected, changed = ensure_archived_sensor_source_disclosure(
+        corrected, graph
+    )
+    if changed:
+        issues.append("archived_sensor_source_disclosure")
     return corrected, issues
 
 

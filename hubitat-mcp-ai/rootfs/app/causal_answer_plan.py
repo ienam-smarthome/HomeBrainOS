@@ -32,6 +32,11 @@ def build_causal_answer_plan(
     direct = off.get("directCommand")
     hypotheses = graph.get("offHypotheses") or {}
     controller = graph.get("controllerCandidate") or {}
+    journal = off.get("archivedSensorEvidence") or {}
+    journal_observations = [
+        row for row in (journal.get("observations") or [])[:8]
+        if isinstance(row, dict)
+    ]
 
     command_observation = {
         "kind": "verified-direct-command" if direct else (
@@ -121,6 +126,25 @@ def build_causal_answer_plan(
             "sensorEdges": sensor_evidence,
             "sensorHistoryCoverage": off.get("sensorHistoryCoverage") or {},
             "windowedSensorRetrieval": off.get("windowedSensorRetrieval") or [],
+            "archivedSensorObservations": {
+                "source": "HomeBrain local Historical Journal",
+                "count": int(journal.get("archivedObservationCount") or 0),
+                "sourceRows": [
+                    {"deviceId": row.get("deviceId"), "label": row.get("label"),
+                     "value": row.get("value"),
+                     "observedAt": row.get("observedAt"),
+                     "timestampBasis": row.get("timestampBasis")}
+                    for row in journal_observations
+                ],
+                "verifiedMcpWindowCount": journal.get("verifiedMcpWindowCount"),
+                "verifiedMcpReturnedEventCount":
+                    journal.get("verifiedMcpReturnedEventCount"),
+                "historyComplete": False,
+                "collectorReceptionDoesNotProveSensorEventTime": True,
+                "notProofOfOffCauseOrTimer": True,
+            },
+            "archivedAppLogReconciliation":
+                off.get("archivedAppLogReconciliation") or {},
             "timerComparisons": timer_assessments,
             "appConfiguration": {
                 "checked": bool(
@@ -174,6 +198,15 @@ def build_causal_answer_plan(
             "Do not elevate state reporters or event listeners into command "
             "producers. Omit incidental listeners unless the user explicitly "
             "asks for them or their actions are material.",
+            *(
+                ["Explicitly report the local Historical Journal's "
+                 "archived sensor observation count and sensor states alongside "
+                 "MCP window results. Do not equate a verified MCP window "
+                 "returning zero rows with zero archived observations. Clearly "
+                 "label collector-received timestamps as nonauthoritative for "
+                 "source-event ordering, and never infer an OFF cause or timer."]
+                if journal_observations else []
+            ),
             "Use one short conclusion, one relevant timeline if useful, and "
             "a concise assessment of competing causes. Avoid repeated "
             "uncertainty summaries or unsupported absolutes.",
