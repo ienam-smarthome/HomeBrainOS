@@ -1757,6 +1757,41 @@ class UnifiedMCPAgent:
                 }
 
 
+        async def read_focal_window(spec, args):
+            started_window = time.monotonic()
+            request = {"tool": "hub_list_device_events", "args": args}
+            try:
+                result = await self.mcp.call_tool("hub_read_devices", request)
+                ok = self._tool_succeeded(result)
+                data = result.data if ok and isinstance(result.data, dict) else {}
+            except Exception as error:
+                logger.debug("Focal sensor history window unavailable: %s", error)
+                ok, data = False, {}
+            verified = verify_windowed_sensor_reply(args, data if ok else None)
+            details = {
+                "label": str(spec.get("name") or ""),
+                "deviceId": args["deviceId"],
+                "attribute": args["attribute"],
+                "windowVerified": verified.get("status") == "verified-window",
+                "events": verified.get("events") or [],
+                "eventCount": len(verified.get("events") or []),
+                "historyScope": "bounded-absolute-window",
+                "sourceHistoryComplete": False,
+            }
+            self.evidence.record(
+                "hub_read_devices", request, success=ok,
+                elapsed_ms=round((time.monotonic() - started_window) * 1000),
+                summary=(
+                    "Focal sensor absolute window: " +
+                    str(verified.get("status") or "unavailable")
+                ),
+                supports_live_claim=verified.get("status") == "verified-window",
+                evidence_kind="authoritative_device_event_history",
+                effect="read", mutates=False, details=details,
+            )
+            return spec, verified
+
+
         pending: list[
             tuple[str, dict[str, Any], dict[str, Any]]
         ] = []
@@ -1881,39 +1916,6 @@ class UnifiedMCPAgent:
                 if len(selections) >= 2:
                     break
 
-            async def read_focal_window(spec, args):
-                started_window = time.monotonic()
-                request = {"tool": "hub_list_device_events", "args": args}
-                try:
-                    result = await self.mcp.call_tool("hub_read_devices", request)
-                    ok = self._tool_succeeded(result)
-                    data = result.data if ok and isinstance(result.data, dict) else {}
-                except Exception as error:
-                    logger.debug("Focal sensor history window unavailable: %s", error)
-                    ok, data = False, {}
-                verified = verify_windowed_sensor_reply(args, data if ok else None)
-                details = {
-                    "label": str(spec.get("name") or ""),
-                    "deviceId": args["deviceId"],
-                    "attribute": args["attribute"],
-                    "windowVerified": verified.get("status") == "verified-window",
-                    "events": verified.get("events") or [],
-                    "eventCount": len(verified.get("events") or []),
-                    "historyScope": "bounded-absolute-window",
-                    "sourceHistoryComplete": False,
-                }
-                self.evidence.record(
-                    "hub_read_devices", request, success=ok,
-                    elapsed_ms=round((time.monotonic() - started_window) * 1000),
-                    summary=(
-                        "Focal sensor absolute window: " +
-                        str(verified.get("status") or "unavailable")
-                    ),
-                    supports_live_claim=verified.get("status") == "verified-window",
-                    evidence_kind="authoritative_device_event_history",
-                    effect="read", mutates=False, details=details,
-                )
-                return spec, verified
 
             if selections:
                 focal_window_probes = [
