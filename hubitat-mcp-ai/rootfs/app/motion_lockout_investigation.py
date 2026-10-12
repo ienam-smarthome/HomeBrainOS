@@ -187,6 +187,81 @@ def focal_command_provenance(
     return sorted(matched, key=lambda row: row["commandPrecedesStateMs"])[:3]
 
 
+
+def source_local_off_time(subject: dict[str, Any], off: datetime) -> str | None:
+    """Preserve the actual Hubitat offset from a matching native source row.
+
+    Data collection and time-window queries use UTC. Display can use the
+    original explicit event offset, but must not assume the host's machine
+    timezone is the Hubitat hub's timezone.
+    """
+    candidates = [
+        row.get("end") for row in completed_light_intervals(subject)
+        if not row.get("clippedAtWindowEnd")
+    ]
+    candidates.extend(
+        row.get("date") or row.get("timestamp")
+        for row in (subject.get("boundaryEvents") or
+                    subject.get("observedEvents") or [])
+        if isinstance(row, dict)
+        and str(row.get("value") or "").casefold() == "off"
+    )
+    for raw in candidates:
+        stamp = _time(raw)
+        if stamp is not None and abs((stamp - off).total_seconds()) <= 0.001:
+            try:
+                original = datetime.fromisoformat(
+                    str(raw).replace("Z", "+00:00")
+                )
+                if original.utcoffset() is not None:
+                    return original.isoformat(timespec="milliseconds")
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def observed_motion_correlations(
+    journal: list[dict[str, Any]], *, off: datetime,
+    local_off: str | None = None,
+) -> list[dict[str, Any]]:
+    """Observed activity is not proof that a sensor can activate a light."""
+    local_tz = None
+    if local_off:
+        try:
+            local_tz = datetime.fromisoformat(local_off).tzinfo
+        except ValueError:
+            pass
+    output = []
+    for entry in journal:
+        if not isinstance(entry, dict) or entry.get("kind") != "sensor":
+            continue
+        for row in entry.get("observations") or []:
+            if str(row.get("value") or "").casefold() != "active":
+                continue
+            stamp = _time(row.get("observedAt"))
+            if stamp is None:
+                continue
+            seconds = (stamp - off).total_seconds()
+            if not (0 <= seconds <= 180):
+                continue
+            output.append({
+                "deviceId": str(entry.get("deviceId") or ""),
+                "label": str(entry.get("label") or ""),
+                "observedAtUtc": stamp.isoformat(timespec="milliseconds"),
+                "observedAtHubOffset": (
+                    stamp.astimezone(local_tz).isoformat(timespec="milliseconds")
+                    if local_tz else None
+                ),
+                "secondsAfterOff": round(seconds, 3),
+                "timestampBasis": row.get("timestampBasis", "unknown"),
+                "eligibleActivationSourceVerified": (
+                    entry.get("activationSourceVerified") is True
+                ),
+                "role": entry.get("activationRole", "unverified"),
+            })
+    return sorted(output, key=lambda row: row["secondsAfterOff"])[:20]
+
+
 def _candidate_devices(
     identities: list[dict[str, Any]], light: dict[str, Any], config: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -297,6 +372,12 @@ async def prefetch_motion_lockout(
         )
         findings["manualOffVerified"] = False  # command producer != hardware press
         findings["latestFocalOffBasis"] = "newest observed completed OFF boundary"
+        findings["focalOffHubLocal"] = source_local_off_time(subject_data, off)
+        findings["focalOffTimestampBasis"] = (
+            "native Hubitat state-event clock with explicit UTC offset"
+            if findings["focalOffHubLocal"] else
+            "normalized UTC; original hub time offset unavailable"
+        )
 
     config_search = ""
     async def remote(gateway: str, leaf: str, args: dict[str, Any]) -> dict[str, Any] | None:
@@ -393,6 +474,11 @@ async def prefetch_motion_lockout(
                         "returnedRows": res.get("count"),
                         "gapCount": len(res.get("gaps") or []),
                         "timestampCompletenessVerified": False,
+                        "activationSourceVerified": False if kind == "sensor" else None,
+                        "activationRole": (
+                            "unverified-from-current-configuration"
+                            if kind == "sensor" else None
+                        ),
                     }
                 except Exception:
                     return {
@@ -404,6 +490,13 @@ async def prefetch_motion_lockout(
                 lookup(device, attr, kind) for device, attr, kind in targets
             ))
             findings["journal"] = journal
+            findings["motionCorrelations"] = observed_motion_correlations(
+                journal, off=off, local_off=findings.get("focalOffHubLocal"),
+            )
+            findings["sensorActivationEligibilityVerified"] = any(
+                item["eligibleActivationSourceVerified"]
+                for item in findings["motionCorrelations"]
+            )
             findings["sources"].append({
                 "source": "Historical Journal",
                 "deviceScopesChecked": len(journal),
@@ -451,7 +544,12 @@ async def prefetch_motion_lockout(
             "coverage separately. When focalCommandProvenance contains a "
             "matching command, explicitly disclose its actual app/controller "
             "producer without confusing that command with an independently "
-            "recorded hardware button press. The newest completed OFF state "
+            "recorded hardware button press. Distinguish observed sensor "
+            "activity from VERIFIED motion-activation eligibility: a room "
+            "sensor or keep-on sensor need not be an activation trigger. "
+            "Use focalOffHubLocal as the human time when available, with "
+            "its UTC offset, and preserve collector-received timestamp "
+            "qualifiers for journal observations. The newest completed OFF state "
             "boundary takes priority over earlier OFF/ON transitions. Never "
             "infer lockout success just because there was no ON, or claim a "
             "hardware press solely from a labelled command producer. If history "
@@ -465,5 +563,6 @@ async def prefetch_motion_lockout(
 __all__ = [
     "is_motion_lockout_investigation", "resolve_named_light",
     "completed_light_intervals", "last_observed_off",
-    "focal_command_provenance", "prefetch_motion_lockout",
+    "focal_command_provenance", "source_local_off_time",
+    "observed_motion_correlations", "prefetch_motion_lockout",
 ]
