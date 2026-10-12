@@ -84,6 +84,7 @@ from causal_native_logs import (
 )
 from causal_timeline import (
     causal_log_windows,
+    explicitly_focused_event_rows,
     render_command_source_followup,
     unresolved_material_timeline_rows,
 )
@@ -193,6 +194,8 @@ def _normalize_causal_log_call(
     tool_name: str,
     arguments: dict[str, Any],
     evidence: list[dict[str, Any]],
+    *,
+    original_user: str = "",
 ) -> dict[str, Any]:
     """Force native log reads onto observed causal boundary timestamps.
 
@@ -208,7 +211,8 @@ def _normalize_causal_log_call(
     if not (direct or gateway):
         return arguments
 
-    windows = causal_log_windows(evidence)
+    focused = explicitly_focused_event_rows(evidence, original_user)
+    windows = causal_log_windows(evidence, original_user=original_user)
     if not windows:
         return arguments
 
@@ -222,7 +226,10 @@ def _normalize_causal_log_call(
             or str(receipt.get("sub_tool") or "") == "hub_get_logs"
         )
     )
-    window = windows[min(prior_log_reads, len(windows) - 1)]
+    # A scoped one-event investigation always reads that same event, even
+    # after a host-side app-log prefetch. Rotating to the next interval was
+    # silently changing the question from 07:53 to 07:08.
+    window = windows[0] if focused else windows[min(prior_log_reads, len(windows) - 1)]
     normalized = dict(arguments)
     if direct:
         normalized["since"] = window["since"]
@@ -2856,6 +2863,7 @@ class UnifiedMCPAgent:
                         name,
                         arguments,
                         self.evidence.receipts(),
+                        original_user=user_prompt,
                     )
                 signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
