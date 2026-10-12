@@ -1058,10 +1058,11 @@ class UnifiedMCPAgent:
 
         # A completed ON interval has an independent OFF boundary.
         # Inspect its command history before either ON fast path returns.
-        if wants_deep_investigation(user_prompt) and seed.transition == "on":
+        if wants_deep_investigation(user_prompt) and seed.transition in {"on", "off"}:
             await self._collect_focal_off_provenance(
                 user_prompt=user_prompt,
                 resolved_device_id=str(seed.target.get("id") or ""),
+                requested_transition=seed.transition,
                 catalog=catalog,
             )
         current_evidence = self.evidence.receipts()
@@ -1137,6 +1138,7 @@ class UnifiedMCPAgent:
         *,
         user_prompt: str,
         resolved_device_id: str,
+        requested_transition: str = "on",
         catalog: ToolDiscoveryCatalog,
     ) -> None:
         """Read the focal OFF command and app context independently of ON.
@@ -1268,19 +1270,26 @@ class UnifiedMCPAgent:
             )
             increment_active_metric("causal_off_app_log_reads")
 
-        if not direct_app_id or catalog.available_tool("hub_read_apps_code") is None:
+        # An explicit why-OFF request also needs the observed OFF listener's
+        # current settings when no direct OFF command producer is identified.
+        # That app remains a listener candidate, never a proven actor.
+        context_app_id = (
+            direct_app_id
+            or (notified_app_id if requested_transition == "off" else "")
+        )
+        if not context_app_id or catalog.available_tool("hub_read_apps_code") is None:
             return
         checked = any(
             row.get("success") is True and row.get("sub_tool") == "hub_get_app_config"
             and str(((row.get("arguments") or {}).get("args") or {}).get("appId") or "")
-                == direct_app_id
+                == context_app_id
             for row in self.evidence.receipts()
         )
         if checked:
             return
         request = {
             "tool": "hub_get_app_config",
-            "args": {"appId": direct_app_id, "includeSettings": False},
+            "args": {"appId": context_app_id, "includeSettings": False},
         }
         started = time.monotonic()
         try:
@@ -1299,7 +1308,7 @@ class UnifiedMCPAgent:
             supports_live_claim=False, evidence_kind="tool_result",
             effect="read", mutates=False,
             details=({
-                "appId": direct_app_id, "configured": excerpts[:8],
+                "appId": context_app_id, "configured": excerpts[:8],
                 "historicalExecutionNotProven": True,
             } if ok else None),
         )
