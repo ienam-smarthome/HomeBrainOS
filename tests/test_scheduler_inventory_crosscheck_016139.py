@@ -194,6 +194,22 @@ def test_host_plan_inventory_only_for_real_job_candidates_and_publishes_digest()
     assert all(x[2]["mutates"] is False for x in agent.executor.evidence.rows)
 
 
+def test_scheduler_only_skips_non_provenance_crosschecks_and_broad_logs():
+    """A scheduler-only question cannot gain owner proof from candidate probes."""
+    from performance_host_plan import collect_broad_performance_outcome
+    agent = _Agent()
+    outcome = asyncio.run(collect_broad_performance_outcome(
+        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+    ))
+    calls = [row[0] for row in agent.executor.calls]
+    assert calls == ["hub_get_jobs", "hub_get_performance_stats"]
+    assert "hub_list_apps" not in calls
+    assert "hub_list_devices" not in calls
+    assert "hub_get_device" not in calls
+    assert "hub_get_logs" not in calls
+    assert "scheduler_inventory_crosscheck" not in outcome.metrics
+
+
 def test_no_scheduler_question_does_not_add_inventory_reads():
     from performance_host_plan import collect_broad_performance_outcome
     agent = _Agent()
