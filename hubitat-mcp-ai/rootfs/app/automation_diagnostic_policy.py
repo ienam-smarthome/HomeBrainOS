@@ -20,15 +20,86 @@ _DIAGNOSTIC = re.compile(
     r"runtime|execution|not\s+responding)\b",
     re.I,
 )
-_BROAD = re.compile(
-    r"\b(?:all|every|entire|whole|across|any|which|"
-    r"my\s+(?:automations|rules|apps)|"
-    r"system|overall|full|comprehensive)\b", re.I
+# Broad scope must apply to the automation population or whole-hub
+# diagnostics, not to an unrelated word elsewhere in the question.
+# In particular, 'which history source supports ...' is NOT permission
+# to replace a named light-event investigation with a whole-hub audit.
+_BROAD_AUTOMATION_COLLECTION = re.compile(
+    r"\b(?:all|every|any|which|my|our|entire|whole|full|comprehensive)"
+    r"\s+(?:of\s+)?(?:(?:my|our|the|installed|existing|active|paused|"
+    r"running|broken|failed|failing|current)\s+){0,4}"
+    r"(?:automations|rules|apps)\b",
+    re.I,
 )
+_BROAD_EVERY_SINGLE = re.compile(
+    r"\b(?:each|every)\s+"
+    r"(?:(?:my|our|the|installed|existing|active|running)\s+){0,3}"
+    r"(?:automation|rule|app)\b",
+    re.I,
+)
+_BROAD_AUTOMATION_LOGS = re.compile(
+    r"\b(?:all|every|entire|whole|full|comprehensive)\s+"
+    r"(?:(?:my|the|our)\s+)?(?:automation|rule|app)\s+"
+    r"(?:logs?|executions?|statuses?|failures?|errors?)\b",
+    re.I,
+)
+_BROAD_HUB_SCOPE = re.compile(
+    r"\b(?:system[- ]wide|across\s+(?:(?:my|our|the|all)\s+)?(?:hub|system)|"
+    r"(?:whole|entire|full|comprehensive)\s+(?:hub|system))\b",
+    re.I,
+)
+
+
+def has_broad_automation_scope(prompt: str) -> bool:
+    """Require grammatical broad *automation* scope, not isolated words.
+
+    'Any', 'which', 'system', 'all' and 'my' are ubiquitous in targeted
+    questions and must not independently trigger a 200-device System Check.
+    """
+    text = str(prompt or "").strip()
+    return bool(
+        _BROAD_AUTOMATION_COLLECTION.search(text)
+        or _BROAD_EVERY_SINGLE.search(text)
+        or _BROAD_AUTOMATION_LOGS.search(text)
+        or _BROAD_HUB_SCOPE.search(text)
+    )
 _MUTATION = re.compile(
     r"^\s*(?:please\s+)?(?:fix|repair|delete|remove|disable|enable|"
     r"rebuild|reset|change|update)\s+", re.I
 )
+
+
+_TARGETED_EVENT_INTENT = re.compile(
+    r"\b(?:why|investigat(?:e|ion)|explain|trace|caus(?:e|ed))\b", re.I
+)
+_TARGETED_DEVICE = re.compile(
+    r"\b(?:lights?|lamps?|bulbs?|switch(?:es)?|sockets?|plugs?|"
+    r"fans?|outlets?|thermostats?|devices?)\b", re.I
+)
+_TARGETED_STATE_CHANGE = re.compile(
+    r"\b(?:turn(?:ed)?|switch(?:ed)?|went|came|power(?:ed)?)\s+"
+    r"(?:on|off)\b", re.I
+)
+_SINGLE_EVENT_ANCHOR = re.compile(
+    r"\b(?:at|around|about|before|after)\s+(?:approximately\s+)?"
+    r"\d{1,2}:\d{2}|\b(?:today|yesterday|last\s+night)\b", re.I
+)
+
+
+def is_targeted_device_transition_investigation(prompt: str) -> bool:
+    """Keep a timed, named ON/OFF event out of whole-hub audit shortcuts.
+
+    An automation can be mentioned as a possible cause without making a
+    single-light forensic investigation a request to audit all automations.
+    These terms establish routing *scope*, not a causal claim.
+    """
+    text = str(prompt or "").strip()
+    return bool(
+        _TARGETED_EVENT_INTENT.search(text)
+        and _TARGETED_DEVICE.search(text)
+        and _TARGETED_STATE_CHANGE.search(text)
+        and _SINGLE_EVENT_ANCHOR.search(text)
+    )
 
 
 def is_automation_runtime_diagnostic(prompt: str) -> bool:
@@ -47,7 +118,8 @@ def is_broad_automation_runtime_diagnostic(prompt: str) -> bool:
     text = str(prompt or "").strip()
     return bool(
         is_automation_runtime_diagnostic(text)
-        and _BROAD.search(text)
+        and has_broad_automation_scope(text)
+        and not is_targeted_device_transition_investigation(text)
         and not _MUTATION.search(text)
     )
 
@@ -102,6 +174,8 @@ __all__ = [
     "AUTOMATION_DIAGNOSTIC_INSTRUCTION",
     "is_automation_runtime_diagnostic",
     "is_broad_automation_runtime_diagnostic",
+    "has_broad_automation_scope",
+    "is_targeted_device_transition_investigation",
     "is_integration_runtime_diagnostic",
     "INTEGRATION_DIAGNOSTIC_INSTRUCTION",
 ]

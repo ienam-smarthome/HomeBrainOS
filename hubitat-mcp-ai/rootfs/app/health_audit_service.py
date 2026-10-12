@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from automation_diagnostic_policy import is_targeted_device_transition_investigation
 from frozen_core import health_audit_service_core as _core
 
 
@@ -341,6 +342,11 @@ def is_comprehensive_system_audit_request(prompt: str) -> bool:
         "run system check", "full system check",
     )):
         return True
+    # A named historical ON/OFF event remains a targeted causal question even
+    # if the user asks to inspect its device history, app logs and evidence.
+    # Global System Check is neither the answer nor a cheap preflight.
+    if is_targeted_device_transition_investigation(prompt):
+        return False
     is_investigation = any(
         phrase in words for phrase in (
             "check", "audit", "inspect", "investigate", "diagnose", "review",
