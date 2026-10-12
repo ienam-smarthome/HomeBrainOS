@@ -121,7 +121,7 @@ def test_final_answer_cannot_equate_zero_native_rows_with_zero_sensor_history():
     assert "no sensor event rows" in answer
     assert "Historical Journal retained 4 partial sensor observations" in answer
     assert "collector reception" in answer.lower()
-    assert "timer execution is proven" not in answer
+    assert "neither an OFF producer nor a timer execution is proven" in answer
     assert "archived_sensor_not_absent" in issues
 
 
