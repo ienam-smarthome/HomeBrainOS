@@ -789,9 +789,21 @@ class UnifiedMCPAgent:
             ),
             None,
         )
+        history_room = next(
+            (
+                str((receipt.get("details") or {}).get("room") or "").strip()
+                for receipt in self.evidence.receipts()
+                if receipt.get("tool") == "homebrain_device_history"
+                and isinstance(receipt.get("details"), dict)
+                and str((receipt["details"].get("label") or "")).casefold() == subject
+                and (receipt["details"].get("room") or "")
+            ),
+            "",
+        )
         room = str(
             (subject_record or {}).get("room")
             or (subject_record or {}).get("roomName")
+            or history_room
             or ""
         ).strip()
 
@@ -804,7 +816,7 @@ class UnifiedMCPAgent:
         # Otherwise test only configured occupancy sources or one unambiguous
         # room occupancy device; never search every motion sensor on the hub.
         occupancy_matches: list[dict[str, Any]] = []
-        if room and not any("triggered" in row.casefold() for row in execution):
+        if not any(re.search(r"\bTriggered:\s*\S", row, re.I) for row in execution):
             candidates = choose_occupancy_event_sources(
                 identities,
                 config_search=config_search,
@@ -835,6 +847,31 @@ class UnifiedMCPAgent:
                 )
                 if match is not None:
                     occupancy_matches.append(match)
+                    self.evidence.record(
+                        "homebrain_causal_trigger_correlation",
+                        {
+                            "appId": app_id,
+                            "deviceId": device_id,
+                            "attribute": attribute,
+                        },
+                        success=True,
+                        elapsed_ms=0,
+                        summary=(
+                            f"Observed {attribute} activity on configured sensor "
+                            f"{match['label']} near the light transition"
+                        ),
+                        supports_live_claim=True,
+                        evidence_kind="deterministic_causal_secondary_correlation",
+                        effect="read",
+                        details={
+                            "label": match["label"],
+                            "attribute": attribute,
+                            "configured": match["configured"],
+                            "sensorEvent": match["when"].isoformat(),
+                            "stateBoundary": str(focus.get("stateBoundary") or ""),
+                            "signedDeltaSeconds": match["signedDeltaSeconds"],
+                        },
+                    )
                     increment_active_metric("causal_sensor_aligned")
                     if match["configured"] and match["signedDeltaSeconds"] <= 0:
                         break
