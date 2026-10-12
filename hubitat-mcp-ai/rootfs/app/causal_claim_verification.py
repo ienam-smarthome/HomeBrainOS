@@ -15,7 +15,10 @@ import re
 from datetime import datetime
 from typing import Any
 
-from focal_evidence_reconciliation import guard_unproven_on_button_initiation
+from focal_evidence_reconciliation import (
+    guard_unproven_on_button_initiation,
+    guard_sensor_history_source_contradiction,
+)
 from causal_answer_plan import guard_causal_answer_claim_boundaries
 from causal_history_coverage import guard_history_gap_claims
 from causal_certainty_contract import guard_off_certainty_contract
@@ -547,6 +550,11 @@ def verify_causal_claims(
     corrected, changed = guard_history_gap_claims(corrected, graph)
     if changed:
         issues.append("causal_history_gap_claims")
+    corrected, changed = guard_sensor_history_source_contradiction(
+        corrected, graph
+    )
+    if changed:
+        issues.append("archived_sensor_not_absent")
     return corrected, issues
 
 
