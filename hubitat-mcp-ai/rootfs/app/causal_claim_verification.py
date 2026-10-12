@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from causal_certainty_contract import guard_off_certainty_contract
+from off_hypothesis_synthesis_guard import guard_off_hypothesis_summary
 from causal_evidence_graph import build_causal_evidence_graph
 
 
@@ -521,6 +522,9 @@ def verify_causal_claims(
     )
     if changed:
         issues.append("causal_off_certainty_contract")
+    corrected, changed = guard_off_hypothesis_summary(corrected, graph)
+    if changed:
+        issues.append("off_hypothesis_summary")
     return corrected, issues
 
 
