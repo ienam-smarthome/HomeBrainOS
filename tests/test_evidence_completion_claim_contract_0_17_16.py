@@ -71,7 +71,7 @@ initiator remains unresolved, as no command was issued by Hubitat.
 | Command Producer | Unresolved | No matched Hubitat command |
 | Trigger | Likely External | FP300 inactive 69ms before OFF |
 | Confirmed | State Change | Hue Bridge reported OFF |
-| Likely | Causal Link | FP300 \rightarrow External Automation \rightarrow Light OFF |
+| Likely | Causal Link | FP300 \\rightarrow External Automation \\rightarrow Light OFF |
 """
 
 
@@ -201,6 +201,12 @@ def test_off_only_categorical_exclusions_and_invented_external_path_are_correcte
 async def test_final_verifier_and_api_preserve_same_unresolved_off_verdict():
     rows, _ = await _run(_records(), _MCP(off_events=[]),
                          question=OFF_EXTERNAL, transition="off")
+    # Production host correlation receipts explicitly carry the unique focal
+    # requested boundary. Keep that binding so API serialization can re-scope
+    # its final safety check without being passed arbitrary model user text.
+    next(row for row in rows if
+         row.get("tool") == "homebrain_causal_secondary_correlation"
+    )["details"]["requestedBoundary"] = "2026-10-12T08:16:10.861+0100"
     corrected, issues = verify_causal_claims(OFF_ONLY_DRAFT, rows, OFF_EXTERNAL)
     assert "causal_off_certainty_contract" in issues
     assert "Likely External" not in corrected
