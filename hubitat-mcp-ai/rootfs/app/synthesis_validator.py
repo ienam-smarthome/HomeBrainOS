@@ -6,6 +6,7 @@ from contextvars import ContextVar
 import re
 from typing import Any
 
+from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
     guard_configuration_only_causal_claim,
     guard_triggered_listener_causal_claim,
@@ -265,6 +266,12 @@ def validate_synthesis(
             issues.append("performance_evidence_first")
 
     if causal:
+        corrected, coverage_changed = guard_causal_controller_history_coverage(
+            corrected, evidence, original_user
+        )
+        if coverage_changed:
+            issues.append("causal_controller_history_coverage")
+
         corrected, focal_duration_changed = guard_focal_interval_duration(
             corrected, evidence, original_user
         )
