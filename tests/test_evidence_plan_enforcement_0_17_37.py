@@ -79,8 +79,11 @@ def test_lockout_structured_collector_is_evaluated_without_configuration_proof()
     mapping = {r["key"]: r["state"] for r in outcome["requirements"]}
     assert mapping == {
         "target_off": "observed", "controller": "checked-unverified",
-        "motion": "observed", "execution": "checked-unverified",
+        "motion": "checked-unverified", "execution": "checked-unverified",
     }
+    # Observed motion without verified activation-source eligibility does not
+    # prove an attempted motion-controlled ON or lockout decision.
+    assert any("eligibility" in msg for msg in outcome["warnings"])
     assert outcome["evidenceComplete"] is False
 
 
