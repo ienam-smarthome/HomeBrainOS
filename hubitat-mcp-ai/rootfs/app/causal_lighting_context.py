@@ -486,8 +486,13 @@ def render_concise_lighting_answer(
                 if matched.get("configured")
                 else "may have triggered the automation"
             )
+            observation = (
+                "reported its contact opening"
+                if matched.get("attribute") == "contact"
+                else "detected activity"
+            )
             explanation = (
-                f"{name} detected activity around "
+                f"{name} {observation} around "
                 f"{_short_clock(matched['when'], boundary)}, which {relation}."
             )
         elif occupancy_matches:
