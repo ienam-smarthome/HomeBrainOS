@@ -48,6 +48,7 @@ from grounding_policy import reset_grounding_policy_factory, set_grounding_polic
 from hub_timezone import HubTimezoneResolver
 from live_evidence_authority import LiveEvidenceAuthority
 from investigation_policy import is_causal_investigation
+from investigation_intelligence import plan_investigation
 from location_event_queries import (
     find_mode_last_entered,
     mode_active_before,
@@ -1629,13 +1630,19 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             if pending_confirmation is not None:
                 return pending_confirmation
 
-            rule_request = parse_rule_analysis_request(user_prompt)
-            if rule_request is not None:
-                return await self._rule_analysis_outcome(*rule_request)
+            # Model/host investigation contracts outrank snapshot presenters:
+            # the quick rule report only has current config and sensor states.
+            goal = plan_investigation(user_prompt)
+            if goal is None:
+                rule_request = parse_rule_analysis_request(user_prompt)
+                if rule_request is not None:
+                    return await self._rule_analysis_outcome(*rule_request)
 
-            room_request = parse_room_status_request(user_prompt)
-            if room_request is not None:
-                return await self._room_status_outcome(room_request)
+                room_request = parse_room_status_request(user_prompt)
+                if room_request is not None:
+                    return await self._room_status_outcome(room_request)
+            else:
+                self.request_metrics.increment("investigation_snapshot_shortcut_bypassed")
 
             if parse_current_time_intent(user_prompt):
                 return await self._current_time_outcome()
