@@ -4,6 +4,7 @@ from copy import deepcopy
 import re
 from typing import Any
 
+from causal_claim_verification import verify_causal_claims
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
     guard_unproven_upstream_manual_exclusion,
@@ -394,6 +395,12 @@ def build_agent_response(
         evidence,
     )
     message, _ = guard_location_correlation_claim(message, evidence)
+    # Re-apply graph-backed action ownership, log absence and sensor-order
+    # invariants at the final serialization boundary. The host-verified
+    # requestedBoundary receipt safely resolves the focal event when the
+    # original question is not carried into the API builder.
+    message, _ = verify_causal_claims(message, evidence)
+
     # Post-synthesis API serialization enforces the same causal claim
     # integrity contract: model revisions must not restore unsupported
     # exclusions or misattribute recorded sensor events to empty app logs.
