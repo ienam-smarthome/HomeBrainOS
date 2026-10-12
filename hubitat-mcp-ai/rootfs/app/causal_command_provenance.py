@@ -79,24 +79,64 @@ def _subject_command_events(
     *,
     subject: str,
 ) -> list[dict[str, Any]]:
+    """Combine first-party subject commands and targeted command-history reads.
+
+    The original implementation returned only DeviceHistoryService's command
+    snapshot, so a later authoritative hub_list_device_events(command-off)
+    could never establish a missing OFF producer. Accept additional successful
+    command-specific pages *only* when the tool receipt identifies the same
+    exact subject label. Never use an unrelated device's command page or turn
+    a zero-row page into evidence that no external command existed.
+    """
     wanted = str(subject or "").strip().casefold()
-    for receipt in reversed(evidence):
-        if (
-            not isinstance(receipt, dict)
-            or receipt.get("success") is not True
-            or receipt.get("tool") != "homebrain_device_history"
-        ):
+    if not wanted:
+        return []
+    selected: list[dict[str, Any]] = []
+    keys: set[tuple[str, str, str, str, str]] = set()
+
+    def include(event: dict[str, Any]) -> None:
+        producer = event.get("producedBy") or {}
+        if not isinstance(producer, dict):
+            producer = {}
+        key = (
+            str(event.get("name") or ""),
+            str(event.get("date") or ""),
+            str(producer.get("type") or ""),
+            str(producer.get("id") or ""),
+            str(event.get("description") or ""),
+        )
+        if key in keys:
+            return
+        keys.add(key)
+        selected.append(event)
+
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
             continue
         details = receipt.get("details")
         if not isinstance(details, dict):
             continue
-        label = str(details.get("label") or "").strip().casefold()
-        if wanted and label != wanted:
+        if str(details.get("label") or "").strip().casefold() != wanted:
             continue
-        events = details.get("commandEvents")
-        if isinstance(events, list):
-            return [row for row in events if isinstance(row, dict)]
-    return []
+        if receipt.get("tool") == "homebrain_device_history":
+            rows = details.get("commandEvents")
+        elif (
+            receipt.get("tool") == "hub_read_devices"
+            and receipt.get("sub_tool") == "hub_list_device_events"
+        ):
+            args = (receipt.get("arguments") or {}).get("args") or {}
+            attribute = str(args.get("attribute") or details.get("eventName") or "")
+            if attribute not in {"command-on", "command-off", "command-setLevel"}:
+                continue
+            rows = details.get("events")
+        else:
+            continue
+        if not isinstance(rows, list):
+            continue
+        for event in rows:
+            if isinstance(event, dict):
+                include(event)
+    return selected
 
 
 def _subject_boundary_events(
