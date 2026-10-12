@@ -9,6 +9,8 @@ sys.path.insert(0, str(APP_DIR))
 
 from causal_lighting_context import (  # noqa: E402
     choose_occupancy_event_sources,
+    matched_occupancy_edge,
+    render_concise_lighting_answer,
     render_level_command_pattern,
     render_occupancy_edge_correlation,
 )
@@ -177,3 +179,106 @@ def test_occupancy_edge_is_reported_as_correlation_not_certain_cause():
             "date": "2026-10-12T07:08:16.450+0100",
         }]},
     ) is None
+
+
+
+def test_status_label_lights_off_motion_idle_still_identifies_rule():
+    receipt = _evidence()
+    events = receipt[0]["details"]["commandEvents"]
+    for event in events:
+        event["producedBy"]["label"] = "Bathroom (⚪ Lights Off, ⚪ Motion Idle)"
+    receipt[0]["details"]["boundaryEvents"] = [
+        _switch("on", "2026-10-12T07:08:06.273+0100")
+    ]
+    focal = proven_lighting_command(receipt)
+    assert focal is not None
+    assert focal["producer"]["id"] == "4013"
+
+
+def test_plain_english_answer_names_app_sensor_trigger_and_followup_levels():
+    focus = _focus()
+    focus["producer"]["label"] = "Bathroom (⚪ Lights Off, ⚪ Motion Idle)"
+    focus["intervalEnd"] = "2026-10-12T07:25:16.174+0100"
+    focus["open"] = False
+    detection = matched_occupancy_edge(
+        focus,
+        label="LWR01 Bathroom Occupancy",
+        attribute="motion",
+        event_data={"events": [{
+            "name": "motion",
+            "value": "active",
+            "date": "2026-10-12T07:08:06.050+0100",
+        }]},
+        configured=True,
+    )
+    assert detection is not None
+    answer = render_concise_lighting_answer(
+        _evidence(),
+        focus,
+        logs=[],
+        config_search="LWR01 Bathroom Occupancy",
+        referenced_sensors=[],
+        occupancy_matches=[detection],
+        mode_events=[],
+    )
+    assert "Bathroom Light 1 turned on at 07:08 at 30%" in answer
+    assert "Bathroom (app 4013)" in answer
+    assert "LWR01 Bathroom Occupancy detected activity" in answer
+    assert "likely triggered the automation" in answer
+    assert "50% at 07:15" in answer
+    assert "light went off at 07:25" in answer
+    assert "**" not in answer
+    assert "Command semantics" not in answer
+    assert "provenance" not in answer
+    assert "independently verified" not in answer
+
+
+def test_sensor_reported_after_light_is_not_declared_trigger():
+    focus = _focus()
+    late = matched_occupancy_edge(
+        focus,
+        label="LWR01 Bathroom Occupancy",
+        attribute="motion",
+        event_data={"events": [{
+            "name": "motion",
+            "value": "active",
+            "date": "2026-10-12T07:08:06.450+0100",
+        }]},
+        configured=True,
+    )
+    assert late is not None
+    answer = render_concise_lighting_answer(
+        _evidence(), focus,
+        logs=[],
+        config_search="LWR01 Bathroom Occupancy",
+        referenced_sensors=[],
+        occupancy_matches=[late],
+        mode_events=[],
+    )
+    assert "exact trigger isn't confirmed" in answer
+    assert "likely triggered" not in answer
+
+
+def test_explicit_timestamp_aligned_app_trigger_log_is_preferred():
+    answer = render_concise_lighting_answer(
+        _evidence(), _focus(),
+        logs=["- 07:08:06 — Triggered: LWR01 Bathroom Occupancy active"],
+        config_search="",
+        referenced_sensors=[],
+        occupancy_matches=[],
+        mode_events=[],
+    )
+    assert "The app log shows it was triggered by LWR01 Bathroom Occupancy active." in answer
+
+
+def test_no_sensor_history_does_not_invent_specific_trigger():
+    answer = render_concise_lighting_answer(
+        _evidence(), _focus(),
+        logs=[],
+        config_search="motion active",
+        referenced_sensors=[],
+        occupancy_matches=[],
+        mode_events=[],
+    )
+    assert "exact event that triggered it isn't confirmed" in answer
+    assert "LWR01" not in answer
