@@ -81,6 +81,7 @@ The repository drift test compares this table directly with the live directory. 
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
 | `one_time_rule_cleanup.py` | Soft-deletes expired HomeBrain-generated one-time Rule Machine rules on a guarded Hubitat-local nightly schedule. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
+| `off_hypothesis_synthesis_guard.py` | Ensures final OFF explanations include material, evidence-backed timer feasibility and bounded command claims. |
 | `performance_api_finalizer.py` | Runs the bounded recent-log read and evidence-scoped performance synthesis directly on the production `/api/ask`/`/api/chat` request path, then applies the fail-closed live semantic guard before serialization. |
 | `performance_causality_guard.py` | Prevents recent log activity from being promoted into the cause of longer-window performance statistics without direct linking evidence, and blocks unsupported threshold/edit prescriptions. |
 | `performance_diagnostic_evidence_gate.py` | Classifies adaptive source-scoped performance evidence as diagnostic signal, repeated neutral activity, sparse/neutral observations, or no observations, and forces unsupported mechanism hypotheses to remain unresolved. |
