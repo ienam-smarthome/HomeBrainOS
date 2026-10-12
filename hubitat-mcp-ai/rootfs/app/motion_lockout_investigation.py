@@ -124,7 +124,7 @@ def _candidate_devices(
         # Button devices often belong to the virtual Button Controllers room.
         # Match a distinctive physical room prefix from the light's label.
         light_prefix = re.split(
-            r"\\b(?:lights?|lamps?|bulbs?|switch(?:es)?)\\b",
+            r"\b(?:lights?|lamps?|bulbs?|switch(?:es)?)\b",
             _label(light).casefold(), maxsplit=1,
         )[0].strip()
         named_room = bool(
