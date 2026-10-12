@@ -35,6 +35,7 @@ def _same(first: Any, second: Any, tolerance_ms: float = 3) -> bool:
 
 def focal_closed_transition(
     evidence: list[dict[str, Any]], original_user: str,
+    *, resolved_device_id: str = "",
 ) -> dict[str, Any] | None:
     """Require one exactly selected, bounded interval and known device ID."""
     matched = explicitly_focused_event_rows(evidence, original_user)
@@ -49,7 +50,7 @@ def focal_closed_transition(
         if str(details.get("label") or "") != subject:
             continue
         device_id = str(
-            details.get("deviceId")
+            resolved_device_id or details.get("deviceId")
             or (receipt.get("arguments") or {}).get("_resolved_target", {}).get("id")
             or ""
         )
