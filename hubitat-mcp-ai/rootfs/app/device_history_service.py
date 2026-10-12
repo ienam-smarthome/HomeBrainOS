@@ -390,7 +390,7 @@ class DeviceHistoryService:
             rows = [
                 row
                 for row in rows
-                if str(row.get("name") or "").casefold() == event_name
+                if str(row.get("name") or "").casefold() == event_name.casefold()
             ]
             self._record_evidence(
                 DEVICE_GATEWAY,
