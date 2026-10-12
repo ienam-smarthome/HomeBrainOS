@@ -16,6 +16,7 @@ from controller_correlation_guard import guard_controller_boundary_claim
 from evidence_source_guard import (
     guard_checked_source_absence_claim,
     guard_positive_source_attribution,
+    has_performance_evidence,
 )
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
@@ -206,14 +207,9 @@ def validate_synthesis(
     if correlation_changed:
         issues.append("location_correlation_consistency")
 
-    performance_scope = bool(_PERFORMANCE_TASK_RE.search(str(original_user or ""))) or any(
-        isinstance(row, dict)
-        and row.get("success") is True
-        and (
-            str(row.get("sub_tool") or "") in {"hub_get_performance_stats", "hub_get_metrics", "hub_get_jobs"}
-            or "performance" in str(row.get("evidence_kind") or "").casefold()
-        )
-        for row in evidence
+    performance_scope = (
+        bool(_PERFORMANCE_TASK_RE.search(str(original_user or "")))
+        or has_performance_evidence(evidence)
     )
     corrected, source_changed = guard_checked_source_absence_claim(
         corrected, evidence, performance_request=performance_scope
