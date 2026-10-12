@@ -233,7 +233,15 @@ def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -
             "producedBy names a bridge/device, an app appearing only in triggered[] "
             "must be described as downstream, never as the initiating trigger. "
             "If an app reaction appears only after the subject command, describe "
-            "it as downstream handling, not initiation. "
+            "it as downstream handling, not initiation. The actor of any claimed "
+            "setLevel/brightness action must match that command's own producedBy "
+            "app identity, not a different app merely present as a listener. "
+            "An empty event-time app log cannot confirm that no internal rule "
+            "logic executed or initiated an action; it means no entries were "
+            "returned for the searched window. Preserve signed timestamps: "
+            "when one occupancy sensor became inactive before OFF and another "
+            "after OFF, state their individual order, never collapse both into "
+            "one earlier sensor event. "
         )
     elif investigative:
         text += (
@@ -492,6 +500,8 @@ class FinalAnswerCoordinator:
             "triggered_listener_causal_attribution",
             "configuration_only_causal_attribution",
             "causal_controller_history_coverage",
+            "causal_action_ownership", "causal_empty_log_inference",
+            "causal_sensor_event_order",
         }
         if (
             causal
@@ -515,6 +525,8 @@ class FinalAnswerCoordinator:
                 "controller_boundary_direction", "triggered_listener_causal_attribution",
                 "configuration_only_causal_attribution", "upstream_manual_exclusion",
                 "causal_source_attribution", "causal_controller_history_coverage",
+                "causal_action_ownership", "causal_empty_log_inference",
+                "causal_sensor_event_order",
             }
             for issue in issues
         ):
