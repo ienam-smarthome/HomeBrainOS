@@ -771,6 +771,24 @@ def _off_provenance(
         _logs(evidence, listener_id, str(focus["end"]))
         if listener_id and listener_id != source_id else {"checked": False}
     )
+    archived_app_logs: dict[str, Any] = {}
+    for receipt in reversed(evidence):
+        if receipt.get("tool") != "homebrain_archived_app_log_reconciliation":
+            continue
+        args = receipt.get("arguments") or {}
+        candidate_app_id = str(args.get("appId") or "")
+        if not candidate_app_id or candidate_app_id not in {source_id, listener_id}:
+            continue
+        start_time = _time(args.get("since"))
+        end_time = _time(args.get("until"))
+        focal_time = _time(focus["end"])
+        if not (start_time and end_time and focal_time
+                and start_time <= focal_time <= end_time):
+            continue
+        details = receipt.get("details")
+        if isinstance(details, dict):
+            archived_app_logs = dict(details)
+        break
     if competing:
         certainty = "ambiguous-multiple-command-producers"
     elif command:
@@ -789,6 +807,7 @@ def _off_provenance(
         "sensorCorrelations": correlations,
         "sensorHistoryCoverage": local_sensor_history_coverage,
         "windowedSensorRetrieval": windowed_sensor_retrieval,
+        "archivedAppLogReconciliation": archived_app_logs,
         "appProducerContext": {
             "appId": source_id,
             "configuration": app_config,
