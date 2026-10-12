@@ -219,7 +219,15 @@ class HistoricalEvidenceJournal:
             inserted = 0
             for row in rows:
                 packed = json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-                signature = hashlib.sha256(packed.encode("utf-8")).hexdigest()
+                # A genuine source timestamp supports stable reconnect de-duplication.
+                # Frames without one can represent repeated real events, so
+                # keep collector-receive time in their signatures.
+                identity = dict(row)
+                if row["source_time"]:
+                    identity.pop("received_at", None)
+                    identity.pop("observed_at", None) if row["timestamp_basis"] == "collector-received" else None
+                stable = json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                signature = hashlib.sha256(stable.encode("utf-8")).hexdigest()
                 cursor = db.execute("""INSERT OR IGNORE INTO journal_events
                     (stream,device_id,app_id,attribute,value,display_name,source,
                      source_time,observed_at,received_at,timestamp_basis,message,signature)
@@ -246,7 +254,7 @@ class HistoricalEvidenceJournal:
             try:
                 tick += 1
                 self._recorded += await asyncio.to_thread(
-                    self._write_batch, batch, tick % 200 == 0
+                    self._write_batch, batch, tick % 10 == 0
                 )
             except Exception as exc:
                 self.error = f"Journal storage unavailable: {type(exc).__name__}"
