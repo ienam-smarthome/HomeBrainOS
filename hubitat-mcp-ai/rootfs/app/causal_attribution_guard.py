@@ -374,7 +374,10 @@ def guard_unproven_upstream_manual_exclusion(
             if colon >= 0:
                 category = _category(line[:colon])
                 if category and _UNSUPPORTED_EXCLUSION.search(line[colon + 1:]):
-                    line = line[:colon + 1] + " " + _calibrated_exclusion(
+                    # Preserve the closing bold markers after a Markdown
+                    # category label such as **Manual Control:**.
+                    emphasis = "**" if line[colon + 1:].lstrip().startswith("**") else ""
+                    line = line[:colon + 1] + emphasis + " " + _calibrated_exclusion(
                         category, evidence
                     )
                     changed = True
