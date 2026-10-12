@@ -297,6 +297,47 @@ def has_strong_requested_correlated_candidate(analysis: dict[str, Any]) -> bool:
 
 
 
+
+def has_local_requested_off_correlation(
+    analysis: dict[str, Any], *,
+    max_abs_delta_seconds: float = 3.0,
+) -> bool:
+    """Stop broad cross-room search after checking a room-local OFF edge.
+
+    This is NOT a verified causal explanation. It only says that the known
+    local sensor evidence is relevant enough to provide a bounded, explicitly
+    unresolved OFF investigation; additional unrelated sensors cannot by
+    themselves establish the OFF command producer.
+    """
+    if str(analysis.get("transition") or "").lower() != "off":
+        return False
+    requested = _parse_time(analysis.get("requestedBoundary"))
+    if requested is None:
+        return False
+    for sensor in analysis.get("sensors") or []:
+        if not isinstance(sensor, dict):
+            continue
+        for event in sensor.get("relevantCorrelations") or []:
+            if not isinstance(event, dict) or event.get("boundaryRole") != "end":
+                continue
+            boundary = _parse_time(event.get("subjectTransition"))
+            if boundary is None:
+                continue
+            if abs((boundary - requested).total_seconds()) > .25:
+                continue
+            if str(event.get("eventValue") or "").casefold() not in {
+                "inactive", "not present", "absent", "off", "closed"
+            }:
+                continue
+            try:
+                delta = float(event["signedDeltaSeconds"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if abs(delta) <= max_abs_delta_seconds:
+                return True
+    return False
+
+
 def has_repeated_requested_controller_candidate(
     analysis: dict[str, Any],
     *,
