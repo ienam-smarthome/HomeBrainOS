@@ -337,10 +337,11 @@ def _command(
 
 
 
-def _physical_boundary(
+def _observed_state_boundary(
     evidence: list[dict[str, Any]], focus: dict[str, Any],
+    *, transition: str = "on",
 ) -> dict[str, Any] | None:
-    """Identify the bridge/reporting device and downstream event listeners.
+    """Identify each bridge/reporting device and downstream event listeners.
 
     Device state event producedBy identifies the reporting origin, not the
     controller or human who initiated the action. The triggered[] field lists
@@ -359,8 +360,12 @@ def _physical_boundary(
             if (
                 not isinstance(event, dict)
                 or str(event.get("name") or "") != "switch"
-                or str(event.get("value") or "").casefold() != "on"
-                or not _eq_time(event.get("date"), focus.get("start"), tolerance=.002)
+                or str(event.get("value") or "").casefold() != transition
+                or not _eq_time(
+                    event.get("date"),
+                    focus.get("start" if transition == "on" else "end"),
+                    tolerance=.002,
+                )
             ):
                 continue
             producer = event.get("producedBy") or {}
@@ -388,6 +393,13 @@ def _physical_boundary(
                 "listenersNotNecessarilyCommandIssuers": True,
             }
     return None
+
+
+def _physical_boundary(
+    evidence: list[dict[str, Any]], focus: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Backward-compatible ON-boundary view for existing graph consumers."""
+    return _observed_state_boundary(evidence, focus, transition="on")
 
 
 def _controller_candidate(
@@ -667,6 +679,124 @@ def _end_sensor_correlations(
     return output[:4]
 
 
+def _off_provenance(
+    evidence: list[dict[str, Any]],
+    focus: dict[str, Any],
+    command: dict[str, Any] | None,
+    correlations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """A separate OFF causal hypothesis, never inherited from ON.
+
+    Distinguish a bounded successful empty command page from an exhaustive
+    assertion that Hubitat or external controllers did not issue any command.
+    App logs are scoped to OFF time; current configuration never proves that
+    a specific timer actually ran.
+    """
+    if not focus.get("end"):
+        return {
+            "observed": False, "status": "no-recorded-off-transition",
+            "commandHistory": {"checked": False, "result": "not-applicable"},
+        }
+    reported = _observed_state_boundary(evidence, focus, transition="off")
+    history: dict[str, Any] = {
+        "checked": False, "result": "not-checked",
+        "scope": "bounded-returned-event-page",
+    }
+    for row in reversed(evidence):
+        if _tool(row) != "hub_list_device_events":
+            continue
+        args = _args(row)
+        if str(args.get("attribute") or "") != "command-off":
+            continue
+        details = row.get("details") or {}
+        if str(details.get("label") or "") != str(focus.get("subject") or ""):
+            continue
+        if row.get("success") is not True:
+            history.update(result="unavailable")
+        else:
+            count = details.get("eventCount")
+            if not isinstance(count, int):
+                events = details.get("events")
+                count = len(events) if isinstance(events, list) else None
+            history.update(
+                checked=True, eventCount=count,
+                result=(
+                    "zero-recorded-command-off-events" if count == 0
+                    else "recorded-command-off-events" if isinstance(count, int)
+                    else "count-not-reported"
+                ),
+            )
+        break
+
+    matched = [
+        row for row in correlate_command_producers(evidence)
+        if row.get("boundaryRole") == "end"
+        and _eq_time(row.get("intervalStart"), focus["start"], tolerance=.002)
+        and _eq_time(row.get("stateBoundary"), focus["end"], tolerance=.002)
+    ]
+    competing = any(bool(row.get("competingCommands")) for row in matched)
+    producer = command.get("producer") if command else None
+    source_id = (
+        str(producer.get("id") or "")
+        if isinstance(producer, dict)
+        and str(producer.get("type") or "").casefold() == "app" else ""
+    )
+    app_config = _configuration(evidence, source_id) if source_id else {"checked": False}
+    app_logs = _logs(evidence, source_id, str(focus["end"])) if source_id else {"checked": False}
+    listener = next((
+        row for row in ((reported or {}).get("listenersNotified") or [])
+        if "light" in str(row.get("handler") or "").casefold()
+        or "switch" in str(row.get("handler") or "").casefold()
+    ), None)
+    listener_id = str((listener or {}).get("appId") or "")
+    # Logging from an OFF listener is distinct from direct command provenance.
+    listener_logs = (
+        _logs(evidence, listener_id, str(focus["end"]))
+        if listener_id and listener_id != source_id else {"checked": False}
+    )
+    if competing:
+        certainty = "ambiguous-multiple-command-producers"
+    elif command:
+        certainty = "confirmed-direct-command-producer"
+    elif correlations:
+        certainty = "temporal-sensor-correlation-only"
+    else:
+        certainty = "observed-off-with-unidentified-initiator"
+    return {
+        "observed": True,
+        "time": focus["end"],
+        "state": reported,
+        "directCommand": command,
+        "commandHistory": history,
+        "status": certainty,
+        "sensorCorrelations": correlations,
+        "appProducerContext": {
+            "appId": source_id,
+            "configuration": app_config,
+            "executionLogs": app_logs,
+            "currentConfigDoesNotProveExecutedConditions": True,
+        },
+        "notifiedListenerContext": {
+            "appId": listener_id,
+            "notified": bool(listener_id),
+            "notNecessarilyProducer": True,
+            "executionLogs": listener_logs,
+        },
+        "internalTimerExecutionVerified": False,
+        "externalAutomationIdentityVerified": False,
+        "uncertainties": [
+            "A nearby inactive sensor event does not identify the OFF actor.",
+            "An empty command-off page is bounded evidence, not proof no "
+            "command or external bridge automation existed.",
+            "The app configured for OFF handling need not have executed its "
+            "inactivity timer for this specific transition.",
+        ] if not command else [
+            "Direct OFF command ownership does not prove the upstream sensor "
+            "or timer condition that caused the app to act.",
+        ],
+    }
+
+
 def build_causal_evidence_graph(
     evidence: list[dict[str, Any]], original_user: str
 ) -> dict[str, Any]:
@@ -689,6 +819,9 @@ def build_causal_evidence_graph(
     )
     post_on_commands = _post_on_commands(evidence, focus)
     end_sensor_correlations = _end_sensor_correlations(evidence, focus)
+    off_provenance = _off_provenance(
+        evidence, focus, end_command, end_sensor_correlations
+    )
     config = _configuration(evidence, app_id) if app_id else {"checked": False}
     logs = _logs(evidence, app_id, (start_command or {}).get("time") or "") if app_id else {"checked": False}
     notified = (physical_boundary or {}).get("listenersNotified") or []
@@ -773,6 +906,24 @@ def build_causal_evidence_graph(
         "otherSensorEvidenceChecked": alternate_sensors_checked,
         "physicalEvidenceComplete": physical_evidence_complete,
         "locationMode": mode,
+        "transitionEvidence": {
+            "on": {
+                "state": physical_boundary,
+                "directCommand": start_command,
+                "triggerCandidate": sensor or controller_candidate,
+                "producerVerified": bool(start_command),
+                "confidence": (
+                    "confirmed-direct-command" if start_command
+                    else "strong-controller-association"
+                    if (controller_candidate or {}).get("status") ==
+                        "repeated-temporal-association"
+                    else "unresolved"
+                ),
+                "appConfiguration": config,
+                "executionLogs": logs,
+            },
+            "off": off_provenance,
+        },
         "offCommand": end_command,
         "offAttribution": (
             "confirmed-direct-command" if end_command else
@@ -879,6 +1030,13 @@ def render_causal_evidence_graph(
         "state change as probable association ONLY when repeated, never as "
         "a confirmed Hubitat-side earlier command. Never promote a sensor "
         "timestamp or an app's listener into a proven rule-branch execution. "
+        "The ON and OFF transitionEvidence objects have independent actors, "
+        "logs, trigger candidates and uncertainty. Never identify OFF as likely "
+        "caused by an inactive sensor merely from time alignment, even when "
+        "ON is well explained. Only an OFF-aligned command verifies the direct "
+        "OFF producer; the specific upstream timer or sensor remains separately "
+        "unverified. Empty OFF-command pages are bounded observations, not "
+        "proof of no external command. "
         "Report unavailable sources as gaps; if a configured inactive timer "
         "and OFF event timing appear inconsistent, do not invent an OFF cause."
     )
