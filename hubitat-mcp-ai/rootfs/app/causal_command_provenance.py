@@ -468,6 +468,7 @@ def correlate_command_producers(
                         or event.get("descriptionText") or ""
                     ).strip(),
                     "display": semantics.get("display"),
+                    "method": semantics.get("method"),
                     "semantics": semantics.get("semantics"),
                     "level": semantics.get("level"),
                     "type": str(event.get("type") or "").strip(),
