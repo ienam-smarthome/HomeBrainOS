@@ -730,11 +730,54 @@ def render_command_source_followup(evidence: list[dict[str, Any]]) -> str | None
     )
 
 
+
+_FOCAL_ELAPSED_DURATION = re.compile(
+    r"(?i)(?P<minutes>\d{1,4})\s*(?:m|min(?:utes?)?)\s*"
+    r"(?P<seconds>\d{1,2})\s*(?:s|sec(?:onds?)?)\b"
+)
+
+
+def guard_focal_interval_duration(
+    message: str, evidence: list[dict[str, Any]], original_user: str
+) -> tuple[str, bool]:
+    """Correct an inconsistent single-event elapsed duration deterministically.
+
+    Only one unambiguous user-requested observed interval and one explicit
+    minutes+seconds mention can be corrected safely. Broad history comparisons
+    and a model answer with multiple durations remain untouched.
+    """
+    text = str(message or "")
+    focus = explicitly_focused_event_rows(evidence, original_user)
+    if len(focus) != 1 or not focus[0].get("end"):
+        return text, False
+    try:
+        elapsed = int(focus[0]["durationSeconds"])
+    except (TypeError, ValueError, KeyError):
+        return text, False
+    if elapsed < 0:
+        return text, False
+    matches = list(_FOCAL_ELAPSED_DURATION.finditer(text))
+    if len(matches) != 1:
+        return text, False
+    mention = matches[0]
+    shown = int(mention["minutes"]) * 60 + int(mention["seconds"])
+    if shown == elapsed:
+        return text, False
+    minutes, seconds = divmod(elapsed, 60)
+    return (
+        text[:mention.start()]
+        + f"{minutes}m {seconds}s"
+        + text[mention.end():],
+        True,
+    )
+
+
 __all__ = [
     "build_causal_timeline_rows",
     "causal_log_windows",
     "command_source_followup_needed",
     "missing_material_timeline_rows",
+    "guard_focal_interval_duration",
     "unresolved_material_timeline_rows",
     "render_causal_timeline",
     "render_command_source_followup",
