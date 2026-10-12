@@ -38,8 +38,8 @@ def proven_lighting_command(
     """Select an exact command→switch boundary from a lighting app.
 
     Restrict the extra work to proven lighting producers: named lighting rules
-    or apps whose setLevel command activated the light. Custom apps need not
-    be named 'Lighting'; generic button rules keep the existing fast path.
+    or status-labelled lighting automations whose setLevel command activated
+    the light. Generic mode controllers and button rules keep their fast path.
     """
 
     requested = focal_transition_boundary(evidence, transition)
@@ -57,7 +57,10 @@ def proven_lighting_command(
             and "light" in subject.casefold()
             and (
                 re.search(r"\b(?:lighting|room lighting|low light)\b", label, re.I)
-                or (row.get("command") or {}).get("semantics") == "level-switch-command"
+                or (
+                    (row.get("command") or {}).get("semantics") == "level-switch-command"
+                    and re.search(r"\\b(?:lights?\\s+on|motion\\s+active|occupancy)\\b", label, re.I)
+                )
             )
         ):
             continue
