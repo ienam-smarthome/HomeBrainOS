@@ -107,6 +107,18 @@ def merge_windowed_sensor_history(
             combined[key] = row
     merged = dict(history)
     merged["events"] = list(combined.values())
+    # History service exposes observedEvents separately; the coverage checker
+    # must see the same newly verified focal observations as the correlator.
+    if isinstance(history.get("observedEvents"), list):
+        observed = {
+            (str(row.get("name")), str(row.get("date")), str(row.get("value"))): row
+            for row in history["observedEvents"] if isinstance(row, dict)
+        }
+        observed.update({
+            (str(row.get("name")), str(row.get("date")), str(row.get("value"))): row
+            for row in (probe.get("events") or []) if isinstance(row, dict)
+        })
+        merged["observedEvents"] = list(observed.values())
     merged["windowedEvidenceVerified"] = True
     merged["windowedEventsRecovered"] = len(probe.get("events") or [])
     return merged
