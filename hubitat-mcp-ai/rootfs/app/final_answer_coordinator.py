@@ -513,7 +513,7 @@ class FinalAnswerCoordinator:
             "causal_controller_history_coverage",
             "causal_action_ownership", "causal_empty_log_inference",
             "causal_sensor_event_order", "causal_off_trigger_overclaim",
-            "causal_off_certainty_contract",
+            "causal_off_certainty_contract", "off_hypothesis_summary",
         }
         if (
             causal
@@ -540,7 +540,7 @@ class FinalAnswerCoordinator:
                 "causal_source_attribution", "causal_controller_history_coverage",
                 "causal_action_ownership", "causal_empty_log_inference",
                 "causal_sensor_event_order", "causal_off_trigger_overclaim",
-                "causal_off_certainty_contract",
+                "causal_off_certainty_contract", "off_hypothesis_summary",
             }
             for issue in issues
         ):
