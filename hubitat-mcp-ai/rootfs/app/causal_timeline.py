@@ -480,16 +480,23 @@ def _render_event(event: dict[str, Any]) -> str:
     return f"{date}: {label}"
 
 
-def render_causal_timeline(evidence: list[dict[str, Any]]) -> str | None:
-    rows = build_causal_timeline_rows(evidence)
+def render_causal_timeline(
+    evidence: list[dict[str, Any]], *, original_user: str = ""
+) -> str | None:
+    focused = explicitly_focused_event_rows(evidence, original_user)
+    rows = focused or build_causal_timeline_rows(evidence)
     if not rows:
         return None
 
     rendered = [
         "HOST CAUSAL TIMELINE",
         (
+            "FOCAL EVENT: The user specified a single observed event time. "
+            "Answer only that event. Other intervals are background, not "
+            "required unexplained causes. " if focused else ""
+        ) + (
             "This is a structured join of current-turn evidence, not a causal "
-            "conclusion. The final answer must account for every MATERIAL row. "
+            "conclusion. The final answer must account for every MATERIAL row IN THIS VIEW. "
             "Adjacent short non-material unresolved rows may be grouped as brief "
             "unexplained activity, but a material interval with aligned provenance "
             "must not be omitted. A controller event aligned to an interval START "
@@ -561,15 +568,48 @@ def unresolved_material_timeline_rows(
     ]
 
 
+_FOCAL_CLOCK = re.compile(r"(?<![\\d:])([01]?\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?![\\d:])")
+
+
+def explicitly_focused_event_rows(
+    evidence: list[dict[str, Any]], original_user: str
+) -> list[dict[str, Any]]:
+    """One exact user clock time must map to one observed device boundary.
+
+    If absent or ambiguous, do not silently select the latest run or hide
+    other intervals. A matching time is evidence-based, not a model guess.
+    """
+    matches = list(_FOCAL_CLOCK.finditer(str(original_user or "")))
+    if len(matches) != 1:
+        return []
+    clock = tuple(int(v) for v in matches[0].groups())
+    selected = []
+    for row in build_causal_timeline_rows(evidence):
+        if any(
+            (moment.hour, moment.minute, moment.second) == clock
+            for edge in ("start", "end")
+            if (moment := _parse_time(row.get(edge))) is not None
+        ):
+            selected.append(row)
+    return selected if len(selected) == 1 else []
+
+
+def has_explicit_focal_clock(original_user: str) -> bool:
+    return len(_FOCAL_CLOCK.findall(str(original_user or ""))) == 1
+
+
 def missing_material_timeline_rows(
     message: str,
     evidence: list[dict[str, Any]],
+    *,
+    original_user: str = "",
 ) -> list[dict[str, Any]]:
     """Return material intervals whose start anchor is absent from the draft."""
 
     comparable = re.sub(r"\s+", " ", str(message or "").casefold())
     missing: list[dict[str, Any]] = []
-    for row in build_causal_timeline_rows(evidence):
+    for row in (explicitly_focused_event_rows(evidence, original_user)
+                or build_causal_timeline_rows(evidence)):
         if not row.get("material"):
             continue
         tokens = _time_tokens(str(row.get("start") or ""))
@@ -583,6 +623,7 @@ def causal_log_windows(
     *,
     padding_seconds: int = 10,
     max_windows: int = 2,
+    original_user: str = "",
 ) -> list[dict[str, str]]:
     """Return UTC log windows around unresolved material start boundaries.
 
@@ -596,7 +637,8 @@ def causal_log_windows(
     only a bounded pair of complementary provenance reads.
     """
 
-    rows = unresolved_material_timeline_rows(evidence)
+    focused = explicitly_focused_event_rows(evidence, original_user)
+    rows = focused or unresolved_material_timeline_rows(evidence)
     if not rows:
         rows = [
             row
