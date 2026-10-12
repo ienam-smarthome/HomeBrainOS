@@ -254,10 +254,84 @@ def guard_sensor_history_source_contradiction(
     return "".join(lines), changed
 
 
+
+def ensure_archived_sensor_source_disclosure(
+    message: str, graph: dict[str, Any],
+) -> tuple[str, bool]:
+    """Require a source-scoped archive note when a causal answer omits it.
+
+    This does not add conclusions or new evidence: the requested focal graph
+    already contains all rows. A missing archive mention is a completeness
+    problem even if the model makes no *false* empty-history statement.
+    """
+    import re
+
+    original = str(message or "")
+    off = (graph.get("transitionEvidence") or {}).get("off") or {}
+    evidence = off.get("archivedSensorEvidence") or {}
+    count = evidence.get("archivedObservationCount", 0)
+    if not isinstance(count, int) or count <= 0:
+        return original, False
+
+    # A legitimate source-aware answer may use 'archive' rather than the
+    # product name. Don't append a second paragraph when it already explains
+    # the archive and its timestamp limits.
+    lowered = original.casefold()
+    if (
+        ("historical journal" in lowered or "archived sensor" in lowered
+         or "journal archive" in lowered)
+        and ("collector" in lowered or "reception" in lowered
+             or "source timestamp" in lowered)
+    ):
+        return original, False
+
+    observed = evidence.get("observations") or []
+    groups: dict[str, list[str]] = {}
+    for row in observed:
+        if not isinstance(row, dict):
+            continue
+        name = " ".join(str(row.get("label") or "sensor").split())
+        name = re.sub(r"[*|<>{}\[\]]", "", name)[:72]
+        state = str(row.get("value") or "").casefold().strip()
+        if not state or not name:
+            continue
+        groups.setdefault(name, [])
+        if state not in groups[name]:
+            groups[name].append(state)
+    sensor_text = "; ".join(
+        f"{label}: {', '.join(states[:3])}"
+        for label, states in list(groups.items())[:2]
+    )
+    if not sensor_text:
+        sensor_text = "recorded sensor changes"
+    mcp_count = evidence.get("verifiedMcpWindowCount", 0)
+    rows = evidence.get("verifiedMcpReturnedEventCount", 0)
+    note = (
+        f"**Historical Journal (partial):** {count} archived sensor "
+        f"observations ({sensor_text}). "
+        f"The {mcp_count} verified bounded MCP sensor window(s) returned "
+        f"{rows} event rows. The archived times may be **collector-received** "
+        "rather than original device-event timestamps. Neither a five-second "
+        "timer execution nor the OFF command initiator is established by "
+        "these observations."
+    )
+    match = re.search(
+        r"(?im)^#{1,5}\s+(?:summary|conclusion|final verdict)\b", original
+    )
+    if match:
+        position = match.start()
+        return (
+            original[:position].rstrip() + "\n\n" + note + "\n\n"
+            + original[position:].lstrip()
+        ), True
+    return original.rstrip() + "\n\n" + note, True
+
+
 __all__ = [
     "reconcile_window_coverage",
     "reconcile_focal_archived_sensor_evidence",
     "guard_sensor_history_source_contradiction",
+    "ensure_archived_sensor_source_disclosure",
     "summarize_journal_app_logs",
     "guard_unproven_on_button_initiation",
 ]
