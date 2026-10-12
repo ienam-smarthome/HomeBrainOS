@@ -366,7 +366,7 @@ def _readable_app_name(label: str) -> str:
 
 
 def _short_clock(when: datetime, anchor: datetime) -> str:
-    return when.astimezone(anchor.tzinfo).strftime("%H:%M")
+    return when.astimezone(anchor.tzinfo).strftime("%H:%M:%S")
 
 
 def _level_changes_after(
@@ -460,8 +460,8 @@ def render_concise_lighting_answer(
         except (ValueError, TypeError):
             pass
     first = (
-        f"{subject} turned on at {_short_clock(boundary, boundary)}{level_text} "
-        f"because {app_label} (app {app_id}) switched it on."
+        f"{subject} turned on at {_short_clock(boundary, boundary)}{level_text}, "
+        f"switched on by {app_label} (app {app_id})."
     )
 
     trigger = _logged_trigger(logs)
@@ -489,16 +489,18 @@ def render_concise_lighting_answer(
             observation = (
                 "reported its contact opening"
                 if matched.get("attribute") == "contact"
+                else "detected motion"
+                if matched.get("attribute") == "motion"
                 else "detected activity"
             )
             explanation = (
-                f"{name} {observation} around "
+                f"{name} {observation} at "
                 f"{_short_clock(matched['when'], boundary)}, which {relation}."
             )
         elif occupancy_matches:
             name = str(occupancy_matches[0].get("label") or "An occupancy sensor")
             explanation = (
-                f"{name} also reported activity around "
+                f"{name} also reported activity at "
                 f"{_short_clock(occupancy_matches[0]['when'], boundary)}, "
                 "but the exact trigger isn't confirmed."
             )
@@ -528,21 +530,26 @@ def render_concise_lighting_answer(
         else:
             explanation = "The event that triggered the app couldn't be confirmed."
 
-    last = []
+    outcome_sentences: list[str] = []
     later = _level_changes_after(evidence, focus)
     if later:
         when, value = later
-        last.append(
-            f"It later adjusted the brightness to {value:g}% at "
-            f"{_short_clock(when, boundary)}"
+        outcome_sentences.append(
+            f"The app later adjusted brightness to {value:g}% at "
+            f"{_short_clock(when, boundary)}."
         )
     end = _time(focus.get("intervalEnd"))
-    if end:
-        last.append(f"the light went off at {_short_clock(end, boundary)}")
-    outcome = ""
-    if last:
-        outcome = ". ".join(last) + "."
-        if len(last) == 2:
-            outcome = last[0] + ", and " + last[1] + "."
+    if end and end >= boundary:
+        seconds = int((end - boundary).total_seconds())
+        hours, remaining = divmod(seconds, 3600)
+        minutes, seconds = divmod(remaining, 60)
+        duration = (
+            f"{hours}h {minutes}m {seconds}s"
+            if hours else f"{minutes}m {seconds}s"
+        )
+        outcome_sentences.append(
+            f"The light switched off at {_short_clock(end, boundary)} "
+            f"(after {duration})."
+        )
 
-    return " ".join(part for part in (first, explanation, outcome) if part)
+    return " ".join(part for part in (first, explanation, *outcome_sentences) if part)
