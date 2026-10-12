@@ -103,3 +103,137 @@ def test_empty_native_history_remains_unresolved_not_deleted():
         {"label": "Room sensor", "events": [NEW]},
         {"status": "unsupported-or-unverified-window", "events": [OLD]},
     ).get("windowedEvidenceVerified")
+
+
+import pytest
+from types import SimpleNamespace
+from mcp_client import MCPToolResult
+from mcp_agent_orchestrator import UnifiedMCPAgent
+from request_metrics import RequestMetrics
+import mcp_agent_orchestrator as host_module
+
+
+class _MCP:
+    def __init__(self, window_supported=True):
+        self.window_supported = window_supported
+        self.calls = []
+
+    def peek_device_identities(self):
+        return [
+            {"id": "100", "label": "Example Light", "room": "Example", "capabilities": ["Switch"], "attributes": {"switch": "off"}},
+            {"id": "123", "label": "Room sensor", "room": "Example", "capabilities": ["MotionSensor"], "attributes": {"motion": "active"}},
+            {"id": "124", "label": "Second sensor", "room": "Example", "capabilities": ["MotionSensor"], "attributes": {"motion": "active"}},
+        ]
+
+    async def call_tool(self, name, request):
+        self.calls.append(request)
+        args = request["args"]
+        data = {
+            "deviceId": args["deviceId"],
+            "events": [OLD] if args["deviceId"] == "123" else [],
+        }
+        if self.window_supported:
+            data.update({
+                "sinceMode": "explicit", "sinceTimestamp": args["since"],
+                "untilTimestamp": args["until"],
+            })
+        return MCPToolResult(name, request, {}, "ok", data)
+
+
+class _Executor:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, name, arguments, **kwargs):
+        self.calls.append(arguments)
+        subject = arguments.get("name")
+        data = {
+            "label": subject,
+            "room": "Example", "attribute": arguments.get("attribute"),
+            "events": [NEW], "observedEvents": [NEW],
+        }
+        if subject == "Example Light":
+            data["events"] = []
+            data["observedEvents"] = []
+        return SimpleNamespace(
+            success=True, result=MCPToolResult(name, arguments, {}, "ok", data)
+        )
+
+
+class _Evidence:
+    def __init__(self):
+        self.records = []
+
+    def record(self, tool, args, **kwargs):
+        self.records.append({"tool": tool, "arguments": args, **kwargs})
+
+
+class _Catalogue:
+    def declared_tool(self, name):
+        return object()
+
+    def available_tool(self, name):
+        return object()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("supports_window", [True, False])
+async def test_orchestrator_recovers_only_local_window_and_stops_cross_room(
+    monkeypatch, supports_window,
+):
+    sensors = [
+        {"name": label, "attribute": "motion", "candidate": {"id": id_, "label": label, "room": "Example"}}
+        for id_, label in [("123", "Room sensor"), ("124", "Second sensor")]
+    ]
+    monkeypatch.setattr(
+        host_module.DeviceQueryService, "cached_room_event_source_hints",
+        staticmethod(lambda *args, **kwargs: [{"name": "Room sensor"}]),
+    )
+    monkeypatch.setattr(host_module, "controller_history_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(host_module, "trigger_sensor_history_candidates", lambda *a, **k: sensors)
+    monkeypatch.setattr(
+        host_module, "prioritize_known_automation_sensor_candidates",
+        lambda pool, *a, **k: (pool[:2], False),
+    )
+    mcp = _MCP(window_supported=supports_window)
+    recorder = _Evidence()
+    host = SimpleNamespace(
+        mcp=mcp, evidence=recorder, executor=_Executor(),
+        known_automations=[], _tool_succeeded=lambda result: not result.is_error,
+    )
+    history = {
+        "label": "Example Light", "deviceId": "100", "room": "Example",
+        "correlationEvents": [
+            {"name": "switch", "value": "on", "date": "2026-10-12T08:16:10.861+0100"},
+            {"name": "switch", "value": "off", "date": FOCAL},
+        ],
+    }
+    metric = RequestMetrics()
+    token = metric.begin()
+    try:
+        await UnifiedMCPAgent._collect_reporting_source_secondary_correlation(
+            host,
+            subject_history=history, transition="off",
+            boundary_match={"stateBoundary": FOCAL},
+            catalog=_Catalogue(), completed_calls=set(),
+        )
+        counters = metric.snapshot()["counters"]
+    finally:
+        metric.reset(token)
+    analysis = next(row["details"] for row in recorder.records
+        if row["tool"] == "homebrain_causal_secondary_correlation")
+    assert len(mcp.calls) == 2, mcp.calls
+    assert all(call["tool"] == "hub_list_device_events" for call in mcp.calls)
+    assert all("since" in call["args"] and "until" in call["args"] for call in mcp.calls)
+    assert analysis["discoveryCoverage"]["outsideRoomAttempted"] == 0
+    assert counters.get("causal_focal_window_reads") == 2
+    if supports_window:
+        assert analysis["localSensorHistoryCoverage"]["preFocalObserved"] is True
+        assert analysis["discoveryCoverage"]["crossRoomSkippedForLocalOffEvidence"]
+        assert any(r["eventValue"] == "inactive" for sensor in analysis["sensors"]
+                   for r in sensor.get("relevantCorrelations") or [])
+    else:
+        assert not analysis["localSensorHistoryCoverage"]["preFocalObserved"]
+        assert analysis["discoveryCoverage"]["crossRoomSkippedForFocalHistoryGap"]
+        assert all(s["status"] == "unsupported-or-unverified-window"
+                   for s in analysis["focalWindowRetrieval"])
