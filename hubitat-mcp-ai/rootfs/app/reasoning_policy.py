@@ -89,7 +89,8 @@ def set_reasoning_profile(profile: str) -> None:
 
     normalized = str(profile or "standard").strip().casefold()
     _REASONING_PROFILE.set(
-        "investigative" if normalized == "investigative" else "standard"
+        normalized if normalized in {"standard", "investigative", "deep"}
+        else "standard"
     )
 
 
