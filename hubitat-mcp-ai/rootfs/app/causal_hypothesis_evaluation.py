@@ -42,7 +42,8 @@ def evaluate_off_hypotheses(graph: dict[str, Any]) -> dict[str, Any]:
         excerpts = [excerpts]
     descriptions = [str(s) for s in excerpts]
     timers = sorted(set(
-        ms for s in descriptions if _INACTIVE.search(s) for ms in _delay_ms(s)
+        ms for s in descriptions for clause in re.split(r"[;\n]", s)
+        if _INACTIVE.search(clause) for ms in _delay_ms(clause)
     ))
     # Include only genuinely inactive sensor edges; a later sensor edge cannot
     # initiate a new timer before the recorded OFF boundary.
