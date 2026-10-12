@@ -157,7 +157,13 @@ def guard_off_certainty_contract(
     has_direct = bool(command)
     trigger_proven = bool(off.get("internalTimerExecutionVerified"))
     external_verified = bool(off.get("externalAutomationIdentityVerified"))
-    off_only = requested_transition_scope(original_user) == "off"
+    off_only = (
+        requested_transition_scope(original_user) == "off"
+        or (
+            not str(original_user or "").strip()
+            and requested_transition_scope(source) == "off"
+        )
+    )
     # The question is unavailable at the final serialization boundary. An
     # explicitly scoped event graph still permits correction of OFF table rows
     # and OFF-specific prose, but not unrelated ON/manual statements.
