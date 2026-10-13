@@ -97,6 +97,12 @@ def reconcile_focal_requirement_sources(
         source_classes["target_off"] = (
             "Historical Journal OFF observation (collector receipt; "
             "native state-event time unverified)"
+            if journal_off_basis == "collector-received" else
+            "Historical Journal OFF observation (source time; native "
+            "switch-state row unverified)"
+            if journal_off_basis == "source" else
+            "Historical Journal OFF observation (unknown timestamp "
+            "basis; native switch-state time unverified)"
         )
         notes.append(
             "Requested OFF appears in collector-received journal observations; "
@@ -167,7 +173,9 @@ def reconcile_focal_requirement_sources(
     evidence = {
         "requestedEventUtc": target.isoformat(),
         "nativeLightOffObserved": native_observed,
-        "collectorReceivedLightOffObserved": journal_off,
+        "collectorReceivedLightOffObserved": journal_off and journal_off_basis == "collector-received",
+        "journalOffObserved": journal_off,
+        "journalOffTimestampBasis": journal_off_basis,
         "collectorLightOffAtUtc": journal_off_time,
         "nativeButtonCommandLinked": bool(
             native_button_command or selection_manual
