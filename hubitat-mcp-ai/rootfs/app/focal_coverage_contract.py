@@ -60,6 +60,7 @@ def reconcile_focal_requirement_sources(
     fusion = detail.get("crossSourceFocalProvenance") or {}
     journal_off = False
     journal_off_time = None
+    journal_off_basis = None
     target_light = str(detail.get("lightDeviceId") or "")
     for item in detail.get("journal") or []:
         if (
@@ -79,6 +80,7 @@ def reconcile_focal_requirement_sources(
                 continue
             journal_off = True
             journal_off_time = stamp.isoformat(timespec="milliseconds")
+            journal_off_basis = str(row.get("timestampBasis") or "unknown")
             break
         if journal_off:
             break
