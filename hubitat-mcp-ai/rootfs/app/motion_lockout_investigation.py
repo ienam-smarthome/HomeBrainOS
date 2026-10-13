@@ -704,9 +704,75 @@ async def prefetch_motion_lockout(
     return True
 
 
+def collected_lockout_ready_for_synthesis(
+    prompt: str, receipts: list[dict[str, Any]],
+) -> bool:
+    """Close only a fully grounded single-focal lockout read, not an open search.
+
+    The host has already read the named light, configured controller,
+    app settings and time-bounded app logs. A verified physical press,
+    app command and OFF state makes further *unfocused* model tool rounds
+    redundant. The logs may still be inconclusive about actual suppression:
+    one evidence-scoped synthesis must disclose that uncertainty, not infer
+    that the automation executed. Missing or failed sources fall through
+    to the ordinary investigative path.
+    """
+    if not is_motion_lockout_investigation(prompt):
+        return False
+    if re.search(
+        r"\b(?:and also|as well as|in addition|plus (?:investigate|analyse|analyze|check))\b",
+        str(prompt), re.I,
+    ):
+        return False
+    for receipt in reversed(receipts):
+        if not isinstance(receipt, dict) or receipt.get("tool") != (
+            "homebrain_motion_lockout_investigation"
+        ):
+            continue
+        if receipt.get("success") is not True:
+            return False
+        facts = receipt.get("details")
+        if not isinstance(facts, dict):
+            return False
+        selected = facts.get("focalSelection")
+        if (
+            facts.get("status") != "partial-focal-sequence"
+            or not facts.get("appId") or not facts.get("lightDeviceId")
+            or facts.get("manualOffVerified") is not True
+            or not isinstance(selected, dict)
+            or selected.get("manualOffVerified") is not True
+            or not selected.get("selectedOff")
+            or selected["selectedOff"] != facts.get("focalOff")
+        ):
+            return False
+        current = facts.get("currentConfiguration")
+        if not isinstance(current, dict) or current.get("settingsRead") is not True:
+            return False
+        sources = facts.get("sources")
+        if not isinstance(sources, list):
+            return False
+        by_source = {
+            row.get("source"): row for row in sources
+            if isinstance(row, dict) and isinstance(row.get("source"), str)
+        }
+        light = by_source.get("bounded-light-device-history") or {}
+        button = by_source.get("targeted-native-controller-history") or {}
+        config = by_source.get("present-day-app-configuration") or {}
+        logs = by_source.get("bounded-app-execution-logs") or {}
+        return bool(
+            light.get("success") is True
+            and button.get("readSucceeded") is True
+            and int(button.get("verifiedPhysicalPresses") or 0) > 0
+            and config.get("available") is True
+            and logs.get("readSucceeded") is True
+        )
+    return False
+
+
 __all__ = [
     "is_motion_lockout_investigation", "resolve_named_light",
     "completed_light_intervals", "last_observed_off",
     "focal_command_provenance", "source_local_off_time",
     "observed_motion_correlations", "prefetch_motion_lockout",
+    "collected_lockout_ready_for_synthesis",
 ]
