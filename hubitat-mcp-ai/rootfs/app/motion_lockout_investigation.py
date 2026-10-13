@@ -449,6 +449,15 @@ async def prefetch_motion_lockout(
                     r"\bbutton\b", _label(item), re.I
                 ))
             ), None)
+    if (
+        configured_button is None
+        and len(candidates) == 1
+        and _attribute(candidates[0], "pushed")
+    ):
+        configured_button = candidates[0]
+        findings["controllerSelectionBasis"] = (
+            "unique-room-name-controller-candidate-not-config-proof"
+        )
     if configured_button is not None and catalog.declared_tool(
         "homebrain_device_history"
     ) is not None:
