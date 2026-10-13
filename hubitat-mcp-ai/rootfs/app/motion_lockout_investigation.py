@@ -19,6 +19,7 @@ from causal_rule_decision_context import configuration_text
 from decision_claim_reconciliation import reconcile_decision_claims
 from focal_event_cross_source import correlate_requested_focal_sources
 from focal_history_lookback import explicit_focal_history_lookback
+from archived_app_decision_evidence import archived_app_decision_evidence
 from focal_event_provenance import (
     current_config_facts, physical_button_observations, select_focal_off,
     off_candidates,
@@ -664,6 +665,29 @@ async def prefetch_motion_lockout(
                     "content": model_only_log_packet(app_log_rows, app_id),
                 })
         archive = getattr(host, "historical_journal", None)
+        if app_id:
+            archived_decisions = await archived_app_decision_evidence(
+                archive, app_id=app_id,
+                since=first.isoformat(), until=last.isoformat(),
+            )
+            findings["archivedAppDecisionEvidence"] = archived_decisions
+            findings["sources"].append({
+                "source": "Historical Journal app-log capture",
+                "appId": app_id,
+                "configuredToCaptureApp": archived_decisions[
+                    "configuredToCaptureApp"
+                ],
+                "logSocketConnectedAtRead": archived_decisions[
+                    "logSocketConnectedAtRead"
+                ],
+                "querySucceeded": archived_decisions["querySucceeded"],
+                "returnedRows": archived_decisions["returnedRows"],
+                "reportedDecisionCandidateCount": len(
+                    archived_decisions["reportedDecisionRows"]
+                ),
+                "captureCompletenessVerified": False,
+                "reportOnlyNotEffectiveExecutionProof": True,
+            })
         if (
             light and archive is not None
             and getattr(archive, "enabled", False)
@@ -808,6 +832,13 @@ async def prefetch_motion_lockout(
             "the discrepancy without silently replacing the numeric value. "
             "CurrentConfiguration is authoritative only for settings at "
             "the time of this read, never for historical execution. "
+            "If archivedAppDecisionEvidence is present, distinguish "
+            "captured journal app-log rows from short-retention Hubitat "
+            "diagnostics, and record whether log capture is configured "
+            "for the target app. Archived app-log timestamps are collector "
+            "receipt clocks, not independently established native app "
+            "execution times. Log text assertions alone do not prove "
+            "the lockout inhibited a later eligible motion event. "
             "Do not claim an activation was inhibited. "
             "Treat associatedAppEventHandlers "
             "as event-recipient metadata, not proof a handler executed a "
