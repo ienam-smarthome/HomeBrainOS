@@ -552,6 +552,14 @@ async def prefetch_motion_lockout(
             and abs((stamp - target_instant).total_seconds()) <= 3
         ] if target_instant is not None else []
         findings["nativeFocalCommandRowsRetained"] = len(native_commands)
+        findings["nativeFocalCommandProducers"] = [
+            {
+                "commandAt": _time(row.get("date") or row.get("timestamp")).isoformat(),
+                "producerAppId": str((row.get("producedBy") or {}).get("id") or ""),
+                "producerLabel": str((row.get("producedBy") or {}).get("label") or "")[:80],
+                "source": "native-device-command-history",
+            } for row in native_commands[:3]
+        ]
         findings["nativeFocalCommandHistoryIncomplete"] = (
             len(native_commands) == 0
         )
