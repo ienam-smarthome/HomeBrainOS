@@ -21,6 +21,7 @@ from focal_event_cross_source import correlate_requested_focal_sources
 from focal_history_lookback import explicit_focal_history_lookback
 from focal_event_provenance import (
     current_config_facts, physical_button_observations, select_focal_off,
+    off_candidates,
     source_offset_for_request, explicit_british_clock_source,
 )
 from scoped_execution_evidence import (
