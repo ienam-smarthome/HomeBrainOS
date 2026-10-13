@@ -40,6 +40,7 @@ from investigation_intelligence import (
 from causal_history_coverage import assess_local_sensor_history_coverage
 from motion_lockout_investigation import (
     is_motion_lockout_investigation, prefetch_motion_lockout,
+    collected_lockout_ready_for_synthesis,
 )
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
@@ -3430,6 +3431,18 @@ class UnifiedMCPAgent:
             if causal_prefetch == "empty":
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
+
+        # 0.17.45: a complete, independently corroborated manual OFF already
+        # has its light, physical controller, settings and bounded app-log
+        # evidence. Synthesise once from this request's receipts and preserve
+        # unresolved enforcement/activation claims. Do not let the model
+        # rediscover the same facts through unrelated whole-hub reads.
+        if lockout_prefetch and collected_lockout_ready_for_synthesis(
+            user_prompt, self.evidence.receipts(),
+        ):
+            increment_active_metric("lockout_prefetch_sufficiency_stop")
+            increment_active_metric("investigative_finalization")
+            return await self._final_answer(messages)
 
         for _ in range(self.max_tool_rounds):
             if causal_completion_mode:
