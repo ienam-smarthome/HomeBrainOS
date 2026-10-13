@@ -38,6 +38,7 @@ from investigation_intelligence import (
     plan_investigation, render_investigation_plan, assess_investigation,
 )
 from causal_history_coverage import assess_local_sensor_history_coverage
+from focal_history_report import render_bounded_focal_reconstruction
 from motion_lockout_investigation import (
     is_motion_lockout_investigation, prefetch_motion_lockout,
     collected_lockout_ready_for_synthesis,
@@ -3442,6 +3443,20 @@ class UnifiedMCPAgent:
             if causal_prefetch == "empty":
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
+
+        # Explicit historical source sets can now be finalised directly from
+        # typed native/journal/config/log evidence. This preserves source clocks
+        # and source absence boundaries without a model inventing provenance.
+        # Incomplete source classes and unrelated additional objectives retain
+        # the established exploratory/model-led investigation.
+        if lockout_prefetch:
+            bounded_report = render_bounded_focal_reconstruction(
+                user_prompt, self.evidence.receipts(),
+            )
+            if bounded_report is not None:
+                increment_active_metric("lockout_focal_evidence_report")
+                increment_active_metric("investigative_finalization")
+                return bounded_report
 
         # 0.17.45: a complete, independently corroborated manual OFF already
         # has its light, physical controller, settings and bounded app-log
