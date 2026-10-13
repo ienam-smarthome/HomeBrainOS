@@ -186,7 +186,9 @@ async def test_historical_lockout_collects_event_sequence_not_health():
         host, QUESTION, catalog=Catalog(), messages=messages,
     )
     assert ok
-    assert [name for name, _ in exe.calls] == ["homebrain_device_history"]
+    assert [name for name, _ in exe.calls] == [
+        "homebrain_device_history", "homebrain_device_history",
+    ]
     assert {request["tool"] for _, request in mcp.calls} == {
         "hub_get_app_config", "hub_get_logs",
     }
