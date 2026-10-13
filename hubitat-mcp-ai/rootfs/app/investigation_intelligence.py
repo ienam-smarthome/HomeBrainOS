@@ -10,6 +10,7 @@ recognition separate from claim/evidence logic.
 """
 from __future__ import annotations
 
+from focal_coverage_contract import reconcile_focal_requirement_sources
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -350,13 +351,20 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                 "OFF may be observed, but past lockout engagement requires "
                 "a time-linked execution/decision record"
             )
+    source_overrides: dict[str, str] = {}
+    focal_evidence = None
+    if plan.domain == "manual_motion_lockout":
+        source_overrides, focal_evidence = reconcile_focal_requirement_sources(
+            source, found, checked, notes,
+        )
     requirements = []
     for item in plan.requirements:
         state = ("observed" if item.key in found else
                  "checked-unverified" if item.key in checked else "not-checked")
         requirements.append({
             "key": item.key, "state": state, "necessary": item.necessary,
-            "source": item.source, "description": item.description,
+            "source": source_overrides.get(item.key, item.source),
+            "description": item.description,
         })
     necessary = [x for x in requirements if x["necessary"]]
     complete = all(x["state"] == "observed" for x in necessary)
@@ -372,6 +380,8 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
         "warnings": list(dict.fromkeys(notes))[:3],
         "noCausalAttributionFromToolSuccess": True,
     }
+    if focal_evidence is not None:
+        result["focalSourceEvidence"] = focal_evidence
     if plan.domain == "manual_motion_lockout":
         # Carry separately typed textual-decision claims through to API
         # coverage, without changing the independently scored "execution"
