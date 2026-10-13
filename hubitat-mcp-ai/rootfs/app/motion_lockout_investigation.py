@@ -720,7 +720,7 @@ def collected_lockout_ready_for_synthesis(
     if not is_motion_lockout_investigation(prompt):
         return False
     if re.search(
-        r"\b(?:and also|as well as|in addition|plus (?:investigate|analyse|analyze|check))\b",
+        r"\b(?:and also|as well as|in addition|also (?:check|analyse|analyze|investigate|review)|plus (?:investigate|analyse|analyze|check))\b",
         str(prompt), re.I,
     ):
         return False
