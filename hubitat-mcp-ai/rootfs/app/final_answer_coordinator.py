@@ -176,6 +176,13 @@ def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -
 
     causal = is_causal_investigation(original_user)
     investigative = is_history_investigation(original_user)
+    plan = plan_investigation(original_user)
+    lockout_goal = plan is not None and plan.domain == "manual_motion_lockout"
+    # The user asked about one focal OFF/lockout, not daily device-usage
+    # durations. Treating every duration phrase as a request for all-day
+    # interval tables leads to repetitive, irrelevant material.
+    if lockout_goal:
+        focused_event = True
     if not investigative:
         return FINAL_SYNTHESIS_INSTRUCTION
 
@@ -264,6 +271,20 @@ def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -
             "classes directly, preserve objective patterns and uncertainty, and do "
             "not invent a causal explanation or normality baseline that the "
             "current-turn evidence does not establish. "
+        )
+    if lockout_goal:
+        text += (
+            "Reconcile three independent stages: issued command, textual "
+            "app decision declaration, and observed suppression of an "
+            "eligible activation. A log declaration alone can substantiate "
+            "that a decision was REPORTED, but does not establish effective "
+            "suppression of a later motion-triggered ON; and backend-filter "
+            "only provenance is not independent per-row source verification. "
+            "If the user-specified duration and source-reported duration "
+            "conflict, quote both with their original units and distinguish "
+            "them from verified configuration. Focus on the focal lockout "
+            "and its evidence; don't add daily light-on interval tables "
+            "unless requested. "
         )
     text += (
         "Synthesize rather than dump raw fields. For unverified device-event "
