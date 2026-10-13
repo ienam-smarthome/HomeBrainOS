@@ -120,6 +120,15 @@ def _command_pairs(
             pushed = aware(press.get("occurredAt"))
             if pushed is None or not 0 <= (command - pushed).total_seconds() <= tolerance:
                 continue
+            # Do not join a different button number merely because it
+            # happened nearby. A numbered producer label is source data,
+            # not an instruction; it must agree with the physical event.
+            indicated = re.search(
+                r"\bbutton\s+(\d+)\s+pushed\b",
+                str(producer.get("label") or ""), re.I,
+            )
+            if indicated and indicated.group(1) != press["buttonNumber"]:
+                continue
             correlated.append({
                 "button": press,
                 "commandAt": command.isoformat(),
@@ -197,6 +206,52 @@ def select_focal_off(
     }
 
 
+def source_offset_for_request(data: dict[str, Any], prompt: str) -> str | None:
+    """Resolve the event clock using a source event *on the requested day*.
+
+    Reusing the latest event's UTC offset for a historical date crossing a
+    daylight-saving boundary silently shifts the search window by an hour.
+    """
+    day, clock = _DAY.search(str(prompt)), _CLOCK.search(str(prompt))
+    if not day or not clock:
+        return None
+    try:
+        requested_day = (
+            int(day.group(3)), _MONTHS[day.group(2).lower()], int(day.group(1))
+        )
+    except (ValueError, TypeError):
+        return None
+    temporal = data.get("temporalAnalysis") or {}
+    observed = []
+    if isinstance(temporal, dict):
+        for key in ("intervals", "observedIntervals"):
+            observed.extend(
+                x.get("end") for x in temporal.get(key) or []
+                if isinstance(x, dict) and not x.get("clippedAtWindowEnd")
+            )
+    for key in ("observedEvents", "boundaryEvents"):
+        observed.extend(
+            x.get("date") or x.get("timestamp")
+            for x in data.get(key) or []
+            if isinstance(x, dict)
+            and str(x.get("value") or "").lower() == "off"
+        )
+    for raw in observed:
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if dt.utcoffset() is None or (
+            dt.year, dt.month, dt.day
+        ) != requested_day:
+            continue
+        if abs((dt.hour * 3600 + dt.minute * 60 + dt.second)
+               - (int(clock.group(1)) * 3600 + int(clock.group(2)) * 60
+                  + int(clock.group(3) or 0))) <= 3:
+            return dt.isoformat(timespec="milliseconds")
+    return None
+
+
 def current_config_facts(config: dict[str, Any] | None) -> dict[str, Any]:
     """Extract only typed, persisted values from an explicit settings read.
 
@@ -237,5 +292,5 @@ def current_config_facts(config: dict[str, Any] | None) -> dict[str, Any]:
 
 __all__ = [
     "off_candidates", "explicit_requested_instant", "physical_button_observations",
-    "select_focal_off", "current_config_facts",
+    "select_focal_off", "source_offset_for_request", "current_config_facts",
 ]
