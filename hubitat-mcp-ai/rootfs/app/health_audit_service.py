@@ -943,6 +943,29 @@ def render_comprehensive_system_audit(
                 f", pages={source.get('pages', 'unknown')}"
                 f", fresh projection verified={source.get('complete') is True}."
             )
+            page_stats = source.get("page_timings_ms")
+            if isinstance(page_stats, list) and page_stats:
+                measured = [
+                    item for item in page_stats
+                    if isinstance(item, dict)
+                    and isinstance(item.get("offset"), int)
+                    and isinstance(item.get("elapsed_ms"), (int, float))
+                ]
+                ordered = sorted(
+                    measured, key=lambda item: item["offset"]
+                )[:10]
+                if ordered:
+                    page_summary = ", ".join(
+                        f"{item['offset']}={item['elapsed_ms']}ms"
+                        for item in ordered
+                    )
+                    lines.append(
+                        "- Fresh MCP inventory page elapsed times "
+                        f"(offset=milliseconds): {page_summary}; "
+                        f"bounded concurrency={source.get('parallel_page_max_concurrent', '?')}. "
+                        "Includes transport and queue time, not measured "
+                        "Hubitat CPU usage."
+                    )
             if source.get("source") == "full_detailed_fallback":
                 lines.append(
                     "- The lean read did not pass verification; the existing "
