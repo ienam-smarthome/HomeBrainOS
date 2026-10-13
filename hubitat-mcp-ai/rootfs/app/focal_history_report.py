@@ -279,6 +279,62 @@ def render_bounded_focal_reconstruction(
         f"- Bounded app-execution logs: {int(logs.get('returnedRows') or 0)} returned rows. "
         "Their absence does **not** establish that no handler ran."
     )
+    archived = facts.get("archivedAppDecisionEvidence") or {}
+    if archived:
+        configured = archived.get("configuredToCaptureApp") is True
+        rows = archived.get("returnedRows")
+        if not configured:
+            lines.append(
+                "- Persistent app-log capture: **not configured for this app** "
+                "in the opt-in Historical Journal. Enable the log stream and "
+                "app-ID allowlist before the next controlled test; this "
+                "cannot recover earlier uncaptured logs."
+            )
+        elif archived.get("querySucceeded") is True:
+            lines.append(
+                "- Persistent app-log capture: configured for this app; "
+                f"{int(rows or 0)} stored app-log row(s) in the requested "
+                "window (collector-received timestamps, not verified "
+                "source execution clocks)."
+            )
+            if archived.get("logSocketConnectedAtRead") is not True:
+                lines.append(
+                    "- Log socket **not connected at investigation time**; "
+                    "capture may have gaps."
+                )
+            claims = archived.get("reportedDecisionRows") or []
+            if claims:
+                lines.append(
+                    f"- Archived app logs contain **{len(claims)} "
+                    "lockout/motion-related textual candidate(s)**. These "
+                    "are statements in recorded messages, not verification "
+                    "of a timer start or successful suppression."
+                )
+                for candidate in claims[:3]:
+                    lines.append(
+                        f"  - {_name(candidate.get('stage'))} at "
+                        f"{_name(candidate.get('collectorReceivedAtUtc'))} "
+                        "(collector-received; message body excluded from "
+                        "public evidence)."
+                    )
+            else:
+                lines.append(
+                    "- No lockout-specific decision statement was "
+                    "identified in these returned archived app-log rows; "
+                    "this does not prove that no decision occurred."
+                )
+            if archived.get("logCaptureGapWindows"):
+                lines.append(
+                    f"- **Archived log capture gaps:** "
+                    f"{int(archived['logCaptureGapWindows'])} "
+                    "window(s) overlapped the requested interval."
+                )
+        else:
+            lines.append(
+                "- Persistent app-log capture is configured but its "
+                "historical query did not succeed; decision coverage "
+                "remains unverified."
+            )
     lines.append(
         "- **Historical decision, timer start, motion-trigger eligibility, "
         "and effective inhibition remain unverified.** No Hubitat configuration or device was changed."
