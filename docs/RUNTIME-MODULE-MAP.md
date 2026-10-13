@@ -28,6 +28,7 @@ The repository drift test compares this table directly with the live directory. 
 | `motion_lockout_investigation.py` | Performs bounded read-only light-OFF, button and motion event-sequence prefetch; checks current configuration and scoped execution logs; permits one-pass synthesis only when manual provenance and required evidence reads are verified, without claiming historical enforcement from silence. |
 | `targeted_lockout_config.py` | Resolves named app lockout configuration questions through the read-only, permission-gated apps gateway without model-selected tool names; reports stored setting vs intended duration and no historical proof. |
 | `focal_history_lookback.py` | Derives longer bounded native history reads from explicitly dated source-zone event clocks. |
+| `focal_coverage_contract.py` | Reconciles requested-event evidence sources before published `investigation_coverage` scoring, preventing unrelated newer OFF histories from being labelled focal proof. |
 | `focal_history_report.py` | Renders checked native/journal/app-log evidence with timestamp and retention caveats without generative provenance invention. |
 | `focal_event_cross_source.py` | Reconciles native press/command evidence with Historical Journal collector observations without conflating clock/source provenance. |
 | `focal_event_provenance.py` | Generic source-linked historical focal selection: newest observed state vs independently verified manual press-command-OFF chain, explicit event-day clock offset, and typed current persisted settings versus user expectations. |
