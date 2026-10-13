@@ -17,6 +17,7 @@ from typing import Any
 
 from causal_rule_decision_context import configuration_text
 from decision_claim_reconciliation import reconcile_decision_claims
+from focal_event_cross_source import correlate_requested_focal_sources
 from focal_event_provenance import (
     current_config_facts, physical_button_observations, select_focal_off,
     source_offset_for_request, explicit_british_clock_source,
@@ -544,6 +545,7 @@ async def prefetch_motion_lockout(
     # history omitted that old state transition, query logs/journal around
     # the REQUESTED event without describing the anchor as an observed OFF.
     scope_anchor = off or _time(selection.get("explicitTargetUtc"))
+    journal_for_correlation: list[dict[str, Any]] = []
     if scope_anchor:
         first = scope_anchor - timedelta(seconds=20)
         last = min(scope_anchor + timedelta(seconds=195), datetime.now(timezone.utc))
@@ -659,6 +661,7 @@ async def prefetch_motion_lockout(
                 lookup(device, attr, kind) for device, attr, kind in targets
             ))
             findings["journal"] = journal
+            journal_for_correlation = journal
             findings["motionCorrelations"] = (
                 observed_motion_correlations(
                     journal, off=scope_anchor, local_off=findings.get("focalOffHubLocal"),
@@ -698,6 +701,34 @@ async def prefetch_motion_lockout(
             findings["nearbyButtonEvents"] = related[:8]
             # The selected manual classification comes from time-linked
             # native press + command + state evidence, not journal reception.
+    if selection.get("explicitTargetUtc"):
+        fused = correlate_requested_focal_sources(
+            subject_data, physical_presses, journal_for_correlation,
+            anchor_utc=str(selection["explicitTargetUtc"]),
+            light_device_id=findings["lightDeviceId"],
+        )
+        findings["crossSourceFocalProvenance"] = fused
+        matched = fused.get("candidate")
+        if (
+            isinstance(matched, dict)
+            and fused.get("nativeButtonCommandVerified") is True
+            and fused.get("journalLightOffObserved") is True
+            and off is None
+        ):
+            journal_off = matched.get("journalLightOff") or {}
+            stamp = _time(journal_off.get("collectorReceivedAtUtc"))
+            if stamp is not None:
+                findings["motionCorrelations"] = observed_motion_correlations(
+                    journal_for_correlation, off=stamp,
+                    local_off=source_clock,
+                )
+                findings["motionCorrelationAnchor"] = (
+                    "collector-received journal OFF (not native state clock)"
+                )
+                findings["sensorActivationEligibilityVerified"] = any(
+                    row.get("eligibleActivationSourceVerified") is True
+                    for row in findings["motionCorrelations"]
+                )
     findings["status"] = (
         "partial-focal-sequence" if off
         else "explicit-event-not-observed" if scope_anchor
@@ -746,6 +777,16 @@ async def prefetch_motion_lockout(
             "row count, do not claim their execution messages were inspected "
             "or that they contain no lockout decision. Missing journal rows "
             "with capture gaps cannot prove a sensor stayed inactive. "
+            "When crossSourceFocalProvenance contains a verified NATIVE "
+            "physical-button-to-app-command link, explicitly report the "
+            "native command producer even if the native switch event "
+            "fell outside the newest-N state history. A collector-received "
+            "journal OFF may support an observed OFF with its own later "
+            "receipt clock but must NOT be upgraded to a native switch "
+            "timestamp or proof that lockout activated. Describe reported "
+            "post-OFF sensor events and unknown trigger eligibility separately. "
+            "Do not say app command provenance is missing if native "
+            "command history contains the linked command. "
             "Select the requested focal event using focalSelection: "
             "the latest observed OFF is NOT necessarily the latest VERIFIED "
             "manual OFF. Prefer a time-linked native physical press, "
