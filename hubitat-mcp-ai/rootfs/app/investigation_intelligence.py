@@ -252,6 +252,14 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                                             )
                     if detail.get("nearbyButtonEvents"):
                         found.add("controller")
+                    selection = detail.get("focalSelection") or {}
+                    if (isinstance(selection, dict)
+                            and selection.get("manualOffVerified") is True
+                            and selection.get("physicalButtonCommandChain")):
+                        # Independently time-linked physical press -> controller
+                        # app OFF command -> state event, unlike a handler label.
+                        checked.add("controller")
+                        found.add("controller")
                     if any(isinstance(x, dict)
                            and x.get("source") == "bounded-app-execution-logs"
                            and x.get("readSucceeded")
