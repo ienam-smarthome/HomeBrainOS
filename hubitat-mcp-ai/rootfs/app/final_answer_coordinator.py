@@ -175,8 +175,11 @@ def _synthesis_instruction(original_user: str, *, focused_event: bool = False) -
     """Build the shared final reasoning contract from request class."""
 
     causal = is_causal_investigation(original_user)
-    investigative = is_history_investigation(original_user)
     plan = plan_investigation(original_user)
+    # The shared investigation goal is the authoritative intent classifier
+    # across collection AND final synthesis; a narrower history regex should
+    # not return generic synthesis for the same recognised investigation.
+    investigative = is_history_investigation(original_user) or plan is not None
     lockout_goal = plan is not None and plan.domain == "manual_motion_lockout"
     # The user asked about one focal OFF/lockout, not daily device-usage
     # durations. Treating every duration phrase as a request for all-day
