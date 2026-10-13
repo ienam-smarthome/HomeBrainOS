@@ -290,7 +290,9 @@ def _candidate_devices(
         )[0].strip()
         named_room = bool(
             len(light_prefix) >= 6
-            and name.casefold().startswith(light_prefix + " ")
+            and re.sub(r"[^a-z0-9]", "", name.casefold()).startswith(
+                re.sub(r"[^a-z0-9]", "", light_prefix)
+            )
         )
         exact_config_name = bool(config and name.casefold() in config.casefold())
         if _attribute(row, "motion") and (exact_config_name or same_room):
