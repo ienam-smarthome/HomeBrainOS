@@ -42,6 +42,7 @@ from motion_lockout_investigation import (
     is_motion_lockout_investigation, prefetch_motion_lockout,
     collected_lockout_ready_for_synthesis,
 )
+from targeted_lockout_config import read_current_lockout_config
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
@@ -3113,6 +3114,15 @@ class UnifiedMCPAgent:
                 "Nothing was executed. Submit the original request again and only "
                 "confirm when the response carries a verified pending action."
             )
+        # Current, named-app lockout configuration has an existing read-only
+        # gateway. Call it deterministically instead of spending multiple model
+        # rounds guessing a sub-operation as an undeclared top-level tool.
+        current_lockout = await read_current_lockout_config(
+            self, user_prompt, catalog=catalog,
+        )
+        if current_lockout is not None:
+            return current_lockout
+
         inventory_arguments = _device_inventory_arguments(user_prompt)
         if inventory_arguments is not None:
             inventory_tool = catalog.available_tool(_LOCAL_DEVICE_INVENTORY_TOOL)
