@@ -141,6 +141,18 @@ def _device_findings(
                 None,
             )
             has_activity, raw_activity, activity_at = _core._activity_value(device)
+            age_seconds = (
+                round((checked_at - activity_at).total_seconds(), 3)
+                if activity_at is not None else None
+            )
+            # A newer device event and a concurrent 'offline' state can
+            # coexist (a cached driver health flag, or an unrelated event).
+            # Preserve the warning, but explain the disagreement instead of
+            # asserting physical disconnection from a status label alone.
+            recent_activity_conflict = bool(
+                age_seconds is not None
+                and 0 <= age_seconds <= 300
+            )
             offline.append({
                 "id": identifier,
                 "label": label,
@@ -153,6 +165,9 @@ def _device_findings(
                     else None
                 ),
                 "reachability_independently_verified": False,
+                "recent_activity_conflict": recent_activity_conflict,
+                "last_activity_age_seconds": age_seconds,
+                "recent_activity_does_not_verify_online": True,
             })
             issues.append(
                 _core._issue(
@@ -928,6 +943,29 @@ def render_comprehensive_system_audit(
                 f", pages={source.get('pages', 'unknown')}"
                 f", fresh projection verified={source.get('complete') is True}."
             )
+            page_stats = source.get("page_timings_ms")
+            if isinstance(page_stats, list) and page_stats:
+                measured = [
+                    item for item in page_stats
+                    if isinstance(item, dict)
+                    and isinstance(item.get("offset"), int)
+                    and isinstance(item.get("elapsed_ms"), (int, float))
+                ]
+                ordered = sorted(
+                    measured, key=lambda item: item["offset"]
+                )[:10]
+                if ordered:
+                    page_summary = ", ".join(
+                        f"{item['offset']}={item['elapsed_ms']}ms"
+                        for item in ordered
+                    )
+                    lines.append(
+                        "- Fresh MCP inventory page elapsed times "
+                        f"(offset=milliseconds): {page_summary}; "
+                        f"bounded concurrency={source.get('parallel_page_max_concurrent', '?')}. "
+                        "Includes transport and queue time, not measured "
+                        "Hubitat CPU usage."
+                    )
             if source.get("source") == "full_detailed_fallback":
                 lines.append(
                     "- The lean read did not pass verification; the existing "
@@ -976,6 +1014,17 @@ def render_comprehensive_system_audit(
                 f"battery={level}, last recorded activity="
                 f"{row.get('last_activity') or 'not supplied'}."
             )
+            if row.get("recent_activity_conflict") is True:
+                seconds = row.get("last_activity_age_seconds")
+                lines.append(
+                    "- **Status/activity conflict:** "
+                    f"{row.get('label') or row.get('id') or 'Device'} "
+                    f"reported an activity timestamp about {int(seconds or 0)} "
+                    "seconds before the snapshot while its health status "
+                    "reported offline. This may be a stale health flag or an "
+                    "event that does not prove command reachability; "
+                    "verify the actual device state before repairs."
+                )
 
     quiet = devices.get("no_recent_activity") or []
     if isinstance(quiet, list) and quiet:

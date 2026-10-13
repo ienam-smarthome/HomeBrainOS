@@ -411,6 +411,21 @@ class HubitatMCPClient:
         started = time.monotonic()
         generation = self._live_device_snapshot_generation
         pages_fetched = 0
+        page_timings: list[dict[str, Any]] = []
+
+        def timing_summary() -> dict[str, Any]:
+            ordered = sorted(page_timings, key=lambda row: int(row["offset"]))
+            values = [int(row["elapsed_ms"]) for row in ordered]
+            return {
+                "page_timings_ms": ordered,
+                "slowest_page_ms": max(values, default=0),
+                "first_page_ms": next(
+                    (int(row["elapsed_ms"]) for row in ordered
+                     if row["offset"] == 0), None
+                ),
+                "parallel_page_max_concurrent": self.max_concurrent_calls,
+                "page_timings_are_end_to_end_mcp_not_hub_cpu": True,
+            }
 
         async def fallback(reason: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
             devices = await self.get_cached_devices(refresh=True)
@@ -419,6 +434,7 @@ class HubitatMCPClient:
                 "reason": reason,
                 "pages": pages_fetched,
                 "read_elapsed_ms": round((time.monotonic() - started) * 1000),
+                **timing_summary(),
                 "complete": False,  # no separate proof of projection coverage
             }
 
@@ -435,21 +451,36 @@ class HubitatMCPClient:
 
         async def page_at(offset: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
             nonlocal pages_fetched
-            args = {
-                "tool": "hub_list_devices",
-                "args": plan.arguments(limit=page_size, offset=offset),
-            }
-            result = await self.call_tool("hub_read_devices", args)
-            pages_fetched += 1
-            if not tool_succeeded(result):
-                raise MCPError("projected page request was rejected")
-            page = self._find_device_page(result.data)
-            devices = self._find_device_list(result.data)
-            if devices is None or not all(isinstance(item, dict) for item in devices):
-                raise MCPError("projected page lacks a device list")
-            if not projected_state_shape_is_usable(devices, plan.state_field):
-                raise MCPError("projected page lacks required device attributes")
-            return page, devices
+            page_started = time.monotonic()
+            succeeded = False
+            try:
+                args = {
+                    "tool": "hub_list_devices",
+                    "args": plan.arguments(limit=page_size, offset=offset),
+                }
+                result = await self.call_tool("hub_read_devices", args)
+                pages_fetched += 1
+                if not tool_succeeded(result):
+                    raise MCPError("projected page request was rejected")
+                page = self._find_device_page(result.data)
+                devices = self._find_device_list(result.data)
+                if devices is None or not all(isinstance(item, dict) for item in devices):
+                    raise MCPError("projected page lacks a device list")
+                if not projected_state_shape_is_usable(devices, plan.state_field):
+                    raise MCPError("projected page lacks required device attributes")
+                succeeded = True
+                return page, devices
+            finally:
+                # One source-scoped duration per page. Includes MCP transport,
+                # gateway work and bounded client queue waits; not a hub CPU
+                # profile or an independently measured provider runtime.
+                page_timings.append({
+                    "offset": offset,
+                    "elapsed_ms": round(
+                        (time.monotonic() - page_started) * 1000
+                    ),
+                    "success": succeeded,
+                })
 
         try:
             first_page, first_devices = await page_at(0)
@@ -550,6 +581,7 @@ class HubitatMCPClient:
                 "pages": pages_fetched,
                 "devices": len(devices),
                 "read_elapsed_ms": round((time.monotonic() - started) * 1000),
+                **timing_summary(),
                 "complete": True,
             }
         except asyncio.CancelledError:
