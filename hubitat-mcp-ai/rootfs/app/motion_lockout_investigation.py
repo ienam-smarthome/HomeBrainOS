@@ -18,6 +18,7 @@ from typing import Any
 from causal_rule_decision_context import configuration_text
 from decision_claim_reconciliation import reconcile_decision_claims
 from focal_event_cross_source import correlate_requested_focal_sources
+from focal_history_lookback import explicit_focal_history_lookback
 from focal_event_provenance import (
     current_config_facts, physical_button_observations, select_focal_off,
     source_offset_for_request, explicit_british_clock_source,
@@ -372,10 +373,14 @@ async def prefetch_motion_lockout(
         "sources": [],
     }
     subject_data: dict[str, Any] = {}
+    native_lookback = explicit_focal_history_lookback(prompt)
+    findings["nativeHistoryLookback"] = native_lookback
+    history_hours = int(native_lookback["hoursBackRequested"])
     tool = catalog.declared_tool("homebrain_device_history")
     if light and tool is not None:
         args = {
             "name": _label(light), "attribute": "switch", "limit": 50,
+            "hours_back": history_hours,
             "_resolved_target": dict(light),
             "_include_command_provenance": True,
         }
@@ -390,9 +395,15 @@ async def prefetch_motion_lockout(
             )
         findings["sources"].append({
             "source": "bounded-light-device-history", "success": bool(result.success),
+            "requestedHoursBack": history_hours,
             "observedIntervals": len(
                 completed_light_intervals(subject_data)
             ),
+            "eventClockWithinWindow": any(
+                abs((stamp - _time(native_lookback.get("requestedEventUtc"))).total_seconds()) <= 3
+                for stamp in off_candidates(subject_data)
+            ) if native_lookback.get("requestedEventUtc") else None,
+            "requestBoundNotRetentionProof": True,
         })
     # Select a focal event *after* receiving the configured button identity
     # and (when available) one targeted native physical-button history.
@@ -484,7 +495,8 @@ async def prefetch_motion_lockout(
         button_result = await host.executor.execute(
             "homebrain_device_history", {
                 "name": _label(configured_button), "attribute": "pushed",
-                "limit": 50, "_resolved_target": dict(configured_button),
+                "limit": 50, "hours_back": history_hours,
+                "_resolved_target": dict(configured_button),
             },
             tool=catalog.declared_tool("homebrain_device_history"),
             supports_live_claim=True,
@@ -501,6 +513,8 @@ async def prefetch_motion_lockout(
             "deviceId": str(configured_button.get("id")),
             "readSucceeded": bool(button_result.success),
             "verifiedPhysicalPresses": len(physical_presses),
+            "requestedHoursBack": history_hours,
+            "sourceRetentionComplete": False,
         })
     latest = last_observed_off(subject_data)
     # When a historical wall clock is explicitly requested, its UTC offset
@@ -524,6 +538,29 @@ async def prefetch_motion_lockout(
     findings["manualOffVerified"] = bool(selection.get("manualOffVerified"))
     findings["requestedEventUtc"] = selection.get("explicitTargetUtc")
     findings["requestedEventStateObserved"] = bool(off)
+    # Report a source-limited absence as such, not as a proven absence of a
+    # physical command or event. The upstream event pages are finite and
+    # a wider requested lookback is not proof of full retention.
+    if selection.get("explicitTargetUtc"):
+        target_instant = _time(selection["explicitTargetUtc"])
+        native_commands = [
+            row for row in subject_data.get("commandEvents") or []
+            if isinstance(row, dict)
+            and str(row.get("name") or "").casefold() == "command-off"
+            and (stamp := _time(row.get("date") or row.get("timestamp"))) is not None
+            and abs((stamp - target_instant).total_seconds()) <= 3
+        ] if target_instant is not None else []
+        findings["nativeFocalCommandRowsRetained"] = len(native_commands)
+        findings["nativeFocalCommandHistoryIncomplete"] = (
+            len(native_commands) == 0
+        )
+        findings["nativeHistoryAbsenceConclusion"] = (
+            "Targeted native command row not found within returned "
+            f"{history_hours}-hour history; neither upstream retention "
+            "nor absence of historical command is proven."
+            if not native_commands else
+            "Targeted native command rows present in returned history."
+        )
     if off is not None:
         findings["focalOff"] = off.isoformat()
         findings["focalOffHubLocal"] = source_local_off_time(subject_data, off)
@@ -785,6 +822,12 @@ async def prefetch_motion_lockout(
             "receipt clock but must NOT be upgraded to a native switch "
             "timestamp or proof that lockout activated. Describe reported "
             "post-OFF sensor events and unknown trigger eligibility separately. "
+            "State nativeHistoryLookback.hoursBackRequested explicitly "
+            "when earlier-than-default time is requested. If native "
+            "source rows are missing, disclose age, window boundary and "
+            "upstream retention uncertainty; never say no command existed. "
+            "A journal button observation cannot be promoted to a native "
+            "physical-button source timestamp. "
             "Do not say app command provenance is missing if native "
             "command history contains the linked command. "
             "Select the requested focal event using focalSelection: "
