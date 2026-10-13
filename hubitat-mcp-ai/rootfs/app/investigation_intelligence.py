@@ -354,7 +354,7 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
     status = ("evidence-acquired" if complete else
               "partial-evidence" if any(x["state"] == "observed" for x in necessary)
               else "not-established")
-    return {
+    result = {
         "domain": plan.domain, "status": status,
         "evidenceComplete": complete,
         "requirements": requirements,
@@ -363,6 +363,31 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
         "warnings": list(dict.fromkeys(notes))[:3],
         "noCausalAttributionFromToolSuccess": True,
     }
+    if plan.domain == "manual_motion_lockout":
+        # Carry separately typed textual-decision claims through to API
+        # coverage, without changing the independently scored "execution"
+        # requirement into verified behavior or leaking log message bodies.
+        structured = next((
+            row.get("details", {}).get("decisionClaimReconciliation")
+            for row in reversed(source)
+            if row.get("tool") == "homebrain_motion_lockout_investigation"
+            and isinstance(row.get("details"), dict)
+            and isinstance(row["details"].get("decisionClaimReconciliation"), dict)
+        ), None)
+        if structured is not None:
+            result["decisionClaimEvidence"] = {
+                "stage": structured.get("decisionStage", {}),
+                "durationMismatchObserved": structured.get("durationMismatchObserved"),
+                "durationComparisons": structured.get("durationComparisons", []),
+                "containsPrivateLogContent": False,
+            }
+            if structured.get("durationMismatchObserved") is True:
+                result["warnings"] = list(dict.fromkeys([
+                    *result["warnings"],
+                    "Requested duration and a returned log's reported duration disagree; "
+                    "the effective configured duration is not yet verified",
+                ]))
+    return result
 
 
 def render_investigation_plan(plan: InvestigationPlan) -> str:
