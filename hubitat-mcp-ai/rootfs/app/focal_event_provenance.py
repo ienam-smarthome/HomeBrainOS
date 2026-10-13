@@ -8,6 +8,7 @@ Current settings, historical actions and user expectations are separate facts.
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any
 import re
 
@@ -77,6 +78,35 @@ def explicit_requested_instant(prompt: str, source_local: str | None) -> datetim
         )
         return dt.astimezone(timezone.utc)
     except (ValueError, TypeError):
+        return None
+
+
+def explicit_british_clock_source(prompt: str) -> str | None:
+    """Resolve an explicitly user-labelled BST/GMT event day, not guessed local time.
+
+    DST offset is validated against Europe/London on the requested date.
+    This supports a historical focal query when the newest-N Hubitat history
+    no longer contains a state event on that day.
+    """
+    day, clock = _DAY.search(str(prompt)), _CLOCK.search(str(prompt))
+    if day is None or clock is None:
+        return None
+    # Only trust the zone label adjacent to the requested clock, not a later
+    # unrelated mention of logs or a different timezone in the prompt.
+    after = str(prompt)[clock.end():clock.end() + 10]
+    zone = re.match(r"\s*(BST|GMT)\b", after, re.I)
+    if zone is None:
+        return None
+    try:
+        local = datetime(
+            int(day.group(3)), _MONTHS[day.group(2).casefold()],
+            int(day.group(1)), int(clock.group(1)), int(clock.group(2)),
+            int(clock.group(3) or 0), tzinfo=ZoneInfo("Europe/London"),
+        )
+        if local.tzname() != zone.group(1).upper():
+            return None
+        return local.isoformat()
+    except (ValueError, OverflowError):
         return None
 
 
@@ -293,4 +323,5 @@ def current_config_facts(config: dict[str, Any] | None) -> dict[str, Any]:
 __all__ = [
     "off_candidates", "explicit_requested_instant", "physical_button_observations",
     "select_focal_off", "source_offset_for_request", "current_config_facts",
+    "explicit_british_clock_source",
 ]

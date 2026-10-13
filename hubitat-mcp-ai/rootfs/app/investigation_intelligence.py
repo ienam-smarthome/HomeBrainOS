@@ -114,7 +114,8 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     if not text:
         return None
     analytic = any(stem in text for stem in (
-        "investigat", "diagnos", "analys", "analyz", "why ", "determine",
+        "investigat", "diagnos", "analys", "analyz", "reconstruct",
+        "correlat", "why ", "determine",
         "establish", "verify", "explain", "optimis", "optimiz", "identify",
     ))
     if not analytic:
