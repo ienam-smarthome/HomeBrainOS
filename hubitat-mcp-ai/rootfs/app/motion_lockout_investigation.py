@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from causal_rule_decision_context import configuration_text
+from decision_claim_reconciliation import reconcile_decision_claims
 from scoped_execution_evidence import (
     bounded_app_log_evidence, event_handler_associations, model_only_log_packet,
 )
@@ -449,6 +450,12 @@ async def prefetch_motion_lockout(
             # Bound model-only excerpts and publish only count/provenance
             # metadata in the persistent technical evidence receipt.
             app_log_rows, log_summary = bounded_app_log_evidence(logs, app_id)
+            # Reconcile independently retained timestamp/quantity/source facts
+            # BEFORE authoring the answer. This is a report of a log claim,
+            # not a verified account of subsequent effective inhibition.
+            findings["decisionClaimReconciliation"] = reconcile_decision_claims(
+                prompt, app_log_rows, focal_off=off,
+            )
             findings["sources"].append({
                 "source": "bounded-app-execution-logs", "appId": app_id,
                 "readSucceeded": logs is not None,
@@ -457,6 +464,12 @@ async def prefetch_motion_lockout(
                 "decisionContentProvidedToModel": bool(app_log_rows),
                 "decisionContentReviewed": False,
                 "lockoutDecisionConfirmed": False,
+                "durationConflictChecked": bool(
+                    findings["decisionClaimReconciliation"]["durationComparisons"]
+                ),
+                "durationMismatchObserved": findings[
+                    "decisionClaimReconciliation"
+                ]["durationMismatchObserved"],
             })
             if app_log_rows:
                 messages.append({
@@ -566,7 +579,14 @@ async def prefetch_motion_lockout(
             "coverage separately. When focalCommandProvenance contains a "
             "matching command, explicitly disclose its actual app/controller "
             "producer without confusing that command with an independently "
-            "recorded hardware button press. Treat associatedAppEventHandlers "
+            "recorded hardware button press. Use typed "
+            "decisionClaimReconciliation to distinguish a logged textual "
+            "decision, verified source identity, the intended duration and "
+            "observed effect. Where the question asks for three minutes and "
+            "the log text says 300 minutes, explicitly report the conflict "
+            "without converting, treating either as authoritative current "
+            "configuration, or claiming that an activation was inhibited. "
+            "Treat associatedAppEventHandlers "
             "as event-recipient metadata, not proof a handler executed a "
             "lockout decision. Cite bounded app-log row IDs if they contain "
             "actual decision evidence; otherwise state that the available "
