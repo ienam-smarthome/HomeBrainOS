@@ -141,6 +141,18 @@ def _device_findings(
                 None,
             )
             has_activity, raw_activity, activity_at = _core._activity_value(device)
+            age_seconds = (
+                round((checked_at - activity_at).total_seconds(), 3)
+                if activity_at is not None else None
+            )
+            # A newer device event and a concurrent 'offline' state can
+            # coexist (a cached driver health flag, or an unrelated event).
+            # Preserve the warning, but explain the disagreement instead of
+            # asserting physical disconnection from a status label alone.
+            recent_activity_conflict = bool(
+                age_seconds is not None
+                and 0 <= age_seconds <= 300
+            )
             offline.append({
                 "id": identifier,
                 "label": label,
@@ -153,6 +165,9 @@ def _device_findings(
                     else None
                 ),
                 "reachability_independently_verified": False,
+                "recent_activity_conflict": recent_activity_conflict,
+                "last_activity_age_seconds": age_seconds,
+                "recent_activity_does_not_verify_online": True,
             })
             issues.append(
                 _core._issue(
@@ -976,6 +991,17 @@ def render_comprehensive_system_audit(
                 f"battery={level}, last recorded activity="
                 f"{row.get('last_activity') or 'not supplied'}."
             )
+            if row.get("recent_activity_conflict") is True:
+                seconds = row.get("last_activity_age_seconds")
+                lines.append(
+                    "- **Status/activity conflict:** "
+                    f"{row.get('label') or row.get('id') or 'Device'} "
+                    f"reported an activity timestamp about {int(seconds or 0)} "
+                    "seconds before the snapshot while its health status "
+                    "reported offline. This may be a stale health flag or an "
+                    "event that does not prove command reachability; "
+                    "verify the actual device state before repairs."
+                )
 
     quiet = devices.get("no_recent_activity") or []
     if isinstance(quiet, list) and quiet:
