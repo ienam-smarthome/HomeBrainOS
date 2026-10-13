@@ -17,6 +17,9 @@ from typing import Any
 
 from causal_rule_decision_context import configuration_text
 from decision_claim_reconciliation import reconcile_decision_claims
+from focal_event_provenance import (
+    current_config_facts, physical_button_observations, select_focal_off,
+)
 from scoped_execution_evidence import (
     bounded_app_log_evidence, event_handler_associations, model_only_log_packet,
 )
@@ -368,25 +371,9 @@ async def prefetch_motion_lockout(
                 completed_light_intervals(subject_data)
             ),
         })
-    off = last_observed_off(subject_data)
-    if off is not None:
-        findings["focalOff"] = off.isoformat()
-        findings["focalCommandProvenance"] = focal_command_provenance(
-            subject_data, off=off
-        )
-        findings["manualOffVerified"] = False  # command producer != hardware press
-        findings["latestFocalOffBasis"] = "newest observed completed OFF boundary"
-        findings["associatedAppEventHandlers"] = event_handler_associations(
-            subject_data, focal_off=off, app_id=app_id,
-        )
-        findings["handlerReferenceIsNotExecutionProof"] = True
-        findings["focalOffHubLocal"] = source_local_off_time(subject_data, off)
-        findings["focalOffTimestampBasis"] = (
-            "native Hubitat state-event clock with explicit UTC offset"
-            if findings["focalOffHubLocal"] else
-            "normalized UTC; original hub time offset unavailable"
-        )
-
+    # Select a focal event *after* receiving the configured button identity
+    # and (when available) one targeted native physical-button history.
+    off = None
     config_search = ""
     async def remote(gateway: str, leaf: str, args: dict[str, Any]) -> dict[str, Any] | None:
         try:
@@ -419,15 +406,79 @@ async def prefetch_motion_lockout(
     if app_id:
         config = await remote(
             "hub_read_apps_code", "hub_get_app_config",
-            {"appId": app_id, "includeSettings": False},
+            {"appId": app_id, "includeSettings": True},
         )
         if config:
             _, config_search = configuration_text(config)
+        findings["currentConfiguration"] = current_config_facts(config)
         findings["sources"].append({
             "source": "present-day-app-configuration", "appId": app_id,
             "available": config is not None,
             "historicalExecutionProven": False,
         })
+    # Target only the configured/relevant physical controller. This is one
+    # historical read, not a room-wide event scan or generic inventory.
+    physical_presses: list[dict[str, Any]] = []
+    candidates = _candidate_devices(
+        identities if isinstance(identities, list) else [],
+        light, config_search,
+    )[1] if light else []
+    configured_button = next(
+        (item for item in candidates if config_search and
+         _label(item).casefold() in config_search.casefold()), None
+    )
+    if configured_button is not None and catalog.declared_tool(
+        "homebrain_device_history"
+    ) is not None:
+        button_result = await host.executor.execute(
+            "homebrain_device_history", {
+                "name": _label(configured_button), "attribute": "pushed",
+                "limit": 50, "_resolved_target": dict(configured_button),
+            },
+            tool=catalog.declared_tool("homebrain_device_history"),
+            supports_live_claim=True,
+            evidence_kind="bounded_physical_button_history",
+        )
+        if button_result.success and button_result.result is not None:
+            raw_button = button_result.result.data
+            if isinstance(raw_button, dict):
+                physical_presses = physical_button_observations(
+                    raw_button, str(configured_button.get("id"))
+                )
+        findings["sources"].append({
+            "source": "targeted-native-controller-history",
+            "deviceId": str(configured_button.get("id")),
+            "readSucceeded": bool(button_result.success),
+            "verifiedPhysicalPresses": len(physical_presses),
+        })
+    latest = last_observed_off(subject_data)
+    source_clock = (
+        source_local_off_time(subject_data, latest) if latest else None
+    )
+    selection = select_focal_off(
+        subject_data, prompt, physical_presses=physical_presses,
+        source_local=source_clock,
+    )
+    findings["focalSelection"] = selection
+    off = _time(selection.get("selectedOff"))
+    findings["manualOffVerified"] = bool(selection.get("manualOffVerified"))
+    if off is not None:
+        findings["focalOff"] = off.isoformat()
+        findings["focalOffHubLocal"] = source_local_off_time(subject_data, off)
+        findings["focalOffTimestampBasis"] = (
+            "native Hubitat state-event clock with explicit UTC offset"
+            if findings["focalOffHubLocal"] else
+            "normalized UTC; original hub time offset unavailable"
+        )
+        findings["focalCommandProvenance"] = focal_command_provenance(
+            subject_data, off=off,
+        )
+        findings["associatedAppEventHandlers"] = event_handler_associations(
+            subject_data, focal_off=off, app_id=app_id,
+        )
+        findings["handlerReferenceIsNotExecutionProof"] = True
+        findings["latestFocalOffBasis"] = selection["selectionBasis"]
+
     if off:
         # Never reinterpret a specific requested exact timestamp as "latest".
         first = off - timedelta(seconds=20)
@@ -555,7 +606,8 @@ async def prefetch_motion_lockout(
                             "timestampBasis": event.get("timestampBasis"),
                         })
             findings["nearbyButtonEvents"] = related[:8]
-            findings["manualOffVerified"] = False
+            # The selected manual classification comes from time-linked
+            # native press + command + state evidence, not journal reception.
     findings["status"] = (
         "partial-focal-sequence" if off else "no-focal-off-observed"
     )
@@ -600,8 +652,14 @@ async def prefetch_motion_lockout(
             "row count, do not claim their execution messages were inspected "
             "or that they contain no lockout decision. Missing journal rows "
             "with capture gaps cannot prove a sensor stayed inactive. "
-            "The newest completed OFF state "
-            "boundary takes priority over earlier OFF/ON transitions. Never "
+            "Select the requested focal event using focalSelection: "
+            "the latest observed OFF is NOT necessarily the latest VERIFIED "
+            "manual OFF. Prefer a time-linked native physical press, "
+            "command, and state chain only when the request asks for manual "
+            "OFF. Do not silently substitute an unrelated new OFF. Current "
+            "settings are evidence of settings NOW, not historical settings. "
+            "Use the selected focal timestamp for every bounded app-log and "
+            "journal query, with actual UTC offsets. Never "
             "infer lockout success just because there was no ON, or claim a "
             "hardware press solely from a labelled command producer. If history "
             "is missing, say investigation is incomplete rather than replacing "
