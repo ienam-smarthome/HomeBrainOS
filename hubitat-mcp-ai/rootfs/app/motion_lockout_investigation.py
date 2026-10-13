@@ -19,6 +19,7 @@ from causal_rule_decision_context import configuration_text
 from decision_claim_reconciliation import reconcile_decision_claims
 from focal_event_provenance import (
     current_config_facts, physical_button_observations, select_focal_off,
+    source_offset_for_request,
 )
 from scoped_execution_evidence import (
     bounded_app_log_evidence, event_handler_associations, model_only_log_packet,
@@ -411,6 +412,8 @@ async def prefetch_motion_lockout(
         if config:
             _, config_search = configuration_text(config)
         findings["currentConfiguration"] = current_config_facts(config)
+        findings["configSource"] = "hub_get_app_config(includeSettings=True)"
+        findings["userExpectedDurationIsNotConfigProof"] = True
         findings["sources"].append({
             "source": "present-day-app-configuration", "appId": app_id,
             "available": config is not None,
@@ -452,9 +455,15 @@ async def prefetch_motion_lockout(
             "verifiedPhysicalPresses": len(physical_presses),
         })
     latest = last_observed_off(subject_data)
-    source_clock = (
-        source_local_off_time(subject_data, latest) if latest else None
-    )
+    # When a historical wall clock is explicitly requested, its UTC offset
+    # must come from a source event on that day, not the latest day's offset.
+    source_clock = source_offset_for_request(subject_data, prompt)
+    if source_clock is None and not re.search(
+        r"\b\d{1,2}\s+(?:january|february|march|april|may|june|july|"
+        r"august|september|october|november|december)\s+\d{4}\b",
+        prompt, re.I,
+    ):
+        source_clock = source_local_off_time(subject_data, latest) if latest else None
     selection = select_focal_off(
         subject_data, prompt, physical_presses=physical_presses,
         source_local=source_clock,
@@ -507,6 +516,30 @@ async def prefetch_motion_lockout(
             findings["decisionClaimReconciliation"] = reconcile_decision_claims(
                 prompt, app_log_rows, focal_off=off,
             )
+            current = findings.get("currentConfiguration") or {}
+            configured = current.get("configuredDurationSeconds")
+            reconciled = findings["decisionClaimReconciliation"]
+            if isinstance(configured, int):
+                reconciled["decisionStage"]["configuredDurationVerified"] = True
+                reconciled["configuredDurationSeconds"] = configured
+                reconciled["configurationVsRequested"] = [
+                    {
+                        "requestedSeconds": x["seconds"],
+                        "configuredSeconds": configured,
+                        "matches": x["seconds"] == configured,
+                    }
+                    for x in reconciled.get("expectedDurations", [])[:4]
+                ]
+                reconciled["configurationVsLog"] = [
+                    {
+                        "sourceRowId": row.get("sourceRowId"),
+                        "reportedSeconds": duration["seconds"],
+                        "configuredSeconds": configured,
+                        "matches": duration["seconds"] == configured,
+                    }
+                    for row in reconciled.get("logDeclarationCandidates", [])
+                    for duration in row.get("reportedDurations", [])
+                ][:12]
             findings["sources"].append({
                 "source": "bounded-app-execution-logs", "appId": app_id,
                 "readSucceeded": logs is not None,
@@ -635,9 +668,11 @@ async def prefetch_motion_lockout(
             "decisionClaimReconciliation to distinguish a logged textual "
             "decision, verified source identity, the intended duration and "
             "observed effect. Where the question asks for three minutes and "
-            "the log text says 300 minutes, explicitly report the conflict "
-            "without converting, treating either as authoritative current "
-            "configuration, or claiming that an activation was inhibited. "
+            "the log reports a different duration, explicitly report "
+            "the discrepancy without silently replacing the numeric value. "
+            "CurrentConfiguration is authoritative only for settings at "
+            "the time of this read, never for historical execution. "
+            "Do not claim an activation was inhibited. "
             "Treat associatedAppEventHandlers "
             "as event-recipient metadata, not proof a handler executed a "
             "lockout decision. Cite bounded app-log row IDs if they contain "
