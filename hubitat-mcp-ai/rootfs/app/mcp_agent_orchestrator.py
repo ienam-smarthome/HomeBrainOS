@@ -41,6 +41,7 @@ from causal_history_coverage import assess_local_sensor_history_coverage
 from motion_lockout_investigation import (
     is_motion_lockout_investigation, prefetch_motion_lockout,
     collected_lockout_ready_for_synthesis,
+    collected_explicit_focal_ready_for_synthesis,
 )
 from targeted_lockout_config import read_current_lockout_config
 from focal_evidence_reconciliation import (
@@ -3451,6 +3452,17 @@ class UnifiedMCPAgent:
             user_prompt, self.evidence.receipts(),
         ):
             increment_active_metric("lockout_prefetch_sufficiency_stop")
+            increment_active_metric("investigative_finalization")
+            return await self._final_answer(messages)
+
+        # The requested earlier OFF may have fallen outside native switch
+        # retention while its native physical-button and OFF-command rows plus
+        # a scoped journal OFF remain. When all relevant sources were checked,
+        # synthesise once rather than querying unrelated fresh logs.
+        if lockout_prefetch and collected_explicit_focal_ready_for_synthesis(
+            user_prompt, self.evidence.receipts(),
+        ):
+            increment_active_metric("lockout_cross_source_sufficiency_stop")
             increment_active_metric("investigative_finalization")
             return await self._final_answer(messages)
 
