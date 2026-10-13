@@ -34,7 +34,7 @@ def current_lockout_config_app_id(prompt: str) -> str | None:
     if not re.search(r"\b(?:configur\w*|persisted|settings?|duration|trigger mode)\b", folded):
         return None
     if re.search(
-        r"\b(?:investigat\w*|reconstruct|historical|history|"
+        r"\b(?:investigat\w*|reconstruct|"
         r"at\s+\d{1,2}:\d{2}|on\s+\d{1,2}\s+\w+\s+\d{4}|"
         r"execution logs?|followed by motion|engag\w*)\b", folded,
     ):
