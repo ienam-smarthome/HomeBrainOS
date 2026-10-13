@@ -178,11 +178,17 @@ async def test_prefetch_preserves_separate_clock_and_eligibility():
               "label": "🔢 Living Room Button",
               "room": "Button Controllers",
               "attributes": {"pushed": "1"}, "capabilities": ["PushableButton"]}
+    sensor = {
+        "id": "7981", "label": "FP400 Computer Desk",
+        "name": "FP400 Computer Desk", "room": "Living Room",
+        "attributes": {"motion": "inactive"},
+        "capabilities": ["MotionSensor"],
+    }
     records, calls = [], []
 
     class MCP:
         async def get_device_identities(self):
-            return [light, button]
+            return [light, button, sensor]
 
     class Exec:
         async def execute(self, name, args, **kwargs):
