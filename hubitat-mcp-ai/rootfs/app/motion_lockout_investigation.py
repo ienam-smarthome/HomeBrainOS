@@ -869,10 +869,74 @@ def collected_lockout_ready_for_synthesis(
     return False
 
 
+def collected_explicit_focal_ready_for_synthesis(
+    prompt: str, receipts: list[dict[str, Any]],
+) -> bool:
+    """One-pass bounded conclusion for a fully scoped but incompletely retained event.
+
+    A journal OFF does NOT upgrade manualOffVerified to true without a native
+    state row. This gate only prevents unnecessary model-driven additional
+    searches once current config, native controller and command, collector
+    observation, and scoped app logs have ALREADY been read. The final
+    synthesis must report exactly which source-level conclusions are unknown.
+    """
+    if not is_motion_lockout_investigation(prompt):
+        return False
+    if re.search(
+        r"\b(?:and also|as well as|in addition|also (?:check|analyse|analyze|investigate|review))\b",
+        str(prompt), re.I,
+    ):
+        return False
+    for receipt in reversed(receipts):
+        if not isinstance(receipt, dict) or receipt.get("tool") != (
+            "homebrain_motion_lockout_investigation"
+        ):
+            continue
+        if receipt.get("success") is not True:
+            return False
+        facts = receipt.get("details") or {}
+        if not isinstance(facts, dict):
+            return False
+        selection = facts.get("focalSelection") or {}
+        fused = facts.get("crossSourceFocalProvenance") or {}
+        if not (
+            facts.get("status") == "explicit-event-not-observed"
+            and selection.get("explicitTargetUtc")
+            and not selection.get("selectedOff")
+            and fused.get("requestedEventUtc") == selection["explicitTargetUtc"]
+            and fused.get("nativeButtonCommandVerified") is True
+            and fused.get("journalLightOffObserved") is True
+            and fused.get("nativeLightStateObserved") is False
+        ):
+            return False
+        config = facts.get("currentConfiguration") or {}
+        if config.get("settingsRead") is not True:
+            return False
+        sources = {
+            row.get("source"): row
+            for row in (facts.get("sources") or [])
+            if isinstance(row, dict)
+        }
+        return bool(
+            sources.get("bounded-light-device-history", {}).get("success") is True
+            and sources.get("targeted-native-controller-history", {}).get(
+                "readSucceeded"
+            ) is True
+            and sources.get("bounded-app-execution-logs", {}).get(
+                "readSucceeded"
+            ) is True
+            and sources.get("Historical Journal", {}).get(
+                "deviceScopesChecked", 0
+            ) > 0
+        )
+    return False
+
+
 __all__ = [
     "is_motion_lockout_investigation", "resolve_named_light",
     "completed_light_intervals", "last_observed_off",
     "focal_command_provenance", "source_local_off_time",
     "observed_motion_correlations", "prefetch_motion_lockout",
     "collected_lockout_ready_for_synthesis",
+    "collected_explicit_focal_ready_for_synthesis",
 ]
