@@ -19,7 +19,7 @@ from causal_rule_decision_context import configuration_text
 from decision_claim_reconciliation import reconcile_decision_claims
 from focal_event_provenance import (
     current_config_facts, physical_button_observations, select_focal_off,
-    source_offset_for_request,
+    source_offset_for_request, explicit_british_clock_source,
 )
 from scoped_execution_evidence import (
     bounded_app_log_evidence, event_handler_associations, model_only_log_packet,
@@ -430,6 +430,23 @@ async def prefetch_motion_lockout(
         (item for item in candidates if config_search and
          _label(item).casefold() in config_search.casefold()), None
     )
+    # When the user explicitly identifies a physical button device ID,
+    # resolve that exact identity rather than requiring a rendered app page
+    # to mention a label. Never choose a device merely by room proximity.
+    if configured_button is None:
+        match = re.search(
+            r"\bdevice\s+(\d{2,6})(?:'s)?\s+(?:physical\s+)?button\b",
+            prompt, re.I,
+        )
+        if match:
+            configured_button = next((
+                item for item in (identities if isinstance(identities, list) else [])
+                if isinstance(item, dict)
+                and str(item.get("id") or "") == match.group(1)
+                and (_attribute(item, "pushed") or re.search(
+                    r"\bbutton\b", _label(item), re.I
+                ))
+            ), None)
     if configured_button is not None and catalog.declared_tool(
         "homebrain_device_history"
     ) is not None:
@@ -457,7 +474,10 @@ async def prefetch_motion_lockout(
     latest = last_observed_off(subject_data)
     # When a historical wall clock is explicitly requested, its UTC offset
     # must come from a source event on that day, not the latest day's offset.
-    source_clock = source_offset_for_request(subject_data, prompt)
+    source_clock = (
+        explicit_british_clock_source(prompt)
+        or source_offset_for_request(subject_data, prompt)
+    )
     if source_clock is None and not re.search(
         r"\b\d{1,2}\s+(?:january|february|march|april|may|june|july|"
         r"august|september|october|november|december)\s+\d{4}\b",
@@ -471,6 +491,8 @@ async def prefetch_motion_lockout(
     findings["focalSelection"] = selection
     off = _time(selection.get("selectedOff"))
     findings["manualOffVerified"] = bool(selection.get("manualOffVerified"))
+    findings["requestedEventUtc"] = selection.get("explicitTargetUtc")
+    findings["requestedEventStateObserved"] = bool(off)
     if off is not None:
         findings["focalOff"] = off.isoformat()
         findings["focalOffHubLocal"] = source_local_off_time(subject_data, off)
@@ -488,16 +510,19 @@ async def prefetch_motion_lockout(
         findings["handlerReferenceIsNotExecutionProof"] = True
         findings["latestFocalOffBasis"] = selection["selectionBasis"]
 
-    if off:
-        # Never reinterpret a specific requested exact timestamp as "latest".
-        first = off - timedelta(seconds=20)
-        last = min(off + timedelta(seconds=195), datetime.now(timezone.utc))
+    # When the user specified a trustworthy explicit clock but switch
+    # history omitted that old state transition, query logs/journal around
+    # the REQUESTED event without describing the anchor as an observed OFF.
+    scope_anchor = off or _time(selection.get("explicitTargetUtc"))
+    if scope_anchor:
+        first = scope_anchor - timedelta(seconds=20)
+        last = min(scope_anchor + timedelta(seconds=195), datetime.now(timezone.utc))
         if last <= first:
-            last = off + timedelta(seconds=1)
+            last = scope_anchor + timedelta(seconds=1)
         findings["window"] = {
             "since": first.isoformat(), "until": last.isoformat(),
             "threeMinuteWindowElapsed": datetime.now(timezone.utc) >= (
-                off + timedelta(minutes=3)
+                scope_anchor + timedelta(minutes=3)
             ),
         }
         if app_id:
@@ -514,7 +539,7 @@ async def prefetch_motion_lockout(
             # BEFORE authoring the answer. This is a report of a log claim,
             # not a verified account of subsequent effective inhibition.
             findings["decisionClaimReconciliation"] = reconcile_decision_claims(
-                prompt, app_log_rows, focal_off=off,
+                prompt, app_log_rows, focal_off=scope_anchor,
             )
             current = findings.get("currentConfiguration") or {}
             configured = current.get("configuredDurationSeconds")
@@ -604,8 +629,10 @@ async def prefetch_motion_lockout(
                 lookup(device, attr, kind) for device, attr, kind in targets
             ))
             findings["journal"] = journal
-            findings["motionCorrelations"] = observed_motion_correlations(
-                journal, off=off, local_off=findings.get("focalOffHubLocal"),
+            findings["motionCorrelations"] = (
+                observed_motion_correlations(
+                    journal, off=scope_anchor, local_off=findings.get("focalOffHubLocal"),
+                ) if off is not None else []
             )
             findings["sensorActivationEligibilityVerified"] = any(
                 item["eligibleActivationSourceVerified"]
@@ -630,19 +657,21 @@ async def prefetch_motion_lockout(
                 for event in item.get("observations") or []:
                     stamp = _time(event.get("observedAt"))
                     if stamp is not None and abs(
-                        (stamp - off).total_seconds()
+                        (stamp - scope_anchor).total_seconds()
                     ) <= 2:
                         related.append({
                             "deviceId": item.get("deviceId"),
                             "label": item.get("label"),
-                            "deltaMs": round((stamp-off).total_seconds()*1000),
+                            "deltaMs": round((stamp-scope_anchor).total_seconds()*1000),
                             "timestampBasis": event.get("timestampBasis"),
                         })
             findings["nearbyButtonEvents"] = related[:8]
             # The selected manual classification comes from time-linked
             # native press + command + state evidence, not journal reception.
     findings["status"] = (
-        "partial-focal-sequence" if off else "no-focal-off-observed"
+        "partial-focal-sequence" if off
+        else "explicit-event-not-observed" if scope_anchor
+        else "no-focal-off-observed"
     )
     host.evidence.record(
         "homebrain_motion_lockout_investigation",
