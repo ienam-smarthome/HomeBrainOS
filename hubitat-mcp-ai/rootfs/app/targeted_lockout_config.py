@@ -13,7 +13,15 @@ from focal_event_provenance import current_config_facts
 
 
 _APP_ID = re.compile(r"\bapp\s*(?:#|id\s*)?(\d{3,6})\b", re.I)
-_EXPECTED = re.compile(r"\b(?:intended|expected|desired|want|requested)\s+(?:a\s+|the\s+)?(?:\w+\s+){0,3}?(\d+)\s*(?:-|\s)?minutes?\b", re.I)
+_EXPECTED = re.compile(
+    r"\b(?:intended|expected|desired|want|requested)\b.{0,60}?"
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+    r"\s*(?:-|\s)?minutes?\b", re.I,
+)
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
 
 
 def current_lockout_config_app_id(prompt: str) -> str | None:
@@ -112,7 +120,8 @@ async def read_current_lockout_config(
     ]
     wanted = _EXPECTED.search(str(prompt))
     if wanted and duration is not None:
-        expected = int(wanted.group(1))
+        token = wanted.group(1).casefold()
+        expected = int(token) if token.isdecimal() else _NUMBER_WORDS[token]
         answer.append(
             f"- Your stated intention is **{expected} minutes**; "
             + ("this matches the stored duration."
