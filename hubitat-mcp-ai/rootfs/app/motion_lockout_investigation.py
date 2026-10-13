@@ -34,7 +34,7 @@ _MANUAL_OFF = re.compile(
     re.I,
 )
 _INVESTIGATE = re.compile(
-    r"\b(?:investigat(?:e|ion)|why|whether|did|check|verify|trace|diagnos(?:e|is))\b",
+    r"\b(?:investigat(?:e|ion)|reconstruct|correlate|why|whether|did|check|verify|trace|diagnos(?:e|is))\b",
     re.I,
 )
 
