@@ -39,6 +39,26 @@ _INVESTIGATE = re.compile(
 )
 
 
+
+def _lockout_app_id(prompt: str) -> str:
+    """Choose the app *owning the lockout*, not a preceding button app.
+
+    In questions naming "app 1251's OFF command" and "app 4019's lockout
+    decision", the first app ID is not the target for execution logs.
+    Ambiguous multiple app mentions fail closed.
+    """
+    matches = list(_APP_ID.finditer(str(prompt or "")))
+    if len(matches) == 1:
+        return matches[0].group(1)
+    candidates = []
+    for match in matches:
+        clause = str(prompt)[match.end():match.end() + 65].split(",")[0].split(".")[0]
+        if re.search(r"\block[- ]?out\b", clause, re.I):
+            candidates.append(match.group(1))
+    unique = list(dict.fromkeys(candidates))
+    return unique[0] if len(unique) == 1 else ""
+
+
 def is_motion_lockout_investigation(prompt: str) -> bool:
     """Agree with the shared investigation goal, not just legacy phrasing."""
     contract = plan_investigation(prompt)
@@ -337,8 +357,7 @@ async def prefetch_motion_lockout(
     except Exception:
         identities = []
     light = resolve_named_light(prompt, identities if isinstance(identities, list) else [])
-    app_match = _APP_ID.search(prompt)
-    app_id = app_match.group(1) if app_match else ""
+    app_id = _lockout_app_id(prompt)
     findings: dict[str, Any] = {
         "status": "incomplete", "appId": app_id,
         "subject": _label(light) if light else "",
