@@ -168,7 +168,12 @@ from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
-from mcp_skill_guidance import build_mcp_skill_guidance, wants_deep_investigation
+from mcp_skill_guidance import (
+    build_mcp_skill_guidance,
+    build_mcp_skill_guidance_for_domains,
+    wants_deep_investigation,
+)
+from general_task_engine import GeneralTaskPlanner
 from tool_catalog_assembly import build_request_tool_catalog
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
@@ -439,6 +444,7 @@ class UnifiedMCPAgent:
         rule_write_enabled: bool = True,
         causal_subject_prefetch_enabled: bool = True,
         causal_deterministic_final_enabled: bool = True,
+        general_task_engine_enabled: bool = False,
         known_automations: Any | None = None,
         internet_control_aliases: Any | None = None,
         max_tool_result_chars: int = 24000,
@@ -472,6 +478,9 @@ class UnifiedMCPAgent:
         self.causal_deterministic_final_enabled = bool(
             causal_deterministic_final_enabled
         )
+        # Opt-in semantic planning; no changes to tool permissions or approval.
+        self.general_task_engine_enabled = bool(general_task_engine_enabled)
+        self.general_task_planner = GeneralTaskPlanner(self._chat)
         self.known_automations = parse_known_automations(known_automations)
         self.confirmation_policy = ConfirmationPolicy(
             enabled=self.require_sensitive_confirmation
@@ -2879,7 +2888,8 @@ class UnifiedMCPAgent:
         return list(self._app_manifest)
 
     async def _system_prompt(
-        self, user_prompt: str = "", conversation_history: Any = None
+        self, user_prompt: str = "", conversation_history: Any = None,
+        *, skill_domains: tuple[str, ...] | None = None,
     ) -> str:
         manifest = "Device manifest omitted or unavailable."
         if self._include_identity_manifest(user_prompt):
@@ -2909,8 +2919,12 @@ class UnifiedMCPAgent:
             previous_user_prompt = content
             break
         if (
-            _matches(user_prompt, _APP_TERMS)
-            or _matches(previous_user_prompt, _APP_TERMS)
+            "automation" in skill_domains
+            if skill_domains is not None
+            else (
+                _matches(user_prompt, _APP_TERMS)
+                or _matches(previous_user_prompt, _APP_TERMS)
+            )
         ):
             # App/rule identity context is loaded only when the conversation
             # actually asks for that evidence class. Generic investigations begin
@@ -2918,8 +2932,12 @@ class UnifiedMCPAgent:
             # provenance registry later only when subject evidence warrants it.
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
-        return (build_system_prompt(manifest, app_section)
-                + "\n\n" + build_mcp_skill_guidance(user_prompt))
+        guidance = (
+            build_mcp_skill_guidance_for_domains(skill_domains)
+            if skill_domains is not None
+            else build_mcp_skill_guidance(user_prompt)
+        )
+        return build_system_prompt(manifest, app_section) + "\n\n" + guidance
 
     @staticmethod
     def _tool_schema(tool: MCPTool) -> dict[str, Any]:
@@ -3146,6 +3164,17 @@ class UnifiedMCPAgent:
                     if message is not None:
                         return message
 
+        # A general task objective is advisory: it guides skill selection and
+        # targeted discovery, never effect classification, user authorisation,
+        # device identity, tool schema validation or claimed evidence.
+        task_plan = (
+            await self.general_task_planner.plan(
+                user_prompt, history=self._history(conversation_history),
+            )
+            if self.general_task_engine_enabled
+            and not self._is_conversational_prompt(user_prompt)
+            else None
+        )
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
@@ -3162,15 +3191,23 @@ class UnifiedMCPAgent:
             and not self._is_conversational_prompt(user_prompt)
             and not known_history_path
         ):
+            # Search a model-proposed capability rather than using the full
+            # original question as a fuzzy tool query. Invalid/missing plans
+            # retain the existing discovery behavior.
+            discovery_query = (
+                task_plan.capability_queries[0]
+                if task_plan is not None and task_plan.capability_queries
+                else str(user_prompt).strip()
+            )
             discovery = await self.executor.execute(
                 SEARCH_TOOL,
-                {"query": str(user_prompt).strip()},
+                {"query": discovery_query},
                 tool=search_tool,
                 supports_live_claim=False,
                 record_evidence=False,
             )
             capability_additions = (
-                catalog.expand(discovery.result, query=user_prompt)
+                catalog.expand(discovery.result, query=discovery_query)
                 if discovery.result is not None
                 else []
             )
@@ -3193,7 +3230,13 @@ class UnifiedMCPAgent:
             )
         tools = catalog.schemas()
         prompt_started = time.monotonic()
-        system_prompt = await self._system_prompt(user_prompt, conversation_history)
+        system_prompt = await self._system_prompt(
+            user_prompt,
+            conversation_history,
+            skill_domains=task_plan.skill_domains if task_plan is not None else None,
+        )
+        if task_plan is not None:
+            system_prompt += "\n\n" + task_plan.instruction()
         contract = plan_investigation(user_prompt)
         if contract is not None:
             system_prompt += (
