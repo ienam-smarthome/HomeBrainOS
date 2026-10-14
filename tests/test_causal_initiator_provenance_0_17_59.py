@@ -41,8 +41,24 @@ def test_repaired_answer_cannot_promote_missing_command_into_external_cause():
         "is a Matter-integrated Hue bridge, the initiating logic likely "
         "resides in an external automation such as Hue-native motion."
     )
+    focal_evidence = [{
+        "tool": "homebrain_causal_secondary_correlation",
+        "success": True,
+        "details": {
+            "subject": "Livingroom Light 1",
+            "sensors": [{
+                "label": "FP400 motion sensor",
+                "relevantCorrelations": [{
+                    "boundaryRole": "start",
+                    "subjectTransition": "2026-10-14T19:55:00.049+01:00",
+                    "sensorEvent": "2026-10-14T19:54:59.961+01:00",
+                    "eventValue": "active",
+                }],
+            }],
+        },
+    }]
     revised, changed = guard_unverified_initiator_claims(
-        draft, [], "Why did the light turn on?", graph=_graph(),
+        draft, focal_evidence, "Why did the light turn on?", graph=_graph(),
     )
     assert changed
     assert "initiating logic likely" not in revised
@@ -51,7 +67,9 @@ def test_repaired_answer_cannot_promote_missing_command_into_external_cause():
     assert "No matching direct Hubitat command producer" in revised
     assert "An external automation or manual action remains possible" in revised
     assert "not identify them as initiators" in revised
-    assert "timing correlates the FP400 event" in revised
+    assert "FP400 motion sensor reported active" in revised
+    assert "0.088 seconds before" in revised
+    assert "not a confirmed command" in revised
 
 
 def test_possibility_language_and_genuine_direct_commands_survive():
