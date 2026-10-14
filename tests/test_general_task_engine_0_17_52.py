@@ -350,4 +350,4 @@ async def test_proposal_model_write_is_blocked_before_mcp_execution():
     )
     assert "Proposal" in answer
     assert not any(name == "hub_manage_rule_machine" for name, _ in mcp.calls)
-    assert not agent.confirmations.has_pending("default")
+    assert "default" not in agent.confirmations.pending
