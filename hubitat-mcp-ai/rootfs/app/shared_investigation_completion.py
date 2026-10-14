@@ -97,7 +97,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
     goal = plan_investigation(request)
-    causal = is_causal_investigation(request)
+    # The broad legacy classifier also matches prospective rule "triggers".
+    # This final historical gate must not turn proposal-only read requests into
+    # historical-cause investigations merely for mentioning rule triggers.
+    request_text = str(request or "").strip().casefold()
+    causal = is_causal_investigation(request) and (
+        request_text.endswith("?") or request_text.startswith((
+            "why ", "investigate ", "explain ", "analyse ", "analyze ",
+            "diagnose ", "determine ", "what caused ", "what triggered ",
+        ))
+    )
     prior = getattr(outcome, "investigation_coverage", None)
     if goal is None and not causal and not isinstance(prior, dict):
         return outcome
@@ -138,11 +147,11 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         **existing,
         "domain": domain,
         "status": "partial-evidence" if partial else "source-checks-complete",
-        "evidenceComplete": False if partial else bool(domain_proof_complete),
+        "evidenceComplete": False if partial else domain_proof_complete,
         "assessmentScope": "all-api-routes-read-only",
         "sourceCoverage": source_coverage.to_dict(),
         "sourceIntegrityWarnings": integrity,
-        "causalInitiatorVerified": False if causal else None,
+        "causalInitiatorVerified": None,
         "completionNote": (
             "A successful tool request proves that a source was queried, not "
             "that the device was responsive or an upstream action occurred."
@@ -158,8 +167,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             limitations.append("unverified/truncated historical coverage")
         if causal:
             limitations.append(
-                "upstream command or automation initiator not independently "
-                "established by this generic gate"
+                "upstream initiator not independently established by the "
+                "shared source-class assessment"
             )
         if domain_proof_complete is False and not missing and not integrity and not causal:
             limitations.append(
