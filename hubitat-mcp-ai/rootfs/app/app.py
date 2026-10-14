@@ -37,6 +37,7 @@ from health_audit_service import (
     run_comprehensive_chat_audit,
 )
 from investigation_intelligence import plan_investigation, assess_investigation
+from shared_investigation_completion import apply_shared_investigation_completion
 from history_time_windows import (
     parse_history_window_request,
     reset_history_window_request,
@@ -615,7 +616,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             or is_comprehensive_system_audit_request(request.message)
             or is_broad_automation_runtime_diagnostic(request.message)
         )
-        return await request_coordinator.run(
+        outcome = await request_coordinator.run(
             request.coordination_key,
             operation,
             connection=connection,
@@ -624,6 +625,10 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                 OPTIONS.get("investigation_deadline_seconds") or 90
             )) if comprehensive else None,
         )
+        # Single cross-route evidence assessment: even early host completions,
+        # semantic fast paths and specialist routes pass this boundary before
+        # /api/ask and /api/chat serialize their answer.
+        return apply_shared_investigation_completion(outcome, request.message)
     except HTTPException:
         raise
     except asyncio.CancelledError:
