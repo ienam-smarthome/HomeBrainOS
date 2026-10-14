@@ -74,13 +74,17 @@ def focal_closed_transition(
                     str(requested.get("subject") or "")
             ):
                 predecessors.append((end, row))
-        # Keep the existing independent subsequent-OFF coverage where the
-        # returned event history has no earlier OFF. That later OFF is not
-        # the cause of the ON; it is a separately investigated transition.
-        chosen = (
-            max(predecessors, key=lambda pair: pair[0])[1]
-            if predecessors else requested
+        # A close OFF/ON bounce merits inspecting its preceding OFF. An
+        # unrelated OFF a minute or more earlier is not the requested
+        # return-on incident: keep the existing independent investigation
+        # of this interval's closing OFF instead. This is a generic
+        # event-proximity condition, not a device or room special-case.
+        preceding = max(predecessors, key=lambda pair: pair[0]) if predecessors else None
+        adjacent_bounce = (
+            preceding is not None
+            and 0 < (requested_on - preceding[0]).total_seconds() <= 10.0
         )
+        chosen = preceding[1] if adjacent_bounce else requested
     if not chosen.get("end"):
         return None
     subject = str(chosen.get("subject") or "")
