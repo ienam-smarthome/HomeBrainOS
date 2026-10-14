@@ -246,3 +246,64 @@ def test_policy_refuses_even_when_a_different_device_mismatches_on_the_retry():
     second = policy.decide("Back Door")
     assert second.action is DeviceClaimAction.REFUSE
     assert second.message == DEVICE_CLAIM_REFUSAL.format(label="Back Door")
+
+
+def test_event_produced_by_app_is_not_inferred_to_be_device():
+    """Live regression: Bedroom 3 Mesh has refresh commands from an app.
+
+    The final device grounding guard must not demand a device-state lookup
+    for Device Health Monitor (app 4072) merely because the history lists
+    it in producedBy with both id and label.
+    """
+    tool_messages = [{"role": "tool", "content": json.dumps({
+        "result": {
+            "deviceId": "7103", "label": "Bedroom 3 Mesh",
+            "observedEvents": [
+                {
+                    "name": "command-refresh",
+                    "producedBy": {
+                        "id": "4072", "label": "Device Health Monitor",
+                        "type": "app",
+                    },
+                },
+                {
+                    "name": "mqttStatus", "value": "connected",
+                    "producedBy": {
+                        "id": "7103", "label": "Bedroom 3 Mesh",
+                        "type": "device",
+                    },
+                },
+            ],
+        }
+    })}]
+    devices = extract_tool_message_device_identities(tool_messages)
+    assert devices == [{"id": "7103", "label": "Bedroom 3 Mesh"}]
+    assert find_named_device_mismatch(
+        "The Device Health Monitor app requested refresh for Bedroom 3 Mesh.",
+        devices, {"7103"},
+    ) is None
+
+
+def test_non_device_producer_types_are_ignored_but_real_other_device_is_checked():
+    tool_messages = [{"role": "tool", "content": json.dumps({
+        "results": [
+            {"id": "111", "label": "Another Rule", "type": "app"},
+            {"id": "222", "label": "A Bridge", "type": "device"},
+            {"id": "333", "label": "A Service", "entityType": "integration"},
+            {"id": "444", "label": "An App Instance", "appId": "444"},
+        ],
+    })}]
+    devices = extract_tool_message_device_identities(tool_messages)
+    assert devices == [{"id": "222", "label": "A Bridge"}]
+    assert find_named_device_mismatch(
+        "A Bridge is offline.", devices, {"7103"},
+    ) == "A Bridge"
+
+
+def test_untyped_targeted_device_resolver_identity_is_preserved():
+    messages = [{"role": "tool", "content": json.dumps({
+        "target": {"id": "7103", "label": "Bedroom 3 Mesh"},
+    })}]
+    assert extract_tool_message_device_identities(messages) == [
+        {"id": "7103", "label": "Bedroom 3 Mesh"}
+    ]
