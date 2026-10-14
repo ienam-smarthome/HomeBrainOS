@@ -124,8 +124,60 @@ def reconcile_telemetry_answer(
         line = raw[:-1] if newline else raw
         body = line.casefold()
         revised = line
+        # Structure-aware repairs are driven by a *bounded source* assessment:
+        # neither a device-attributed attribute event nor a filled/truncated
+        # event history proves physical telemetry or command acknowledgement.
+        if (
+            line.lstrip().startswith("|")
+            and "telemetry is stale" in body
+            and "no device-originated events since" in body
+        ):
+            revised = (
+                "| **Evidence-limited** | **Recent physical telemetry unverified** "
+                f"| {authoritative_last} |"
+            )
+        elif (
+            line.lstrip().startswith("|")
+            and "commands are not triggering updates" in body
+            and ("zero state changes" in body or "no state changes" in body)
+        ):
+            revised = (
+                "| **Evidence-limited** | **Commands were recorded** | "
+                "No corresponding state update was established by the "
+                "returned bounded history. Delivery, execution and "
+                "complete event coverage remain unverified. |"
+            )
+        elif re.search(
+            r"(?i)\b(?:last|latest)\s+telemetry\s+received\s+from\s+the\s+device\b",
+            line,
+        ) or re.search(
+            r"(?i)\blast\s+device[- ]originated\s+event\b.*\b"
+            r"last\s+telemetry\s+received\b",
+            line,
+        ):
+            heading = re.match(r"^(\s*[*-]\s*\*\*[^*]+\*\*\s*)", line)
+            prefix = heading.group(1) if heading else ""
+            revised = prefix + authoritative_last
+        elif (
+            "no state-change events followed these commands" in body
+            or "resulted in zero state changes" in body
+        ):
+            if "however" in body:
+                head = re.split(r"(?i)\bhowever\b", line, maxsplit=1)[0].rstrip()
+                revised = (
+                    head + " However, the returned bounded event history "
+                    "does not establish command delivery or a complete "
+                    "record of subsequent state changes."
+                )
+            else:
+                heading = re.match(r"^(\s*[*-]\s*\*\*[^*]+\*\*\s*)", line)
+                prefix = heading.group(1) if heading else ""
+                revised = (
+                    prefix + "Commands were recorded, but physical delivery "
+                    "and a complete response history were not verified."
+                )
         # Replace an unqualified sampled age presented as current.
-        if saved and saved in ''.join(ch for ch in line if ch.isdigit()) and (
+        elif saved and saved in ''.join(ch for ch in line if ch.isdigit()) and (
             "data age" in body or "dataageseconds" in body
         ) and not re.search(r"(?i)\b(?:recorded|stored|historical|previous)\b", line):
             heading = re.match(r"^(\s*[*-]\s*\*\*[^*]+\*\*\s*)", line)
