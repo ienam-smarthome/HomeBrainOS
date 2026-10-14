@@ -150,7 +150,8 @@ class GeneralTaskPlanner:
         '"capabilityQueries":["light state event history",'
         '"automation app logs and configuration"],'
         '"evidenceGoals":["Observed state transition",'
-        '"Verified command provenance"]}\\n'
+        '"Verified command provenance"],'
+        '"requiredEvidenceKinds":["device_history","app_logs"]}\\n'
         "Allowed domains: device, automations, rooms, diagnostics, hub, "
         "integrations, system_state, code, other. "
         "Allowed operations: read, investigate, propose, write. "
