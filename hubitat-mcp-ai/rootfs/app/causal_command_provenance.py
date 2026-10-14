@@ -13,7 +13,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from causal_command_semantics import classify_state_command, command_family_description
-from causal_timeline import build_causal_timeline_rows
+from causal_timeline import (
+    build_causal_timeline_rows, explicitly_focused_event_rows,
+    has_explicit_focal_clock,
+)
 from natural_datetime import normalize_iso_offset
 
 
@@ -427,6 +430,28 @@ def focal_transition_boundary(
     if not candidates:
         return None
     return max(candidates).isoformat()
+
+
+def prompt_focal_transition_boundary(
+    evidence: list[dict[str, Any]],
+    transition: str,
+    original_user: str,
+) -> str | None:
+    """Bind an explicit historical clock to the requested ON/OFF boundary.
+
+    The historical request must never silently fall back to the most
+    recently observed state change if the named event is absent/ambiguous.
+    For generic untimed questions retain newest-event semantics.
+    """
+    if not has_explicit_focal_clock(original_user):
+        return focal_transition_boundary(evidence, transition)
+    selected = explicitly_focused_event_rows(
+        evidence, original_user, transition=transition,
+    )
+    if len(selected) != 1:
+        return None
+    key = {"on": "start", "off": "end"}.get(str(transition or "").casefold())
+    return str(selected[0].get(key) or "") or None
 
 
 def _same_boundary(left: Any, right: Any) -> bool:
