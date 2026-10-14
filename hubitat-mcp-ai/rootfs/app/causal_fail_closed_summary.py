@@ -8,9 +8,77 @@ focal boundary instead of returning a conflicting, high-confidence story.
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime
 import re
 
 from causal_evidence_graph import build_causal_evidence_graph
+
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else None
+    except ValueError:
+        return None
+
+
+def _focal_sensor_correlations(
+    evidence: list[dict[str, Any]], subject: str,
+    focal_time: str, boundary_role: str,
+) -> list[str]:
+    """Signed, bounded correlations for the *one* requested transition."""
+    focus = _parse_time(focal_time)
+    if focus is None:
+        return []
+    matches: list[tuple[float, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if receipt.get("tool") != "homebrain_causal_secondary_correlation":
+            continue
+        details = receipt.get("details") or {}
+        if not isinstance(details, dict) or details.get("subject") != subject:
+            continue
+        for sensor in (details.get("sensors") or [])[:25]:
+            if not isinstance(sensor, dict) or not sensor.get("label"):
+                continue
+            rows = sensor.get(
+                "relevantCorrelations" if boundary_role == "start"
+                else "oppositeCorrelations"
+            ) or []
+            aligned = set()
+            for row in rows[:25]:
+                if not isinstance(row, dict) or row.get("boundaryRole") != boundary_role:
+                    continue
+                start = _parse_time(row.get("subjectTransition"))
+                at = _parse_time(row.get("sensorEvent"))
+                if start is None or at is None:
+                    continue
+                if abs((start - focus).total_seconds()) > .002:
+                    continue
+                delta = (at - focus).total_seconds()
+                if abs(delta) > 3:
+                    continue
+                key = (str(sensor["label"]), at.isoformat())
+                if key in seen:
+                    continue
+                seen.add(key)
+                aligned.update(str(other.get("subjectTransition") or "")
+                               for other in rows if isinstance(other, dict))
+                relation = "before" if delta < 0 else "after" if delta > 0 else "at"
+                matches.append((
+                    abs(delta),
+                    f"{sensor['label']} reported {row.get('eventValue') or 'an event'} "
+                    f"at {at.isoformat()}, {abs(delta):.3f} seconds {relation} "
+                    "the light transition. This is temporal correlation, "
+                    "not a confirmed command from the sensor."
+                ))
+    matches.sort(key=lambda item: item[0])
+    return [sentence for _, sentence in matches[:3]]
 
 
 def render_failed_causal_synthesis(
@@ -63,10 +131,26 @@ def render_failed_causal_synthesis(
             "established for this transition in the bounded Hubitat data. "
             "This is not proof that every potential command path was absent."
         )
+    correlations = _focal_sensor_correlations(
+        evidence, subject, time, "end" if asking_off else "start",
+    )
+    if correlations:
+        lines.append("**Time-aligned sensor evidence:** " + " ".join(correlations))
+    else:
+        lines.append(
+            "**Candidate triggers:** No uniquely verified initiating "
+            "sensor or controller was established in this bounded investigation."
+        )
+    listeners = physical.get("listenersNotified") or []
+    if isinstance(listeners, list) and listeners:
+        names = list(dict.fromkeys(
+            str(item.get("label") or "") for item in listeners
+            if isinstance(item, dict) and item.get("label")
+        ))[:3]
+        if names:
+            lines.append("**Downstream listeners:** " + ", ".join(names)
+                         + ". Notification does not prove command initiation.")
     lines.extend([
-        "**Candidate triggers:** Nearby occupancy, motion, controller and "
-        "button events are correlations only; their precise time ordering "
-        "does not prove an initiating automation.",
         "**Why this answer is limited:** The initial model explanation and "
         "its one repair did not meet the causal evidence checks. "
         "HomeBrain has therefore withheld unsupported causal attribution. "
