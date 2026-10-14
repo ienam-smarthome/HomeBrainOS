@@ -227,3 +227,134 @@ async def test_opt_in_request_loop_uses_semantic_room_skill_and_live_gateway():
     model_system = model.requests[1]["json"]["messages"][0]["content"]
     assert "SKILL: ROOM MANAGEMENT" in model_system
     assert "GENERAL TASK OBJECTIVES" in model_system
+
+
+def test_proposal_is_distinct_from_write():
+    plan = GeneralTaskPlan.from_model(task(
+        domain="automations", operation="propose",
+        objective="Design a lighting rule without creating it",
+    ))
+    assert plan is not None
+    assert plan.operation == "propose"
+    assert "PROPOSAL-ONLY EXECUTION BOUNDARY" in plan.instruction()
+    assert "do not call" in plan.instruction().casefold()
+
+
+def test_reported_bridge_device_is_not_mistaken_for_unobserved_device():
+    from device_claim_grounding import (
+        extract_event_reporter_device_ids,
+        find_named_device_mismatch,
+    )
+    source = [{"role": "tool", "content": json.dumps({
+        "boundaryEvents": [{
+            "name": "switch", "value": "on",
+            "producedBy": {
+                "label": "Matter Hue Bridge Pro", "id": "7790", "type": "device",
+            },
+        }],
+    })}]
+    observed = extract_event_reporter_device_ids(source)
+    assert observed == {"7790"}
+    devices = [{"label": "Matter Hue Bridge Pro", "id": "7790"}]
+    mention = "Event data lists Matter Hue Bridge Pro as the reporter."
+    assert find_named_device_mismatch(mention, devices, {"7805"}) is not None
+    assert find_named_device_mismatch(
+        mention, devices, {"7805"} | observed,
+    ) is None
+
+
+def test_non_device_reporter_does_not_count_as_observed():
+    from device_claim_grounding import extract_event_reporter_device_ids
+    source = [{"role": "tool", "content": json.dumps({
+        "producedBy": {
+            "id": "4019", "label": "Livingroom automation", "type": "app",
+        },
+    })}]
+    assert extract_event_reporter_device_ids(source) == set()
+
+
+@pytest.mark.asyncio
+async def test_proposal_model_write_is_blocked_before_mcp_execution():
+    from mcp_agent_orchestrator import UnifiedMCPAgent
+    from mcp_client import MCPTool, MCPToolResult
+
+    class FakeMCP:
+        def __init__(self):
+            self.calls = []
+
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search", {"type": "object"}),
+                MCPTool("hub_get_tool_guide", "Guide", {"type": "object"}),
+                MCPTool("hub_manage_rule_machine", "Manage RM", {
+                    "type": "object", "properties": {
+                        "tool": {"type": "string"}, "args": {"type": "object"},
+                    },
+                }),
+            ]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "Read-only schema guide"})
+            if name != "hub_search_tools":
+                raise AssertionError("Proposal caused an MCP mutation")
+            return MCPToolResult(name, arguments, {}, "", {
+                "results": [
+                    {"tool": "hub_set_rule", "gateway": "hub_manage_rule_machine"},
+                ],
+            })
+
+    class Reply:
+        def __init__(self, message):
+            self.message = message
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": self.message}
+
+    class FakeAI:
+        def __init__(self):
+            self.responses = iter([
+                {"role": "assistant", "content": task(
+                    operation="propose", domain="automations",
+                    objective="Draft a motion rule; don't execute it",
+                    capabilityQueries=["native Rule Machine rule authoring"],
+                )},
+                {"role": "assistant", "content": "", "tool_calls": [{
+                    "function": {"name": "hub_manage_rule_machine",
+                                 "arguments": {
+                                     "tool": "hub_set_rule",
+                                     "args": {"name": "Draft"},
+                                 }},
+                }]},
+                {"role": "assistant", "content": "", "tool_calls": [{
+                    "function": {"name": "hub_get_tool_guide",
+                                 "arguments": {"section": "rules"}},
+                }]},
+                {"role": "assistant", "content": "Proposal: create a motion rule; nothing was executed."},
+            ])
+
+        async def post(self, _url, **_kwargs):
+            return Reply(next(self.responses))
+
+        async def aclose(self):
+            return None
+
+    mcp = FakeMCP()
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b",
+        ai_client=FakeAI(),
+        general_task_engine_enabled=True,
+    )
+    answer = await agent.process_user_request(
+        "Prepare a motion-based lighting rule proposal. Do not create anything."
+    )
+    assert "Proposal" in answer
+    assert not any(name == "hub_manage_rule_machine" for name, _ in mcp.calls)
+    assert "default" not in agent.confirmations.pending

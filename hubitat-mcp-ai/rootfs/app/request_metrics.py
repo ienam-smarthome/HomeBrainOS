@@ -38,7 +38,7 @@ class RequestMetrics:
         "evidence_retries", "grounding_refusals", "confirmation_queued",
         "confirmation_expired", "confirmation_evicted",
         "mutation_verification_failures",
-        "proposal_validation_failures",
+        "proposal_validation_failures", "proposal_write_attempts_blocked",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
         "device_control_needs_input",
