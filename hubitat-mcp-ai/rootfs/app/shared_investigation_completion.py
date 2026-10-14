@@ -13,6 +13,7 @@ from typing import Any
 from general_evidence_completion import assess_task_source_coverage
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
+    reconcile_telemetry_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from investigation_policy import is_causal_investigation
@@ -166,8 +167,18 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         temporal = assess_recorded_telemetry_freshness(evidence)
         if temporal is not None:
             coverage["telemetryTimestampAssessment"] = temporal
+            original_message = message
+            message, reconciled = reconcile_telemetry_answer(
+                original_message, temporal,
+            )
+            if reconciled:
+                counters = metrics.setdefault("counters", {})
+                counters["telemetry_claims_reconciled"] = int(
+                    counters.get("telemetry_claims_reconciled") or 0
+                ) + 1
+                coverage["telemetryClaimsReconciled"] = True
             message += "\n\n" + render_temporal_qualification(
-                temporal, message,
+                temporal, original_message,
             )
     if partial:
         limitations: list[str] = []
