@@ -179,6 +179,54 @@ def extract_tool_message_device_identities(
     return list(identities.values())
 
 
+def extract_event_reporter_device_ids(
+    messages: list[dict[str, Any]],
+) -> set[str]:
+    """Accept *mentions* of event reporters without asserting they acted.
+
+    Device event results can identify an upstream bridge in `producedBy`,
+    although the tool call itself targets the light rather than the bridge.
+    This returns only the bridge identity inside an observed event. It does
+    not make a bridge's live health, command origin or historic action
+    independently verified. Other claim/provenance guards still apply.
+    """
+    found: set[str] = set()
+    visited = 0
+
+    def walk(node: Any) -> None:
+        nonlocal visited
+        if visited >= _MAX_TOOL_IDENTITY_NODES:
+            return
+        visited += 1
+        if isinstance(node, dict):
+            producer = node.get("producedBy")
+            if (isinstance(producer, dict)
+                    and str(producer.get("type") or "").casefold() == "device"):
+                identifier = _normalize_id(producer.get("id"))
+                if identifier and str(producer.get("label") or "").strip():
+                    found.add(identifier)
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node[:_MAX_TOOL_IDENTITY_LIST_ITEMS]:
+                walk(item)
+
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        payload = message.get("content")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (ValueError, TypeError):
+                continue
+        walk(payload)
+        if visited >= _MAX_TOOL_IDENTITY_NODES:
+            break
+    return found
+
+
 def find_named_device_mismatch(
     answer: str,
     devices: list[dict[str, Any]],
@@ -272,6 +320,7 @@ __all__ = [
     "DeviceClaimDecision",
     "DeviceClaimGroundingPolicy",
     "extract_receipt_device_ids",
+    "extract_event_reporter_device_ids",
     "extract_tool_message_device_identities",
     "find_named_device_mismatch",
 ]
