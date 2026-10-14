@@ -240,6 +240,12 @@ class ChatTransport:
                     keep_alive=keep_alive,
                     disable_thinking=True,
                 )
+            except EmptyOllamaAssistantMessage as exc:
+                increment_active_metric("ollama_empty_message_recovery_failed")
+                raise EmptyOllamaAssistantMessage(
+                    "Ollama returned no assistant message after one "
+                    "non-streamed recovery attempt"
+                ) from exc
             except Exception:
                 increment_active_metric("ollama_empty_message_recovery_failed")
                 raise
@@ -304,6 +310,8 @@ class ChatTransport:
         if not isinstance(message, dict):
             raise EmptyOllamaAssistantMessage("Ollama returned no assistant message")
         normalized = self._normalized_assistant_message(message)
+        if not normalized["content"] and not normalized.get("tool_calls"):
+            raise EmptyOllamaAssistantMessage("Ollama returned no assistant message")
         observe_assistant_message(normalized)
         logger.info(
             "Ollama round completed in %.3fs with %d declared tools (%s)",
