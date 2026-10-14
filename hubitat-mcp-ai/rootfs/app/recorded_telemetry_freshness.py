@@ -124,6 +124,114 @@ def assess_recorded_telemetry_freshness(
 
 
 
+
+def render_command_only_evidence_answer(
+    original_message: str,
+    evidence: list[dict[str, Any]],
+    assessment: dict[str, Any],
+) -> str | None:
+    """Produce a source-backed answer instead of repairing unbounded causal prose."""
+    if assessment.get("onlyCommandEventsInReturnedWindow") is not True:
+        return None
+    label = str(assessment.get("device") or "").strip()
+    receipt = next((
+        item for item in reversed(evidence)
+        if isinstance(item, dict) and item.get("success") is True
+        and item.get("tool") == "homebrain_device_history"
+        and isinstance(item.get("details"), dict)
+        and str(item["details"].get("label") or "") == label
+        and isinstance(item["details"].get("observedEvents"), list)
+    ), None)
+    if not receipt:
+        return None
+    events = receipt["details"]["observedEvents"]
+    commands = [
+        row for row in events if isinstance(row, dict)
+        and (
+            str(row.get("name") or "").startswith("command-")
+            or row.get("type") == "command"
+        )
+    ]
+    if len(commands) != len(events) or not commands:
+        return None
+
+    # Retain reported state facts from the original model's targeted device
+    # read, but not its telemetry history or unverified root-cause conclusions.
+    original = str(original_message or "")
+    found = re.search(
+        r"(?is)(?:^|\n)\*\*Reported State\*\*\s*\n(.*?)(?=\n\*\*Telemetry Activity\*\*|\n---|\n###|\Z)",
+        original,
+    )
+    state = found.group(1).strip() if found else ""
+    if state:
+        state = "\n".join(
+            line for line in state.splitlines()
+            if not re.search(
+                r"(?i)\b(?:last seen|data age|telemetry since|contradiction|physical connection is)\b",
+                line,
+            )
+        )[:1200].strip()
+
+    counts: dict[tuple[str, str], int] = {}
+    for event in commands:
+        producer = event.get("producedBy") or {}
+        if not isinstance(producer, dict):
+            producer = {}
+        name = str(producer.get("label") or "unattributed")
+        action = str(event.get("name") or "command").removeprefix("command-")
+        counts[(name, action)] = counts.get((name, action), 0) + 1
+    window = assessment.get("sourceWindowHours")
+    window_label = f"{window}-hour" if window else "bounded"
+    paragraphs = [f"### Investigation results: {label or 'device'}"]
+    if state:
+        paragraphs += [
+            "**Reported state (attributes, not verified physical connectivity)**",
+            state,
+        ]
+    paragraphs += [
+        "**Recorded Hubitat activity**",
+        f"The returned {window_label} device-event sample contains "
+        f"**{len(commands)} command invocations** and no device-attributed "
+        "state events. This says only what was returned by this source, "
+        "not that physical telemetry ceased.",
+    ]
+    for (name, action), count in sorted(
+        counts.items(), key=lambda group: (-group[1], group[0])
+    ):
+        paragraphs.append(
+            f"- {name}: {count} recorded {action}() invocation"
+            + ("" if count == 1 else "s")
+        )
+    paragraphs.append(
+        "Recorded command calls do not establish delivery, execution, a "
+        "device response or one-way connectivity."
+    )
+    log_row = next((
+        item for item in reversed(evidence)
+        if isinstance(item, dict) and item.get("success") is True
+        and item.get("sub_tool") == "hub_get_logs"
+        and isinstance(item.get("details"), dict)
+        and isinstance(item["details"].get("logCount"), int)
+        and isinstance(item.get("arguments"), dict)
+        and str(((item["arguments"].get("args") or {}).get("deviceId") or ""))
+    ), None)
+    if log_row:
+        paragraphs.append(
+            "**Targeted device logs:** "
+            f"{log_row['details']['logCount']} rows in the checked device-scoped "
+            "log window; other periods were not established."
+        )
+    paragraphs += [
+        "**Unverified:** Current physical reachability, last actual incoming "
+        "telemetry packet, completeness of event history, live MQTT session, "
+        "and end-to-end command acknowledgements.",
+        "Previously saved lastSeen/dataAgeSeconds values cannot establish "
+        "a fresh age without their own verified observation timestamps.",
+        "**Root cause:** Not established by these read-only sources.",
+    ]
+    return "\n\n".join(paragraphs)
+
+
 def reconcile_telemetry_answer(
     message: str, summary: dict[str, Any],
 ) -> tuple[str, bool]:
@@ -319,4 +427,5 @@ def render_temporal_qualification(summary: dict[str, Any], message: str) -> str:
 __all__ = [
     "assess_recorded_telemetry_freshness", "render_temporal_qualification",
     "reconcile_telemetry_answer",
+    "render_command_only_evidence_answer",
 ]
