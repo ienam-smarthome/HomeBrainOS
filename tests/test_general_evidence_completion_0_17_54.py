@@ -96,7 +96,7 @@ def test_read_source_receipt_can_be_checked_even_with_zero_log_rows():
                                   "args": {"appId": "4019", "limit": 50}})]
     result = assess_task_source_coverage(("app_logs",), sources)
     assert result.sources_checked
-    assert "historical" in result.to_dict()["note"]
+    assert "historic" in result.to_dict()["note"]
 
 
 def test_mutations_cannot_satisfy_read_source_requirements():
