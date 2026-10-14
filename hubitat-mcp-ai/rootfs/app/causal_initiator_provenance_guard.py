@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from causal_evidence_graph import build_causal_evidence_graph
+from causal_fail_closed_summary import _focal_sensor_correlations
 
 
 _EXTERNAL = re.compile(
@@ -85,8 +86,40 @@ def guard_unverified_initiator_claims(
         absence_as_proof = bool(_STRONG_NO_HUB_COMMAND.search(stripped))
         listener_excluded = bool(_UNPROVEN_LISTENER_EXCLUSION.search(stripped))
         if external_guess:
+            # A single paragraph can mix a correct observed sensor edge
+            # with an invented upstream initiator: do not discard the
+            # observation along with the unsupported causal leap.
+            # Reproduce only a *source-verified* focal timing fact, never
+            # preserve model prose merely because it mentions a sensor.
+            leading = re.split(r"(?i)\\b(?:however|therefore|thus)\\s*[,;:]?\\s*", stripped, maxsplit=1)[0]
+            focus = graph.get("focus") or {}
+            off_requested = re.search(
+                r"(?i)\\b(?:turn|turned|switch|switched|went)\\s+off\\b",
+                str(original_user or ""),
+            ) is not None
+            timing_facts = _focal_sensor_correlations(
+                evidence,
+                str(focus.get("subject") or ""),
+                str(focus.get("off" if off_requested else "on") or ""),
+                "end" if off_requested else "start",
+            )
+            verified_observation = ""
+            if leading != stripped and re.search(
+                r"(?i)\\b(?:correlat\\w*|sensor|motion|occupancy)\\b",
+                leading,
+            ):
+                for fact in timing_facts:
+                    name = fact.split(" reported ", 1)[0].strip()
+                    aliases = [name]
+                    if name:
+                        aliases.append(name.split()[0])
+                    if any(len(alias) >= 4 and alias.casefold() in leading.casefold()
+                           for alias in aliases):
+                        verified_observation = fact + " "
+                        break
             line = (
-                prefix + "The bounded evidence does not identify an initiating "
+                prefix + verified_observation
+                + "The bounded evidence does not identify an initiating "
                 "controller. An external automation or manual action remains "
                 "possible, but neither has been verified as the cause."
             )
