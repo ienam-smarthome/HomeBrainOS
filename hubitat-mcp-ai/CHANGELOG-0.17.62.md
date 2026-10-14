@@ -8,10 +8,10 @@
   and optional physical-response follow-up all share the explicitly
   requested ON/OFF focal boundary.
 - For a deep why-ON investigation, the auxiliary OFF inquiry prefers
-  the nearest observed OFF **before** that ON. When the returned history
-  contains no preceding OFF, it retains the older independent investigation
-  of the ON interval's later closing OFF without treating that later event
-  as the cause of the preceding ON.
+  an adjacent observed OFF **within ten seconds before** the ON, where
+  the events form an immediate OFF/ON bounce. Otherwise, it retains the
+  older independent investigation of the ON interval's later closing OFF,
+  explicitly separate from the initiating cause of the ON.
 - Keep explicitly requested why-OFF support anchored to the stated OFF.
   No substitution if the requested boundary cannot be independently found.
 
