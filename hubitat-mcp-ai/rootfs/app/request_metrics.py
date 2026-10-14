@@ -91,7 +91,7 @@ class RequestMetrics:
         "synthesis_validation_issues", "synthesis_localized_corrections",
         "synthesis_repair_rounds", "synthesis_repair_causal_coverage",
         "synthesis_repair_causal_provenance", "synthesis_repair_performance",
-        "synthesis_repair_other", "synthesis_repair_failed", "synthesis_causal_fail_closed",
+        "synthesis_repair_other", "synthesis_repair_failed", "synthesis_causal_fail_closed", "telemetry_claims_reconciled",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",
