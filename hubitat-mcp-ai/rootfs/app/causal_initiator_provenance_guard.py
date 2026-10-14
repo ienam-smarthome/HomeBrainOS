@@ -91,10 +91,10 @@ def guard_unverified_initiator_claims(
             # observation along with the unsupported causal leap.
             # Reproduce only a *source-verified* focal timing fact, never
             # preserve model prose merely because it mentions a sensor.
-            leading = re.split(r"(?i)\\b(?:however|therefore|thus)\\s*[,;:]?\\s*", stripped, maxsplit=1)[0]
+            leading = re.split(r"(?i)\b(?:however|therefore|thus)\s*[,;:]?\s*", stripped, maxsplit=1)[0]
             focus = graph.get("focus") or {}
             off_requested = re.search(
-                r"(?i)\\b(?:turn|turned|switch|switched|went)\\s+off\\b",
+                r"(?i)\b(?:turn|turned|switch|switched|went)\s+off\b",
                 str(original_user or ""),
             ) is not None
             timing_facts = _focal_sensor_correlations(
@@ -105,7 +105,7 @@ def guard_unverified_initiator_claims(
             )
             verified_observation = ""
             if leading != stripped and re.search(
-                r"(?i)\\b(?:correlat\\w*|sensor|motion|occupancy)\\b",
+                r"(?i)\b(?:correlat\w*|sensor|motion|occupancy)\b",
                 leading,
             ):
                 for fact in timing_facts:
