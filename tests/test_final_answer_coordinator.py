@@ -79,3 +79,36 @@ async def test_final_answer_propagates_provider_cancellation() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert await asyncio.wait_for(cancelled.wait(), timeout=1) is True
+
+
+@pytest.mark.asyncio
+async def test_failed_causal_repair_uses_bounded_source_only_fallback(monkeypatch):
+    import final_answer_coordinator as coordinator_module
+
+    calls = []
+
+    async def chat(messages, _tools):
+        calls.append(messages)
+        return {"role": "assistant", "content":
+                "A confident external initiator claim without proof."}
+
+    def invalid(_message, _evidence, *, original_user="", causal=False):
+        assert causal
+        return "Still unsupported", ["causal_source_attribution"]
+
+    monkeypatch.setattr(coordinator_module, "validate_synthesis", invalid)
+    monkeypatch.setattr(
+        coordinator_module, "render_failed_causal_synthesis",
+        lambda _evidence, _prompt: (
+            "The requested state event was observed; "
+            "its initiating controller remains unverified."
+        ),
+    )
+    agent = FinalAnswerCoordinator(chat, evidence_supplier=lambda: [])
+    answer = await agent.answer([
+        {"role": "user",
+         "content": "Why did Livingroom Light 1 switch on at 19:55?"}
+    ])
+    assert len(calls) == 2
+    assert "initiating controller remains unverified" in answer
+    assert "confident external" not in answer

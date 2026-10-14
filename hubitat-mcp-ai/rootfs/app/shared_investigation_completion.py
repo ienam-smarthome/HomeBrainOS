@@ -11,6 +11,9 @@ from copy import deepcopy
 from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
+from recorded_telemetry_freshness import (
+    assess_recorded_telemetry_freshness, render_temporal_qualification,
+)
 from investigation_intelligence import assess_investigation, plan_investigation
 from investigation_policy import is_causal_investigation
 
@@ -159,6 +162,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     }
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
+    if domain == "device_telemetry":
+        temporal = assess_recorded_telemetry_freshness(evidence)
+        if temporal is not None:
+            coverage["telemetryTimestampAssessment"] = temporal
+            message += "\n\n" + render_temporal_qualification(
+                temporal, message,
+            )
     if partial:
         limitations: list[str] = []
         if missing:
