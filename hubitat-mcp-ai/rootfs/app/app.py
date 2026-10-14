@@ -128,6 +128,7 @@ def load_options() -> dict[str, Any]:
         "historical_journal_log_app_ids": "",
         "causal_deterministic_final_enabled": True,
         "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
+        "general_task_engine_enabled": False,
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
@@ -317,6 +318,9 @@ agent = UnifiedMCPAgent(
     ),
     known_automations=OPTIONS.get("causal_known_automations_json"),
     internet_control_aliases=OPTIONS.get("internet_control_aliases_json"),
+    general_task_engine_enabled=_bool(
+        OPTIONS.get("general_task_engine_enabled"), False
+    ),
     semantic_agent_enabled=_bool(
         OPTIONS.get("semantic_agent_enabled"), True
     ),
