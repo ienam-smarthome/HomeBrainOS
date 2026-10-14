@@ -132,3 +132,20 @@ def test_command_only_history_reconciles_unproven_physical_silence_and_age():
         "physical telemetry or command delivery" in corrected
     )
     assert "command invocations" in corrected
+
+
+def test_command_only_history_qualifies_no_incoming_telemetry_and_mqtt_conflict():
+    assessment = assess_recorded_telemetry_freshness(_command_only())
+    draft = "\n".join((
+        "*   **Connectivity:** The mqttStatus is reported as connected, "
+        "creating a contradiction with the offline health status.",
+        "*   **Recent Activity:** In the last 24 hours, there have been "
+        "no incoming telemetry updates. The returned history consists "
+        "entirely of outgoing commands.",
+    ))
+    corrected, changed = reconcile_telemetry_answer(draft, assessment)
+    assert changed
+    assert "contradiction" not in corrected
+    assert "no incoming telemetry updates" not in corrected
+    assert "cannot prove the absence of physical telemetry" in corrected
+    assert "different statuses" in corrected

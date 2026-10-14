@@ -187,12 +187,20 @@ def reconcile_telemetry_answer(
         elif command_only and (
             "no telemetry or state changes were received" in body
             or "no telemetry has been received" in body
+            or "no incoming telemetry updates" in body
             or "no device-originated events" in body
         ):
             revised = authoritative_last
         elif command_only and (
             "but this contradicts the health status" in body
-            or "discrepancy between the" in body and "mqtt" in body
+            or ("discrepancy between the" in body and "mqtt" in body)
+            or (
+                ("mqttstatus" in body or "mqtt status" in body)
+                and "offline" in body
+                and any(term in body for term in (
+                    "contradiction", "conflict", "inconsistent",
+                ))
+            )
         ):
             revised = (
                 "The stored mqttStatus and health attributes report different "

@@ -271,3 +271,114 @@ async def test_local_unreachable_and_cloud_unconfigured_fails_closed():
     # fallback correctly refused to proceed without an API key.
     urls = [url for url, _ in client.requests]
     assert urls == ["http://localhost:11434/api/chat"]
+
+
+class EmptyStreamRecoveryClient:
+    """Scripted Ollama stream followed by at most one non-stream POST."""
+
+    def __init__(self, stream_lines, post_payload):
+        self.stream_lines = stream_lines
+        self.post_payload = post_payload
+        self.stream_requests = []
+        self.post_requests = []
+
+    def stream(self, method, url, **kwargs):
+        self.stream_requests.append((method, url, kwargs))
+        return StreamContext(StreamResponse(self.stream_lines))
+
+    async def post(self, url, **kwargs):
+        self.post_requests.append((url, kwargs))
+        return FakeResponse(self.post_payload)
+
+
+@pytest.mark.asyncio
+async def test_empty_stream_thinking_only_recovers_with_one_non_streamed_round():
+    client = EmptyStreamRecoveryClient(
+        [
+            '{"message":{"role":"assistant","thinking":"internal trace"}}',
+            '{"done":true,"done_reason":"stop"}',
+        ],
+        {"message": {"role": "assistant", "content": "Grounded answer"}},
+    )
+    transport = ChatTransport(
+        "key", "gemma4:31b-cloud", client=client,
+    )
+    tools = [{"type": "function", "function": {"name": "read_status"}}]
+    answer = await transport.chat(
+        [{"role": "user", "content": "Investigate the device"}], tools,
+    )
+    assert answer == {"role": "assistant", "content": "Grounded answer"}
+    assert len(client.stream_requests) == 1
+    assert len(client.post_requests) == 1
+    streamed = client.stream_requests[0][2]["json"]
+    recovered = client.post_requests[0][1]["json"]
+    assert streamed["stream"] is True
+    assert streamed["think"] is True
+    assert recovered["stream"] is False
+    assert recovered["think"] is False
+    assert recovered["messages"] == streamed["messages"]
+    assert recovered["tools"] == streamed["tools"] == tools
+
+
+@pytest.mark.asyncio
+async def test_empty_stream_recovery_may_return_native_tool_calls_without_executing():
+    calls = [{"function": {"name": "read_status", "arguments": {"id": "7103"}}}]
+    client = EmptyStreamRecoveryClient(
+        ['{"done":true,"done_reason":"stop"}'],
+        {"message": {"role": "assistant", "content": "", "tool_calls": calls}},
+    )
+    transport = ChatTransport("key", "gemma4:31b", client=client)
+    answer = await transport.chat(
+        [{"role": "user", "content": "Read status"}], [],
+    )
+    assert answer["tool_calls"] == calls
+    assert len(client.post_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_stream_recovery_fails_closed_if_post_also_empty():
+    client = EmptyStreamRecoveryClient(
+        ['{"message":{"thinking":"not a user-visible answer"}}',
+         '{"done":true}'],
+        {"done": True, "message": {"role": "assistant", "content": "", "thinking": "private"}},
+    )
+    transport = ChatTransport("key", "gemma4:31b", client=client)
+    with pytest.raises(RuntimeError, match="no assistant message after one"):
+        await transport.chat([{"role": "user", "content": "Why?"}], [])
+    assert len(client.stream_requests) == 1
+    assert len(client.post_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_stream_does_not_run_recovery_post():
+    client = EmptyStreamRecoveryClient(
+        ['{"message":{"role":"assistant","content":"OK"}}', '{"done":true}'],
+        {"message": {"role": "assistant", "content": "Should never be used"}},
+    )
+    answer = await ChatTransport("key", "gemma4:31b", client=client).chat(
+        [{"role": "user", "content": "Hi"}], [],
+    )
+    assert answer["content"] == "OK"
+    assert client.post_requests == []
+
+
+@pytest.mark.asyncio
+async def test_nonstream_empty_response_can_recover_once():
+    class SequencedPostClient(PostClient):
+        def __init__(self):
+            super().__init__({})
+            self.answers = [
+                {},
+                {"message": {"role": "assistant", "content": "Recovered"}},
+            ]
+
+        async def post(self, url, **kwargs):
+            self.requests.append((url, kwargs))
+            return FakeResponse(self.answers.pop(0))
+
+    client = SequencedPostClient()
+    transport = ChatTransport("key", "gemma4:31b", client=client)
+    answer = await transport.chat([{"role": "user", "content": "Hi"}], [])
+    assert answer["content"] == "Recovered"
+    assert len(client.requests) == 2
+    assert client.requests[1][1]["json"]["think"] is False
