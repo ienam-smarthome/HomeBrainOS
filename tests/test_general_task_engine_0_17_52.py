@@ -271,3 +271,83 @@ def test_non_device_reporter_does_not_count_as_observed():
         },
     })}]
     assert extract_event_reporter_device_ids(source) == set()
+
+
+@pytest.mark.asyncio
+async def test_proposal_model_write_is_blocked_before_mcp_execution():
+    from mcp_agent_orchestrator import UnifiedMCPAgent
+    from mcp_client import MCPTool, MCPToolResult
+
+    class FakeMCP:
+        def __init__(self):
+            self.calls = []
+
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search", {"type": "object"}),
+                MCPTool("hub_manage_rule_machine", "Manage RM", {
+                    "type": "object", "properties": {
+                        "tool": {"type": "string"}, "args": {"type": "object"},
+                    },
+                }),
+            ]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name != "hub_search_tools":
+                raise AssertionError("Proposal caused an MCP mutation")
+            return MCPToolResult(name, arguments, {}, "", {
+                "results": [
+                    {"tool": "hub_set_rule", "gateway": "hub_manage_rule_machine"},
+                ],
+            })
+
+    class Reply:
+        def __init__(self, message):
+            self.message = message
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": self.message}
+
+    class FakeAI:
+        def __init__(self):
+            self.responses = iter([
+                {"role": "assistant", "content": task(
+                    operation="propose", domain="automations",
+                    objective="Draft a motion rule; don't execute it",
+                    capabilityQueries=["native Rule Machine rule authoring"],
+                )},
+                {"role": "assistant", "content": "", "tool_calls": [{
+                    "function": {"name": "hub_manage_rule_machine",
+                                 "arguments": {
+                                     "tool": "hub_set_rule",
+                                     "args": {"name": "Draft"},
+                                 }},
+                }]},
+                {"role": "assistant", "content": "Proposal: create a motion rule; nothing was executed."},
+            ])
+
+        async def post(self, _url, **_kwargs):
+            return Reply(next(self.responses))
+
+        async def aclose(self):
+            return None
+
+    mcp = FakeMCP()
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b",
+        ai_client=FakeAI(),
+        general_task_engine_enabled=True,
+    )
+    answer = await agent.process_user_request(
+        "Prepare a motion-based lighting rule proposal. Do not create anything."
+    )
+    assert "Proposal" in answer
+    assert not any(name == "hub_manage_rule_machine" for name, _ in mcp.calls)
+    assert not agent.confirmations.has_pending("default")
