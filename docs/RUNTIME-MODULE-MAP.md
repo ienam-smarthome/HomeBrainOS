@@ -74,6 +74,7 @@ The repository drift test compares this table directly with the live directory. 
 | `health_audit_scheduler.py` | Runs the stored read-only system health audit on a configurable morning schedule using hub-local time. |
 | `health_audit_service.py` | Performs deterministic Hub/MCP/device/battery/automation/log health checks, persists snapshots, and tracks new/resolved findings. |
 | `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
+| `general_task_engine.py` | Validates model-proposed cross-domain objectives, skill selections, live capability-search phrases, and evidence goals; advisory-only and opt-in, never grants MCP write authority. |
 | `gateway_argument_view.py` | Canonical read-only view of direct or one-level-wrapped MCP gateway operation envelopes so evidence, grounding, and gateway compatibility checks agree on the same sub-tool without rewriting provider payloads. |
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. |
