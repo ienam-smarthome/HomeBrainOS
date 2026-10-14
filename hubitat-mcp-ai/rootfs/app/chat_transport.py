@@ -399,7 +399,7 @@ class ChatTransport:
                         call for call in calls if isinstance(call, dict)
                     )
         if not content and not tool_calls:
-            raise RuntimeError("Ollama returned no assistant message")
+            raise EmptyOllamaAssistantMessage("Ollama returned no assistant message")
         logger.info(
             "Ollama streamed round completed in %.3fs with %d chunks and "
             "%d declared tools (%s)",
