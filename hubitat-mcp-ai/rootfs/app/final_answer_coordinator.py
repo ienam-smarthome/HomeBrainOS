@@ -32,6 +32,7 @@ from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 from request_metrics import increment_active_metric
 from synthesis_context import build_tool_evidence_packet
 from synthesis_validator import validate_synthesis
+from causal_fail_closed_summary import render_failed_causal_synthesis
 
 
 FINAL_ANSWER_INSTRUCTION = FINAL_SYNTHESIS_INSTRUCTION
@@ -678,6 +679,11 @@ class FinalAnswerCoordinator:
         repaired_content = str(repaired.get("content") or "").strip()
         if not repaired_content:
             increment_active_metric("synthesis_repair_failed")
+            if causal:
+                safe = render_failed_causal_synthesis(evidence, original_user)
+                if safe is not None:
+                    increment_active_metric("synthesis_causal_fail_closed")
+                    return safe
             return corrected
 
         repaired_corrected, remaining = validate_synthesis(
@@ -688,6 +694,14 @@ class FinalAnswerCoordinator:
         )
         if remaining:
             increment_active_metric("synthesis_repair_failed")
+            if causal:
+                # A failed source-bound repair must not return another
+                # incompatible causal story merely because it now has
+                # an appended partial-coverage warning.
+                safe = render_failed_causal_synthesis(evidence, original_user)
+                if safe is not None:
+                    increment_active_metric("synthesis_causal_fail_closed")
+                    return safe
         return repaired_content if not remaining else repaired_corrected
 
 
