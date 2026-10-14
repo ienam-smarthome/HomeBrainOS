@@ -40,6 +40,7 @@ class RequestMetrics:
         "mutation_verification_failures",
         "proposal_validation_failures", "proposal_write_attempts_blocked",
         "task_evidence_retry", "task_evidence_incomplete",
+        "shared_completion_checked", "shared_completion_partial",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
         "device_control_needs_input",
