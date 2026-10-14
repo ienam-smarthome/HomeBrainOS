@@ -227,3 +227,47 @@ async def test_opt_in_request_loop_uses_semantic_room_skill_and_live_gateway():
     model_system = model.requests[1]["json"]["messages"][0]["content"]
     assert "SKILL: ROOM MANAGEMENT" in model_system
     assert "GENERAL TASK OBJECTIVES" in model_system
+
+
+def test_proposal_is_distinct_from_write():
+    plan = GeneralTaskPlan.from_model(task(
+        domain="automations", operation="propose",
+        objective="Design a lighting rule without creating it",
+    ))
+    assert plan is not None
+    assert plan.operation == "propose"
+    assert "PROPOSAL-ONLY EXECUTION BOUNDARY" in plan.instruction()
+    assert "do not call" in plan.instruction().casefold()
+
+
+def test_reported_bridge_device_is_not_mistaken_for_unobserved_device():
+    from device_claim_grounding import (
+        extract_event_reporter_device_ids,
+        find_named_device_mismatch,
+    )
+    source = [{"role": "tool", "content": json.dumps({
+        "boundaryEvents": [{
+            "name": "switch", "value": "on",
+            "producedBy": {
+                "label": "Matter Hue Bridge Pro", "id": "7790", "type": "device",
+            },
+        }],
+    })}]
+    observed = extract_event_reporter_device_ids(source)
+    assert observed == {"7790"}
+    devices = [{"label": "Matter Hue Bridge Pro", "id": "7790"}]
+    mention = "Event data lists Matter Hue Bridge Pro as the reporter."
+    assert find_named_device_mismatch(mention, devices, {"7805"}) is not None
+    assert find_named_device_mismatch(
+        mention, devices, {"7805"} | observed,
+    ) is None
+
+
+def test_non_device_reporter_does_not_count_as_observed():
+    from device_claim_grounding import extract_event_reporter_device_ids
+    source = [{"role": "tool", "content": json.dumps({
+        "producedBy": {
+            "id": "4019", "label": "Livingroom automation", "type": "app",
+        },
+    })}]
+    assert extract_event_reporter_device_ids(source) == set()
