@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from causal_command_provenance import correlate_command_producers
-from causal_timeline import explicitly_focused_event_rows
+from causal_timeline import explicitly_focused_event_rows, build_causal_timeline_rows
 
 
 def _clock(value: Any) -> datetime | None:
@@ -36,12 +36,46 @@ def _same(first: Any, second: Any, tolerance_ms: float = 3) -> bool:
 def focal_closed_transition(
     evidence: list[dict[str, Any]], original_user: str,
     *, resolved_device_id: str = "",
+    requested_transition: str = "off",
 ) -> dict[str, Any] | None:
-    """Require one exactly selected, bounded interval and known device ID."""
-    matched = explicitly_focused_event_rows(evidence, original_user)
-    if len(matched) != 1 or not matched[0].get("end"):
+    """Select a relevant OFF boundary from the explicitly requested event.
+
+    For why-ON investigations, the OFF of the *same* ON interval is a
+    subsequent event and may be hours later. Investigate the nearest
+    prior observed OFF boundary instead, if one exists. For why-OFF
+    investigations retain the exact requested closing boundary.
+    """
+    transition = str(requested_transition or "off").casefold()
+    if transition not in ("on", "off"):
         return None
-    chosen = matched[0]
+    matched = explicitly_focused_event_rows(
+        evidence, original_user, transition=transition,
+    )
+    if len(matched) != 1:
+        return None
+    requested = matched[0]
+    if transition == "off":
+        chosen = requested
+    else:
+        requested_on = _clock(requested.get("start"))
+        if requested_on is None:
+            return None
+        predecessors = []
+        for row in build_causal_timeline_rows(evidence):
+            if not isinstance(row, dict):
+                continue
+            end = _clock(row.get("end"))
+            if (
+                end is not None and end < requested_on
+                and str(row.get("subject") or "") ==
+                    str(requested.get("subject") or "")
+            ):
+                predecessors.append((end, row))
+        if not predecessors:
+            return None
+        chosen = max(predecessors, key=lambda pair: pair[0])[1]
+    if not chosen.get("end"):
+        return None
     subject = str(chosen.get("subject") or "")
     for receipt in evidence:
         if receipt.get("tool") != "homebrain_device_history" or not receipt.get("success"):
