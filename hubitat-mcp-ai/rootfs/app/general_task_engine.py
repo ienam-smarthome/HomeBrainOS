@@ -20,7 +20,7 @@ DOMAINS = frozenset({
     "device", "automations", "rooms", "diagnostics", "hub",
     "integrations", "system_state", "code", "other",
 })
-OPERATIONS = frozenset({"read", "investigate", "write"})
+OPERATIONS = frozenset({"read", "investigate", "propose", "write"})
 SKILLS = frozenset({
     "device_control", "automation", "diagnostics",
     "hub_admin", "integrations", "code_management",
@@ -110,14 +110,23 @@ class GeneralTaskPlan:
             "objective": self.objective,
             "evidence_goals": list(self.evidence_goals),
         }
+        intent_guard = (
+            "\\nPROPOSAL-ONLY EXECUTION BOUNDARY: The user requested a design "
+            "or proposed change, NOT an execution. Do not call a state-changing "
+            "MCP operation or queue confirmation. Read-only schema inspection, "
+            "target resolution, safety checks and a proposed implementation "
+            "are allowed. Identify unresolved choices before implementation."
+            if self.operation == "propose" else ""
+        )
         return (
-            "GENERAL TASK OBJECTIVES (model-proposed, not verified evidence):\n"
+            "GENERAL TASK OBJECTIVES (model-proposed, not verified evidence):\\n"
             + json.dumps(payload, ensure_ascii=False)
             + "\nEvaluate every requested objective. Discover the specific live MCP "
               "operation when needed. Use tool receipts to decide what was "
               "established; do not claim execution or a causal explanation "
               "from a proposed plan. The original user message and MCP safety "
               "gates remain authoritative. Report unresolved objectives."
+            + intent_guard
         )
 
 
@@ -136,7 +145,7 @@ class GeneralTaskPlanner:
         '"Verified command provenance"]}\\n'
         "Allowed domains: device, automations, rooms, diagnostics, hub, "
         "integrations, system_state, code, other. "
-        "Allowed operations: read, investigate, write. "
+         "Allowed operations: read, investigate, propose, write. "
         "Allowed skills: device_control, automation, diagnostics, hub_admin, "
         "integrations, code_management. "
         "Infer the purpose of the request from meaning, not keyword matches. "
@@ -147,6 +156,9 @@ class GeneralTaskPlanner:
         "Do NOT claim anything has been executed, invent device IDs or command "
         "schemas, or approve writes. Requests to explain prior changes are "
         "read/investigate, even when describing words such as 'turn off'. "
+        "For a design, draft, simulation, or plan without execution, choose "
+        "operation=propose, never write. The user must explicitly request "
+        "execution before any state-changing tool call. "
         "A write plan does not itself authorise a write. "
         "Prefer compact plans: one or two capability queries for a simple task."
     )
