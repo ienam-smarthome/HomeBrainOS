@@ -10,7 +10,7 @@
 - Real device claims still require matching target-device evidence. Untyped
   device resolver targets and expressly typed `device` records continue to
   participate in device grounding. The existing retry/refusal gate remains.
-- Extend the existing cross-route `device_telemetry` diagnostic plan to
+- A deep read-only causal question beginning with Investigate/Diagnose/Explain,\n  and asking why an event happened, is no longer misclassified as a write\n  merely because it describes a historical turn-on or turn-off command.\n- Extend the existing cross-route `device_telemetry` diagnostic plan to
   investigations about telemetry activity, device health and recent device
   logs even when questions don't use the words "offline" or "stale".
 - The shared API completion gate can now report that a read of unscoped
