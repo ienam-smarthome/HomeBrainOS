@@ -145,7 +145,7 @@ class GeneralTaskPlanner:
         '"Verified command provenance"]}\\n'
         "Allowed domains: device, automations, rooms, diagnostics, hub, "
         "integrations, system_state, code, other. "
-         "Allowed operations: read, investigate, propose, write. "
+        "Allowed operations: read, investigate, propose, write. "
         "Allowed skills: device_control, automation, diagnostics, hub_admin, "
         "integrations, code_management. "
         "Infer the purpose of the request from meaning, not keyword matches. "
