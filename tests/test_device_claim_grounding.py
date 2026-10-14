@@ -307,3 +307,20 @@ def test_untyped_targeted_device_resolver_identity_is_preserved():
     assert extract_tool_message_device_identities(messages) == [
         {"id": "7103", "label": "Bedroom 3 Mesh"}
     ]
+
+
+def test_investigative_why_is_not_misclassified_as_hubitat_write():
+    from mcp_agent_orchestrator import _explicit_mutation_request
+
+    assert _explicit_mutation_request(
+        "Investigate thoroughly why did Livingroom Light 1 turn on?"
+    ) is False
+    assert _explicit_mutation_request(
+        "Diagnose why Bedroom 3 Mesh did not turn on."
+    ) is False
+    assert _explicit_mutation_request(
+        "Turn on Livingroom Light 1."
+    ) is True
+    assert _explicit_mutation_request(
+        "Investigate this issue and turn on Livingroom Light 1."
+    ) is True
