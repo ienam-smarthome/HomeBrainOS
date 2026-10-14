@@ -8,6 +8,7 @@ guesses or provider-produced prose.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 
@@ -88,6 +89,64 @@ def assess_recorded_telemetry_freshness(
     return result
 
 
+
+def reconcile_telemetry_answer(
+    message: str, summary: dict[str, Any],
+) -> tuple[str, bool]:
+    """Reconcile textual freshness claims against typed, timestamped events.
+
+    A previous age-counter sample cannot become the present age, and bounded
+    event histories cannot prove total absence of physical transport telemetry.
+    Preserve unrelated health, switch and command observations.
+    """
+    old_age = summary.get("storedDataAgeSeconds")
+    if not isinstance(old_age, dict):
+        old_age = {}
+    last_time = str(summary.get("latestReturnedDeviceAttributedEventAt") or "")
+    last_kind = str(summary.get("latestReturnedEventAttribute") or "")
+    recorded_at = str(old_age.get("recordedAt") or "")
+    saved = str(old_age.get("value") or "")
+    authoritative_age = (
+        f"Stored dataAgeSeconds={saved} was recorded at {recorded_at}; "
+        "this is a historical driver value, not a current elapsed-time reading."
+        if saved and recorded_at else
+        "No fresh device-originated telemetry-age calculation was established."
+    )
+    authoritative_last = (
+        f"The latest returned device-attributed state event was {last_kind} "
+        f"at {last_time}; this does not establish actual physical telemetry "
+        "or complete absence of later transport data."
+    )
+    guarded: list[str] = []
+    changed = False
+    for raw in str(message or "").splitlines(keepends=True):
+        newline = "\n" if raw.endswith("\n") else ""
+        line = raw[:-1] if newline else raw
+        body = line.casefold()
+        revised = line
+        # Replace an unqualified sampled age presented as current.
+        if saved and saved in line and (
+            "data age" in body or "dataageseconds" in body
+        ) and not re.search(r"(?i)\\b(?:recorded|stored|historical|previous)\\b", line):
+            heading = re.match(r"^(\\s*[*-]\\s*\\*\\*[^*]+\\*\\*\\s*)", line)
+            prefix = heading.group(1) if heading else ""
+            revised = prefix + authoritative_age
+        # Neither a driver-generated attribute update nor a bounded 20-row
+        # history establishes that no actual device-originated packets arrived.
+        elif (
+            re.search(r"(?i)\\bno\\s+(?:new\\s+)?telemetry\\s+has\\s+been\\s+received\\b", line)
+            or re.search(r"(?i)\\bhas\\s+not\\s+provided\\s+(?:a\\s+)?fresh\\s+update\\b", line)
+            or re.search(r"(?i)\\bno\\s+telemetry\\s+(?:was|is)\\s+received\\b", line)
+        ):
+            heading = re.match(r"^(\\s*[*-]\\s*\\*\\*[^*]+\\*\\*\\s*)", line)
+            prefix = heading.group(1) if heading else ""
+            revised = prefix + authoritative_last
+        if revised != line:
+            changed = True
+        guarded.append(revised + newline)
+    return "".join(guarded), changed
+
+
 def render_temporal_qualification(summary: dict[str, Any], message: str) -> str:
     """Add a necessary qualification without changing existing observations."""
     lines = [
@@ -118,4 +177,5 @@ def render_temporal_qualification(summary: dict[str, Any], message: str) -> str:
 
 __all__ = [
     "assess_recorded_telemetry_freshness", "render_temporal_qualification",
+    "reconcile_telemetry_answer",
 ]
