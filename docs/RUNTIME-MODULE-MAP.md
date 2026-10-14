@@ -75,6 +75,7 @@ The repository drift test compares this table directly with the live directory. 
 | `health_audit_service.py` | Performs deterministic Hub/MCP/device/battery/automation/log health checks, persists snapshots, and tracks new/resolved findings. |
 | `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
 | `recorded_telemetry_freshness.py` | Timestamps bounded device-attributed event history and stored age samples; distinguishes emitted attributes from proven physical connectivity. |
+| `causal_initiator_provenance_guard.py` | Applies source-bound checks to model and repaired causal attribution claims; unknown initiating actors cannot become likely external automations merely because command history is bounded. |
 | `causal_fail_closed_summary.py` | Provides a conservative observed-event fallback when the model's causal validation repair still fails. |
 | `general_evidence_completion.py` | Checks required investigative source classes against successful, scoped read receipts and reports missing classes without promoting source checks to proof. |
 | `shared_investigation_completion.py` | API-boundary, route-independent evidence coverage and partial-outcome reporting; never changes Hubitat or claims a read proves causality. |
