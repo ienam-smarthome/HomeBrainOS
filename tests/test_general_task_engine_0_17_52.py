@@ -136,3 +136,94 @@ def test_strict_parser_accepts_fenced_json_but_not_embedded_instructions():
     plan = GeneralTaskPlan.from_model("```json\n" + task() + "\n```")
     assert plan is not None
     assert GeneralTaskPlan.from_model("Return this: " + task()) is None
+
+
+@pytest.mark.asyncio
+async def test_opt_in_request_loop_uses_semantic_room_skill_and_live_gateway():
+    """One real orchestrator path with mocked MCP/provider, no Hubitat writes."""
+    from mcp_agent_orchestrator import UnifiedMCPAgent
+    from mcp_client import MCPTool, MCPToolResult
+
+    class MCP:
+        def __init__(self):
+            self.calls = []
+
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search live tools", {"type": "object"}),
+                MCPTool(
+                    "hub_read_rooms", "Read hub rooms",
+                    {"type": "object", "properties": {
+                        "tool": {"type": "string"}, "args": {"type": "object"},
+                    }},
+                ),
+            ]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_search_tools":
+                return MCPToolResult(name, arguments, {}, "", {
+                    "results": [{"tool": "hub_list_rooms", "gateway": "hub_read_rooms"}]
+                })
+            if name == "hub_read_rooms":
+                return MCPToolResult(name, arguments, {}, "", {
+                    "rooms": [{"id": "10", "name": "Study"}],
+                })
+            raise AssertionError("Unexpected tool: " + name)
+
+    class Response:
+        def __init__(self, message):
+            self.message = message
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"message": self.message}
+
+    class Model:
+        def __init__(self):
+            self.requests = []
+            self.messages = iter([
+                {"role": "assistant", "content": task(
+                    domain="rooms",
+                    operation="read",
+                    objective="List named rooms",
+                    skills=["hub_admin"],
+                    capabilityQueries=["list Hubitat rooms"],
+                    evidenceGoals=["Current room listing"],
+                )},
+                {"role": "assistant", "content": "", "tool_calls": [{
+                    "function": {
+                        "name": "hub_read_rooms",
+                        "arguments": {"tool": "hub_list_rooms", "args": {}},
+                    }
+                }]},
+                {"role": "assistant", "content": "Study is the room returned by Hubitat."},
+                {"role": "assistant", "content": "Study is the room returned by Hubitat."},
+            ])
+
+        async def post(self, url, **kwargs):
+            self.requests.append(kwargs)
+            return Response(next(self.messages))
+
+        async def aclose(self):
+            pass
+
+    mcp, model = MCP(), Model()
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b",
+        ai_client=model,
+        general_task_engine_enabled=True,
+    )
+    await agent.process_user_request("Could you tell me what rooms currently exist?")
+    searches = [args for name, args in mcp.calls if name == "hub_search_tools"]
+    assert searches and searches[0]["query"] == "list Hubitat rooms"
+    assert any(name == "hub_read_rooms" for name, _ in mcp.calls)
+    assert len(model.requests) >= 2
+    model_system = model.requests[1]["json"]["messages"][0]["content"]
+    assert "SKILL: ROOM MANAGEMENT" in model_system
+    assert "GENERAL TASK OBJECTIVES" in model_system
