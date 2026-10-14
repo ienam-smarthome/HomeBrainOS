@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
     guard_configuration_only_causal_claim,
@@ -271,6 +272,15 @@ def validate_synthesis(
             corrected, evidence, original_user
         )
         issues.extend(claim_issues)
+
+        # Enforce a source-typed upstream-initiator obligation even after
+        # an initial model repair. A physical event or a 0-row bounded
+        # command lookup cannot establish an external automation as "likely".
+        corrected, unsupported_initiator = guard_unverified_initiator_claims(
+            corrected, evidence, original_user,
+        )
+        if unsupported_initiator:
+            issues.append("causal_unverified_initiator")
 
         corrected, coverage_changed = guard_causal_controller_history_coverage(
             corrected, evidence, original_user
