@@ -76,6 +76,7 @@ class ToolEffect(str, Enum):
 _READ_GATEWAYS = {
     "hub_get_info",
     "hub_search_tools",
+    "hub_get_tool_guide",
 }
 _DESTRUCTIVE_GATEWAYS = {"hub_manage_destructive_ops"}
 _SENSITIVE_GATEWAYS = {HUB_UPDATE_FIRMWARE_TOOL}
