@@ -335,6 +335,19 @@ def _explicit_mutation_request(prompt: str) -> bool:
         return False
     if _READ_QUERY_PREFIX.search(text):
         return False
+    # An imperative investigative lead-in can still be a READ, even when
+    # describing a historical command (e.g. "Investigate thoroughly why
+    # the light turned on?"). The broad control-verb parser must not turn
+    # that explanation into a write request and later reject valid findings.
+    # Retain writes for explicit mixed requests without a causal question.
+    investigative_lead = re.match(
+        r"^\\s*(?:investigate|diagnose|explain|analyse|analyze|reconstruct)"
+        r"\\b", text, re.I,
+    )
+    if investigative_lead and re.search(
+        r"\\b(?:why|what caused|what triggered|how did)\\b", text, re.I,
+    ):
+        return False
     return _requests_mutation(text)
 
 _DEVICE_INVENTORY_PATTERNS = (
