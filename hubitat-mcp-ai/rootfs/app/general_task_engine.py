@@ -126,15 +126,19 @@ class GeneralTaskPlanner:
 
     PROMPT = (
         "You are the planning stage for a Hubitat MCP assistant. Return exactly "
-        "one JSON object, no prose, no markdown:\n"
-        '{"version":"1","domain":"device|automations|rooms|diagnostics|hub|'
-        'integrations|system_state|code|other","operation":"read|investigate|write",'
-        '"objective":"short user objective","skills":["device_control|automation|'
-        'diagnostics|hub_admin|integrations|code_management"],'
-        '"capabilityQueries":["MCP search phrase for the needed operation"],'
-        '"evidenceGoals":["observable result required to answer"]}\n'
-        "Use exactly one domain and operation from the enumerations; entries in "
-        "skills must be individual values, not the literal pipe-joined example. "
+        "one JSON object, no prose, no markdown:\\n"
+        '{"version":"1","domain":"diagnostics","operation":"investigate",'
+        '"objective":"Explain an unexpected light activation",'
+        '"skills":["diagnostics","automation"],'
+        '"capabilityQueries":["light state event history",'
+        '"automation app logs and configuration"],'
+        '"evidenceGoals":["Observed state transition",'
+        '"Verified command provenance"]}\\n'
+        "Allowed domains: device, automations, rooms, diagnostics, hub, "
+        "integrations, system_state, code, other. "
+        "Allowed operations: read, investigate, write. "
+        "Allowed skills: device_control, automation, diagnostics, hub_admin, "
+        "integrations, code_management. "
         "Infer the purpose of the request from meaning, not keyword matches. "
         "A request may need several skills and MCP gateway searches. "
         "Include specific capability search phrases (at most four) rather than "
