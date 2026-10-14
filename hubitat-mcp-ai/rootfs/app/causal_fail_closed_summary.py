@@ -8,6 +8,7 @@ focal boundary instead of returning a conflicting, high-confidence story.
 from __future__ import annotations
 
 from typing import Any
+import re
 
 from causal_evidence_graph import build_causal_evidence_graph
 
@@ -23,15 +24,25 @@ def render_failed_causal_synthesis(
     if not isinstance(focus, dict):
         return None
     subject = str(focus.get("subject") or "The requested device")
-    time = str(focus.get("on") or "")
+    asking_off = re.search(
+        r"(?i)\\b(?:turn|turned|switch|switched|going|went)\\s+off\\b",
+        str(original_user or ""),
+    ) is not None
+    transition = "off" if asking_off else "on"
+    time = str(focus.get(transition) or "")
     if not time:
         return None
-    physical = graph.get("physicalStateBoundary") or {}
+    boundaries = graph.get("transitionEvidence") or {}
+    if transition == "off":
+        physical = (boundaries.get("off") or {}).get("state") or {}
+        actor = graph.get("offCommand") or {}
+    else:
+        physical = graph.get("physicalStateBoundary") or {}
+        actor = graph.get("directCommand") or {}
     reporter = physical.get("reporter") or {}
-    actor = graph.get("directCommand") or {}
     lines = [
         "### Investigation result — initiating cause unresolved",
-        f"**Recorded transition:** {subject} switched ON at {time}.",
+        f"**Recorded transition:** {subject} switched {transition.upper()} at {time}.",
     ]
     if isinstance(reporter, dict) and reporter.get("label"):
         lines.append(
