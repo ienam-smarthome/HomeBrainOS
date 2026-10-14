@@ -12,6 +12,8 @@ _COUNTER_LABELS = (
     ("mcp_retries", "MCP retries"),
     ("mcp_concurrent_peak", "MCP concurrent peak"),
     ("evidence_retries", "Evidence retries"),
+    ("shared_completion_checked", "Shared investigation checks"),
+    ("shared_completion_partial", "Partial investigations"),
     ("grounding_refusals", "Grounding refusals"),
     ("confirmation_queued", "Confirmations queued"),
     ("confirmation_expired", "Confirmations expired"),
