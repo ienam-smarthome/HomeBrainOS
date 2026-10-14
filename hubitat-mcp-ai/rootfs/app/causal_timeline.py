@@ -608,7 +608,8 @@ def _focal_clock_parts(original_user: str) -> tuple[int, ...] | None:
 
 
 def explicitly_focused_event_rows(
-    evidence: list[dict[str, Any]], original_user: str
+    evidence: list[dict[str, Any]], original_user: str,
+    *, transition: str | None = None,
 ) -> list[dict[str, Any]]:
     """Select one observed boundary at a specified clock time.
 
@@ -636,8 +637,16 @@ def explicitly_focused_event_rows(
         if date_match else None
     )
     selected = []
+    # If the question asks who initiated a particular ON/OFF event, do not
+    # select the opposite boundary of an interval just because it happened
+    # to fall in the named minute. Generic callers retain both edges.
+    boundary_keys = (
+        ("start",) if transition == "on" else
+        ("end",) if transition == "off" else
+        ("start", "end")
+    )
     for row in build_causal_timeline_rows(evidence):
-        for edge in ("start", "end"):
+        for edge in boundary_keys:
             moment = _parse_time(row.get(edge))
             if moment is None:
                 continue

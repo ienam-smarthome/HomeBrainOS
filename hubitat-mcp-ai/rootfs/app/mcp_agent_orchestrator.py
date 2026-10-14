@@ -97,6 +97,7 @@ from causal_command_provenance import (
     correlate_command_producers,
     render_competing_command_summary,
     focal_transition_boundary,
+    prompt_focal_transition_boundary,
     render_boundary_producer_summary,
     render_command_producer_summary,
     render_command_producer_evidence,
@@ -1136,8 +1137,22 @@ class UnifiedMCPAgent:
         command_correlations = correlate_command_producers(current_evidence)
         requested_boundary = (
             focused_off["end"] if focused_off else
-            focal_transition_boundary(current_evidence, seed.transition)
+            prompt_focal_transition_boundary(
+                current_evidence, seed.transition, user_prompt,
+            )
         )
+        if has_explicit_focal_clock(user_prompt) and not requested_boundary:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL FOCAL BOUNDARY UNVERIFIED\\n"
+                    "The exact requested ON/OFF boundary was not uniquely "
+                    "observed in the returned history. Do not substitute the "
+                    "latest transition or use nearby sensor correlation "
+                    "as if it belonged to the requested time."
+                ),
+            })
+            return "partial", subject_key, seed.transition
         if command_producer_transition_sufficient(
             command_correlations,
             seed.transition,
@@ -1157,7 +1172,7 @@ class UnifiedMCPAgent:
         if boundary_producer_transition_sufficient(
             boundary_correlations,
             seed.transition,
-            requested_boundary=requested_boundary if explicit_off else None,
+            requested_boundary=requested_boundary if has_explicit_focal_clock(user_prompt) else None,
         ):
             increment_active_metric("causal_boundary_producer_provenance")
             boundary_kind = boundary_producer_transition_kind(
@@ -4300,9 +4315,10 @@ class UnifiedMCPAgent:
                 requested_transition = switch_transition_from_prompt(user_prompt)
                 if requested_transition in {"on", "off"}:
                     current_evidence = self.evidence.receipts()
-                    requested_boundary = focal_transition_boundary(
+                    requested_boundary = prompt_focal_transition_boundary(
                         current_evidence,
                         requested_transition,
+                        user_prompt,
                     )
                     command_correlations = correlate_command_producers(
                         current_evidence

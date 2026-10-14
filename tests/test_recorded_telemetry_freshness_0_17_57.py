@@ -60,7 +60,12 @@ def test_command_events_alone_do_not_count_as_device_origin_telemetry():
     rows[0]["details"]["observedEvents"] = [
         rows[0]["details"]["observedEvents"][0]
     ]
-    assert assess_recorded_telemetry_freshness(rows) is None
+    snapshot = assess_recorded_telemetry_freshness(rows)
+    assert snapshot is not None
+    assert snapshot["onlyCommandEventsInReturnedWindow"] is True
+    assert snapshot["observedCommandEvents"] == 1
+    assert snapshot["latestReturnedDeviceAttributedEventAt"] is None
+    assert snapshot["physicalTelemetryVerified"] is False
 
 
 def test_ambiguous_causal_repair_uses_safe_graph_fallback(monkeypatch):
