@@ -156,3 +156,24 @@ def test_histories_unrelated_to_telemetry_are_preserved():
         "latestReturnedEventAttribute": "mqttStatus",
     }
     assert reconcile_telemetry_answer(msg, snapshot) == (msg, False)
+
+
+def test_shared_validator_enforces_initiator_proof_after_model_repair(monkeypatch):
+    import causal_initiator_provenance_guard as proof_guard
+    from synthesis_validator import validate_synthesis
+
+    monkeypatch.setattr(
+        proof_guard, "build_causal_evidence_graph",
+        lambda _evidence, _question: _graph(),
+    )
+    draft = (
+        "The FP400 motion edge occurred near the light transition. "
+        "An external Hue-native automation most likely caused the ON event."
+    )
+    corrected, issues = validate_synthesis(
+        draft, [], original_user="Why did Livingroom Light 1 turn on?",
+        causal=True,
+    )
+    assert "causal_unverified_initiator" in issues
+    assert "most likely caused" not in corrected
+    assert "external automation or manual action remains possible" in corrected
