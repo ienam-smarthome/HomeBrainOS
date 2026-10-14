@@ -91,6 +91,54 @@ def build_mcp_skill_guidance(user_prompt: str) -> str:
     return "\n".join(parts).strip()
 
 
+_SKILL_ROOMS = """
+SKILL: ROOM MANAGEMENT
+- Discover the live hub_read_rooms / hub_manage_rooms operations and their
+  schemas. Verify exact room and device identities before changes.
+- Confirm the affected device's room assignment after an authorised write.
+- Room changes do not delete devices; never present them as removal.
+"""
+
+_SKILL_INTEGRATIONS = """
+SKILL: INTEGRATION AND BRIDGE DIAGNOSTICS
+- Distinguish state reported to Hubitat from commands originated by Hubitat,
+  and distinguish a bridge event from proof of the external controller mapping.
+- Look for the integration's native evidence before assigning a cause.
+- Do not infer network reachability from a health flag or recent event alone.
+"""
+
+_SKILL_CODE = """
+SKILL: HUB APP, DRIVER, AND CODE ADMINISTRATION
+- Discover installed source and dependency information before proposing writes.
+- Source updates/deletes require the relevant approval, backup and version checks.
+- Do not treat a write acknowledgement as proof the changed code is operational.
+"""
+
+_SKILL_SECTIONS = {
+    "device_control": _CONTROL,
+    "automation": _RULES,
+    "diagnostics": _DIAGNOSTICS,
+    "hub_admin": _SKILL_ROOMS + "\n" + _CONTROL,
+    "integrations": _SKILL_INTEGRATIONS + "\n" + _DIAGNOSTICS,
+    "code_management": _SKILL_CODE,
+}
+
+
+def build_mcp_skill_guidance_for_domains(skill_domains: tuple[str, ...]) -> str:
+    """Activate skill instructions from a validated semantic plan, not words.
+
+    A missing or invalid plan keeps generic MCP guidance rather than guessing
+    the user's intention. These sections are operational suggestions only;
+    MCP live schemas and runtime permission checks remain authoritative.
+    """
+    parts = [_GENERIC]
+    for domain in dict.fromkeys(skill_domains):
+        section = _SKILL_SECTIONS.get(domain)
+        if section is not None:
+            parts.append(section)
+    return "\n".join(parts).strip()
+
+
 def wants_deep_investigation(user_prompt: str) -> bool:
     """Explicit effort request; ordinary one-step causal questions stay fast."""
     text = " ".join(str(user_prompt or "").casefold().split())
@@ -102,4 +150,4 @@ def wants_deep_investigation(user_prompt: str) -> bool:
     ))
 
 
-__all__ = ["build_mcp_skill_guidance", "wants_deep_investigation"]
+__all__ = ["build_mcp_skill_guidance", "build_mcp_skill_guidance_for_domains", "wants_deep_investigation"]
