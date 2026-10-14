@@ -22,6 +22,7 @@ EVIDENCE_KINDS = frozenset({
     "scheduled_jobs",
     "performance_stats",
     "tool_guide",
+    "command_history",
 })
 
 _READ_OPERATIONS: dict[str, str] = {
@@ -74,6 +75,8 @@ def _kind(receipt: dict[str, Any]) -> str | None:
             return "app_logs"
         # Whole-hub log reads cannot establish app/device-specific coverage.
         return None
+    if op == "hub_list_device_events" and str(args.get("attribute") or "").casefold().startswith("command-"):
+        return "command_history"
     if op == "hub_list_devices":
         # A basic list is identity navigation. Only a detailed, scoped
         # projection contains state and can count as a device-state read.
