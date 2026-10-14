@@ -9,9 +9,14 @@ from typing import Any
 import httpx
 
 from reasoning_policy import observe_assistant_message, prepare_reasoning_turn
+from request_metrics import increment_active_metric
 
 
 logger = logging.getLogger("HomeBrainOS.ChatTransport")
+
+
+class EmptyOllamaAssistantMessage(RuntimeError):
+    """The provider completed a round without final text or native tool calls."""
 
 # Ollama's native `think` field is model-family-specific. Keep the allow-list
 # deliberately conservative: these are reasoning families HomeBrain currently
@@ -190,26 +195,54 @@ class ChatTransport:
         keep_alive: float | None,
     ) -> dict[str, Any]:
         prepared_messages, prepared_tools = prepare_reasoning_turn(messages, tools)
-        if callable(getattr(self.client, "stream", None)):
-            return await self._chat_stream(
+        streamed = callable(getattr(self.client, "stream", None))
+        try:
+            if streamed:
+                return await self._chat_stream(
+                    prepared_messages,
+                    prepared_tools,
+                    base_url=base_url,
+                    model_name=model_name,
+                    api_key=api_key,
+                    timeout=timeout,
+                    read_timeout=read_timeout,
+                    keep_alive=keep_alive,
+                )
+            return await self._chat_post(
                 prepared_messages,
                 prepared_tools,
                 base_url=base_url,
                 model_name=model_name,
                 api_key=api_key,
                 timeout=timeout,
-                read_timeout=read_timeout,
                 keep_alive=keep_alive,
             )
-        return await self._chat_post(
-            prepared_messages,
-            prepared_tools,
-            base_url=base_url,
-            model_name=model_name,
-            api_key=api_key,
-            timeout=timeout,
-            keep_alive=keep_alive,
-        )
+        except EmptyOllamaAssistantMessage:
+            # A completed provider round with neither content nor tool calls
+            # has NOT executed any MCP tool. Recover this exact model round
+            # once, without streaming and without optional reasoning. Never
+            # retry timeouts, malformed JSON, status errors or cancelled calls.
+            increment_active_metric("ollama_empty_message_recovery")
+            logger.warning(
+                "Ollama returned no assistant message; retrying one "
+                "non-streamed round with thinking disabled (model=%s, "
+                "streamed=%s)",
+                model_name, streamed,
+            )
+            try:
+                return await self._chat_post(
+                    prepared_messages,
+                    prepared_tools,
+                    base_url=base_url,
+                    model_name=model_name,
+                    api_key=api_key,
+                    timeout=timeout,
+                    keep_alive=keep_alive,
+                    disable_thinking=True,
+                )
+            except Exception:
+                increment_active_metric("ollama_empty_message_recovery_failed")
+                raise
 
     def _request(
         self,
@@ -219,6 +252,7 @@ class ChatTransport:
         *,
         stream: bool,
         keep_alive: float | None,
+        disable_thinking: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model_name,
@@ -227,7 +261,9 @@ class ChatTransport:
             "stream": stream,
             "options": {"temperature": 0.1},
         }
-        if self.thinking_enabled and self._supports_thinking(model_name):
+        if disable_thinking and self._supports_thinking(model_name):
+            payload["think"] = False
+        elif self.thinking_enabled and self._supports_thinking(model_name):
             payload["think"] = True
         if keep_alive is not None:
             # Ollama accepts a plain number of seconds here; 0 unloads
@@ -250,13 +286,15 @@ class ChatTransport:
         api_key: str,
         timeout: httpx.Timeout,
         keep_alive: float | None,
+        disable_thinking: bool = False,
     ) -> dict[str, Any]:
         started = time.monotonic()
         response = await self.client.post(
             f"{base_url}/api/chat",
             headers=self._headers(api_key),
             json=self._request(
-                messages, tools, model_name, stream=False, keep_alive=keep_alive
+                messages, tools, model_name, stream=False,
+                keep_alive=keep_alive, disable_thinking=disable_thinking
             ),
             timeout=timeout,
         )
@@ -264,7 +302,7 @@ class ChatTransport:
         payload = response.json()
         message = payload.get("message")
         if not isinstance(message, dict):
-            raise RuntimeError("Ollama returned no assistant message")
+            raise EmptyOllamaAssistantMessage("Ollama returned no assistant message")
         normalized = self._normalized_assistant_message(message)
         observe_assistant_message(normalized)
         logger.info(
