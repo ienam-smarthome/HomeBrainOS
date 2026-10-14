@@ -13,7 +13,7 @@ from typing import Any
 from general_evidence_completion import assess_task_source_coverage
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
-    reconcile_telemetry_answer,
+    reconcile_telemetry_answer, render_command_only_evidence_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from investigation_policy import is_causal_investigation
@@ -168,9 +168,18 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         if temporal is not None:
             coverage["telemetryTimestampAssessment"] = temporal
             original_message = message
-            message, reconciled = reconcile_telemetry_answer(
-                original_message, temporal,
+            projected = render_command_only_evidence_answer(
+                original_message, evidence, temporal,
             )
+            if projected is not None:
+                # A command-only window has no physical lastSeen proof; rebuild
+                # the high-risk activity/conclusion sections from typed rows.
+                message, reconciled = projected, projected != original_message
+                coverage["answerProjection"] = "bounded-command-only-evidence"
+            else:
+                message, reconciled = reconcile_telemetry_answer(
+                    original_message, temporal,
+                )
             if reconciled:
                 counters = metrics.setdefault("counters", {})
                 counters["telemetry_claims_reconciled"] = int(
