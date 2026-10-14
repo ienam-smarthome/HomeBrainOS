@@ -1,0 +1,178 @@
+"""One read-only final investigation assessment for every API execution route.
+
+This runs *after* the native, deterministic, and specialist paths finish.
+It never executes a tool, changes a device, invents evidence, or converts
+source-class coverage into proof of an upstream cause. Partial coverage is
+visible regardless of which route produced the original answer.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any
+
+from general_evidence_completion import assess_task_source_coverage
+from investigation_intelligence import assess_investigation, plan_investigation
+from investigation_policy import is_causal_investigation
+
+TELEMETRY_KINDS = ("device_state", "device_history", "device_logs")
+CAUSAL_KINDS = ("device_history", "command_history")
+SCHEDULER_KINDS = ("scheduled_jobs",)
+
+
+class _CoverageOutcome:
+    """Preserve arbitrary specialist outcome fields without copying or casting."""
+
+    def __init__(self, original: Any, coverage: dict[str, Any],
+                 metrics: dict[str, Any], message: str) -> None:
+        self._original = original
+        self.investigation_coverage = coverage
+        self.metrics = metrics
+        self.message = message
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._original, name)
+
+
+def _historical_integrity_issues(evidence: list[dict[str, Any]]) -> list[str]:
+    """Explicit bounded source-health flags; no assertions about missing rows."""
+    problems: list[str] = []
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        if details.get("historySourceIntegrityVerified") is False:
+            problems.append(
+                "Event-history completeness is not independently verified."
+            )
+        if details.get("observedEventsTruncated") is True:
+            problems.append(
+                "Returned device events were truncated; older boundaries may be missing."
+            )
+        if details.get("boundaryEventsTruncated") is True:
+            problems.append(
+                "Returned boundary events were truncated."
+            )
+    return list(dict.fromkeys(problems))
+
+
+def _known_source_requirements(domain: str) -> tuple[str, ...]:
+    if domain == "device_telemetry":
+        return TELEMETRY_KINDS
+    if domain == "scheduler_ownership":
+        return SCHEDULER_KINDS
+    if domain == "manual_motion_lockout":
+        return ("device_history", "app_logs")
+    return ()
+
+
+def _safe_metrics(outcome: Any, *, partial: bool) -> dict[str, Any]:
+    """Never clobber prior failures or mutate an existing metrics snapshot."""
+    original = getattr(outcome, "metrics", None)
+    metrics = deepcopy(original) if isinstance(original, dict) else {}
+    counters = metrics.get("counters")
+    if not isinstance(counters, dict):
+        counters = {}
+        metrics["counters"] = counters
+    counters["shared_completion_checked"] = int(
+        counters.get("shared_completion_checked") or 0
+    ) + 1
+    if partial:
+        counters["shared_completion_partial"] = int(
+            counters.get("shared_completion_partial") or 0
+        ) + 1
+        if metrics.get("outcome") in (None, "success"):
+            metrics["outcome"] = "unresolved"
+    return metrics
+
+
+def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
+    """Attach a structured assessment before /api/ask or /api/chat serialization.
+
+    This checkpoint is independent of the path's early return and cannot make
+    calls after the original agent has finished. A missing source is marked as
+    incomplete, never automatically fabricated or treated as a Hubitat fault.
+    """
+    if str(getattr(outcome, "request_class", "")) != "live-read":
+        return outcome
+    goal = plan_investigation(request)
+    causal = is_causal_investigation(request)
+    prior = getattr(outcome, "investigation_coverage", None)
+    if goal is None and not causal and not isinstance(prior, dict):
+        return outcome
+
+    evidence = list(getattr(outcome, "evidence", []) or [])
+    if goal is not None:
+        domain = goal.domain
+        required = _known_source_requirements(domain)
+    else:
+        domain = "causal_provenance"
+        required = CAUSAL_KINDS
+
+    if isinstance(prior, dict):
+        existing = deepcopy(prior)
+    elif goal is not None:
+        existing = assess_investigation(goal, evidence)
+    else:
+        existing = {}
+    source_coverage = assess_task_source_coverage(required, evidence)
+    integrity = _historical_integrity_issues(evidence)
+    missing = list(source_coverage.missing)
+
+    # Provenance is a separate proof obligation from checking a relevant
+    # source. If the goal has a domain-specific observed-requirements contract
+    # we retain it, rather than upgrading to complete when sources were read.
+    domain_proof_complete = (
+        existing.get("evidenceComplete") is True
+        if "evidenceComplete" in existing else None
+    )
+    partial = bool(missing or integrity or domain_proof_complete is False)
+    if causal:
+        # A reporting bridge and a switch state are NOT evidence that an
+        # upstream initiating command/automation was proven. We can certify
+        # source classes, not resolve the causal question generically.
+        partial = True
+
+    coverage = {
+        **existing,
+        "domain": domain,
+        "status": "partial-evidence" if partial else "source-checks-complete",
+        "evidenceComplete": False if partial else bool(domain_proof_complete),
+        "assessmentScope": "all-api-routes-read-only",
+        "sourceCoverage": source_coverage.to_dict(),
+        "sourceIntegrityWarnings": integrity,
+        "causalInitiatorVerified": False if causal else None,
+        "completionNote": (
+            "A successful tool request proves that a source was queried, not "
+            "that the device was responsive or an upstream action occurred."
+        ),
+    }
+    metrics = _safe_metrics(outcome, partial=partial)
+    message = str(getattr(outcome, "message", "") or "")
+    if partial:
+        limitations: list[str] = []
+        if missing:
+            limitations.append("unchecked source classes: " + ", ".join(missing))
+        if integrity:
+            limitations.append("unverified/truncated historical coverage")
+        if causal:
+            limitations.append(
+                "upstream command or automation initiator not independently "
+                "established by this generic gate"
+            )
+        if domain_proof_complete is False and not missing and not integrity and not causal:
+            limitations.append(
+                "one or more required domain-specific observations remain unverified"
+            )
+        if limitations:
+            message += (
+                "\n\n**Investigation completeness: partial.** "
+                + "; ".join(limitations)
+                + ". The reported observations remain available, but the "
+                  "unresolved points must not be treated as confirmed."
+            )
+    return _CoverageOutcome(outcome, coverage, metrics, message)
+
+
+__all__ = ["apply_shared_investigation_completion"]
