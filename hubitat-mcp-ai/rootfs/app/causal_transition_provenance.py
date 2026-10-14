@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from causal_command_provenance import correlate_command_producers
-from causal_timeline import explicitly_focused_event_rows
+from causal_timeline import explicitly_focused_event_rows, build_causal_timeline_rows
 
 
 def _clock(value: Any) -> datetime | None:
@@ -36,12 +36,57 @@ def _same(first: Any, second: Any, tolerance_ms: float = 3) -> bool:
 def focal_closed_transition(
     evidence: list[dict[str, Any]], original_user: str,
     *, resolved_device_id: str = "",
+    requested_transition: str | None = None,
 ) -> dict[str, Any] | None:
-    """Require one exactly selected, bounded interval and known device ID."""
-    matched = explicitly_focused_event_rows(evidence, original_user)
-    if len(matched) != 1 or not matched[0].get("end"):
+    """Select an independent OFF boundary without changing focal identity.
+
+    Explicit why-ON inquiries prefer a previously observed closing OFF.
+    If that is unavailable, preserve the historical secondary investigation
+    of the ON interval's later closing OFF, separately labelled as such.
+    Standalone callers retain the original unique observed-interval contract.
+    """
+    transition = (
+        str(requested_transition).casefold()
+        if requested_transition is not None else None
+    )
+    if transition not in (None, "on", "off"):
         return None
-    chosen = matched[0]
+    matched = explicitly_focused_event_rows(
+        evidence, original_user, transition=transition,
+    )
+    if len(matched) != 1:
+        return None
+    requested = matched[0]
+    if transition in (None, "off"):
+        chosen = requested
+    else:
+        requested_on = _clock(requested.get("start"))
+        if requested_on is None:
+            return None
+        predecessors = []
+        for row in build_causal_timeline_rows(evidence):
+            if not isinstance(row, dict):
+                continue
+            end = _clock(row.get("end"))
+            if (
+                end is not None and end < requested_on
+                and str(row.get("subject") or "") ==
+                    str(requested.get("subject") or "")
+            ):
+                predecessors.append((end, row))
+        # A close OFF/ON bounce merits inspecting its preceding OFF. An
+        # unrelated OFF a minute or more earlier is not the requested
+        # return-on incident: keep the existing independent investigation
+        # of this interval's closing OFF instead. This is a generic
+        # event-proximity condition, not a device or room special-case.
+        preceding = max(predecessors, key=lambda pair: pair[0]) if predecessors else None
+        adjacent_bounce = (
+            preceding is not None
+            and 0 < (requested_on - preceding[0]).total_seconds() <= 10.0
+        )
+        chosen = preceding[1] if adjacent_bounce else requested
+    if not chosen.get("end"):
+        return None
     subject = str(chosen.get("subject") or "")
     for receipt in evidence:
         if receipt.get("tool") != "homebrain_device_history" or not receipt.get("success"):

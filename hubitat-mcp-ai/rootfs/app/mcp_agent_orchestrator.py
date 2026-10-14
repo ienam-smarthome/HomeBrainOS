@@ -1178,12 +1178,18 @@ class UnifiedMCPAgent:
             boundary_kind = boundary_producer_transition_kind(
                 boundary_correlations,
                 seed.transition,
-                requested_boundary=requested_boundary if explicit_off else None,
+                requested_boundary=(
+                    requested_boundary if has_explicit_focal_clock(user_prompt)
+                    else None
+                ),
             )
             boundary_match = boundary_producer_transition_match(
                 boundary_correlations,
                 seed.transition,
-                requested_boundary=requested_boundary if explicit_off else None,
+                requested_boundary=(
+                    requested_boundary if has_explicit_focal_clock(user_prompt)
+                    else None
+                ),
             )
             if boundary_kind == "reporting_source" and boundary_match is not None:
                 await self._collect_reporting_source_secondary_correlation(
@@ -1235,6 +1241,7 @@ class UnifiedMCPAgent:
         focus = focal_closed_transition(
             self.evidence.receipts(), user_prompt,
             resolved_device_id=resolved_device_id,
+            requested_transition=requested_transition,
         )
         if not focus:
             return
