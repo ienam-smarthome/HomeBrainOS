@@ -340,10 +340,10 @@ async def test_empty_stream_recovery_fails_closed_if_post_also_empty():
     client = EmptyStreamRecoveryClient(
         ['{"message":{"thinking":"not a user-visible answer"}}',
          '{"done":true}'],
-        {"done": True, "message": None},
+        {"done": True, "message": {"role": "assistant", "content": "", "thinking": "private"}},
     )
     transport = ChatTransport("key", "gemma4:31b", client=client)
-    with pytest.raises(RuntimeError, match="no assistant message"):
+    with pytest.raises(RuntimeError, match="no assistant message after one"):
         await transport.chat([{"role": "user", "content": "Why?"}], [])
     assert len(client.stream_requests) == 1
     assert len(client.post_requests) == 1
