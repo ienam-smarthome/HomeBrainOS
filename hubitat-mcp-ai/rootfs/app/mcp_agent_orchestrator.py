@@ -128,6 +128,7 @@ from device_claim_grounding import (
     DeviceClaimAction,
     DeviceClaimGroundingPolicy,
     extract_receipt_device_ids,
+    extract_event_reporter_device_ids,
     extract_tool_message_device_identities,
     find_named_device_mismatch,
 )
@@ -3671,7 +3672,7 @@ class UnifiedMCPAgent:
                     mismatched_label = find_named_device_mismatch(
                         answer,
                         known_devices,
-                        receipt_device_ids,
+                        receipt_device_ids | extract_event_reporter_device_ids(messages),
                     )
                     device_claim_decision = device_claim_grounding.decide(
                         mismatched_label
