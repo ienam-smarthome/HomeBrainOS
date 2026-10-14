@@ -285,6 +285,7 @@ async def test_proposal_model_write_is_blocked_before_mcp_execution():
         async def list_tools(self):
             return [
                 MCPTool("hub_search_tools", "Search", {"type": "object"}),
+                MCPTool("hub_get_tool_guide", "Guide", {"type": "object"}),
                 MCPTool("hub_manage_rule_machine", "Manage RM", {
                     "type": "object", "properties": {
                         "tool": {"type": "string"}, "args": {"type": "object"},
@@ -297,6 +298,8 @@ async def test_proposal_model_write_is_blocked_before_mcp_execution():
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "Read-only schema guide"})
             if name != "hub_search_tools":
                 raise AssertionError("Proposal caused an MCP mutation")
             return MCPToolResult(name, arguments, {}, "", {
@@ -329,6 +332,10 @@ async def test_proposal_model_write_is_blocked_before_mcp_execution():
                                      "tool": "hub_set_rule",
                                      "args": {"name": "Draft"},
                                  }},
+                }]},
+                {"role": "assistant", "content": "", "tool_calls": [{
+                    "function": {"name": "hub_get_tool_guide",
+                                 "arguments": {"section": "rules"}},
                 }]},
                 {"role": "assistant", "content": "Proposal: create a motion rule; nothing was executed."},
             ])
