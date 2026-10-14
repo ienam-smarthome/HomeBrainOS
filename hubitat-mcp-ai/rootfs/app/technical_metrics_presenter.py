@@ -81,6 +81,7 @@ _COUNTER_LABELS = (
     ("synthesis_repair_performance", "Synthesis repair: performance"),
     ("synthesis_repair_other", "Synthesis repair: other"),
     ("synthesis_repair_failed", "Unresolved synthesis repairs"),
+    ("synthesis_causal_fail_closed", "Causal safety fallbacks"),
     ("causal_open_start_provenance", "Open-start controller provenance"),
     ("causal_deterministic_finalization", "Deterministic causal finalizations"),
     ("causal_subject_empty_stop", "Empty-subject causal stops"),
