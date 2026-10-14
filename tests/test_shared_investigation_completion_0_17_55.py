@@ -178,3 +178,50 @@ def test_explicit_command_event_read_is_not_confused_with_switch_event_read():
     assert assess_task_source_coverage(
         ("command_history",), read,
     ).sources_checked is True
+
+
+def test_device_telemetry_without_offline_keyword_still_gets_shared_coverage():
+    from investigation_intelligence import plan_investigation
+
+    question = (
+        "Investigate Bedroom 3 Mesh. Check its reported state, last telemetry "
+        "activity and recent device logs. Explain which conclusions are "
+        "established and which remain unverified. Read-only."
+    )
+    plan = plan_investigation(question)
+    assert plan is not None and plan.domain == "device_telemetry"
+    evidence = [
+        receipt("hub_read_devices", "hub_list_devices", {
+            "labelFilter": "Bedroom 3 Mesh", "detailed": True,
+        }),
+        receipt("hub_read_devices", "hub_list_device_events", {
+            "deviceId": "7103", "hoursBack": 24,
+        }, details={"observedEventsTruncated": True,
+                    "historySourceIntegrityVerified": False}),
+        receipt("hub_read_diagnostics", "hub_get_logs", {
+            "since": "30m", "limit": 100,
+        }, details={"logCount": 100}),
+        receipt("hub_read_diagnostics", "hub_get_logs", {
+            "appId": "4072", "since": "24h",
+        }, details={"logCount": 0}),
+    ]
+    observed = build_observed_agent_outcome(outcome(evidence), {
+        "outcome": "success", "counters": {}, "timings_ms": {},
+    })
+    result = serialize(apply_shared_investigation_completion(
+        observed, question,
+    ))
+    source = result["investigation_coverage"]["sourceCoverage"]
+    assert "device_logs" in source["missingSourceKinds"]
+    assert "device_history" in source["checkedSourceKinds"]
+    assert result["investigation_coverage"]["domain"] == "device_telemetry"
+    assert result["metrics"]["outcome"] == "unresolved"
+    assert result["metrics"]["counters"]["shared_completion_checked"] == 1
+
+
+def test_prospective_rule_explanation_does_not_become_diagnostic_telemetry():
+    from investigation_intelligence import plan_investigation
+
+    assert plan_investigation(
+        "Explain how to create a VRB rule for a hallway motion sensor."
+    ) is None

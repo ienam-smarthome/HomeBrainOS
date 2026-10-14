@@ -132,7 +132,8 @@ def extract_tool_message_device_identities(
     refresh the complete Hubitat inventory after the model has already finished.
 
     Only dictionaries that contain both a scalar device id and an explicit
-    ``label`` are accepted. Naked ids and generic ``name`` fields are ignored so
+    ``label`` are accepted. Explicit app/automation typed identities and
+    dictionaries with ``appId`` are excluded. Naked ids and generic ``name`` fields are ignored so
     event attributes (for example ``name='switch'``) cannot accidentally become
     device identities. Traversal is deliberately bounded because provider-bound
     tool results can contain nested event arrays.
@@ -147,6 +148,18 @@ def extract_tool_message_device_identities(
             return
         visited += 1
         if isinstance(node, dict):
+            # Event provenance includes apps as {id, label, type: "app"}.
+            # These are valid command issuers, but NEVER devices that the
+            # device-specific grounding guard may demand an independent
+            # state read for. Preserve untyped device resolver targets while
+            # excluding explicitly non-device entity identities.
+            entity_type = str(
+                node.get("type") or node.get("entityType") or ""
+            ).strip().casefold()
+            is_non_device_entity = (
+                entity_type not in ("", "device")
+                or node.get("appId") not in (None, "")
+            )
             device_id = next(
                 (
                     normalized
@@ -156,7 +169,8 @@ def extract_tool_message_device_identities(
                 None,
             )
             label = str(node.get("label") or "").strip()
-            if device_id and len(label) >= _MIN_LABEL_LENGTH:
+            if (not is_non_device_entity and device_id
+                    and len(label) >= _MIN_LABEL_LENGTH):
                 identities.setdefault(device_id, {"id": device_id, "label": label})
             for value in node.values():
                 _walk(value)

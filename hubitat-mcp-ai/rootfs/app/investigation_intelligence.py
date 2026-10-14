@@ -131,10 +131,18 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
                                   "performance", "workload", "optimis", "optimiz")
     ):
         return _PLANS["scheduler_ownership"]
-    if any(term in text for term in ("offline", "stale", "not reporting", "last seen",
-                                   "no telemetry", "unavailable")) and any(
-        term in text for term in ("device", "mqtt", "mesh", "connection", "telemetry",
-                                  "reporting", "communication")
+    # Diagnostic questions about current health, recent telemetry, or
+    # bounded device logs do not always contain "offline" or "stale". Require
+    # a genuine investigative request plus telemetry/health source semantics,
+    # rather than special-casing device labels or the wording of one test.
+    telemetry_goal = any(term in text for term in (
+        "offline", "stale", "not reporting", "last seen", "no telemetry",
+        "unavailable", "telemetry activity", "last telemetry", "last activity",
+        "device health", "health status", "device logs", "device history",
+    ))
+    if telemetry_goal and any(
+        term in text for term in ("device", "mqtt", "mesh", "connection",
+                                  "telemetry", "reporting", "communication")
     ):
         return _PLANS["device_telemetry"]
     return None
