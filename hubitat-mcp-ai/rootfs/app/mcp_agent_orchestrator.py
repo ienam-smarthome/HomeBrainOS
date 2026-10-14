@@ -3217,12 +3217,16 @@ class UnifiedMCPAgent:
                     "Original-request discovery expanded registry with: %s",
                     ", ".join(item.name for item in capability_additions),
                 )
-        rule_decision = await self.rule_authoring.propose(
-            user_prompt,
-            available_gateways=set(catalog.available_names),
-            can_read_rules=True,
+        rule_decision = (
+            await self.rule_authoring.propose(
+                user_prompt,
+                available_gateways=set(catalog.available_names),
+                can_read_rules=True,
+            )
+            if task_plan is None or task_plan.operation != "propose"
+            else None
         )
-        if rule_decision.handled:
+        if rule_decision is not None and rule_decision.handled:
             return self._rule_proposal_confirmation.resolve(
                 rule_decision,
                 user_prompt=user_prompt,
@@ -3756,6 +3760,7 @@ class UnifiedMCPAgent:
             sensitive: list[tuple[str, dict[str, Any]]] = []
             round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
+            blocked_proposal_writes: list[str] = []
             round_has_mutation = False
             for call in calls:
                 function = call.get("function") or {}
@@ -3768,6 +3773,10 @@ class UnifiedMCPAgent:
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
+                if (task_plan is not None and task_plan.operation == "propose"
+                        and effect.mutates):
+                    blocked_proposal_writes.append(name)
+                    continue
                 if (
                     not self.rule_write_enabled
                     and name == ConfirmedActionCoordinator.RULE_GATEWAY
@@ -3787,6 +3796,27 @@ class UnifiedMCPAgent:
                     and self.confirmation_policy.requires_confirmation(effect)
                 ):
                     sensitive.append((name, arguments))
+            if blocked_proposal_writes:
+                # Prevent a model-selected write from silently converting a
+                # read-only design request into a mutation or confirmation.
+                # Reject the complete model round atomically, including any
+                # companion reads, to preserve a coherent tool transcript.
+                increment_active_metric("proposal_write_attempts_blocked")
+                messages.append(assistant)
+                for call in calls:
+                    name = str((call.get("function") or {}).get("name") or "")
+                    messages.append({
+                        "role": "tool",
+                        "tool_name": name,
+                        "content": json.dumps({
+                            "error": (
+                                "Proposal-only task: no tool calls in this round "
+                                "were executed. Continue using read-only discovery "
+                                "and provide a proposal without changing Hubitat."
+                            ),
+                        }),
+                    })
+                continue
             if proposal_errors:
                 failed_name, failed_reason = proposal_errors[0]
                 failed_arguments = next(
