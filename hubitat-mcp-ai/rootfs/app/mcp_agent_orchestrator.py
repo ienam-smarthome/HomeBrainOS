@@ -175,6 +175,7 @@ from mcp_skill_guidance import (
     wants_deep_investigation,
 )
 from general_task_engine import GeneralTaskPlanner
+from general_evidence_completion import assess_task_source_coverage
 from tool_catalog_assembly import build_request_tool_catalog
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
@@ -3529,6 +3530,7 @@ class UnifiedMCPAgent:
             increment_active_metric("investigative_finalization")
             return await self._final_answer(messages)
 
+        source_completion_retry_used = False
         for _ in range(self.max_tool_rounds):
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
@@ -3699,6 +3701,41 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
+
+                # A semantic investigation declares source *classes*, not
+                # conclusions. Check actual read receipts before allowing the
+                # model to stop after only an identity/room lookup. One bounded
+                # retry is permitted; absence of a source remains unresolved.
+                if (task_plan is not None and task_plan.operation == "investigate"
+                        and task_plan.required_evidence_kinds):
+                    source_coverage = assess_task_source_coverage(
+                        task_plan.required_evidence_kinds, self.evidence.receipts(),
+                    )
+                    if source_coverage.missing and not source_completion_retry_used:
+                        source_completion_retry_used = True
+                        increment_active_metric("task_evidence_retry")
+                        messages.extend([
+                            assistant,
+                            {"role": "user", "content": source_coverage.retry_instruction()},
+                        ])
+                        continue
+                    if source_coverage.missing:
+                        increment_active_metric("task_evidence_incomplete")
+                        missing_sources = ", ".join(source_coverage.missing)
+                        note = (
+                            "\n\n**Evidence coverage incomplete:** Required "
+                            "read-source classes not verified as checked: "
+                            f"{missing_sources}. These gaps prevent treating the "
+                            "investigation as comprehensive; read-tool success "
+                            "alone cannot prove any specific historical cause."
+                        )
+                        if investigative_request:
+                            increment_active_metric("investigative_finalization")
+                            return (await self._final_answer(messages)) + note
+                        return self._unverified_mutation_guard(
+                            str(assistant.get("content") or
+                                "The investigation is incomplete.")
+                        ) + note
 
                 # A causal investigation with observed boundary commands still has
                 # one unresolved provenance slot until an app/rule/log source is
