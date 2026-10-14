@@ -341,11 +341,11 @@ def _explicit_mutation_request(prompt: str) -> bool:
     # that explanation into a write request and later reject valid findings.
     # Retain writes for explicit mixed requests without a causal question.
     investigative_lead = re.match(
-        r"^\\s*(?:investigate|diagnose|explain|analyse|analyze|reconstruct)"
-        r"\\b", text, re.I,
+        r"^\s*(?:investigate|diagnose|explain|analyse|analyze|reconstruct)"
+        r"\b", text, re.I,
     )
     if investigative_lead and re.search(
-        r"\\b(?:why|what caused|what triggered|how did)\\b", text, re.I,
+        r"\b(?:why|what caused|what triggered|how did)\b", text, re.I,
     ):
         return False
     return _requests_mutation(text)
