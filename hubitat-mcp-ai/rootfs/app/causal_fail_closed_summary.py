@@ -25,7 +25,7 @@ def render_failed_causal_synthesis(
         return None
     subject = str(focus.get("subject") or "The requested device")
     asking_off = re.search(
-        r"(?i)\\b(?:turn|turned|switch|switched|going|went)\\s+off\\b",
+        r"(?i)\b(?:turn|turned|switch|switched|going|went)\s+off\b",
         str(original_user or ""),
     ) is not None
     transition = "off" if asking_off else "on"
