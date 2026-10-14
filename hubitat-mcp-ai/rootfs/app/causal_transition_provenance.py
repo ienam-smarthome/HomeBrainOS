@@ -36,17 +36,20 @@ def _same(first: Any, second: Any, tolerance_ms: float = 3) -> bool:
 def focal_closed_transition(
     evidence: list[dict[str, Any]], original_user: str,
     *, resolved_device_id: str = "",
-    requested_transition: str = "off",
+    requested_transition: str | None = None,
 ) -> dict[str, Any] | None:
-    """Select a relevant OFF boundary from the explicitly requested event.
+    """Select an independent OFF boundary without changing focal identity.
 
-    For why-ON investigations, the OFF of the *same* ON interval is a
-    subsequent event and may be hours later. Investigate the nearest
-    prior observed OFF boundary instead, if one exists. For why-OFF
-    investigations retain the exact requested closing boundary.
+    Explicit why-ON inquiries prefer a previously observed closing OFF.
+    If that is unavailable, preserve the historical secondary investigation
+    of the ON interval's later closing OFF, separately labelled as such.
+    Standalone callers retain the original unique observed-interval contract.
     """
-    transition = str(requested_transition or "off").casefold()
-    if transition not in ("on", "off"):
+    transition = (
+        str(requested_transition).casefold()
+        if requested_transition is not None else None
+    )
+    if transition not in (None, "on", "off"):
         return None
     matched = explicitly_focused_event_rows(
         evidence, original_user, transition=transition,
@@ -54,7 +57,7 @@ def focal_closed_transition(
     if len(matched) != 1:
         return None
     requested = matched[0]
-    if transition == "off":
+    if transition in (None, "off"):
         chosen = requested
     else:
         requested_on = _clock(requested.get("start"))
@@ -71,9 +74,13 @@ def focal_closed_transition(
                     str(requested.get("subject") or "")
             ):
                 predecessors.append((end, row))
-        if not predecessors:
-            return None
-        chosen = max(predecessors, key=lambda pair: pair[0])[1]
+        # Keep the existing independent subsequent-OFF coverage where the
+        # returned event history has no earlier OFF. That later OFF is not
+        # the cause of the ON; it is a separately investigated transition.
+        chosen = (
+            max(predecessors, key=lambda pair: pair[0])[1]
+            if predecessors else requested
+        )
     if not chosen.get("end"):
         return None
     subject = str(chosen.get("subject") or "")
