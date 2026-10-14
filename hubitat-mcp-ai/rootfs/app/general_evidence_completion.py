@@ -62,6 +62,10 @@ def _args(receipt: dict[str, Any]) -> dict[str, Any]:
 
 def _kind(receipt: dict[str, Any]) -> str | None:
     op = _operation(receipt)
+    raw = receipt.get("arguments")
+    if (isinstance(raw, dict) and isinstance(raw.get("args"), dict)
+            and isinstance(raw["args"].get("args"), dict)):
+        return None  # malformed double-wrapped gateway call
     args = _args(receipt)
     if op == "hub_get_logs":
         if args.get("deviceId") or args.get("device_id"):
