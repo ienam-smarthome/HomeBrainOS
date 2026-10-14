@@ -29,6 +29,9 @@ def assess_recorded_telemetry_freshness(
     candidates: list[tuple[datetime, dict[str, Any], str]] = []
     stored_age: list[tuple[datetime, str]] = []
     checked_at: list[datetime] = []
+    observed_commands = 0
+    source_rows = 0
+    windows: list[int] = []
     for receipt in evidence:
         if not isinstance(receipt, dict) or receipt.get("success") is not True:
             continue
@@ -38,11 +41,17 @@ def assess_recorded_telemetry_freshness(
         if not isinstance(details, dict):
             continue
         label = str(details.get("label") or "")
+        if isinstance(details.get("hoursBack"), (int, float)):
+            windows.append(int(details["hoursBack"]))
         when = _instant(receipt.get("timestamp"))
         if when:
             checked_at.append(when)
         for row in details.get("observedEvents") or []:
             if not isinstance(row, dict):
+                continue
+            source_rows += 1
+            if str(row.get("name") or "").startswith("command-") or row.get("type") == "command":
+                observed_commands += 1
                 continue
             event_at = _instant(row.get("date") or row.get("timestamp"))
             if event_at is None:
@@ -60,26 +69,51 @@ def assess_recorded_telemetry_freshness(
             candidates.append((event_at, row, label))
             if name == "dataAgeSeconds":
                 stored_age.append((event_at, str(row.get("value") or "")))
-    if not candidates or not checked_at:
+    if not checked_at:
         return None
-    latest_at, latest, label = max(candidates, key=lambda record: record[0])
     as_of = max(checked_at)
-    seconds = max(0, int((as_of - latest_at).total_seconds()))
-    result: dict[str, Any] = {
-        "device": label,
-        "asOf": as_of.isoformat(),
-        "latestReturnedDeviceAttributedEventAt": latest_at.isoformat(),
-        "latestReturnedEventAttribute": str(latest.get("name") or ""),
-        "secondsSinceLatestReturnedEvent": seconds,
-        "eventWithinPast24hOfRead": seconds < 86400,
-        "physicalTelemetryVerified": False,
-        "fullHistoryVerified": False,
-        "interpretation": (
-            "These are bounded Hubitat device-attributed event records, not "
-            "independent proof of a live physical device connection or an "
-            "exhaustive absence of other telemetry."
-        ),
-    }
+    if candidates:
+        latest_at, latest, label = max(candidates, key=lambda record: record[0])
+        seconds = max(0, int((as_of - latest_at).total_seconds()))
+        result: dict[str, Any] = {
+            "device": label,
+            "asOf": as_of.isoformat(),
+            "latestReturnedDeviceAttributedEventAt": latest_at.isoformat(),
+            "latestReturnedEventAttribute": str(latest.get("name") or ""),
+            "secondsSinceLatestReturnedEvent": seconds,
+            "eventWithinPast24hOfRead": seconds < 86400,
+            "physicalTelemetryVerified": False,
+            "fullHistoryVerified": False,
+            "interpretation": (
+                "Returned Hubitat device-attributed events do not independently "
+                "prove physical transport connectivity or exhaustive coverage."
+            ),
+        }
+    elif observed_commands and source_rows == observed_commands:
+        # The event history was read, but it contains only commands.
+        # This is *not* proof that the device received nothing: driver
+        # lastSeen and cached age are unverified without source timestamps.
+        result = {
+            "device": label,
+            "asOf": as_of.isoformat(),
+            "latestReturnedDeviceAttributedEventAt": None,
+            "latestReturnedEventAttribute": None,
+            "secondsSinceLatestReturnedEvent": None,
+            "eventWithinPast24hOfRead": None,
+            "observedCommandEvents": observed_commands,
+            "returnedEventCount": source_rows,
+            "sourceWindowHours": min(windows) if windows else None,
+            "onlyCommandEventsInReturnedWindow": True,
+            "physicalTelemetryVerified": False,
+            "fullHistoryVerified": False,
+            "interpretation": (
+                "The bounded device-history sample contains only command "
+                "invocations. Its physical delivery, telemetry completeness "
+                "and precise age of last transport update are not established."
+            ),
+        }
+    else:
+        return None
     if stored_age:
         age_at, value = max(stored_age, key=lambda item: item[0])
         result["storedDataAgeSeconds"] = {
@@ -112,7 +146,13 @@ def reconcile_telemetry_answer(
         if saved and recorded_at else
         "No fresh device-originated telemetry-age calculation was established."
     )
+    command_only = summary.get("onlyCommandEventsInReturnedWindow") is True
     authoritative_last = (
+        f"The returned {summary.get('sourceWindowHours') or 'bounded'}-hour "
+        f"history contains {summary.get('observedCommandEvents', 0)} "
+        "recorded command invocations and no device-attributed state events. "
+        "It cannot prove the absence of physical telemetry or command delivery."
+        if command_only else
         f"The latest returned device-attributed state event was {last_kind} "
         f"at {last_time}; this does not establish actual physical telemetry "
         "or complete absence of later transport data."
@@ -124,6 +164,40 @@ def reconcile_telemetry_answer(
         line = raw[:-1] if newline else raw
         body = line.casefold()
         revised = line
+        if command_only and (
+            ("45 hours" in body and ("data age" in body or "telemetry" in body
+             or "freshness" in body or "stale" in body))
+            or ("162,325" in body and "data age" in body)
+        ):
+            prefix_match = re.match(r"^(\\s*[*-]\\s*\\*\\*[^*]+\\*\\*\\s*)", line)
+            revised = (prefix_match.group(1) if prefix_match else "") + (
+                "The exact current telemetry age cannot be verified from "
+                "this command-only event sample. The driver-reported lastSeen "
+                "and stored dataAgeSeconds require timestamped verification."
+            )
+        elif command_only and (
+            "communication is one-way" in body
+            or "the device is not responding with state updates" in body
+        ):
+            revised = (
+                "The hub recorded command invocations, but this history "
+                "does not establish physical command delivery, responses, "
+                "or one-way transport behaviour."
+            )
+        elif command_only and (
+            "no telemetry or state changes were received" in body
+            or "no telemetry has been received" in body
+            or "no device-originated events" in body
+        ):
+            revised = authoritative_last
+        elif command_only and (
+            "but this contradicts the health status" in body
+            or "discrepancy between the" in body and "mqtt" in body
+        ):
+            revised = (
+                "The stored mqttStatus and health attributes report different "
+                "statuses; freshness and their distinct meanings are unverified."
+            )
         # Structure-aware repairs are driven by a *bounded source* assessment:
         # neither a device-attributed attribute event nor a filled/truncated
         # event history proves physical telemetry or command acknowledgement.
@@ -201,13 +275,20 @@ def reconcile_telemetry_answer(
 
 def render_temporal_qualification(summary: dict[str, Any], message: str) -> str:
     """Add a necessary qualification without changing existing observations."""
-    lines = [
-        "**Time-source qualification:** The most recent returned "
-        "device-attributed event is "
-        f"{summary['latestReturnedDeviceAttributedEventAt']} "
-        f"({summary['latestReturnedEventAttribute']}); "
-        "such an event does not prove a physical connection."
-    ]
+    if summary.get("onlyCommandEventsInReturnedWindow"):
+        lines = [
+            "**Time-source qualification:** The returned device event sample "
+            "contained command invocations only. No fresh age of device-originated "
+            "transport telemetry or end-to-end command acknowledgement was proven."
+        ]
+    else:
+        lines = [
+            "**Time-source qualification:** The most recent returned "
+            "device-attributed event is "
+            f"{summary['latestReturnedDeviceAttributedEventAt']} "
+            f"({summary['latestReturnedEventAttribute']}); "
+            "such an event does not prove a physical connection."
+        ]
     age = summary.get("storedDataAgeSeconds")
     if isinstance(age, dict):
         lines.append(
