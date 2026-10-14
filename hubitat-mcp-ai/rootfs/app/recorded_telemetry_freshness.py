@@ -125,7 +125,7 @@ def reconcile_telemetry_answer(
         body = line.casefold()
         revised = line
         # Replace an unqualified sampled age presented as current.
-        if saved and saved in line and (
+        if saved and saved in ''.join(ch for ch in line if ch.isdigit()) and (
             "data age" in body or "dataageseconds" in body
         ) and not re.search(r"(?i)\b(?:recorded|stored|historical|previous)\b", line):
             heading = re.match(r"^(\s*[*-]\s*\*\*[^*]+\*\*\s*)", line)
