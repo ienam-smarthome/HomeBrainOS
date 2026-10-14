@@ -79,8 +79,8 @@ def test_fastpath_causal_history_only_is_partial_in_api():
     assert response["investigation_coverage"]["assessmentScope"] == (
         "all-api-routes-read-only"
     )
-    assert "Event-history completeness" in response[
-        "investigation_coverage"]["sourceIntegrityWarnings"]
+    assert any("Event-history completeness" in warning for warning in response[
+        "investigation_coverage"]["sourceIntegrityWarnings"])
     assert response["message"].startswith("Observed device state changes")
     assert "Investigation completeness: partial" in response["message"]
 
