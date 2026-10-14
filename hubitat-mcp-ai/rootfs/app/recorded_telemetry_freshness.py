@@ -127,18 +127,18 @@ def reconcile_telemetry_answer(
         # Replace an unqualified sampled age presented as current.
         if saved and saved in line and (
             "data age" in body or "dataageseconds" in body
-        ) and not re.search(r"(?i)\\b(?:recorded|stored|historical|previous)\\b", line):
-            heading = re.match(r"^(\\s*[*-]\\s*\\*\\*[^*]+\\*\\*\\s*)", line)
+        ) and not re.search(r"(?i)\b(?:recorded|stored|historical|previous)\b", line):
+            heading = re.match(r"^(\s*[*-]\s*\*\*[^*]+\*\*\s*)", line)
             prefix = heading.group(1) if heading else ""
             revised = prefix + authoritative_age
         # Neither a driver-generated attribute update nor a bounded 20-row
         # history establishes that no actual device-originated packets arrived.
         elif (
-            re.search(r"(?i)\\bno\\s+(?:new\\s+)?telemetry\\s+has\\s+been\\s+received\\b", line)
-            or re.search(r"(?i)\\bhas\\s+not\\s+provided\\s+(?:a\\s+)?fresh\\s+update\\b", line)
-            or re.search(r"(?i)\\bno\\s+telemetry\\s+(?:was|is)\\s+received\\b", line)
+            re.search(r"(?i)\bno\s+(?:new\s+)?telemetry\s+has\s+been\s+received\b", line)
+            or re.search(r"(?i)\bhas\s+not\s+provided\s+(?:a\s+)?fresh\s+update\b", line)
+            or re.search(r"(?i)\bno\s+telemetry\s+(?:was|is)\s+received\b", line)
         ):
-            heading = re.match(r"^(\\s*[*-]\\s*\\*\\*[^*]+\\*\\*\\s*)", line)
+            heading = re.match(r"^(\s*[*-]\s*\*\*[^*]+\*\*\s*)", line)
             prefix = heading.group(1) if heading else ""
             revised = prefix + authoritative_last
         if revised != line:
