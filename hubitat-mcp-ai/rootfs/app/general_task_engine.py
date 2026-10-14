@@ -14,6 +14,8 @@ import json
 import logging
 from typing import Any
 
+from general_evidence_completion import EVIDENCE_KINDS
+
 logger = logging.getLogger("HomeBrainOS.GeneralTaskEngine")
 
 DOMAINS = frozenset({
@@ -63,6 +65,7 @@ class GeneralTaskPlan:
     skill_domains: tuple[str, ...]
     capability_queries: tuple[str, ...]
     evidence_goals: tuple[str, ...]
+    required_evidence_kinds: tuple[str, ...] = ()
 
     @classmethod
     def from_model(cls, response: str) -> "GeneralTaskPlan | None":
@@ -93,6 +96,9 @@ class GeneralTaskPlan:
             value.get("capabilityQueries"), count=4, width=120
         )
         goals = _bounded_strings(value.get("evidenceGoals"), count=5, width=180)
+        kinds = tuple(x for x in _bounded_strings(
+            value.get("requiredEvidenceKinds"), count=5, width=48,
+        ) if x in EVIDENCE_KINDS)
         return cls(
             domain=domain,
             operation=operation,
@@ -100,6 +106,7 @@ class GeneralTaskPlan:
             skill_domains=tuple(skills),
             capability_queries=capabilities,
             evidence_goals=goals,
+            required_evidence_kinds=kinds,
         )
 
     def instruction(self) -> str:
@@ -109,6 +116,7 @@ class GeneralTaskPlan:
             "operation": self.operation,
             "objective": self.objective,
             "evidence_goals": list(self.evidence_goals),
+            "required_source_kinds": list(self.required_evidence_kinds),
         }
         intent_guard = (
             "\\nPROPOSAL-ONLY EXECUTION BOUNDARY: The user requested a design "
@@ -148,6 +156,12 @@ class GeneralTaskPlanner:
         "Allowed operations: read, investigate, propose, write. "
         "Allowed skills: device_control, automation, diagnostics, hub_admin, "
         "integrations, code_management. "
+        "Allowed requiredEvidenceKinds values: device_state, device_history, "
+        "device_logs, app_config, app_logs, room_inventory, native_rules, "
+        "scheduled_jobs, performance_stats, tool_guide. "
+        "For investigate operations choose 1-3 indispensable read-source "
+        "classes for requiredEvidenceKinds; for simple state reads use []. "
+        "Checked sources are not proof of a historical cause or event. "
         "Infer the purpose of the request from meaning, not keyword matches. "
         "A request may need several skills and MCP gateway searches. "
         "Include specific capability search phrases (at most four) rather than "
