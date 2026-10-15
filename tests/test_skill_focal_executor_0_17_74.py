@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"))
 
-from skill_focal_window import build_focal_source_plan, execute_focal_source_plan
+from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, project_focal_state_result
 from skill_grounded_answer import render_grounded_causal_answer
 from test_skill_focal_window_0_17_73 import _recent_unbounded, QUESTION
 
@@ -135,3 +135,27 @@ def test_failed_gateway_is_not_labeled_checked():
     assert metrics["skills_focal_read_failed"] == 1
     assert not any(r["evidence_kind"] == "focal_exact_state_history"
                    and r["success"] is True for r in recorder.rows)
+
+
+def test_busy_focal_window_preserves_requested_transition_under_redaction_cap():
+    from datetime import datetime, timedelta
+    plan = build_focal_source_plan(_recent_unbounded(), QUESTION)
+    target = datetime.fromisoformat("2026-10-14T19:55:00.049+01:00")
+    many = [{
+        "name": "switch",
+        "value": "off" if i % 2 else "on",
+        "date": (target + timedelta(milliseconds=20 * i)).isoformat(),
+    } for i in range(35)]
+    many.append({
+        "name": "switch", "value": "off",
+        "date": "2026-10-14T19:54:57.946+0100",
+    })
+    retained = project_focal_state_result({"events": many}, plan)
+    assert retained["returnedRowsInWindow"] == 36
+    assert retained["retainedRows"] == 20
+    assert retained["eventsTruncated"] is True
+    assert len(retained["events"]) == 20
+    assert any(e["date"] == "2026-10-14T19:55:00.049+01:00"
+               for e in retained["events"])
+    assert any(e["date"] == "2026-10-14T19:54:57.946+0100"
+               for e in retained["events"])
