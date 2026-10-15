@@ -8,6 +8,7 @@ distinct proof classes. This module never asserts physical command delivery.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 
@@ -64,6 +65,72 @@ def _target_label(evidence: list[dict[str, Any]], target_id: str) -> str:
     return ""
 
 
+
+def _join_derived_event_rows(
+    evidence: list[dict[str, Any]],
+    direct: dict[str, Any],
+    target_id: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """Associate a direct ID-scoped query with its immediate derived result.
+
+    The direct receipt may omit large event arrays while its paired,
+    deterministic homebrain_device_history receipt preserves them. Require
+    a resolved target label, the direct source event count, the same history
+    window and near-adjacent read times. Never join a different device's
+    history or unrelated prior source data.
+    """
+    label = _target_label(evidence, target_id)
+    direct_time = _timestamp(direct.get("timestamp"))
+    hours = str(_args(direct).get("hoursBack") or "")
+    summary = str(direct.get("summary") or "")
+    count_match = re.fullmatch(
+        r"(\d+)\s+device events for '([^']+)'", summary
+    )
+    if (
+        not label or direct_time is None or count_match is None
+        or count_match.group(2).casefold() != label.casefold()
+    ):
+        return None
+    expected_count = int(count_match.group(1))
+    if expected_count <= 0:
+        return None
+    matches = []
+    for row in evidence:
+        if (
+            not isinstance(row, dict)
+            or row.get("success") is not True
+            or row.get("tool") != "homebrain_device_history"
+        ):
+            continue
+        details = row.get("details") or {}
+        if not isinstance(details, dict):
+            continue
+        derived_label = str(details.get("label") or "")
+        if derived_label.casefold() != label.casefold():
+            continue
+        if hours and str(details.get("hoursBack") or "") != hours:
+            continue
+        rows = details.get("observedEvents")
+        if (
+            not isinstance(rows, list)
+            or len(rows) != expected_count
+            or not all(isinstance(item, dict) for item in rows)
+        ):
+            continue
+        time = _timestamp(row.get("timestamp"))
+        if time is None:
+            continue
+        delta = (time - direct_time).total_seconds()
+        if 0 <= delta <= 10.0:
+            matches.append((delta, rows, details))
+    # Conflicting matches cannot be resolved by choosing the most
+    # convenient source. One immediate derived receipt is required.
+    if len(matches) != 1:
+        return None
+    return matches[0][1], matches[0][2]
+
+
+
 def normalize_target_device_history(
     evidence: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -73,7 +140,7 @@ def normalize_target_device_history(
     Prefer the widest checked window with the greatest number of returned
     records for that target. Event count does NOT indicate complete history.
     """
-    candidates: list[tuple[int, int, dict[str, Any], list[dict[str, Any]]]] = []
+    candidates: list[tuple[int, int, dict[str, Any], list[dict[str, Any]], dict[str, Any], bool]] = []
     for receipt in evidence:
         if (not isinstance(receipt, dict) or receipt.get("success") is not True
                 or receipt.get("sub_tool") != "hub_list_device_events"):
@@ -94,11 +161,18 @@ def normalize_target_device_history(
         rows = details.get("observedEvents")
         if not isinstance(rows, list):
             rows = details.get("events")
+        joined = False
         if not isinstance(rows, list):
-            continue
+            paired = _join_derived_event_rows(
+                evidence, receipt, target_id,
+            )
+            if paired is None:
+                continue
+            rows, details = paired
+            joined = True
         count = len([row for row in rows if isinstance(row, dict)])
         hours = int(args.get("hoursBack") or 0) if str(args.get("hoursBack") or "").isdigit() else 0
-        candidates.append((hours, count, receipt, rows))
+        candidates.append((hours, count, receipt, rows, details, joined))
     if not candidates:
         return None
 
@@ -110,7 +184,9 @@ def normalize_target_device_history(
     # scoped to a single device; callers must select a device explicitly.
     if len(scoped_ids) != 1:
         return None
-    hours, _, receipt, source = max(candidates, key=lambda c: (c[0], c[1]))
+    hours, _, receipt, source, source_details, was_joined = max(
+        candidates, key=lambda c: (c[0], c[1])
+    )
     target_id = next(iter(scoped_ids))
     checked_at = _timestamp(receipt.get("timestamp"))
     commands, states = [], []
@@ -152,7 +228,7 @@ def normalize_target_device_history(
             states, key=lambda e: e["date"] or "", reverse=True,
         ) if state["attribute"] == "dataAgeSeconds"
     ), None)
-    detail = receipt.get("details") or {}
+    detail = source_details
     truncated = detail.get("observedEventsTruncated") is True
     groups: dict[tuple[str, str], int] = {}
     for item in commands:
@@ -181,6 +257,9 @@ def normalize_target_device_history(
         "physicalCommunicationVerified": False,
         "eventHistoryComplete": False,
         "scope": "target-device-mixed-bounded-event-page",
+        "joinedDerivedHistory": was_joined,
+        "eventSource": ("verified-direct-derived-receipt-pair" if was_joined
+                        else "direct-id-scoped-event-receipt"),
     }
 
 
