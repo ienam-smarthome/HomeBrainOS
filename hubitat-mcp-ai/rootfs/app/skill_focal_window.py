@@ -212,12 +212,30 @@ def project_focal_state_result(
             "name": "switch", "value": state, "date": when,
             "producedBy": owner,
         }
+    ordered = sorted(events.values(), key=lambda e: _time(e["date"]))
+    # EvidenceRecorder redacts any list after 20 entries. Restrict before
+    # recording, retaining the observed focal boundary and its nearest
+    # preceding transitions rather than whichever 20 rows the API returned.
+    if len(ordered) > 20:
+        target = _time(plan.get("requestedOn")) or stop
+        selected = sorted(
+            ordered,
+            key=lambda ev: (
+                abs((_time(ev["date"]) - target).total_seconds()),
+                _time(ev["date"]),
+            ),
+        )[:20]
+        retained = sorted(selected, key=lambda e: _time(e["date"]))
+    else:
+        retained = ordered
     return {
         "label": str(plan.get("subject") or ""),
         "deviceId": str(plan.get("deviceId") or ""),
         "attribute": "switch",
-        "events": sorted(events.values(), key=lambda e: _time(e["date"])),
-        "returnedRowsInWindow": len(events),
+        "events": retained,
+        "returnedRowsInWindow": len(ordered),
+        "retainedRows": len(retained),
+        "eventsTruncated": len(ordered) > len(retained) or len(rows) > 100,
         "requestedSince": interval["since"],
         "requestedUntil": interval["until"],
         "sourceHistoryComplete": False,
