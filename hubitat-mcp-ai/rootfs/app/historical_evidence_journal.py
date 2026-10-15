@@ -292,7 +292,13 @@ class HistoricalEvidenceJournal:
             return 0
         value = payload
         for _ in range(3):
-            if isinstance(value, dict) and isinstance(value.get("events"), list):
+            if isinstance(value, dict) and any(
+                isinstance(value.get(key), list)
+                for key in (
+                    "events", "commandEvents", "boundaryEvents",
+                    "correlationEvents", "observedEvents", "windowEvents",
+                )
+            ):
                 break
             if isinstance(value, dict):
                 value = value.get("result") or value.get("data") or {}
