@@ -3587,7 +3587,23 @@ class UnifiedMCPAgent:
             return await self._final_answer(messages)
 
         source_completion_retry_used = False
-        for _ in range(self.max_tool_rounds):
+        # A read-only investigation with an explicit historical causal
+        # boundary has already run focused host-side evidence collection.
+        # Bound further model-directed exploration, then use the existing
+        # evidence-grounded final coordinator. Do not alter budgets for
+        # writes, confirmations, generic reads or untimed investigations.
+        scoped_causal_round_budget = bool(
+            deep_causal_request
+            and has_explicit_focal_clock(user_prompt)
+            and not self._mutation_requested_by_user.get()
+        )
+        active_round_budget = (
+            min(self.max_tool_rounds, 6)
+            if scoped_causal_round_budget else self.max_tool_rounds
+        )
+        if active_round_budget < self.max_tool_rounds:
+            increment_active_metric("causal_read_round_budget")
+        for _ in range(active_round_budget):
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
@@ -4455,6 +4471,8 @@ class UnifiedMCPAgent:
                 # round wander into location/motion/rule reads merely for context.
                 increment_active_metric("evidence_sufficiency_stop")
                 return await self._final_answer(messages)
+        if active_round_budget < self.max_tool_rounds:
+            increment_active_metric("causal_read_round_budget_exhausted")
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         if ungrounded_confirmation_claim_seen:
             return (
