@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"))
 
 from test_homebrain_skills_framework_0_17_69 import _case, QUESTION
-from skill_focal_window import build_focal_source_plan
+from skill_focal_window import build_focal_source_plan, project_focal_state_result
 from skill_grounded_answer import render_grounded_causal_answer
 from skill_investigation import build_skill_investigation
 
@@ -127,3 +127,41 @@ def test_multiple_device_ids_are_never_guessed():
         "details": {"label": "Livingroom Light 1", "events": []},
     })
     assert build_focal_source_plan(rows, QUESTION) is None
+
+
+def test_raw_native_gateway_events_are_retained_as_focal_proof_not_summary():
+    plan = build_focal_source_plan(_recent_unbounded(), QUESTION)
+    raw = {"result": {"events": [
+        {"name": "switch", "value": "off",
+         "date": "2026-10-14T19:54:57.946+0100",
+         "producedBy": {"label": "Matter Hue Bridge Pro"}},
+        {"name": "switch", "value": "on",
+         "date": "2026-10-14T19:55:00.049+0100",
+         "producedBy": {"label": "Matter Hue Bridge Pro"}},
+        {"name": "switch", "value": "on",
+         "date": "2026-10-15T09:00:00.000+0100"},
+        {"name": "switch", "value": "nonsense",
+         "date": "2026-10-14T19:54:59.000+0100"},
+    ]}}
+    receipt = project_focal_state_result(raw, plan)
+    assert receipt is not None
+    assert receipt["returnedRowsInWindow"] == 2
+    assert [e["value"] for e in receipt["events"]] == ["off", "on"]
+    assert receipt["sourceHistoryComplete"] is False
+    rows = _recent_unbounded()
+    rows.append({
+        "success": True, "tool": "hub_read_devices",
+        "sub_tool": "hub_list_device_events",
+        "evidence_kind": "focal_exact_state_history",
+        "arguments": {"tool": "hub_list_device_events", "args": plan["stateRead"]},
+        "details": receipt,
+    })
+    assert "19:54:57.946" in render_grounded_causal_answer(rows, QUESTION)
+
+
+def test_empty_scoped_gateway_page_is_not_invented_as_off_event():
+    plan = build_focal_source_plan(_recent_unbounded(), QUESTION)
+    projection = project_focal_state_result({"events": []}, plan)
+    assert projection["events"] == []
+    assert projection["sourceHistoryComplete"] is False
+    assert project_focal_state_result({"unexpected": "no event rows"}, plan) is None
