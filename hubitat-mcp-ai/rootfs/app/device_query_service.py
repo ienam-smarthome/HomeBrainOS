@@ -1371,6 +1371,44 @@ class DeviceQueryService:
                 for item in (HubitatMCPClient._find_device_list(source.data) or [])
                 if isinstance(item, dict)
             ]
+            # Preserve a bounded, source-typed snapshot of reported health
+            # attributes for later evidence-first finalisation. Without this,
+            # the event normalizer can present commands accurately but cannot
+            # report the current Hubitat health/status fields that were read.
+            reported = None
+            if len(candidates) == 1 and self._tool_succeeded(source):
+                item = candidates[0]
+                fields = (
+                    "healthStatus", "mqttStatus", "lastSeen",
+                    "lastActivity", "dataAgeSeconds", "switch",
+                )
+                raw_attributes = item.get("attributes") or {}
+                attribute_values = {}
+                if isinstance(raw_attributes, dict):
+                    attribute_values = raw_attributes
+                elif isinstance(raw_attributes, list):
+                    attribute_values = {
+                        str(entry.get("name") or ""): entry.get(
+                            "currentValue", entry.get("value")
+                        )
+                        for entry in raw_attributes
+                        if isinstance(entry, dict)
+                    }
+                safe_attributes = {}
+                for field in fields:
+                    raw = attribute_values.get(field, item.get(field))
+                    if isinstance(raw, dict):
+                        raw = raw.get("currentValue", raw.get("value"))
+                    if isinstance(raw, (str, int, float, bool)):
+                        safe_attributes[field] = str(raw)[:160]
+                reported = {
+                    "deviceId": str(item.get("id") or item.get("deviceId") or ""),
+                    "label": str(item.get("label") or item.get("name") or ""),
+                    "observedAt": datetime.now(timezone.utc).isoformat(),
+                    "reportedAttributes": safe_attributes,
+                    "source": "targeted-hubitat-device-state",
+                    "isPhysicalConnectivityProof": False,
+                }
             self._record_evidence(
                 "hub_read_devices",
                 source_arguments,
@@ -1379,6 +1417,8 @@ class DeviceQueryService:
                 summary=f"{len(candidates)} targeted device candidates",
                 supports_live_claim=False,
                 evidence_kind="targeted_device_lookup",
+                details=({"reportedDeviceState": reported}
+                         if reported and reported["deviceId"] else None),
             )
             attempt_source = "label_filter"
         if not self._tool_succeeded(source):
