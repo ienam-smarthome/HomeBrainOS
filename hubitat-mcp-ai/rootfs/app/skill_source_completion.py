@@ -41,7 +41,7 @@ def pending_device_log_read(
     for row in receipts:
         if not isinstance(row, dict):
             continue
-        leaf = str(row.get("sub_tool") or _args(row).get("tool") or "")
+        leaf = str(row.get("sub_tool") or (row.get("arguments") or {}).get("tool") or _args(row).get("tool") or "")
         if leaf != "hub_get_logs":
             continue
         args = _args(row)
