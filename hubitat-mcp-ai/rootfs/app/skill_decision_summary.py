@@ -70,7 +70,7 @@ def causal_skill_conclusion(
         },
         "intervening": intervening[:6],
         "alternatives": [
-            "independent Hue/bridge-side action requires source-side evidence",
+            "independent reporting-integration action requires source-side evidence",
             "stale-state resynchronisation needs transport/state history",
         ],
         "sourceChecks": {
@@ -84,8 +84,8 @@ def causal_skill_conclusion(
             ),
         },
         "nextCheck": (
-            "Check the command producer's upstream touch/MQTT receipt at the "
-            "command timestamp and Hue/bridge transport around the intervening "
+            "Check the command producer's upstream controller or message receipt at the "
+            "command timestamp and reporting integration transport around any intervening "
             "state reports. A current app setting does not prove past execution."
         ),
     }
@@ -120,7 +120,7 @@ def render_causal_skill_conclusion(
         )
     lines.append(
         "**Competing explanations:** The recorded Hubitat command, an "
-        "independent bridge-side action, and stale-state resynchronisation "
+        "independent reporting-integration action, and stale-state resynchronisation "
         "remain distinct hypotheses; the latter two have no verified "
         "initiator in this evidence."
     )
