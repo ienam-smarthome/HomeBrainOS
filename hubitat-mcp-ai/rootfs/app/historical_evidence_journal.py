@@ -296,11 +296,24 @@ class HistoricalEvidenceJournal:
                 break
             if isinstance(value, dict):
                 value = value.get("result") or value.get("data") or {}
-        events = value.get("events") if isinstance(value, dict) else None
-        if not isinstance(events, list):
+        if not isinstance(value, dict):
+            return 0
+        # DeviceHistoryService returns a source-typed combination of direct
+        # events, commandEvents, boundaryEvents and correlationEvents. Each
+        # projection may overlap; persist unique source observations only.
+        events: list[dict[str, Any]] = []
+        for key in (
+            "events", "commandEvents", "boundaryEvents", "correlationEvents",
+            "observedEvents", "windowEvents",
+        ):
+            values = value.get(key)
+            if isinstance(values, list):
+                events.extend(item for item in values if isinstance(item, dict))
+        if not events:
             return 0
         accepted = 0
-        for event in events[:200]:
+        seen: set[tuple[str, str, str, str]] = set()
+        for event in events[:400]:
             if not isinstance(event, dict):
                 continue
             name = str(event.get("name") or "").strip()
@@ -324,6 +337,12 @@ class HistoricalEvidenceJournal:
                 state = str(event.get("value") or "").lower()
                 if state not in {"on", "off"}:
                     continue
+            identity = (
+                name, timestamp, state, origin,
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
             row = {
                 "stream": "events", "device_id": str(device_id),
                 "app_id": "", "attribute": name, "value": state,
