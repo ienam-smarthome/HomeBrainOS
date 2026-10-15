@@ -1751,15 +1751,25 @@ class UnifiedMCPAgent:
             filter_data,
             limit=8,
         )
-        sensor_specs, sensor_priority_plan = prioritize_focal_sensor_candidates(
+        ranked_sensor_specs, sensor_priority_plan = prioritize_focal_sensor_candidates(
             sensor_pool,
             candidate_inventory,
             self.known_automations,
             subject=str(subject_history.get("label") or ""),
             subject_room=str(subject_history.get("room") or ""),
             transition=transition,
-            limit=2,
+            limit=4,
         )
+        sensor_specs = ranked_sensor_specs[:2]
+        fallback_sensor_specs = ranked_sensor_specs[2:4]
+        sensor_priority_plan["initialProbeSensorIds"] = [
+            str((item.get("candidate") or {}).get("id") or "")
+            for item in sensor_specs
+        ]
+        sensor_priority_plan["fallbackProbeSensorIds"] = [
+            str((item.get("candidate") or {}).get("id") or "")
+            for item in fallback_sensor_specs
+        ]
         if sensor_priority_plan["topologyUsed"]:
             increment_active_metric("causal_topology_sensor_plan")
         if sensor_priority_plan["configuredCandidatesSelected"]:
@@ -1991,6 +2001,60 @@ class UnifiedMCPAgent:
                     increment_active_metric(
                         "causal_focal_window_evidence_recovered"
                     )
+                # If both first-choice historical windows were verified but
+                # yielded no events, probe up to two other ranked, distinct
+                # occupancy sources before concluding the focal sensor evidence
+                # is unavailable. An unverified initial window is NOT treated
+                # as a negative sensor observation.
+                elif (
+                    explicit_historical_focus and transition == "on"
+                    and len(focal_window_probes) == len(selections)
+                    and all(row["status"] == "verified-window"
+                            for row in focal_window_probes)
+                    and fallback_sensor_specs
+                ):
+                    extras = []
+                    for spec in fallback_sensor_specs:
+                        args = build_focal_sensor_window_probe(
+                            spec, boundary_match.get("stateBoundary")
+                        )
+                        if args and args["deviceId"] not in direct_attempted_ids:
+                            direct_attempted_ids.add(args["deviceId"])
+                            extras.append((spec, args))
+                    if extras:
+                        recovered = await asyncio.gather(*(
+                            read_focal_window(spec, args)
+                            for spec, args in extras
+                        ))
+                        for (spec, args), (_spec, reply) in zip(extras, recovered):
+                            rows = list(reply.get("events") or [])
+                            status = str(reply.get("status") or "unavailable")
+                            focal_window_probes.append({
+                                "deviceId": args["deviceId"],
+                                "label": str(spec.get("name") or ""),
+                                "status": status,
+                                "eventCount": len(rows),
+                                "retrievalOrder": "historical-empty-window-backup",
+                            })
+                            if status == "verified-window":
+                                candidate = spec.get("candidate") or {}
+                                direct_sensor_data.append({
+                                    "label": str(spec.get("name") or ""),
+                                    "deviceId": args["deviceId"],
+                                    "attribute": args["attribute"],
+                                    "room": candidate.get("room") or subject_history.get("room"),
+                                    "candidateMatchBasis": candidate.get("matchBasis"),
+                                    "events": rows, "observedEvents": rows,
+                                    "sourceHistoryComplete": False,
+                                    "windowedEvidenceVerified": True,
+                                    "historyScope": "bounded-absolute-window",
+                                })
+                        increment_active_metric(
+                            "causal_focal_window_reads", len(extras)
+                        )
+                        increment_active_metric(
+                            "causal_historical_sensor_fallback_reads", len(extras)
+                        )
 
         pending: list[
             tuple[str, dict[str, Any], dict[str, Any]]
