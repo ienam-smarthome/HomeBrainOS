@@ -63,3 +63,25 @@ def test_no_internal_clue_no_rewrite():
         _evidence()[:1], QUESTION,
     )
     assert not changed
+
+
+def test_live_01767_full_claims_are_reconciled():
+    draft = (
+        "### Investigation Result: Livingroom Light 1 Activation\n"
+        "The activation was reported as a state change rather than a command "
+        "execution, indicating the trigger originated from a controller "
+        "outside the Hubitat ecosystem.\n"
+        "At 19:54:46 SenseCap D1 Settings issued an on() command.\n"
+        "No direct command producer was recorded in Hubitat for this transition.\n"
+        "No Hubitat-native rule, button, or sensor triggered the event.\n"
+        "Because the Hue Bridge reported the state change without a corresponding "
+        "Hubitat command, the activation was likely triggered by an external source."
+    )
+    updated, changed = guard_causal_exclusion_with_command_clue(draft, _evidence(), QUESTION)
+    assert changed
+    assert "outside the Hubitat ecosystem" not in updated
+    assert "No Hubitat-native" not in updated
+    assert "without a corresponding Hubitat command" not in updated
+    assert "No direct command producer was recorded" not in updated
+    assert "likely triggered by an external source" not in updated
+    assert "remains unverified" in updated

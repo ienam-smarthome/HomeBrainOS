@@ -63,7 +63,7 @@ def guard_causal_exclusion_with_command_clue(
                 requested_boundary=boundary,
             ):
                 candidates.append((subject, boundary, clue))
-        break
+        # Another successful receipt can contain the matching command page.
     if not candidates:
         return message, False
     candidates.sort(key=lambda row: row[2]["delaySeconds"])
@@ -76,6 +76,19 @@ def guard_causal_exclusion_with_command_clue(
     )
     for pattern in (_EXTERNAL_CLAIM, _NO_INTERNAL, _LIKELY_EXTERNAL):
         corrected = pattern.sub(replacement, corrected)
+    # The live failure also used these ungrounded negative formulations.
+    corrected = re.sub(
+        r"(?i)\bno\s+(?:corresponding|matching)\s+Hubitat\s+command\b",
+        "no command proven to cause the transition", corrected,
+    )
+    corrected = re.sub(
+        r"(?i)\bno\s+(?:direct\s+)?command\s+producer\s+was\s+recorded\s+in\s+Hubitat\b",
+        "no uniquely verified command initiator was established", corrected,
+    )
+    corrected = re.sub(
+        r"(?i)\bwithout\s+a\s+corresponding\s+Hubitat\s+command\b",
+        "without a verified command-to-state delivery link", corrected,
+    )
     label = str(clue["producer"].get("label") or "an identified Hubitat app")
     if label.casefold() not in corrected.casefold():
         corrected += (
