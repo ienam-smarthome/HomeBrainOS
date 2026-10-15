@@ -279,6 +279,69 @@ class HistoricalEvidenceJournal:
         self._last_received[stream] = row["received_at"]
         return True
 
+    async def ingest_native_history(self, device_id: str, payload: Any) -> int:
+        """Preserve safe, source-timestamped historical rows seen in MCP reads.
+
+        The websocket stream may not expose command invocation metadata.
+        Opportunistic read-through retains only approved switch states and
+        command-on/off/setLevel observations from a *successful* native device
+        history request. A reported command is never recorded as a physical
+        state transition. No backfill is claimed beyond the returned page.
+        """
+        if not self.enabled or not self._started or not str(device_id).isdigit():
+            return 0
+        value = payload
+        for _ in range(3):
+            if isinstance(value, dict) and isinstance(value.get("events"), list):
+                break
+            if isinstance(value, dict):
+                value = value.get("result") or value.get("data") or {}
+        events = value.get("events") if isinstance(value, dict) else None
+        if not isinstance(events, list):
+            return 0
+        accepted = 0
+        for event in events[:200]:
+            if not isinstance(event, dict):
+                continue
+            name = str(event.get("name") or "").strip()
+            if name not in {"switch", "command-on", "command-off", "command-setLevel"}:
+                continue
+            timestamp = _aware_iso(event.get("date"))
+            if not timestamp:
+                continue
+            source = event.get("producedBy") or {}
+            if not isinstance(source, dict):
+                source = {}
+            if name.startswith("command-"):
+                if source.get("type") != "app" or not str(source.get("id") or "").isdigit():
+                    continue
+                origin = "hubitat-mcp-command:app:" + _limited(source.get("id"), 18)
+                label = _limited(source.get("label"), 128)
+                state = ""
+            else:
+                origin = "hubitat-mcp-state"
+                label = ""
+                state = str(event.get("value") or "").lower()
+                if state not in {"on", "off"}:
+                    continue
+            row = {
+                "stream": "events", "device_id": str(device_id),
+                "app_id": "", "attribute": name, "value": state,
+                "display_name": label, "source": origin,
+                "source_time": timestamp, "observed_at": timestamp,
+                "received_at": utcnow(), "timestamp_basis": "source",
+                "message": "",
+            }
+            try:
+                self._queue.put_nowait(row)
+                accepted += 1
+            except asyncio.QueueFull:
+                self._dropped += 1
+                self.error = "Journal queue overflow; coverage has gaps"
+                await asyncio.to_thread(self._mark_disconnected, "events", "queue-overflow")
+                break
+        return accepted
+
     async def _stream(self, stream: str) -> None:
         path = "/eventsocket" if stream == "events" else "/logsocket"
         delay = 2
