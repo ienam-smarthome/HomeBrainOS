@@ -25,6 +25,7 @@ from causal_command_provenance import correlate_command_producers
 from causal_timeline import (
     build_causal_timeline_rows,
     explicitly_focused_event_rows,
+    has_explicit_focal_clock,
 )
 from natural_datetime import normalize_iso_offset
 
@@ -108,6 +109,10 @@ def _focus(evidence: list[dict[str, Any]], question: str) -> dict[str, Any] | No
         return next(iter(unique.values()))
     if len(unique) > 1:
         return None  # multiple ONs in requested minute: need clarification
+    # An explicit historical timestamp must NEVER silently bind to a
+    # different newer interval, even when that is the sole remaining row.
+    if has_explicit_focal_clock(question):
+        return None
     # An unfocused multi-interval question cannot be turned into an invented
     # single-event explanation. One observed interval alone can be summarized.
     all_rows = build_causal_timeline_rows(evidence)
