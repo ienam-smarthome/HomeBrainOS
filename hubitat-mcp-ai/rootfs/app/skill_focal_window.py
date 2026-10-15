@@ -97,6 +97,37 @@ def _requested_clock(question: str, reference: datetime) -> datetime | None:
     return wanted
 
 
+
+_ARCHIVE_CLOCK_RANGE = re.compile(
+    r"\\b(?:between|from)\\s+"
+    r"(?P<begin>(?:[01]?\\d|2[0-3]):[0-5]\\d)"
+    r"\\s+(?:and|to|through|until|[-–])\\s+"
+    r"(?P<end>(?:[01]?\\d|2[0-3]):[0-5]\\d)\\b",
+    re.I,
+)
+
+
+def _requested_archive_window(question: str, focal: datetime) -> dict[str, str] | None:
+    """Respect a supplementary bounded journal search range on focal day.
+
+    Only when the range is unique, spans at most one hour, and contains
+    the focal event. A malformed/ambiguous range never moves the event date
+    or expands an unbounded query.
+    """
+    windows = list(_ARCHIVE_CLOCK_RANGE.finditer(str(question or "")))
+    if len(windows) != 1 or focal.tzinfo is None:
+        return None
+    def _at(clock: str) -> datetime:
+        hour, minute = (int(value) for value in clock.split(":"))
+        return focal.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    start, stop = _at(windows[0].group("begin")), _at(windows[0].group("end"))
+    if not start < stop or not start <= focal <= stop:
+        return None
+    if (stop - start).total_seconds() > 3600:
+        return None
+    return {"since": _iso_utc(start), "until": _iso_utc(stop)}
+
+
 def _missing_boundary_plan(
     evidence: list[dict[str, Any]], question: str,
 ) -> dict[str, Any] | None:
@@ -178,6 +209,7 @@ def _missing_boundary_plan(
         "requestedMinuteOnly": True, "observedBoundaryVerified": False,
         "commandTime": command_text,
         "sourceWindow": {"since": _iso_utc(begin), "until": _iso_utc(end)},
+        "journalWindow": _requested_archive_window(question, requested),
         "stateRead": state_args, "producerLogRead": log_args,
         "stateHistoryStatus": "not-verified-at-focal-minute",
         "producerLogStatus": "not-verified-at-command",
@@ -274,6 +306,7 @@ def build_focal_source_plan(
         "requestedOn": verdict.get("focusTime"),
         "commandTime": command.get("timestamp"),
         "sourceWindow": {"since": state_args["since"], "until": state_args["until"]},
+        "journalWindow": _requested_archive_window(question, focus),
         "stateRead": None if checked_state else state_args,
         "producerLogRead": None if checked_logs else log_args,
         "stateHistoryStatus": "read-attempted" if checked_state else "not-checked-in-exact-window",
@@ -592,8 +625,9 @@ def project_archived_focal_state(
     A coverage gap, empty query or duplicated candidate never proves an
     external cause, even if the journal persisted the information correctly.
     """
-    begin = _time(plan.get("sourceWindow", {}).get("since"))
-    end = _time(plan.get("sourceWindow", {}).get("until"))
+    query_window = plan.get("journalWindow") or plan.get("sourceWindow") or {}
+    begin = _time(query_window.get("since"))
+    end = _time(query_window.get("until"))
     if begin is None or end is None:
         raise ValueError("Exact bounded journal window required")
     events: list[dict[str, Any]] = []
