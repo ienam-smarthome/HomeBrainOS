@@ -79,7 +79,8 @@ def test_journal_recovers_evicted_off_on_without_inventing_cause(tmp_path):
     answer = render_grounded_causal_answer(rows + [receipt(plan, projection)], QUESTION)
     assert answer is not None
     assert "SenseCap D1 Settings" in answer
-    assert "confirmed cause" not in answer.lower()
+    assert "not a confirmed cause" in answer.lower()
+    assert "persistent HomeBrain journal" in answer
 
 
 def test_collector_receive_time_does_not_become_verified_source_event(tmp_path):
