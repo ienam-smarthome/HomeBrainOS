@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / 
 
 from test_homebrain_skills_framework_0_17_69 import _case, QUESTION
 from causal_evidence_graph import build_causal_evidence_graph
-from skill_focal_window import build_focal_source_plan, project_focal_state_result
+from skill_focal_window import build_focal_source_plan, project_focal_state_result, render_unverified_focal_outcome
 from skill_grounded_answer import render_grounded_causal_answer
 
 
@@ -129,3 +129,41 @@ def test_correct_native_utc_interval_is_not_requeried():
     final = build_focal_source_plan(rows, QUESTION)
     assert final["stateRead"] is None
     assert final["producerLogRead"] is None
+
+
+def test_unverified_history_yields_safe_answer_without_claiming_automation_cause():
+    rows = _evicted()
+    plan = build_focal_source_plan(rows, QUESTION)
+    rows.append(_response(plan, []))
+    result = render_unverified_focal_outcome(plan, rows, QUESTION)
+    assert result is not None
+    assert "Historical ON not independently verified" in result
+    assert "SenseCap D1 Settings" in result
+    assert "19:54:46.691" in result
+    assert "not proof" in result
+    assert "did not establish exactly one ON" in result
+    assert "Next read-only checks" in result
+    assert "direct cause" not in result
+    assert render_unverified_focal_outcome(
+        build_focal_source_plan(_case(), QUESTION), _case(), QUESTION,
+    ) is None
+
+
+def test_recovered_actual_focal_on_disables_fail_closed_stop():
+    rows = _evicted()
+    plan = build_focal_source_plan(rows, QUESTION)
+    rows.append(_response(plan, [
+        {"name": "switch", "value": "on",
+         "date": "2026-10-14T19:55:00.049+0100"},
+    ]))
+    assert render_unverified_focal_outcome(plan, rows, QUESTION) is None
+
+
+def test_wrong_calendar_date_and_unrelated_older_command_do_not_seed_history():
+    rows = _evicted()
+    assert build_focal_source_plan(
+        rows, "Why did Livingroom Light 1 turn ON at 19:55 on 13 October 2026?"
+    ) is None
+    assert build_focal_source_plan(
+        rows, "Why did Livingroom Light 1 turn ON at 12:00 on 14 October 2026?"
+    ) is None
