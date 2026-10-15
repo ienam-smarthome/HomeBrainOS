@@ -18,6 +18,11 @@ from skill_investigation import build_skill_investigation
 
 def _recent_unbounded():
     rows = _case()
+    # The real v0.17.72 trace did not retain this OFF in *any* receipt.
+    rows[0]["details"]["correlationEvents"] = [
+        event for event in rows[0]["details"]["correlationEvents"]
+        if str(event.get("value") or "").casefold() != "off"
+    ]
     rows.append({
         "success": True, "sub_tool": "hub_list_device_events",
         "arguments": {"tool": "hub_list_device_events", "args": {
