@@ -43,6 +43,10 @@ def test_event_time_is_not_replaced_by_archive_window_or_latest_day():
     assert plan["requestedOn"].startswith("2026-10-14T19:55:00")
     assert plan["stateRead"]["since"] == "2026-10-14T18:54:36.691Z"
     assert plan["stateRead"]["until"] == "2026-10-14T18:56:00.000Z"
+    assert plan["journalWindow"] == {
+        "since": "2026-10-14T18:50:00.000Z",
+        "until": "2026-10-14T19:00:00.000Z",
+    }
 
 
 def test_multiple_competing_focal_events_still_require_disambiguation():
@@ -118,6 +122,12 @@ async def test_real_prompt_checks_journal_before_empty_subject_early_stop(
     assert "source-timestamped switch row(s)" in result.message
     assert "14 October" in result.message
     assert "15 October 2026 at 19:55" not in result.message
+    journal_receipt = next(
+        row for row in result.evidence
+        if row.get("evidence_kind") == "focal_archived_state_history"
+    )
+    assert journal_receipt["arguments"]["since"] == "2026-10-14T18:50:00.000Z"
+    assert journal_receipt["arguments"]["until"] == "2026-10-14T19:00:00.000Z"
     assert [
         (name, args["tool"]) for name, args in mcp.calls
     ] == [
