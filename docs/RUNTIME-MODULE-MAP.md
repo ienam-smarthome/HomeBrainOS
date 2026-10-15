@@ -25,6 +25,7 @@ The repository drift test compares this table directly with the live directory. 
 | `skill_topology.py` | Plans read-only producer-first configuration and source-coverage checks from current-turn receipts. |
 | `skill_source_completion.py` | Plans a required device-scoped log read from resolved telemetry evidence before final synthesis; does not execute or mutate. |
 | `skill_decision_summary.py` | Produces source-ranked causal hypotheses and calibrated offline telemetry diagnoses without inventing execution or transport facts. |
+| `skill_grounded_answer.py` | Direct, source-grounded explanation for unique focal ON events with preceding recorded commands but no proven causal chain; prevents an unverified model verdict overriding typed evidence. |
 | `skill_secret_guard.py` | Redacts credentials from model-facing tool content and final assistant responses. |
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
 | `causal_rule_decision_context.py` | Separates confirmed lighting-app command provenance, scoped execution logs, current rule configuration, and present-day sensor-health evidence without inferring historical sensor truth. |

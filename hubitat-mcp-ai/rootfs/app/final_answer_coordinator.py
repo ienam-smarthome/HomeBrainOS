@@ -32,6 +32,7 @@ from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 from request_metrics import increment_active_metric
 from synthesis_context import build_tool_evidence_packet
 from skill_investigation import render_skill_investigation
+from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
 from causal_fail_closed_summary import render_failed_causal_synthesis
 
@@ -469,6 +470,23 @@ class FinalAnswerCoordinator:
             build_causal_evidence_graph(evidence, original_user)
             if causal else {}
         )
+        # A source-ranked causal conclusion is a decision from typed receipts,
+        # not text that a model can override by choosing different wording.
+        # Only use this direct path for an exact focal ON event with a recorded
+        # preceding command but no established upstream causal chain.
+        if (
+            causal
+            and (investigative or contract is not None)
+            and causal_graph.get("scope") == "single-observed-event"
+            and not causal_graph.get("ready")
+            and not causal_graph.get("physicalEvidenceComplete")
+        ):
+            grounded_answer = render_grounded_causal_answer(
+                evidence, original_user,
+            )
+            if grounded_answer:
+                increment_active_metric("skills_grounded_answer_selected")
+                return grounded_answer
         causal_graph_brief = (
             render_causal_evidence_graph(evidence, original_user)
             if causal_graph.get("scope") == "single-observed-event"
