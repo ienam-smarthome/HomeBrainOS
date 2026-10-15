@@ -345,14 +345,21 @@ def project_focal_state_result(
     # stream contains many other events closer to the focal timestamp.
     if len(ordered) > 20:
         target = _time(plan.get("requestedOn")) or stop
-        required: list[dict[str, Any]] = [
+        focus_on = [
             ev for ev in ordered
-            if ev["value"] == "on"
-            and abs((_time(ev["date"]) - target).total_seconds()) <= .002
-        ][:1]
+            if ev["value"] == "on" and (
+                (0 <= (_time(ev["date"]) - target).total_seconds() < 60)
+                if plan.get("requestedMinuteOnly") else
+                abs((_time(ev["date"]) - target).total_seconds()) <= .002
+            )
+        ]
+        # Preserve exact ON if known; for minute-only questions retain each
+        # candidate (up to cap) so ambiguity cannot be silently resolved.
+        required: list[dict[str, Any]] = focus_on[:15]
+        selected_on = (_time(focus_on[0]["date"]) if len(focus_on) == 1 else target)
         prior_off = [
             ev for ev in ordered
-            if ev["value"] == "off" and _time(ev["date"]) < target
+            if ev["value"] == "off" and _time(ev["date"]) < selected_on
         ]
         if prior_off:
             required.append(prior_off[-1])
@@ -378,6 +385,18 @@ def project_focal_state_result(
         "eventsTruncated": len(ordered) > len(retained) or len(rows) > 500,
         "requestedSince": interval["since"],
         "requestedUntil": interval["until"],
+        "requestedOn": str(plan.get("requestedOn") or ""),
+        "requestedMinuteOnly": bool(plan.get("requestedMinuteOnly")),
+        "sourceVerifiedOn": (
+            sum(
+                1 for ev in retained
+                if ev["value"] == "on" and (
+                    (0 <= (_time(ev["date"]) - _time(plan["requestedOn"])).total_seconds() < 60)
+                    if plan.get("requestedMinuteOnly") else
+                    abs((_time(ev["date"]) - _time(plan["requestedOn"])).total_seconds()) <= .002
+                )
+            ) == 1
+        ),
         "sourceHistoryComplete": False,
         "status": "bounded-events-retained-not-proof-of-complete-history",
     }
