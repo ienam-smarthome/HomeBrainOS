@@ -158,3 +158,72 @@ def test_device_scoped_logs_require_unambiguous_resolution():
                 "details": {"label": "Bedroom 3 Mesh"}}]
     assert pending_device_log_read(question, missing) is None
     assert pending_device_log_read("What's happening at home?", missing) is None
+
+
+def test_skills_ranked_explanation_survives_failed_model_repair():
+    from skill_decision_summary import (
+        causal_skill_conclusion, render_causal_skill_conclusion,
+    )
+    rows = _case()
+    rows.extend([
+        {"success": True, "sub_tool": "hub_get_app_config",
+         "arguments": {"args": {"appId": "4129"}},
+         "details": {"configured": ["Device subscription exists"]}},
+        {"success": True, "sub_tool": "hub_get_logs",
+         "arguments": {"args": {"appId": "4129", "since": "2026-10-14T18:54:50Z"}},
+         "details": {"logCount": 0}},
+    ])
+    verdict = causal_skill_conclusion(rows, QUESTION)
+    assert verdict["command"]["producer"] == "SenseCap D1 Settings"
+    assert verdict["command"]["causationVerified"] is False
+    assert verdict["intervening"][0]["state"] == "off"
+    assert verdict["sourceChecks"]["producerAppConfigChecked"]
+    assert verdict["sourceChecks"]["producerAppLogEntries"] == 0
+    rendered = render_causal_skill_conclusion(rows, QUESTION)
+    assert "strongest" in rendered.lower()
+    assert "Competing explanations" in rendered
+    assert "App execution logs" in rendered
+    assert "Best next checks" in rendered
+    from causal_fail_closed_summary import render_failed_causal_synthesis
+    fallback = render_failed_causal_synthesis(rows, QUESTION)
+    assert "Best-supported explanation" in fallback
+    assert "19:54:57.946" in fallback
+    assert "13.358" in fallback
+
+
+def test_offline_telemetry_skill_verdict_is_status_level_not_root_cause():
+    from skill_decision_summary import telemetry_skill_conclusion
+    summary = {
+        "deviceId": "7103", "deviceLabel": "Bedroom 3 Mesh",
+        "stateEventCount": 0, "queryWindowHours": 24,
+        "reportedDeviceState": {"reportedAttributes": {
+            "healthStatus": "offline", "mqttStatus": "connected"
+        }},
+    }
+    statement = telemetry_skill_conclusion(summary)
+    assert "consistent with stale or interrupted device telemetry" in statement
+    assert "root cause have not been independently verified" in statement
+    assert "fresh physical packet" in statement
+    summary["reportedDeviceState"]["reportedAttributes"]["healthStatus"] = "online"
+    assert telemetry_skill_conclusion(summary) is None
+
+
+def test_empty_device_logs_are_reported_as_empty_bounded_read():
+    from typed_device_history_evidence import render_target_device_evidence_answer
+    summary = {
+        "deviceId": "7103", "deviceLabel": "Bedroom 3 Mesh",
+        "returnedEvents": 9, "commandCount": 9, "stateEventCount": 0,
+        "queryWindowHours": 24, "commandGroups": [],
+        "reportedDeviceState": {"reportedAttributes": {
+            "healthStatus": "offline", "mqttStatus": "connected"
+        }},
+    }
+    rows = [{"success": True, "sub_tool": "hub_get_logs",
+             "arguments": {"tool": "hub_get_logs", "args": {
+                 "deviceId": "7103", "since": "24h",
+             }}, "details": {"logCount": 0, "logs": []}}]
+    answer = render_target_device_evidence_answer(rows, summary)
+    assert "**Working diagnosis:**" in answer
+    assert "**Device-scoped logs:** 0 entries returned" in answer
+    assert "Most useful next checks" in answer
+    assert "physical device, radio/network path and root cause" in answer
