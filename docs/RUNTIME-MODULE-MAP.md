@@ -20,6 +20,10 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_lighting_context.py` | Explains bounded level-command chronology and correlates specifically selected occupancy history with proven lighting activations without inventing a sensor trigger. |
 | `causal_command_provenance.py` | Correlates compatible ON/OFF/setLevel command rows to focal switch boundaries, keeps command producers distinct from bridge reporters and flags competing apps without inventing a unique initiator. |
 | `causal_command_clue_guard.py` | Prevents unverified external-controller exclusion when an exact-event preceding Hubitat command is present; preserves producer metadata as an investigative clue rather than causal proof. |
+| `skills_framework.py` | Selects and loads bounded repo-owned MCP operating and investigative skills by request intent without granting tools. |
+| `skill_investigation.py` | Projects exact causal events and intervening-state anomalies into ranked candidate hypotheses. |
+| `skill_topology.py` | Plans read-only producer-first configuration and source-coverage checks from current-turn receipts. |
+| `skill_secret_guard.py` | Redacts credentials from model-facing tool content and final assistant responses. |
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
 | `causal_rule_decision_context.py` | Separates confirmed lighting-app command provenance, scoped execution logs, current rule configuration, and present-day sensor-health evidence without inferring historical sensor truth. |
 | `causal_subject_prefetch.py` | Conservatively matches one explicit known switch device and ON/OFF transition from a causal prompt so subject history can be gathered before the first provider round; ambiguous/broader causal questions fall through unchanged. |
