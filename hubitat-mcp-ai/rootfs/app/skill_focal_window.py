@@ -155,4 +155,74 @@ def build_focal_source_plan(
     }
 
 
-__all__ = ["build_focal_source_plan"]
+def project_focal_state_result(
+    response_data: Any, plan: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Persist a safe, time-filtered event projection from a gateway response.
+
+    The generic tool executor may record only a summary for gateway event
+    results. Return a separate scoped receipt with event rows, never a
+    guessed event or a copy of arbitrary configuration payload.
+    """
+    def find_rows(value: Any, depth: int = 0) -> list[dict[str, Any]] | None:
+        if depth > 3:
+            return None
+        if isinstance(value, list):
+            return value if all(isinstance(x, dict) for x in value) else None
+        if not isinstance(value, dict):
+            return None
+        if isinstance(value.get("events"), list):
+            return value["events"]
+        for name in ("result", "data", "payload"):
+            nested = value.get(name)
+            if isinstance(nested, (list, dict)):
+                selected = find_rows(nested, depth + 1)
+                if selected is not None:
+                    return selected
+        return None
+
+    rows = find_rows(response_data)
+    if rows is None:
+        return None
+    interval = plan.get("sourceWindow") or {}
+    start, stop = _time(interval.get("since")), _time(interval.get("until"))
+    if start is None or stop is None:
+        return None
+    events = {}
+    for item in rows[:100]:
+        name = str(item.get("name") or item.get("attribute") or "")
+        if name != "switch":
+            continue
+        state = str(item.get("value") or "").casefold()
+        if state not in {"on", "off"}:
+            continue
+        when = str(item.get("date") or item.get("timestamp") or "")
+        clock = _time(when)
+        if clock is None or not (start <= clock <= stop):
+            continue
+        producer = item.get("producedBy")
+        owner = {}
+        if isinstance(producer, dict):
+            owner = {
+                key: str(producer[key])[:100]
+                for key in ("label", "id", "type")
+                if producer.get(key) is not None
+            }
+        events[(clock.isoformat(), state)] = {
+            "name": "switch", "value": state, "date": when,
+            "producedBy": owner,
+        }
+    return {
+        "label": str(plan.get("subject") or ""),
+        "deviceId": str(plan.get("deviceId") or ""),
+        "attribute": "switch",
+        "events": sorted(events.values(), key=lambda e: _time(e["date"])),
+        "returnedRowsInWindow": len(events),
+        "requestedSince": interval["since"],
+        "requestedUntil": interval["until"],
+        "sourceHistoryComplete": False,
+        "status": "bounded-events-retained-not-proof-of-complete-history",
+    }
+
+
+__all__ = ["build_focal_source_plan", "project_focal_state_result"]
