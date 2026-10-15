@@ -85,6 +85,8 @@ _COUNTER_LABELS = (
     ("telemetry_claims_reconciled", "Timestamped telemetry claims corrected"),
     ("typed_device_history_projections", "Typed event diagnostic summaries"),
     ("causal_configured_sensor_prioritized", "Configured sensor sources prioritised"),
+    ("causal_historical_sensor_fallback_reads", "Additional verified historical sensor probes"),
+    ("causal_irrelevant_off_skipped", "Unrelated later OFF investigations skipped"),
     ("causal_read_round_budget", "Historical investigation round budgets"),
     ("causal_read_round_budget_exhausted", "Historical round budgets reached"),
     ("ollama_empty_message_recovery", "Ollama empty-response recoveries"),
