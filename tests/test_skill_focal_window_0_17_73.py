@@ -52,7 +52,7 @@ def test_timestamp_scoped_focal_read_is_required_despite_latest_n_reads():
 def test_wrong_utc_app_log_query_is_not_marked_checked():
     plan = build_focal_source_plan(_recent_unbounded(), QUESTION)
     assert plan["producerLogRead"] == {
-        "appId": "4129",
+        "appId": 4129,
         "since": "2026-10-14T18:54:36.691Z",
         "until": "2026-10-14T18:55:05.049Z",
         "limit": 100,
