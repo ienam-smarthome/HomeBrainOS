@@ -337,6 +337,9 @@ agent.performance_synthesis_timeout_seconds = float(
 )
 # Read-only journal evidence is optional; do not affect ordinary MCP requests.
 agent.historical_journal = historical_journal
+# Persist safe source-stamped command/state rows encountered in native read-only
+# MCP history queries; the collector remains opt-in and never performs writes.
+agent.executor.historical_journal = historical_journal
 
 
 class RequestCoordinator:
