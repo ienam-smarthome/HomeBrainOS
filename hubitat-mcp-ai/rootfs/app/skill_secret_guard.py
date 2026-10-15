@@ -17,10 +17,11 @@ _BEARER = re.compile(r'(?i)(\bBearer\s+)[a-z0-9._~+/\-]+=*')
 
 def redact_secrets(value: str) -> str:
     result = str(value or "")
+    result = _BEARER.sub(lambda m: m.group(1) + "[REDACTED]", result)
     result = _JSON.sub(lambda m: m.group(1) + "[REDACTED]" + m.group(3), result)
     result = _PAIR.sub(lambda m: m.group(1) + "[REDACTED]", result)
     result = _QUERY.sub(lambda m: m.group(1) + "[REDACTED]", result)
-    return _BEARER.sub(lambda m: m.group(1) + "[REDACTED]", result)
+    return result
 
 
 def redact_model_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
