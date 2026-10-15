@@ -402,6 +402,89 @@ def project_focal_state_result(
     }
 
 
+def render_unverified_focal_outcome(
+    plan: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    question: str,
+) -> str | None:
+    """Fail closed when exact-window reads cannot uniquely establish the ON.
+
+    Only applies to missing-boundary recovery from a dated command. A normal
+    observed incident retains the richer evidence graph and skill synthesis.
+    """
+    if not plan.get("requestedMinuteOnly"):
+        return None
+    if build_causal_evidence_graph(evidence, question).get("scope") == "single-observed-event":
+        return None
+    source_reads = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("evidence_kind") == "focal_exact_state_history"
+        and str((row.get("details") or {}).get("deviceId") or "") == str(plan.get("deviceId") or "")
+        and row.get("success") is True
+    ]
+    failed_reads = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("evidence_kind") in {
+            "focal_source_unavailable", "focal_source_execution_failed",
+            "focal_event_payload_unrecognised", "focal_source_catalog_unavailable",
+        }
+    ]
+    if not source_reads and not failed_reads:
+        return None
+    command_producer = "an identified Hubitat app"
+    command_at = _time(plan.get("commandTime"))
+    for row in evidence:
+        if _leaf(row) != "hub_list_device_events" or row.get("success") is not True:
+            continue
+        if str((row.get("details") or {}).get("label") or "") != str(plan.get("subject") or ""):
+            continue
+        for event in (row.get("details") or {}).get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            if event.get("name") != "command-on" or _time(event.get("date")) != command_at:
+                continue
+            producer = event.get("producedBy") or {}
+            if str(producer.get("id") or "") == str(plan.get("producerAppId") or ""):
+                command_producer = str(producer.get("label") or command_producer)
+    minute = _time(plan.get("requestedOn"))
+    minute_text = minute.strftime("%d %B %Y at %H:%M %z") if minute else "the requested time"
+    summary = (
+        f"**Historical ON not independently verified — {plan.get('subject')}.** "
+        f"The recorded command history shows {command_producer} issued an "
+        f"on() command at {plan.get('commandTime')}. "
+        f"This is a verified Hubitat command invocation, not proof the "
+        f"device turned on or that this app caused a later state transition."
+    )
+    if source_reads:
+        count = max(
+            len((row.get("details") or {}).get("events") or [])
+            for row in source_reads
+        )
+        check = (
+            f"An exact timestamp-filtered state query was completed for "
+            f"{minute_text} and preserved {count} state event(s), but it did "
+            "not establish exactly one ON in the requested minute."
+        )
+    else:
+        check = (
+            "The exact timestamp-filtered state query failed or yielded no "
+            "usable event payload, so the requested ON transition could not "
+            "be independently established."
+        )
+    return (
+        summary + "\\n\\n" + check
+        + "\\n\\nHistorical source completeness is unverified. A missing "
+          "event in a bounded Hubitat page does not prove the light stayed "
+          "off, and a prior command cannot be promoted into verified causation."
+        + "\\n\\n**Next read-only checks:** Review any retained device or "
+          "bridge event journal for the named minute and the command producer's "
+          "execution/MQTT history. Do not change devices or automations."
+    )
+
+
+
 async def execute_focal_source_plan(
     plan: dict[str, Any],
     *,
@@ -507,4 +590,4 @@ async def execute_focal_source_plan(
     return statuses
 
 
-__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan"]
+__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan", "render_unverified_focal_outcome"]
