@@ -76,7 +76,7 @@ def test_telemetry_reports_disagreeing_cached_attributes():
     finding = reported_telemetry_consistency(reported)
     assert finding is not None
     assert "disagree" in finding
-    assert "not" in finding.lower()
+    assert "neither establishes a fresh device-originated packet" in finding.lower()
 
 
 def test_telemetry_agreement_and_missing_inputs_are_not_false_warnings():
