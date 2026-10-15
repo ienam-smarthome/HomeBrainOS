@@ -1239,7 +1239,7 @@ def render_preceding_command_candidates(
             f"{row['commandTime']} ({row['delaySeconds']:.3f} seconds "
             f"before {row['stateBoundary']})."
         )
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def render_competing_command_summary(
