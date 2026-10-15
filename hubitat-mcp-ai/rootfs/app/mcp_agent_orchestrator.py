@@ -141,6 +141,7 @@ from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
 from skills_framework import render_skills_for_request
+from skill_topology import render_topology_plan
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -3531,6 +3532,12 @@ class UnifiedMCPAgent:
             )
             if prefetched_subject_key:
                 investigative_subject_history_key = prefetched_subject_key
+                topology_brief = render_topology_plan(
+                    self.evidence.receipts(), user_prompt,
+                )
+                if topology_brief:
+                    messages.append({"role": "user", "content": topology_brief})
+                    increment_active_metric("skills_topology_plan")
             if causal_prefetch == "sufficient":
                 deterministic_answer = (
                     (
