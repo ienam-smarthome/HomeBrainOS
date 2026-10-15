@@ -139,7 +139,8 @@ from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
-from final_answer_coordinator import FinalAnswerCoordinator
+from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
+from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
 from history_result_enrichment import inferred_state_retry_arguments
@@ -3144,6 +3145,14 @@ class UnifiedMCPAgent:
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         content = await self.final_answers.answer(messages)
+        # Terminal safety net. Earlier synthesis may skip causal validation if
+        # a classifier or repair path fails; never send an unverified external
+        # attribution when the exact event has a preceding internal command.
+        content, corrected = guard_causal_exclusion_with_command_clue(
+            content, self.evidence.receipts(), _original_user_request(messages),
+        )
+        if corrected:
+            increment_active_metric("causal_final_output_reconciled")
         return self._unverified_mutation_guard(content)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
