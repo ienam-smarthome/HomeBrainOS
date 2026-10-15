@@ -21,8 +21,8 @@ _EXTERNAL_CLAIM = re.compile(
     r"outside\s+(?:the\s+)?Hubitat(?:\s+ecosystem)?[^.]*\."
 )
 _NO_INTERNAL = re.compile(
-    r"(?i)\\bno\\s+Hubitat[- ]native\\s+[^.]{0,150}?"
-    r"(?:triggered|initiated|caused)\\s+(?:the\\s+)?(?:event|activation|transition)[^.]*\\."
+    r"(?i)\bno\s+Hubitat[- ]native\s+[^.]{0,150}?"
+    r"(?:triggered|initiated|caused)\s+(?:the\s+)?(?:event|activation|transition)[^.]*\."
 )
 _LIKELY_EXTERNAL = re.compile(
     r"(?i)(?:the\s+)?activation\s+was\s+likely\s+triggered\s+by\s+"
