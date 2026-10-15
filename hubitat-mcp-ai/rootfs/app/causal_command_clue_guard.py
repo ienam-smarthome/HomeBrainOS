@@ -85,6 +85,10 @@ def guard_causal_exclusion_with_command_clue(
         r"(?i)\bno\s+(?:direct\s+)?command\s+producer\s+was\s+recorded\s+in\s+Hubitat\b",
         "no uniquely verified command initiator was established", corrected,
     )
+    corrected = re.sub(
+        r"(?i)\bwithout\s+a\s+corresponding\s+Hubitat\s+command\b",
+        "without a verified command-to-state delivery link", corrected,
+    )
     label = str(clue["producer"].get("label") or "an identified Hubitat app")
     if label.casefold() not in corrected.casefold():
         corrected += (
