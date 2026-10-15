@@ -95,7 +95,7 @@ class RequestMetrics:
         "typed_device_history_projections",
         "causal_configured_sensor_prioritized",
         "causal_historical_sensor_fallback_reads",
-        "causal_irrelevant_off_skipped", "causal_preceding_command_clues",
+        "causal_irrelevant_off_skipped", "causal_preceding_command_clues", "causal_final_output_reconciled",
         "causal_read_round_budget", "causal_read_round_budget_exhausted",
         "ollama_empty_message_recovery", "ollama_empty_message_recovery_failed",
     })
