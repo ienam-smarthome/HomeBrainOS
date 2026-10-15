@@ -8,6 +8,7 @@ distinct proof classes. This module never asserts physical command delivery.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import re
 from typing import Any
 
@@ -288,6 +289,40 @@ def normalize_target_device_history(
     }
 
 
+
+def reported_telemetry_consistency(reported: dict[str, Any]) -> str | None:
+    """Flag contradictions in cached attributes without claiming transport status."""
+    values = reported.get("reportedAttributes") or {}
+    if not isinstance(values, dict):
+        return None
+    last_seen = str(values.get("lastSeen") or "")
+    raw_age = values.get("dataAgeSeconds")
+    read_at = _timestamp(reported.get("observedAt"))
+    if not last_seen or raw_age is None or read_at is None:
+        return None
+    try:
+        age = float(raw_age)
+        # Hubitat's driver exposes human-formatted local BST/GMT dates here.
+        observed_local = datetime.strptime(last_seen, "%a %b %d %H:%M:%S %Z %Y")
+        observed_local = observed_local.replace(tzinfo=ZoneInfo("Europe/London"))
+        age_from_seen = (read_at - observed_local).total_seconds()
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if age < 0 or age_from_seen < 0:
+        return "Cached telemetry timestamps appear inconsistent (future/negative age)."
+    disagreement = abs(age - age_from_seen)
+    if disagreement <= 300:
+        return None
+    return (
+        "Cached telemetry timestamps disagree: lastSeen implies "
+        f"approximately {age_from_seen / 3600:.1f} hours before this read, "
+        f"while dataAgeSeconds implies {age / 3600:.1f} hours "
+        f"(difference {disagreement / 3600:.1f} hours). "
+        "These fields may use different update/reference times; "
+        "neither establishes a fresh device-originated packet."
+    )
+
+
 def render_target_device_evidence_answer(
     evidence: list[dict[str, Any]],
     summary: dict[str, Any],
@@ -321,6 +356,10 @@ def render_target_device_evidence_answer(
                     "at the read time, not independently verified physical "
                     "transport or original measurement timestamps."
                 )
+    if isinstance(reported, dict):
+        consistency = reported_telemetry_consistency(reported)
+        if consistency:
+            lines.append("**Telemetry consistency:** " + consistency)
     latest = summary.get("latestReturnedStateEvent")
     if isinstance(latest, dict):
         lines.append(
@@ -403,4 +442,5 @@ def render_target_device_evidence_answer(
 __all__ = [
     "normalize_target_device_history",
     "render_target_device_evidence_answer",
+    "reported_telemetry_consistency",
 ]
