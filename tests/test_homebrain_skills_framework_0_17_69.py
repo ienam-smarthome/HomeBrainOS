@@ -107,3 +107,54 @@ def test_secret_values_redacted_without_modifying_source_messages():
     assert "abc123" not in sanitized[2]["content"]
     assert "test-pass" in source[1]["content"]  # raw receipt left unchanged
     assert "tok123" not in redact_secrets("Authorization: Bearer tok123")
+
+
+def test_live_01769_failed_synthesis_preserves_leading_command_candidate():
+    from causal_fail_closed_summary import render_failed_causal_synthesis
+    output = render_failed_causal_synthesis(_case(), QUESTION)
+    assert output is not None
+    assert "SenseCap D1 Settings" in output
+    assert "13.358" in output
+    assert "19:54:57.946" in output
+    assert "not confirmed cause" in output.lower()
+    assert "an external controller caused" not in output.lower()
+    assert "remain unverified" in output
+
+
+def test_telemetry_requires_device_scoped_logs_before_answer():
+    from skill_source_completion import pending_device_log_read
+    question = "Investigate why Bedroom 3 Mesh is offline and examine MQTT telemetry and logs. Read-only."
+    receipts = [
+        {
+            "success": True, "tool": "hub_read_devices",
+            "sub_tool": "hub_list_devices",
+            "details": {"reportedDeviceState": {
+                "label": "Bedroom 3 Mesh", "deviceId": "7103",
+            }},
+        },
+        {
+            "success": True, "tool": "hub_read_diagnostics",
+            "sub_tool": "hub_get_logs",
+            "arguments": {"tool": "hub_get_logs", "args": {"since": "24h"}},
+        },
+    ]
+    assert pending_device_log_read(question, receipts) == {
+        "deviceId": "7103", "since": "24h", "limit": 60,
+    }
+    receipts.append({
+        "success": True, "tool": "hub_read_diagnostics",
+        "sub_tool": "hub_get_logs",
+        "arguments": {"tool": "hub_get_logs", "args": {
+            "deviceId": "7103", "since": "24h",
+        }},
+    })
+    assert pending_device_log_read(question, receipts) is None
+
+
+def test_device_scoped_logs_require_unambiguous_resolution():
+    from skill_source_completion import pending_device_log_read
+    question = "Investigate why Bedroom 3 Mesh is offline."
+    missing = [{"success": True, "tool": "hub_list_device_events",
+                "details": {"label": "Bedroom 3 Mesh"}}]
+    assert pending_device_log_read(question, missing) is None
+    assert pending_device_log_read("What's happening at home?", missing) is None

@@ -142,6 +142,7 @@ from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
+from skill_source_completion import pending_device_log_read
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -3148,6 +3149,33 @@ class UnifiedMCPAgent:
         return content
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
+        # Complete mandatory read-only source classes BEFORE the final model
+        # synthesis. Post-answer coverage warnings alone cannot investigate.
+        objective = self._current_user_objective.get() or _original_user_request(messages)
+        device_log_args = pending_device_log_read(
+            objective, self.evidence.receipts(),
+        )
+        if device_log_args is not None:
+            try:
+                live_catalog = build_request_tool_catalog(await self.mcp.list_tools())
+                log_tool = live_catalog.declared_tool("hub_read_diagnostics")
+                if log_tool is not None:
+                    execution = await self.executor.execute(
+                        "hub_read_diagnostics",
+                        {"tool": "hub_get_logs", "args": device_log_args},
+                        tool=log_tool,
+                        supports_live_claim=True,
+                        evidence_kind="native_device_scoped_logs",
+                    )
+                    messages.append({
+                        "role": "tool", "tool_name": "hub_read_diagnostics",
+                        "content": execution.content,
+                    })
+                    increment_active_metric("skills_required_source_read")
+            except Exception as exc:
+                # A failed or unavailable source must never masquerade as a
+                # checked-empty device history or abort the investigation.
+                logger.debug("Required scoped device log read unavailable: %s", exc)
         content = await self.final_answers.answer(messages)
         # Terminal safety net. Earlier synthesis may skip causal validation if
         # a classifier or repair path fails; never send an unverified external

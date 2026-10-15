@@ -12,6 +12,7 @@ from datetime import datetime
 import re
 
 from causal_evidence_graph import build_causal_evidence_graph
+from skill_investigation import build_skill_investigation
 
 
 
@@ -117,6 +118,19 @@ def render_failed_causal_synthesis(
             f"**Reported by:** {reporter['label']}. This identifies the "
             "Hubitat event reporting source, not the upstream controller."
         )
+    # A strict direct-command match may be absent even when the same exact
+    # subject has a verified preceding command outside the two-second window.
+    # Preserve that strongest *recorded candidate* on safety fallback; never
+    # promote it to confirmed delivery or causation.
+    skill_projection = (
+        build_skill_investigation(evidence, original_user)
+        if transition == "on" else None
+    )
+    prior_facts = [
+        row for row in (skill_projection or {}).get("facts", [])
+        if row.get("kind") == "preceding_hubitat_command"
+    ]
+    preceding = prior_facts[0] if prior_facts else None
     if isinstance(actor, dict) and actor.get("producer"):
         producer = actor.get("producer") or {}
         name = str(producer.get("label") or "an attributed Hubitat source")
@@ -129,8 +143,32 @@ def render_failed_causal_synthesis(
         lines.append(
             "**Command record:** No matching direct command producer was "
             "established for this transition in the bounded Hubitat data. "
-            "This is not proof that every potential command path was absent."
+            "This refers to strict command-to-state matching, not to absence "
+            "of preceding commands or other potential command paths."
         )
+    if preceding:
+        lines.append(
+            "**Leading recorded command candidate (not confirmed cause):** "
+            f"{preceding.get('producer') or 'Hubitat app'} issued "
+            f"{preceding.get('command') or 'a matching command'} at "
+            f"{preceding.get('time')}. The command preceded the state report "
+            f"by {preceding.get('delaySeconds')} seconds. Its actual delivery "
+            "and causal effect remain unverified."
+        )
+    for fact in (skill_projection or {}).get("facts", []):
+        if fact.get("kind") != "intervening_state_changes":
+            continue
+        events = fact.get("events") or []
+        if events:
+            order = ", ".join(
+                f"{row.get('state', '').upper()} at {row.get('date')}"
+                for row in events[:4]
+            )
+            lines.append(
+                "**Intervening state reports:** " + order
+                + ". These complicate a simple delayed-command explanation "
+                  "but do not themselves establish an external controller."
+            )
     correlations = _focal_sensor_correlations(
         evidence, subject, time, "end" if asking_off else "start",
     )
