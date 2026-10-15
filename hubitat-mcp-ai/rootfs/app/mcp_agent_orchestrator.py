@@ -48,6 +48,7 @@ from targeted_lockout_config import read_current_lockout_config
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
+from causal_sensor_candidate_priority import prioritize_focal_sensor_candidates
 from causal_windowed_source import (
     build_focal_sensor_window_probe,
     verify_windowed_sensor_reply,
@@ -1750,19 +1751,21 @@ class UnifiedMCPAgent:
             filter_data,
             limit=8,
         )
-        sensor_specs, topology_sensor_plan = (
-            prioritize_known_automation_sensor_candidates(
-                sensor_pool,
-                self.known_automations,
-                subject=subject_history.get("label"),
-                transition=transition,
-                limit=2,
-            )
-        )
-        if topology_sensor_plan:
-            increment_active_metric("causal_topology_sensor_plan")
-        topology_sensor_visibility = known_automation_sensor_candidate_visibility(
+        sensor_specs, sensor_priority_plan = prioritize_focal_sensor_candidates(
             sensor_pool,
+            candidate_inventory,
+            self.known_automations,
+            subject=str(subject_history.get("label") or ""),
+            subject_room=str(subject_history.get("room") or ""),
+            transition=transition,
+            limit=2,
+        )
+        if sensor_priority_plan["topologyUsed"]:
+            increment_active_metric("causal_topology_sensor_plan")
+        if sensor_priority_plan["configuredCandidatesSelected"]:
+            increment_active_metric("causal_configured_sensor_prioritized")
+        topology_sensor_visibility = known_automation_sensor_candidate_visibility(
+            [*sensor_specs, *sensor_pool],
             sensor_specs,
             self.known_automations,
             subject=subject_history.get("label"),
@@ -2265,6 +2268,7 @@ class UnifiedMCPAgent:
                     break
         if expanded_sensor_attempts:
             increment_active_metric("causal_adaptive_candidate_plans")
+        analysis["sensorSelection"] = sensor_priority_plan
         if focal_window_probes:
             analysis["focalWindowRetrieval"] = focal_window_probes
         if journal_summary:
@@ -3583,7 +3587,23 @@ class UnifiedMCPAgent:
             return await self._final_answer(messages)
 
         source_completion_retry_used = False
-        for _ in range(self.max_tool_rounds):
+        # A read-only investigation with an explicit historical causal
+        # boundary has already run focused host-side evidence collection.
+        # Bound further model-directed exploration, then use the existing
+        # evidence-grounded final coordinator. Do not alter budgets for
+        # writes, confirmations, generic reads or untimed investigations.
+        scoped_causal_round_budget = bool(
+            deep_causal_request
+            and has_explicit_focal_clock(user_prompt)
+            and not self._mutation_requested_by_user.get()
+        )
+        active_round_budget = (
+            min(self.max_tool_rounds, 6)
+            if scoped_causal_round_budget else self.max_tool_rounds
+        )
+        if active_round_budget < self.max_tool_rounds:
+            increment_active_metric("causal_read_round_budget")
+        for _ in range(active_round_budget):
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
@@ -4451,6 +4471,8 @@ class UnifiedMCPAgent:
                 # round wander into location/motion/rule reads merely for context.
                 increment_active_metric("evidence_sufficiency_stop")
                 return await self._final_answer(messages)
+        if active_round_budget < self.max_tool_rounds:
+            increment_active_metric("causal_read_round_budget_exhausted")
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         if ungrounded_confirmation_claim_seen:
             return (
