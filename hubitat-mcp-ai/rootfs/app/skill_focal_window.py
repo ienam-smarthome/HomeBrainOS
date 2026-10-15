@@ -550,6 +550,68 @@ def render_unverified_focal_outcome(
 
 
 
+def project_archived_focal_state(
+    stored: dict[str, Any], plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Only source-timestamped archived ONs establish an exact boundary.
+
+    Collector reception is useful context but can lag the physical action.
+    A coverage gap, empty query or duplicated candidate never proves an
+    external cause, even if the journal persisted the information correctly.
+    """
+    begin = _time(plan.get("sourceWindow", {}).get("since"))
+    end = _time(plan.get("sourceWindow", {}).get("until"))
+    if begin is None or end is None:
+        raise ValueError("Exact bounded journal window required")
+    events: list[dict[str, Any]] = []
+    received_only = 0
+    for row in (stored.get("events") or [])[:200]:
+        if not isinstance(row, dict) or row.get("attribute") != "switch":
+            continue
+        if str(row.get("device_id") or "") != str(plan.get("deviceId") or ""):
+            continue
+        state = str(row.get("value") or "").lower()
+        when = _time(row.get("observed_at"))
+        if state not in {"on", "off"} or when is None or not begin <= when <= end:
+            continue
+        if row.get("timestamp_basis") != "source":
+            received_only += 1
+            continue
+        events.append({
+            "name": "switch", "value": state,
+            "date": when.isoformat(),
+            "timestampBasis": "source",
+            "source": str(row.get("source") or "")[:80],
+        })
+    events.sort(key=lambda item: _time(item["date"]))
+    requested = _time(plan.get("requestedOn"))
+    on_matches = [
+        item for item in events
+        if requested and item["value"] == "on" and (
+            0 <= (_time(item["date"]) - requested).total_seconds() < 60
+            if plan.get("requestedMinuteOnly") else
+            abs((_time(item["date"]) - requested).total_seconds()) <= .002
+        )
+    ]
+    gaps = [row for row in (stored.get("gaps") or []) if isinstance(row, dict)]
+    return {
+        "label": plan.get("subject"),
+        "deviceId": str(plan.get("deviceId") or ""),
+        "attribute": "switch",
+        "requestedOn": plan.get("requestedOn"),
+        "requestedMinuteOnly": bool(plan.get("requestedMinuteOnly")),
+        "events": events[:20],
+        "sourceVerifiedOn": len(on_matches) == 1,
+        "sourceTimestampedCount": len(events),
+        "collectorReceivedOnlyCount": received_only,
+        "gapCount": len(gaps),
+        "eventsTruncated": len(events) > 20,
+        "sourceHistoryComplete": False,
+        "archiveHistoricalCoverageComplete": False,
+        "provenance": "persistent-homebrain-journal",
+    }
+
+
 async def execute_focal_source_plan(
     plan: dict[str, Any],
     *,
@@ -655,4 +717,4 @@ async def execute_focal_source_plan(
     return statuses
 
 
-__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan", "render_unverified_focal_outcome"]
+__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan", "render_unverified_focal_outcome", "project_archived_focal_state"]

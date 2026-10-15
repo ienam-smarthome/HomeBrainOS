@@ -279,6 +279,94 @@ class HistoricalEvidenceJournal:
         self._last_received[stream] = row["received_at"]
         return True
 
+    async def ingest_native_history(self, device_id: str, payload: Any) -> int:
+        """Preserve safe, source-timestamped historical rows seen in MCP reads.
+
+        The websocket stream may not expose command invocation metadata.
+        Opportunistic read-through retains only approved switch states and
+        command-on/off/setLevel observations from a *successful* native device
+        history request. A reported command is never recorded as a physical
+        state transition. No backfill is claimed beyond the returned page.
+        """
+        if not self.enabled or not self._started or not str(device_id).isdigit():
+            return 0
+        value = payload
+        for _ in range(3):
+            if isinstance(value, dict) and any(
+                isinstance(value.get(key), list)
+                for key in (
+                    "events", "commandEvents", "boundaryEvents",
+                    "correlationEvents", "observedEvents", "windowEvents",
+                )
+            ):
+                break
+            if isinstance(value, dict):
+                value = value.get("result") or value.get("data") or {}
+        if not isinstance(value, dict):
+            return 0
+        # DeviceHistoryService returns a source-typed combination of direct
+        # events, commandEvents, boundaryEvents and correlationEvents. Each
+        # projection may overlap; persist unique source observations only.
+        events: list[dict[str, Any]] = []
+        for key in (
+            "events", "commandEvents", "boundaryEvents", "correlationEvents",
+            "observedEvents", "windowEvents",
+        ):
+            values = value.get(key)
+            if isinstance(values, list):
+                events.extend(item for item in values if isinstance(item, dict))
+        if not events:
+            return 0
+        accepted = 0
+        seen: set[tuple[str, str, str, str]] = set()
+        for event in events[:400]:
+            if not isinstance(event, dict):
+                continue
+            name = str(event.get("name") or "").strip()
+            if name not in {"switch", "command-on", "command-off", "command-setLevel"}:
+                continue
+            timestamp = _aware_iso(event.get("date"))
+            if not timestamp:
+                continue
+            source = event.get("producedBy") or {}
+            if not isinstance(source, dict):
+                source = {}
+            if name.startswith("command-"):
+                if source.get("type") != "app" or not str(source.get("id") or "").isdigit():
+                    continue
+                origin = "hubitat-mcp-command:app:" + _limited(source.get("id"), 18)
+                label = _limited(source.get("label"), 128)
+                state = ""
+            else:
+                origin = "hubitat-mcp-state"
+                label = ""
+                state = str(event.get("value") or "").lower()
+                if state not in {"on", "off"}:
+                    continue
+            identity = (
+                name, timestamp, state, origin,
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            row = {
+                "stream": "events", "device_id": str(device_id),
+                "app_id": "", "attribute": name, "value": state,
+                "display_name": label, "source": origin,
+                "source_time": timestamp, "observed_at": timestamp,
+                "received_at": utcnow(), "timestamp_basis": "source",
+                "message": "",
+            }
+            try:
+                self._queue.put_nowait(row)
+                accepted += 1
+            except asyncio.QueueFull:
+                self._dropped += 1
+                self.error = "Journal queue overflow; coverage has gaps"
+                await asyncio.to_thread(self._mark_disconnected, "events", "queue-overflow")
+                break
+        return accepted
+
     async def _stream(self, stream: str) -> None:
         path = "/eventsocket" if stream == "events" else "/logsocket"
         delay = 2

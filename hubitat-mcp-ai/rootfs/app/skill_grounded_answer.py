@@ -193,6 +193,13 @@ def render_grounded_causal_answer(
                 "focal_source_catalog_unavailable",
             }:
                 failed_source_checks.append(receipt)
+    archived = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("success") is True
+        and row.get("evidence_kind") == "focal_archived_state_history"
+        and isinstance((row.get("details") or {}).get("events"), list)
+    ]
     usable = [
         row for row in scoped_reads
         if row.get("success") is True
@@ -208,6 +215,19 @@ def render_grounded_causal_answer(
             f"state-history query returned {count} retained ON/OFF event rows "
             "for the requested interval. Missing rows are not proof "
             "that no other historical events occurred."
+        )
+    elif archived and any((row.get("details") or {}).get("events") for row in archived):
+        details = next(
+            row["details"] for row in archived
+            if (row.get("details") or {}).get("events")
+        )
+        lines.append(
+            "**Focal event-window coverage:** The persistent HomeBrain "
+            "journal retained "
+            f"{len(details['events'])} source-timestamped ON/OFF event row(s). "
+            "These are archived observations, not a current native Hubitat "
+            "state-history response; stream gaps and historical completeness "
+            f"remain unverified ({details.get('gapCount', 0)} recorded gap(s))."
         )
     elif scoped_reads or failed_source_checks:
         lines.append(

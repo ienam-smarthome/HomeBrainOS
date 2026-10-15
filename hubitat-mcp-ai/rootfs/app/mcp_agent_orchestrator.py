@@ -143,7 +143,7 @@ from final_answer_coordinator import FinalAnswerCoordinator, _original_user_requ
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
 from skill_source_completion import pending_device_log_read
-from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome
+from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -3158,6 +3158,53 @@ class UnifiedMCPAgent:
             live_catalog = catalog or build_request_tool_catalog(
                 await self.mcp.list_tools()
             )
+            # Archive is a separate historical source. It must never be
+            # conflated with a complete Hubitat native history, and socket
+            # reception times do not constitute exact source timestamps.
+            journal = getattr(self, "historical_journal", None)
+            if (
+                journal is not None
+                and getattr(journal, "enabled", False)
+                and getattr(journal, "_started", False)
+                and plan.get("deviceId")
+            ):
+                try:
+                    archived = await asyncio.to_thread(
+                        journal.query,
+                        since=plan["sourceWindow"]["since"],
+                        until=plan["sourceWindow"]["until"],
+                        device_id=str(plan["deviceId"]), attribute="switch",
+                        limit=100,
+                    )
+                    archive_details = project_archived_focal_state(archived, plan)
+                    self.evidence.record(
+                        "homebrain_evidence_journal",
+                        {"device_id": str(plan["deviceId"]),
+                         "since": plan["sourceWindow"]["since"],
+                         "until": plan["sourceWindow"]["until"]},
+                        success=True, elapsed_ms=0,
+                        summary="Journal bounded state query: "
+                                f"{archive_details['sourceTimestampedCount']} source-timestamped, "
+                                f"{archive_details['collectorReceivedOnlyCount']} reception-only",
+                        supports_live_claim=True,
+                        evidence_kind="focal_archived_state_history",
+                        mutates=False, effect="read",
+                        details=archive_details,
+                    )
+                    increment_active_metric("skills_focal_journal_read")
+                    if archive_details["sourceVerifiedOn"]:
+                        increment_active_metric("skills_focal_journal_on_recovered")
+                except (OSError, ValueError, TypeError, AttributeError):
+                    self.evidence.record(
+                        "homebrain_evidence_journal",
+                        {"device_id": str(plan["deviceId"])},
+                        success=False, elapsed_ms=0,
+                        summary="Journal source query unavailable",
+                        supports_live_claim=False,
+                        evidence_kind="focal_archive_unavailable",
+                        mutates=False, effect="read",
+                    )
+                    increment_active_metric("skills_focal_journal_failed")
             await execute_focal_source_plan(
                 plan,
                 catalog=live_catalog,
