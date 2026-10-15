@@ -3618,6 +3618,9 @@ class UnifiedMCPAgent:
         causal_completion_mode = False
 
         deep_causal_request = causal_request and wants_deep_investigation(user_prompt)
+        causal_prefetch = "not_applicable"
+        prefetched_subject_key: str | None = None
+        prefetched_transition: str | None = None
         if causal_request and not lockout_prefetch:
             causal_prefetch, prefetched_subject_key, prefetched_transition = (
                 await self._prefetch_explicit_causal_subject(
