@@ -7,6 +7,8 @@ distinct proof classes. This module never asserts physical command delivery.
 """
 from __future__ import annotations
 
+from skill_decision_summary import telemetry_skill_conclusion
+
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import re
@@ -334,6 +336,11 @@ def render_target_device_evidence_answer(
     window_text = f"{window}-hour" if window else "bounded"
     lines = [
         f"### Investigation: {label}",
+    ]
+    skill_verdict = telemetry_skill_conclusion(summary)
+    if skill_verdict:
+        lines.append(skill_verdict)
+    lines += [
         f"**Event evidence:** Hubitat returned {summary['returnedEvents']} "
         f"records for device {summary['deviceId']} in a {window_text} query: "
         f"{summary['commandCount']} command invocations and "
@@ -410,10 +417,24 @@ def render_target_device_evidence_answer(
         and str(_args(row).get("deviceId") or "") == str(summary["deviceId"])
     ]
     if matching_logs:
-        lines.append(
-            "**Device-scoped logs:** A device-ID-filtered log query was "
-            "performed. Findings are limited to its requested period."
-        )
+        counts = [
+            (row.get("details") or {}).get("logCount")
+            for row in matching_logs
+        ]
+        numeric = [n for n in counts if type(n) is int]
+        if numeric and len(numeric) == len(matching_logs):
+            total = sum(numeric)
+            lines.append(
+                f"**Device-scoped logs:** {total} entries returned from "
+                "device-ID-filtered log queries. An empty bounded log window "
+                "does not prove the device was working or failing."
+            )
+        else:
+            lines.append(
+                "**Device-scoped logs:** A device-ID-filtered log query was "
+                "performed, but a verified entry count was not retained. "
+                "Findings are limited to the queried period."
+            )
     else:
         lines.append(
             "**Device-scoped logs:** No verified log read filtered to this "
@@ -437,6 +458,14 @@ def render_target_device_evidence_answer(
         "confirmed by this event stream. Current reachability, precise "
         "telemetry freshness and the cause of any outage remain unverified."
     )
+    if skill_verdict:
+        lines.append(
+            "**Most useful next checks (read-only):** Inspect the device or "
+            "gateway's source-side telemetry/broker status and original "
+            "last-packet timestamp, then compare it with the Hubitat driver "
+            "attributes. Check physical power/network reachability separately. "
+            "Avoid sending commands to test reachability without permission."
+        )
     return "\n\n".join(lines)
 
 

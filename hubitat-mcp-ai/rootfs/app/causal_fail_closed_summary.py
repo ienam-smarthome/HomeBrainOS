@@ -13,6 +13,7 @@ import re
 
 from causal_evidence_graph import build_causal_evidence_graph
 from skill_investigation import build_skill_investigation
+from skill_decision_summary import render_causal_skill_conclusion
 
 
 
@@ -113,6 +114,12 @@ def render_failed_causal_synthesis(
         "### Investigation result — initiating cause unresolved",
         f"**Recorded transition:** {subject} switched {transition.upper()} at {time}.",
     ]
+    # The safety fallback itself must provide a useful evidence-ranked
+    # conclusion when the model's one repair fails. Do not ask another
+    # language-model round or discard source-checked alternative hypotheses.
+    skill_conclusion = render_causal_skill_conclusion(evidence, original_user)
+    if skill_conclusion:
+        lines.append(skill_conclusion)
     if isinstance(reporter, dict) and reporter.get("label"):
         lines.append(
             f"**Reported by:** {reporter['label']}. This identifies the "
