@@ -143,6 +143,7 @@ from final_answer_coordinator import FinalAnswerCoordinator, _original_user_requ
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
 from skill_source_completion import pending_device_log_read
+from skill_focal_window import build_focal_source_plan, project_focal_state_result
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -3152,6 +3153,70 @@ class UnifiedMCPAgent:
         # Complete mandatory read-only source classes BEFORE the final model
         # synthesis. Post-answer coverage warnings alone cannot investigate.
         objective = self._current_user_objective.get() or _original_user_request(messages)
+        # Guarantee a request-scoped incident read before deciding causation.
+        # Latest-N event pages may have silently evicted an intervening OFF
+        # even while an older ON boundary remains in interval history.
+        focal_plan = build_focal_source_plan(self.evidence.receipts(), objective)
+        if focal_plan is not None:
+            try:
+                focal_catalog = build_request_tool_catalog(await self.mcp.list_tools())
+                for gateway, leaf, args, kind, metric in (
+                    (
+                        "hub_read_devices", "hub_list_device_events",
+                        focal_plan["stateRead"], "focal_exact_state_history",
+                        "skills_focal_state_window",
+                    ),
+                    (
+                        "hub_read_diagnostics", "hub_get_logs",
+                        focal_plan["producerLogRead"], "focal_producer_execution_logs",
+                        "skills_focal_producer_logs",
+                    ),
+                ):
+                    if not args:
+                        continue
+                    available = focal_catalog.declared_tool(gateway)
+                    if available is None:
+                        continue
+                    execution = await self.executor.execute(
+                        gateway, {"tool": leaf, "args": args},
+                        tool=available,
+                        supports_live_claim=True,
+                        evidence_kind=kind,
+                    )
+                    messages.append({
+                        "role": "tool", "tool_name": gateway,
+                        "content": execution.content,
+                    })
+                    # Native event gateways have occasionally written only a
+                    # summary receipt even when the response contained rows.
+                    # Persist a safe, exact-window copy independently of any
+                    # model truncation or generic evidence projection.
+                    if (
+                        leaf == "hub_list_device_events"
+                        and execution.success
+                        and execution.result is not None
+                    ):
+                        scoped_details = project_focal_state_result(
+                            execution.result.data, focal_plan,
+                        )
+                        if scoped_details is not None:
+                            self.evidence.record(
+                                gateway,
+                                {"tool": leaf, "args": args},
+                                success=True, elapsed_ms=0,
+                                summary="Exact focal switch window retained",
+                                supports_live_claim=True,
+                                evidence_kind="focal_exact_state_history",
+                                mutates=False, effect="read",
+                                details=scoped_details,
+                            )
+                            if scoped_details["returnedRowsInWindow"] > 0:
+                                increment_active_metric("skills_focal_state_rows_retained")
+                    increment_active_metric(metric)
+            except Exception as exc:
+                # Missing/expired history must stay an explicit source gap;
+                # never invent an OFF event from prior conversation context.
+                logger.debug("Focal history completion unavailable: %s", exc)
         device_log_args = pending_device_log_read(
             objective, self.evidence.receipts(),
         )
