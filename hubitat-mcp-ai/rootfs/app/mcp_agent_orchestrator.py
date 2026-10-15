@@ -557,6 +557,7 @@ class UnifiedMCPAgent:
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
         )
+        self._current_user_objective: ContextVar[str] = ContextVar("homebrain_current_user_objective", default="")
         self._choices: ContextVar[list[str] | None] = ContextVar(
             "hubitat_choices", default=None
         )
@@ -3149,7 +3150,7 @@ class UnifiedMCPAgent:
         # a classifier or repair path fails; never send an unverified external
         # attribution when the exact event has a preceding internal command.
         content, corrected = guard_causal_exclusion_with_command_clue(
-            content, self.evidence.receipts(), _original_user_request(messages),
+            content, self.evidence.receipts(), self._current_user_objective.get() or _original_user_request(messages),
         )
         if corrected:
             increment_active_metric("causal_final_output_reconciled")
@@ -3198,6 +3199,7 @@ class UnifiedMCPAgent:
             _explicit_mutation_request(user_prompt)
         )
         class_token = self._request_class.set("tool-driven")
+        objective_token = self._current_user_objective.set(str(user_prompt))
         try:
             message = await self._process_user_request(
                 user_prompt,
@@ -3231,6 +3233,7 @@ class UnifiedMCPAgent:
                 investigation_coverage=coverage,
             )
         finally:
+            self._current_user_objective.reset(objective_token)
             self._request_class.reset(class_token)
             self._mutation_requested_by_user.reset(mutation_request_token)
             self._mutation_call_seen.reset(mutation_token)
