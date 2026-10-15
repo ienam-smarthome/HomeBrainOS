@@ -83,6 +83,7 @@ _COUNTER_LABELS = (
     ("synthesis_repair_failed", "Unresolved synthesis repairs"),
     ("synthesis_causal_fail_closed", "Causal safety fallbacks"),
     ("telemetry_claims_reconciled", "Timestamped telemetry claims corrected"),
+    ("typed_device_history_projections", "Typed event diagnostic summaries"),
     ("ollama_empty_message_recovery", "Ollama empty-response recoveries"),
     ("ollama_empty_message_recovery_failed", "Unresolved Ollama empty responses"),
     ("causal_open_start_provenance", "Open-start controller provenance"),

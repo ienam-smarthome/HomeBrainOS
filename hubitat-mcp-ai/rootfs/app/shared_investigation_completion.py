@@ -11,6 +11,9 @@ from copy import deepcopy
 from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
+from typed_device_history_evidence import (
+    normalize_target_device_history, render_target_device_evidence_answer,
+)
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
     reconcile_telemetry_answer, render_command_only_evidence_answer,
@@ -164,31 +167,52 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
     if domain == "device_telemetry":
-        temporal = assess_recorded_telemetry_freshness(evidence)
-        if temporal is not None:
-            coverage["telemetryTimestampAssessment"] = temporal
-            original_message = message
-            projected = render_command_only_evidence_answer(
-                original_message, evidence, temporal,
+        # A direct device-ID-scoped mixed history is authoritative for which
+        # Hubitat command/state events were *returned*. It can contain one
+        # historical device-attributed attribute amongst many commands: the
+        # earlier command-only summariser intentionally missed this case.
+        normalized = normalize_target_device_history(evidence)
+        if normalized is not None:
+            coverage["normalizedDeviceHistory"] = normalized
+            coverage["answerProjection"] = "target-scoped-mixed-event-evidence"
+            message = render_target_device_evidence_answer(
+                evidence, normalized,
             )
-            if projected is not None:
-                # A command-only window has no physical lastSeen proof; rebuild
-                # the high-risk activity/conclusion sections from typed rows.
-                message, reconciled = projected, projected != original_message
-                coverage["answerProjection"] = "bounded-command-only-evidence"
-            else:
-                message, reconciled = reconcile_telemetry_answer(
-                    original_message, temporal,
+            metrics.setdefault("counters", {})[
+                "typed_device_history_projections"
+            ] = int(metrics["counters"].get(
+                "typed_device_history_projections"
+            ) or 0) + 1
+            # A mixed sample does not certify watchdog evidence, lastSeen
+            # timestamps, command acknowledgments or physical connectivity.
+            if metrics.get("outcome") in (None, "success"):
+                metrics["outcome"] = "unresolved"
+        else:
+            temporal = assess_recorded_telemetry_freshness(evidence)
+            if temporal is not None:
+                coverage["telemetryTimestampAssessment"] = temporal
+                original_message = message
+                projected = render_command_only_evidence_answer(
+                    original_message, evidence, temporal,
                 )
-            if reconciled:
-                counters = metrics.setdefault("counters", {})
-                counters["telemetry_claims_reconciled"] = int(
-                    counters.get("telemetry_claims_reconciled") or 0
-                ) + 1
-                coverage["telemetryClaimsReconciled"] = True
-            message += "\n\n" + render_temporal_qualification(
-                temporal, original_message,
-            )
+                if projected is not None:
+                    # A command-only window has no physical lastSeen proof; rebuild
+                    # the high-risk activity/conclusion sections from typed rows.
+                    message, reconciled = projected, projected != original_message
+                    coverage["answerProjection"] = "bounded-command-only-evidence"
+                else:
+                    message, reconciled = reconcile_telemetry_answer(
+                        original_message, temporal,
+                    )
+                if reconciled:
+                    counters = metrics.setdefault("counters", {})
+                    counters["telemetry_claims_reconciled"] = int(
+                        counters.get("telemetry_claims_reconciled") or 0
+                    ) + 1
+                    coverage["telemetryClaimsReconciled"] = True
+                message += "\n\n" + render_temporal_qualification(
+                    temporal, original_message,
+                )
     if partial:
         limitations: list[str] = []
         if missing:
