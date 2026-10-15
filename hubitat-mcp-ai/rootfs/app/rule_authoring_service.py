@@ -285,22 +285,22 @@ class RuleAuthoringService:
         return goal.strip(" ,.-")
 
     _ACTION_REQUEST = re.compile(
-        r"^\\s*(?:(?:please\\s+)?(?:block|disable|restrict|allow|enable|"
+        r"^\s*(?:(?:please\s+)?(?:block|disable|restrict|allow|enable|"
         r"turn|switch|lock|unlock|close|shut|open|create|write|build|"
-        r"schedule|add|make|set\\s+up|setup)\\b|"
-        r"(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?"
+        r"schedule|add|make|set\s+up|setup)\b|"
+        r"(?:can|could|would|will)\s+you\s+(?:please\s+)?"
         r"(?:block|disable|restrict|allow|enable|turn|switch|lock|"
         r"unlock|close|shut|open|create|write|build|schedule|add|"
-        r"make|set\\s+up|setup)\\b)",
+        r"make|set\s+up|setup)\b)",
         re.I,
     )
     _DESIGN_ONLY = re.compile(
-        r"\\b(?:how\\s+(?:would|could|do|can)|"
-        r"(?:do\\s+not|don't)\\s+(?:actually\\s+)?"
+        r"\b(?:how\s+(?:would|could|do|can)|"
+        r"(?:do\s+not|don't)\s+(?:actually\s+)?"
         r"(?:create|write|execute|apply|schedule|block)|"
-        r"without\\s+(?:creating|executing|applying|scheduling)|"
-        r"just\\s+(?:describe|explain|show)|"
-        r"for\\s+illustration\\s+only)\\b",
+        r"without\s+(?:creating|executing|applying|scheduling)|"
+        r"just\s+(?:describe|explain|show)|"
+        r"for\s+illustration\s+only)\b",
         re.I,
     )
 
