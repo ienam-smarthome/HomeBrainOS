@@ -1198,6 +1198,7 @@ class UnifiedMCPAgent:
                     boundary_match=boundary_match,
                     catalog=catalog,
                     completed_calls=completed_calls,
+                    explicit_historical_focus=has_explicit_focal_clock(user_prompt),
                 )
                 if (
                     seed.transition == "on"
@@ -1621,6 +1622,7 @@ class UnifiedMCPAgent:
         boundary_match: dict[str, Any],
         catalog: ToolDiscoveryCatalog,
         completed_calls: set[str],
+        explicit_historical_focus: bool = False,
     ) -> None:
         """Run bounded multi-candidate correlation for bridge/device provenance."""
 
@@ -1913,11 +1915,23 @@ class UnifiedMCPAgent:
             and getattr(archive, "enabled", False)
             and getattr(archive, "_started", False)
         )
+        # A requested *historical ON* must use the named ON timestamp to
+        # query the focal sensor window. Newest-N pages frequently contain
+        # only subsequent mornings, yielding false absence and fan-out.
+        # Server-side explicit since/until echoes remain mandatory: a
+        # backend ignoring time filters never establishes historical data.
+        focal_window_first = (
+            journal_first or (
+                explicit_historical_focus
+                and transition == "on"
+                and bool(boundary_match.get("stateBoundary"))
+            )
+        )
         direct_attempted_ids: set[str] = set()
         direct_sensor_data: list[dict[str, Any]] = []
         focal_window_probes: list[dict[str, Any]] = []
         if (
-            journal_first
+            focal_window_first
             and callable(getattr(catalog, "available_tool", None))
             and catalog.available_tool("hub_read_devices") is not None
         ):
@@ -1942,7 +1956,10 @@ class UnifiedMCPAgent:
                         "label": str(spec.get("name") or ""),
                         "status": outcome,
                         "eventCount": len(rows),
-                        "retrievalOrder": "journal-first-direct-window",
+                        "retrievalOrder": (
+                        "journal-first-direct-window" if journal_first
+                        else "historical-on-direct-window"
+                    ),
                     })
                     if outcome != "verified-window":
                         continue
