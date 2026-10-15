@@ -62,6 +62,7 @@ def test_wrong_utc_app_log_query_is_not_marked_checked():
 
 def test_focal_off_recovered_from_targeted_history_and_shown_in_answer():
     rows = _recent_unbounded()
+    assert "19:54:57.946" not in render_grounded_causal_answer(rows, QUESTION)
     rows.append({
         "success": True, "tool": "hub_read_devices",
         "sub_tool": "hub_list_device_events",
