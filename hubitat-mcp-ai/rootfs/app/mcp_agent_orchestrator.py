@@ -102,6 +102,7 @@ from causal_command_provenance import (
     render_boundary_producer_summary,
     render_command_producer_summary,
     render_command_producer_evidence,
+    render_preceding_command_candidates,
 )
 from causal_subject_prefetch import (
     causal_subject_history_arguments,
@@ -1166,6 +1167,19 @@ class UnifiedMCPAgent:
             if instruction:
                 messages.append({"role": "user", "content": instruction})
             return "sufficient", subject_key, seed.transition
+
+        # A longer preceding command is a useful investigative clue, not
+        # sufficient causal attribution. Preserve it for grounded synthesis.
+        if requested_boundary:
+            clue = render_preceding_command_candidates(
+                current_evidence,
+                subject=subject_key,
+                transition=seed.transition,
+                requested_boundary=requested_boundary,
+            )
+            if clue:
+                messages.append({"role": "user", "content": clue})
+                increment_active_metric("causal_preceding_command_clues")
 
         boundary_correlations = correlate_boundary_producers(
             self.evidence.receipts()
