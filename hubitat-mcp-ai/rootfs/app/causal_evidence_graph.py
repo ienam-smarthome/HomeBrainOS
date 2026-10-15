@@ -25,6 +25,7 @@ from causal_command_provenance import correlate_command_producers
 from causal_timeline import (
     build_causal_timeline_rows,
     explicitly_focused_event_rows,
+    has_explicit_focal_clock,
 )
 from natural_datetime import normalize_iso_offset
 
@@ -68,6 +69,50 @@ def _focus(evidence: list[dict[str, Any]], question: str) -> dict[str, Any] | No
     selected = explicitly_focused_event_rows(evidence, question)
     if len(selected) == 1:
         return selected[0]
+    # A dated historical ON can be absent from the latest-N temporal intervals
+    # even when a second, exact-window native gateway read recovers it. Only
+    # trust a typed, successfully retained state-event receipt from the focal
+    # source planner. Never manufacture a missing light transition from an
+    # earlier command or from the user's requested clock alone.
+    recovered = []
+    for receipt in evidence:
+        if (
+            not _working(receipt)
+            or receipt.get("evidence_kind") != "focal_exact_state_history"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        requested = _time(details.get("requestedOn"))
+        subject = str(details.get("label") or "").strip()
+        if not requested or not subject or subject.casefold() not in question.casefold():
+            continue
+        minute_only = bool(details.get("requestedMinuteOnly"))
+        for item in details.get("events") or []:
+            if not isinstance(item, dict):
+                continue
+            when = _time(item.get("date"))
+            if item.get("name") != "switch" or item.get("value") != "on" or when is None:
+                continue
+            delta = (when - requested).total_seconds()
+            if (0 <= delta < 60) if minute_only else abs(delta) <= .002:
+                recovered.append({
+                    "subject": subject, "start": str(item.get("date")),
+                    "end": "", "durationSeconds": None,
+                    "open": True, "material": True,
+                    "observedFrom": "focal_exact_state_history",
+                })
+    unique = {
+        (str(row["subject"]), str(row["start"])): row
+        for row in recovered
+    }
+    if len(unique) == 1:
+        return next(iter(unique.values()))
+    if len(unique) > 1:
+        return None  # multiple ONs in requested minute: need clarification
+    # An explicit historical timestamp must NEVER silently bind to a
+    # different newer interval, even when that is the sole remaining row.
+    if has_explicit_focal_clock(question):
+        return None
     # An unfocused multi-interval question cannot be turned into an invented
     # single-event explanation. One observed interval alone can be summarized.
     all_rows = build_causal_timeline_rows(evidence)
@@ -391,6 +436,43 @@ def _observed_state_boundary(
                     for row in (event.get("triggered") or [])
                     if isinstance(row, dict)
                 ][:8],
+                "status": "observed-state-boundary",
+                "reporterNotNecessarilyInitiator": True,
+                "listenersNotNecessarilyCommandIssuers": True,
+            }
+    # Scoped native source projection may be the only retained reporter after
+    # a latest-N history page evicts the requested switch boundary.
+    for receipt in evidence:
+        if (
+            not _working(receipt)
+            or receipt.get("evidence_kind") != "focal_exact_state_history"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        if str(details.get("label") or "") != str(focus.get("subject") or ""):
+            continue
+        for event in details.get("events") or []:
+            if (
+                not isinstance(event, dict)
+                or event.get("name") != "switch"
+                or str(event.get("value") or "").casefold() != transition
+                or not _eq_time(
+                    event.get("date"),
+                    focus.get("start" if transition == "on" else "end"),
+                    tolerance=.002,
+                )
+            ):
+                continue
+            reporter = event.get("producedBy") or {}
+            return {
+                "event": str(event.get("date") or ""),
+                "eventType": "reported-switch-state",
+                "reporter": {
+                    "id": str(reporter.get("id") or ""),
+                    "label": str(reporter.get("label") or ""),
+                    "type": str(reporter.get("type") or ""),
+                },
+                "listenersNotified": [],
                 "status": "observed-state-boundary",
                 "reporterNotNecessarilyInitiator": True,
                 "listenersNotNecessarilyCommandIssuers": True,

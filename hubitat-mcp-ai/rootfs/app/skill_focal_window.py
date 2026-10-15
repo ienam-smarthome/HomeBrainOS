@@ -7,10 +7,12 @@ All queries are read-only and identified from *matching* subject receipts.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 from causal_evidence_graph import build_causal_evidence_graph
 from skill_decision_summary import causal_skill_conclusion
+from causal_subject_prefetch import switch_transition_from_prompt
 
 
 def _time(value: Any) -> datetime | None:
@@ -58,6 +60,128 @@ def _device_ids(evidence: list[dict[str, Any]], subject: str) -> set[str]:
     return found
 
 
+
+_MONTHS = {month.lower(): n for n, month in enumerate(
+    ("January", "February", "March", "April", "May", "June",
+     "July", "August", "September", "October", "November", "December"), 1
+)}
+_EXPLICIT_DATE = re.compile(
+    r"\b([0-3]?\d)\s+(" + "|".join(_MONTHS) + r")\s+(20\d{2})\b",
+    re.I,
+)
+_EXPLICIT_CLOCK = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
+
+
+def _requested_clock(question: str, reference: datetime) -> datetime | None:
+    """Parse user-provided calendar date and time, using a receipt's offset.
+
+    Never use system time or an invented hub timezone for historical dates.
+    The offset is *only* used when a command receipt matches the given date.
+    """
+    day = _EXPLICIT_DATE.search(str(question or ""))
+    clocks = list(_EXPLICIT_CLOCK.finditer(str(question or "")))
+    if day is None or len(clocks) != 1 or reference.tzinfo is None:
+        return None
+    clock = clocks[0]
+    try:
+        wanted = datetime(
+            int(day.group(3)), _MONTHS[day.group(2).lower()],
+            int(day.group(1)), int(clock.group(1)), int(clock.group(2)),
+            int(clock.group(3) or 0), tzinfo=reference.tzinfo,
+        )
+    except ValueError:
+        return None
+    return wanted
+
+
+def _missing_boundary_plan(
+    evidence: list[dict[str, Any]], question: str,
+) -> dict[str, Any] | None:
+    """Resolve a *read plan*, not a causal verdict, from a dated command clue.
+
+    A historical ON state may have been evicted from latest-N pages. Require
+    one unique command-on with app producer, one exact subject/device identity,
+    and a date/time stated by the user. Query the entire requested minute
+    without declaring that an ON occurred.
+    """
+    if switch_transition_from_prompt(question) != "on":
+        return None
+    possible = {}
+    for row in evidence:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if _leaf(row) != "hub_list_device_events":
+            continue
+        details = row.get("details") or {}
+        label = str(details.get("label") or "").strip()
+        device_id = str(_args(row).get("deviceId") or details.get("deviceId") or "")
+        if not label or not device_id.isdigit() or label.casefold() not in question.casefold():
+            continue
+        for event in details.get("events") or []:
+            if not isinstance(event, dict) or event.get("name") != "command-on":
+                continue
+            command_at = _time(event.get("date"))
+            producer = event.get("producedBy") or {}
+            app_id = str(producer.get("id") or "")
+            if not command_at or not app_id.isdigit() or producer.get("type") != "app":
+                continue
+            requested = _requested_clock(question, command_at)
+            if requested is None:
+                continue
+            if not 0 <= (requested + timedelta(minutes=1) - command_at).total_seconds() <= 90:
+                continue
+            if not (requested - timedelta(seconds=30) <= command_at < requested + timedelta(minutes=1)):
+                continue
+            unique = (label, device_id, command_at.isoformat(), app_id)
+            possible[unique] = (command_at, requested)
+    if len(possible) != 1:
+        return None
+    (subject, device_id, command_text, app_id), (command_at, requested) = next(iter(possible.items()))
+    if _device_ids(evidence, subject) != {device_id}:
+        return None
+    # For minute-only clocks the observed ON might have occurred at any
+    # second in that minute. Preserve all state events through minute end.
+    begin = min(command_at - timedelta(seconds=10), requested - timedelta(seconds=15))
+    end = requested + timedelta(minutes=1)
+    state_args = {
+        "deviceId": device_id, "attribute": "switch",
+        "since": _iso_utc(begin), "until": _iso_utc(end), "limit": 100,
+    }
+    log_args = {
+        "appId": int(app_id),
+        "since": state_args["since"], "until": state_args["until"],
+        "limit": 100,
+    }
+    for row in evidence:
+        if not isinstance(row, dict):
+            continue
+        args, kind = _args(row), _leaf(row)
+        if (
+            kind == "hub_list_device_events"
+            and str(args.get("deviceId") or "") == device_id
+            and str(args.get("attribute") or "") == "switch"
+            and _contains(args.get("since"), args.get("until"), begin, end)
+        ):
+            state_args = None
+        if (
+            kind == "hub_get_logs"
+            and str(args.get("appId") or "") == app_id
+            and _contains(args.get("since"), args.get("until"), begin, end)
+        ):
+            log_args = None
+    return {
+        "subject": subject, "deviceId": device_id,
+        "producerAppId": app_id, "requestedOn": requested.isoformat(),
+        "requestedMinuteOnly": True, "observedBoundaryVerified": False,
+        "commandTime": command_text,
+        "sourceWindow": {"since": _iso_utc(begin), "until": _iso_utc(end)},
+        "stateRead": state_args, "producerLogRead": log_args,
+        "stateHistoryStatus": "not-verified-at-focal-minute",
+        "producerLogStatus": "not-verified-at-command",
+        "fullHistoricalCoverageVerified": False,
+    }
+
+
 def build_focal_source_plan(
     evidence: list[dict[str, Any]], question: str,
 ) -> dict[str, Any] | None:
@@ -70,10 +194,10 @@ def build_focal_source_plan(
     """
     verdict = causal_skill_conclusion(evidence, question)
     if not verdict or verdict.get("status") != "leading-recorded-candidate-unverified":
-        return None
+        return _missing_boundary_plan(evidence, question)
     graph = build_causal_evidence_graph(evidence, question)
     if graph.get("scope") != "single-observed-event":
-        return None
+        return _missing_boundary_plan(evidence, question)
     subject = str(verdict.get("subject") or "")
     command = verdict.get("command") or {}
     focus = _time(verdict.get("focusTime"))
@@ -221,14 +345,21 @@ def project_focal_state_result(
     # stream contains many other events closer to the focal timestamp.
     if len(ordered) > 20:
         target = _time(plan.get("requestedOn")) or stop
-        required: list[dict[str, Any]] = [
+        focus_on = [
             ev for ev in ordered
-            if ev["value"] == "on"
-            and abs((_time(ev["date"]) - target).total_seconds()) <= .002
-        ][:1]
+            if ev["value"] == "on" and (
+                (0 <= (_time(ev["date"]) - target).total_seconds() < 60)
+                if plan.get("requestedMinuteOnly") else
+                abs((_time(ev["date"]) - target).total_seconds()) <= .002
+            )
+        ]
+        # Preserve exact ON if known; for minute-only questions retain each
+        # candidate (up to cap) so ambiguity cannot be silently resolved.
+        required: list[dict[str, Any]] = focus_on[:15]
+        selected_on = (_time(focus_on[0]["date"]) if len(focus_on) == 1 else target)
         prior_off = [
             ev for ev in ordered
-            if ev["value"] == "off" and _time(ev["date"]) < target
+            if ev["value"] == "off" and _time(ev["date"]) < selected_on
         ]
         if prior_off:
             required.append(prior_off[-1])
@@ -254,9 +385,104 @@ def project_focal_state_result(
         "eventsTruncated": len(ordered) > len(retained) or len(rows) > 500,
         "requestedSince": interval["since"],
         "requestedUntil": interval["until"],
+        "requestedOn": str(plan.get("requestedOn") or ""),
+        "requestedMinuteOnly": bool(plan.get("requestedMinuteOnly")),
+        "sourceVerifiedOn": (
+            sum(
+                1 for ev in retained
+                if ev["value"] == "on" and (
+                    (0 <= (_time(ev["date"]) - _time(plan["requestedOn"])).total_seconds() < 60)
+                    if plan.get("requestedMinuteOnly") else
+                    abs((_time(ev["date"]) - _time(plan["requestedOn"])).total_seconds()) <= .002
+                )
+            ) == 1
+        ),
         "sourceHistoryComplete": False,
         "status": "bounded-events-retained-not-proof-of-complete-history",
     }
+
+
+def render_unverified_focal_outcome(
+    plan: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    question: str,
+) -> str | None:
+    """Fail closed when exact-window reads cannot uniquely establish the ON.
+
+    Only applies to missing-boundary recovery from a dated command. A normal
+    observed incident retains the richer evidence graph and skill synthesis.
+    """
+    if not plan.get("requestedMinuteOnly"):
+        return None
+    if build_causal_evidence_graph(evidence, question).get("scope") == "single-observed-event":
+        return None
+    source_reads = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("evidence_kind") == "focal_exact_state_history"
+        and str((row.get("details") or {}).get("deviceId") or "") == str(plan.get("deviceId") or "")
+        and row.get("success") is True
+    ]
+    failed_reads = [
+        row for row in evidence
+        if isinstance(row, dict)
+        and row.get("evidence_kind") in {
+            "focal_source_unavailable", "focal_source_execution_failed",
+            "focal_event_payload_unrecognised", "focal_source_catalog_unavailable",
+        }
+    ]
+    if not source_reads and not failed_reads:
+        return None
+    command_producer = "an identified Hubitat app"
+    command_at = _time(plan.get("commandTime"))
+    for row in evidence:
+        if _leaf(row) != "hub_list_device_events" or row.get("success") is not True:
+            continue
+        if str((row.get("details") or {}).get("label") or "") != str(plan.get("subject") or ""):
+            continue
+        for event in (row.get("details") or {}).get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            if event.get("name") != "command-on" or _time(event.get("date")) != command_at:
+                continue
+            producer = event.get("producedBy") or {}
+            if str(producer.get("id") or "") == str(plan.get("producerAppId") or ""):
+                command_producer = str(producer.get("label") or command_producer)
+    minute = _time(plan.get("requestedOn"))
+    minute_text = minute.strftime("%d %B %Y at %H:%M %z") if minute else "the requested time"
+    summary = (
+        f"**Historical ON not independently verified — {plan.get('subject')}.** "
+        f"The recorded command history shows {command_producer} issued an "
+        f"on() command at {plan.get('commandTime')}. "
+        f"This is a verified Hubitat command invocation, not proof the "
+        f"device turned on or that this app caused a later state transition."
+    )
+    if source_reads:
+        count = max(
+            len((row.get("details") or {}).get("events") or [])
+            for row in source_reads
+        )
+        check = (
+            f"An exact timestamp-filtered state query was completed for "
+            f"{minute_text} and preserved {count} state event(s), but it did "
+            "not establish exactly one ON in the requested minute."
+        )
+    else:
+        check = (
+            "The exact timestamp-filtered state query failed or yielded no "
+            "usable event payload, so the requested ON transition could not "
+            "be independently established."
+        )
+    return (
+        summary + "\n\n" + check
+        + "\n\nHistorical source completeness is unverified. A missing "
+          "event in a bounded Hubitat page does not prove the light stayed "
+          "off, and a prior command cannot be promoted into verified causation."
+        + "\n\n**Next read-only checks:** Review any retained device or "
+          "bridge event journal for the named minute and the command producer's "
+          "execution/MQTT history. Do not change devices or automations."
+    )
+
 
 
 async def execute_focal_source_plan(
@@ -364,4 +590,4 @@ async def execute_focal_source_plan(
     return statuses
 
 
-__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan"]
+__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan", "render_unverified_focal_outcome"]
