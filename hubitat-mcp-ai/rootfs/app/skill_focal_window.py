@@ -189,7 +189,10 @@ def project_focal_state_result(
     if start is None or stop is None:
         return None
     events = {}
-    for item in rows[:100]:
+    for item in rows[:500]:
+        event_device_id = str(item.get("deviceId") or "")
+        if event_device_id and event_device_id != str(plan.get("deviceId") or ""):
+            continue
         name = str(item.get("name") or item.get("attribute") or "")
         if name != "switch":
             continue
@@ -213,19 +216,32 @@ def project_focal_state_result(
             "producedBy": owner,
         }
     ordered = sorted(events.values(), key=lambda e: _time(e["date"]))
-    # EvidenceRecorder redacts any list after 20 entries. Restrict before
-    # recording, retaining the observed focal boundary and its nearest
-    # preceding transitions rather than whichever 20 rows the API returned.
+    # EvidenceRecorder redacts any list after 20 entries. Reserve slots for
+    # the exact focal ON and the nearest intervening OFF, even if a noisy
+    # stream contains many other events closer to the focal timestamp.
     if len(ordered) > 20:
         target = _time(plan.get("requestedOn")) or stop
+        required: list[dict[str, Any]] = [
+            ev for ev in ordered
+            if ev["value"] == "on"
+            and abs((_time(ev["date"]) - target).total_seconds()) <= .002
+        ][:1]
+        prior_off = [
+            ev for ev in ordered
+            if ev["value"] == "off" and _time(ev["date"]) < target
+        ]
+        if prior_off:
+            required.append(prior_off[-1])
+        required_keys = {(e["date"], e["value"]) for e in required}
         selected = sorted(
-            ordered,
+            [ev for ev in ordered
+             if (ev["date"], ev["value"]) not in required_keys],
             key=lambda ev: (
                 abs((_time(ev["date"]) - target).total_seconds()),
                 _time(ev["date"]),
             ),
-        )[:20]
-        retained = sorted(selected, key=lambda e: _time(e["date"]))
+        )[: 20 - len(required)]
+        retained = sorted(required + selected, key=lambda e: _time(e["date"]))
     else:
         retained = ordered
     return {
@@ -235,7 +251,7 @@ def project_focal_state_result(
         "events": retained,
         "returnedRowsInWindow": len(ordered),
         "retainedRows": len(retained),
-        "eventsTruncated": len(ordered) > len(retained) or len(rows) > 100,
+        "eventsTruncated": len(ordered) > len(retained) or len(rows) > 500,
         "requestedSince": interval["since"],
         "requestedUntil": interval["until"],
         "sourceHistoryComplete": False,
