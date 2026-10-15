@@ -131,6 +131,7 @@ class ToolExecutor:
         self.local_handlers = dict(local_handlers or {})
         self.max_tool_result_chars = max(2000, int(max_tool_result_chars))
         self._clock = clock
+        self.historical_journal = None  # optional opt-in, assigned by app startup
 
     @staticmethod
     def succeeded(result: MCPToolResult) -> bool:
@@ -466,6 +467,25 @@ class ToolExecutor:
             success = self.succeeded(result)
             if success:
                 observe_aggregate_result(name, receipt_arguments, result)
+                # Save source-timestamped command/state rows only on approved
+                # read-only native event-history reads. The journal is opt-in;
+                # storage failures must not break otherwise successful reads.
+                args = receipt_arguments.get("args") or {}
+                journal = self.historical_journal
+                if (
+                    journal is not None
+                    and not effect.mutates
+                    and name == "hub_read_devices"
+                    and receipt_arguments.get("tool") == "hub_list_device_events"
+                    and isinstance(args, dict)
+                    and str(args.get("deviceId") or "").isdigit()
+                ):
+                    try:
+                        await journal.ingest_native_history(
+                            str(args["deviceId"]), result.data,
+                        )
+                    except (OSError, ValueError, TypeError, AttributeError):
+                        logger.warning("Historical journal read-through unavailable")
             if record_evidence:
                 self.evidence.record(
                     name,
