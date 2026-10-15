@@ -48,6 +48,7 @@ from targeted_lockout_config import read_current_lockout_config
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
+from causal_sensor_candidate_priority import prioritize_focal_sensor_candidates
 from causal_windowed_source import (
     build_focal_sensor_window_probe,
     verify_windowed_sensor_reply,
@@ -1750,19 +1751,21 @@ class UnifiedMCPAgent:
             filter_data,
             limit=8,
         )
-        sensor_specs, topology_sensor_plan = (
-            prioritize_known_automation_sensor_candidates(
-                sensor_pool,
-                self.known_automations,
-                subject=subject_history.get("label"),
-                transition=transition,
-                limit=2,
-            )
-        )
-        if topology_sensor_plan:
-            increment_active_metric("causal_topology_sensor_plan")
-        topology_sensor_visibility = known_automation_sensor_candidate_visibility(
+        sensor_specs, sensor_priority_plan = prioritize_focal_sensor_candidates(
             sensor_pool,
+            candidate_inventory,
+            self.known_automations,
+            subject=str(subject_history.get("label") or ""),
+            subject_room=str(subject_history.get("room") or ""),
+            transition=transition,
+            limit=2,
+        )
+        if sensor_priority_plan["topologyUsed"]:
+            increment_active_metric("causal_topology_sensor_plan")
+        if sensor_priority_plan["configuredCandidatesSelected"]:
+            increment_active_metric("causal_configured_sensor_prioritized")
+        topology_sensor_visibility = known_automation_sensor_candidate_visibility(
+            [*sensor_specs, *sensor_pool],
             sensor_specs,
             self.known_automations,
             subject=subject_history.get("label"),
@@ -2265,6 +2268,7 @@ class UnifiedMCPAgent:
                     break
         if expanded_sensor_attempts:
             increment_active_metric("causal_adaptive_candidate_plans")
+        analysis["sensorSelection"] = sensor_priority_plan
         if focal_window_probes:
             analysis["focalWindowRetrieval"] = focal_window_probes
         if journal_summary:
