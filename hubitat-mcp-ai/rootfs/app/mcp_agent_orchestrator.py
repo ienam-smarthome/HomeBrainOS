@@ -1267,11 +1267,13 @@ class UnifiedMCPAgent:
                 if (
                     on_at is not None and off_at is not None
                     and on_at.tzinfo and off_at.tzinfo
-                    and off_at >= on_at
+                    and (off_at - on_at).total_seconds() > 120
                 ):
-                    # A subsequent OFF is not a predecessor cause of the
-                    # user-requested ON. Avoid following its command/app logs
-                    # during a focused why-ON investigation.
+                    # A distant closing OFF is not a predecessor cause of
+                    # the explicitly requested ON. Keep short-interval OFF
+                    # provenance available as an independent observation,
+                    # which is valuable for rapid toggles and existing
+                    # source-backed transition analysis.
                     increment_active_metric("causal_irrelevant_off_skipped")
                     return
         prior_off = scoped_off_history_receipt(self.evidence.receipts(), focus)
