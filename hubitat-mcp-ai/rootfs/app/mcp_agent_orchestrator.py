@@ -3169,10 +3169,11 @@ class UnifiedMCPAgent:
                 and plan.get("deviceId")
             ):
                 try:
+                    archive_window = plan.get("journalWindow") or plan["sourceWindow"]
                     archived = await asyncio.to_thread(
                         journal.query,
-                        since=plan["sourceWindow"]["since"],
-                        until=plan["sourceWindow"]["until"],
+                        since=archive_window["since"],
+                        until=archive_window["until"],
                         device_id=str(plan["deviceId"]), attribute="switch",
                         limit=100,
                     )
@@ -3180,8 +3181,8 @@ class UnifiedMCPAgent:
                     self.evidence.record(
                         "homebrain_evidence_journal",
                         {"device_id": str(plan["deviceId"]),
-                         "since": plan["sourceWindow"]["since"],
-                         "until": plan["sourceWindow"]["until"]},
+                         "since": archive_window["since"],
+                         "until": archive_window["until"]},
                         success=True, elapsed_ms=0,
                         summary="Journal bounded state query: "
                                 f"{archive_details['sourceTimestampedCount']} source-timestamped, "
