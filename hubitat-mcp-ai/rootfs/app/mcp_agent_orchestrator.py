@@ -1173,7 +1173,7 @@ class UnifiedMCPAgent:
         if requested_boundary:
             clue = render_preceding_command_candidates(
                 current_evidence,
-                subject=subject_key,
+                subject=seed.name,
                 transition=seed.transition,
                 requested_boundary=requested_boundary,
             )
