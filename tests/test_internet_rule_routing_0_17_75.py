@@ -91,7 +91,7 @@ def agent(mcp):
 async def test_scheduled_block_routes_without_model_and_queues_off_rule(prompt):
     mcp = FakeMCP()
     homebrain = agent(mcp)
-    outcome = await homebrain.process_user_request(prompt, session_id="scheduled-tab")
+    outcome = await homebrain.process_user_request_result(prompt, session_id="scheduled-tab")
     assert outcome.confirmation_required is True
     assert outcome.confirmation_count == 1
     assert outcome.request_class == "write"
@@ -111,7 +111,7 @@ async def test_scheduled_block_routes_without_model_and_queues_off_rule(prompt):
 @pytest.mark.asyncio
 async def test_missing_rule_gateway_returns_specific_failure_without_fake_device_resolution():
     mcp = FakeMCP(missing_rule_gateway=True)
-    outcome = await agent(mcp).process_user_request(
+    outcome = await agent(mcp).process_user_request_result(
         "block Tab S9 FE in 15 minutes"
     )
     assert "Rule Machine write gateway is unavailable" in outcome.message
