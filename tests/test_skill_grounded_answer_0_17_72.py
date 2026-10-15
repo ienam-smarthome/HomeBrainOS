@@ -27,7 +27,7 @@ def test_source_grounded_causal_answer_contains_all_focal_evidence():
     assert "Reporter: Matter Hue Bridge Pro" in text
     assert "does not disprove its prior command" not in text  # no listeners in sparse fixture
     assert "initiated outside of Hubitat" not in text
-    assert "not a Hue app" in text
+    assert "not which upstream app" in text
 
 
 def test_actual_coordinator_must_not_consult_model_for_grounded_case():
