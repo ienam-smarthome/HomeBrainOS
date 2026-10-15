@@ -143,7 +143,7 @@ from final_answer_coordinator import FinalAnswerCoordinator, _original_user_requ
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
 from skill_source_completion import pending_device_log_read
-from skill_focal_window import build_focal_source_plan, execute_focal_source_plan
+from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -3182,6 +3182,16 @@ class UnifiedMCPAgent:
                     mutates=False, effect="read",
                 )
                 increment_active_metric("skills_focal_read_failed")
+        # When exact-window recovery returned no uniquely observed ON, do
+        # not enter a long model loop that treats the command as physical
+        # causation or substitutes newer intervals for the dated event.
+        if focal_plan is not None and focal_plan.get("requestedMinuteOnly"):
+            missing_focal_answer = render_unverified_focal_outcome(
+                focal_plan, self.evidence.receipts(), objective,
+            )
+            if missing_focal_answer:
+                increment_active_metric("skills_focal_unverified_stop")
+                return missing_focal_answer
         device_log_args = pending_device_log_read(
             objective, self.evidence.receipts(),
         )
