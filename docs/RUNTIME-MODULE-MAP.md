@@ -74,6 +74,7 @@ The repository drift test compares this table directly with the live directory. 
 | `health_audit_scheduler.py` | Runs the stored read-only system health audit on a configurable morning schedule using hub-local time. |
 | `health_audit_service.py` | Performs deterministic Hub/MCP/device/battery/automation/log health checks, persists snapshots, and tracks new/resolved findings. |
 | `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
+| `causal_sensor_candidate_priority.py` | Ranks capability-verified sensor candidates referenced by automations before generic room candidates, without treating configured sources as historical proof. |
 | `typed_device_history_evidence.py` | Extracts ID-scoped mixed command/state events from direct Hubitat history receipts and renders bounded diagnostic findings without inferred hardware outcomes. |
 | `recorded_telemetry_freshness.py` | Timestamps bounded device-attributed event history and stored age samples; distinguishes emitted attributes from proven physical connectivity. |
 | `causal_initiator_provenance_guard.py` | Applies source-bound checks to model and repaired causal attribution claims; unknown initiating actors cannot become likely external automations merely because command history is bounded. |
