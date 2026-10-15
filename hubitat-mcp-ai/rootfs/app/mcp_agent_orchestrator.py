@@ -1247,6 +1247,33 @@ class UnifiedMCPAgent:
         )
         if not focus:
             return
+        if (
+            requested_transition == "on"
+            and has_explicit_focal_clock(user_prompt)
+        ):
+            requested_on = prompt_focal_transition_boundary(
+                self.evidence.receipts(), "on", user_prompt,
+            )
+            if requested_on:
+                try:
+                    on_at = datetime.fromisoformat(
+                        requested_on.replace("Z", "+00:00")
+                    )
+                    off_at = datetime.fromisoformat(
+                        str(focus.get("end") or "").replace("Z", "+00:00")
+                    )
+                except (ValueError, TypeError):
+                    on_at, off_at = None, None
+                if (
+                    on_at is not None and off_at is not None
+                    and on_at.tzinfo and off_at.tzinfo
+                    and off_at >= on_at
+                ):
+                    # A subsequent OFF is not a predecessor cause of the
+                    # user-requested ON. Avoid following its command/app logs
+                    # during a focused why-ON investigation.
+                    increment_active_metric("causal_irrelevant_off_skipped")
+                    return
         prior_off = scoped_off_history_receipt(self.evidence.receipts(), focus)
         proven = positive_off_command_already_recorded(
             self.evidence.receipts(), focus
