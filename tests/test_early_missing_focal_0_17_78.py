@@ -90,8 +90,14 @@ async def test_non_deep_dated_incident_runs_exact_reads_before_any_model(monkeyp
 
     async def recorded_prefetch(self, *_args, **_kwargs):
         for row in _evicted():
+            # The small source fixture historically stores the leaf name in
+            # sub_tool; production receipts carry the full gateway operation.
+            # Normalize into the real recorder contract before injecting.
+            args = row.get("arguments") or {}
+            if row.get("sub_tool") and "tool" not in args:
+                args = {"tool": row["sub_tool"], "args": args.get("args") or args}
             self.evidence.record(
-                row["tool"], row.get("arguments") or {},
+                row["tool"], args,
                 success=True, elapsed_ms=0,
                 summary=str(row.get("summary") or "verified"),
                 supports_live_claim=True,
