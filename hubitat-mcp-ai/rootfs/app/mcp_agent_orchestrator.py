@@ -3149,6 +3149,36 @@ class UnifiedMCPAgent:
             return UNVERIFIED_MUTATION_REFUSAL
         return content
 
+    async def _execute_focal_plan(
+        self, plan: dict[str, Any], messages: list[dict[str, Any]],
+        *, catalog: ToolDiscoveryCatalog | None = None,
+    ) -> None:
+        """Host read-only completion, independent of model planning rounds."""
+        try:
+            live_catalog = catalog or build_request_tool_catalog(
+                await self.mcp.list_tools()
+            )
+            await execute_focal_source_plan(
+                plan,
+                catalog=live_catalog,
+                executor=self.executor,
+                recorder=self.evidence,
+                messages=messages,
+                count_metric=increment_active_metric,
+            )
+        except Exception:
+            self.evidence.record(
+                "hub_read_devices",
+                {"tool": "hub_list_device_events",
+                 "args": plan.get("stateRead") or {}},
+                success=False, elapsed_ms=0,
+                summary="Focal source catalog unavailable",
+                supports_live_claim=False,
+                evidence_kind="focal_source_catalog_unavailable",
+                mutates=False, effect="read",
+            )
+            increment_active_metric("skills_focal_read_failed")
+
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         # Complete mandatory read-only source classes BEFORE the final model
         # synthesis. Post-answer coverage warnings alone cannot investigate.
@@ -3158,30 +3188,7 @@ class UnifiedMCPAgent:
         # even while an older ON boundary remains in interval history.
         focal_plan = build_focal_source_plan(self.evidence.receipts(), objective)
         if focal_plan is not None:
-            try:
-                focal_catalog = build_request_tool_catalog(await self.mcp.list_tools())
-                await execute_focal_source_plan(
-                    focal_plan,
-                    catalog=focal_catalog,
-                    executor=self.executor,
-                    recorder=self.evidence,
-                    messages=messages,
-                    count_metric=increment_active_metric,
-                )
-            except Exception:
-                # This is a source failure, not a verified empty event window.
-                # Avoid logging exception details that might include secrets.
-                self.evidence.record(
-                    "hub_read_devices",
-                    {"tool": "hub_list_device_events",
-                     "args": focal_plan.get("stateRead") or {}},
-                    success=False, elapsed_ms=0,
-                    summary="Focal source catalog unavailable",
-                    supports_live_claim=False,
-                    evidence_kind="focal_source_catalog_unavailable",
-                    mutates=False, effect="read",
-                )
-                increment_active_metric("skills_focal_read_failed")
+            await self._execute_focal_plan(focal_plan, messages)
         # When exact-window recovery returned no uniquely observed ON, do
         # not enter a long model loop that treats the command as physical
         # causation or substitutes newer intervals for the dated event.
@@ -3771,6 +3778,34 @@ class UnifiedMCPAgent:
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
 
+        # For a precisely dated ON missing from latest-N history, the host
+        # already has subject and command receipts after prefetch. Recover the
+        # bounded native window NOW rather than waiting for six-plus provider
+        # rounds to decide whether a historical ON still exists. Preserve
+        # general reasoning when the source actually yields a unique event.
+        if (
+            causal_prefetch == "partial"
+            and deep_causal_request
+            and prefetched_subject_key
+            and has_explicit_focal_clock(user_prompt)
+            and switch_transition_from_prompt(user_prompt) == "on"
+        ):
+            early_focal_plan = build_focal_source_plan(
+                self.evidence.receipts(), user_prompt,
+            )
+            if early_focal_plan is not None and early_focal_plan.get("requestedMinuteOnly"):
+                await self._execute_focal_plan(
+                    early_focal_plan, messages, catalog=catalog,
+                )
+                early_outcome = render_unverified_focal_outcome(
+                    early_focal_plan, self.evidence.receipts(), user_prompt,
+                )
+                if early_outcome:
+                    increment_active_metric("skills_focal_unverified_stop")
+                    increment_active_metric("skills_early_focal_stop")
+                    increment_active_metric("investigative_finalization")
+                    return early_outcome
+
         # Explicit historical source sets can now be finalised directly from
         # typed native/journal/config/log evidence. This preserves source clocks
         # and source absence boundaries without a model inventing provenance.
@@ -4025,7 +4060,24 @@ class UnifiedMCPAgent:
                         )
                         if investigative_request:
                             increment_active_metric("investigative_finalization")
-                            return (await self._final_answer(messages)) + note
+                            completed_answer = await self._final_answer(messages)
+                            # Late mandatory host reads can fill the precise
+                            # source gap that caused this retry. Never append
+                            # stale "app_logs unchecked" after an app-ID log
+                            # query has now succeeded.
+                            final_coverage = assess_task_source_coverage(
+                                task_plan.required_evidence_kinds,
+                                self.evidence.receipts(),
+                            )
+                            if not final_coverage.missing:
+                                return completed_answer
+                            current_missing = ", ".join(final_coverage.missing)
+                            return completed_answer + (
+                                "\\n\\n**Evidence coverage incomplete:** Required "
+                                "read-source classes not verified as checked: "
+                                f"{current_missing}. This does not prove the "
+                                "historical event or cause."
+                            )
                         return self._unverified_mutation_guard(
                             str(assistant.get("content") or
                                 "The investigation is incomplete.")
