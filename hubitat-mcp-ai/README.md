@@ -250,8 +250,15 @@ contain private user text; capture only explicitly opted-in IDs. Connection
 errors, collection interruptions, and overflow are reported as coverage gaps.
 Use the local Hubitat host only. No token or password is accepted in the URL.
 
-Events are filtered to switch, motion/presence/occupancy, level, mode and button
-attributes. Raw high-volume power/temperature telemetry is not archived.
+Live socket events are filtered to switch, motion/presence/occupancy, level,
+mode and button attributes. **From 0.17.79**, verified read-only native
+`hub_list_device_events` responses are additionally persisted when enabled:
+switch ON/OFF state events and supported `command-on`, `command-off`, and
+`command-setLevel` events with valid source timestamps. A command's producing
+Hubitat app ID and label are retained separately as source identifiers; no
+unrestricted command descriptions are stored. These read-through observations
+are opportunistic, **not** proof that the journal has collected every command.
+Raw high-volume power/temperature telemetry is not archived.
 The SQLite DB is `/data/homebrain-evidence-journal.sqlite3` inside the
 add-on's persistent data directory. It survives normal add-on restart/upgrades.
 Old entries are purged after the selected retention period and a row-count
@@ -265,6 +272,16 @@ Status (also included in `/api/status`):
 - `GET /api/evidence-journal/events?device_id=7774&attribute=motion&since=2026-10-12T07:13:23Z&until=2026-10-12T07:20:23Z`
   — bounded read-only evidence (max 200 rows, at most 31 days per request,
   requires an exact device ID or app ID).
+
+**Causal replay:** When enabled and running, HomeBrain also checks the
+persistent journal for exact incident-window switch events. An archived ON
+can establish an observed state transition only if the journal retained
+an authoritative, timezone-aware **source event timestamp**. A reception-only
+timestamp may be useful as approximate context but never proves the exact
+moment of a physical change. Journal gaps and truncated records are disclosed
+and not treated as evidence of inactivity. Already-expired events cannot be
+backfilled from the native API. Verify collection via the in-app Evidence Journal
+status panel after restarting and allow time for future events to be captured.
 
 **Evidence limitations:** Hubitat live socket event frames may lack an authoritative
 event timestamp; in that case the journal records UTC **collector reception time**,
