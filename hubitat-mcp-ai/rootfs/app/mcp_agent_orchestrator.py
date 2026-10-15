@@ -1267,7 +1267,7 @@ class UnifiedMCPAgent:
                 if (
                     on_at is not None and off_at is not None
                     and on_at.tzinfo and off_at.tzinfo
-                    and (off_at - on_at).total_seconds() > 120
+                    and (off_at - on_at).total_seconds() > 300
                 ):
                     # A distant closing OFF is not a predecessor cause of
                     # the explicitly requested ON. Keep short-interval OFF
