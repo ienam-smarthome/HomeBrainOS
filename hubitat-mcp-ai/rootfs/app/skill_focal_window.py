@@ -115,7 +115,7 @@ def build_focal_source_plan(
     }
     # Independent producer-log investigation, not a repeated broad hub log read.
     log_args = {
-        "appId": app_id,
+        "appId": int(app_id),
         "since": _iso_utc(begin),
         "until": _iso_utc(end),
         "limit": 100,
