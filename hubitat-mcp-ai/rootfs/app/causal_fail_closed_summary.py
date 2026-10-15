@@ -141,9 +141,10 @@ def render_failed_causal_synthesis(
         )
     else:
         lines.append(
-            "**Command record:** No command was independently proven to "
-            "produce this exact state transition within the strict match "
-            "window. This is not proof that no preceding commands occurred."
+            "**Command record:** No matching direct command producer was "
+            "established for this transition in the bounded Hubitat data. "
+            "This refers to strict command-to-state matching, not to absence "
+            "of preceding commands or other potential command paths."
         )
     if preceding:
         lines.append(
