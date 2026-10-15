@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import datetime
+
 from causal_evidence_graph import build_causal_evidence_graph
 from causal_subject_prefetch import switch_transition_from_prompt
 from skill_decision_summary import causal_skill_conclusion
@@ -15,6 +17,42 @@ from skill_decision_summary import causal_skill_conclusion
 
 def _name(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _focal_reporter(
+    evidence: list[dict[str, Any]], subject: str, focal: str,
+) -> str:
+    """Accept equivalent source-typed history shapes, exact event boundary only."""
+    try:
+        target = datetime.fromisoformat(focal.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        details = receipt.get("details") or {}
+        if _name(details.get("label")).casefold() != subject.casefold():
+            continue
+        for key in ("boundaryEvents", "observedEvents", "correlationEvents", "events"):
+            for event in details.get(key) or []:
+                if not isinstance(event, dict):
+                    continue
+                if event.get("name") != "switch" or str(event.get("value")).casefold() != "on":
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(str(event.get("date") or "").replace("Z", "+00:00"))
+                    if stamp.tzinfo is None or target.tzinfo is None:
+                        continue
+                    if abs((stamp - target).total_seconds()) > .002:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+                producer = event.get("producedBy") or {}
+                if isinstance(producer, dict):
+                    label = _name(producer.get("label"))
+                    if label:
+                        return label
+    return ""
 
 
 def _focal_sensors(evidence: list[dict[str, Any]]) -> tuple[list[str], bool]:
@@ -71,7 +109,10 @@ def render_grounded_causal_answer(
         return None
     subject = _name(verdict.get("subject")) or "the requested device"
     boundary = graph.get("physicalStateBoundary") or {}
-    reporter = _name((boundary.get("reporter") or {}).get("label"))
+    reporter = (
+        _name((boundary.get("reporter") or {}).get("label"))
+        or _focal_reporter(evidence, subject, focus)
+    )
     lines = [
         f"### Investigation — {subject}",
         (
