@@ -174,7 +174,7 @@ from automation_diagnostic_policy import (
     is_integration_runtime_diagnostic,
 )
 from request_metrics import increment_active_metric
-from rule_authoring_service import RuleAuthoringService
+from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
@@ -3409,6 +3409,41 @@ class UnifiedMCPAgent:
                     if message is not None:
                         return message
 
+        # The user's explicit time-bound rule command is the authority for
+        # authoring intent. Do NOT let the semantic planner's advisory
+        # operation="propose" suppress this deterministic compiler: doing so
+        # fell through to a model search for the fictional blockInternet
+        # command and an unnecessary "what starts the countdown?" question.
+        # Pure design questions must still remain read-only.
+        if self.rule_authoring.is_action_request(user_prompt):
+            if not self.rule_write_enabled:
+                return RULE_WRITES_DISABLED_MESSAGE
+            if RULE_MACHINE_GATEWAY not in catalog.available_names:
+                increment_active_metric("rule_schedule_gateway_missing")
+                return (
+                    "I understand the scheduled device action, but the "
+                    "Hubitat Rule Machine write gateway is unavailable. "
+                    "No rule was queued or changed."
+                )
+            rule_decision = await self.rule_authoring.propose(
+                user_prompt,
+                available_gateways=set(catalog.available_names),
+                can_read_rules=True,
+            )
+            if rule_decision.handled:
+                increment_active_metric("rule_schedule_fastpath")
+                return self._rule_proposal_confirmation.resolve(
+                    rule_decision,
+                    user_prompt=user_prompt,
+                    session_id=session_id,
+                )
+            # An explicitly scheduled request must not degrade into a
+            # speculative model-authored Rule Machine payload.
+            return (
+                "The scheduled action could not be safely compiled into a "
+                "verified Hubitat Rule Machine proposal. Nothing was queued."
+            )
+
         # A general task objective is advisory: it guides skill selection and
         # targeted discovery, never effect classification, user authorisation,
         # device identity, tool schema validation or claimed evidence.
@@ -3426,11 +3461,6 @@ class UnifiedMCPAgent:
         known_history_path = uses_known_history_evidence_path(user_prompt)
         if known_history_path:
             increment_active_metric("history_known_tool_fastpath")
-        if (
-            not self.rule_write_enabled
-            and self.rule_authoring.matches_request(user_prompt)
-        ):
-            return RULE_WRITES_DISABLED_MESSAGE
         if (
             search_tool is not None
             and not self._is_conversational_prompt(user_prompt)
@@ -3462,21 +3492,6 @@ class UnifiedMCPAgent:
                     "Original-request discovery expanded registry with: %s",
                     ", ".join(item.name for item in capability_additions),
                 )
-        rule_decision = (
-            await self.rule_authoring.propose(
-                user_prompt,
-                available_gateways=set(catalog.available_names),
-                can_read_rules=True,
-            )
-            if task_plan is None or task_plan.operation != "propose"
-            else None
-        )
-        if rule_decision is not None and rule_decision.handled:
-            return self._rule_proposal_confirmation.resolve(
-                rule_decision,
-                user_prompt=user_prompt,
-                session_id=session_id,
-            )
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(
