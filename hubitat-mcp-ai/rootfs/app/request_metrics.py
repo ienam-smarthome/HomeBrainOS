@@ -97,7 +97,7 @@ class RequestMetrics:
         "causal_configured_sensor_prioritized",
         "causal_historical_sensor_fallback_reads",
         "causal_irrelevant_off_skipped", "causal_preceding_command_clues", "causal_final_output_reconciled",
-        "skills_framework_activated", "skills_topology_plan", "skills_required_source_read", "skills_grounded_answer_selected", "skills_focal_state_window", "skills_focal_producer_logs", "skills_focal_state_rows_retained", "skills_focal_read_failed", "skills_focal_unverified_stop", "skills_early_focal_stop",
+        "skills_framework_activated", "skills_topology_plan", "skills_required_source_read", "skills_grounded_answer_selected", "skills_focal_state_window", "skills_focal_producer_logs", "skills_focal_state_rows_retained", "skills_focal_read_failed", "skills_focal_unverified_stop", "skills_early_focal_stop", "skills_focal_journal_read", "skills_focal_journal_on_recovered", "skills_focal_journal_failed",
         "causal_read_round_budget", "causal_read_round_budget_exhausted",
         "ollama_empty_message_recovery", "ollama_empty_message_recovery_failed",
     })
