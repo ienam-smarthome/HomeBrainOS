@@ -13,6 +13,7 @@ from typing import Any
 from causal_evidence_graph import build_causal_evidence_graph
 from skill_decision_summary import causal_skill_conclusion
 from causal_subject_prefetch import switch_transition_from_prompt
+from causal_timeline import _focal_clock_token
 
 
 def _time(value: Any) -> datetime | None:
@@ -79,10 +80,12 @@ def _requested_clock(question: str, reference: datetime) -> datetime | None:
     The offset is *only* used when a command receipt matches the given date.
     """
     day = _EXPLICIT_DATE.search(str(question or ""))
-    clocks = list(_EXPLICIT_CLOCK.finditer(str(question or "")))
-    if day is None or len(clocks) != 1 or reference.tzinfo is None:
+    selected_clock = _focal_clock_token(str(question or ""))
+    if day is None or not selected_clock or reference.tzinfo is None:
         return None
-    clock = clocks[0]
+    clock = _EXPLICIT_CLOCK.fullmatch(selected_clock)
+    if clock is None:
+        return None
     try:
         wanted = datetime(
             int(day.group(3)), _MONTHS[day.group(2).lower()],
@@ -92,6 +95,37 @@ def _requested_clock(question: str, reference: datetime) -> datetime | None:
     except ValueError:
         return None
     return wanted
+
+
+
+_ARCHIVE_CLOCK_RANGE = re.compile(
+    r"\b(?:between|from)\s+"
+    r"(?P<begin>(?:[01]?\d|2[0-3]):[0-5]\d)"
+    r"\s+(?:and|to|through|until|[-–])\s+"
+    r"(?P<end>(?:[01]?\d|2[0-3]):[0-5]\d)\b",
+    re.I,
+)
+
+
+def _requested_archive_window(question: str, focal: datetime) -> dict[str, str] | None:
+    """Respect a supplementary bounded journal search range on focal day.
+
+    Only when the range is unique, spans at most one hour, and contains
+    the focal event. A malformed/ambiguous range never moves the event date
+    or expands an unbounded query.
+    """
+    windows = list(_ARCHIVE_CLOCK_RANGE.finditer(str(question or "")))
+    if len(windows) != 1 or focal.tzinfo is None:
+        return None
+    def _at(clock: str) -> datetime:
+        hour, minute = (int(value) for value in clock.split(":"))
+        return focal.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    start, stop = _at(windows[0].group("begin")), _at(windows[0].group("end"))
+    if not start < stop or not start <= focal <= stop:
+        return None
+    if (stop - start).total_seconds() > 3600:
+        return None
+    return {"since": _iso_utc(start), "until": _iso_utc(stop)}
 
 
 def _missing_boundary_plan(
@@ -175,6 +209,7 @@ def _missing_boundary_plan(
         "requestedMinuteOnly": True, "observedBoundaryVerified": False,
         "commandTime": command_text,
         "sourceWindow": {"since": _iso_utc(begin), "until": _iso_utc(end)},
+        "journalWindow": _requested_archive_window(question, requested),
         "stateRead": state_args, "producerLogRead": log_args,
         "stateHistoryStatus": "not-verified-at-focal-minute",
         "producerLogStatus": "not-verified-at-command",
@@ -271,6 +306,7 @@ def build_focal_source_plan(
         "requestedOn": verdict.get("focusTime"),
         "commandTime": command.get("timestamp"),
         "sourceWindow": {"since": state_args["since"], "until": state_args["until"]},
+        "journalWindow": _requested_archive_window(question, focus),
         "stateRead": None if checked_state else state_args,
         "producerLogRead": None if checked_logs else log_args,
         "stateHistoryStatus": "read-attempted" if checked_state else "not-checked-in-exact-window",
@@ -521,6 +557,36 @@ def render_unverified_focal_outcome(
         and str(_args(receipt).get("appId") or "") == str(plan.get("producerAppId") or "")
         and receipt.get("success") is True
     ]
+    archives = [
+        row.get("details") or {}
+        for row in evidence
+        if isinstance(row, dict)
+        and row.get("success") is True
+        and row.get("evidence_kind") == "focal_archived_state_history"
+        and str((row.get("details") or {}).get("deviceId") or "") ==
+            str(plan.get("deviceId") or "")
+    ]
+    if archives:
+        source_total = max(
+            int(item.get("sourceTimestampedCount") or 0) for item in archives
+        )
+        receive_total = max(
+            int(item.get("collectorReceivedOnlyCount") or 0) for item in archives
+        )
+        gap_total = max(int(item.get("gapCount") or 0) for item in archives)
+        archive_note = (
+            "**Persistent Evidence Journal checked:** "
+            f"{source_total} source-timestamped switch row(s), "
+            f"{receive_total} collector-reception-only row(s), "
+            f"{gap_total} recorded connection gap(s) in the query window. "
+            "Reception-only times do not independently verify the physical "
+            "event time, and a zero-row archive query does not prove inactivity."
+        )
+    else:
+        archive_note = (
+            "**Persistent Evidence Journal:** No successful, bounded journal "
+            "read was recorded for this incident; archived coverage is unknown."
+        )
     if app_logs:
         log_count = max(
             int((receipt.get("details") or {}).get("logCount") or 0)
@@ -538,7 +604,7 @@ def render_unverified_focal_outcome(
         )
     return (
         summary + "\n\n" + check
-        + "\n\n" + app_log_note + " " + limitation
+        + "\n\n" + archive_note + "\n\n" + app_log_note + " " + limitation
         + "\n\nHistorical source completeness is unverified. A missing "
           "event in a bounded Hubitat page does not prove the light stayed "
           "off, and a prior command cannot be promoted into verified causation."
@@ -559,8 +625,9 @@ def project_archived_focal_state(
     A coverage gap, empty query or duplicated candidate never proves an
     external cause, even if the journal persisted the information correctly.
     """
-    begin = _time(plan.get("sourceWindow", {}).get("since"))
-    end = _time(plan.get("sourceWindow", {}).get("until"))
+    query_window = plan.get("journalWindow") or plan.get("sourceWindow") or {}
+    begin = _time(query_window.get("since"))
+    end = _time(query_window.get("until"))
     if begin is None or end is None:
         raise ValueError("Exact bounded journal window required")
     events: list[dict[str, Any]] = []
