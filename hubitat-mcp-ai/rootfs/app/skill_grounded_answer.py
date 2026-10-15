@@ -98,7 +98,7 @@ def render_grounded_causal_answer(
         lines.append(
             f"**Reporting versus initiating:** {reporter} reported the "
             "state to Hubitat. This identifies the reporting integration, "
-            "not a Hue app, physical switch, or other upstream initiator."
+            "not which upstream app, physical controller or person initiated it."
         )
     listeners = [
         _name(x.get("label"))
