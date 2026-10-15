@@ -78,7 +78,7 @@ def _focus(evidence: list[dict[str, Any]], question: str) -> dict[str, Any] | No
     for receipt in evidence:
         if (
             not _working(receipt)
-            or receipt.get("evidence_kind") != "focal_exact_state_history"
+            or receipt.get("evidence_kind") not in {"focal_exact_state_history", "focal_archived_state_history"}
         ):
             continue
         details = receipt.get("details") or {}
@@ -93,13 +93,15 @@ def _focus(evidence: list[dict[str, Any]], question: str) -> dict[str, Any] | No
             when = _time(item.get("date"))
             if item.get("name") != "switch" or item.get("value") != "on" or when is None:
                 continue
+            if receipt.get("evidence_kind") == "focal_archived_state_history" and item.get("timestampBasis") != "source":
+                continue
             delta = (when - requested).total_seconds()
             if (0 <= delta < 60) if minute_only else abs(delta) <= .002:
                 recovered.append({
                     "subject": subject, "start": str(item.get("date")),
                     "end": "", "durationSeconds": None,
                     "open": True, "material": True,
-                    "observedFrom": "focal_exact_state_history",
+                    "observedFrom": receipt.get("evidence_kind"),
                 })
     unique = {
         (str(row["subject"]), str(row["start"])): row
