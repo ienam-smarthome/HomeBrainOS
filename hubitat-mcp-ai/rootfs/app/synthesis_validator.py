@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
@@ -268,6 +269,11 @@ def validate_synthesis(
             issues.append("performance_evidence_first")
 
     if causal:
+        corrected, clue_guard_changed = guard_causal_exclusion_with_command_clue(
+            corrected, evidence, original_user,
+        )
+        if clue_guard_changed:
+            issues.append("causal_command_clue_integrity")
         corrected, claim_issues = verify_causal_claims(
             corrected, evidence, original_user
         )
