@@ -3209,8 +3209,13 @@ class UnifiedMCPAgent:
                 conversation_history,
                 session_id=session_id,
             )
-            # Final user-facing redaction covers deterministic shortcuts too.
-            message = redact_secrets(message)
+            # Redact deterministic shortcut output only when it contains
+            # credential-shaped keys; leave ordinary status snapshots untouched.
+            if any(term in str(message).casefold() for term in (
+                "password", "passphrase", "secret", "access_token",
+                "refresh_token", "api_key", "authorization:", "bearer ",
+            )):
+                message = redact_secrets(message)
             evidence = self.evidence.receipts()
             if (
                 self._mutation_requested_by_user.get()
