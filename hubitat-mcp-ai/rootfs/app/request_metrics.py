@@ -93,6 +93,8 @@ class RequestMetrics:
         "synthesis_repair_causal_provenance", "synthesis_repair_performance",
         "synthesis_repair_other", "synthesis_repair_failed", "synthesis_causal_fail_closed", "telemetry_claims_reconciled",
         "typed_device_history_projections",
+        "causal_configured_sensor_prioritized",
+        "causal_read_round_budget", "causal_read_round_budget_exhausted",
         "ollama_empty_message_recovery", "ollama_empty_message_recovery_failed",
     })
     ALLOWED_TIMINGS = frozenset({
