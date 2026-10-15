@@ -167,3 +167,46 @@ def test_wrong_calendar_date_and_unrelated_older_command_do_not_seed_history():
     assert build_focal_source_plan(
         rows, "Why did Livingroom Light 1 turn ON at 12:00 on 14 October 2026?"
     ) is None
+
+
+def test_native_window_zero_is_not_historical_archive_and_logs_are_checked():
+    rows = _evicted()
+    # A latest-N state page no longer reaches the named minute, but its
+    # oldest observed record is useful, explicitly qualified context.
+    rows[0]["details"]["correlationEvents"] = [{
+        "name": "switch", "value": "on",
+        "date": "2026-10-14T22:45:47.671+0100",
+    }]
+    plan = build_focal_source_plan(rows, QUESTION)
+    scoped = _response(plan, [])
+    assert scoped["details"]["upstreamReturnedCount"] == 0
+    assert scoped["details"]["upstreamEventStoreCompletenessVerified"] is False
+    rows.extend([scoped, {
+        "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+        "success": True, "mutates": False, "effect": "read",
+        "evidence_kind": "focal_producer_execution_logs",
+        "arguments": {"tool": "hub_get_logs", "args": plan["producerLogRead"]},
+        "details": {"logCount": 0, "logs": []},
+    }])
+    answer = render_unverified_focal_outcome(plan, rows, QUESTION)
+    assert "returned 0 record(s)" in answer
+    assert "oldest switch-state event" in answer
+    assert "22:45:47.671" in answer
+    assert "maximum event-history retention" in answer
+    assert "not successfully verified" not in answer
+    assert "app_logs" not in answer
+    from general_evidence_completion import assess_task_source_coverage
+    coverage = assess_task_source_coverage(("app_logs",), rows)
+    assert coverage.sources_checked is True
+    assert coverage.missing == ()
+
+
+def test_incomplete_latest_page_does_not_claim_the_hub_discarded_the_event():
+    rows = _evicted()
+    plan = build_focal_source_plan(rows, QUESTION)
+    text = render_unverified_focal_outcome(
+        plan, rows + [_response(plan, [])], QUESTION
+    )
+    assert "already outside that store" in text
+    assert "never occurred" not in text
+    assert "proven" not in text.split("Historical source completeness")[0]
