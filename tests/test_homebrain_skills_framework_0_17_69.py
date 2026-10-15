@@ -118,7 +118,7 @@ def test_live_01769_failed_synthesis_preserves_leading_command_candidate():
     assert "19:54:57.946" in output
     assert "not confirmed cause" in output.lower()
     assert "an external controller caused" not in output.lower()
-    assert "remains unverified" in output
+    assert "remain unverified" in output
 
 
 def test_telemetry_requires_device_scoped_logs_before_answer():
