@@ -167,6 +167,47 @@ def render_grounded_causal_answer(
                   "bounded events. Other sensors and unretained events "
                   "are not ruled out."
             )
+    # A status-neutral source note: a latest-N history page is not a
+    # verified neighborhood around a focal historic event.
+    scoped_reads = []
+    for receipt in evidence:
+        if not isinstance(receipt, dict):
+            continue
+        arguments = receipt.get("arguments") or {}
+        args = arguments.get("args") if isinstance(arguments.get("args"), dict) else arguments
+        if not isinstance(args, dict):
+            continue
+        if (
+            receipt.get("sub_tool") == "hub_list_device_events"
+            and str(args.get("attribute") or "") == "switch"
+            and args.get("since") and args.get("until")
+            and receipt.get("evidence_kind") == "focal_exact_state_history"
+        ):
+            scoped_reads.append(receipt)
+    if scoped_reads:
+        usable = any(
+            row.get("success") is True and
+            isinstance((row.get("details") or {}).get("events"), list)
+            for row in scoped_reads
+        )
+        lines.append(
+            "**Focal event-window coverage:** "
+            + (
+                "A timestamp-filtered state-event page was returned for the "
+                "requested incident. An empty result would not independently "
+                "prove historical source completeness."
+                if usable else
+                "An exact incident-window query was attempted, but its "
+                "state-event content was not verified; intervening changes "
+                "cannot be excluded."
+            )
+        )
+    else:
+        lines.append(
+            "**Focal event-window coverage:** The returned latest-N "
+            "history does not independently establish complete coverage "
+            "of the minutes surrounding the incident."
+        )
     if verdict.get("intervening"):
         lines.append(
             "**Important counterevidence:** An intervening OFF/ON sequence "
@@ -183,11 +224,11 @@ def render_grounded_causal_answer(
     coverage = verdict.get("sourceChecks") or {}
     scope = []
     scope.append(
-        "producer app configuration checked" if coverage.get("producerAppConfigChecked")
+        "producer app configuration query completed (historical settings/initiating inputs unverified)" if coverage.get("producerAppConfigChecked")
         else "producer app configuration not verified in this investigation"
     )
     scope.append(
-        "producer execution logs queried" if coverage.get("producerAppLogsChecked")
+        "producer execution-log query completed (its historic time-window coverage must be checked)" if coverage.get("producerAppLogsChecked")
         else "producer execution logs not verified in this investigation"
     )
     lines.append(
