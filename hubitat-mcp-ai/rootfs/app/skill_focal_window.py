@@ -13,6 +13,7 @@ from typing import Any
 from causal_evidence_graph import build_causal_evidence_graph
 from skill_decision_summary import causal_skill_conclusion
 from causal_subject_prefetch import switch_transition_from_prompt
+from causal_timeline import _focal_clock_token
 
 
 def _time(value: Any) -> datetime | None:
@@ -79,10 +80,12 @@ def _requested_clock(question: str, reference: datetime) -> datetime | None:
     The offset is *only* used when a command receipt matches the given date.
     """
     day = _EXPLICIT_DATE.search(str(question or ""))
-    clocks = list(_EXPLICIT_CLOCK.finditer(str(question or "")))
-    if day is None or len(clocks) != 1 or reference.tzinfo is None:
+    selected_clock = _focal_clock_token(str(question or ""))
+    if day is None or not selected_clock or reference.tzinfo is None:
         return None
-    clock = clocks[0]
+    clock = _EXPLICIT_CLOCK.fullmatch(selected_clock)
+    if clock is None:
+        return None
     try:
         wanted = datetime(
             int(day.group(3)), _MONTHS[day.group(2).lower()],
