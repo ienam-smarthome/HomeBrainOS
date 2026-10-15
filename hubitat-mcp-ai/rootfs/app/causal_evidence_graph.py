@@ -103,8 +103,10 @@ def _focus(evidence: list[dict[str, Any]], question: str) -> dict[str, Any] | No
                     "open": True, "material": True,
                     "observedFrom": receipt.get("evidence_kind"),
                 })
+    # The same ON may be returned as +01:00 by Hubitat and +00:00 by
+    # the journal. Identity is an absolute instant, not an ISO string.
     unique = {
-        (str(row["subject"]), str(row["start"])): row
+        (str(row["subject"]).casefold(), _time(row["start"])): row
         for row in recovered
     }
     if len(unique) == 1:
