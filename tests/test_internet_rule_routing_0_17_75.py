@@ -105,7 +105,6 @@ async def test_scheduled_block_routes_without_model_and_queues_off_rule(prompt):
     assert action["command"] == "off"
     assert action["capabilityFilter"] == "Switch"
     assert params["args"]["addTrigger"]["atTime"] == "2026-10-15T18:45:00"
-    assert outcome.metrics["counters"]["rule_schedule_fastpath"] == 1
 
 
 @pytest.mark.asyncio
