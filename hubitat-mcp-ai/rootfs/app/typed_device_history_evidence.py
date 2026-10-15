@@ -131,6 +131,30 @@ def _join_derived_event_rows(
 
 
 
+def _reported_target_health(
+    evidence: list[dict[str, Any]], target_id: str,
+) -> dict[str, Any] | None:
+    """Read only ID-matching snapshots from successful targeted live lookups."""
+    matches = []
+    for receipt in evidence:
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("success") is not True
+            or receipt.get("sub_tool") != "hub_list_devices"
+        ):
+            continue
+        details = receipt.get("details") or {}
+        state = details.get("reportedDeviceState") if isinstance(details, dict) else None
+        if (
+            isinstance(state, dict)
+            and str(state.get("deviceId") or "") == target_id
+            and state.get("source") == "targeted-hubitat-device-state"
+        ):
+            matches.append(state)
+    return dict(matches[-1]) if matches else None
+
+
+
 def normalize_target_device_history(
     evidence: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -237,6 +261,7 @@ def normalize_target_device_history(
     return {
         "deviceId": target_id,
         "deviceLabel": _target_label(evidence, target_id),
+        "reportedDeviceState": _reported_target_health(evidence, target_id),
         "queryWindowHours": hours or None,
         "receiptCheckedAt": checked_at.isoformat() if checked_at else None,
         "returnedEvents": len(commands) + len(states),
@@ -278,6 +303,24 @@ def render_target_device_evidence_answer(
         f"{summary['commandCount']} command invocations and "
         f"{summary['stateEventCount']} state/attribute events.",
     ]
+    reported = summary.get("reportedDeviceState")
+    if isinstance(reported, dict):
+        values = reported.get("reportedAttributes") or {}
+        if isinstance(values, dict) and values:
+            fields = ", ".join(
+                f"{key}={values[key]}" for key in (
+                    "healthStatus", "mqttStatus", "switch",
+                    "lastActivity", "lastSeen", "dataAgeSeconds",
+                ) if key in values
+            )
+            if fields:
+                lines.append(
+                    "**Reported state at targeted Hubitat read "
+                    f"({reported.get('observedAt') or 'time unverified'}):** "
+                    + fields + ". These are saved driver attributes observed "
+                    "at the read time, not independently verified physical "
+                    "transport or original measurement timestamps."
+                )
     latest = summary.get("latestReturnedStateEvent")
     if isinstance(latest, dict):
         lines.append(
