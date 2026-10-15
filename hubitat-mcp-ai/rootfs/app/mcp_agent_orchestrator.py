@@ -140,6 +140,9 @@ from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
+from skills_framework import render_skills_for_request
+from skill_topology import render_topology_plan
+from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
@@ -3130,7 +3133,7 @@ class UnifiedMCPAgent:
         return ToolDiscoveryCatalog.discovered_tools(result, available)
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-        return await self.transport.chat(self._bounded_messages(messages), tools)
+        return await self.transport.chat(redact_model_messages(self._bounded_messages(messages)), tools)
 
     def _unverified_mutation_guard(self, content: str) -> str:
         mutation_expected = (
@@ -3154,7 +3157,7 @@ class UnifiedMCPAgent:
         )
         if corrected:
             increment_active_metric("causal_final_output_reconciled")
-        return self._unverified_mutation_guard(content)
+        return redact_secrets(self._unverified_mutation_guard(content))
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
         return self.confirmations.consume(session_id, prompt)
@@ -3206,6 +3209,13 @@ class UnifiedMCPAgent:
                 conversation_history,
                 session_id=session_id,
             )
+            # Redact deterministic shortcut output only when it contains
+            # credential-shaped keys; leave ordinary status snapshots untouched.
+            if any(term in str(message).casefold() for term in (
+                "password", "passphrase", "secret", "access_token",
+                "refresh_token", "api_key", "authorization:", "bearer ",
+            )):
+                message = redact_secrets(message)
             evidence = self.evidence.receipts()
             if (
                 self._mutation_requested_by_user.get()
@@ -3416,6 +3426,10 @@ class UnifiedMCPAgent:
             conversation_history,
             skill_domains=task_plan.skill_domains if task_plan is not None else None,
         )
+        # Progressive on-demand skill loading (repo-owned instructions only).
+        skill_guidance = render_skills_for_request(user_prompt)
+        if skill_guidance:
+            system_prompt += "\n\n" + skill_guidance
         if task_plan is not None:
             system_prompt += "\n\n" + task_plan.instruction()
         contract = plan_investigation(user_prompt)
@@ -3525,6 +3539,12 @@ class UnifiedMCPAgent:
             )
             if prefetched_subject_key:
                 investigative_subject_history_key = prefetched_subject_key
+                topology_brief = render_topology_plan(
+                    self.evidence.receipts(), user_prompt,
+                )
+                if topology_brief:
+                    messages.append({"role": "user", "content": topology_brief})
+                    increment_active_metric("skills_topology_plan")
             if causal_prefetch == "sufficient":
                 deterministic_answer = (
                     (
