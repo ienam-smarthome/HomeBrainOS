@@ -89,7 +89,7 @@ def test_mixed_history_retains_historical_state_without_proving_connectivity():
     assert "unresponsive" not in answer
     assert "physically non-functional" not in answer
     assert "stale since Oct 12" not in answer
-    assert "device ID" in answer
+    assert "for device 7103" in answer
 
 
 def test_direct_mixed_event_receipt_replaces_unverified_model_conclusion():
