@@ -474,11 +474,11 @@ def render_unverified_focal_outcome(
             "be independently established."
         )
     return (
-        summary + "\\n\\n" + check
-        + "\\n\\nHistorical source completeness is unverified. A missing "
+        summary + "\n\n" + check
+        + "\n\nHistorical source completeness is unverified. A missing "
           "event in a bounded Hubitat page does not prove the light stayed "
           "off, and a prior command cannot be promoted into verified causation."
-        + "\\n\\n**Next read-only checks:** Review any retained device or "
+        + "\n\n**Next read-only checks:** Review any retained device or "
           "bridge event journal for the named minute and the command producer's "
           "execution/MQTT history. Do not change devices or automations."
     )
