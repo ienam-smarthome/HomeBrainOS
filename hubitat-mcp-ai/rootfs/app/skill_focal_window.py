@@ -397,6 +397,15 @@ def project_focal_state_result(
                 )
             ) == 1
         ),
+        # Upstream hub_list_device_events reads the currently retained
+        # /device/eventsJson page then applies since/until; it cannot page
+        # backward into evicted device events. Preserve that limitation.
+        "upstreamReturnedCount": len(rows),
+        "upstreamSinceMode": (
+            str(response_data.get("sinceMode") or "")
+            if isinstance(response_data, dict) else ""
+        ),
+        "upstreamEventStoreCompletenessVerified": False,
         "sourceHistoryComplete": False,
         "status": "bounded-events-retained-not-proof-of-complete-history",
     }
@@ -473,14 +482,70 @@ def render_unverified_focal_outcome(
             "usable event payload, so the requested ON transition could not "
             "be independently established."
         )
+    # Reading an exact interval from the native gateway is a filter of the
+    # currently retained device events, not an archival query. Show the
+    # oldest timestamp *seen in the returned recent page* as context,
+    # without claiming it is the oldest event ever stored by Hubitat.
+    page_events: list[datetime] = []
+    for receipt in evidence:
+        if receipt.get("success") is not True:
+            continue
+        if receipt.get("tool") != "homebrain_device_history":
+            continue
+        details = receipt.get("details") or {}
+        if str(details.get("label") or "") != str(plan.get("subject") or ""):
+            continue
+        for event in (details.get("correlationEvents") or []):
+            if not isinstance(event, dict):
+                continue
+            if event.get("name") != "switch":
+                continue
+            when = _time(event.get("date"))
+            if when:
+                page_events.append(when)
+    oldest = min(page_events) if page_events else None
+    limitation = (
+        f"The oldest switch-state event in the checked recent history was "
+        f"{oldest.isoformat()}, later than the requested minute. "
+        "This is consistent with older state rows no longer being accessible "
+        "through the current native history page; it does not independently "
+        "establish the hub's retention settings or prove the event never occurred."
+        if oldest and minute and oldest > minute else
+        "The native history API filters the hub's currently retained events. "
+        "An exact-time query cannot retrieve records already outside that store."
+    )
+    app_logs = [
+        receipt for receipt in evidence
+        if isinstance(receipt, dict)
+        and receipt.get("evidence_kind") == "focal_producer_execution_logs"
+        and str(_args(receipt).get("appId") or "") == str(plan.get("producerAppId") or "")
+        and receipt.get("success") is True
+    ]
+    if app_logs:
+        log_count = max(
+            int((receipt.get("details") or {}).get("logCount") or 0)
+            for receipt in app_logs
+        )
+        app_log_note = (
+            f"The producer app's timestamp-filtered execution logs were "
+            f"checked and returned {log_count} record(s). "
+            "This is not proof that no app action occurred."
+        )
+    else:
+        app_log_note = (
+            "The producer app's scoped execution-log history was not "
+            "successfully verified, so its execution remains unverified."
+        )
     return (
         summary + "\n\n" + check
+        + "\n\n" + app_log_note + " " + limitation
         + "\n\nHistorical source completeness is unverified. A missing "
           "event in a bounded Hubitat page does not prove the light stayed "
           "off, and a prior command cannot be promoted into verified causation."
-        + "\n\n**Next read-only checks:** Review any retained device or "
-          "bridge event journal for the named minute and the command producer's "
-          "execution/MQTT history. Do not change devices or automations."
+        + "\n\n**Next read-only checks:** Check the device's configured "
+          "maximum event-history retention and any independent historical "
+          "journal; check the producer's archived MQTT/execution records. "
+          "Do not change devices or automations."
     )
 
 
