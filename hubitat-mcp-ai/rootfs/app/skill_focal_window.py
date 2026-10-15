@@ -66,10 +66,10 @@ _MONTHS = {month.lower(): n for n, month in enumerate(
      "July", "August", "September", "October", "November", "December"), 1
 )}
 _EXPLICIT_DATE = re.compile(
-    r"\\b([0-3]?\\d)\\s+(" + "|".join(_MONTHS) + r")\\s+(20\\d{2})\\b",
+    r"\b([0-3]?\d)\s+(" + "|".join(_MONTHS) + r")\s+(20\d{2})\b",
     re.I,
 )
-_EXPLICIT_CLOCK = re.compile(r"\\b([01]?\\d|2[0-3]):([0-5]\\d)(?::([0-5]\\d))?\\b")
+_EXPLICIT_CLOCK = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
 
 
 def _requested_clock(question: str, reference: datetime) -> datetime | None:
