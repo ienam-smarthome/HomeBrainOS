@@ -593,18 +593,45 @@ _MONTH_NAMES = {
 }
 
 
-def _focal_clock_parts(original_user: str) -> tuple[int, ...] | None:
-    """Use exact seconds when provided, or unique minute-level event matching."""
+_EVENT_CLOCK = re.compile(
+    r"\\b(?:turn(?:ed|s)?|switch(?:ed|es)?|went|goes|came|comes)"
+    r"\\s+(?:back\\s+)?(?:on|off)\\s+at\\s+"
+    r"(?P<clock>(?:[01]?\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?)\\b",
+    re.I,
+)
+
+
+def _focal_clock_token(original_user: str) -> str | None:
+    """Select the requested transition, not supplementary search-window clocks.
+
+    Use a single clock explicitly attached to a switch transition; this
+    supports multi-sentence incident requests with separate 19:50–20:00
+    archival ranges. If no event-specific clock exists, a unique clock in
+    the opening question/sentence is valid. Otherwise require a unique
+    clock in the whole request; never silently choose among ambiguities.
+    """
     prompt = str(original_user or "")
-    seconds = list(_FOCAL_CLOCK.finditer(prompt))
-    if len(seconds) == 1:
-        return tuple(int(part) for part in seconds[0].groups())
-    if seconds:
+    event_clocks = [match.group("clock") for match in _EVENT_CLOCK.finditer(prompt)]
+    if len(event_clocks) == 1:
+        return event_clocks[0]
+    if len(event_clocks) > 1:
         return None
-    minutes = list(_FOCAL_MINUTE.finditer(prompt))
-    if len(minutes) != 1:
-        return None
-    return tuple(int(part) for part in minutes[0].groups())
+    first_clause = re.split(r"[.?!](?=\\s|$)", prompt, maxsplit=1)[0]
+    for candidate in (first_clause, prompt):
+        clocks = [
+            (match.start(), match.group(0))
+            for pattern in (_FOCAL_CLOCK, _FOCAL_MINUTE)
+            for match in pattern.finditer(candidate)
+        ]
+        if len(clocks) == 1:
+            return clocks[0][1]
+    return None
+
+
+def _focal_clock_parts(original_user: str) -> tuple[int, ...] | None:
+    """Use one identified focal event clock, preserving exact seconds."""
+    chosen = _focal_clock_token(original_user)
+    return tuple(int(part) for part in chosen.split(":")) if chosen else None
 
 
 def explicitly_focused_event_rows(
