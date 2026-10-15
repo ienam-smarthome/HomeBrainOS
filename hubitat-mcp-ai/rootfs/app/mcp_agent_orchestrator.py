@@ -3630,6 +3630,37 @@ class UnifiedMCPAgent:
                     messages=messages,
                 )
             )
+            # A specifically dated causal ON is always an evidence-first
+            # request, regardless of whether the user says "deep". Run the
+            # host's bounded state and producer-log reads before provider
+            # exploration and before deterministic early exits. Only a
+            # verified unique native ON may establish the focal transition.
+            if (
+                prefetched_subject_key
+                and has_explicit_focal_clock(user_prompt)
+                and switch_transition_from_prompt(user_prompt) == "on"
+            ):
+                early_focal_plan = build_focal_source_plan(
+                    self.evidence.receipts(), user_prompt,
+                )
+                if (
+                    early_focal_plan is not None
+                    and early_focal_plan.get("requestedMinuteOnly")
+                ):
+                    await self._execute_focal_plan(
+                        early_focal_plan, messages, catalog=catalog,
+                    )
+                    early_outcome = render_unverified_focal_outcome(
+                        early_focal_plan,
+                        self.evidence.receipts(),
+                        user_prompt,
+                    )
+                    if early_outcome:
+                        increment_active_metric("skills_focal_unverified_stop")
+                        increment_active_metric("skills_early_focal_stop")
+                        increment_active_metric("investigative_finalization")
+                        return early_outcome
+
             if prefetched_subject_key:
                 investigative_subject_history_key = prefetched_subject_key
                 topology_brief = render_topology_plan(
@@ -3780,34 +3811,6 @@ class UnifiedMCPAgent:
             if causal_prefetch == "empty":
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
-
-        # For a precisely dated ON missing from latest-N history, the host
-        # already has subject and command receipts after prefetch. Recover the
-        # bounded native window NOW rather than waiting for six-plus provider
-        # rounds to decide whether a historical ON still exists. Preserve
-        # general reasoning when the source actually yields a unique event.
-        if (
-            causal_prefetch == "partial"
-            and deep_causal_request
-            and prefetched_subject_key
-            and has_explicit_focal_clock(user_prompt)
-            and switch_transition_from_prompt(user_prompt) == "on"
-        ):
-            early_focal_plan = build_focal_source_plan(
-                self.evidence.receipts(), user_prompt,
-            )
-            if early_focal_plan is not None and early_focal_plan.get("requestedMinuteOnly"):
-                await self._execute_focal_plan(
-                    early_focal_plan, messages, catalog=catalog,
-                )
-                early_outcome = render_unverified_focal_outcome(
-                    early_focal_plan, self.evidence.receipts(), user_prompt,
-                )
-                if early_outcome:
-                    increment_active_metric("skills_focal_unverified_stop")
-                    increment_active_metric("skills_early_focal_stop")
-                    increment_active_metric("investigative_finalization")
-                    return early_outcome
 
         # Explicit historical source sets can now be finalised directly from
         # typed native/journal/config/log evidence. This preserves source clocks
