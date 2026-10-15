@@ -472,17 +472,26 @@ class ToolExecutor:
                 # storage failures must not break otherwise successful reads.
                 args = receipt_arguments.get("args") or {}
                 journal = self.historical_journal
+                device_id = ""
+                if (
+                    name == "hub_read_devices"
+                    and receipt_arguments.get("tool") == "hub_list_device_events"
+                    and isinstance(args, dict)
+                ):
+                    device_id = str(args.get("deviceId") or "")
+                elif (
+                    name == "homebrain_device_history"
+                    and isinstance(result.data, dict)
+                ):
+                    device_id = str(result.data.get("deviceId") or "")
                 if (
                     journal is not None
                     and not effect.mutates
-                    and name == "hub_read_devices"
-                    and receipt_arguments.get("tool") == "hub_list_device_events"
-                    and isinstance(args, dict)
-                    and str(args.get("deviceId") or "").isdigit()
+                    and device_id.isdigit()
                 ):
                     try:
                         await journal.ingest_native_history(
-                            str(args["deviceId"]), result.data,
+                            device_id, result.data,
                         )
                     except (OSError, ValueError, TypeError, AttributeError):
                         logger.warning("Historical journal read-through unavailable")
