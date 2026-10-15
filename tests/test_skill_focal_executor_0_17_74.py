@@ -155,7 +155,7 @@ def test_busy_focal_window_preserves_requested_transition_under_redaction_cap():
     assert retained["retainedRows"] == 20
     assert retained["eventsTruncated"] is True
     assert len(retained["events"]) == 20
-    assert any(e["date"] == "2026-10-14T19:55:00.049+01:00"
+    assert any(datetime.fromisoformat(e["date"]) == target
                for e in retained["events"])
     assert any(e["date"] == "2026-10-14T19:54:57.946+0100"
                for e in retained["events"])
