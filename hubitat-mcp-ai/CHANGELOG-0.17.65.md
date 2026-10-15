@@ -17,11 +17,13 @@
 - Sensor configuration remains a discovery hint, never execution proof.
 
 ## Event relevance
-- Skip a later, independently occurring closing-OFF command/app-log
-  investigation when the request names a historical ON and the OFF occurred
-  after it. A later OFF cannot be a predecessor cause of the ON.
-- Preserve the separate OFF path where a genuinely preceding OFF is found
-  and for questions explicitly asking why the light switched OFF.
+- Skip a distant, independently occurring closing-OFF command/app-log
+  investigation when the request names a historical ON and the later OFF
+  is more than two minutes afterward. That later OFF is not a predecessor
+  cause of the requested ON.
+- Preserve short-interval independent OFF provenance, the separate OFF path
+  where a genuinely preceding OFF is found, and questions explicitly asking
+  why the light switched OFF.
 - Record `causal_irrelevant_off_skipped` when an irrelevant later-OFF
   follow-up is omitted.
 
