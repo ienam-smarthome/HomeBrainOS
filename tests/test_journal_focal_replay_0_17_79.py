@@ -176,3 +176,62 @@ def test_native_and_archive_same_instant_do_not_become_ambiguous(tmp_path):
     }
     graph = build_causal_evidence_graph(rows + [native, receipt(plan, selected)], QUESTION)
     assert graph["scope"] == "single-observed-event"
+
+
+@pytest.mark.asyncio
+async def test_host_completion_reads_journal_before_current_native_history(tmp_path):
+    """Integration: archived ON survives a now-empty native gateway response."""
+    from types import SimpleNamespace
+    from evidence_recorder import EvidenceRecorder
+    from mcp_agent_orchestrator import UnifiedMCPAgent
+
+    instance = journal(tmp_path)
+    now = "2026-10-14T18:55:00.049+00:00"
+    instance._write_batch([instance._row(
+        "events",
+        {"deviceId": "7805", "name": "switch", "value": "on", "date": now},
+        now, frozenset(),
+    )])
+    rows = _evicted()
+    plan = build_focal_source_plan(rows, QUESTION)
+    calls = []
+
+    class StubExecutor:
+        async def execute(self, gateway, args, **kwargs):
+            calls.append((gateway, args["tool"]))
+            return SimpleNamespace(
+                success=True, content="{}",
+                result=SimpleNamespace(
+                    data={"events": []} if args["tool"] == "hub_list_device_events"
+                    else {"logs": [], "count": 0},
+                ),
+            )
+
+    class Catalog:
+        @staticmethod
+        def available_tool(name):
+            return SimpleNamespace(name=name)
+
+    host = object.__new__(UnifiedMCPAgent)
+    host.evidence = EvidenceRecorder()
+    host.executor = StubExecutor()
+    host.historical_journal = instance
+    token = host.evidence.begin()
+    try:
+        await host._execute_focal_plan(plan, [], catalog=Catalog())
+        receipts = host.evidence.receipts()
+    finally:
+        host.evidence.reset(token)
+    journal_receipt = next(
+        row for row in receipts
+        if row.get("evidence_kind") == "focal_archived_state_history"
+    )
+    assert journal_receipt["details"]["sourceVerifiedOn"] is True
+    assert calls == [
+        ("hub_read_devices", "hub_list_device_events"),
+        ("hub_read_diagnostics", "hub_get_logs"),
+    ]
+    graph = build_causal_evidence_graph(
+        rows + receipts, QUESTION,
+    )
+    assert graph["scope"] == "single-observed-event"
