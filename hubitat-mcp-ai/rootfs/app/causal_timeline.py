@@ -594,9 +594,9 @@ _MONTH_NAMES = {
 
 
 _EVENT_CLOCK = re.compile(
-    r"\\b(?:turn(?:ed|s)?|switch(?:ed|es)?|went|goes|came|comes)"
-    r"\\s+(?:back\\s+)?(?:on|off)\\s+at\\s+"
-    r"(?P<clock>(?:[01]?\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?)\\b",
+    r"\b(?:turn(?:ed|s)?|switch(?:ed|es)?|went|goes|came|comes)"
+    r"\s+(?:back\s+)?(?:on|off)\s+at\s+"
+    r"(?P<clock>(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?)\b",
     re.I,
 )
 
@@ -616,7 +616,7 @@ def _focal_clock_token(original_user: str) -> str | None:
         return event_clocks[0]
     if len(event_clocks) > 1:
         return None
-    first_clause = re.split(r"[.?!](?=\\s|$)", prompt, maxsplit=1)[0]
+    first_clause = re.split(r"[.?!](?=\s|$)", prompt, maxsplit=1)[0]
     for candidate in (first_clause, prompt):
         clocks = [
             (match.start(), match.group(0))
