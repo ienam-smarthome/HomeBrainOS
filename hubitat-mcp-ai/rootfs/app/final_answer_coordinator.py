@@ -31,6 +31,7 @@ from performance_evidence_first import build_performance_synthesis_contract
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 from request_metrics import increment_active_metric
 from synthesis_context import build_tool_evidence_packet
+from skill_investigation import render_skill_investigation
 from synthesis_validator import validate_synthesis
 from causal_fail_closed_summary import render_failed_causal_synthesis
 
@@ -478,6 +479,10 @@ class FinalAnswerCoordinator:
             if causal_graph.get("scope") == "single-observed-event"
             else None
         )
+        skill_investigation = (
+            render_skill_investigation(evidence, original_user)
+            if causal else None
+        )
         native_log_correlation = (
             render_native_log_correlation(
                 correlate_native_log_boundaries(evidence)
@@ -533,6 +538,10 @@ class FinalAnswerCoordinator:
             # Highest-priority causal synthesis guidance: typed precomputed
             # relationships before the model authors its one final answer.
             final_messages.append({"role": "user", "content": causal_answer_plan})
+        if skill_investigation:
+            final_messages.append({
+                "role": "user", "content": skill_investigation,
+            })
         if native_log_correlation:
             final_messages.append({
                 "role": "user",
