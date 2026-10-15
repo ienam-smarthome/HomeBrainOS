@@ -235,3 +235,37 @@ async def test_host_completion_reads_journal_before_current_native_history(tmp_p
         rows + receipts, QUESTION,
     )
     assert graph["scope"] == "single-observed-event"
+
+
+@pytest.mark.asyncio
+async def test_local_device_history_command_projection_is_persisted_without_duplication(tmp_path):
+    archive = journal(tmp_path)
+    payload = {
+        "deviceId": "7805", "label": "Livingroom Light 1",
+        "commandEvents": [{
+            "name": "command-on",
+            "date": "2026-10-14T19:54:46.691+01:00",
+            "producedBy": {"id": "4129", "type": "app",
+                           "label": "SenseCap D1 Settings"},
+        }],
+        "correlationEvents": [{
+            "name": "switch", "value": "on",
+            "date": "2026-10-14T19:55:00.049+01:00",
+        }],
+        "boundaryEvents": [{
+            "name": "switch", "value": "on",
+            "date": "2026-10-14T19:55:00.049+01:00",
+        }],
+    }
+    assert await archive.ingest_native_history("7805", payload) == 2
+    rows = [archive._queue.get_nowait() for _ in range(2)]
+    assert archive._write_batch(rows) == 2
+    saved = archive.query(
+        since="2026-10-14T18:54:00Z",
+        until="2026-10-14T18:56:00Z",
+        device_id="7805", limit=10,
+    )
+    assert saved["count"] == 2
+    assert {row["attribute"] for row in saved["events"]} == {
+        "command-on", "switch",
+    }
