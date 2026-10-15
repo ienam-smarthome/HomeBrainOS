@@ -524,6 +524,36 @@ def render_unverified_focal_outcome(
         and str(_args(receipt).get("appId") or "") == str(plan.get("producerAppId") or "")
         and receipt.get("success") is True
     ]
+    archives = [
+        row.get("details") or {}
+        for row in evidence
+        if isinstance(row, dict)
+        and row.get("success") is True
+        and row.get("evidence_kind") == "focal_archived_state_history"
+        and str((row.get("details") or {}).get("deviceId") or "") ==
+            str(plan.get("deviceId") or "")
+    ]
+    if archives:
+        source_total = max(
+            int(item.get("sourceTimestampedCount") or 0) for item in archives
+        )
+        receive_total = max(
+            int(item.get("collectorReceivedOnlyCount") or 0) for item in archives
+        )
+        gap_total = max(int(item.get("gapCount") or 0) for item in archives)
+        archive_note = (
+            "**Persistent Evidence Journal checked:** "
+            f"{source_total} source-timestamped switch row(s), "
+            f"{receive_total} collector-reception-only row(s), "
+            f"{gap_total} recorded connection gap(s) in the query window. "
+            "Reception-only times do not independently verify the physical "
+            "event time, and a zero-row archive query does not prove inactivity."
+        )
+    else:
+        archive_note = (
+            "**Persistent Evidence Journal:** No successful, bounded journal "
+            "read was recorded for this incident; archived coverage is unknown."
+        )
     if app_logs:
         log_count = max(
             int((receipt.get("details") or {}).get("logCount") or 0)
@@ -541,7 +571,7 @@ def render_unverified_focal_outcome(
         )
     return (
         summary + "\n\n" + check
-        + "\n\n" + app_log_note + " " + limitation
+        + "\n\n" + archive_note + "\n\n" + app_log_note + " " + limitation
         + "\n\nHistorical source completeness is unverified. A missing "
           "event in a bounded Hubitat page does not prove the light stayed "
           "off, and a prior command cannot be promoted into verified causation."
