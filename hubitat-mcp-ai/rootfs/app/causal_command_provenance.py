@@ -1167,6 +1167,81 @@ def render_command_producer_summary(
     return "\n".join(lines)
 
 
+
+def preceding_command_candidates(
+    evidence: list[dict[str, Any]],
+    *,
+    subject: str,
+    transition: str,
+    requested_boundary: str,
+    lookback_seconds: float = 30.0,
+) -> list[dict[str, Any]]:
+    """Find preceding command clues without upgrading them to verified causes.
+
+    This is intentionally separate from the strict 2-second producer matcher.
+    Events are accepted only from successful subject-label-scoped receipts and
+    must precede the *requested* boundary, never a nearby newer transition.
+    """
+    action = str(transition or "").strip().casefold()
+    anchor = _parse_time(requested_boundary)
+    if action not in {"on", "off"} or not subject or anchor is None:
+        return []
+    accepted = []
+    for event in _subject_command_events(evidence, subject=subject):
+        semantics = classify_state_command(event, action)
+        if not semantics or not semantics.get("compatible"):
+            continue
+        when = _parse_time(event.get("date"))
+        producer = event.get("producedBy")
+        if when is None or not isinstance(producer, dict) or not producer.get("label"):
+            continue
+        seconds = (anchor - when).total_seconds()
+        # Strict producer correlations already handle the initial 2 seconds.
+        if not 2.0 < seconds <= min(120.0, max(2.0, lookback_seconds)):
+            continue
+        accepted.append({
+            "producer": dict(producer),
+            "command": str(semantics.get("display") or event.get("name") or ""),
+            "commandTime": when.isoformat(),
+            "stateBoundary": anchor.isoformat(),
+            "delaySeconds": round(seconds, 3),
+            "evidenceClass": "preceding-command-candidate-not-cause",
+        })
+    accepted.sort(key=lambda row: row["delaySeconds"])
+    return accepted[:6]
+
+
+def render_preceding_command_candidates(
+    evidence: list[dict[str, Any]],
+    *,
+    subject: str,
+    transition: str,
+    requested_boundary: str,
+) -> str | None:
+    """Evidence instruction that cannot be mistaken for causal proof."""
+    rows = preceding_command_candidates(
+        evidence, subject=subject, transition=transition,
+        requested_boundary=requested_boundary,
+    )
+    if not rows:
+        return None
+    lines = [
+        "HOST TIME-ALIGNED COMMAND CLUES (NOT VERIFIED INITIATORS)",
+        "These device-scoped command events precede the exact requested "
+        "state boundary but fall outside the strict causal match window. "
+        "Mention the strongest candidate and its time separation in the "
+        "answer; investigate command delivery and alternative controllers "
+        "before attributing causation.",
+    ]
+    for row in rows:
+        lines.append(
+            f"- {row['producer']['label']} issued {row['command']} at "
+            f"{row['commandTime']} ({row['delaySeconds']:.3f} seconds "
+            f"before {row['stateBoundary']})."
+        )
+    return "\\n".join(lines)
+
+
 def render_competing_command_summary(
     evidence: list[dict[str, Any]],
     *,
@@ -1256,4 +1331,6 @@ __all__ = [
     "render_command_producer_answer",
     "render_competing_command_summary",
     "render_command_producer_evidence",
+    "preceding_command_candidates",
+    "render_preceding_command_candidates",
 ]
