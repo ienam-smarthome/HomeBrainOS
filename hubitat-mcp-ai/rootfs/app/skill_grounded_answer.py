@@ -170,10 +170,13 @@ def render_grounded_causal_answer(
     # A status-neutral source note: a latest-N history page is not a
     # verified neighborhood around a focal historic event.
     scoped_reads = []
+    failed_source_checks = []
     for receipt in evidence:
         if not isinstance(receipt, dict):
             continue
         arguments = receipt.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            continue
         args = arguments.get("args") if isinstance(arguments.get("args"), dict) else arguments
         if not isinstance(args, dict):
             continue
@@ -181,32 +184,42 @@ def render_grounded_causal_answer(
             receipt.get("sub_tool") == "hub_list_device_events"
             and str(args.get("attribute") or "") == "switch"
             and args.get("since") and args.get("until")
-            and receipt.get("evidence_kind") == "focal_exact_state_history"
         ):
-            scoped_reads.append(receipt)
-    if scoped_reads:
-        usable = any(
-            row.get("success") is True and
-            isinstance((row.get("details") or {}).get("events"), list)
-            for row in scoped_reads
+            if receipt.get("evidence_kind") == "focal_exact_state_history":
+                scoped_reads.append(receipt)
+            elif receipt.get("evidence_kind") in {
+                "focal_source_unavailable", "focal_source_execution_failed",
+                "focal_event_payload_unrecognised",
+                "focal_source_catalog_unavailable",
+            }:
+                failed_source_checks.append(receipt)
+    usable = [
+        row for row in scoped_reads
+        if row.get("success") is True
+        and isinstance((row.get("details") or {}).get("events"), list)
+    ]
+    if usable:
+        count = max(
+            len((row.get("details") or {}).get("events") or [])
+            for row in usable
         )
         lines.append(
-            "**Focal event-window coverage:** "
-            + (
-                "A timestamp-filtered state-event page was returned for the "
-                "requested incident. An empty result would not independently "
-                "prove historical source completeness."
-                if usable else
-                "An exact incident-window query was attempted, but its "
-                "state-event content was not verified; intervening changes "
-                "cannot be excluded."
-            )
+            "**Focal event-window coverage:** A timestamp-filtered "
+            f"state-history query returned {count} retained ON/OFF event rows "
+            "for the requested interval. Missing rows are not proof "
+            "that no other historical events occurred."
+        )
+    elif scoped_reads or failed_source_checks:
+        lines.append(
+            "**Focal event-window coverage:** The exact incident-window "
+            "source read was attempted, but no usable state-event payload "
+            "was retained. Intervening changes cannot be excluded."
         )
     else:
         lines.append(
-            "**Focal event-window coverage:** The returned latest-N "
-            "history does not independently establish complete coverage "
-            "of the minutes surrounding the incident."
+            "**Focal event-window coverage:** No exact incident-window "
+            "state-history receipt was established. Latest-N history "
+            "cannot prove complete coverage around the incident."
         )
     if verdict.get("intervening"):
         lines.append(

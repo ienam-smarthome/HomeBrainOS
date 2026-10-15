@@ -189,7 +189,10 @@ def project_focal_state_result(
     if start is None or stop is None:
         return None
     events = {}
-    for item in rows[:100]:
+    for item in rows[:500]:
+        event_device_id = str(item.get("deviceId") or "")
+        if event_device_id and event_device_id != str(plan.get("deviceId") or ""):
+            continue
         name = str(item.get("name") or item.get("attribute") or "")
         if name != "switch":
             continue
@@ -212,12 +215,43 @@ def project_focal_state_result(
             "name": "switch", "value": state, "date": when,
             "producedBy": owner,
         }
+    ordered = sorted(events.values(), key=lambda e: _time(e["date"]))
+    # EvidenceRecorder redacts any list after 20 entries. Reserve slots for
+    # the exact focal ON and the nearest intervening OFF, even if a noisy
+    # stream contains many other events closer to the focal timestamp.
+    if len(ordered) > 20:
+        target = _time(plan.get("requestedOn")) or stop
+        required: list[dict[str, Any]] = [
+            ev for ev in ordered
+            if ev["value"] == "on"
+            and abs((_time(ev["date"]) - target).total_seconds()) <= .002
+        ][:1]
+        prior_off = [
+            ev for ev in ordered
+            if ev["value"] == "off" and _time(ev["date"]) < target
+        ]
+        if prior_off:
+            required.append(prior_off[-1])
+        required_keys = {(e["date"], e["value"]) for e in required}
+        selected = sorted(
+            [ev for ev in ordered
+             if (ev["date"], ev["value"]) not in required_keys],
+            key=lambda ev: (
+                abs((_time(ev["date"]) - target).total_seconds()),
+                _time(ev["date"]),
+            ),
+        )[: 20 - len(required)]
+        retained = sorted(required + selected, key=lambda e: _time(e["date"]))
+    else:
+        retained = ordered
     return {
         "label": str(plan.get("subject") or ""),
         "deviceId": str(plan.get("deviceId") or ""),
         "attribute": "switch",
-        "events": sorted(events.values(), key=lambda e: _time(e["date"])),
-        "returnedRowsInWindow": len(events),
+        "events": retained,
+        "returnedRowsInWindow": len(ordered),
+        "retainedRows": len(retained),
+        "eventsTruncated": len(ordered) > len(retained) or len(rows) > 500,
         "requestedSince": interval["since"],
         "requestedUntil": interval["until"],
         "sourceHistoryComplete": False,
@@ -225,4 +259,109 @@ def project_focal_state_result(
     }
 
 
-__all__ = ["build_focal_source_plan", "project_focal_state_result"]
+async def execute_focal_source_plan(
+    plan: dict[str, Any],
+    *,
+    catalog: Any,
+    executor: Any,
+    recorder: Any,
+    messages: list[dict[str, Any]],
+    count_metric: Any,
+) -> dict[str, str]:
+    """Perform host-authorised source reads independent of model visibility.
+
+    The initial model catalog deliberately hides the broad hub_read_devices
+    gateway. Using declared_tool() here silently skipped the focal switch
+    read in v0.17.73, although the gateway was available and device reads
+    were performed elsewhere in the request. A host-directed read should
+    use available_tool(), with explicit failure receipts on any missing
+    source, failed operation or undecodable event payload.
+    """
+    statuses: dict[str, str] = {}
+    specifications = (
+        ("state", "hub_read_devices", "hub_list_device_events",
+         plan.get("stateRead"), "focal_exact_state_history",
+         "skills_focal_state_window"),
+        ("producer_logs", "hub_read_diagnostics", "hub_get_logs",
+         plan.get("producerLogRead"), "focal_producer_execution_logs",
+         "skills_focal_producer_logs"),
+    )
+    for source, gateway, leaf, args, evidence_kind, metric in specifications:
+        if not args:
+            statuses[source] = "previously-queried"
+            continue
+        operation = {"tool": leaf, "args": args}
+        # Runtime availability and model visibility are intentionally
+        # different registries. Host-owned reads must use availability.
+        tool = catalog.available_tool(gateway)
+        if tool is None:
+            statuses[source] = "gateway-unavailable"
+            recorder.record(
+                gateway, operation, success=False, elapsed_ms=0,
+                summary="Required focal source gateway not available",
+                supports_live_claim=False,
+                evidence_kind="focal_source_unavailable", mutates=False,
+                effect="read",
+            )
+            count_metric("skills_focal_read_failed")
+            continue
+        try:
+            execution = await executor.execute(
+                gateway, operation, tool=tool,
+                supports_live_claim=True, evidence_kind=evidence_kind,
+            )
+        except Exception:
+            # Do not record exception text, which may contain sensitive
+            # broker details. Retain the precise requested source arguments.
+            statuses[source] = "execution-failed"
+            recorder.record(
+                gateway, operation, success=False, elapsed_ms=0,
+                summary="Required focal source read raised an error",
+                supports_live_claim=False,
+                evidence_kind="focal_source_execution_failed",
+                mutates=False, effect="read",
+            )
+            count_metric("skills_focal_read_failed")
+            continue
+        messages.append({
+            "role": "tool", "tool_name": gateway,
+            "content": execution.content,
+        })
+        count_metric(metric)
+        if not execution.success or execution.result is None:
+            statuses[source] = "read-failed"
+            count_metric("skills_focal_read_failed")
+            continue
+        if source == "producer_logs":
+            statuses[source] = "queried"
+            continue
+        details = project_focal_state_result(execution.result.data, plan)
+        if details is None:
+            statuses[source] = "unrecognised-event-payload"
+            recorder.record(
+                gateway, operation, success=False, elapsed_ms=0,
+                summary="Focal state gateway returned no parseable event array",
+                supports_live_claim=False,
+                evidence_kind="focal_event_payload_unrecognised",
+                mutates=False, effect="read",
+            )
+            count_metric("skills_focal_read_failed")
+            continue
+        recorder.record(
+            gateway, operation, success=True, elapsed_ms=0,
+            summary="Focal switch window event rows retained",
+            supports_live_claim=True,
+            evidence_kind="focal_exact_state_history",
+            mutates=False, effect="read",
+            details=details,
+        )
+        count = details["returnedRowsInWindow"]
+        if count:
+            count_metric("skills_focal_state_rows_retained")
+            statuses[source] = "rows-retained"
+        else:
+            statuses[source] = "queried-no-rows"
+    return statuses
+
+
+__all__ = ["build_focal_source_plan", "project_focal_state_result", "execute_focal_source_plan"]
