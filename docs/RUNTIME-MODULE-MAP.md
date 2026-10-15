@@ -23,6 +23,7 @@ The repository drift test compares this table directly with the live directory. 
 | `skills_framework.py` | Selects and loads bounded repo-owned MCP operating and investigative skills by request intent without granting tools. |
 | `skill_investigation.py` | Projects exact causal events and intervening-state anomalies into ranked candidate hypotheses. |
 | `skill_topology.py` | Plans read-only producer-first configuration and source-coverage checks from current-turn receipts. |
+| `skill_source_completion.py` | Plans a required device-scoped log read from resolved telemetry evidence before final synthesis; does not execute or mutate. |
 | `skill_secret_guard.py` | Redacts credentials from model-facing tool content and final assistant responses. |
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
 | `causal_rule_decision_context.py` | Separates confirmed lighting-app command provenance, scoped execution logs, current rule configuration, and present-day sensor-health evidence without inferring historical sensor truth. |
