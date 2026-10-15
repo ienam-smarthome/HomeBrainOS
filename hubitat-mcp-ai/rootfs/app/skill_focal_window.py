@@ -99,10 +99,10 @@ def _requested_clock(question: str, reference: datetime) -> datetime | None:
 
 
 _ARCHIVE_CLOCK_RANGE = re.compile(
-    r"\\b(?:between|from)\\s+"
-    r"(?P<begin>(?:[01]?\\d|2[0-3]):[0-5]\\d)"
-    r"\\s+(?:and|to|through|until|[-–])\\s+"
-    r"(?P<end>(?:[01]?\\d|2[0-3]):[0-5]\\d)\\b",
+    r"\b(?:between|from)\s+"
+    r"(?P<begin>(?:[01]?\d|2[0-3]):[0-5]\d)"
+    r"\s+(?:and|to|through|until|[-–])\s+"
+    r"(?P<end>(?:[01]?\d|2[0-3]):[0-5]\d)\b",
     re.I,
 )
 
