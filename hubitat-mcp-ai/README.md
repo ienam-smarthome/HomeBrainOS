@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.17.74**.
+Current add-on version: **0.17.75**.
 
 ## Architecture
 

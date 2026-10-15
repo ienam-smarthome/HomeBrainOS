@@ -179,11 +179,10 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
 
     assert outcome.request_class == "write"
     assert outcome.confirmation_required is True
+    # User-authorised deterministic rule schedules do not need model tool
+    # search. Device identity and current rules remain verified before
+    # queueing a confirmation.
     assert mcp.calls == [
-        (
-            "hub_search_tools",
-            {"query": "write a rule to block tab s9 from 9am to 7pm everyday"},
-        ),
         (
             "hub_read_devices",
             {

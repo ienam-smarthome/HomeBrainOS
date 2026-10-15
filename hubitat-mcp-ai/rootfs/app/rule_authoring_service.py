@@ -284,6 +284,41 @@ class RuleAuthoringService:
         goal = cls._LEADING_PLEASE.sub("", goal)
         return goal.strip(" ,.-")
 
+    _ACTION_REQUEST = re.compile(
+        r"^\s*(?:(?:please\s+)?(?:block|disable|restrict|allow|enable|"
+        r"turn|switch|lock|unlock|close|shut|open|create|write|build|"
+        r"schedule|add|make|set\s+up|setup)\b|"
+        r"(?:can|could|would|will)\s+you\s+(?:please\s+)?"
+        r"(?:block|disable|restrict|allow|enable|turn|switch|lock|"
+        r"unlock|close|shut|open|create|write|build|schedule|add|"
+        r"make|set\s+up|setup)\b)",
+        re.I,
+    )
+    _DESIGN_ONLY = re.compile(
+        r"\b(?:how\s+(?:would|could|do|can)|"
+        r"(?:do\s+not|don't)\s+(?:actually\s+)?"
+        r"(?:create|write|execute|apply|schedule|block)|"
+        r"without\s+(?:creating|executing|applying|scheduling)|"
+        r"just\s+(?:describe|explain|show)|"
+        r"for\s+illustration\s+only)\b",
+        re.I,
+    )
+
+    def is_action_request(self, prompt: str) -> bool:
+        """Explicit user scheduling authority, independent of AI task labels.
+
+        Read-only design questions may match the authoring grammar because
+        they quote valid rule syntax. They must never reach the Hubitat rule
+        write confirmation path. An imperative with a valid time clause is
+        authoritative even if a model classifier calls it 'propose'.
+        """
+        text = str(prompt or "").strip()
+        return bool(
+            self._ACTION_REQUEST.match(text)
+            and not self._DESIGN_ONLY.search(text)
+            and self.matches_request(text)
+        )
+
     def matches_request(self, prompt: str) -> bool:
         """Return whether the bounded deterministic authoring grammar applies."""
 

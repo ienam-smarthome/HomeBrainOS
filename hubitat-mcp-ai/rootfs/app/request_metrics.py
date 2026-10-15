@@ -39,6 +39,7 @@ class RequestMetrics:
         "confirmation_expired", "confirmation_evicted",
         "mutation_verification_failures",
         "proposal_validation_failures", "proposal_write_attempts_blocked",
+        "rule_schedule_fastpath", "rule_schedule_gateway_missing",
         "task_evidence_retry", "task_evidence_incomplete",
         "shared_completion_checked", "shared_completion_partial",
         "request_cancellations", "device_resolution_ambiguous",

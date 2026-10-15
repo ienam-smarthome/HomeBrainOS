@@ -17,7 +17,7 @@ from time_expressions import AT_TIME, parse_clock
 _STRONG_CONTROL_VERBS = {
     "create", "delete", "disable", "enable", "install", "pause", "reboot", "remove",
     "restart", "resume", "set", "shutdown", "start", "stop", "toggle",
-    "unlock", "update", "write",
+    "unlock", "update", "write", "block", "unblock", "restrict", "allow",
 }
 
 _TRAILING_PLEASE = re.compile(r"\s+please\s*$", re.I)
