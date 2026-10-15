@@ -3209,6 +3209,8 @@ class UnifiedMCPAgent:
                 conversation_history,
                 session_id=session_id,
             )
+            # Final user-facing redaction covers deterministic shortcuts too.
+            message = redact_secrets(message)
             evidence = self.evidence.receipts()
             if (
                 self._mutation_requested_by_user.get()
