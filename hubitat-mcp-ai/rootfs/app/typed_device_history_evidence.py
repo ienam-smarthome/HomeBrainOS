@@ -303,7 +303,8 @@ def reported_telemetry_consistency(reported: dict[str, Any]) -> str | None:
     try:
         age = float(raw_age)
         # Hubitat's driver exposes human-formatted local BST/GMT dates here.
-        observed_local = datetime.strptime(last_seen, "%a %b %d %H:%M:%S %Z %Y")
+        cleaned = re.sub(r"\\s+(BST|GMT)\\s+", " ", last_seen)
+        observed_local = datetime.strptime(cleaned, "%a %b %d %H:%M:%S %Y")
         observed_local = observed_local.replace(tzinfo=ZoneInfo("Europe/London"))
         age_from_seen = (read_at - observed_local).total_seconds()
     except (ValueError, TypeError, OverflowError):
