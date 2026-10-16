@@ -4313,7 +4313,7 @@ class UnifiedMCPAgent:
                             arguments = json.loads(arguments)
                         except (ValueError, TypeError):
                             arguments = {}
-                    if classify_tool_effect(
+                    if name.startswith(("hub_manage_", "hub_set_")) or classify_tool_effect(
                         catalog.available_tool(name),
                         arguments if isinstance(arguments, dict) else {},
                     ).mutates:
