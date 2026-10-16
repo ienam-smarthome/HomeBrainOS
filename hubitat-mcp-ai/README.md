@@ -402,3 +402,43 @@ The blocking test/release gates include Python compilation, architecture-module-
 Runtime modules under `hubitat-mcp-ai/rootfs/app/` must be documented in `docs/RUNTIME-MODULE-MAP.md`. Any runtime change requires a new add-on version and matching release notes.
 
 For release-by-release technical history, use [CHANGELOG-INDEX.md](CHANGELOG-INDEX.md).
+
+## Experimental opt-in paid Ollama model routing
+
+This feature is **disabled by default**. It does not purchase credits or
+change Ollama billing. Start with the existing free `gemma4:31b-cloud` account
+and purchase credits manually only if you choose to run the experiment.
+
+Home Assistant add-on options:
+
+| Option | Initial value | Meaning |
+| --- | --- | --- |
+| `ollama_paid_routing_enabled` | `false` | Explicit opt-in; no paid selections while false |
+| `ollama_paid_routing_mode` | `hybrid` | `hybrid`, `manual`, or `paid` |
+| `ollama_paid_budget_usd` | `6.5` | Estimated USD reservation ceiling (roughly £5 at an illustrative exchange rate) |
+| `ollama_paid_deep_model` | `deepseek-v4-pro` | Set `glm-5.3` for side-by-side evaluation |
+| `ollama_cloud_first` | `false` | Existing option; set true if paid cloud should be attempted before an enabled local model |
+
+Hybrid uses the free configured model for ordinary questions, Flash for
+automation/history questions and the selected premium model for diagnostic
+investigations. Manual only escalates when the question explicitly includes
+"use paid model", "premium model", or "paid investigation". Paid mode prefers
+the premium model (except simple switch commands). **All modes remain subject
+to the existing tool permissions and write-confirmation checks.**
+
+A persistent conservative **estimated** spend reservation ledger is stored at
+`/data/ollama_paid_usage.json`. Reservations include model rates, a pessimistic
+input-token count and 8,192 output tokens per provider round. Reservations are
+not refunded on timeouts or errors to avoid accidentally replaying billable
+work. The ledger is not proof of charges and is not a provider-side spending
+cap; actual token charges may differ, including reasoning tokens and provider
+rounding. Do not enable Ollama auto-reload, and check the Ollama usage screen.
+Never delete or reset the ledger to bypass the configured limit. Existing
+explicit household-account consent and failover restrictions are unchanged.
+
+For a controlled comparison, run identical **read-only** investigations against
+the free baseline, DeepSeek V4 Pro and GLM-5.3, record answer correctness,
+evidence/source coverage, hallucinations, latency and Ollama-reported token
+charges. No automatic benchmark execution or provider-purchase action is
+performed by this feature.
+
