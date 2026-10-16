@@ -13,6 +13,7 @@ from household_ollama_accounts import (
     HouseholdCloudAccount, permissible_cloud_failover,
 )
 from request_metrics import increment_active_metric
+from paid_model_routing import PaidCreditGuard
 
 
 logger = logging.getLogger("HomeBrainOS.ChatTransport")
@@ -87,6 +88,10 @@ class ChatTransport:
         household_cloud_accounts: tuple[HouseholdCloudAccount, ...] = (),
         household_cloud_failover_enabled: bool = False,
         cloud_first: bool = False,
+        paid_routing_enabled: bool = False,
+        paid_routing_mode: str = "hybrid",
+        paid_budget_usd: float = 6.50,
+        paid_deep_model: str = "deepseek-v4-pro",
     ) -> None:
         self.api_key = str(api_key or "").strip()
         self.model_name = str(model_name or "").strip()
@@ -111,6 +116,10 @@ class ChatTransport:
         )
         self.household_cloud_failover_enabled = bool(household_cloud_failover_enabled)
         self.cloud_first = bool(cloud_first)
+        self.paid_credit_guard = PaidCreditGuard(
+            enabled=paid_routing_enabled, mode=paid_routing_mode,
+            budget_usd=paid_budget_usd, deep_model=paid_deep_model,
+        )
         self.client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -175,6 +184,8 @@ class ChatTransport:
     ) -> dict[str, Any]:
         if not self.configured:
             raise RuntimeError("Ollama Online API key is not configured")
+        paid_model = await self.paid_credit_guard.select(messages, tools)
+        selected_model = paid_model or self.model_name
         account_keys = [("primary", self.api_key)]
         if self.household_cloud_failover_enabled and self.household_cloud_accounts:
             if self.base_url != "https://ollama.com":
@@ -190,7 +201,7 @@ class ChatTransport:
                 result = await self._chat_round(
                     messages, tools,
                     base_url=self.base_url,
-                    model_name=self.model_name,
+                    model_name=selected_model,
                     api_key=key,
                     timeout=httpx.Timeout(self.timeout_seconds),
                     read_timeout=self.timeout_seconds,

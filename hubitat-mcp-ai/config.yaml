@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.17.91"
+version: "0.17.92"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -34,6 +34,10 @@ options:
   ollama_household_cloud_failover_enabled: false
   ollama_household_accounts_json: "[]"
   ollama_cloud_first: false
+  ollama_paid_routing_enabled: false
+  ollama_paid_routing_mode: "hybrid"
+  ollama_paid_budget_usd: 6.5
+  ollama_paid_deep_model: "deepseek-v4-pro"
   ollama_local_enabled: false
   ollama_local_base_url: "http://localhost:11434"
   ollama_local_model: ""
@@ -110,6 +114,10 @@ schema:
   ollama_household_cloud_failover_enabled: bool
   ollama_household_accounts_json: password
   ollama_cloud_first: bool
+  ollama_paid_routing_enabled: bool
+  ollama_paid_routing_mode: str
+  ollama_paid_budget_usd: float
+  ollama_paid_deep_model: str
   ollama_local_enabled: bool
   ollama_local_base_url: str
   ollama_local_model: str

@@ -95,6 +95,10 @@ def load_options() -> dict[str, Any]:
         "ollama_household_cloud_failover_enabled": False,
         "ollama_household_accounts_json": "[]",
         "ollama_cloud_first": False,
+        "ollama_paid_routing_enabled": False,
+        "ollama_paid_routing_mode": "hybrid",
+        "ollama_paid_budget_usd": 6.50,
+        "ollama_paid_deep_model": "deepseek-v4-pro",
         "ollama_local_enabled": False,
         "ollama_local_base_url": "http://localhost:11434",
         "ollama_local_model": "",
@@ -294,6 +298,10 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("ollama_household_cloud_failover_enabled"), False
     ),
     cloud_first=_bool(OPTIONS.get("ollama_cloud_first"), False),
+    paid_routing_enabled=_bool(OPTIONS.get("ollama_paid_routing_enabled"), False),
+    paid_routing_mode=str(OPTIONS.get("ollama_paid_routing_mode") or "hybrid"),
+    paid_budget_usd=float(OPTIONS.get("ollama_paid_budget_usd") or 0),
+    paid_deep_model=str(OPTIONS.get("ollama_paid_deep_model") or "deepseek-v4-pro"),
     local_base_url=(
         str(OPTIONS.get("ollama_local_base_url") or "")
         if _bool(OPTIONS.get("ollama_local_enabled"), False)
