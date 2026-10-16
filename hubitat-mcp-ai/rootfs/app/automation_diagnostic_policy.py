@@ -45,6 +45,17 @@ _BROAD_STATE_MODIFIER = re.compile(
     re.I,
 )
 
+# An owner-qualified population often includes a natural-language comma
+# list: "all my broken, incomplete, disabled or potentially faulty Hubitat
+# automations". The simple state-modifier grammar cannot match punctuation.
+# Match the scoped population, not isolated words; existing targeted-incident
+# exclusion still prevents an unrelated single-light question from expanding.
+_BROAD_OWNED_POPULATION = re.compile(
+    r"\b(?:all|each|every)\s+(?:my|our|the)\s+"
+    r"[^.!?]{0,110}\b(?:automations|rules|apps)\b",
+    re.I,
+)
+
 _BROAD_EVERY_SINGLE = re.compile(
     r"\b(?:each|every)\s+"
     r"(?:(?:my|our|the|installed|existing|active|running)\s+){0,3}"
@@ -74,6 +85,7 @@ def has_broad_automation_scope(prompt: str) -> bool:
     return bool(
         _BROAD_AUTOMATION_COLLECTION.search(text)
         or _BROAD_STATE_MODIFIER.search(text)
+        or _BROAD_OWNED_POPULATION.search(text)
         or _BROAD_EVERY_SINGLE.search(text)
         or _BROAD_AUTOMATION_LOGS.search(text)
         or _BROAD_HUB_SCOPE.search(text)
