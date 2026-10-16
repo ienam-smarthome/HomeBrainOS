@@ -18,7 +18,7 @@ def test_app_status_always_attempts_real_read():
         def __init__(self):
             self.calls = []
         async def list_tools(self):
-            return [SimpleNamespace(name="hub_get_app_config")]
+            return [SimpleNamespace(name="hub_read_apps_code")]
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
             return SimpleNamespace(
@@ -28,7 +28,7 @@ def test_app_status_always_attempts_real_read():
     async def run():
         fake = FakeMCP()
         out = await read_scoped_app_status(fake, 4019)
-        assert fake.calls == [("hub_get_app_config", {"appId": "4019", "includeSettings": False})]
+        assert fake.calls == [("hub_read_apps_code", {"tool": "hub_get_app_config", "args": {"appId": "4019", "includeSettings": False}})]
         assert out.route == "scoped-app-status"
         assert out.evidence[0]["success"] is True
         assert "configuration was retrieved" in out.message
