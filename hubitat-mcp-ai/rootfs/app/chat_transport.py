@@ -9,6 +9,9 @@ from typing import Any
 import httpx
 
 from reasoning_policy import observe_assistant_message, prepare_reasoning_turn
+from household_ollama_accounts import (
+    HouseholdCloudAccount, permissible_cloud_failover,
+)
 from request_metrics import increment_active_metric
 
 
@@ -81,6 +84,9 @@ class ChatTransport:
         local_connect_timeout_seconds: float = 3,
         local_keep_alive_seconds: float = 120,
         thinking_enabled: bool = True,
+        household_cloud_accounts: tuple[HouseholdCloudAccount, ...] = (),
+        household_cloud_failover_enabled: bool = False,
+        cloud_first: bool = False,
     ) -> None:
         self.api_key = str(api_key or "").strip()
         self.model_name = str(model_name or "").strip()
@@ -99,6 +105,12 @@ class ChatTransport:
         )
         self.local_keep_alive_seconds = float(local_keep_alive_seconds)
         self.thinking_enabled = bool(thinking_enabled)
+        self.household_cloud_accounts = (
+            tuple(household_cloud_accounts)
+            if household_cloud_failover_enabled else ()
+        )
+        self.household_cloud_failover_enabled = bool(household_cloud_failover_enabled)
+        self.cloud_first = bool(cloud_first)
         self.client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -142,45 +154,90 @@ class ChatTransport:
                 normalized["tool_calls"] = kept
         return normalized
 
+    async def _try_local(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return await self._chat_round(
+            messages, tools,
+            base_url=self.local_base_url,
+            model_name=self.local_model_name,
+            api_key="",
+            timeout=httpx.Timeout(
+                self.local_timeout_seconds,
+                connect=self.local_connect_timeout_seconds,
+            ),
+            read_timeout=self.local_timeout_seconds,
+            keep_alive=self.local_keep_alive_seconds,
+        )
+
+    async def _try_cloud_accounts(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not self.configured:
+            raise RuntimeError("Ollama Online API key is not configured")
+        account_keys = [("primary", self.api_key)]
+        if self.household_cloud_failover_enabled:
+            account_keys.extend(
+                (acct.account_id, acct.api_key)
+                for acct in self.household_cloud_accounts
+            )
+        for index, (alias, key) in enumerate(account_keys):
+            try:
+                result = await self._chat_round(
+                    messages, tools,
+                    base_url=self.base_url,
+                    model_name=self.model_name,
+                    api_key=key,
+                    timeout=httpx.Timeout(self.timeout_seconds),
+                    read_timeout=self.timeout_seconds,
+                    keep_alive=None,
+                )
+                if index:
+                    increment_active_metric("ollama_authorized_cloud_failover")
+                return result
+            except Exception as exc:
+                # No 429/account-quota bypass. Never replay a request after a
+                # response timeout or partial stream. Only pre-response
+                # connect failures and 502/503/504 are failover candidates.
+                if (
+                    index == len(account_keys)-1
+                    or not permissible_cloud_failover(exc)
+                ):
+                    raise
+                increment_active_metric("ollama_cloud_failover_eligible")
+                logger.warning(
+                    "Cloud account %s encountered a retryable infrastructure "
+                    "failure; attempting explicitly authorised secondary account",
+                    alias,
+                )
+        raise RuntimeError("No authorised Ollama Cloud account is available")
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        if self.local_configured:
+        if self.local_configured and not self.cloud_first:
             try:
-                return await self._chat_round(
-                    messages,
-                    tools,
-                    base_url=self.local_base_url,
-                    model_name=self.local_model_name,
-                    api_key="",
-                    timeout=httpx.Timeout(
-                        self.local_timeout_seconds,
-                        connect=self.local_connect_timeout_seconds,
-                    ),
-                    read_timeout=self.local_timeout_seconds,
-                    keep_alive=self.local_keep_alive_seconds,
-                )
+                return await self._try_local(messages, tools)
             except Exception:
                 logger.warning(
-                    "Local Ollama at %s unreachable or failed; falling back "
-                    "to cloud",
-                    self.local_base_url,
-                    exc_info=True,
+                    "Local Ollama unavailable; attempting configured cloud",
+                    exc_info=False,
                 )
-        if not self.configured:
-            raise RuntimeError("Ollama Online API key is not configured")
-        return await self._chat_round(
-            messages,
-            tools,
-            base_url=self.base_url,
-            model_name=self.model_name,
-            api_key=self.api_key,
-            timeout=httpx.Timeout(self.timeout_seconds),
-            read_timeout=self.timeout_seconds,
-            keep_alive=None,
-        )
+        try:
+            return await self._try_cloud_accounts(messages, tools)
+        except Exception:
+            if self.local_configured and self.cloud_first:
+                # Final fallback is the locally configured Ollama model.
+                # This is independent of household cloud-account usage.
+                try:
+                    result = await self._try_local(messages, tools)
+                    increment_active_metric("ollama_cloud_to_local_fallback")
+                    return result
+                except Exception:
+                    logger.warning("Local Ollama fallback also unavailable")
+            raise
 
     async def _chat_round(
         self,
