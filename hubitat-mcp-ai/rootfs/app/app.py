@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Awaitable
 
 import uvicorn
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
@@ -59,6 +60,7 @@ from performance_host_plan import (
     is_broad_performance_request,
     is_whole_hub_optimization_request,
 )
+from provider_rate_limit_policy import describe_ollama_rate_limit
 from pushover_notifier import PushoverNotifier
 from webui import render_page
 
@@ -636,6 +638,23 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         raise
     except asyncio.CancelledError:
         raise
+    except httpx.HTTPStatusError as exc:
+        limited = describe_ollama_rate_limit(exc)
+        if limited:
+            detail, retry_after = limited
+            # Return an actionable provider-status error, without provider
+            # body, bearer token, or a misleading Hubitat/MCP failure.
+            logger.warning("Ollama Cloud rate limit (HTTP 429); retry_after=%s", retry_after)
+            raise HTTPException(
+                status_code=429,
+                detail=detail,
+                headers={"Retry-After": retry_after} if retry_after else None,
+            ) from exc
+        logger.exception("Upstream provider HTTP error")
+        raise HTTPException(
+            status_code=502,
+            detail="The model provider returned an HTTP error. Hubitat and MCP may remain available.",
+        ) from exc
     except Exception as exc:
         logger.exception("Unified MCP request failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
