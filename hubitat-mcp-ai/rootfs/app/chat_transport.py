@@ -12,7 +12,7 @@ from reasoning_policy import observe_assistant_message, prepare_reasoning_turn
 from household_ollama_accounts import (
     HouseholdCloudAccount, permissible_cloud_failover,
 )
-from request_metrics import increment_active_metric
+from request_metrics import increment_active_metric, record_active_provider_model
 from paid_model_routing import PaidCreditGuard
 from provider_rate_limit_policy import confirmed_free_allowance_exhaustion
 
@@ -292,7 +292,7 @@ class ChatTransport:
         streamed = callable(getattr(self.client, "stream", None))
         try:
             if streamed:
-                return await self._chat_stream(
+                answer = await self._chat_stream(
                     prepared_messages,
                     prepared_tools,
                     base_url=base_url,
@@ -302,7 +302,9 @@ class ChatTransport:
                     read_timeout=read_timeout,
                     keep_alive=keep_alive,
                 )
-            return await self._chat_post(
+                record_active_provider_model(model_name, "local" if not api_key else "ollama-cloud")
+                return answer
+            answer = await self._chat_post(
                 prepared_messages,
                 prepared_tools,
                 base_url=base_url,
@@ -311,6 +313,8 @@ class ChatTransport:
                 timeout=timeout,
                 keep_alive=keep_alive,
             )
+            record_active_provider_model(model_name, "local" if not api_key else "ollama-cloud")
+            return answer
         except EmptyOllamaAssistantMessage:
             # A completed provider round with neither content nor tool calls
             # has NOT executed any MCP tool. Recover this exact model round
@@ -324,7 +328,7 @@ class ChatTransport:
                 model_name, streamed,
             )
             try:
-                return await self._chat_post(
+                answer = await self._chat_post(
                     prepared_messages,
                     prepared_tools,
                     base_url=base_url,
@@ -334,6 +338,8 @@ class ChatTransport:
                     keep_alive=keep_alive,
                     disable_thinking=True,
                 )
+                record_active_provider_model(model_name, "local" if not api_key else "ollama-cloud")
+                return answer
             except EmptyOllamaAssistantMessage as exc:
                 increment_active_metric("ollama_empty_message_recovery_failed")
                 raise EmptyOllamaAssistantMessage(
