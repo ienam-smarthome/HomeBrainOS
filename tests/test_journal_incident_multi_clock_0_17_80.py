@@ -131,7 +131,7 @@ async def test_real_prompt_checks_journal_before_empty_subject_early_stop(
         ("hub_read_diagnostics", "hub_get_logs"),
     ]
     assert "SenseCap D1 Settings" in result.message
-    assert "Historical verification boundary" in result.message
+    assert "Historical ON not independently verified" in result.message
     assert "1 collector-reception-only row(s)" in result.message
     assert "source-timestamped switch row(s)" in result.message
     assert "14 October" in result.message
