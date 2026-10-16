@@ -306,7 +306,7 @@ async function browseJournal(reset=false){
   }catch(error){body.replaceChildren();status.textContent='Query failed: '+error.message;previous.disabled=next.disabled=true}
   finally{search.disabled=false}
 }
-document.getElementById('journalBrowseDay').value=new Date().toLocaleDateString('en-CA');
+const journalToday=new Date();document.getElementById('journalBrowseDay').value=[journalToday.getFullYear(),String(journalToday.getMonth()+1).padStart(2,'0'),String(journalToday.getDate()).padStart(2,'0')].join('-');
 document.getElementById('journalBrowseSearch').onclick=()=>void browseJournal(true);
 document.getElementById('journalBrowsePrev').onclick=()=>{journalBrowseOffset=Math.max(0,journalBrowseOffset-50);void browseJournal()};
 document.getElementById('journalBrowseNext').onclick=()=>{journalBrowseOffset+=50;void browseJournal()};
