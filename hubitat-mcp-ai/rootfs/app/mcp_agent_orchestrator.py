@@ -4059,6 +4059,25 @@ class UnifiedMCPAgent:
                         f"Machine proposal validation failed. Exact reason: {reason} "
                         f"Rejected payload: {rejected}"
                     )
+                # A model that selects no new source must not replace a
+                # receipt-grounded partial investigation with an unrelated
+                # generic refusal (for example, a fresh-log retry when the
+                # historical app-log window was already checked).
+                baseline_snapshot = self._investigation_baseline.get()
+                if self._investigation_reflection_used.get() and baseline_snapshot:
+                    new_successful_read = any(
+                        isinstance(item, dict)
+                        and item.get("success") is True
+                        and item.get("effect") == "read"
+                        and item.get("evidence_kind") not in {
+                            "focal_archived_state_history",
+                            "focal_exact_state_history",
+                        }
+                        for item in self.evidence.receipts()[baseline_snapshot[1]:]
+                    )
+                    if not new_successful_read:
+                        increment_active_metric("skills_focal_unverified_stop")
+                        return baseline_snapshot[0]
                 answer = str(assistant.get("content") or "")
                 resolver_used = any(
                     json.loads(signature)[0] == _LOCAL_RESOLVE_TOOL
