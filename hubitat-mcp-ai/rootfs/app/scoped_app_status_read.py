@@ -47,14 +47,14 @@ async def read_scoped_app_status(mcp: HubitatMCPClient, app_id: int) -> ScopedAp
         return ScopedAppStatusOutcome(
             f"Unable to verify app {app_id} status: MCP tool discovery failed. No app configuration was read."
         )
-    if "hub_get_app_config" not in {tool.name for tool in tools}:
+    if "hub_read_apps_code" not in {tool.name for tool in tools}:
         return ScopedAppStatusOutcome(
-            f"Unable to verify app {app_id} status: hub_get_app_config is not available in the current MCP catalog."
+            f"Unable to verify app {app_id} status: hub_read_apps_code is not available in the current MCP catalog."
         )
 
     args = {"appId": str(app_id), "includeSettings": False}
     try:
-        response = await mcp.call_tool("hub_get_app_config", args)
+        response = await mcp.call_tool("hub_read_apps_code", {"tool": "hub_get_app_config", "args": args})
     except Exception:
         return ScopedAppStatusOutcome(
             f"Unable to verify app {app_id} status: the configuration read was attempted but failed.",
