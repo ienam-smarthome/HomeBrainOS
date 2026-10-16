@@ -3703,6 +3703,7 @@ class UnifiedMCPAgent:
             or lockout_intent
             or is_automation_runtime_diagnostic(user_prompt)
             or is_integration_runtime_diagnostic(user_prompt)
+            or contract is not None
         )
         set_reasoning_profile(
             "deep" if investigative_request and wants_deep_investigation(user_prompt)
@@ -4168,6 +4169,54 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
+
+                # General evidence-sufficiency checkpoint: across device
+                # telemetry, motion, scheduler or other declared domain plans,
+                # an important source never queried is an opportunity for one
+                # more targeted read, not proof the question is unanswerable.
+                # Checked-but-empty and truly unavailable sources are not
+                # automatic retry triggers.
+                if (
+                    contract is not None
+                    and not self._investigation_reflection_used.get()
+                    and not self._mutation_requested_by_user.get()
+                ):
+                    assessment = assess_investigation(
+                        contract, self.evidence.receipts()
+                    )
+                    missing_unchecked = any(
+                        item.get("necessary") is True
+                        and item.get("state") == "not-checked"
+                        for item in assessment.get("requirements") or []
+                    )
+                    if missing_unchecked:
+                        read_tools = catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit
+                        )
+                        if read_tools:
+                            self._investigation_reflection_used.set(True)
+                            increment_active_metric(
+                                "investigation_general_evidence_retry"
+                            )
+                            messages.extend([
+                                assistant,
+                                {"role": "user", "content": (
+                                    render_investigation_checkpoint(
+                                        user_prompt, self.evidence.receipts(),
+                                        available_read_tools=read_tools,
+                                    )
+                                    + "\nHOST MISSING SOURCE REQUIREMENTS: "
+                                    + json.dumps(
+                                        assessment.get("nextMissingSources") or [],
+                                        ensure_ascii=False,
+                                    )
+                                    + "\nFind the most decisive feasible "
+                                      "read-only source; do not repeat already "
+                                      "checked sources or invent tool leaves."
+                                )},
+                            ])
+                            tools = catalog.schemas()
+                            continue
 
                 # A semantic investigation declares source *classes*, not
                 # conclusions. Check actual read receipts before allowing the
