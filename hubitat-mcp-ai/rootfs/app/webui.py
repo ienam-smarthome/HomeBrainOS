@@ -270,7 +270,7 @@ async function browseJournal(reset=false){
   }
   const begin=new Date(day+'T00:00:00');
   if(Number.isNaN(begin.getTime())){status.textContent='Invalid local date.';return}
-  const end=new Date(begin);end.setDate(end.getDate()+1);
+  const end=new Date(begin);end.setDate(end.getDate()+1);end.setMilliseconds(end.getMilliseconds()-1);
   if(reset)journalBrowseOffset=0;
   const params=new URLSearchParams({device_id:id,since:begin.toISOString(),until:end.toISOString(),limit:'50',offset:String(journalBrowseOffset)});
   const attribute=document.getElementById('journalBrowseAttribute').value;
