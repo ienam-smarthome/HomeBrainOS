@@ -175,15 +175,42 @@ def parse_bare_attribute(prompt: str) -> str | None:
 
 
 def parse_device_selection(prompt: str) -> str | None:
-    """Return an explicit device-selection command without model routing."""
+    """Accept an explicit named-device choice, never an open-ended task.
 
-    if _SELECTION_PREFIX.search(prompt) is None:
+    In a real investigation the user wrote "Choose a recent unexpected
+    device state change. Reconstruct its timeline ..." and the old catch-all
+    regex sent the entire instruction to targeted device resolution, before
+    any model reasoning. A selection is a short entity reference, not an
+    instruction to *find* an entity or perform subsequent analysis.
+    """
+    text = str(prompt or "").strip()
+    if _SELECTION_PREFIX.search(text) is None:
         return None
-    match = _DEVICE_SELECTION.fullmatch(prompt)
+    # "Choose a [something]" delegates selection to the agent; it does not
+    # identify a concrete device. By contrast "choose the Hallway Light 1"
+    # remains a genuine named selection.
+    if re.match(r"^\s*(?:select|use|choose)\s+an?\s+", text, re.I):
+        return None
+    match = _DEVICE_SELECTION.fullmatch(text)
     if match is None:
         return None
     name = clean_choice_label(match.group("name")).strip()
-    return name or None
+    if not name:
+        return None
+    # Device names can contain spaces, numbers, and parentheses, but a
+    # multi-sentence instruction or a subordinate investigative action is
+    # not a device name. Keep this structural, not device-specific.
+    if len(re.findall(r"\b[\w'-]+\b", name)) > 12:
+        return None
+    if any(punctuation in name for punctuation in (".", "?", "!", ";", "\\n")):
+        return None
+    if re.search(
+        r"\b(?:and|then|because|why|whether|investigate|reconstruct|"
+        r"analyse|analyze|evaluate|explain|compare|using|based on|"
+        r"from history|with evidence)\b", name, re.I,
+    ):
+        return None
+    return name
 
 
 def capability_choice_labels(

@@ -31,6 +31,20 @@ _BROAD_AUTOMATION_COLLECTION = re.compile(
     r"(?:automations|rules|apps)\b",
     re.I,
 )
+# Accept a coordinated list of *automation-state* modifiers. A request to
+# investigate "my broken or incomplete Hubitat automations" is still broad
+# despite the conjunction; an arbitrary device/room name between "my" and
+# "automations" is not. This complements the strict original grammar without
+# turning single-device causal questions into whole-hub audits.
+_BROAD_STATE_MODIFIER = re.compile(
+    r"\b(?:all|every|my|our)\s+"
+    r"(?:(?:broken|failed|failing|incomplete|paused|disabled|active|"
+    r"installed|existing|faulty|misconfigured|unresponsive|hubitat|"
+    r"rule\s+machine|or|and)\s+){1,7}"
+    r"(?:automations|rules|apps)\b",
+    re.I,
+)
+
 _BROAD_EVERY_SINGLE = re.compile(
     r"\b(?:each|every)\s+"
     r"(?:(?:my|our|the|installed|existing|active|running)\s+){0,3}"
@@ -59,6 +73,7 @@ def has_broad_automation_scope(prompt: str) -> bool:
     text = str(prompt or "").strip()
     return bool(
         _BROAD_AUTOMATION_COLLECTION.search(text)
+        or _BROAD_STATE_MODIFIER.search(text)
         or _BROAD_EVERY_SINGLE.search(text)
         or _BROAD_AUTOMATION_LOGS.search(text)
         or _BROAD_HUB_SCOPE.search(text)
