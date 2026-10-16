@@ -7,6 +7,8 @@ distinct proof classes. This module never asserts physical command delivery.
 """
 from __future__ import annotations
 
+from device_watchdog_evidence import summarize_device_watchdog, render_device_watchdog
+
 from skill_decision_summary import telemetry_skill_conclusion
 
 from datetime import datetime, timezone
@@ -405,10 +407,13 @@ def render_target_device_evidence_answer(
             "invocation" + ("" if group["count"] == 1 else "s")
         )
     lines.append(
-        "**Command outcomes:** Command invocations are recorded. No "
-        "end-to-end device acknowledgement or command delivery was "
-        "independently verified in these sources; the absence of a "
-        "matching state-change record does not prove failed execution."
+        "**Command outcomes:** "
+        + ("Command invocations were returned in this bounded sample. "
+           if summary.get("commandCount") else
+           "No command invocation was returned in this bounded sample. ")
+        + "No end-to-end device acknowledgement or command delivery was "
+          "independently verified in these sources; absence of a matching "
+          "state-change record does not prove failed execution."
     )
     matching_logs = [
         row for row in evidence
@@ -441,6 +446,9 @@ def render_target_device_evidence_answer(
             "device ID was found. Unfiltered and app-name-matching logs "
             "cannot establish the device's full error or watchdog history."
         )
+    watchdog = summarize_device_watchdog(evidence, str(summary["deviceId"]))
+    if watchdog is not None:
+        lines.append(render_device_watchdog(watchdog))
     if summary.get("truncated"):
         lines.append(
             "**History integrity:** The returned event page is explicitly "
