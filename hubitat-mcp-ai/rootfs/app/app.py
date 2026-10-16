@@ -62,6 +62,7 @@ from performance_host_plan import (
     is_whole_hub_optimization_request,
 )
 from provider_rate_limit_policy import describe_ollama_rate_limit
+from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
 from webui import render_page
 
@@ -645,7 +646,10 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         # Single cross-route evidence assessment: even early host completions,
         # semantic fast paths and specialist routes pass this boundary before
         # /api/ask and /api/chat serialize their answer.
-        return apply_shared_investigation_completion(outcome, request.message)
+        return calibrate_api_outcome(
+            apply_shared_investigation_completion(outcome, request.message),
+            request.message,
+        )
     except HTTPException:
         raise
     except asyncio.CancelledError:
