@@ -3357,7 +3357,7 @@ class UnifiedMCPAgent:
                 if new_evidence and content.strip() else source_limited_baseline
             )
             content += (
-                "\n\n**Historical verification boundary:** HomeBrain has 
+                "\n\n**Historical verification boundary:** HomeBrain has "
                 "archived collector-received state reports, but no "
                 "independently verified source-timestamped switch ON in the "
                 "requested minute. Neither current configuration nor a prior "
