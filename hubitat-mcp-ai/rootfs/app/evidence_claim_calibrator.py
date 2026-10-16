@@ -85,10 +85,11 @@ def _dedupe_repeated_summary_lines(text: str) -> tuple[str, bool]:
                 continue
             seen.add(plain)
         output.append(line)
+    if not changed:
+        return text, False
     updated = "\n".join(output)
-    if changed:
-        updated = re.sub(r"\n{3,}", "\n\n", updated).rstrip()
-    return updated, changed
+    updated = re.sub(r"\n{3,}", "\n\n", updated).rstrip()
+    return updated, True
 
 
 def calibrate_supported_conclusions(
