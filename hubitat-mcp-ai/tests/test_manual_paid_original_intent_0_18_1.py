@@ -128,3 +128,45 @@ def test_normal_manual_request_keeps_local_first():
             reset_original_paid_request(token)
             await transport.close()
     asyncio.run(run())
+
+
+def test_paid_requested_but_disabled_is_explicit_in_answer():
+    from types import SimpleNamespace
+    from api_response_builder import build_agent_response
+    outcome = SimpleNamespace(
+        message="The configuration supports a 300-minute timer.",
+        route="unified-mcp-agent", request_class="live-read",
+        choices=[], evidence=[], confirmation_required=False,
+        confirmation_count=0, automation_items=[], investigation_coverage=None,
+        metrics={
+            "outcome": "success",
+            "counters": {"paid_model_requested": 1, "paid_routing_disabled": 1},
+            "timings_ms": {},
+            "model_round_details": [{"model": "gemma4:31b", "provider": "ollama-cloud"}],
+        },
+    )
+    rendered = build_agent_response(outcome, model="gemma4:31b", elapsed_ms=123, version="0.18.1")
+    assert rendered["paid_routing"] == {
+        "requested": True, "used": False, "reason": "disabled_in_homebrain"
+    }
+    assert "Paid model not used" in rendered["message"]
+
+
+def test_confirmed_paid_provider_is_reported_from_actual_rounds():
+    from types import SimpleNamespace
+    from api_response_builder import build_agent_response
+    outcome = SimpleNamespace(
+        message="Paid investigation complete.",
+        route="unified-mcp-agent", request_class="live-read",
+        choices=[], evidence=[], confirmation_required=False,
+        confirmation_count=0, automation_items=[], investigation_coverage=None,
+        metrics={
+            "outcome": "success",
+            "counters": {"paid_model_requested": 1, "paid_model_reserved": 1},
+            "timings_ms": {},
+            "model_round_details": [{"model": "deepseek-v4-pro", "provider": "ollama-cloud"}],
+        },
+    )
+    rendered = build_agent_response(outcome, model="gemma4:31b", elapsed_ms=123, version="0.18.1")
+    assert rendered["paid_routing"] == {"requested": True, "used": True, "reason": "used"}
+    assert "Paid model not used" not in rendered["message"]
