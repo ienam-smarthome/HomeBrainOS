@@ -4201,7 +4201,12 @@ class UnifiedMCPAgent:
                 # scoped logs before the model loop. Grounding must consume
                 # the SAME current-request receipts as final synthesis, or it
                 # incorrectly refuses despite a successful log query.
-                if grounding.logs_requested and not grounding.logs_checked:
+                if (
+                    getattr(grounding, "logs_requested", False)
+                    and not getattr(grounding, "logs_checked", False)
+                    and callable(getattr(grounding, "is_live_log_call", None))
+                    and callable(getattr(grounding, "record_tool_outcome", None))
+                ):
                     for receipt in self.evidence.receipts():
                         if (
                             not isinstance(receipt, dict)
