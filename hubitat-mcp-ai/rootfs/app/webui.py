@@ -55,6 +55,15 @@ def render_page(title: str, version: str) -> str:
 .journal-actions{display:flex;align-items:center;gap:8px;margin-top:8px}
 .journal-actions button{width:auto;padding:7px 11px;margin:0;font-size:12px}
 @media(max-width:520px){.journal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.journal-stat{padding:7px}}
+
+.journal-browser-controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin:9px 0}
+.journal-browser-controls label{display:block;font-size:12px;color:var(--muted)}
+.journal-browser-controls input,.journal-browser-controls select{display:block;width:100%;background:#151518;color:#fff;border:1px solid #49494e;border-radius:7px;margin:4px 0;padding:9px;font-size:14px}
+.journal-browser-table-wrap{max-width:100%;overflow:auto;max-height:360px;margin:7px 0}
+.journal-browser-table{border-collapse:collapse;width:100%;font-size:12px;min-width:610px}
+.journal-browser-table th,.journal-browser-table td{padding:8px;border-bottom:1px solid #39393d;vertical-align:top;text-align:left;overflow-wrap:anywhere}
+.journal-browser-table th{position:sticky;top:0;background:#242428}
+@media(max-width:520px){.journal-browser-controls{grid-template-columns:1fr 1fr}.journal-browser-controls label:first-child{grid-column:span 2}}
 </style>
 </head>
 <body><main class="wrap">
@@ -114,6 +123,19 @@ def render_page(title: str, version: str) -> str:
 <ul class="journal-events" id="journalRecentEvents"><li class="journal-small">Expand to load recent events.</li></ul>
 <strong>Connection gaps</strong>
 <ul class="journal-gaps" id="journalRecentGaps"><li class="journal-small">No gap details loaded.</li></ul>
+</details>
+
+<details class="health-details" id="journalBrowser">
+<summary>Browse historical records</summary>
+<div class="journal-browser-controls">
+<label>Device ID<input id="journalBrowseDevice" type="text" inputmode="numeric" placeholder="e.g. 7805" maxlength="12"></label>
+<label>Day (local time)<input id="journalBrowseDay" type="date"></label>
+<label>Event type<select id="journalBrowseAttribute"><option value="">All recorded attributes</option><option value="switch">Switch</option><option value="command-on">ON command</option><option value="command-off">OFF command</option><option value="command-setLevel">Set level command</option><option value="motion">Motion</option><option value="presence">Presence</option><option value="occupancy">Occupancy</option><option value="pushed">Button pushed</option></select></label>
+</div>
+<div class="journal-actions"><button id="journalBrowseSearch" type="button">Search records</button><button class="secondary" id="journalBrowsePrev" type="button" disabled>Previous</button><button class="secondary" id="journalBrowseNext" type="button" disabled>Next</button></div>
+<div class="journal-small" id="journalBrowseStatus" role="status">Search by an exact device ID and local day. Results are archived observations, not proof of uninterrupted recording.</div>
+<div class="journal-browser-table-wrap"><table class="journal-browser-table"><thead><tr><th>Recorded time</th><th>Event</th><th>Value</th><th>Source</th><th>Timestamp basis</th></tr></thead><tbody id="journalBrowseRows"></tbody></table></div>
+<div class="journal-small">Up to 50 records per page, oldest first. Connected streams, timestamps and an empty result do not prove complete coverage. App-log message bodies are not displayed here.</div>
 </details>
 </section>
 <section class="card" id="oneTimeCleanupCard">
@@ -236,6 +258,59 @@ document.getElementById('runOneTimeCleanup').onclick=async()=>{if(!window.confir
 document.getElementById('sendPushoverReport').onclick=async()=>{const button=document.getElementById('sendPushoverReport'),meta=document.getElementById('healthAuditMeta');button.disabled=true;button.textContent='📲 Sending report…';try{const response=await fetch(apiPath('api/pushover/report'),{method:'POST'}),data=await jsonResponse(response);if(!response.ok||!data.success)throw new Error(data.detail||'Pushover rejected the report');meta.textContent=data.message||'Latest System Check report sent to Pushover.';button.textContent='✅ Report sent'}catch(error){meta.textContent='Pushover report failed: '+error.message;button.textContent='❌ Send failed'}finally{setTimeout(()=>{button.disabled=false;button.textContent='📲 Send report to Pushover'},1800)}};
 let activeRecognition=null;function startVoice(){stopAudio();if(activeRecognition){activeRecognition.stop();return}const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){answer.textContent='Speech recognition is unavailable in this browser.';return}const recognition=new Recognition();activeRecognition=recognition;recognition.lang='en-GB';const fab=document.getElementById('micFab');fab.classList.add('listening');fab.textContent='■';recognition.onresult=event=>submit(event.results[0][0].transcript);recognition.onerror=event=>{answer.textContent='Speech recognition error: '+event.error};recognition.onend=()=>{activeRecognition=null;fab.classList.remove('listening');fab.textContent='🎤'};recognition.start()}
 document.getElementById('speak').onclick=startVoice;document.getElementById('micFab').onclick=startVoice;
+
+let journalBrowseOffset=0;
+async function browseJournal(reset=false){
+  const id=document.getElementById('journalBrowseDevice').value.trim();
+  const day=document.getElementById('journalBrowseDay').value;
+  const status=document.getElementById('journalBrowseStatus');
+  const body=document.getElementById('journalBrowseRows');
+  if(!/^\d{1,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(day)){
+    status.textContent='Enter a numeric device ID and select a valid date.';return;
+  }
+  const begin=new Date(day+'T00:00:00');
+  if(Number.isNaN(begin.getTime())){status.textContent='Invalid local date.';return}
+  const end=new Date(begin);end.setDate(end.getDate()+1);end.setMilliseconds(end.getMilliseconds()-1);
+  if(reset)journalBrowseOffset=0;
+  const params=new URLSearchParams({device_id:id,since:begin.toISOString(),until:end.toISOString(),limit:'50',offset:String(journalBrowseOffset)});
+  const attribute=document.getElementById('journalBrowseAttribute').value;
+  if(attribute)params.set('attribute',attribute);
+  const previous=document.getElementById('journalBrowsePrev'),next=document.getElementById('journalBrowseNext'),search=document.getElementById('journalBrowseSearch');
+  previous.disabled=next.disabled=search.disabled=true;status.textContent='Reading archived records…';
+  try{
+    const response=await fetch(apiPath('api/evidence-journal/events?'+params.toString()));
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error(data.detail||'Journal query unavailable');
+    const records=Array.isArray(data.events)?data.events:[];
+    body.replaceChildren();
+    for(const record of records){
+      if(record.stream!=='events')continue;
+      const tr=document.createElement('tr');
+      for(const val of [
+        journalTime(record.observed_at),
+        String(record.attribute||'—'),
+        String(record.value||'—'),
+        String(record.source||'—'),
+        record.timestamp_basis==='source'?'Source event time':'Collector reception'
+      ]){const td=document.createElement('td');td.textContent=val;tr.append(td)}
+      body.append(tr);
+    }
+    const hasMore=!!data.has_more;
+    previous.disabled=journalBrowseOffset===0;
+    next.disabled=!hasMore;
+    const gapCount=Array.isArray(data.gaps)?data.gaps.length:0;
+    status.textContent='Records '+(records.length?journalBrowseOffset+1:0)+'–'+(journalBrowseOffset+records.length)
+      +' · '+(hasMore?'More pages available':'No further matching records')
+      +' · '+gapCount+' recorded gap(s) overlap this day. Historical coverage is never verified as complete.';
+    if(!records.length)status.textContent+=' No records does not mean no activity.';
+  }catch(error){body.replaceChildren();status.textContent='Query failed: '+error.message;previous.disabled=next.disabled=true}
+  finally{search.disabled=false}
+}
+const journalToday=new Date();document.getElementById('journalBrowseDay').value=[journalToday.getFullYear(),String(journalToday.getMonth()+1).padStart(2,'0'),String(journalToday.getDate()).padStart(2,'0')].join('-');
+document.getElementById('journalBrowseSearch').onclick=()=>void browseJournal(true);
+document.getElementById('journalBrowsePrev').onclick=()=>{journalBrowseOffset=Math.max(0,journalBrowseOffset-50);void browseJournal()};
+document.getElementById('journalBrowseNext').onclick=()=>{journalBrowseOffset+=50;void browseJournal()};
+
 document.getElementById('journalDetails').addEventListener('toggle',event=>{if(event.target.open)void loadJournalRecent()});
 document.getElementById('journalRefresh').onclick=async()=>{const b=document.getElementById('journalRefresh');b.disabled=true;try{await loadJournal();await loadJournalRecent()}finally{b.disabled=false}};
 status();setInterval(status,30000);

@@ -530,7 +530,7 @@ class HistoricalEvidenceJournal:
     def query(
         self, *, since: str, until: str,
         device_id: str = "", attribute: str = "", app_id: str = "",
-        limit: int = 100,
+        limit: int = 100, offset: int = 0,
     ) -> dict[str, Any]:
         start, end = _aware_iso(since), _aware_iso(until)
         if not start or not end or start >= end:
@@ -539,6 +539,8 @@ class HistoricalEvidenceJournal:
             raise ValueError("Journal query window cannot exceed 31 days")
         if not (device_id or app_id):
             raise ValueError("An exact device_id or app_id is required")
+        if not isinstance(offset, int) or not 0 <= offset <= self.max_rows:
+            raise ValueError("Journal offset is out of bounds")
         clauses = ["observed_at>=?", "observed_at<=?"]
         params: list[Any] = [start, end]
         for col, val in (("device_id", device_id), ("app_id", app_id), ("attribute", attribute)):
@@ -548,10 +550,10 @@ class HistoricalEvidenceJournal:
         sql = ("SELECT stream,device_id,app_id,attribute,value,display_name,source,"
                "source_time,observed_at,received_at,timestamp_basis,message "
                "FROM journal_events WHERE " + " AND ".join(clauses)
-               + " ORDER BY observed_at ASC LIMIT ?")
+               + " ORDER BY observed_at ASC, id ASC LIMIT ? OFFSET ?")
         requested_limit = max(1, min(MAX_ROWS_PER_QUERY, int(limit)))
         # Fetch one extra row to expose result-window truncation.
-        params.append(requested_limit + 1)
+        params.extend((requested_limit + 1, offset))
         with self._connect() as db:
             db.row_factory = sqlite3.Row
             fetched = [dict(row) for row in db.execute(sql, params)]
@@ -564,7 +566,9 @@ class HistoricalEvidenceJournal:
                         "ORDER BY started_at DESC LIMIT 100", (end, start))]
         return {
             "events": events, "count": len(events), "gaps": gaps,
-            "truncated": truncated, "limit": requested_limit,
+            "truncated": truncated, "has_more": truncated,
+            "limit": requested_limit, "offset": offset,
+            "next_offset": offset + len(events) if truncated else None,
             "coverage_complete": False,
             "empty_means_inactivity": False,
             "timestamps": "source time if timezone-aware, otherwise collector reception time",

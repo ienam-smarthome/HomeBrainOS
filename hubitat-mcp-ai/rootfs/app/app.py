@@ -699,7 +699,7 @@ async def evidence_journal_recent(limit: int = 12) -> dict[str, Any]:
 @app.get("/api/evidence-journal/events")
 async def evidence_journal_events(
     since: str, until: str, device_id: str = "", attribute: str = "",
-    app_id: str = "", limit: int = 100,
+    app_id: str = "", limit: int = 100, offset: int = 0,
 ) -> dict[str, Any]:
     """Bounded, read-only archived evidence; requires an exact device or app."""
     if not historical_journal.enabled or not historical_journal._started:
@@ -708,7 +708,7 @@ async def evidence_journal_events(
         return await asyncio.to_thread(
             historical_journal.query,
             since=since, until=until, device_id=device_id,
-            attribute=attribute, app_id=app_id, limit=limit,
+            attribute=attribute, app_id=app_id, limit=limit, offset=offset,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

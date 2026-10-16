@@ -86,6 +86,14 @@ def _requested_clock(question: str, reference: datetime) -> datetime | None:
     clock = _EXPLICIT_CLOCK.fullmatch(selected_clock)
     if clock is None:
         return None
+    # A prior-day command is not a safe source of the requested day's
+    # historical timezone or evidence of its activation. In particular,
+    # dates on opposite sides of a DST change cannot share an offset.
+    requested_date = (
+        int(day.group(3)), _MONTHS[day.group(2).lower()], int(day.group(1))
+    )
+    if (reference.year, reference.month, reference.day) != requested_date:
+        return None
     try:
         wanted = datetime(
             int(day.group(3)), _MONTHS[day.group(2).lower()],
