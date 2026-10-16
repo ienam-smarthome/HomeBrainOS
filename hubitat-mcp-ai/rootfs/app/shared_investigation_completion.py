@@ -19,6 +19,10 @@ from recorded_telemetry_freshness import (
     reconcile_telemetry_answer, render_command_only_evidence_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
+from telemetry_clock_consistency import (
+    assess_telemetry_clock_consistency,
+    render_telemetry_clock_qualification,
+)
 from investigation_policy import is_causal_investigation
 
 TELEMETRY_KINDS = ("device_state", "device_history", "device_logs")
@@ -167,6 +171,14 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
     if domain == "device_telemetry":
+        clock_check = assess_telemetry_clock_consistency(evidence)
+        if clock_check is not None:
+            coverage["telemetryClockConsistency"] = clock_check
+            if clock_check["sourcesAgree"] is False:
+                # This claim boundary must remain visible even when a
+                # specialist finalizer replaces a model's original prose.
+                if metrics.get("outcome") in (None, "success"):
+                    metrics["outcome"] = "unresolved"
         # A direct device-ID-scoped mixed history is authoritative for which
         # Hubitat command/state events were *returned*. It can contain one
         # historical device-attributed attribute amongst many commands: the
@@ -213,6 +225,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 message += "\n\n" + render_temporal_qualification(
                     temporal, original_message,
                 )
+    if domain == "device_telemetry":
+        clock_check = coverage.get("telemetryClockConsistency")
+        if isinstance(clock_check, dict) and clock_check.get("sourcesAgree") is False:
+            message = (
+                render_telemetry_clock_qualification(clock_check)
+                + "\n\n" + message
+            )
     if partial:
         limitations: list[str] = []
         if missing:
