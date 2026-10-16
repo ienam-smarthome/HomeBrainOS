@@ -176,7 +176,11 @@ class ChatTransport:
         if not self.configured:
             raise RuntimeError("Ollama Online API key is not configured")
         account_keys = [("primary", self.api_key)]
-        if self.household_cloud_failover_enabled:
+        if self.household_cloud_failover_enabled and self.household_cloud_accounts:
+            if self.base_url != "https://ollama.com":
+                raise RuntimeError(
+                    "Secondary Ollama Cloud keys require the official HTTPS endpoint"
+                )
             account_keys.extend(
                 (acct.account_id, acct.api_key)
                 for acct in self.household_cloud_accounts
