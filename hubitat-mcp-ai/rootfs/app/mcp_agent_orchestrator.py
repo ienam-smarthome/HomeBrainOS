@@ -145,6 +145,9 @@ from skill_topology import render_topology_plan
 from skill_source_completion import pending_device_log_read
 from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
 from skill_investigation_followup import execute_unverified_next_reads
+from investigation_checkpoint import (
+    is_investigative_question, render_investigation_checkpoint,
+)
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -564,6 +567,9 @@ class UnifiedMCPAgent:
             "hubitat_request_class", default="live-read"
         )
         self._current_user_objective: ContextVar[str] = ContextVar("homebrain_current_user_objective", default="")
+        self._investigation_reflection_used: ContextVar[bool] = ContextVar(
+            "homebrain_investigation_reflection_used", default=False
+        )
         self._choices: ContextVar[list[str] | None] = ContextVar(
             "hubitat_choices", default=None
         )
@@ -3341,6 +3347,7 @@ class UnifiedMCPAgent:
         )
         class_token = self._request_class.set("tool-driven")
         objective_token = self._current_user_objective.set(str(user_prompt))
+        reflection_token = self._investigation_reflection_used.set(False)
         try:
             message = await self._process_user_request(
                 user_prompt,
@@ -3381,6 +3388,7 @@ class UnifiedMCPAgent:
                 investigation_coverage=coverage,
             )
         finally:
+            self._investigation_reflection_used.reset(reflection_token)
             self._current_user_objective.reset(objective_token)
             self._request_class.reset(class_token)
             self._mutation_requested_by_user.reset(mutation_request_token)
@@ -3719,10 +3727,37 @@ class UnifiedMCPAgent:
                         user_prompt,
                     )
                     if early_outcome:
-                        increment_active_metric("skills_focal_unverified_stop")
-                        increment_active_metric("skills_early_focal_stop")
-                        increment_active_metric("investigative_finalization")
-                        return early_outcome
+                        if (
+                            is_investigative_question(user_prompt)
+                            and not self._mutation_requested_by_user.get()
+                        ):
+                            # A partial result must not preempt the existing
+                            # model-led, bounded evidence selection loop.
+                            # Replace the model-facing registry with installed,
+                            # safely classified READ tools only.
+                            read_tools = catalog.activate_investigation_read_view(
+                                max_declared=self.tool_limit
+                            )
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "HOST VERIFIED PARTIAL ANSWER (do not overwrite "
+                                    "source-clock and causation boundaries):\n"
+                                    + early_outcome[:4200] + "\n\n"
+                                    + render_investigation_checkpoint(
+                                        user_prompt, self.evidence.receipts(),
+                                        available_read_tools=read_tools,
+                                    )
+                                ),
+                            })
+                            tools = catalog.schemas()
+                            self._investigation_reflection_used.set(True)
+                            increment_active_metric("investigation_read_reflection")
+                        else:
+                            increment_active_metric("skills_focal_unverified_stop")
+                            increment_active_metric("skills_early_focal_stop")
+                            increment_active_metric("investigative_finalization")
+                            return early_outcome
 
             if prefetched_subject_key:
                 investigative_subject_history_key = prefetched_subject_key
@@ -3754,7 +3789,7 @@ class UnifiedMCPAgent:
                         deterministic_answer,
                         transition=prefetched_transition or "on",
                     )
-                    if not deep_causal_request:
+                    if not deep_causal_request and not self._investigation_reflection_used.get():
                         increment_active_metric(
                             "causal_deterministic_finalization"
                         )
@@ -3871,7 +3906,7 @@ class UnifiedMCPAgent:
                     if not deep_causal_request:
                         increment_active_metric("investigative_finalization")
                         return await self._final_answer(messages)
-            if causal_prefetch == "empty":
+            if causal_prefetch == "empty" and not self._investigation_reflection_used.get():
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
 
@@ -3924,12 +3959,17 @@ class UnifiedMCPAgent:
             and not self._mutation_requested_by_user.get()
         )
         active_round_budget = (
-            min(self.max_tool_rounds, 6)
+            min(self.max_tool_rounds, 3)
+            if self._investigation_reflection_used.get()
+            else min(self.max_tool_rounds, 6)
             if scoped_causal_round_budget else self.max_tool_rounds
         )
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
         for _ in range(active_round_budget):
+            if self._investigation_reflection_used.get() and not causal_completion_mode:
+                catalog.activate_investigation_read_view(max_declared=self.tool_limit)
+                tools = catalog.schemas()
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
@@ -4182,6 +4222,39 @@ class UnifiedMCPAgent:
                 return self._unverified_mutation_guard(
                     str(assistant.get("content") or "Done.")
                 )
+            if self._investigation_reflection_used.get():
+                # Defence in depth: a discovered tool cannot bypass the read-
+                # only view by using a mutating gateway or structured subcall.
+                from tool_registry import classify_tool_effect
+                from tool_discovery_catalog import SEARCH_TOOL as _SEARCH
+                forbidden = []
+                for proposed in calls:
+                    func = proposed.get("function") or {}
+                    name = str(func.get("name") or "")
+                    arguments = func.get("arguments") or {}
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except (ValueError, TypeError):
+                            arguments = {}
+                    if classify_tool_effect(
+                        catalog.available_tool(name),
+                        arguments if isinstance(arguments, dict) else {},
+                    ).mutates:
+                        forbidden.append(name)
+                if forbidden:
+                    increment_active_metric("investigation_write_blocked")
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST READ-ONLY ENFORCEMENT: A proposed tool "
+                            "is write-capable or unavailable. No write was "
+                            "executed. Continue only with available read "
+                            "tools, or state the evidence limitation."
+                        ),
+                    })
+                    continue
+
             if causal_completion_mode:
                 allowed_completion_tools = set(catalog.causal_provenance_names())
                 disallowed_completion_calls = [
