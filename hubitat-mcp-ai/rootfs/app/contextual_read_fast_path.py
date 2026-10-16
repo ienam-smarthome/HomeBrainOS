@@ -189,7 +189,7 @@ def parse_device_selection(prompt: str) -> str | None:
     # "Choose a [something]" delegates selection to the agent; it does not
     # identify a concrete device. By contrast "choose the Hallway Light 1"
     # remains a genuine named selection.
-    if re.match(r"^\\s*(?:select|use|choose)\\s+an?\\s+", text, re.I):
+    if re.match(r"^\s*(?:select|use|choose)\s+an?\s+", text, re.I):
         return None
     match = _DEVICE_SELECTION.fullmatch(text)
     if match is None:
@@ -200,14 +200,14 @@ def parse_device_selection(prompt: str) -> str | None:
     # Device names can contain spaces, numbers, and parentheses, but a
     # multi-sentence instruction or a subordinate investigative action is
     # not a device name. Keep this structural, not device-specific.
-    if len(re.findall(r"\\b[\\w'-]+\\b", name)) > 12:
+    if len(re.findall(r"\b[\w'-]+\b", name)) > 12:
         return None
     if any(punctuation in name for punctuation in (".", "?", "!", ";", "\\n")):
         return None
     if re.search(
-        r"\\b(?:and|then|because|why|whether|investigate|reconstruct|"
+        r"\b(?:and|then|because|why|whether|investigate|reconstruct|
         r"analyse|analyze|evaluate|explain|compare|using|based on|"
-        r"from history|with evidence)\\b", name, re.I,
+        r"from history|with evidence)\b", name, re.I,
     ):
         return None
     return name
