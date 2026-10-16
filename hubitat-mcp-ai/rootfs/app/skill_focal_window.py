@@ -590,6 +590,52 @@ def render_unverified_focal_outcome(
             "Reception-only times do not independently verify the physical "
             "event time, and a zero-row archive query does not prove inactivity."
         )
+        # Explain the *available* archive chronology rather than reducing it
+        # to counts. Source and collector clocks are different evidence grades.
+        transitions = next((
+            item.get("receptionOnlyTransitions")
+            for item in archives
+            if isinstance(item.get("receptionOnlyTransitions"), list)
+            and item.get("receptionOnlyTransitions")
+        ), [])
+        timeline = []
+        for item in transitions[:12]:
+            if not isinstance(item, dict):
+                continue
+            when = _time(item.get("receivedAt"))
+            state = str(item.get("value") or "").lower()
+            if when is None or state not in {"on", "off"}:
+                continue
+            if minute and minute.tzinfo:
+                when = when.astimezone(minute.tzinfo)
+            timeline.append((when, state))
+        timeline.sort(key=lambda pair: pair[0])
+        if timeline:
+            events_text = "; ".join(
+                f"{state.upper()} at {when.strftime('%H:%M:%S.%f')[:-3]}"
+                for when, state in timeline
+            )
+            archive_note += (
+                "\\n\\n**Archived collector-received sequence ("
+                + (minute.strftime("%d %B %Y %z") if minute else "bounded focal window")
+                + "):** " + events_text + ". "
+                "These are times HomeBrain received reports, not verified "
+                "Hubitat source-event or physical actuation times."
+            )
+            states = [state for _, state in timeline]
+            if any(states[i:i+3] == ["on", "off", "on"]
+                   for i in range(len(states)-2)):
+                archive_note += (
+                    " The ON/OFF/ON sequence needs explanation: the earlier "
+                    "recorded ON command does not establish what initiated "
+                    "the later ON report. Check MQTT origin, SenseCap command "
+                    "handling and Hue Bridge activity to distinguish the causes."
+                )
+        if any(item.get("journalQueryTruncated") for item in archives):
+            archive_note += " This journal query reached its result limit; later rows may be missing."
+        elif any(item.get("receptionOnlyTransitionsTruncated") for item in archives):
+            archive_note += " Only the first twelve collector observations are shown."
+
     else:
         archive_note = (
             "**Persistent Evidence Journal:** No successful, bounded journal "
@@ -640,6 +686,7 @@ def project_archived_focal_state(
         raise ValueError("Exact bounded journal window required")
     events: list[dict[str, Any]] = []
     received_only = 0
+    received_transitions: list[dict[str, str]] = []
     for row in (stored.get("events") or [])[:200]:
         if not isinstance(row, dict) or row.get("attribute") != "switch":
             continue
@@ -651,6 +698,14 @@ def project_archived_focal_state(
             continue
         if row.get("timestamp_basis") != "source":
             received_only += 1
+            # Retain typed state and reception timestamp as *partial context*.
+            # Never put these in 'events': causal focus selection requires
+            # verified source-event times, not collector delivery times.
+            received_transitions.append({
+                "value": state,
+                "receivedAt": when.isoformat(),
+                "timestampBasis": "collector-received",
+            })
             continue
         events.append({
             "name": "switch", "value": state,
@@ -659,6 +714,7 @@ def project_archived_focal_state(
             "source": str(row.get("source") or "")[:80],
         })
     events.sort(key=lambda item: _time(item["date"]))
+    received_transitions.sort(key=lambda item: _time(item["receivedAt"]))
     requested = _time(plan.get("requestedOn"))
     on_matches = [
         item for item in events
@@ -679,6 +735,10 @@ def project_archived_focal_state(
         "sourceVerifiedOn": len(on_matches) == 1,
         "sourceTimestampedCount": len(events),
         "collectorReceivedOnlyCount": received_only,
+        # Keep only safe, short structured entries in the technical receipt.
+        "receptionOnlyTransitions": received_transitions[:12],
+        "receptionOnlyTransitionsTruncated": len(received_transitions) > 12,
+        "journalQueryTruncated": bool(stored.get("truncated")),
         "gapCount": len(gaps),
         "eventsTruncated": len(events) > 20,
         "sourceHistoryComplete": False,
