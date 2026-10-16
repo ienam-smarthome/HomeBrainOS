@@ -15,7 +15,8 @@ def msg(prompt):
 def test_complex_and_medium_routing():
     assert choose_paid_model(msg("Investigate why the bedroom light came on"), "hybrid") == "deepseek-v4-pro"
     assert choose_paid_model(msg("Analyse conflicting evidence"), "hybrid") == "deepseek-v4-pro"
-    assert choose_paid_model(msg("Show rule history"), "hybrid") == "deepseek-v4.1-flash"
+    assert choose_paid_model(msg("Show rule history"), "hybrid") is None
+    assert choose_paid_model(msg("Summarise rule history"), "hybrid") == "deepseek-v4.1-flash"
     assert choose_paid_model(msg("Is the hallway light on?"), "hybrid") is None
 
 
