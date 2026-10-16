@@ -127,6 +127,7 @@ from causal_timeline import (
     unresolved_material_timeline_rows,
 )
 from deterministic_tool_presenter import present_tool_result
+from incident_grounded_fallback import render_grounded_incident_fallback
 from device_claim_grounding import (
     DeviceClaimAction,
     DeviceClaimGroundingPolicy,
@@ -4215,6 +4216,18 @@ class UnifiedMCPAgent:
                         ])
                         continue
                     if device_claim_decision.action is DeviceClaimAction.REFUSE:
+                        # For delegated incident selection, a model may drift
+                        # onto an unrelated device after collecting a valid
+                        # device-specific history. Retain the actual observed
+                        # evidence rather than ending with an empty refusal.
+                        partial = render_grounded_incident_fallback(
+                            user_prompt, self.evidence.receipts()
+                        )
+                        if partial:
+                            increment_active_metric(
+                                "investigation_grounded_fallback"
+                            )
+                            return partial
                         return str(device_claim_decision.message)
                 # Host-owned investigative prefetches may have already read
                 # scoped logs before the model loop. Grounding must consume
