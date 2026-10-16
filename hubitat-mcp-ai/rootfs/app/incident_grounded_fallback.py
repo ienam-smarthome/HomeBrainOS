@@ -108,7 +108,7 @@ def render_grounded_incident_fallback(
             if isinstance(producer, dict) else ""
         )
         lines.append(
-            f"- {stamp.isoformat()}: {attribute}={value}"
+            f"- {stamp.isoformat(timespec='milliseconds')}: {attribute}={value}"
             + (f"; reported via {source}" if source else "")
             + "."
         )
