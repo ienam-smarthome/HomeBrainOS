@@ -1017,13 +1017,15 @@ def render_comprehensive_system_audit(
             if row.get("recent_activity_conflict") is True:
                 seconds = row.get("last_activity_age_seconds")
                 lines.append(
-                    "- **Status/activity conflict:** "
+                    "- **Status/activity metadata overlap:** "
                     f"{row.get('label') or row.get('id') or 'Device'} "
-                    f"reported an activity timestamp about {int(seconds or 0)} "
-                    "seconds before the snapshot while its health status "
-                    "reported offline. This may be a stale health flag or an "
-                    "event that does not prove command reachability; "
-                    "verify the actual device state before repairs."
+                    f"has a reported activity timestamp about {int(seconds or 0)} "
+                    "seconds before the snapshot, while healthStatus reports "
+                    "offline. The timestamp's origin was not checked: a "
+                    "watchdog-generated health/status event can refresh Hubitat "
+                    "activity without a fresh physical device packet. This "
+                    "is not independent evidence of recovery or a stale "
+                    "offline flag; verify upstream telemetry before repairs."
                 )
 
     quiet = devices.get("no_recent_activity") or []
