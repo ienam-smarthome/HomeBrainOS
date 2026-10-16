@@ -614,9 +614,13 @@ async def _agent_request(request: ChatRequest) -> Any:
 
 
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
+    from scoped_app_status_read import scoped_status_app_id, read_scoped_app_status
     try:
         operation: Awaitable[Any]
-        if (
+        scoped_id = scoped_status_app_id(request.message)
+        if scoped_id is not None:
+            operation = read_scoped_app_status(mcp, scoped_id)
+        elif (
             automation_status.matches_request(request.message)
             and plan_investigation(request.message) is None
             and not is_comprehensive_system_audit_request(request.message)
