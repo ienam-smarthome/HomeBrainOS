@@ -174,7 +174,7 @@ async def test_local_first_preserved_even_if_household_cloud_configured():
         "local": "ok",
     }, cloud_first=False, local=True)
     result = await obj.chat([{"role": "user", "content": "Inspect"}], [])
-    assert result["content"] == "ok-local"
+    assert result["content"] == "ok"
     assert len(client.calls) == 1
 
 
