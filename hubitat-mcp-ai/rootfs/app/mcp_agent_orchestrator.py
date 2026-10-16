@@ -472,6 +472,7 @@ class UnifiedMCPAgent:
         paid_routing_enabled: bool = False,
         paid_routing_mode: str = "hybrid",
         paid_budget_usd: float = 6.50,
+        paid_deep_model: str = "deepseek-v4-pro",
         tool_limit: int = 48,
         max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
@@ -508,6 +509,7 @@ class UnifiedMCPAgent:
             paid_routing_enabled=paid_routing_enabled,
             paid_routing_mode=paid_routing_mode,
             paid_budget_usd=paid_budget_usd,
+            paid_deep_model=paid_deep_model,
         )
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
