@@ -205,7 +205,7 @@ def parse_device_selection(prompt: str) -> str | None:
     if any(punctuation in name for punctuation in (".", "?", "!", ";", "\\n")):
         return None
     if re.search(
-        r"\b(?:and|then|because|why|whether|investigate|reconstruct|
+        r"\b(?:and|then|because|why|whether|investigate|reconstruct|"
         r"analyse|analyze|evaluate|explain|compare|using|based on|"
         r"from history|with evidence)\b", name, re.I,
     ):
