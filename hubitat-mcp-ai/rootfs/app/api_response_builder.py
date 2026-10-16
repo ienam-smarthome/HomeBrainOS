@@ -540,6 +540,9 @@ def build_agent_response(
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
     }
+    if getattr(outcome, "route", "") == "scoped-app-status":
+        result["success"] = bool(getattr(outcome, "complete", False))
+        result["status_verification"] = "partial" if not result["success"] else "configuration_read"
     coverage = getattr(outcome, "investigation_coverage", None)
     if isinstance(coverage, dict):
         result["investigation_coverage"] = deepcopy(coverage)
