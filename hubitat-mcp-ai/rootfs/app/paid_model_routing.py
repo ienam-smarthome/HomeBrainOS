@@ -10,11 +10,12 @@ from __future__ import annotations
 import asyncio
 from contextvars import ContextVar, Token
 import json
+import math
 import os
 from pathlib import Path
 import re
 
-from request_metrics import increment_active_metric
+from request_metrics import increment_active_metric, record_active_paid_guard
 
 # Only the real request sets this context. Do not infer consent from host-added
 # role=user instructions, tool text, or historic conversation messages.
@@ -113,9 +114,11 @@ class PaidCreditGuard:
             model = self.deep_model
         if not self.enabled:
             increment_active_metric("paid_routing_disabled")
+            record_active_paid_guard("disabled", budget_usd=self.budget_usd)
             return None
         if self.budget_usd <= 0:
             increment_active_metric("paid_routing_budget_disabled")
+            record_active_paid_guard("zero_budget", budget_usd=self.budget_usd)
             return None
         reserved = await self._reserve(messages, tools, model)
         increment_active_metric("paid_model_reserved" if reserved else "paid_routing_reservation_blocked")
@@ -123,6 +126,12 @@ class PaidCreditGuard:
 
     async def _reserve(self, messages: list[dict], tools: list[dict], model: str | None) -> str | None:
         if not self.enabled or self.budget_usd <= 0 or not model:
+            if model:
+                record_active_paid_guard("disabled" if not self.enabled else "zero_budget",
+                                         budget_usd=self.budget_usd)
+            return None
+        if model not in MODEL_RATES:
+            record_active_paid_guard("unknown_model", budget_usd=self.budget_usd)
             return None
         # Pessimistic character/token ratio of 1:1 for the complete model
         # packet, including tools. Allow 8,192 output tokens per round.
@@ -137,12 +146,24 @@ class PaidCreditGuard:
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
                 spent = float(data.get("reserved_usd", 0))
+                if not math.isfinite(spent) or spent < 0:
+                    raise ValueError("Invalid cumulative reservation total")
             except FileNotFoundError:
                 spent = 0.0
             except (ValueError, TypeError):
                 # Corrupted ledger must fail closed rather than resetting spend.
+                record_active_paid_guard("invalid_ledger", budget_usd=self.budget_usd,
+                                         estimated_round_usd=reservation)
+                return None
+            except OSError:
+                record_active_paid_guard("storage_unavailable", budget_usd=self.budget_usd,
+                                         estimated_round_usd=reservation)
                 return None
             if spent + reservation > self.budget_usd:
+                record_active_paid_guard("round_exceeds_budget",
+                                         budget_usd=self.budget_usd,
+                                         already_reserved_usd=spent,
+                                         estimated_round_usd=reservation)
                 return None
             updated = {"reserved_usd": round(spent + reservation, 8),
                        "reservation_count": 0}
@@ -152,6 +173,14 @@ class PaidCreditGuard:
             except FileNotFoundError:
                 updated["reservation_count"] = 1
             except (ValueError, TypeError):
+                record_active_paid_guard("invalid_ledger", budget_usd=self.budget_usd,
+                                         already_reserved_usd=spent,
+                                         estimated_round_usd=reservation)
+                return None
+            except OSError:
+                record_active_paid_guard("storage_unavailable", budget_usd=self.budget_usd,
+                                         already_reserved_usd=spent,
+                                         estimated_round_usd=reservation)
                 return None
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,5 +188,11 @@ class PaidCreditGuard:
                 tmp.write_text(json.dumps(updated), encoding="utf-8")
                 os.replace(tmp, self.path)
             except OSError:
+                record_active_paid_guard("storage_unavailable", budget_usd=self.budget_usd,
+                                         already_reserved_usd=spent,
+                                         estimated_round_usd=reservation)
                 return None
+        record_active_paid_guard("reserved", budget_usd=self.budget_usd,
+                                 already_reserved_usd=spent + reservation,
+                                 estimated_round_usd=reservation)
         return model
