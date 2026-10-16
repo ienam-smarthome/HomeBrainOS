@@ -466,6 +466,9 @@ class UnifiedMCPAgent:
         local_timeout_seconds: float = 12,
         local_connect_timeout_seconds: float = 3,
         local_keep_alive_seconds: float = 120,
+        household_cloud_accounts: tuple[Any, ...] = (),
+        household_cloud_failover_enabled: bool = False,
+        cloud_first: bool = False,
         tool_limit: int = 48,
         max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
@@ -496,6 +499,9 @@ class UnifiedMCPAgent:
             local_timeout_seconds=local_timeout_seconds,
             local_connect_timeout_seconds=local_connect_timeout_seconds,
             local_keep_alive_seconds=local_keep_alive_seconds,
+            household_cloud_accounts=household_cloud_accounts,
+            household_cloud_failover_enabled=household_cloud_failover_enabled,
+            cloud_first=cloud_first,
         )
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
