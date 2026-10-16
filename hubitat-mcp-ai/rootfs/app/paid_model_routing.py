@@ -49,7 +49,12 @@ def choose_paid_model(messages: list[dict], mode: str) -> str | None:
         return None
     if mode == "paid" or _COMPLEX.search(question):
         return "deepseek-v4-pro"
-    if _MEDIUM.search(question):
+    # A lone mention of a device/rule or a simple "show" is not evidence
+    # that paid reasoning will add value. Require an analytical action.
+    if _MEDIUM.search(question) and re.search(
+        r"\b(?:analyse|analyze|summaris\w*|summariz\w*|review|explain|trace|reconstruct|compare)\b",
+        question, re.I,
+    ):
         return "deepseek-v4.1-flash"
     return None
 

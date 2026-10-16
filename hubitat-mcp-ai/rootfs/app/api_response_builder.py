@@ -33,6 +33,11 @@ _NO_HISTORY_DATA = re.compile(
 
 
 def _participating_model(metrics: dict[str, Any], model: str) -> str | None:
+    details = metrics.get("model_round_details")
+    if isinstance(details, list) and details:
+        last = details[-1]
+        if isinstance(last, dict) and isinstance(last.get("model"), str):
+            return last["model"]
     counters = metrics.get("counters")
     if not isinstance(counters, dict):
         return str(model)
@@ -41,6 +46,54 @@ def _participating_model(metrics: dict[str, Any], model: str) -> str | None:
     except (TypeError, ValueError):
         model_rounds = 0
     return str(model) if model_rounds > 0 else None
+
+
+
+def _guard_exclusive_history_date_claim(
+    message: str, evidence: list[dict[str, Any]],
+) -> str:
+    """An all-evidence single-date claim cannot ignore dated command receipts.
+
+    A command from another date is NOT proof of a requested switch transition.
+    Correct only the false scope summary, not a narrower claim that the exact
+    focal event at a particular time was missing.
+    """
+    import datetime
+    dates: set[str] = set()
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        for key in ("events", "commandEvents", "boundaryEvents", "correlationEvents"):
+            rows = details.get(key)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                value = row.get("date")
+                if isinstance(value, str) and re.match(r"^\\d{4}-\\d{2}-\\d{2}[T ]", value):
+                    dates.add(value[:10])
+    if len(dates) < 2:
+        return message
+    pattern = re.compile(
+        r"(?i)(?:the\\s+)?evidence\\s+gathered\\s+in\\s+this\\s+turn\\s+"
+        r"exclusively\\s+covers\\s+activity\\s+from\\s+\\*\\*[^\\n.]+\\*\\*"
+    )
+    if not pattern.search(message):
+        return message
+    observed = ", ".join(
+        datetime.date.fromisoformat(d).strftime("%-d %B %Y")
+        for d in sorted(dates)
+    )
+    return pattern.sub(
+        "The checked device and command records include dates " + observed
+        + "; those records do not by themselves verify the requested event's initiator",
+        message,
+        count=1,
+    )
 
 
 def _mark_history_correction(receipt: dict[str, Any]) -> None:
@@ -394,6 +447,7 @@ def build_agent_response(
         str(getattr(outcome, "message", "")),
         evidence,
     )
+    message = _guard_exclusive_history_date_claim(message, evidence)
     message, _ = guard_location_correlation_claim(message, evidence)
     # Re-apply graph-backed action ownership, log absence and sensor-order
     # invariants at the final serialization boundary. The host-verified
