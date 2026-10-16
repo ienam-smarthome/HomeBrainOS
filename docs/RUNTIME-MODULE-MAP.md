@@ -22,6 +22,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_command_clue_guard.py` | Prevents unverified external-controller exclusion when an exact-event preceding Hubitat command is present; preserves producer metadata as an investigative clue rather than causal proof. |
 | `skills_framework.py` | Selects and loads bounded repo-owned MCP operating and investigative skills by request intent without granting tools. |
 | `skill_investigation.py` | Projects exact causal events and intervening-state anomalies into ranked candidate hypotheses. |
+| `skill_investigation_followup.py` | Selects at most two evidence-derived, read-only missing-focal follow-ups (current producer config and explicitly allowlisted archived log counts); preserves no-causation and secret-redaction boundaries. |
 | `skill_topology.py` | Plans read-only producer-first configuration and source-coverage checks from current-turn receipts. |
 | `skill_source_completion.py` | Plans a required device-scoped log read from resolved telemetry evidence before final synthesis; does not execute or mutate. |
 | `skill_decision_summary.py` | Produces source-ranked causal hypotheses and calibrated offline telemetry diagnoses without inventing execution or transport facts. |
