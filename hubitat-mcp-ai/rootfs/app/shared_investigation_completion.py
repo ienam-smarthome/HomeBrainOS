@@ -120,9 +120,6 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         ))
     )
     prior = getattr(outcome, "investigation_coverage", None)
-    if goal is None and not causal and not isinstance(prior, dict):
-        return outcome
-
     evidence = list(getattr(outcome, "evidence", []) or [])
     # System-wide section and performance source checks have different proof
     # obligations from an individual historical ON/OFF investigation.
@@ -142,6 +139,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 + ". Do not infer that their devices or automations are healthy."
             )
         return _CoverageOutcome(outcome, system_audit, metrics, message)
+    if goal is None and not causal and not isinstance(prior, dict):
+        return outcome
     if goal is not None:
         domain = goal.domain
         required = _known_source_requirements(domain)
