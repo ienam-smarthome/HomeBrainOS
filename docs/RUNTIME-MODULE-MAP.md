@@ -62,6 +62,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
+| `paid_model_routing.py` | Opt-in read-side model tier selection and fail-closed, persistent estimated-USD reservation ledger for paid Ollama requests. |
 | `household_ollama_accounts.py` | Validates owner consent, adulthood, provider authorisation and scoped cloud secondary-account routing; denies rate-limit/auth rotation. |
 | `provider_rate_limit_policy.py` | Sanitises Ollama Cloud HTTP 429 limit/usage responses, preserving only bounded Retry-After seconds and actionable guidance without replaying provider content or credentials. |
 | `chatgpt_mcp.py` | Exposes the opt-in ChatGPT-facing Streamable HTTP MCP transport and high-level HomeBrainOS tools. |
