@@ -97,7 +97,7 @@ class StatusClient:
         return httpx.Response(
             decision if isinstance(decision, int) else 200,
             request=request,
-            json={"message": {"role": "assistant", "content": "ok-" + target}},
+            json={"message": {"role": "assistant", "content": "ok"}},
         )
 
 
@@ -123,7 +123,7 @@ async def test_authorized_failover_after_cloud_503_without_key_exposure():
         "Bearer private-secondary-key": "ok",
     })
     result = await obj.chat([{"role": "user", "content": "Inspect device"}], [])
-    assert result["content"] == "ok-Bearer private-secondary-key"
+    assert result["content"] == "ok"
     assert [key for _, key in client.calls] == [
         "Bearer primary-secret", "Bearer private-secondary-key"
     ]
@@ -160,7 +160,7 @@ async def test_cloud_first_429_can_fall_back_to_configured_local():
         "local": "ok",
     }, cloud_first=True, local=True)
     result = await obj.chat([{"role": "user", "content": "Inspect"}], [])
-    assert result["content"] == "ok-local"
+    assert result["content"] == "ok"
     assert len(client.calls) == 2
     assert client.calls[-1][1] == ""
     assert all(k != "Bearer private-secondary-key" for _, k in client.calls)
