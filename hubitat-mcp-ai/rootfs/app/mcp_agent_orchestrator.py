@@ -570,6 +570,9 @@ class UnifiedMCPAgent:
         self._investigation_reflection_used: ContextVar[bool] = ContextVar(
             "homebrain_investigation_reflection_used", default=False
         )
+        self._investigation_baseline: ContextVar[tuple[str, int] | None] = ContextVar(
+            "homebrain_investigation_baseline", default=None
+        )
         self._choices: ContextVar[list[str] | None] = ContextVar(
             "hubitat_choices", default=None
         )
@@ -3256,9 +3259,23 @@ class UnifiedMCPAgent:
         # Latest-N event pages may have silently evicted an intervening OFF
         # even while an older ON boundary remains in interval history.
         focal_plan = build_focal_source_plan(self.evidence.receipts(), objective)
-        source_limited_baseline: str | None = None
+        baseline_snapshot = self._investigation_baseline.get()
+        source_limited_baseline: str | None = (
+            baseline_snapshot[0]
+            if self._investigation_reflection_used.get() and baseline_snapshot
+            else None
+        )
         if focal_plan is not None:
-            await self._execute_focal_plan(focal_plan, messages)
+            already_checked_focal = any(
+                r.get("evidence_kind") in {
+                    "focal_archived_state_history", "focal_exact_state_history"
+                } and str((r.get("details") or {}).get("deviceId") or "")
+                    == str(focal_plan.get("deviceId") or "")
+                for r in self.evidence.receipts()
+                if isinstance(r, dict) and r.get("success") is True
+            )
+            if not (self._investigation_reflection_used.get() and already_checked_focal):
+                await self._execute_focal_plan(focal_plan, messages)
         # When exact-window recovery returned no uniquely observed ON, do
         # not enter a long model loop that treats the command as physical
         # causation or substitutes newer intervals for the dated event.
@@ -3319,11 +3336,28 @@ class UnifiedMCPAgent:
         if corrected:
             increment_active_metric("causal_final_output_reconciled")
         if source_limited_baseline is not None:
-            # An evidence-based final response can improve the explanation,
-            # never silently promote a reception-only state into physical
-            # proof. Keep the limitation explicit even if synthesis omits it.
+            # Never discard stronger, already verified receipt-derived facts
+            # when a model's optional follow-up cannot retrieve more history.
+            # A new synthesis is supplementary, not a replacement for the
+            # trusted historical baseline.
+            new_evidence = (
+                baseline_snapshot is not None
+                and any(
+                    isinstance(row, dict)
+                    and row.get("success") is True
+                    and row.get("evidence_kind") not in {
+                        "focal_archived_state_history",
+                        "focal_exact_state_history",
+                    }
+                    for row in self.evidence.receipts()[baseline_snapshot[1]:]
+                )
+            )
+            content = (
+                source_limited_baseline + "\n\n**Additional investigation:** " + content
+                if new_evidence and content.strip() else source_limited_baseline
+            )
             content += (
-                "\n\n**Historical verification boundary:** HomeBrain has "
+                "\n\n**Historical verification boundary:** HomeBrain has 
                 "archived collector-received state reports, but no "
                 "independently verified source-timestamped switch ON in the "
                 "requested minute. Neither current configuration nor a prior "
@@ -3377,6 +3411,7 @@ class UnifiedMCPAgent:
         class_token = self._request_class.set("tool-driven")
         objective_token = self._current_user_objective.set(str(user_prompt))
         reflection_token = self._investigation_reflection_used.set(False)
+        baseline_token = self._investigation_baseline.set(None)
         try:
             message = await self._process_user_request(
                 user_prompt,
@@ -3417,6 +3452,7 @@ class UnifiedMCPAgent:
                 investigation_coverage=coverage,
             )
         finally:
+            self._investigation_baseline.reset(baseline_token)
             self._investigation_reflection_used.reset(reflection_token)
             self._current_user_objective.reset(objective_token)
             self._request_class.reset(class_token)
@@ -3781,6 +3817,9 @@ class UnifiedMCPAgent:
                                 ),
                             })
                             tools = catalog.schemas()
+                            self._investigation_baseline.set(
+                                (early_outcome, len(self.evidence.receipts()))
+                            )
                             self._investigation_reflection_used.set(True)
                             increment_active_metric("investigation_read_reflection")
                         else:
