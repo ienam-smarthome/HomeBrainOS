@@ -144,6 +144,7 @@ from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
 from skill_source_completion import pending_device_log_read
 from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
+from skill_investigation_followup import execute_unverified_next_reads
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -3213,6 +3214,20 @@ class UnifiedMCPAgent:
                 recorder=self.evidence,
                 messages=messages,
                 count_metric=increment_active_metric,
+            )
+            # Do not terminate at a missing source-timestamped ON before
+            # pursuing one grounded, accessible command-producer topology read.
+            # The bounded next-read planner also queries historical app logs
+            # only when that producer was explicitly capture-allowlisted.
+            await execute_unverified_next_reads(
+                plan,
+                receipts=self.evidence.receipts(),
+                catalog=live_catalog,
+                mcp=getattr(self, "mcp", None),
+                journal=journal,
+                recorder=self.evidence,
+                tool_succeeded=self._tool_succeeded,
+                increment_metric=increment_active_metric,
             )
         except Exception:
             self.evidence.record(
