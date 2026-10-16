@@ -543,6 +543,30 @@ def build_agent_response(
     if getattr(outcome, "route", "") == "scoped-app-status":
         result["success"] = bool(getattr(outcome, "complete", False))
         result["status_verification"] = "partial" if not result["success"] else "configuration_read"
+    counters = metrics.get("counters") if isinstance(metrics.get("counters"), dict) else {}
+    if int(counters.get("paid_model_requested") or 0):
+        rounds = metrics.get("model_round_details") or []
+        paid_used = any(
+            isinstance(item, dict) and str(item.get("model") or "").casefold().startswith(
+                ("deepseek-v4", "glm-5.3")
+            )
+            for item in rounds
+        )
+        reason = "used" if paid_used else (
+            "disabled_in_homebrain" if counters.get("paid_routing_disabled") else
+            "local_budget_zero" if counters.get("paid_routing_budget_disabled") else
+            "local_budget_or_ledger_blocked" if counters.get("paid_routing_reservation_blocked") else
+            "no_paid_round"
+        )
+        result["paid_routing"] = {"requested": True, "used": paid_used, "reason": reason}
+        if not paid_used:
+            result["message"] = (
+                result["message"].rstrip()
+                + "\n\n**Paid model not used:** This answer was not verified as a "
+                  "DeepSeek/GLM paid-model response. HomeBrain routing status: "
+                + reason.replace("_", " ")
+                + ". The Ollama account credit balance alone cannot authorise a paid request."
+            )
     coverage = getattr(outcome, "investigation_coverage", None)
     if isinstance(coverage, dict):
         result["investigation_coverage"] = deepcopy(coverage)

@@ -8,10 +8,34 @@ Never log prompts, account keys or raw evidence.
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar, Token
 import json
 import os
 from pathlib import Path
 import re
+
+from request_metrics import increment_active_metric
+
+# Only the real request sets this context. Do not infer consent from host-added
+# role=user instructions, tool text, or historic conversation messages.
+_ORIGINAL_PAID_REQUEST: ContextVar[str | None] = ContextVar(
+    'homebrain_original_paid_request', default=None
+)
+_EXPLICIT_PAID = re.compile(r'\b(use paid model|premium model|paid investigation)\b', re.I)
+
+
+def set_original_paid_request(prompt: str) -> Token:
+    return _ORIGINAL_PAID_REQUEST.set(str(prompt or ''))
+
+
+def reset_original_paid_request(token: Token) -> None:
+    _ORIGINAL_PAID_REQUEST.reset(token)
+
+
+def explicit_paid_request() -> bool:
+    text = _ORIGINAL_PAID_REQUEST.get()
+    return bool(text is not None and _EXPLICIT_PAID.search(text))
+
 
 # Published per-million token rates supplied by the user, USD.
 MODEL_RATES = {
@@ -36,13 +60,17 @@ def choose_paid_model(messages: list[dict], mode: str) -> str | None:
     mode = str(mode or "hybrid").lower()
     if mode not in {"hybrid", "manual", "paid"}:
         return None
-    question = next(
+    original = _ORIGINAL_PAID_REQUEST.get()
+    question = original if original is not None else next(
         (str(m.get("content") or "") for m in reversed(messages)
          if m.get("role") == "user" and isinstance(m.get("content"), str)), ""
     )
     if mode == "manual":
-        if not re.search(r"\b(use paid model|premium model|paid investigation)\b", question, re.I):
+        if not _EXPLICIT_PAID.search(question):
             return None
+        return "deepseek-v4-pro"
+    # Explicit authorised paid use works in hybrid mode too.
+    if _EXPLICIT_PAID.search(question):
         return "deepseek-v4-pro"
     # Avoid spending on routine writes even if a user asks "why" rhetorically.
     if re.search(r"^\s*(turn |switch |set |lock |unlock |block |allow )", question, re.I):
@@ -79,9 +107,19 @@ class PaidCreditGuard:
 
     async def select(self, messages: list[dict], tools: list[dict]) -> str | None:
         model = choose_paid_model(messages, self.mode)
+        if model is None:
+            return None
         if model == "deepseek-v4-pro":
             model = self.deep_model
-        return await self._reserve(messages, tools, model)
+        if not self.enabled:
+            increment_active_metric("paid_routing_disabled")
+            return None
+        if self.budget_usd <= 0:
+            increment_active_metric("paid_routing_budget_disabled")
+            return None
+        reserved = await self._reserve(messages, tools, model)
+        increment_active_metric("paid_model_reserved" if reserved else "paid_routing_reservation_blocked")
+        return reserved
 
     async def _reserve(self, messages: list[dict], tools: list[dict], model: str | None) -> str | None:
         if not self.enabled or self.budget_usd <= 0 or not model:

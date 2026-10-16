@@ -13,7 +13,7 @@ from household_ollama_accounts import (
     HouseholdCloudAccount, permissible_cloud_failover,
 )
 from request_metrics import increment_active_metric, record_active_provider_model
-from paid_model_routing import PaidCreditGuard
+from paid_model_routing import PaidCreditGuard, explicit_paid_request
 from provider_rate_limit_policy import confirmed_free_allowance_exhaustion
 
 
@@ -254,7 +254,12 @@ class ChatTransport:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        if self.local_configured and not self.cloud_first:
+        manual_paid_cloud = (
+            self.paid_credit_guard.enabled
+            and self.paid_credit_guard.mode == "manual"
+            and explicit_paid_request()
+        )
+        if self.local_configured and not self.cloud_first and not manual_paid_cloud:
             try:
                 return await self._try_local(messages, tools)
             except Exception:
@@ -265,8 +270,9 @@ class ChatTransport:
         try:
             return await self._try_cloud_accounts(messages, tools)
         except Exception:
-            if self.local_configured and self.cloud_first:
-                # Final fallback is the locally configured Ollama model.
+            if self.local_configured and (self.cloud_first or manual_paid_cloud):
+                # An explicitly paid request prefers cloud. If cloud fails,
+                # local fallback remains available and is reported in metrics.
                 # This is independent of household cloud-account usage.
                 try:
                     result = await self._try_local(messages, tools)
