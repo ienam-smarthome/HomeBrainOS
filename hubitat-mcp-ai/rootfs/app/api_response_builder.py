@@ -74,16 +74,16 @@ def _guard_exclusive_history_date_claim(
             if not isinstance(event, dict):
                 continue
             stamp = event.get("date")
-            if not isinstance(stamp, str) or not re.match(r"^\\d{4}-\\d{2}-\\d{2}T", stamp):
+            if not isinstance(stamp, str) or not re.match(r"^\d{4}-\d{2}-\d{2}T", stamp):
                 continue
             from datetime import date
             day = date.fromisoformat(stamp[:10]).strftime("%d %B %Y").lstrip("0")
             # Correct the observed failure: "history and logs only cover
             # events from 16 October", when a 12 October command was read.
             denial = re.search(
-                r"(?i)(?:history|logs|evidence)[^\\n.]{0,120}"
-                r"(?:only|exclusively)\\s+(?:cover|covers|contain|contains|include|includes)"
-                r"[^\\n.]{0,90}\\.",
+                r"(?i)(?:history|logs|evidence)[^\n.]{0,120}"
+                r"(?:only|exclusively)\s+(?:cover|covers|contain|contains|include|includes)"
+                r"[^\n.]{0,90}\.",
                 message,
             )
             if denial and day.lower() not in denial.group(0).lower():
@@ -94,7 +94,7 @@ def _guard_exclusive_history_date_claim(
                     message[:denial.start()]
                     + "The checked history includes multiple dates; source coverage is incomplete."
                     + message[denial.end():]
-                    + f"\\n\\n**Additional verified command/history:** {name} at {stamp}, attributed to {producer}."
+                    + f"\n\n**Additional verified command/history:** {name} at {stamp}, attributed to {producer}."
                     + " This does not establish the cause of the requested activation."
                 )
     import datetime
