@@ -16,6 +16,11 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
+from paid_model_routing import (
+    set_original_paid_request,
+    reset_original_paid_request,
+    explicit_paid_request,
+)
 from confirmed_action_coordinator import ConfirmedActionCoordinator
 from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
@@ -3419,6 +3424,9 @@ class UnifiedMCPAgent:
         *,
         session_id: str = "default",
     ) -> AgentOutcome:
+        paid_request_token = set_original_paid_request(user_prompt)
+        if explicit_paid_request():
+            increment_active_metric("paid_model_requested")
         evidence_token = self.evidence.begin()
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(False)
@@ -3477,6 +3485,7 @@ class UnifiedMCPAgent:
             self._mutation_call_seen.reset(mutation_token)
             self.evidence.reset(evidence_token)
             self._choices.reset(choices_token)
+            reset_original_paid_request(paid_request_token)
 
     async def process_user_request(
         self,
