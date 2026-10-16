@@ -616,7 +616,7 @@ def render_unverified_focal_outcome(
                 for when, state in timeline
             )
             archive_note += (
-                "\\n\\n**Archived collector-received sequence ("
+                "\n\n**Archived collector-received sequence ("
                 + (minute.strftime("%d %B %Y %z") if minute else "bounded focal window")
                 + "):** " + events_text + ". "
                 "These are times HomeBrain received reports, not verified "
