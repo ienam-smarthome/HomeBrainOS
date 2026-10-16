@@ -73,6 +73,17 @@ async def test_real_prompt_checks_journal_before_empty_subject_early_stop(
     mcp = HistoricalMCP()
     model = NeverCallAI()
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=model)
+    checked_at_model = []
+
+    async def model_response(messages, schemas):
+        checked_at_model.append([(name, args["tool"]) for name, args in mcp.calls])
+        return {"content": (
+            "SenseCap D1 Settings is a recorded command source; "
+            "the historical physical activation remains unverified. "
+            "The persistent journal has 1 collector-reception-only row(s), "
+            "not source-timestamped switch rows."), "tool_calls": []}
+
+    monkeypatch.setattr(agent.transport, "chat", model_response)
     archive = journal(tmp_path)
     agent.historical_journal = archive
 
@@ -113,13 +124,16 @@ async def test_real_prompt_checks_journal_before_empty_subject_early_stop(
     assert counts["skills_focal_journal_read"] == 1
     assert counts["skills_focal_state_window"] == 1
     assert counts["skills_focal_producer_logs"] == 1
-    assert counts["skills_early_focal_stop"] == 1
-    assert counts.get("model_rounds", 0) == 0
-    assert model.calls == 0
+    assert counts["investigation_read_reflection"] == 1
+    assert checked_at_model
+    assert checked_at_model[0] == [
+        ("hub_read_devices", "hub_list_device_events"),
+        ("hub_read_diagnostics", "hub_get_logs"),
+    ]
     assert "SenseCap D1 Settings" in result.message
-    assert "Persistent Evidence Journal checked" in result.message
+    assert "Historical verification boundary" in result.message
     assert "1 collector-reception-only row(s)" in result.message
-    assert "source-timestamped switch row(s)" in result.message
+    assert "source-timestamped switch rows" in result.message
     assert "14 October" in result.message
     assert "15 October 2026 at 19:55" not in result.message
     journal_receipt = next(
