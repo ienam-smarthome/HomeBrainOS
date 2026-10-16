@@ -36,6 +36,7 @@ class ScopedAppStatusOutcome:
     confirmation_count: int = 0
     route: str = "scoped-app-status"
     investigation_coverage: dict[str, Any] | None = None
+    complete: bool = False
 
 
 async def read_scoped_app_status(mcp: HubitatMCPClient, app_id: int) -> ScopedAppStatusOutcome:
@@ -87,4 +88,4 @@ async def read_scoped_app_status(mcp: HubitatMCPClient, app_id: int) -> ScopedAp
     else:
         message = (f"App {app_id} configuration was retrieved, but this result has no "
                    "interpretable status fields. Enabled state, readiness, motion and countdown remain unverified.")
-    return ScopedAppStatusOutcome(message, evidence=evidence)
+    return ScopedAppStatusOutcome(message, evidence=evidence, complete=bool(snippets))
