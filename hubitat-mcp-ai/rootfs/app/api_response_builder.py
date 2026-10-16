@@ -552,13 +552,27 @@ def build_agent_response(
             )
             for item in rounds
         )
+        guard = metrics.get("paid_guard") if isinstance(metrics.get("paid_guard"), dict) else {}
+        status = str(guard.get("status") or "")
+        guard_reasons = {
+            "disabled": "disabled_in_homebrain",
+            "zero_budget": "local_budget_zero",
+            "round_exceeds_budget": "estimated_round_exceeds_local_budget",
+            "invalid_ledger": "local_reservation_ledger_invalid",
+            "storage_unavailable": "local_reservation_ledger_unavailable",
+            "unknown_model": "unsupported_paid_model",
+            "reserved": "reserved_but_not_used",
+        }
         reason = "used" if paid_used else (
-            "disabled_in_homebrain" if counters.get("paid_routing_disabled") else
-            "local_budget_zero" if counters.get("paid_routing_budget_disabled") else
-            "local_budget_or_ledger_blocked" if counters.get("paid_routing_reservation_blocked") else
-            "no_paid_round"
+            guard_reasons.get(status) or
+            ("disabled_in_homebrain" if counters.get("paid_routing_disabled") else
+             "local_budget_zero" if counters.get("paid_routing_budget_disabled") else
+             "local_budget_or_ledger_blocked" if counters.get("paid_routing_reservation_blocked") else
+             "no_paid_round")
         )
         result["paid_routing"] = {"requested": True, "used": paid_used, "reason": reason}
+        if guard:
+            result["paid_routing"]["local_guard"] = deepcopy(guard)
         if not paid_used:
             result["message"] = (
                 result["message"].rstrip()
