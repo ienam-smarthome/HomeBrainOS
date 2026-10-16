@@ -29,6 +29,7 @@ def is_investigative_question(question: str) -> bool:
                                           "analyse", "analyze", "explain why"))
             and any(word in text for word in ("device", "app", "automation",
                                               "rule", "hub", "sensor", "mqtt",
+                                              "motion", "lockout", "occupancy",
                                               "light", "scheduled", "offline"))
         )
     )
