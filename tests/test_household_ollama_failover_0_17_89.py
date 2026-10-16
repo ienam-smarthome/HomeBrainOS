@@ -187,3 +187,22 @@ async def test_read_timeout_never_automatically_switches_personal_cloud_account(
     with pytest.raises(httpx.ReadTimeout):
         await obj.chat([{"role": "user", "content": "Inspect"}], [])
     assert len(client.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_secondary_account_credentials_never_sent_to_custom_endpoint():
+    client = StatusClient({
+        "Bearer primary-secret": 503,
+        "Bearer private-secondary-key": "ok",
+    })
+    transport = ChatTransport(
+        api_key="primary-secret", model_name="gemma4:31b-cloud",
+        base_url="http://untrusted.example",
+        client=client, household_cloud_failover_enabled=True,
+        household_cloud_accounts=(HouseholdCloudAccount(
+            "adult_b", "private-secondary-key", "Household adult B",
+        ),),
+    )
+    with pytest.raises(RuntimeError, match="official HTTPS endpoint"):
+        await transport.chat([{"role": "user", "content": "test"}], [])
+    assert client.calls == []
