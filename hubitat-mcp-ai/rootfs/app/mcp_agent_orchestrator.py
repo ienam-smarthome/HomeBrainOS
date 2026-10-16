@@ -4197,6 +4197,26 @@ class UnifiedMCPAgent:
                         continue
                     if device_claim_decision.action is DeviceClaimAction.REFUSE:
                         return str(device_claim_decision.message)
+                # Host-owned investigative prefetches may have already read
+                # scoped logs before the model loop. Grounding must consume
+                # the SAME current-request receipts as final synthesis, or it
+                # incorrectly refuses despite a successful log query.
+                if grounding.logs_requested and not grounding.logs_checked:
+                    for receipt in self.evidence.receipts():
+                        if (
+                            not isinstance(receipt, dict)
+                            or receipt.get("success") is not True
+                        ):
+                            continue
+                        gateway = str(receipt.get("tool") or "")
+                        arguments = receipt.get("arguments") or {}
+                        if not isinstance(arguments, dict):
+                            continue
+                        if grounding.is_live_log_call(gateway, arguments):
+                            grounding.record_tool_outcome(
+                                gateway, arguments, success=True,
+                            )
+                            break
                 decision = grounding.decide_no_tool_calls(
                     has_live_evidence=self.evidence.has_live_evidence()
                 )
