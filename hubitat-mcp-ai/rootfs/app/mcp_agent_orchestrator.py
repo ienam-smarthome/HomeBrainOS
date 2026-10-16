@@ -4303,7 +4303,6 @@ class UnifiedMCPAgent:
             if self._investigation_reflection_used.get():
                 # Defence in depth: a discovered tool cannot bypass the read-
                 # only view by using a mutating gateway or structured subcall.
-                from tool_registry import classify_tool_effect
                 forbidden = []
                 for proposed in calls:
                     func = proposed.get("function") or {}
