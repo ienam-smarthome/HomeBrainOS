@@ -32,6 +32,7 @@ from device_state_summary import (
 )
 from health_audit_scheduler import MorningHealthScheduler
 from historical_evidence_journal import HistoricalEvidenceJournal
+from household_ollama_accounts import read_authorized_household_accounts
 from health_audit_service import (
     HealthAuditService,
     is_comprehensive_system_audit_request,
@@ -90,6 +91,9 @@ def load_options() -> dict[str, Any]:
         "ollama_direct_cloud_api_key": "",
         "ollama_direct_cloud_model": "gemma4:31b-cloud",
         "ollama_cloud_model": "gemma4:31b-cloud",
+        "ollama_household_cloud_failover_enabled": False,
+        "ollama_household_accounts_json": "[]",
+        "ollama_cloud_first": False,
         "ollama_local_enabled": False,
         "ollama_local_base_url": "http://localhost:11434",
         "ollama_local_model": "",
@@ -281,6 +285,14 @@ agent = UnifiedMCPAgent(
         or "gemma4:31b-cloud"
     ),
     base_url=str(OPTIONS.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
+    household_cloud_accounts=read_authorized_household_accounts(
+        str(OPTIONS.get("ollama_household_accounts_json") or "[]"),
+        enabled=_bool(OPTIONS.get("ollama_household_cloud_failover_enabled"), False),
+    ),
+    household_cloud_failover_enabled=_bool(
+        OPTIONS.get("ollama_household_cloud_failover_enabled"), False
+    ),
+    cloud_first=_bool(OPTIONS.get("ollama_cloud_first"), False),
     local_base_url=(
         str(OPTIONS.get("ollama_local_base_url") or "")
         if _bool(OPTIONS.get("ollama_local_enabled"), False)
