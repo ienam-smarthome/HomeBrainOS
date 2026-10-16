@@ -381,6 +381,11 @@ class ToolDiscoveryCatalog:
             tool = self._available.get(name)
             if name in selected or tool is None:
                 continue
+            # Management gateways can make harmless schema-probe calls, but
+            # exposing the whole gateway permits arbitrary writes. Never
+            # treat a probe-classified READ as a read-only gateway.
+            if name.startswith(("hub_manage_", "hub_set_")):
+                continue
             if classify_tool_effect(tool, {}).mutates:
                 continue
             selected.append(name)
