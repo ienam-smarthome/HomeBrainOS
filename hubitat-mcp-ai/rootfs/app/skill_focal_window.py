@@ -14,6 +14,7 @@ from causal_evidence_graph import build_causal_evidence_graph
 from skill_decision_summary import causal_skill_conclusion
 from causal_subject_prefetch import switch_transition_from_prompt
 from causal_timeline import _focal_clock_token
+from skill_investigation_followup import render_followup_findings
 
 
 def _time(value: Any) -> datetime | None:
@@ -656,9 +657,11 @@ def render_unverified_focal_outcome(
             "The producer app's scoped execution-log history was not "
             "successfully verified, so its execution remains unverified."
         )
+    followup = render_followup_findings(evidence, str(plan.get("producerAppId") or ""))
     return (
         summary + "\n\n" + check
         + "\n\n" + archive_note + "\n\n" + app_log_note + " " + limitation
+        + ("\n\n" + followup if followup else "")
         + "\n\nHistorical source completeness is unverified. A missing "
           "event in a bounded Hubitat page does not prove the light stayed "
           "off, and a prior command cannot be promoted into verified causation."
