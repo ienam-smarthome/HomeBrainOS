@@ -103,6 +103,8 @@ class RequestMetrics:
         "skills_framework_activated", "skills_topology_plan", "skills_required_source_read", "skills_grounded_answer_selected", "skills_focal_state_window", "skills_focal_producer_logs", "skills_focal_state_rows_retained", "skills_focal_read_failed", "skills_focal_unverified_stop", "skills_early_focal_stop", "skills_focal_journal_read", "skills_focal_journal_on_recovered", "skills_focal_journal_failed",
         "causal_read_round_budget", "causal_read_round_budget_exhausted",
         "ollama_empty_message_recovery", "ollama_empty_message_recovery_failed",
+        "ollama_cloud_failover_eligible", "ollama_authorized_cloud_failover",
+        "ollama_cloud_to_local_fallback",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",
