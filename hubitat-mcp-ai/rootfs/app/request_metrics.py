@@ -15,6 +15,7 @@ class RequestMetricState:
     counters: dict[str, int] = field(default_factory=dict)
     timings_ms: dict[str, int] = field(default_factory=dict)
     outcome: str | None = None
+    model_round_details: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +149,12 @@ class RequestMetrics:
                 max(0, int(value)),
             )
 
+    def record_provider_model(self, model: str, provider: str) -> None:
+        """Record only provider/model per successful HTTP model round."""
+        state = self._state.get()
+        if state is not None and model and provider and len(state.model_round_details) < 64:
+            state.model_round_details.append({"model": str(model)[:100], "provider": provider})
+
     def observe_ms(self, name: str, elapsed_ms: int | float) -> None:
         if name not in self.ALLOWED_TIMINGS:
             raise ValueError(f"Unsupported metric timing: {name}")
@@ -190,6 +197,7 @@ class RequestMetrics:
             "outcome": state.outcome,
             "counters": state.counters,
             "timings_ms": state.timings_ms,
+            "model_round_details": state.model_round_details,
         })
 
     def active_request_identity(self) -> object | None:
@@ -211,6 +219,12 @@ def increment_active_metric(name: str, amount: int = 1) -> None:
         metrics.increment(name, amount)
 
 
+def record_active_provider_model(model: str, provider: str) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.record_provider_model(model, provider)
+
+
 def add_active_metric_ms(name: str, elapsed_ms: int | float) -> None:
     metrics = _ACTIVE_REQUEST_METRICS.get()
     if metrics is not None:
@@ -226,5 +240,5 @@ def observe_active_metric_max(name: str, value: int) -> None:
 __all__ = [
     "RequestMetricState", "RequestMetricToken", "RequestMetrics",
     "active_request_identity", "increment_active_metric", "add_active_metric_ms",
-    "observe_active_metric_max",
+    "observe_active_metric_max", "record_active_provider_model",
 ]
