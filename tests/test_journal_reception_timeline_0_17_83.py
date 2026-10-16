@@ -87,7 +87,7 @@ def test_bounded_collector_projection_preserves_truncation(tmp_path):
     plan = build_focal_source_plan(_evicted(), QUESTION)
     rows = []
     for n in range(16):
-        stamp = f"2026-10-14T18:54:{n:02d}+00:00"
+        stamp = f"2026-10-14T18:54:{n + 40:02d}+00:00"
         row = archive._row(
             "events", {"deviceId": "7805", "name": "switch",
                        "value": "on" if n % 2 else "off"}, stamp, frozenset()
