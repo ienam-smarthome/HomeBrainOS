@@ -36,3 +36,16 @@ def test_lockout_conflict_is_exposed_not_resolved():
     assert conflict["persisted_claim_minutes"] == 30
     assert conflict["summary_claim_minutes"] == 300
     assert "have not been reconciled" in out
+
+def test_real_0_17_97_mixed_absence_claim():
+    sentence = "No `switch=on` or `command` events were recorded for 12 October 2026."
+    fixed, contradictions = reconcile_command_denials(sentence, EVIDENCE)
+    assert len(contradictions) == 1
+    assert "07:25:37" in fixed
+    assert "No `switch=on`" not in fixed
+
+def test_precise_focal_absence_is_not_invalidated():
+    sentence = "No command was recorded at 08:16 on 12 October 2026."
+    fixed, contradictions = reconcile_command_denials(sentence, EVIDENCE)
+    assert fixed == sentence
+    assert not contradictions
