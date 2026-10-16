@@ -3256,6 +3256,7 @@ class UnifiedMCPAgent:
         # Latest-N event pages may have silently evicted an intervening OFF
         # even while an older ON boundary remains in interval history.
         focal_plan = build_focal_source_plan(self.evidence.receipts(), objective)
+        source_limited_baseline: str | None = None
         if focal_plan is not None:
             await self._execute_focal_plan(focal_plan, messages)
         # When exact-window recovery returned no uniquely observed ON, do
@@ -3266,8 +3267,24 @@ class UnifiedMCPAgent:
                 focal_plan, self.evidence.receipts(), objective,
             )
             if missing_focal_answer:
-                increment_active_metric("skills_focal_unverified_stop")
-                return missing_focal_answer
+                if not self._investigation_reflection_used.get():
+                    increment_active_metric("skills_focal_unverified_stop")
+                    return missing_focal_answer
+                # Synthesis may compare newly discovered, permitted evidence,
+                # but it may NOT erase the trusted historical source limit.
+                source_limited_baseline = missing_focal_answer
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "HOST HISTORICAL VERIFICATION BOUNDARY (authoritative "
+                        "current-request evidence, not a new user request):\n"
+                        + missing_focal_answer[:4800]
+                        + "\nExplain any new evidence from the investigative "
+                          "tool round, with competing hypotheses, while "
+                          "preserving that the exact historical ON and "
+                          "physical initiator remain unverified."
+                    ),
+                })
         device_log_args = pending_device_log_read(
             objective, self.evidence.receipts(),
         )
@@ -3301,6 +3318,18 @@ class UnifiedMCPAgent:
         )
         if corrected:
             increment_active_metric("causal_final_output_reconciled")
+        if source_limited_baseline is not None:
+            # An evidence-based final response can improve the explanation,
+            # never silently promote a reception-only state into physical
+            # proof. Keep the limitation explicit even if synthesis omits it.
+            content += (
+                "\n\n**Historical verification boundary:** HomeBrain has "
+                "archived collector-received state reports, but no "
+                "independently verified source-timestamped switch ON in the "
+                "requested minute. Neither current configuration nor a prior "
+                "command proves the physical initiator."
+            )
+            increment_active_metric("investigation_reflection_synthesized")
         return redact_secrets(self._unverified_mutation_guard(content))
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
@@ -4226,7 +4255,6 @@ class UnifiedMCPAgent:
                 # Defence in depth: a discovered tool cannot bypass the read-
                 # only view by using a mutating gateway or structured subcall.
                 from tool_registry import classify_tool_effect
-                from tool_discovery_catalog import SEARCH_TOOL as _SEARCH
                 forbidden = []
                 for proposed in calls:
                     func = proposed.get("function") or {}
