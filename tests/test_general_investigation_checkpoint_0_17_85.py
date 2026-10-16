@@ -1,0 +1,165 @@
+"""General-purpose investigation checkpoint and read-only tool view (0.17.85)."""
+from __future__ import annotations
+
+from pathlib import Path
+import json
+import sys
+
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[1] /
+           "hubitat-mcp-ai" / "rootfs" / "app")
+)
+
+import pytest
+
+from investigation_checkpoint import (
+    is_investigative_question, build_evidence_checkpoint,
+    render_investigation_checkpoint,
+)
+from tool_discovery_catalog import ToolDiscoveryCatalog
+from mcp_client import MCPTool
+
+
+@pytest.mark.parametrize("query", [
+    "Why did the hallway light turn on yesterday? Read-only.",
+    "Investigate why Bedroom 3 Mesh is offline using MQTT evidence.",
+    "Diagnose the motion lockout failure, read-only.",
+    "Analyse scheduled jobs and identify their owners.",
+    "Troubleshoot failed Rule Machine automations.",
+    "Investigate unexpected energy readings on the freezer socket.",
+])
+def test_investigation_intent_across_domains(query):
+    assert is_investigative_question(query)
+
+
+@pytest.mark.parametrize("query", [
+    "Turn on the hallway light",
+    "What is the kitchen temperature?",
+    "Create a rule to turn on a switch",
+    "Switch off the dehumidifier",
+])
+def test_simple_control_or_state_lookup_not_reflection(query):
+    assert not is_investigative_question(query)
+
+
+def test_checkpoint_uses_source_receipts_not_raw_log_messages_or_secrets():
+    data = [
+        {
+            "tool": "hub_read_devices",
+            "sub_tool": "hub_list_device_events",
+            "success": True,
+            "evidence_kind": "authoritative_device_event_history",
+            "arguments": {"tool": "hub_list_device_events",
+                          "args": {"deviceId": "7805",
+                                   "since":"2026-10-14T18:54:00Z",
+                                   "until":"2026-10-14T18:56:00Z"}},
+            "details": {
+                "sourceVerifiedOn": False,
+                "sourceHistoryComplete": False,
+                "returnedRowsInWindow": 0,
+                "events": [{
+                    "message": "password=should-never-be-rendered",
+                }],
+            },
+        },
+        {
+            "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+            "success": True,
+            "evidence_kind": "focal_producer_execution_logs",
+            "arguments": {"tool": "hub_get_logs",
+                          "args":{"appId": "4129", "limit": 50}},
+            "details": {"logCount": 0, "logs": [
+                {"message":"MQTT password: leak-me"}
+            ]},
+        },
+    ]
+    packet = build_evidence_checkpoint(
+        "Investigate why the light turned on",
+        data, available_read_tools=("hub_read_apps_code",),
+    )
+    assert packet["schema"] == "homebrain-evidence-checkpoint/v1"
+    assert packet["sources"][0]["scope"]["deviceId"] == "7805"
+    assert packet["sources"][0]["recorded_count"]["returnedRowsInWindow"] == 0
+    assert "Exact historical state transition not verified" in packet["open_questions"]
+    assert packet["declared_read_tools"] == ["hub_read_apps_code"]
+    exposed = render_investigation_checkpoint(
+        "Investigate why the light turned on", data,
+    )
+    assert "should-never-be-rendered" not in exposed
+    assert "leak-me" not in exposed
+    assert "source-event timestamps" in exposed
+
+
+def _tool(name: str, **annotations):
+    return MCPTool(
+        name=name,
+        description=name,
+        input_schema={"type": "object", "properties": {}},
+        annotations=annotations,
+    )
+
+
+def test_investigator_tool_view_excludes_known_write_gateways():
+    catalog = ToolDiscoveryCatalog([
+        _tool("hub_search_tools", readOnlyHint=True),
+        _tool("hub_get_tool_guide", readOnlyHint=True),
+        _tool("hub_read_devices", readOnlyHint=True),
+        _tool("hub_read_apps_code", readOnlyHint=True),
+        _tool("hub_read_rules", readOnlyHint=True),
+        _tool("hub_read_diagnostics", readOnlyHint=True),
+        _tool("homebrain_device_history", readOnlyHint=True),
+        _tool("hub_manage_rule_machine", mutates=True),
+        _tool("hub_manage_devices", mutates=True),
+        _tool("homebrain_control_devices", effect="routine_write"),
+    ])
+    tools = catalog.activate_investigation_read_view(max_declared=15)
+    assert "hub_read_apps_code" in tools
+    assert "hub_read_rules" in tools
+    assert "hub_read_diagnostics" in tools
+    assert "hub_search_tools" in tools
+    assert "hub_manage_rule_machine" not in tools
+    assert "hub_manage_devices" not in tools
+    assert "homebrain_control_devices" not in tools
+    assert all(tool in catalog.available_names for tool in tools)
+
+
+def test_investigator_tool_view_bounded_no_guessed_name():
+    installed = [_tool("hub_search_tools", readOnlyHint=True)]
+    installed.extend(_tool(f"hub_read_{n}", readOnlyHint=True) for n in range(45))
+    catalog = ToolDiscoveryCatalog(installed)
+    names = catalog.activate_investigation_read_view(max_declared=12)
+    assert len(names) == 12
+    assert names[0] == "hub_search_tools"
+    assert "hub_read_not_installed" not in names
+
+
+def test_duplicate_tool_sources_are_not_independent_corroboration():
+    data = [
+        {
+            "tool": "hub_read_devices", "success": True,
+            "evidence_kind":"authoritative_command_event_history",
+            "arguments": {"tool":"hub_list_device_events",
+                          "args":{"deviceId": "88", "attribute": "command-on"}},
+            "details":{"eventCount": 1},
+        },
+        {
+            "tool": "hub_read_devices", "success": True,
+            "evidence_kind":"authoritative_command_event_history",
+            "arguments": {"tool":"hub_list_device_events",
+                          "args":{"deviceId": "88", "attribute": "command-on"}},
+            "details":{"eventCount": 1},
+        },
+    ]
+    packet = build_evidence_checkpoint("Investigate device 88", data)
+    assert len(packet["sources"]) == 1
+
+
+def test_failed_read_not_silently_treated_as_checked_success():
+    packet = build_evidence_checkpoint("Diagnose the device", [
+        {"tool": "hub_read_devices", "success": False,
+         "evidence_kind": "read_error",
+         "arguments": {"tool": "hub_list_device_events",
+                       "args": {"deviceId": "5"}}}
+    ])
+    assert packet["sources"][0]["checked"] is False
+    assert any("unavailable" in item for item in packet["open_questions"])
