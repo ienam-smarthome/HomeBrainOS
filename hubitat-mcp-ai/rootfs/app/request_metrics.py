@@ -193,12 +193,14 @@ class RequestMetrics:
         state = self._state.get()
         if state is None:
             return {"outcome": None, "counters": {}, "timings_ms": {}}
-        return deepcopy({
+        result = {
             "outcome": state.outcome,
             "counters": state.counters,
             "timings_ms": state.timings_ms,
-            "model_round_details": state.model_round_details,
-        })
+        }
+        if state.model_round_details:
+            result["model_round_details"] = state.model_round_details
+        return deepcopy(result)
 
     def active_request_identity(self) -> object | None:
         """Return the current request state object for request-local coordination."""
