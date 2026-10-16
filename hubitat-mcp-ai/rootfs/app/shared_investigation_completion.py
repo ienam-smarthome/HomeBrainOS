@@ -24,6 +24,7 @@ from telemetry_clock_consistency import (
     render_telemetry_clock_qualification,
 )
 from investigation_policy import is_causal_investigation
+from system_audit_coverage import assess_system_audit_sources
 
 TELEMETRY_KINDS = ("device_state", "device_history", "device_logs")
 CAUSAL_KINDS = ("device_history", "command_history")
@@ -119,10 +120,27 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         ))
     )
     prior = getattr(outcome, "investigation_coverage", None)
+    evidence = list(getattr(outcome, "evidence", []) or [])
+    # System-wide section and performance source checks have different proof
+    # obligations from an individual historical ON/OFF investigation.
+    system_audit = assess_system_audit_sources(
+        str(getattr(outcome, "route", "") or ""), request, evidence,
+    )
+    if system_audit is not None:
+        is_partial = bool(system_audit.pop("partial"))
+        system_audit.pop("missing", None)
+        metrics = _safe_metrics(outcome, partial=is_partial)
+        message = str(getattr(outcome, "message", "") or "")
+        missing = system_audit["sourceCoverage"]["missingSourceKinds"]
+        if missing:
+            message += (
+                "\n\n**Audit source limitations:** These components were not "
+                "checked in this request: " + ", ".join(missing)
+                + ". Do not infer that their devices or automations are healthy."
+            )
+        return _CoverageOutcome(outcome, system_audit, metrics, message)
     if goal is None and not causal and not isinstance(prior, dict):
         return outcome
-
-    evidence = list(getattr(outcome, "evidence", []) or [])
     if goal is not None:
         domain = goal.domain
         required = _known_source_requirements(domain)
