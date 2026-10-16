@@ -131,7 +131,7 @@ async def test_non_deep_dated_incident_runs_exact_reads_before_any_model(monkeyp
     assert counters["investigation_read_reflection"] == 1
     assert counters["skills_focal_state_window"] == 1
     assert counters["skills_focal_producer_logs"] == 1
-    assert "Historical verification boundary" in outcome.message
+    assert "Historical ON not independently verified" in outcome.message
     assert "returned 0 record(s)" in outcome.message
     assert "initiated outside Hubitat" not in outcome.message
     assert [
