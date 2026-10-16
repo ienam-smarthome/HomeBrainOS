@@ -78,6 +78,16 @@ class AutomationStatusService:
         """
 
         value = " ".join(str(prompt).casefold().split())
+        # A named automation's event/history/timeline is not a request to
+        # enumerate the entire installed app and Rule Machine inventory.
+        # Qualify the word "show": it is not sufficient evidence of list intent.
+        targeted_history = bool(
+            re.search(r"\\b(?:history|historical|events?|timeline|logs?|activity|executions?)\\b", value)
+            and re.search(r"\\b(?:automation|automations|rule|rules|app|apps)\\b", value)
+            and not re.search(r"\\b(?:all|every|entire|whole)\\s+(?:automations|rules|apps)\\b", value)
+        )
+        if targeted_history:
+            return False
         if is_automation_runtime_diagnostic(prompt):
             return False
         if any(word in value for word in ("enable ", "disable ", "pause ", "resume ")):
