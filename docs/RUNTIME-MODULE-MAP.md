@@ -84,6 +84,7 @@ The repository drift test compares this table directly with the live directory. 
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
 | `evidence_source_guard.py` | Corrects final claims that contradict successful current-turn source availability. |
 | `evidence_claim_calibrator.py` | Cross-route factual-confidence and wording checks against bounded history and device-scoped watchdog receipts; deduplicates redundant standalone summaries while preserving observations and source limits. |
+| `system_audit_coverage.py` | Route-matched read-only whole-hub audit section/source contracts, separating bounded log inventory and performance evidence from individual device causal-history proofs. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round and injects the current-turn evidence ledger. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
 | `health_audit_scheduler.py` | Runs the stored read-only system health audit on a configurable morning schedule using hub-local time. |
