@@ -20,8 +20,9 @@ MODEL_RATES = {
     "glm-5.3": (1.40, 4.40),
 }
 _COMPLEX = re.compile(
-    r"\b(why|root.cause|investigat|diagnos|correlat|compare|conflict|"
-    r"inconsisten|audit|optimis|optimiz|reason|timeline|evidence)\b", re.I
+    r"\b(why|root.cause|investigat\w*|diagnos\w*|correlat\w*|compar\w*|"
+    r"conflict\w*|inconsisten\w*|audit|optimis\w*|optimiz\w*|reason\w*|"
+    r"timeline|evidence)\b", re.I
 )
 _MEDIUM = re.compile(r"\b(rule|automation|schedule|history|log|event|sensor)\b", re.I)
 
@@ -42,6 +43,7 @@ def choose_paid_model(messages: list[dict], mode: str) -> str | None:
     if mode == "manual":
         if not re.search(r"\b(use paid model|premium model|paid investigation)\b", question, re.I):
             return None
+        return "deepseek-v4-pro"
     # Avoid spending on routine writes even if a user asks "why" rhetorically.
     if re.search(r"^\s*(turn |switch |set |lock |unlock |block |allow )", question, re.I):
         return None
