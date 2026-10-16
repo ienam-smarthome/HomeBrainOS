@@ -145,6 +145,9 @@ from skill_topology import render_topology_plan
 from skill_source_completion import pending_device_log_read
 from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
 from skill_investigation_followup import execute_unverified_next_reads
+from investigation_checkpoint import (
+    is_investigative_question, render_investigation_checkpoint,
+)
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -564,6 +567,12 @@ class UnifiedMCPAgent:
             "hubitat_request_class", default="live-read"
         )
         self._current_user_objective: ContextVar[str] = ContextVar("homebrain_current_user_objective", default="")
+        self._investigation_reflection_used: ContextVar[bool] = ContextVar(
+            "homebrain_investigation_reflection_used", default=False
+        )
+        self._investigation_baseline: ContextVar[tuple[str, int] | None] = ContextVar(
+            "homebrain_investigation_baseline", default=None
+        )
         self._choices: ContextVar[list[str] | None] = ContextVar(
             "hubitat_choices", default=None
         )
@@ -3250,8 +3259,23 @@ class UnifiedMCPAgent:
         # Latest-N event pages may have silently evicted an intervening OFF
         # even while an older ON boundary remains in interval history.
         focal_plan = build_focal_source_plan(self.evidence.receipts(), objective)
+        baseline_snapshot = self._investigation_baseline.get()
+        source_limited_baseline: str | None = (
+            baseline_snapshot[0]
+            if self._investigation_reflection_used.get() and baseline_snapshot
+            else None
+        )
         if focal_plan is not None:
-            await self._execute_focal_plan(focal_plan, messages)
+            already_checked_focal = any(
+                r.get("evidence_kind") in {
+                    "focal_archived_state_history", "focal_exact_state_history"
+                } and str((r.get("details") or {}).get("deviceId") or "")
+                    == str(focal_plan.get("deviceId") or "")
+                for r in self.evidence.receipts()
+                if isinstance(r, dict) and r.get("success") is True
+            )
+            if not (self._investigation_reflection_used.get() and already_checked_focal):
+                await self._execute_focal_plan(focal_plan, messages)
         # When exact-window recovery returned no uniquely observed ON, do
         # not enter a long model loop that treats the command as physical
         # causation or substitutes newer intervals for the dated event.
@@ -3260,8 +3284,24 @@ class UnifiedMCPAgent:
                 focal_plan, self.evidence.receipts(), objective,
             )
             if missing_focal_answer:
-                increment_active_metric("skills_focal_unverified_stop")
-                return missing_focal_answer
+                if not self._investigation_reflection_used.get():
+                    increment_active_metric("skills_focal_unverified_stop")
+                    return missing_focal_answer
+                # Synthesis may compare newly discovered, permitted evidence,
+                # but it may NOT erase the trusted historical source limit.
+                source_limited_baseline = missing_focal_answer
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "HOST HISTORICAL VERIFICATION BOUNDARY (authoritative "
+                        "current-request evidence, not a new user request):\n"
+                        + missing_focal_answer[:4800]
+                        + "\nExplain any new evidence from the investigative "
+                          "tool round, with competing hypotheses, while "
+                          "preserving that the exact historical ON and "
+                          "physical initiator remain unverified."
+                    ),
+                })
         device_log_args = pending_device_log_read(
             objective, self.evidence.receipts(),
         )
@@ -3295,6 +3335,35 @@ class UnifiedMCPAgent:
         )
         if corrected:
             increment_active_metric("causal_final_output_reconciled")
+        if source_limited_baseline is not None:
+            # Never discard stronger, already verified receipt-derived facts
+            # when a model's optional follow-up cannot retrieve more history.
+            # A new synthesis is supplementary, not a replacement for the
+            # trusted historical baseline.
+            new_evidence = (
+                baseline_snapshot is not None
+                and any(
+                    isinstance(row, dict)
+                    and row.get("success") is True
+                    and row.get("evidence_kind") not in {
+                        "focal_archived_state_history",
+                        "focal_exact_state_history",
+                    }
+                    for row in self.evidence.receipts()[baseline_snapshot[1]:]
+                )
+            )
+            content = (
+                source_limited_baseline + "\n\n**Additional investigation:** " + content
+                if new_evidence and content.strip() else source_limited_baseline
+            )
+            content += (
+                "\n\n**Historical verification boundary:** HomeBrain has "
+                "archived collector-received state reports, but no "
+                "independently verified source-timestamped switch ON in the "
+                "requested minute. Neither current configuration nor a prior "
+                "command proves the physical initiator."
+            )
+            increment_active_metric("investigation_reflection_synthesized")
         return redact_secrets(self._unverified_mutation_guard(content))
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
@@ -3341,6 +3410,8 @@ class UnifiedMCPAgent:
         )
         class_token = self._request_class.set("tool-driven")
         objective_token = self._current_user_objective.set(str(user_prompt))
+        reflection_token = self._investigation_reflection_used.set(False)
+        baseline_token = self._investigation_baseline.set(None)
         try:
             message = await self._process_user_request(
                 user_prompt,
@@ -3381,6 +3452,8 @@ class UnifiedMCPAgent:
                 investigation_coverage=coverage,
             )
         finally:
+            self._investigation_baseline.reset(baseline_token)
+            self._investigation_reflection_used.reset(reflection_token)
             self._current_user_objective.reset(objective_token)
             self._request_class.reset(class_token)
             self._mutation_requested_by_user.reset(mutation_request_token)
@@ -3666,6 +3739,7 @@ class UnifiedMCPAgent:
             or lockout_intent
             or is_automation_runtime_diagnostic(user_prompt)
             or is_integration_runtime_diagnostic(user_prompt)
+            or contract is not None
         )
         set_reasoning_profile(
             "deep" if investigative_request and wants_deep_investigation(user_prompt)
@@ -3719,10 +3793,40 @@ class UnifiedMCPAgent:
                         user_prompt,
                     )
                     if early_outcome:
-                        increment_active_metric("skills_focal_unverified_stop")
-                        increment_active_metric("skills_early_focal_stop")
-                        increment_active_metric("investigative_finalization")
-                        return early_outcome
+                        if (
+                            is_investigative_question(user_prompt)
+                            and not self._mutation_requested_by_user.get()
+                        ):
+                            # A partial result must not preempt the existing
+                            # model-led, bounded evidence selection loop.
+                            # Replace the model-facing registry with installed,
+                            # safely classified READ tools only.
+                            read_tools = catalog.activate_investigation_read_view(
+                                max_declared=self.tool_limit
+                            )
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "HOST VERIFIED PARTIAL ANSWER (do not overwrite "
+                                    "source-clock and causation boundaries):\n"
+                                    + early_outcome[:4200] + "\n\n"
+                                    + render_investigation_checkpoint(
+                                        user_prompt, self.evidence.receipts(),
+                                        available_read_tools=read_tools,
+                                    )
+                                ),
+                            })
+                            tools = catalog.schemas()
+                            self._investigation_baseline.set(
+                                (early_outcome, len(self.evidence.receipts()))
+                            )
+                            self._investigation_reflection_used.set(True)
+                            increment_active_metric("investigation_read_reflection")
+                        else:
+                            increment_active_metric("skills_focal_unverified_stop")
+                            increment_active_metric("skills_early_focal_stop")
+                            increment_active_metric("investigative_finalization")
+                            return early_outcome
 
             if prefetched_subject_key:
                 investigative_subject_history_key = prefetched_subject_key
@@ -3754,7 +3858,7 @@ class UnifiedMCPAgent:
                         deterministic_answer,
                         transition=prefetched_transition or "on",
                     )
-                    if not deep_causal_request:
+                    if not deep_causal_request and not self._investigation_reflection_used.get():
                         increment_active_metric(
                             "causal_deterministic_finalization"
                         )
@@ -3871,7 +3975,7 @@ class UnifiedMCPAgent:
                     if not deep_causal_request:
                         increment_active_metric("investigative_finalization")
                         return await self._final_answer(messages)
-            if causal_prefetch == "empty":
+            if causal_prefetch == "empty" and not self._investigation_reflection_used.get():
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
 
@@ -3924,12 +4028,17 @@ class UnifiedMCPAgent:
             and not self._mutation_requested_by_user.get()
         )
         active_round_budget = (
-            min(self.max_tool_rounds, 6)
+            min(self.max_tool_rounds, 3)
+            if self._investigation_reflection_used.get()
+            else min(self.max_tool_rounds, 6)
             if scoped_causal_round_budget else self.max_tool_rounds
         )
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
         for _ in range(active_round_budget):
+            if self._investigation_reflection_used.get() and not causal_completion_mode:
+                catalog.activate_investigation_read_view(max_declared=self.tool_limit)
+                tools = catalog.schemas()
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
@@ -3950,6 +4059,25 @@ class UnifiedMCPAgent:
                         f"Machine proposal validation failed. Exact reason: {reason} "
                         f"Rejected payload: {rejected}"
                     )
+                # A model that selects no new source must not replace a
+                # receipt-grounded partial investigation with an unrelated
+                # generic refusal (for example, a fresh-log retry when the
+                # historical app-log window was already checked).
+                baseline_snapshot = self._investigation_baseline.get()
+                if self._investigation_reflection_used.get() and baseline_snapshot:
+                    new_successful_read = any(
+                        isinstance(item, dict)
+                        and item.get("success") is True
+                        and item.get("effect") == "read"
+                        and item.get("evidence_kind") not in {
+                            "focal_archived_state_history",
+                            "focal_exact_state_history",
+                        }
+                        for item in self.evidence.receipts()[baseline_snapshot[1]:]
+                    )
+                    if not new_successful_read:
+                        increment_active_metric("skills_focal_unverified_stop")
+                        return baseline_snapshot[0]
                 answer = str(assistant.get("content") or "")
                 resolver_used = any(
                     json.loads(signature)[0] == _LOCAL_RESOLVE_TOOL
@@ -4088,6 +4216,31 @@ class UnifiedMCPAgent:
                         continue
                     if device_claim_decision.action is DeviceClaimAction.REFUSE:
                         return str(device_claim_decision.message)
+                # Host-owned investigative prefetches may have already read
+                # scoped logs before the model loop. Grounding must consume
+                # the SAME current-request receipts as final synthesis, or it
+                # incorrectly refuses despite a successful log query.
+                if (
+                    getattr(grounding, "logs_requested", False)
+                    and not getattr(grounding, "logs_checked", False)
+                    and callable(getattr(grounding, "is_live_log_call", None))
+                    and callable(getattr(grounding, "record_tool_outcome", None))
+                ):
+                    for receipt in self.evidence.receipts():
+                        if (
+                            not isinstance(receipt, dict)
+                            or receipt.get("success") is not True
+                        ):
+                            continue
+                        gateway = str(receipt.get("tool") or "")
+                        arguments = receipt.get("arguments") or {}
+                        if not isinstance(arguments, dict):
+                            continue
+                        if grounding.is_live_log_call(gateway, arguments):
+                            grounding.record_tool_outcome(
+                                gateway, arguments, success=True,
+                            )
+                            break
                 decision = grounding.decide_no_tool_calls(
                     has_live_evidence=self.evidence.has_live_evidence()
                 )
@@ -4099,6 +4252,54 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
+
+                # General evidence-sufficiency checkpoint: across device
+                # telemetry, motion, scheduler or other declared domain plans,
+                # an important source never queried is an opportunity for one
+                # more targeted read, not proof the question is unanswerable.
+                # Checked-but-empty and truly unavailable sources are not
+                # automatic retry triggers.
+                if (
+                    contract is not None
+                    and not self._investigation_reflection_used.get()
+                    and not self._mutation_requested_by_user.get()
+                ):
+                    assessment = assess_investigation(
+                        contract, self.evidence.receipts()
+                    )
+                    missing_unchecked = any(
+                        item.get("necessary") is True
+                        and item.get("state") == "not-checked"
+                        for item in assessment.get("requirements") or []
+                    )
+                    if missing_unchecked:
+                        read_tools = catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit
+                        )
+                        if read_tools:
+                            self._investigation_reflection_used.set(True)
+                            increment_active_metric(
+                                "investigation_general_evidence_retry"
+                            )
+                            messages.extend([
+                                assistant,
+                                {"role": "user", "content": (
+                                    render_investigation_checkpoint(
+                                        user_prompt, self.evidence.receipts(),
+                                        available_read_tools=read_tools,
+                                    )
+                                    + "\nHOST MISSING SOURCE REQUIREMENTS: "
+                                    + json.dumps(
+                                        assessment.get("nextMissingSources") or [],
+                                        ensure_ascii=False,
+                                    )
+                                    + "\nFind the most decisive feasible "
+                                      "read-only source; do not repeat already "
+                                      "checked sources or invent tool leaves."
+                                )},
+                            ])
+                            tools = catalog.schemas()
+                            continue
 
                 # A semantic investigation declares source *classes*, not
                 # conclusions. Check actual read receipts before allowing the
@@ -4182,6 +4383,37 @@ class UnifiedMCPAgent:
                 return self._unverified_mutation_guard(
                     str(assistant.get("content") or "Done.")
                 )
+            if self._investigation_reflection_used.get():
+                # Defence in depth: a discovered tool cannot bypass the read-
+                # only view by using a mutating gateway or structured subcall.
+                forbidden = []
+                for proposed in calls:
+                    func = proposed.get("function") or {}
+                    name = str(func.get("name") or "")
+                    arguments = func.get("arguments") or {}
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except (ValueError, TypeError):
+                            arguments = {}
+                    if name.startswith(("hub_manage_", "hub_set_")) or classify_tool_effect(
+                        catalog.available_tool(name),
+                        arguments if isinstance(arguments, dict) else {},
+                    ).mutates:
+                        forbidden.append(name)
+                if forbidden:
+                    increment_active_metric("investigation_write_blocked")
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST READ-ONLY ENFORCEMENT: A proposed tool "
+                            "is write-capable or unavailable. No write was "
+                            "executed. Continue only with available read "
+                            "tools, or state the evidence limitation."
+                        ),
+                    })
+                    continue
+
             if causal_completion_mode:
                 allowed_completion_tools = set(catalog.causal_provenance_names())
                 disallowed_completion_calls = [

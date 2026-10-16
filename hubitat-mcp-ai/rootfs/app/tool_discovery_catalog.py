@@ -26,6 +26,8 @@ from tool_registry import (
     LOCAL_QUERY_TOOL,
     LOCAL_RESOLVE_TOOL,
     LOCAL_WEATHER_TOOL,
+    ToolEffect,
+    classify_tool_effect,
 )
 
 
@@ -362,6 +364,35 @@ class ToolDiscoveryCatalog:
             self._declared[name] = tool
             added.append(tool)
         return added
+
+    def activate_investigation_read_view(self, *, max_declared: int = 20) -> tuple[str, ...]:
+        """Expose a bounded set of actually installed read-only MCP capabilities.
+
+        Unlike the provenance-only view, this works for any investigative
+        domain: devices, automations, logs, scheduler, energy and others.
+        The effect classifier is the authority; neither names nor model hints
+        can upgrade a management/write tool into a safe read.
+        """
+        limit = max(1, min(32, int(max_declared)))
+        selected: list[str] = []
+        # Keep already-visible tools first so the model does not lose its
+        # discovered target context. Add other installed read sources next.
+        for name in [*self._declared, *self._available]:
+            tool = self._available.get(name)
+            if name in selected or tool is None:
+                continue
+            # Management gateways can make harmless schema-probe calls, but
+            # exposing the whole gateway permits arbitrary writes. Never
+            # treat a probe-classified READ as a read-only gateway.
+            if name.startswith(("hub_manage_", "hub_set_")):
+                continue
+            if classify_tool_effect(tool, {}).mutates:
+                continue
+            selected.append(name)
+            if len(selected) >= limit:
+                break
+        self.replace_declared(selected)
+        return tuple(selected)
 
     @staticmethod
     def _causal_provenance_read_tool(tool: MCPTool) -> bool:
