@@ -469,6 +469,9 @@ class UnifiedMCPAgent:
         household_cloud_accounts: tuple[Any, ...] = (),
         household_cloud_failover_enabled: bool = False,
         cloud_first: bool = False,
+        paid_routing_enabled: bool = False,
+        paid_routing_mode: str = "hybrid",
+        paid_budget_usd: float = 6.50,
         tool_limit: int = 48,
         max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
@@ -502,6 +505,9 @@ class UnifiedMCPAgent:
             household_cloud_accounts=household_cloud_accounts,
             household_cloud_failover_enabled=household_cloud_failover_enabled,
             cloud_first=cloud_first,
+            paid_routing_enabled=paid_routing_enabled,
+            paid_routing_mode=paid_routing_mode,
+            paid_budget_usd=paid_budget_usd,
         )
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
