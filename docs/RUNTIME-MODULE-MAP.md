@@ -88,6 +88,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_sensor_candidate_priority.py` | Ranks capability-verified sensor candidates referenced by automations before generic room candidates, without treating configured sources as historical proof. |
 | `typed_device_history_evidence.py` | Extracts ID-scoped mixed command/state events from direct Hubitat history receipts and renders bounded diagnostic findings without inferred hardware outcomes. |
 | `recorded_telemetry_freshness.py` | Timestamps bounded device-attributed event history and stored age samples; distinguishes emitted attributes from proven physical connectivity. |
+| `telemetry_clock_consistency.py` | Reconciles as-of device-state metadata, reported data age and stored lastSeen timestamps without claiming physical telemetry or power; flags contradictory clocks in shared API investigation output. |
 | `causal_initiator_provenance_guard.py` | Applies source-bound checks to model and repaired causal attribution claims; unknown initiating actors cannot become likely external automations merely because command history is bounded. |
 | `causal_fail_closed_summary.py` | Provides a conservative observed-event fallback when the model's causal validation repair still fails. |
 | `general_evidence_completion.py` | Checks required investigative source classes against successful, scoped read receipts and reports missing classes without promoting source checks to proof. |
