@@ -20,6 +20,18 @@ _ABSENCE = re.compile(
     r"\b[^\n.!?]{0,100}\b(?:on|for|from|dated)\s+"
     r"(?P<iso>\d{4}-\d{2}-\d{2})",
 )
+
+# Additional natural-language form seen in a live failing investigation:
+# "No switch=on or command events were recorded for 12 October 2026".
+# Sentence must deny commands *for an entire date*, not at the focal time.
+_MIXED_ABSENCE = re.compile(
+    r"(?i)\bno\s+(?:\x60?switch\s*=\s*on\x60?\s+or\s+)?"
+    r"\x60?commands?\x60?\s+(?:events?\s+)?"
+    r"(?:were|was)?\s*(?:recorded|observed|identified|found)\s+"
+    r"(?:on|for|from|dated)\s+(?:the\s+date\s+of\s+)?"
+    r"(?P<date>\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{4}-\d{2}-\d{2})"
+)
+
 _MONTHS = {m.lower(): n for n, m in enumerate(
     ("January", "February", "March", "April", "May", "June",
      "July", "August", "September", "October", "November", "December"), 1
@@ -106,4 +118,5 @@ def reconcile_command_denials(message: str, evidence: list[dict[str, Any]]) -> t
             "This does not establish that the separate requested device-state transition occurred."
         )
     corrected = _ABSENCE.sub(replacement, str(message or ""))
+    corrected = _MIXED_ABSENCE.sub(replacement, corrected)
     return corrected, contradictions
