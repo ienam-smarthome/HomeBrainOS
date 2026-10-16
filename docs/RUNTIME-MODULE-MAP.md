@@ -47,6 +47,7 @@ The repository drift test compares this table directly with the live directory. 
 | `decision_claim_reconciliation.py` | Cross-domain typed time quantities, provenance and decision-versus-effect stages from bounded, privacy-scrubbed log excerpts; explicitly reports duration conflicts without treating textual assertions as verified enforcement. |
 | `investigation_intelligence.py` | Cross-domain evidence requirements, source completeness and claim boundaries for historical lockouts, stale MQTT devices and scheduler job ownership; completion is based on observed time-linked evidence, not tool-call success. |
 | `investigation_checkpoint.py` | Cross-domain, privacy-bounded source receipt ledger and read-only iterative evidence-selection checkpoint for unfinished investigations; avoids domain-specific device assumptions and repeated sources. |
+| `incident_grounded_fallback.py` | Returns a bounded, source-timestamped partial report for the single incident actually read when an open-ended selection drifts onto an unsupported device; never fabricates an initiator. |
 | `evidence_gateway_contract.py` | Read-only MCP envelope normalisation and required-field preflight; preserves device/time scope and rejects incomplete requests without Hubitat calls; never rewrites writes. |
 | `causal_hypothesis_evaluation.py` | Evaluates typed OFF actor hypotheses and configured timer feasibility without inferring executions. |
 | `causal_investigation_engine.py` | Ranks cross-integration causal candidates using cached topology, bounded histories, directional timestamps, and stated coverage limits. |
@@ -88,6 +89,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_sensor_candidate_priority.py` | Ranks capability-verified sensor candidates referenced by automations before generic room candidates, without treating configured sources as historical proof. |
 | `typed_device_history_evidence.py` | Extracts ID-scoped mixed command/state events from direct Hubitat history receipts and renders bounded diagnostic findings without inferred hardware outcomes. |
 | `recorded_telemetry_freshness.py` | Timestamps bounded device-attributed event history and stored age samples; distinguishes emitted attributes from proven physical connectivity. |
+| `device_watchdog_evidence.py` | Extracts source-ID-matched repeated watchdog no-data warnings from bounded current-turn log receipts, without treating reconnect attempts as successful delivery. |
 | `telemetry_clock_consistency.py` | Reconciles as-of device-state metadata, reported data age and stored lastSeen timestamps without claiming physical telemetry or power; flags contradictory clocks in shared API investigation output. |
 | `causal_initiator_provenance_guard.py` | Applies source-bound checks to model and repaired causal attribution claims; unknown initiating actors cannot become likely external automations merely because command history is bounded. |
 | `causal_fail_closed_summary.py` | Provides a conservative observed-event fallback when the model's causal validation repair still fails. |
