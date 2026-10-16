@@ -40,3 +40,26 @@ def describe_ollama_rate_limit(error: httpx.HTTPStatusError) -> tuple[str, str |
 
 
 __all__ = ["describe_ollama_rate_limit"]
+
+# Generic HTTP 429 cannot distinguish free quota from rate/concurrency limits.
+# Only explicit structured rejection codes can trigger a paid escalation.
+_FREE_EXHAUSTED_CODES = frozenset({
+    "free_tier_quota_exhausted", "free_quota_exhausted",
+    "free_allowance_exhausted",
+})
+
+def confirmed_free_allowance_exhaustion(error: BaseException) -> bool:
+    if not isinstance(error, httpx.HTTPStatusError):
+        return False
+    response = error.response
+    if response is None or response.status_code not in (402, 429):
+        return False
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    detail = payload.get("error")
+    code = detail.get("code") if isinstance(detail, dict) else payload.get("code")
+    return isinstance(code, str) and code.strip().lower() in _FREE_EXHAUSTED_CODES

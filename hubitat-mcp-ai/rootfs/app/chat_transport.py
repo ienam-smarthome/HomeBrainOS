@@ -14,6 +14,7 @@ from household_ollama_accounts import (
 )
 from request_metrics import increment_active_metric
 from paid_model_routing import PaidCreditGuard
+from provider_rate_limit_policy import confirmed_free_allowance_exhaustion
 
 
 logger = logging.getLogger("HomeBrainOS.ChatTransport")
@@ -92,6 +93,7 @@ class ChatTransport:
         paid_routing_mode: str = "hybrid",
         paid_budget_usd: float = 6.50,
         paid_deep_model: str = "deepseek-v4-pro",
+        free_quota_paid_fallback_enabled: bool = False,
     ) -> None:
         self.api_key = str(api_key or "").strip()
         self.model_name = str(model_name or "").strip()
@@ -116,6 +118,7 @@ class ChatTransport:
         )
         self.household_cloud_failover_enabled = bool(household_cloud_failover_enabled)
         self.cloud_first = bool(cloud_first)
+        self.free_quota_paid_fallback_enabled = bool(free_quota_paid_fallback_enabled)
         self.paid_credit_guard = PaidCreditGuard(
             enabled=paid_routing_enabled, mode=paid_routing_mode,
             budget_usd=paid_budget_usd, deep_model=paid_deep_model,
@@ -211,6 +214,25 @@ class ChatTransport:
                     increment_active_metric("ollama_authorized_cloud_failover")
                 return result
             except Exception as exc:
+                # Only a structured pre-stream free-tier exhaustion response
+                # qualifies. No generic 429, timeout, auth error or key rotation.
+                if (
+                    index == 0 and paid_model is None
+                    and self.free_quota_paid_fallback_enabled
+                    and self.paid_credit_guard.enabled
+                    and self.base_url == "https://ollama.com"
+                    and confirmed_free_allowance_exhaustion(exc)
+                ):
+                    fallback = await self.paid_credit_guard.select_fallback(messages, tools)
+                    if fallback:
+                        logger.info("Explicit free allowance exhausted; attempting budgeted paid model")
+                        increment_active_metric("ollama_free_quota_paid_escalation")
+                        return await self._chat_round(
+                            messages, tools, base_url=self.base_url,
+                            model_name=fallback, api_key=self.api_key,
+                            timeout=httpx.Timeout(self.timeout_seconds),
+                            read_timeout=self.timeout_seconds, keep_alive=None,
+                        )
                 # No 429/account-quota bypass. Never replay a request after a
                 # response timeout or partial stream. Only pre-response
                 # connect failures and 502/503/504 are failover candidates.

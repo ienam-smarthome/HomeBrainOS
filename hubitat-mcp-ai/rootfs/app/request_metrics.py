@@ -105,7 +105,7 @@ class RequestMetrics:
         "causal_read_round_budget", "causal_read_round_budget_exhausted",
         "ollama_empty_message_recovery", "ollama_empty_message_recovery_failed",
         "ollama_cloud_failover_eligible", "ollama_authorized_cloud_failover",
-        "ollama_cloud_to_local_fallback",
+        "ollama_cloud_to_local_fallback", "ollama_free_quota_paid_escalation",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",

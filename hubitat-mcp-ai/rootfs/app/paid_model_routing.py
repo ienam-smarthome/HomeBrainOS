@@ -68,14 +68,19 @@ class PaidCreditGuard:
         self.path = Path(ledger_path)
         self._lock = asyncio.Lock()
 
+    async def select_fallback(self, messages: list[dict], tools: list[dict]) -> str | None:
+        """Reserve credit for an explicitly rejected free-tier request."""
+        return await self._reserve(messages, tools, self.deep_model)
+
     async def select(self, messages: list[dict], tools: list[dict]) -> str | None:
-        if not self.enabled or self.budget_usd <= 0:
-            return None
         model = choose_paid_model(messages, self.mode)
-        if not model:
-            return None
         if model == "deepseek-v4-pro":
             model = self.deep_model
+        return await self._reserve(messages, tools, model)
+
+    async def _reserve(self, messages: list[dict], tools: list[dict], model: str | None) -> str | None:
+        if not self.enabled or self.budget_usd <= 0 or not model:
+            return None
         # Pessimistic character/token ratio of 1:1 for the complete model
         # packet, including tools. Allow 8,192 output tokens per round.
         # This is a reservation, NOT a confirmed invoice amount.
