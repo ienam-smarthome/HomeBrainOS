@@ -33,6 +33,11 @@ _NO_HISTORY_DATA = re.compile(
 
 
 def _participating_model(metrics: dict[str, Any], model: str) -> str | None:
+    details = metrics.get("model_round_details")
+    if isinstance(details, list) and details:
+        last = details[-1]
+        if isinstance(last, dict) and isinstance(last.get("model"), str):
+            return last["model"]
     counters = metrics.get("counters")
     if not isinstance(counters, dict):
         return str(model)
