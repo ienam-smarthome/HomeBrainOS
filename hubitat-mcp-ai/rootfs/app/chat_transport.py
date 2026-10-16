@@ -91,6 +91,7 @@ class ChatTransport:
         paid_routing_enabled: bool = False,
         paid_routing_mode: str = "hybrid",
         paid_budget_usd: float = 6.50,
+        paid_deep_model: str = "deepseek-v4-pro",
     ) -> None:
         self.api_key = str(api_key or "").strip()
         self.model_name = str(model_name or "").strip()
@@ -117,7 +118,7 @@ class ChatTransport:
         self.cloud_first = bool(cloud_first)
         self.paid_credit_guard = PaidCreditGuard(
             enabled=paid_routing_enabled, mode=paid_routing_mode,
-            budget_usd=paid_budget_usd,
+            budget_usd=paid_budget_usd, deep_model=paid_deep_model,
         )
         self.client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
