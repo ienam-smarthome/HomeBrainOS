@@ -80,9 +80,10 @@ def test_audit_reports_conflict_as_unverified_not_automatic_online():
         "parallel_page_max_concurrent": 2,
     }
     text = render_comprehensive_system_audit(snapshot, None)
-    assert "Status/activity conflict" in text
+    assert "Status/activity metadata overlap" in text
     assert "10 seconds" in text
-    assert "stale health flag" in text
+    assert "timestamp's origin was not checked" in text
+    assert "not independent evidence of recovery" in text
     assert "fresh projection verified=True" in text
     assert "offset=milliseconds" in text
     assert "50=10111ms" in text
