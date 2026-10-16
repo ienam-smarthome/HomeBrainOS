@@ -58,6 +58,45 @@ def _guard_exclusive_history_date_claim(
     Correct only the false scope summary, not a narrower claim that the exact
     focal event at a particular time was missing.
     """
+    # A bounded evidence summary must not erase a separately recorded command.
+    # This only corrects coverage claims and never treats the command as proof
+    # of the requested focal activation.
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        rows = details.get("events") or details.get("commandEvents")
+        if not isinstance(rows, list):
+            continue
+        for event in rows:
+            if not isinstance(event, dict):
+                continue
+            stamp = event.get("date")
+            if not isinstance(stamp, str) or not re.match(r"^\\d{4}-\\d{2}-\\d{2}T", stamp):
+                continue
+            from datetime import date
+            day = date.fromisoformat(stamp[:10]).strftime("%d %B %Y").lstrip("0")
+            # Correct the observed failure: "history and logs only cover
+            # events from 16 October", when a 12 October command was read.
+            denial = re.search(
+                r"(?i)(?:history|logs|evidence)[^\\n.]{0,120}"
+                r"(?:only|exclusively)\\s+(?:cover|covers|contain|contains|include|includes)"
+                r"[^\\n.]{0,90}\\.",
+                message,
+            )
+            if denial and day.lower() not in denial.group(0).lower():
+                name = str(event.get("name") or "device event")
+                who = event.get("producedBy") or {}
+                producer = str(who.get("label") or "unknown source") if isinstance(who, dict) else "unknown source"
+                return (
+                    message[:denial.start()]
+                    + "The checked history includes multiple dates; source coverage is incomplete."
+                    + message[denial.end():]
+                    + f"\\n\\n**Additional verified command/history:** {name} at {stamp}, attributed to {producer}."
+                    + " This does not establish the cause of the requested activation."
+                )
     import datetime
     dates: set[str] = set()
     for receipt in evidence:
