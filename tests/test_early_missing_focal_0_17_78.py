@@ -87,6 +87,16 @@ async def test_non_deep_dated_incident_runs_exact_reads_before_any_model(monkeyp
     mcp = HistoricalMCP()
     ai = NeverCallAI()
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+    observed_at_model = []
+
+    async def model_response(messages, schemas):
+        observed_at_model.append([(name, args["tool"]) for name, args in mcp.calls])
+        return {"content": (
+            "SenseCap D1 Settings issued the recorded command, but the exact "
+            "historical physical ON and initiator remain unverified. Producer "
+            "logs returned 0 record(s)."), "tool_calls": []}
+
+    monkeypatch.setattr(agent.transport, "chat", model_response)
 
     async def recorded_prefetch(self, *_args, **_kwargs):
         for row in _evicted():
@@ -113,12 +123,15 @@ async def test_non_deep_dated_incident_runs_exact_reads_before_any_model(monkeyp
     outcome = await agent.process_user_request_result(REAL_QUESTION)
     counters = outcome.metrics["counters"]
 
-    assert ai.calls == 0
-    assert counters.get("model_rounds", 0) == 0
-    assert counters["skills_early_focal_stop"] == 1
+    assert observed_at_model
+    assert observed_at_model[0] == [
+        ("hub_read_devices", "hub_list_device_events"),
+        ("hub_read_diagnostics", "hub_get_logs"),
+    ]
+    assert counters["investigation_read_reflection"] == 1
     assert counters["skills_focal_state_window"] == 1
     assert counters["skills_focal_producer_logs"] == 1
-    assert "Historical ON not independently verified" in outcome.message
+    assert "Historical verification boundary" in outcome.message
     assert "returned 0 record(s)" in outcome.message
     assert "initiated outside Hubitat" not in outcome.message
     assert [
