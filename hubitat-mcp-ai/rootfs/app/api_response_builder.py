@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from investigation_evidence_ledger import reconcile_command_denials
 import re
 from typing import Any
 
@@ -487,6 +488,7 @@ def build_agent_response(
         evidence,
     )
     message = _guard_exclusive_history_date_claim(message, evidence)
+    message, command_contradictions = reconcile_command_denials(message, evidence)
     message, _ = guard_location_correlation_claim(message, evidence)
     # Re-apply graph-backed action ownership, log absence and sensor-order
     # invariants at the final serialization boundary. The host-verified
@@ -526,6 +528,7 @@ def build_agent_response(
         "automation_items": list(getattr(outcome, "automation_items", []) or []),
         "evidence": evidence,
         "metrics": deepcopy(metrics),
+        "evidence_validation": {"contradictions_corrected": command_contradictions} if command_contradictions else {"contradictions_corrected": []},
         "metric_rows": present_request_metrics(metrics),
         "outcome_presentation": deepcopy(outcome_presentation),
         "model": _participating_model(metrics, model),
