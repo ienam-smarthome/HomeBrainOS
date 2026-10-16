@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.17.95**.
+Current add-on version: **0.17.96**.
 
 ## Architecture
 
@@ -446,5 +446,5 @@ performed by this feature.
 Quota fallback (opt-in): `ollama_free_quota_paid_fallback_enabled: true` only escalates when an official Ollama HTTP 402/429 error contains an explicit machine-readable free-tier exhaustion code. Generic 429, text-only messages, timeouts and streaming errors do not trigger paid retries. Paid credit must already be enabled and the estimated reservation budget must permit the attempt. Current Ollama error-schema support is unverified; when the vendor supplies no qualifying code, no automatic paid escalation occurs. Keep auto-reload OFF.
 
 
-### Actual model reporting (0.17.95)
+### Actual model reporting (0.17.96)
 API `model` reports the last successful Ollama model round, not the configured default. `metrics.model_round_details` records successful request-local provider/model pairs without credentials, prompts or tool contents. Simple status/look-up queries avoid paid model escalation unless an explicit analysis/investigation requires it.
