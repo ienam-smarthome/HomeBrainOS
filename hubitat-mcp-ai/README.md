@@ -210,6 +210,42 @@ ha_tts_media_stream: ""
 
 The add-on uses authenticated Home Assistant ingress. The direct host-port mapping is disabled by default. Do not expose the direct port unless another authenticated access-control layer protects it.
 
+## Multiple adult household Ollama accounts (0.17.89; opt-in)
+
+HomeBrain can be configured with **up to three secondary Ollama Cloud identities**, owned by distinct consenting adults, *only if Ollama has explicitly authorised the intended shared use*. These settings are disabled by default. They are for service resilience, **not** for bypassing exhausted usage credits or account limits. Ollama's documented shared-credit model is its Team plan; check https://ollama.com/terms and https://ollama.com/pricing before enabling cross-person key use.
+
+New configuration:
+
+| Add-on option | Default | Meaning |
+| --- | --- | --- |
+| \`ollama_household_cloud_failover_enabled\` | \`false\` | Master permission for eligible secondary accounts. |
+| \`ollama_household_accounts_json\` | \`[]\` | Masked **password-type** add-on setting with up to three separately owned account entries. |
+| \`ollama_cloud_first\` | \`false\` | Set \`true\` for cloud primary, authorised cloud failover and local model as a final fallback. Default continues the existing local-first behaviour. |
+
+Example **placeholder** JSON for the masked Home Assistant option (replace the dummy token **inside Home Assistant**, never in GitHub issues, chats, logs, screenshots or source code):
+
+\`\`\`json
+[
+  {
+    "id": "adult_b",
+    "owner_label": "Authorised adult account B",
+    "api_key": "REPLACE_WITH_ACCOUNT_B_PRIVATE_TOKEN",
+    "enabled": true,
+    "adult_owner_confirmed": true,
+    "owner_consented_to_homebrain": true,
+    "provider_shared_use_authorized": true
+  }
+]
+\`\`\`
+
+The three approval flags are **independent assertions**, not proof of legal or provider permission. Do not mark \`provider_shared_use_authorized\` true without actual provider authorisation for the intended cross-person use. Keep it disabled while awaiting clarification. Under-18 household members must not supply accounts.
+
+**Routing:** With cloud-first enabled, use the existing primary cloud key. On **connect failure before request submission or HTTP 502/503/504**, try each consented and provider-authorised secondary at most once. On **HTTP 429**, auth failures (401/403), post-send timeouts, invalid JSON, interrupted streaming or incomplete responses, **never rotate to another personal account**. If the configured local Ollama model is available, it can then run as an independent fallback; otherwise show the original error. Local-first remains the default when \`ollama_cloud_first=false\`.
+
+**Privacy:** Secondary keys are kept in add-on password settings, never sent to the browser, MCP, Hubitat or evidence journal; the model request itself does go to the selected cloud provider account. The owner must knowingly consent to receiving the shared household HomeBrain prompts, which may include device names, occupancy summaries and other household information. Account IDs/labels are configuration metadata, not authentication or user-identity verification. Do not use shared cloud keys to host separate personal/private conversations. For individual user privacy, a future authenticated user-to-account routing feature would be required.
+
+**Observability:** The per-request technical counters track eligible failover, successful secondary use and cloud-to-local fallback without exposing the keys. No long-term token accounting or account-balance API is implemented. Failure is fail-closed if configuration is invalid; verify local access and vendor terms before activation.
+
 ## Optional local Ollama fallback
 
 If you run `ollama serve` on a machine on your LAN, HomeBrain can try that model first and fall back to Ollama Online when it is unavailable:
