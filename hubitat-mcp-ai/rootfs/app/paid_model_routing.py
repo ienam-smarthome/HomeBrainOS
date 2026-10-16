@@ -59,9 +59,11 @@ class PaidCreditGuard:
 
     def __init__(self, *, enabled: bool, mode: str = "hybrid",
                  budget_usd: float = 6.50,
+                 deep_model: str = "deepseek-v4-pro",
                  ledger_path: str = "/data/ollama_paid_usage.json"):
         self.enabled = bool(enabled)
         self.mode = mode
+        self.deep_model = deep_model if deep_model in {"deepseek-v4-pro", "glm-5.3"} else "deepseek-v4-pro"
         self.budget_usd = max(0.0, float(budget_usd))
         self.path = Path(ledger_path)
         self._lock = asyncio.Lock()
@@ -72,6 +74,8 @@ class PaidCreditGuard:
         model = choose_paid_model(messages, self.mode)
         if not model:
             return None
+        if model == "deepseek-v4-pro":
+            model = self.deep_model
         # Pessimistic character/token ratio of 1:1 for the complete model
         # packet, including tools. Allow 8,192 output tokens per round.
         # This is a reservation, NOT a confirmed invoice amount.
