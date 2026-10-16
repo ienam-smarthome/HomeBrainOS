@@ -223,6 +223,15 @@ ollama_local_timeout_seconds: 12
 ollama_local_keep_alive_seconds: 120
 ```
 
+## Browse retained journal records (0.17.82)
+
+The Historical Journal dashboard includes a **Browse historical records** section.
+Enter the exact numeric Hubitat device ID (e.g. the ID shown in recent observations), choose a local calendar date and optionally an event attribute. **Search records** displays up to 50 events per page; **Previous** and **Next** move through bounded result pages. Each row shows event/value, source type, and whether the timestamp came from the Hubitat source or collector reception. Records are read-only and app-log message bodies are not shown.
+
+The underlying `/api/evidence-journal/events` endpoint also accepts `offset` (default 0), returns `has_more` and `next_offset`, and retains the prior `truncated`, `coverage_complete: false` and `gaps` semantics. Pagination can shift when the collector adds/removes rows, so consecutive pages are not an immutable historical snapshot. No automatic whole-hub archive search or backfill is added.
+
+Historical focal-window planning additionally requires that the source command and requested incident date match; a previous day's source cannot supply the requested day's timezone offset.
+
 ## Persistent historical evidence journal (experimental, opt-in)
 
 Version 0.17.25 adds a bounded local SQLite journal for live Hubitat event frames.
