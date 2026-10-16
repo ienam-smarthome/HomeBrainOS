@@ -549,10 +549,14 @@ class HistoricalEvidenceJournal:
                "source_time,observed_at,received_at,timestamp_basis,message "
                "FROM journal_events WHERE " + " AND ".join(clauses)
                + " ORDER BY observed_at ASC LIMIT ?")
-        params.append(max(1, min(MAX_ROWS_PER_QUERY, int(limit))))
+        requested_limit = max(1, min(MAX_ROWS_PER_QUERY, int(limit)))
+        # Fetch one extra row to expose result-window truncation.
+        params.append(requested_limit + 1)
         with self._connect() as db:
             db.row_factory = sqlite3.Row
-            events = [dict(row) for row in db.execute(sql, params)]
+            fetched = [dict(row) for row in db.execute(sql, params)]
+            truncated = len(fetched) > requested_limit
+            events = fetched[:requested_limit]
             gaps = [dict(zip(("stream", "started_at", "ended_at", "reason"), row))
                     for row in db.execute(
                         "SELECT stream,started_at,ended_at,reason FROM journal_gaps "
@@ -560,6 +564,7 @@ class HistoricalEvidenceJournal:
                         "ORDER BY started_at DESC LIMIT 100", (end, start))]
         return {
             "events": events, "count": len(events), "gaps": gaps,
+            "truncated": truncated, "limit": requested_limit,
             "coverage_complete": False,
             "empty_means_inactivity": False,
             "timestamps": "source time if timezone-aware, otherwise collector reception time",
