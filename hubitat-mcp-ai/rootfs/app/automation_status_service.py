@@ -88,6 +88,9 @@ class AutomationStatusService:
         )
         if targeted_history:
             return False
+        # An explicit app ID selects one target, not the full population.
+        if re.search(r"\bapp\s*#?\s*\d{3,7}\b", value):
+            return False
         if is_automation_runtime_diagnostic(prompt):
             return False
         if any(word in value for word in ("enable ", "disable ", "pause ", "resume ")):
