@@ -91,6 +91,37 @@ def _dedupe_repeated_summary_lines(text: str) -> tuple[str, bool]:
     updated = re.sub(r"\n{3,}", "\n\n", updated).rstrip()
     return updated, True
 
+def _dedupe_nested_restatements(message: str) -> tuple[str, bool]:
+    """Only collapse an immediately nested bullet repeating its parent tail.
+
+    Whole-level checklists, tables, evidence lists and distinct child points
+    remain untouched. Nested bullets must be semantically identical after
+    removing their parent heading and Markdown markers.
+    """
+    lines = message.splitlines(keepends=True)
+    output: list[str] = []
+    reduced = False
+
+    def body(line: str) -> str:
+        return re.sub(r"[*_\x60]", "", re.sub(r"^\s*[-*+]\s+", "", line)).strip()
+
+    for line in lines:
+        current = line.strip()
+        indent = len(line) - len(line.lstrip(" "))
+        if (output and indent > len(output[-1]) - len(output[-1].lstrip(" "))
+                and re.match(r"^[-*+]\s+", current)):
+            parent = output[-1].strip()
+            if re.match(r"^[-*+]\s+", parent):
+                outer = body(parent)
+                inner = body(line)
+                parent_tail = outer.split(":", 1)[-1].strip()
+                if len(inner) >= 80 and parent_tail == inner:
+                    reduced = True
+                    continue
+        output.append(line)
+    return ("".join(output), reduced)
+
+
 
 def calibrate_supported_conclusions(
     message: str,
@@ -106,12 +137,13 @@ def calibrate_supported_conclusions(
     draft = str(message or "")
     labels: list[str] = []
     draft, reduced = _dedupe_repeated_summary_lines(draft)
-    if reduced:
+    draft, nested_reduced = _dedupe_nested_restatements(draft)
+    if reduced or nested_reduced:
         labels.append("duplicate_summary_removed")
     if _partial_history(receipts):
         confident = re.compile(
-            r"(?im)^\s*(?:\*{0,2}Confidence\*{0,2})\s*:\s*"
-            r"(?:\*{0,2})High(?:\*{0,2})[^\n]*$"
+            r"(?im)^\s*\*{0,2}Confidence:?\*{0,2}:?\s*"
+            r"\*{0,2}High\*{0,2}[^\n]*$"
         )
         draft, count = confident.subn(
             "**Confidence:** The returned observations support the stated "
@@ -148,7 +180,56 @@ def calibrate_supported_conclusions(
             if n:
                 labels.append("partial_history_causal_scope")
     if domain == "device_telemetry" and _sampled_watchdog_no_data(receipts):
+        # An actual watchdog no-data warning establishes only the watchdog's
+        # monitored stream. It cannot certify a live MQTT broker session or
+        # the exact last device-originated physical telemetry packet.
         for expression, replacement in (
+            (
+                r"(?im)^\*\*Strongest Supported Cause:\*\*[^\n]*$",
+                "**Strongest supported observation:** Repeated watchdog "
+                "no-data warnings; the underlying physical, MQTT-broker "
+                "and driver causes remain unverified.",
+            ),
+            (
+                r"(?i)\bcomplete cessation of telemetry updates\b",
+                "prolonged absence of telemetry as reported by the watchdog",
+            ),
+            (
+                r"(?i)\bthis proves the MQTT session is active\b",
+                "this establishes only that Hubitat reports mqttStatus "
+                "as connected; active broker-session delivery was not verified",
+            ),
+            (
+                r"(?i)\bthe transport layer successfully re-established "
+                r"a connection\b",
+                "the recorded mqttStatus attribute changed to connected "
+                "(not independent proof of end-to-end connectivity)",
+            ),
+            (
+                r"(?i)\btransport layer restored\b",
+                "Hubitat MQTT status reported connected; broker session "
+                "not independently verified",
+            ),
+            (
+                r"(?i)\bthe (?:Tasmota )?device is not publishing its "
+                r"telemetry \([^)]*\) to the broker\b",
+                "upstream device publication to the broker is not "
+                "verified by these Hubitat records",
+            ),
+            (
+                r"(?i)\blast successful telemetry\b",
+                "stored lastSeen metadata (not a verified source packet)",
+            ),
+            (
+                r"(?i)\bthe last time the device successfully reported state\b",
+                "the driver's recorded lastSeen value; source-side packet "
+                "receipt has not been verified",
+            ),
+            (
+                r"(?i)\bthe watchdog is firing in a tight loop\b",
+                "the watchdog is firing repeatedly within the sampled logs",
+            ),
+
             (
                 r"(?i)\bcomplete telemetry failure\b",
                 "prolonged watchdog-reported absence of device data",
