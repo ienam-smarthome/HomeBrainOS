@@ -686,6 +686,14 @@ def build_agent_response(
     coverage = getattr(outcome, "investigation_coverage", None)
     if isinstance(coverage, dict):
         result["investigation_coverage"] = deepcopy(coverage)
+        if (
+            coverage.get("domain") == "source_code"
+            and coverage.get("analysisAnswerVerified") is False
+        ):
+            # A complete Groovy read and a syntactically successful HTTP call
+            # must not be presented as a completed source investigation.
+            # Only this explicit synthesis failure changes API success.
+            result["success"] = False
     return result
 
 
