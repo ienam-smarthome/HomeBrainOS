@@ -7,6 +7,7 @@ No provider call is made unless the request expressly selects Claude.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -17,6 +18,13 @@ from request_metrics import record_active_provider_model
 
 _ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 _ANTHROPIC_VERSION = "2023-06-01"
+_ANTHROPIC_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_TOOL_ERROR_POSITION = re.compile(r"(?<![a-z])tools(?:\\.|\\[)(\\d+)(?:\\]|\\.)")
+
+
+class ClaudeToolSchemaError(ValueError):
+    """Local provider-format rejection; no request or Hubitat action was sent."""
+
 
 # Never echo provider error bodies. Anthropic error messages may include
 # snippets of model-input instructions, tool arguments, or private content.
@@ -86,12 +94,25 @@ def describe_anthropic_http_error(
     else:
         detail = "Claude API request failed."
 
+    # Link a provider-reported index to the safe, locally declared tool name.
+    # Never expose the provider error text or the tool's input schema.
+    tool_context = ""
+    if status == 400 and reason == "tool-schema":
+        match = _TOOL_ERROR_POSITION.search(hint)
+        names = getattr(exc, "_homebrain_claude_tool_names", ())
+        if match and isinstance(names, tuple):
+            position = int(match.group(1))
+            if 0 <= position < len(names):
+                known_name = names[position]
+                if isinstance(known_name, str) and _ANTHROPIC_TOOL_NAME.fullmatch(known_name):
+                    tool_context = f" tool={known_name}; tool_index={position};"
     retry_after = str(response.headers.get("retry-after") or "").strip()
     retry_after = retry_after if retry_after.isdigit() and int(retry_after) <= 86400 else None
     # Do not treat the Anthropic response as a Hubitat or MCP error.
     safe = (
         f"{detail} (Anthropic HTTP {status}; type={error_type}; "
-        f"category={reason}). No Ollama/Free fallback was attempted."
+        f"category={reason};{tool_context.rstrip(';')}). "
+        "No Ollama/Free fallback was attempted."
     )
     return status, safe, retry_after, error_type, reason
 
@@ -110,25 +131,51 @@ def _tool_calls(value: Any) -> list[dict[str, Any]]:
 
 
 def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert declared Ollama/OpenAI tool schemas without broadening them."""
-    translated = []
-    for row in tools:
+    """Check provider-facing tool roots without weakening Hubitat constraints.
+
+    Do NOT silently replace a malformed MCP schema with an empty permissive
+    object: that would misrepresent the tool and invite invalid/mutating calls.
+    Keep the existing source schema and the already-declared tool set intact.
+    A rejected local declaration is reported before any billable API request.
+    """
+    translated: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, row in enumerate(tools):
         if not isinstance(row, dict) or row.get("type") != "function":
             continue
         fn = row.get("function")
         if not isinstance(fn, dict):
-            continue
+            raise ClaudeToolSchemaError(
+                f"Claude tool declaration {index} has no function object; "
+                "no provider request was sent."
+            )
         name = fn.get("name")
-        if not isinstance(name, str) or not name.strip():
-            continue
+        if not isinstance(name, str) or not _ANTHROPIC_TOOL_NAME.fullmatch(name):
+            raise ClaudeToolSchemaError(
+                f"Claude tool declaration {index} has an invalid tool name; "
+                "no provider request was sent."
+            )
+        if name in seen:
+            raise ClaudeToolSchemaError(
+                f"Claude tool declaration {index} repeats an existing tool name; "
+                "no provider request was sent."
+            )
+        seen.add(name)
         parameters = fn.get("parameters")
-        schema = parameters if isinstance(parameters, dict) else {
-            "type": "object", "properties": {},
-        }
+        if (not isinstance(parameters, dict)
+                or parameters.get("type") != "object"
+                or not isinstance(parameters.get("properties", {}), dict)
+                or not isinstance(parameters.get("required", []), list)
+                or any(not isinstance(x, str) for x in parameters.get("required", []))):
+            raise ClaudeToolSchemaError(
+                f"Claude tool {name} at index {index} has an invalid root "
+                "input_schema; no provider request was sent."
+            )
+        # Preserve the original constraints, nested schemas and required list.
         translated.append({
             "name": name,
-            "description": str(fn.get("description") or "")[:8192],
-            "input_schema": schema,
+            "description": str(fn.get("description") or name)[:8192],
+            "input_schema": parameters,
         })
     return translated
 
@@ -270,7 +317,16 @@ class AnthropicMessagesTransport:
             json=request,
             timeout=httpx.Timeout(max(3.0, self.timeout)),
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Attach only safe schema names to this exception. The API error
+            # presenter may map the provider's tools.N index without logging
+            # or returning Anthropic's raw validation message.
+            exc._homebrain_claude_tool_names = tuple(
+                row["name"] for row in tool_declarations
+            )
+            raise
         payload = response.json()
         if not isinstance(payload, dict) or not isinstance(payload.get("content"), list):
             raise RuntimeError("Claude API response was missing structured content")
