@@ -26,7 +26,7 @@ _DENY_OP = re.compile(r"write|save|install|modify|edit|update|delete|upload|impo
 _SYMBOLS = ("motionOffLockoutMinutes", "getMotionLockoutDurationMinutes",
             "startMotionLockoutForDevice", "startMotionLockoutForAllLights",
             "isDeviceMotionLockedOut", "state.motionLockout", "initialize")
-MAX_CHUNKS = 4
+MAX_CHUNKS = 16
 MAX_CHARS = 250000
 
 
@@ -52,7 +52,7 @@ def source_code_id(config: dict[str, Any], app_id: str) -> str | None:
     if not isinstance(app, dict) or str(app.get("id") or app.get("appId") or "") != app_id:
         return None
     for item in _containers(app):
-        for key in ("codeId", "appCodeId", "sourceCodeId", "appCodeID"):
+        for key in ("codeId", "appCodeId", "sourceCodeId", "appCodeID", "appTypeId"):
             value = item.get(key)
             if isinstance(value, (str, int)) and str(value).isdigit():
                 return str(value)
@@ -133,6 +133,7 @@ def _excerpts(body: str) -> list[str]:
 class GroovySourceReport:
     message: str
     retrieved: bool = False
+    complete: bool = False
 
 
 class GroovySourceService:
@@ -188,6 +189,26 @@ class GroovySourceService:
             self._record("hub_read_apps_code", "hub_get_app_config",
                          leaf_args, began, ok, "Read installed app metadata")
         code_id = source_code_id(config, app_id)
+        if not code_id and "hub_read_apps_code" in names:
+            began = time.monotonic()
+            leaf = {"scope": "instances"}
+            try:
+                result = await self.mcp.call_tool("hub_read_apps_code", {
+                    "tool": "hub_list_apps", "args": leaf,
+                })
+                ok = tool_succeeded(result)
+                inventory = result.data if ok else {}
+                apps = inventory.get("apps", []) if isinstance(inventory, dict) else []
+                for app in apps if isinstance(apps, list) else []:
+                    if isinstance(app, dict):
+                        code_id = source_code_id({"app": app}, app_id)
+                        if code_id:
+                            break
+            except Exception:
+                ok = False
+            self._record("hub_read_apps_code", "hub_list_apps",
+                         leaf, began, ok,
+                         "Read installed app identity and verified code type")
         operations = _source_operations(tools, discovery)
         if not operations:
             return GroovySourceReport(
@@ -209,14 +230,21 @@ class GroovySourceService:
                   "metadata. No guessed code ID was used."
             )
         gateway, operation = viable
-        base_args = {"codeId": code_id} if code_id else {"appId": app_id}
+        if operation == "hub_get_source":
+            if not code_id:
+                return GroovySourceReport(title + "\n- No verified app-to-code ID; refusing a guessed source read.")
+            base_args = {"id": code_id, "type": "app"}
+        else:
+            base_args = {"codeId": code_id} if code_id else {"appId": app_id}
         body = ""
         total: int | None = None
         version: Any = None
         offset = 0
         for index in range(MAX_CHUNKS):
             leaf_args = dict(base_args)
-            if index > 0:
+            if operation == "hub_get_source":
+                leaf_args.update({"offset": offset, "length": 20000})
+            elif index > 0:
                 leaf_args.update({"offset": offset, "limit": 65536})
             began = time.monotonic()
             try:
@@ -239,11 +267,22 @@ class GroovySourceService:
             if len(body) >= MAX_CHARS:
                 break
             next_offset = meta.get("nextOffset")
-            if isinstance(next_offset, int) and next_offset > offset:
-                offset = next_offset
-                continue
+            actual_offset = meta.get("offset", offset)
+            if not isinstance(actual_offset, int) or actual_offset != offset:
+                body = body[:-len(chunk)]
+                break
+            expected_next = offset + len(chunk)
+            if (isinstance(next_offset, int) and next_offset > offset
+                    and next_offset != expected_next):
+                # Server skip/truncation: do not certify disjoint pages as full.
+                break
+            if total is not None and len(body) >= total:
+                break
             if total is not None and len(body) < total:
-                offset = len(body)
+                offset = expected_next
+                continue
+            if isinstance(next_offset, int) and next_offset == expected_next:
+                offset = expected_next
                 continue
             break
         if not body:
@@ -276,7 +315,7 @@ class GroovySourceService:
         if not complete:
             lines.append("Do not assert that a function is absent or a state write "
                          "never occurs without complete implementation coverage.")
-        return GroovySourceReport("\n\n".join(lines), bool(excerpts))
+        return GroovySourceReport("\n\n".join(lines), bool(excerpts), complete)
 
 
 __all__ = ["requested_groovy_app_id", "source_code_id",
