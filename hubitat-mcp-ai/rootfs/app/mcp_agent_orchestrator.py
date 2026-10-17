@@ -51,6 +51,7 @@ from motion_lockout_investigation import (
     collected_explicit_focal_ready_for_synthesis,
 )
 from targeted_lockout_config import read_current_lockout_config
+from groovy_source_investigation import GroovySourceService, requested_groovy_app_id
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
@@ -204,6 +205,7 @@ from tool_registry import (
     LOCAL_ACTIVE_SWITCHES_TOOL as _LOCAL_ACTIVE_SWITCHES_TOOL,
     LOCAL_CONTROL_TOOL as _LOCAL_CONTROL_TOOL,
     LOCAL_DEVICE_HISTORY_TOOL as _LOCAL_DEVICE_HISTORY_TOOL,
+    LOCAL_GROOVY_SOURCE_TOOL as _LOCAL_GROOVY_SOURCE_TOOL,
     LOCAL_DEVICE_INVENTORY_TOOL as _LOCAL_DEVICE_INVENTORY_TOOL,
     LOCAL_FILTER_TOOL as _LOCAL_FILTER_TOOL,
     LOCAL_HOME_SNAPSHOT_TOOL as _LOCAL_HOME_SNAPSHOT_TOOL,
@@ -585,6 +587,7 @@ class UnifiedMCPAgent:
                 _LOCAL_QUERY_TOOL: self._query_devices,
                 _LOCAL_RESOLVE_TOOL: self._resolve_device,
                 _LOCAL_DEVICE_HISTORY_TOOL: self.device_history.history,
+                _LOCAL_GROOVY_SOURCE_TOOL: self._read_groovy_source,
                 _LOCAL_DEVICE_INVENTORY_TOOL: self._device_inventory,
                 _LOCAL_LOCATION_EVENTS_TOOL: self.device_history.location_events,
                 _LOCAL_WEATHER_TOOL: self._weather_snapshot,
@@ -3547,6 +3550,24 @@ class UnifiedMCPAgent:
             return base
         return base + "\n" + secondary
 
+    async def _read_groovy_source(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Read-only evidence tool selected by the model; no host finalizer."""
+        app_id = str(arguments.get("appId") or "").strip()
+        if not re.fullmatch(r"[0-9]{2,7}", app_id):
+            data = {"success": False, "sourceRetrieved": False,
+                    "error": "appId must be a numeric installed application ID"}
+        else:
+            report = await GroovySourceService(self.mcp, self.evidence).inspect(app_id)
+            data = {"success": True, "sourceRetrieved": report.retrieved,
+                    "report": report.message,
+                    "coverage": "partial-or-unverified" if not report.retrieved
+                                else "excerpts-returned; verify full-source claim"}
+        return MCPToolResult(
+            name=_LOCAL_GROOVY_SOURCE_TOOL, arguments=dict(arguments),
+            raw={}, text=json.dumps(data, ensure_ascii=False), data=data,
+            is_error=False,
+        )
+
     async def _process_user_request(
         self,
         user_prompt: str,
@@ -3569,6 +3590,14 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+        groovy_source_app = requested_groovy_app_id(user_prompt)
+        source_investigation = groovy_source_app is not None
+        if source_investigation:
+            # Expose a safe evidence capability; the model decides whether
+            # to call it and how to investigate. No deterministic final answer.
+            catalog.replace_declared([
+                *catalog.declared_names, _LOCAL_GROOVY_SOURCE_TOOL,
+            ])
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
             pending_names = list(dict.fromkeys(name for name, _ in pending.actions))
@@ -3663,7 +3692,7 @@ class UnifiedMCPAgent:
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
-        known_history_path = uses_known_history_evidence_path(user_prompt)
+        known_history_path = (not source_investigation and uses_known_history_evidence_path(user_prompt))
         if known_history_path:
             increment_active_metric("history_known_tool_fastpath")
         if (
@@ -3710,13 +3739,32 @@ class UnifiedMCPAgent:
             system_prompt += "\n\n" + skill_guidance
         if task_plan is not None:
             system_prompt += "\n\n" + task_plan.instruction()
-        contract = plan_investigation(user_prompt)
+        contract = None if source_investigation else plan_investigation(user_prompt)
         if contract is not None:
             system_prompt += (
                 "\n\n" + render_investigation_plan(contract)
                 + "\nPrioritise targeted historical evidence and test the "
                   "actual goal; current configuration or successful reads "
                   "alone cannot establish a past execution."
+            )
+        if source_investigation:
+            system_prompt += (
+                "\n\nINSTALLED GROOVY IMPLEMENTATION INVESTIGATION\n"
+                "This is a source-code investigation, not a Rule Machine "
+                "device-health report. You are responsible for the plan, "
+                "selecting safe read tools, weighing alternatives and "
+                "synthesizing an evidence-backed answer. Installed app ID "
+                f"{groovy_source_app} is NOT necessarily the user-code ID. "
+                "Use homebrain_read_groovy_source, hub_search_tools and "
+                "hub_get_tool_guide where helpful. Check the live tool "
+                "description and schema; never invent a source sub-operation. "
+                "If a reader is missing, consider another read-only route "
+                "that the live MCP catalog positively advertises. "
+                "Do not inspect unrelated sensors unless the question "
+                "explicitly involves them. Never infer Groovy source behavior "
+                "from configuration alone. A claim of full-source coverage "
+                "requires verified chunk completeness. Report missing "
+                "evidence plainly. Never write to Hubitat."
             )
         if capability_discovery:
             system_prompt += (
@@ -3778,16 +3826,17 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
-        lockout_intent = is_motion_lockout_investigation(user_prompt)
+        lockout_intent = not source_investigation and is_motion_lockout_investigation(user_prompt)
         lockout_prefetch = (
             await prefetch_motion_lockout(
                 self, user_prompt, catalog=catalog, messages=messages
             )
             if lockout_intent else False
         )
-        causal_request = is_causal_investigation(user_prompt)
+        causal_request = not source_investigation and is_causal_investigation(user_prompt)
         investigative_request = (
-            is_history_investigation(user_prompt)
+            source_investigation
+            or is_history_investigation(user_prompt)
             or lockout_intent
             or is_automation_runtime_diagnostic(user_prompt)
             or is_integration_runtime_diagnostic(user_prompt)
