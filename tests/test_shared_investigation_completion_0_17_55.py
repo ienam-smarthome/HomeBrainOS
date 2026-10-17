@@ -374,3 +374,36 @@ def test_competing_explanations_do_not_appear_without_model_proposal():
         observed, "Why is this device offline?",
     ))
     assert "Competing explanations (provisional" not in result["message"]
+
+
+def test_final_comparison_preserves_unverified_upstream_packet_proof_boundary():
+    prior = {
+        "domain": "device_telemetry",
+        "evidenceComplete": False,
+        "hypothesisComparisonStatus": "model-proposed-source-checks-not-causal-verdicts",
+        "hypothesisComparisons": [
+            {"candidate": "Endpoint is silent on MQTT",
+             "discriminating_question": "Did the broker receive a device packet?",
+             "source_kind": "device_logs",
+             "required_origin": "upstream",
+             "origin_state": "upstream-origin-not-independently-verified",
+             "source_state": "source-class-checked-verdict-unverified",
+             "hypothesis_verdict": "unverified"},
+            {"candidate": "Hubitat driver cached an old status",
+             "discriminating_question": "Is device state stale?",
+             "source_kind": "device_state",
+             "required_origin": "hubitat",
+             "source_state": "source-class-checked-verdict-unverified",
+             "hypothesis_verdict": "unverified"},
+        ],
+    }
+    observed = build_observed_agent_outcome(
+        outcome(coverage=prior),
+        {"outcome": "unresolved", "counters": {}, "timings_ms": {}},
+    )
+    result = serialize(apply_shared_investigation_completion(
+        observed, "Compare competing explanations for offline MQTT device. Read-only.",
+    ))
+    assert "independent upstream evidence has NOT been verified" in result["message"]
+    assert "discriminator and hypothesis still unverified" in result["message"]
+    assert result["metrics"]["outcome"] == "unresolved"
