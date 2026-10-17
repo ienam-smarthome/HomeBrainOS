@@ -25,9 +25,13 @@ _READ_OP = re.compile(r"^hub_(?:get|read|list)_[a-z0-9_]*(?:source|code)[a-z0-9_
 _DENY_OP = re.compile(r"write|save|install|modify|edit|update|delete|upload|import|set_|create", re.I)
 _SYMBOLS = ("motionOffLockoutMinutes", "getMotionLockoutDurationMinutes",
             "startMotionLockoutForDevice", "startMotionLockoutForAllLights",
-            "isDeviceMotionLockedOut", "state.motionLockout", "initialize")
+            "isDeviceMotionLockedOut", "state.motionLockout",
+            "getMotionLockoutStatusSummary", "updated()", "initialize()")
 MAX_CHUNKS = 16
 MAX_CHARS = 250000
+SOURCE_READ_LENGTH = 48000
+MAX_SYMBOLS = 12
+MAX_EXCERPT_CHARS = 14500
 
 
 def requested_groovy_app_id(prompt: str) -> str | None:
@@ -109,24 +113,47 @@ def _source_body(data: Any) -> tuple[str, dict[str, Any]]:
     return "", {}
 
 
-def _excerpts(body: str) -> list[str]:
+def _validated_symbols(symbols: list[str] | None) -> tuple[str, ...]:
+    """A model-selected read target, not an implementation-specific branch."""
+    if not symbols:
+        return _SYMBOLS
+    cleaned = []
+    for candidate in symbols[:MAX_SYMBOLS]:
+        text = str(candidate).strip()
+        if (1 <= len(text) <= 100
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*(?:\(\))?", text)
+                and text not in cleaned):
+            cleaned.append(text)
+    return tuple(cleaned) or _SYMBOLS
+
+
+def _excerpts(body: str, symbols: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """Bounded, line-numbered slices for the caller's code questions.
+
+    Source verification is independent of whether a requested symbol appears.
+    Multiple occurrences can reveal separate declaration/read/write sites.
+    """
     lines = body.splitlines()
     result: list[str] = []
-    captured: set[int] = set()
-    for symbol in _SYMBOLS:
-        for index, line in enumerate(lines):
-            if symbol.casefold() not in line.casefold() or index in captured:
+    found: list[str] = []
+    selected: set[int] = set()
+    budget = 0
+    for symbol in _validated_symbols(symbols):
+        indexes = [i for i, line in enumerate(lines) if symbol.casefold() in line.casefold()]
+        if indexes:
+            found.append(symbol)
+        for index in indexes[:4]:
+            start, stop = max(0, index - 5), min(len(lines), index + 16)
+            span = range(start, stop)
+            if index in selected:
                 continue
-            span = list(range(max(0, index - 3), min(len(lines), index + 7)))
-            if any(i in captured for i in span):
-                continue
-            excerpt = "\n".join(f"{i+1}: {lines[i]}" for i in span)
-            if sum(len(x) for x in result) + len(excerpt) > 6500:
-                return result
-            result.append(excerpt)
-            captured.update(span)
-            break
-    return result
+            passage = "\n".join(f"{i+1}: {lines[i]}" for i in span)
+            if budget + len(passage) > MAX_EXCERPT_CHARS:
+                return result, found
+            result.append(passage)
+            budget += len(passage)
+            selected.update(span)
+    return result, found
 
 
 @dataclass(slots=True)
@@ -155,7 +182,7 @@ class GroovySourceService:
             mutates=False, effect="read",
         )
 
-    async def inspect(self, app_id: str) -> GroovySourceReport:
+    async def inspect(self, app_id: str, symbols: list[str] | None = None) -> GroovySourceReport:
         title = f"App {app_id} — read-only Groovy implementation investigation:"
         try:
             tools = await self.mcp.list_tools()
@@ -243,7 +270,7 @@ class GroovySourceService:
         for index in range(MAX_CHUNKS):
             leaf_args = dict(base_args)
             if operation == "hub_get_source":
-                leaf_args.update({"offset": offset, "length": 20000})
+                leaf_args.update({"offset": offset, "length": SOURCE_READ_LENGTH})
             elif index > 0:
                 leaf_args.update({"offset": offset, "limit": 65536})
             began = time.monotonic()
@@ -306,7 +333,12 @@ class GroovySourceService:
             lines.append(f"- Verified code ID: {code_id}.")
         if version is not None:
             lines.append(f"- Source version: {str(version)[:32]}.")
-        excerpts = _excerpts(body)
+        excerpts, found_symbols = _excerpts(body, symbols)
+        requested_symbols = _validated_symbols(symbols)
+        lines.append("- Matched symbols: " + (", ".join(found_symbols) if found_symbols else "none in retrieved text") + ".")
+        missing_symbols = [name for name in requested_symbols if name not in found_symbols]
+        if missing_symbols:
+            lines.append("- Symbols not located in retrieved text: " + ", ".join(missing_symbols) + ".")
         if excerpts:
             lines.append("Source excerpts (retrieved-text-relative line numbers):")
             lines.extend(excerpts)
@@ -315,7 +347,7 @@ class GroovySourceService:
         if not complete:
             lines.append("Do not assert that a function is absent or a state write "
                          "never occurs without complete implementation coverage.")
-        return GroovySourceReport("\n\n".join(lines), bool(excerpts), complete)
+        return GroovySourceReport("\n\n".join(lines), True, complete)
 
 
 __all__ = ["requested_groovy_app_id", "source_code_id",
