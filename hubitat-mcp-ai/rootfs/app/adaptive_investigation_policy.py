@@ -11,13 +11,13 @@ import re
 _ANALYTICAL = re.compile(
     r"\b(?:investigat(?:e|ion)|analys(?:e|is)|analyz(?:e|ing)|diagnos(?:e|is)|"
     r"troubleshoot|audit|inspect|review|reconstruct|research|trace|compare|evaluate|"
-    r"root[- ]cause|why\s+did|what\s+caused|explain\s+why)\b", re.I,
+    r"root[- ]cause|explain\s+why)\b", re.I,
 )
 _DEEP = re.compile(
     r"\b(?:source(?:[- ]code)?|groovy|implementation|algorithm|"
     r"execution|logs?|events?|timeline|"
     r"alternatives?|hypothes(?:is|es)|evidence|"
-    r"root[- ]cause|independent(?:ly)?|verify|verified|"
+    r"root[- ]cause|independent(?:ly)?|"
     r"all\s+(?:scheduled|automations|rules|apps)|"
     r"unexpected|repeated|intermittent|unexplained|"
     r"why\s+did|what\s+caused)\b", re.I,
