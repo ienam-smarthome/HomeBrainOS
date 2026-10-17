@@ -60,6 +60,40 @@ def _guard_exclusive_history_date_claim(
     Correct only the false scope summary, not a narrower claim that the exact
     focal event at a particular time was missing.
     """
+    # Prefer a precise, dated cross-source correction before replacing a
+    # longer prose fragment. Doing this first avoids "the The checked..." and
+    # retains both calendar dates rather than only the raw first command ISO.
+    from datetime import date
+    dates_seen: set[str] = set()
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        for key in ("events", "commandEvents", "boundaryEvents", "correlationEvents"):
+            for item in details.get(key) or []:
+                stamp = item.get("date") if isinstance(item, dict) else None
+                if isinstance(stamp, str) and re.match(
+                    r"^\d{4}-\d{2}-\d{2}[T ]", stamp
+                ):
+                    dates_seen.add(stamp[:10])
+    cross_date = re.compile(
+        r"(?i)evidence\s+gathered\s+in\s+this\s+turn\s+"
+        r"exclusively\s+covers\s+activity\s+from\s+"
+        r"\*\*[^\n.]+\*\*"
+    )
+    if len(dates_seen) >= 2 and cross_date.search(message):
+        observed = ", ".join(
+            f"{date.fromisoformat(day).day} "
+            f"{date.fromisoformat(day).strftime('%B %Y')}"
+            for day in sorted(dates_seen)
+        )
+        return cross_date.sub(
+            "checked source records include activity dated " + observed
+            + "; this does not prove the cause of the requested focal event",
+            message, count=1,
+        )
     # A bounded evidence summary must not erase a separately recorded command.
     # This only corrects coverage claims and never treats the command as proof
     # of the requested focal activation.
