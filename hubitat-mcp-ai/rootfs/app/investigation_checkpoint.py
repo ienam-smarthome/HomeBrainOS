@@ -12,6 +12,7 @@ from typing import Any
 
 from investigation_policy import is_causal_investigation, is_history_investigation
 from investigation_intelligence import plan_investigation
+from general_evidence_completion import assess_task_source_coverage, EVIDENCE_KINDS
 from skill_secret_guard import redact_secrets
 
 
@@ -60,6 +61,7 @@ def build_evidence_checkpoint(
     *,
     available_read_tools: tuple[str, ...] = (),
     max_receipts: int = 18,
+    candidate_hypotheses: tuple[Any, ...] = (),
 ) -> dict[str, Any]:
     """Summarise source availability and uncertainty without copying log bodies."""
     evidence = []
@@ -102,11 +104,37 @@ def build_evidence_checkpoint(
             "checked": row.get("success") is True,
             "recorded_count": observed,
         })
+    # Model-proposed alternatives are questions, never source-supported
+    # conclusions. Check ONLY the declared read-source class, not a hypothesis
+    # truth value. A checked-empty source still cannot exclude a candidate.
+    comparisons: list[dict[str, str]] = []
+    for candidate in candidate_hypotheses[:3]:
+        kind = getattr(candidate, "evidence_kind", None)
+        explanation = getattr(candidate, "explanation", None)
+        discriminator = getattr(candidate, "distinguishing_question", None)
+        if (kind not in EVIDENCE_KINDS
+                or not isinstance(explanation, str)
+                or not isinstance(discriminator, str)):
+            continue
+        checked = assess_task_source_coverage((kind,), receipts).sources_checked
+        comparisons.append({
+            "candidate": explanation[:140],
+            "discriminating_question": discriminator[:180],
+            "source_kind": kind,
+            "source_state": ("source-class-checked-verdict-unverified"
+                             if checked else "source-class-not-checked"),
+            "hypothesis_verdict": "unverified",
+        })
     return {
         "schema": "homebrain-evidence-checkpoint/v1",
         "objective": str(objective or "")[:400],
         "sources": evidence[-max(1, min(30, max_receipts)):],
         "open_questions": list(dict.fromkeys(gaps))[:8],
+        "competing_hypothesis_checks": comparisons,
+        "next_unchecked_discriminators": [
+            row["discriminating_question"] for row in comparisons
+            if row["source_state"] == "source-class-not-checked"
+        ][:3],
         "declared_read_tools": list(available_read_tools)[:24],
         "source_success_is_not_causal_proof": True,
         "no_source_is_proof_of_inactivity": False,
@@ -118,9 +146,11 @@ def render_investigation_checkpoint(
     receipts: list[dict[str, Any]],
     *,
     available_read_tools: tuple[str, ...] = (),
+    candidate_hypotheses: tuple[Any, ...] = (),
 ) -> str:
     packet = build_evidence_checkpoint(
         objective, receipts, available_read_tools=available_read_tools,
+        candidate_hypotheses=candidate_hypotheses,
     )
     return (
         "HOST READ-ONLY INVESTIGATION CHECKPOINT (not a cause verdict):\n"
@@ -132,6 +162,10 @@ def render_investigation_checkpoint(
           "explanations, call it with a bounded target and incident window. "
           "Use live MCP discovery/guide when the required leaf is unknown; "
           "never invent an operation or treat an event listener as an initiator. "
+          "Compare only model-proposed competing hypotheses as UNVERIFIED "
+          "questions, never findings. A checked source class cannot establish "
+          "or refute one without matching scoped evidence. Prioritize a "
+          "still-unchecked discriminator when a safe relevant read exists. "
           "Do not repeat checked sources without a specific new field. "
           "Never send a write call, credentials, or unbounded inventory scan. "
           "If nothing accessible could materially improve the evidence, "
