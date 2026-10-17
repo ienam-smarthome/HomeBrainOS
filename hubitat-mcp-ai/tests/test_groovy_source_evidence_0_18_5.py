@@ -133,3 +133,27 @@ def test_unavailable_source_capability_reports_missing_not_conjectured():
         assert "state.motionLockout" not in report.message
         assert not any(c[1].get("tool") == "hub_get_app_source" for c in mcp.calls)
     asyncio.run(run())
+
+
+def test_direct_source_tool_uses_direct_arguments_not_facade():
+    class DirectSource(FakeMCP):
+        async def list_tools(self):
+            return [
+                SimpleNamespace(name="hub_get_app_source", input_schema={}),
+                SimpleNamespace(name="hub_read_apps_code", input_schema={}),
+            ]
+        async def call_tool(self, name, args):
+            if name == "hub_get_app_source":
+                self.calls.append((name, args))
+                assert args == {"codeId": "1453"}
+                return SimpleNamespace(
+                    data={"sourceCode": "private int getMotionLockoutDurationMinutes() {\n"
+                                        " return Math.max(1, Math.min(1440, 30))\n}\n",
+                          "totalChars": 90}, is_error=False,
+                )
+            return await super().call_tool(name, args)
+    async def run():
+        mcp = DirectSource()
+        await GroovySourceService(mcp, Evidence()).inspect("4019")
+        assert any(name == "hub_get_app_source" for name, _ in mcp.calls)
+    asyncio.run(run())
