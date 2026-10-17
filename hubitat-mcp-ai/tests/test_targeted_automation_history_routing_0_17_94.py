@@ -14,13 +14,7 @@ def test_targeted_history_and_logs_are_not_inventory():
         "List recent logs for app 4019",
         "Which events triggered my Livingroom lighting rule?",
     ):
-        chosen = AutomationStatusService.matches_request(question)
-        assert not chosen, (
-            question,
-            getattr(AutomationStatusService.matches_request, "__module__", "?"),
-            getattr(getattr(AutomationStatusService.matches_request, "__code__", None),
-                    "co_filename", "?"),
-        )
+        assert not AutomationStatusService.matches_request(question), question
 
 
 def test_explicit_population_inventory_still_supported():
