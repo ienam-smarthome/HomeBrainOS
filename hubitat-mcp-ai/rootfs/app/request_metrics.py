@@ -86,7 +86,7 @@ class RequestMetrics:
         "broad_performance_log_host_retry",
         "broad_performance_log_host_unavailable",
         "broad_performance_log_host_failed",
-        "rule_analysis_partial",
+        "rule_analysis_partial", "historical_rule_execution_routed",
         "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
         "causal_focal_window_reads", "causal_focal_window_evidence_recovered",
         "causal_focal_history_gap_stop",
