@@ -183,6 +183,10 @@ class GroovySourceReport:
     message: str
     retrieved: bool = False
     complete: bool = False
+    verified_characters: int = 0
+    declared_total: int | None = None
+    verified_pages: int = 0
+    source_code_id: str | None = None
 
 
 class GroovySourceService:
@@ -291,6 +295,7 @@ class GroovySourceService:
         offset = 0
         chunk_size = SOURCE_READ_LENGTH
         retries = 0
+        verified_pages = 0
         incomplete_reason = ""
         # The MCP gateway may return a 47,999-character chunk for a requested
         # 48,000-character page while advertising a larger nextOffset. Never
@@ -359,6 +364,7 @@ class GroovySourceService:
                              incomplete_reason)
                 break
             body += chunk
+            verified_pages += 1
             offset = expected_next
             if chunk_total is not None:
                 total = chunk_total
@@ -416,7 +422,13 @@ class GroovySourceService:
         if not complete:
             lines.append("Do not assert that a function is absent or a state write "
                          "never occurs without complete implementation coverage.")
-        return GroovySourceReport("\n\n".join(lines), True, complete)
+        return GroovySourceReport(
+            "\n\n".join(lines), True, complete,
+            verified_characters=offset,
+            declared_total=total,
+            verified_pages=verified_pages,
+            source_code_id=code_id,
+        )
 
 
 __all__ = ["requested_groovy_app_id", "source_code_id",
