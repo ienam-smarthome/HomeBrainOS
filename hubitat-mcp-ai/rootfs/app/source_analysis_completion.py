@@ -100,13 +100,13 @@ def source_trace_ready_for_synthesis(
 
 
 _RUNTIME_REQUEST = re.compile(
-    r"(?i)\\b(?:correlat\\w*|runtime\\s+observations?|"
-    r"current(?:ly)?|today|offline\\s+state|"
-    r"actual\\s+(?:state|failure|cause)|incident|"
-    r"historical\\s+(?:logs?|events?))\\b"
+    r"(?i)\b(?:correlat\w*|runtime\s+observations?|"
+    r"current(?:ly)?|today|offline\s+state|"
+    r"actual\s+(?:state|failure|cause)|incident|"
+    r"historical\s+(?:logs?|events?))\b"
 )
 _DEVICE_ID_IN_QUESTION = re.compile(
-    r"(?i)\\bdevice\\s*(?:id\\s*)?#?\\s*(\\d{2,9})\\b"
+    r"(?i)\bdevice\s*(?:id\s*)?#?\s*(\d{2,9})\b"
 )
 
 
