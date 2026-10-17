@@ -12,6 +12,7 @@ from causal_rule_decision_context import configuration_text, referenced_sensor_i
 from device_state_summary import device_attributes
 from mcp_client import tool_succeeded
 from room_status_snapshot import _device_health, _parent_reliability
+from groovy_source_investigation import requested_groovy_app_id
 
 _APP_ID = re.compile(r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
 _PARENT_ID = re.compile(r"\bparent\s+(?:device\s+)?(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
@@ -24,6 +25,10 @@ _WRITES = re.compile(
 def parse_rule_analysis_request(prompt: str) -> tuple[str, str | None] | None:
     """Intercept only non-mutating requests about a named Rule Machine app."""
     value = str(prompt or "")
+    # Installed Groovy-source analysis cannot be answered by this configuration-
+    # and-sensor-health-only Rule Machine report.
+    if requested_groovy_app_id(value) is not None:
+        return None
     if not _INTENT.search(value) or _WRITES.search(value):
         return None
     # This fast path reads current configuration and referenced-device health.
