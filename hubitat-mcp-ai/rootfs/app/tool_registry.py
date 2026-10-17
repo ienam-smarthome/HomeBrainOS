@@ -42,6 +42,7 @@ EVIDENCE_KINDS = {
     LOCAL_QUERY_TOOL: "deterministic_attribute_query",
     LOCAL_RESOLVE_TOOL: "deterministic_targeted_device_resolution",
     LOCAL_DEVICE_HISTORY_TOOL: "deterministic_device_event_history",
+    LOCAL_GROOVY_SOURCE_TOOL: "groovy_source_investigation_evidence",
     LOCAL_DEVICE_INVENTORY_TOOL: "deterministic_device_inventory",
     LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
     LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
