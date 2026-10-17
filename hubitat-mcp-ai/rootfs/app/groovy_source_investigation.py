@@ -26,7 +26,7 @@ _DENY_OP = re.compile(r"write|save|install|modify|edit|update|delete|upload|impo
 _SYMBOLS = ("motionOffLockoutMinutes", "getMotionLockoutDurationMinutes",
             "startMotionLockoutForDevice", "startMotionLockoutForAllLights",
             "isDeviceMotionLockedOut", "state.motionLockout", "initialize")
-MAX_CHUNKS = 4
+MAX_CHUNKS = 16
 MAX_CHARS = 250000
 
 
@@ -52,7 +52,7 @@ def source_code_id(config: dict[str, Any], app_id: str) -> str | None:
     if not isinstance(app, dict) or str(app.get("id") or app.get("appId") or "") != app_id:
         return None
     for item in _containers(app):
-        for key in ("codeId", "appCodeId", "sourceCodeId", "appCodeID"):
+        for key in ("codeId", "appCodeId", "sourceCodeId", "appCodeID", "appTypeId"):
             value = item.get(key)
             if isinstance(value, (str, int)) and str(value).isdigit():
                 return str(value)
@@ -133,6 +133,7 @@ def _excerpts(body: str) -> list[str]:
 class GroovySourceReport:
     message: str
     retrieved: bool = False
+    complete: bool = False
 
 
 class GroovySourceService:
@@ -209,14 +210,21 @@ class GroovySourceService:
                   "metadata. No guessed code ID was used."
             )
         gateway, operation = viable
-        base_args = {"codeId": code_id} if code_id else {"appId": app_id}
+        if operation == "hub_get_source":
+            if not code_id:
+                return GroovySourceReport(title + "\n- No verified app-to-code ID; refusing a guessed source read.")
+            base_args = {"id": code_id, "type": "app"}
+        else:
+            base_args = {"codeId": code_id} if code_id else {"appId": app_id}
         body = ""
         total: int | None = None
         version: Any = None
         offset = 0
         for index in range(MAX_CHUNKS):
             leaf_args = dict(base_args)
-            if index > 0:
+            if operation == "hub_get_source":
+                leaf_args.update({"offset": offset, "length": 20000})
+            elif index > 0:
                 leaf_args.update({"offset": offset, "limit": 65536})
             began = time.monotonic()
             try:
@@ -276,7 +284,7 @@ class GroovySourceService:
         if not complete:
             lines.append("Do not assert that a function is absent or a state write "
                          "never occurs without complete implementation coverage.")
-        return GroovySourceReport("\n\n".join(lines), bool(excerpts))
+        return GroovySourceReport("\n\n".join(lines), bool(excerpts), complete)
 
 
 __all__ = ["requested_groovy_app_id", "source_code_id",
