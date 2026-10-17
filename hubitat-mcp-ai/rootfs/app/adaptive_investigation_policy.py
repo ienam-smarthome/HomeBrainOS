@@ -31,6 +31,20 @@ _IMPERATIVE = re.compile(
     r"disable|enable|restart|block|allow|configure|install|"
     r"update|remove|modify|run\s+the\s+command)\b"
 )
+# Existing single-event causal paths already have source-aligned command-history
+# evidence and zero-model fast finals. Do not replace those with an extra
+# planning call. They can still escalate into the existing evidence/model
+# loop when their scoped reads are inconclusive.
+_EXISTING_CAUSAL = re.compile(
+    r"(?i)\b(?:why\s+(?:did|was|has|is)|what\s+caused|what\s+triggered|"
+    r"turned?\s+(?:itself\s+)?on|"
+    r"shut\s+(?:itself\s+)?off|"
+    r"started\s+running|"
+    r"contact\s+(?:opened|closed)|"
+    r"light\s+(?:turned|came)\s+on|"
+    r"command[- ]producer|"
+    r"causal\s+(?:history|provenance))\b"
+)
 _EXPLAINED_CHANGE = re.compile(
     r"(?i)\b(?:whether|if|how|why|when)\s+(?:a\s+)?"
     r"(?:setting|value|rule|duration|config(?:uration)?)\s+"
@@ -46,6 +60,10 @@ def model_led_investigation_request(prompt: str) -> bool:
     if not _ANALYTICAL.search(text) or not _DEEP.search(text):
         return False
     if _IMPERATIVE.search(text) and not _EXPLAINED_CHANGE.search(text):
+        return False
+    # Do not regress tested, source-backed causal fast paths. Complex code
+    # investigations may still use the adaptive planner.
+    if _EXISTING_CAUSAL.search(text) and not source_evidence_request(text):
         return False
     return True
 
