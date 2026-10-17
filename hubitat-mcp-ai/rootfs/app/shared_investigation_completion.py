@@ -392,14 +392,14 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             if explanation and question:
                 comparisons.append(
                     "- **Possible explanation:** " + explanation
-                    + "\\n  **Distinguishing evidence:** " + question
+                    + "\n  **Distinguishing evidence:** " + question
                     + (" (relevant source class checked; hypothesis still unverified)."
                        if checked else " (relevant source class not checked).")
                 )
         if len(comparisons) >= 2:
             message += (
-                "\\n\\n**Competing explanations (provisional; not a causal verdict):**\\n"
-                + "\\n".join(comparisons)
+                "\n\n**Competing explanations (provisional; not a causal verdict):**\n"
+                + "\n".join(comparisons)
             )
     if partial:
         limitations: list[str] = []
