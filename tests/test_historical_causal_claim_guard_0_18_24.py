@@ -152,10 +152,9 @@ def test_hypothesis_or_negation_is_not_execution_assertion():
         "The configuration names Power saving app 3950; it is unknown "
         "whether any off() command occurred on October 12."
     )
-    # This conservative guard may still flag an app ID near a command word:
-    # that is an unresolved claim, never proof that a command was sent.
+    # Explicit uncertainty is not an assertion that this app executed.
     outcome=assess_historical_claims(cautious,rows)
-    assert outcome["historicalActionVerified"] is False
+    assert outcome["historicalActionVerified"] is True
     unrelated = "The source code for app 3950 defines an initialize() method."
     assert assess_historical_claims(unrelated,rows)["historicalActionVerified"] is True
 
