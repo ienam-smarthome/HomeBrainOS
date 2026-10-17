@@ -355,17 +355,17 @@ def _explicit_mutation_request(prompt: str) -> bool:
     # "Use paid model. Why did Bathroom Light 1 turn on?" must stay read-only.
     # Strip only a leading routing directive; subsequent writes remain writes.
     text = re.sub(
-        r"(?i)^\\s*(?:use paid model|premium model|paid investigation)"
-        r"\\s*[.!:,;\\-]*\\s*", "", text,
+        r"(?i)^\s*(?:use paid model|premium model|paid investigation)"
+        r"\s*[.!:,;\-]*\s*", "", text,
     )
     if not text:
         return False
     # Keep *mixed* requests in the guarded write path. Do not let a question
     # lead-in hide a later independent command to change hub state.
     secondary_write = re.search(
-        r"(?i)(?:[.!?]\\s+|\\band\\s+(?:then\\s+|also\\s+)?)"
-        r"(?:please\\s+)?(?:turn|switch|set|change|create|delete|"
-        r"disable|enable|restart|block|allow|configure)\\b",
+        r"(?i)(?:[.!?]\s+|\band\s+(?:then\s+|also\s+)?)"
+        r"(?:please\s+)?(?:turn|switch|set|change|create|delete|"
+        r"disable|enable|restart|block|allow|configure)\b",
         text,
     )
     if _READ_QUERY_PREFIX.search(text) and not secondary_write:
@@ -379,7 +379,7 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"^\s*(?:investigate|diagnose|explain|analyse|analyze|reconstruct)"
         r"\b", text, re.I,
     )
-    if investigative_lead and re.search(
+    if investigative_lead and not secondary_write and re.search(
         r"\b(?:why|what caused|what triggered|how did)\b", text, re.I,
     ):
         return False
