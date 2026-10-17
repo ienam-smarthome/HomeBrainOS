@@ -207,7 +207,11 @@ async def test_non_claude_free_selection_never_contacts_anthropic():
         "ollama-key", client=client, claude_api_key="anthropic-key",
         paid_routing_enabled=True, paid_routing_mode="paid",
     )
-    result = await transport.chat([{"role": "user", "content": "Investigate why"}], [])
+    selected = set_request_model_tier("free")
+    try:
+        result = await transport.chat([{"role": "user", "content": "Investigate why"}], [])
+    finally:
+        reset_request_model_tier(selected)
     assert result["content"] == "Free result"
     assert len(client.calls) == 1
     assert client.calls[0][0] == "https://ollama.com/api/chat"
