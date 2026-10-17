@@ -13,7 +13,7 @@ from household_ollama_accounts import (
     HouseholdCloudAccount, permissible_cloud_failover,
 )
 from request_metrics import increment_active_metric, record_active_provider_model
-from paid_model_routing import PaidCreditGuard, explicit_paid_request
+from paid_model_routing import PaidCreditGuard, explicit_paid_request, request_model_tier
 from provider_rate_limit_policy import confirmed_free_allowance_exhaustion
 
 
@@ -218,6 +218,7 @@ class ChatTransport:
                 # qualifies. No generic 429, timeout, auth error or key rotation.
                 if (
                     index == 0 and paid_model is None
+                    and request_model_tier() != "free"
                     and self.free_quota_paid_fallback_enabled
                     and self.paid_credit_guard.enabled
                     and self.base_url == "https://ollama.com"
@@ -256,8 +257,9 @@ class ChatTransport:
     ) -> dict[str, Any]:
         manual_paid_cloud = (
             self.paid_credit_guard.enabled
-            and self.paid_credit_guard.mode == "manual"
             and explicit_paid_request()
+            and (self.paid_credit_guard.mode == "manual"
+                 or request_model_tier() == "paid")
         )
         if self.local_configured and not self.cloud_first and not manual_paid_cloud:
             try:
