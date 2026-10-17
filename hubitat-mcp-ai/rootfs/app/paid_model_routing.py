@@ -25,7 +25,7 @@ _ORIGINAL_PAID_REQUEST: ContextVar[str | None] = ContextVar(
 # Explicit selection is scoped to one API request, never shared between
 # concurrent sessions. "auto" leaves existing manual/hybrid mode untouched.
 _REQUEST_MODEL_TIER: ContextVar[str] = ContextVar(
-    'homebrain_request_model_tier', default='free'
+    'homebrain_request_model_tier', default='auto'
 )
 
 
