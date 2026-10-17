@@ -3695,7 +3695,16 @@ class UnifiedMCPAgent:
             await self.general_task_planner.plan(
                 user_prompt, history=self._history(conversation_history),
             )
-            if (self.general_task_engine_enabled or adaptive_investigation)
+            # Preserve already-corroborated causal/event fast paths without
+            # an unnecessary extra planning LLM round. Their existing model
+            # reflection handles genuinely unresolved or explicit deep goals.
+            if (
+                self.general_task_engine_enabled
+                or (
+                    adaptive_investigation
+                    and (source_investigation or not is_causal_investigation(user_prompt))
+                )
+            )
             and not self._is_conversational_prompt(user_prompt)
             else None
         )
