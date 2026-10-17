@@ -89,6 +89,30 @@ def remember_verified_read_receipt(receipt: dict[str, Any]) -> None:
         state.verified_reads.append(deepcopy(receipt))
 
 
+def _successful_read_receipt(row: Any) -> bool:
+    """Accept verified reads including older receipts lacking effect metadata.
+
+    For old checkpoints, only an explicitly read-named operation is eligible;
+    an unknown or write-capable name with missing metadata fails closed.
+    """
+    if not isinstance(row, dict) or row.get("success") is not True:
+        return False
+    if row.get("mutates") is True or row.get("effect") not in ("read", None):
+        return False
+    if row.get("mutates") is False or row.get("effect") == "read":
+        return True
+    arguments = row.get("arguments")
+    named = (
+        str(row.get("sub_tool") or "")
+        or str(arguments.get("tool") or "") if isinstance(arguments, dict)
+        else str(row.get("sub_tool") or row.get("tool") or "")
+    )
+    return named.startswith((
+        "hub_get_", "hub_list_", "hub_read_", "hub_search_",
+        "homebrain_read_", "homebrain_device_history",
+    ))
+
+
 def safe_partial_outcome(
     outcome: Any, *, reason: str,
     additional_reads: list[dict[str, Any]] | None = None,
@@ -97,9 +121,7 @@ def safe_partial_outcome(
     safe = copy(outcome)
     receipts = [
         deepcopy(row) for row in (getattr(outcome, "evidence", None) or [])
-        if isinstance(row, dict) and row.get("success") is True
-        and row.get("mutates") is False
-        and row.get("effect") in ("read", None)
+        if _successful_read_receipt(row)
     ]
     for row in additional_reads or []:
         if (
