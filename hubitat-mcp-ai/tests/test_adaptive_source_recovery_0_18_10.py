@@ -123,6 +123,17 @@ def test_model_nested_source_read_envelope_is_flattened_only_when_read_only():
         "tool":"hub_get_source","args":{"id":"1453"},
     }) == ("type",)
     assert normalize_gateway_read("hub_manage_rule_machine",malformed) == malformed
+    whole_envelope = {
+        "args": {"tool": "hub_get_source",
+                 "args": {"id": "1453", "type": "app",
+                          "offset": 48000, "length": 16000}},
+    }
+    assert normalize_gateway_read("hub_read_apps_code", whole_envelope) == normal
+    dangerous = {
+        "args": {"tool": "hub_delete_rule", "args": {"ruleId": "42"}},
+    }
+    assert normalize_gateway_read("hub_read_apps_code", dangerous) == dangerous
+    assert normalize_gateway_read("hub_manage_rule_machine", whole_envelope) == whole_envelope
 
 
 def test_method_definitions_prioritized_and_late_symbols_not_starved():
@@ -186,3 +197,51 @@ def test_complete_workbench_source_is_reported_as_full_coverage():
     assert result.investigation_coverage["chunkCoverage"]["coverage"] == "complete"
     assert result.investigation_coverage["chunkCoverage"]["chunksObserved"] == 11
     assert result.metrics["outcome"] == "success"
+
+
+class JavaUtf16PagesMCP(AlmostFullPageMCP):
+    """Real Java source pages can contain astral characters counted as 2 units."""
+
+    def __init__(self):
+        super().__init__()
+        prefix = "void updated() {\\n  initialize()\\n}\\n".replace("\\n", "\n")
+        padding = "// generic Groovy source line\\n".replace("\\n", "\n") * 8000
+        head = (prefix + padding)[:52000]
+        tail = padding[:186457 - 52002]
+        self.code = head + "😀" + tail
+        self.encoded = self.code.encode("utf-16-le")
+        assert len(self.encoded) // 2 == 186457
+        assert len(self.code) == 186456
+
+    async def call_tool(self, name, payload):
+        if name != "hub_read_apps_code" or payload.get("tool") != "hub_get_source":
+            return await super().call_tool(name, payload)
+        self.calls.append((name, payload))
+        leaf = payload["args"]
+        assert leaf["id"] == "1453"
+        start, size = leaf["offset"], leaf["length"]
+        end = min(start + size, len(self.encoded) // 2)
+        chunk = self.encoded[2 * start:2 * end].decode("utf-16-le")
+        data = {
+            "success": True, "appId": 1453, "version": 96,
+            "source": chunk, "offset": start,
+            "totalLength": len(self.encoded) // 2, "nextOffset": end,
+            "hasMore": end < len(self.encoded) // 2,
+        }
+        return SimpleNamespace(data=data, is_error=False)
+
+
+def test_java_utf16_offset_uses_verified_units_without_retries_or_missing_code():
+    async def run():
+        mcp = JavaUtf16PagesMCP()
+        result = await GroovySourceService(mcp, Audit()).inspect(
+            "4019", symbols=["updated()", "initialize()"],
+        )
+        assert result.retrieved and result.complete
+        assert result.verified_characters == 186457
+        assert "Verified source-offset units: utf16" in result.message
+        assert "Smaller-page recovery attempts: 0" in result.message
+        reads = [args["args"] for _, args in mcp.calls
+                 if args.get("tool") == "hub_get_source"]
+        assert [read["offset"] for read in reads] == [0, 48000, 96000, 144000]
+    asyncio.run(run())

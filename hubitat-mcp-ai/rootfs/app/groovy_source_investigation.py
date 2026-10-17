@@ -36,6 +36,16 @@ MAX_SYMBOLS = 12
 MAX_EXCERPT_CHARS = 14500
 
 
+def _utf16_units(value: str) -> int:
+    """Hubitat/Groovy Java String offsets may count UTF-16 code units.
+
+    Non-BMP characters count as two Java units but one Python code point.
+    This difference is evidence of a coordinate system, not a missing byte.
+    """
+    return len(value.encode("utf-16-le", errors="surrogatepass")) // 2
+
+
+
 def requested_groovy_app_id(prompt: str) -> str | None:
     text = str(prompt or "")
     match = _APP_ID.search(text)
@@ -298,11 +308,13 @@ class GroovySourceService:
         chunk_size = SOURCE_READ_LENGTH
         retries = 0
         verified_pages = 0
+        offset_unit: str | None = None
         incomplete_reason = ""
-        # The MCP gateway may return a 47,999-character chunk for a requested
-        # 48,000-character page while advertising a larger nextOffset. Never
-        # silently skip a character. Retry the same offset with a smaller page,
-        # and only append a segment after its offset and nextOffset agree.
+        # Java/Groovy offsets may be UTF-16 units, whereas Python len() counts
+        # code points. Accept the server's offset ONLY if the decoded text
+        # independently accounts for it under one consistent unit convention.
+        # A genuine omission or malformed surrogate still fails closed and
+        # retries at the same offset with smaller pages.
         for index in range(MAX_CHUNKS):
             leaf_args = dict(base_args)
             if operation == "hub_get_source":
@@ -329,7 +341,28 @@ class GroovySourceService:
                 break
             actual_offset = meta.get("offset", offset)
             advertised_next = meta.get("nextOffset")
-            expected_next = offset + len(chunk)
+            scalar_end = offset + len(chunk)
+            utf16_end = offset + _utf16_units(chunk)
+            candidate_unit = offset_unit
+            expected_next = utf16_end if offset_unit == "utf16" else scalar_end
+            offset_fault = ""
+            # Replacement or unpaired surrogate characters can indicate a
+            # UTF-16 page split. Never certify a possibly damaged source span.
+            if "\ufffd" in chunk or any(0xD800 <= ord(ch) <= 0xDFFF for ch in chunk):
+                offset_fault = f"Unverifiable Unicode page boundary at {offset}"
+            elif isinstance(advertised_next, int) and advertised_next > offset:
+                if advertised_next == scalar_end == utf16_end:
+                    expected_next = advertised_next
+                elif advertised_next == utf16_end and offset_unit != "codepoint":
+                    candidate_unit, expected_next = "utf16", advertised_next
+                elif advertised_next == scalar_end and offset_unit != "utf16":
+                    candidate_unit, expected_next = "codepoint", advertised_next
+                else:
+                    offset_fault = (
+                        f"Source nextOffset disagrees with returned text length at {offset}"
+                    )
+            elif scalar_end != utf16_end and offset_unit is None:
+                offset_fault = f"Source offset units not verified at {offset}"
             chunk_total = next((
                 meta[field] for field in ("totalChars", "totalLength", "sourceLength")
                 if isinstance(meta.get(field), int) and meta[field] > 0
@@ -340,8 +373,8 @@ class GroovySourceService:
             fault = ""
             if not isinstance(actual_offset, int) or actual_offset != offset:
                 fault = f"Unexpected source offset at {offset}"
-            elif isinstance(advertised_next, int) and advertised_next > offset and advertised_next != expected_next:
-                fault = f"Source nextOffset disagrees with returned text length at {offset}"
+            elif offset_fault:
+                fault = offset_fault
             elif chunk_total is not None and total is not None and chunk_total != total:
                 fault = f"Source length changed during retrieval at {offset}"
             elif (returned_id is not None and code_id
@@ -367,6 +400,7 @@ class GroovySourceService:
                 break
             body += chunk
             verified_pages += 1
+            offset_unit = candidate_unit
             offset = expected_next
             if chunk_total is not None:
                 total = chunk_total
@@ -393,13 +427,17 @@ class GroovySourceService:
                   "defaultValue declaration, getter, stored lockout expiry or "
                   "updated()/initialize() behaviour."
             )
-        complete = total is not None and offset == total and len(body) == total
+        # Source completeness uses the same independently verified offset
+        # unit as each page; Python code-point length is only a display count.
+        assembled_units = _utf16_units(body) if offset_unit == "utf16" else len(body)
+        complete = total is not None and offset == total and assembled_units == total
         lines = [
             title, f"- Source reader: {operation} via {gateway}.",
             f"- Source text retrieved: {len(body)} characters; "
             + ("complete by declared length." if complete else
                "full source coverage unverified."),
             f"- Retrieved text SHA-256: {hashlib.sha256(body.encode()).hexdigest()}.",
+            f"- Verified source-offset units: {offset_unit or 'ASCII-compatible / undecided'}.",
             f"- Verified contiguous range: 0..{offset}"
             + (f" / {total} characters." if total is not None else " (total unknown)."),
             f"- Smaller-page recovery attempts: {retries}.",

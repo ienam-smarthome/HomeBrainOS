@@ -89,3 +89,29 @@ def test_executor_metadata_is_sanitized_for_direct_raw_source():
     assert meta["sourceRetrieved"] is True
     assert meta["chunkLength"]==len(content)
     assert content not in str(meta)
+
+
+def test_utf16_raw_source_receipt_counts_verified_java_offset_units():
+    # The actual model text contains one Python code point but two Java units.
+    source = "void updated() {\\n".replace("\\n", "\n") + ("x" * 40) + "😀" + "\n}"
+    offset = 100
+    java_units = len(source.encode("utf-16-le")) // 2
+    details = source_read_metadata("hub_read_apps_code", ARGS, {
+        "success": True, "appId": 1453, "source": source, "offset": offset,
+        "totalLength": 200, "nextOffset": offset + java_units,
+    })
+    assert details["chunkLength"] == java_units
+    assert details["chunkLength"] == len(source) + 1
+
+
+def test_unexplained_source_offset_drift_never_certifies_direct_coverage():
+    source = "void updated() {\\n".replace("\\n", "\n") + ("x" * 40)
+    details = source_read_metadata("hub_read_apps_code", ARGS, {
+        "success": True, "appId": 1453, "source": source, "offset": 100,
+        "totalLength": 200, "nextOffset": 100 + len(source) + 1,
+    })
+    assert details["sourceRetrieved"] is True
+    assert "chunkLength" not in details
+    receipt = _receipt(100, 20, total=200)
+    receipt["details"] = details
+    assert contiguous_source_coverage([receipt])["fullImplementationVerified"] is False
