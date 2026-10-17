@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from targeted_lockout_config import current_lockout_config_app_id, read_current_lockout_config
+from scoped_app_status_read import scoped_status_app_id
 
 
 SOURCE_QUERY = (
@@ -57,3 +58,13 @@ def test_source_question_calls_no_current_settings_gateway():
         )
         assert output is None
     asyncio.run(run())
+
+
+def test_status_shortcut_does_not_swallow_compound_source_request():
+    assert scoped_status_app_id(
+        "Inspect the Groovy source code for app 4019 lockout status and "
+        "the state.motionLockout expiry implementation. Read-only."
+    ) is None
+    assert scoped_status_app_id(
+        "What is the current status and lockout of app 4019?"
+    ) == 4019
