@@ -389,12 +389,24 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             explanation = str(candidate.get("candidate") or "").strip()[:140]
             question = str(candidate.get("discriminating_question") or "").strip()[:180]
             checked = candidate.get("source_state") == "source-class-checked-verdict-unverified"
+            required_origin = candidate.get("required_origin")
+            if required_origin in ("upstream", "physical"):
+                source_status = (
+                    "Hubitat source category queried, but independent "
+                    + required_origin + " evidence has NOT been verified"
+                    if checked else
+                    "requires independent " + required_origin
+                    + " evidence; source category not yet checked"
+                )
+            elif checked:
+                source_status = "relevant source class checked; discriminator and hypothesis still unverified"
+            else:
+                source_status = "relevant source class not checked"
             if explanation and question:
                 comparisons.append(
                     "- **Possible explanation:** " + explanation
                     + "\n  **Distinguishing evidence:** " + question
-                    + (" (relevant source class checked; hypothesis still unverified)."
-                       if checked else " (relevant source class not checked).")
+                    + " (" + source_status + ")."
                 )
         if len(comparisons) >= 2:
             message += (
