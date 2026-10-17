@@ -636,7 +636,7 @@ def build_agent_response(
         if budget_exhausted and paid_rounds and fallback_count:
             result["message"] = (
                 result["message"].rstrip()
-                + "\\n\\n**Model continuity:** "
+                + "\n\n**Model continuity:** "
                   "HomeBrain used the paid model for "
                 + str(len(paid_rounds)) + " recorded round(s), then completed "
                 + str(fallback_count) + " round(s) on the free model after its "
