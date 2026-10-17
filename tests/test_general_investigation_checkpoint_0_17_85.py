@@ -227,8 +227,8 @@ def test_failed_read_never_marks_competing_explanation_checked():
     ("Use paid model. Investigate why Bedroom 3 Mesh is offline despite MQTT "
      "reporting connected. Compare the most plausible causes using available "
      "MCP evidence. Read-only.", True),
-    ("Diagnose the problem and compare the likely explanations.", True),
-    ("Investigate the problem and compare the root causes.", True),
+    ("Diagnose this MQTT outage and compare the likely explanations.", True),
+    ("Investigate this device outage and compare the root causes.", True),
     ("Investigate the light; check possible alternative causes.", False),
     ("Investigate thoroughly why Livingroom Light 1 turned on at 12:00:03; "
      "check app logs and possible alternative causes. Read-only.", False),
