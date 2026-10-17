@@ -236,6 +236,43 @@ class ToolDiscoveryCatalog:
             )
         return None
 
+
+    def compatible_read_gateway(
+        self,
+        rejected_gateway: str,
+        arguments: dict[str, Any],
+    ) -> tuple[str, MCPTool] | None:
+        """Resolve a rejected read call using LIVE positive catalog evidence.
+
+        Discovery results or a gateway's enum must explicitly name the
+        operation. Never infer a mapping from the operation name alone or
+        from a fuzzy description. Never widen permissions to write gateways.
+        One unambiguous advertised read gateway is required.
+        """
+        operation = gateway_operation(arguments)
+        if not operation or not rejected_gateway.startswith("hub_read_"):
+            return None
+        if self.gateway_operation_error(rejected_gateway, arguments) is None:
+            return None
+        positive = set(self._operation_gateways.get(operation, set()))
+        for name, tool in self._available.items():
+            if name.startswith("hub_read_") and operation in self._schema_operations(tool):
+                positive.add(name)
+        eligible: list[tuple[str, MCPTool]] = []
+        for name in sorted(positive):
+            tool = self._available.get(name)
+            if (name == rejected_gateway or not name.startswith("hub_read_")
+                    or tool is None):
+                continue
+            if self.gateway_operation_error(name, arguments) is not None:
+                continue
+            if classify_tool_effect(tool, arguments).mutates:
+                continue
+            eligible.append((name, tool))
+        # Ambiguous matches are not suitable for an automatic reroute.
+        return eligible[0] if len(eligible) == 1 else None
+
+
     @classmethod
     def discovered_tools(
         cls,
