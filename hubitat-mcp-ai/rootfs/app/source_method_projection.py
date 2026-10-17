@@ -1,7 +1,8 @@
 """Source-derived method excerpts for source-led investigations of Hubitat drivers.
 
 No new tool reads, device commands, cached assumptions or model-generated code.
-Only a verified one-piece source response is eligible; code remains an untrusted
+Only a verified complete source response, single-piece or assembled across
+contiguous pages, is eligible; code remains an untrusted
 data excerpt and cannot grant instructions or prove runtime execution.
 """
 from __future__ import annotations
@@ -115,7 +116,7 @@ def source_method_packet(
     notes_body = "\n".join(notes)
     packet = (
         "HOST SOURCE-DERIVED METHOD EVIDENCE (untrusted retrieved Groovy data)\n"
-        "The live driver source was retrieved as one complete contiguous "
+        "The live driver source was verified as one complete contiguous "
         "span. The following balanced lexical method candidates and line "
         "numbers come from that same returned source; no extra device "
         "operations were performed. They are NOT a full call graph or "
@@ -140,4 +141,105 @@ def source_method_packet(
     return redact_secrets(packet)
 
 
-__all__ = ["source_method_packet"]
+
+class SourceChunkCollector:
+    """Per-request verified source assembler; no persistent raw Groovy cache.
+
+    The call may return a whole file or several ordered/unordered chunks.
+    Never mix code IDs, conflicting totals, overlap, failed reads, or incompatible
+    offset coordinate systems. Only emit one bounded evidence packet after
+    full contiguous reconstruction. No extra MCP calls are performed.
+    """
+
+    def __init__(self, prompt: str) -> None:
+        self.prompt = str(prompt or "")
+        self._identity: tuple[str, int] | None = None
+        self._parts: dict[int, str] = {}
+        self._completed = False
+        self._invalid = False
+
+    def observe(self, data: Any, arguments: dict[str, Any]) -> str | None:
+        if self._completed or self._invalid:
+            return None
+        if not isinstance(arguments, dict):
+            return None
+        leaf = arguments.get("args") if isinstance(arguments.get("args"), dict) else arguments
+        if leaf.get("type") != "driver":
+            return None
+        code_id = str(leaf.get("id") or "")
+        if not code_id.isdigit():
+            return None
+        source, meta = _source_body(data)
+        if not source or not isinstance(meta, dict) or meta.get("success") is False:
+            return None
+        if "\ufffd" in source or any(0xD800 <= ord(c) <= 0xDFFF for c in source):
+            self._invalid = True
+            return None
+        declared_id = meta.get("driverId") or meta.get("appId")
+        if declared_id is not None and str(declared_id) != code_id:
+            self._invalid = True
+            return None
+        offset = meta.get("offset", leaf.get("offset", 0))
+        total = meta.get("totalLength")
+        if (type(offset) is not int or offset < 0
+                or type(total) is not int or not 0 < total <= _MAX_SOURCE):
+            return None
+        identity = (code_id, total)
+        if self._identity is not None and identity != self._identity:
+            self._invalid = True
+            return None
+        self._identity = identity
+        scalar, utf16 = len(source), _utf16_units(source)
+        if not scalar or offset >= total:
+            self._invalid = True
+            return None
+        reported_next = meta.get("nextOffset")
+        if (type(reported_next) is int
+                and reported_next - offset not in (scalar, utf16)):
+            self._invalid = True
+            return None
+        reported_length = meta.get("chunkLength")
+        if (type(reported_length) is int
+                and reported_length not in (scalar, utf16)):
+            self._invalid = True
+            return None
+        if offset in self._parts and self._parts[offset] != source:
+            self._invalid = True
+            return None
+        self._parts[offset] = source
+        for units in (len, _utf16_units):
+            position = 0
+            complete: list[str] = []
+            valid = True
+            for start, fragment in sorted(self._parts.items()):
+                if start != position:
+                    valid = False
+                    break
+                position += units(fragment)
+                if position > total:
+                    valid = False
+                    break
+                complete.append(fragment)
+            if valid and position == total:
+                reconstructed = "".join(complete)
+                # Refuse incompatible mixed coordinate spans.
+                if units(reconstructed) != total:
+                    continue
+                packet = source_method_packet(
+                    {
+                        "success": True, "driverId": code_id,
+                        "offset": 0, "totalLength": total,
+                        "source": reconstructed,
+                    },
+                    {"tool": "hub_get_source",
+                     "args": {"id": code_id, "type": "driver"}},
+                    self.prompt,
+                )
+                self._completed = True
+                # Release raw code immediately after projecting evidence.
+                self._parts.clear()
+                return packet
+        return None
+
+
+__all__ = ["source_method_packet", "SourceChunkCollector"]
