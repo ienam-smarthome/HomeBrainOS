@@ -148,6 +148,11 @@ class ToolExecutor:
             return history
 
         data = result.data
+        if (result.name == "homebrain_read_groovy_source"
+                and isinstance(data, dict)):
+            # Audit *whether* raw source was actually returned, not the source.
+            # Source text and any cached File Manager paths stay out of receipts.
+            return {"sourceRetrieved": data.get("sourceRetrieved") is True}
         if isinstance(data, dict) and isinstance(data.get("logs"), list):
             return compact_log_evidence(data)
 
