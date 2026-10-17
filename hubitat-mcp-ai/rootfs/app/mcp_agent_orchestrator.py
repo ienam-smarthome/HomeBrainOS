@@ -17,6 +17,7 @@ from agent_prompt_policy import (
 )
 from chat_transport import ChatTransport
 from source_analysis_completion import source_trace_ready_for_synthesis
+from source_method_projection import source_method_packet
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from paid_model_routing import (
@@ -5048,6 +5049,33 @@ class UnifiedMCPAgent:
                         ):
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
+                # The compact final evidence packet only retains a short
+                # prefix of each tool payload. For verified one-piece driver
+                # source, preserve full *relevant method candidates* from the
+                # original current-turn source before that packet truncation.
+                # No new MCP read, command, or Groovy evaluation occurs.
+                if (
+                    source_investigation or (
+                        adaptive_investigation
+                        and "driver" in user_prompt.casefold()
+                    )
+                ):
+                    if (
+                        name == "hub_read_apps_code"
+                        and arguments.get("tool") == "hub_get_source"
+                        and result is not None
+                        and self._tool_succeeded(result)
+                    ):
+                        method_packet = source_method_packet(
+                            result.data, arguments, user_prompt,
+                        )
+                        if method_packet:
+                            messages.append({
+                                "role": "user", "content": method_packet,
+                            })
+                            increment_active_metric(
+                                "source_method_projection_added"
+                            )
                 if history_reasoning_bypass and not investigative_history_bypass:
                     if temporal_history_answer_ready:
                         round_history_evidence_sufficient = True
