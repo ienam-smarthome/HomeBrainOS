@@ -607,8 +607,11 @@ def build_agent_response(
                 if str(entry.get("provider") or "") == "anthropic"
             )
             paid_count = sum(
-                count for model_used, count in usage.items()
-                if model_used.casefold().startswith(("deepseek-v4", "glm-5.3"))
+                1 for entry in provider_rounds
+                if str(entry.get("provider") or "") != "anthropic"
+                and str(entry.get("model") or "").casefold().startswith(
+                    ("deepseek-v4", "glm-5.3")
+                )
             ) + claude_count
             free_count = sum(usage.values()) - paid_count
             result["model_usage"] = {
