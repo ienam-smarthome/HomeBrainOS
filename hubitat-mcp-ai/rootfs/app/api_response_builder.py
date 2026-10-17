@@ -604,9 +604,45 @@ def build_agent_response(
              "local_budget_or_ledger_blocked" if counters.get("paid_routing_reservation_blocked") else
              "no_paid_round")
         )
-        result["paid_routing"] = {"requested": True, "used": paid_used, "reason": reason}
+        paid_rounds = [
+            index for index, item in enumerate(rounds)
+            if isinstance(item, dict) and str(item.get("model") or "").casefold().startswith(
+                ("deepseek-v4", "glm-5.3")
+            )
+        ]
+        fallback_count = (
+            sum(1 for item in rounds[paid_rounds[-1] + 1:]
+                if isinstance(item, dict)
+                and str(item.get("provider") or "") == "ollama-cloud"
+                and not str(item.get("model") or "").casefold().startswith(
+                    ("deepseek-v4", "glm-5.3")
+                ))
+            if paid_rounds else 0
+        )
+        budget_exhausted = (
+            status == "round_exceeds_budget"
+            and int(counters.get("paid_routing_reservation_blocked") or 0) > 0
+        )
+        result["paid_routing"] = {
+            "requested": True, "used": paid_used, "reason": reason,
+            "paid_rounds": len(paid_rounds),
+            "free_rounds_after_paid": fallback_count,
+            "mixed_models": bool(paid_rounds and fallback_count),
+            "estimated_budget_exhausted": budget_exhausted,
+            "accounting": "cumulative-conservative-reservations-not-provider-charges",
+        }
         if guard:
             result["paid_routing"]["local_guard"] = deepcopy(guard)
+        if budget_exhausted and paid_rounds and fallback_count:
+            result["message"] = (
+                result["message"].rstrip()
+                + "\\n\\n**Model continuity:** "
+                  "HomeBrain used the paid model for "
+                + str(len(paid_rounds)) + " recorded round(s), then completed "
+                + str(fallback_count) + " round(s) on the free model after its "
+                  "local estimated reservation limit prevented further paid "
+                  "rounds. The reservation total is not an Ollama invoice."
+            )
         if not paid_used:
             result["message"] = (
                 result["message"].rstrip()
