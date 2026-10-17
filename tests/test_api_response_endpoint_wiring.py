@@ -17,7 +17,9 @@ def test_api_ask_uses_stable_response_builder() -> None:
 
     assert "from api_response_builder import build_agent_response" in source
     ask_source = source.split('@app.post("/api/ask")', 1)[1]
-    assert "return build_agent_response(" in ask_source
+    assert "build_agent_response(" in ask_source
+    assert 'result["model_tier_requested"] = request.model_tier' in ask_source
+    assert "return result" in ask_source
     assert '"metrics":' not in ask_source
 
 
