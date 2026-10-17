@@ -4801,6 +4801,15 @@ class UnifiedMCPAgent:
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
+                original_tool_name = name
+                gateway_repair = None
+                if name.startswith("hub_read_"):
+                    gateway_repair = catalog.compatible_read_gateway(
+                        name, arguments,
+                    )
+                    if gateway_repair is not None:
+                        name = gateway_repair[0]
+                        increment_active_metric("gateway_read_rerouted")
                 if causal_request:
                     if name == _LOCAL_DEVICE_HISTORY_TOOL:
                         arguments = causal_subject_history_arguments(
@@ -4834,6 +4843,11 @@ class UnifiedMCPAgent:
                 history_reasoning_bypass = False
                 investigative_history_bypass = False
                 tool = catalog.declared_tool(name)
+                if tool is None and gateway_repair is not None:
+                    # The model called a declared read gateway; the corrected
+                    # gateway is positively established by the same live MCP
+                    # catalog. Never expose or execute any write gateway here.
+                    tool = gateway_repair[1]
                 requested_history_name = str(arguments.get("name") or "").strip()
                 requested_history_key = re.sub(
                     r"[^a-z0-9]", "", requested_history_name.casefold()
@@ -4898,6 +4912,10 @@ class UnifiedMCPAgent:
                         )
                     })
                 elif gateway_error is not None:
+                    # An invalid gateway operation was never executed. Do not
+                    # poison duplicate-call deduplication: after exact tool
+                    # discovery, the model may retry with a validated mapping.
+                    completed_calls.discard(signature)
                     round_tool_failure = True
                     increment_active_metric("gateway_operation_rejected")
                     content = json.dumps({
@@ -5050,7 +5068,22 @@ class UnifiedMCPAgent:
                             )
                         ):
                             return deterministic_message
-                messages.append({"role": "tool", "tool_name": name, "content": content})
+                messages.append({
+                    "role": "tool", "tool_name": original_tool_name,
+                    "content": content,
+                })
+                if gateway_repair is not None:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST VERIFIED READ-GATEWAY CORRECTION: the "
+                            "requested operation was executed through the "
+                            "live-advertised, compatible read gateway "
+                            + name + " instead of " + original_tool_name
+                            + ". This is tool-routing evidence only, not "
+                            "proof of any physical-device event."
+                        ),
+                    })
                 # The compact final evidence packet retains a short prefix
                 # per tool. Collect verified contiguous source pages within
                 # this request; only on full reconstruction project complete

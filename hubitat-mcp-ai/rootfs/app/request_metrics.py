@@ -64,7 +64,7 @@ class RequestMetrics:
         "lockout_prefetch_sufficiency_stop",
         "lockout_cross_source_sufficiency_stop",
         "lockout_focal_evidence_report",
-        "investigative_attribute_required", "gateway_operation_rejected",
+        "investigative_attribute_required", "gateway_operation_rejected", "gateway_read_rerouted",
         "history_attribute_rejected", "history_known_tool_fastpath",
         "semantic_fastpath_plans", "semantic_planner_plans",
         "semantic_planner_failures", "semantic_plan_compile_failures",
