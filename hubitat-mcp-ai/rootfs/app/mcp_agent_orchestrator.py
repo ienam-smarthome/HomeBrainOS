@@ -3962,6 +3962,12 @@ class UnifiedMCPAgent:
                                     + render_investigation_checkpoint(
                                         user_prompt, self.evidence.receipts(),
                                         available_read_tools=read_tools,
+                                        candidate_hypotheses=(
+                                            task_plan.candidate_hypotheses
+                                            if task_plan is not None
+                                            and task_plan.operation == "investigate"
+                                            else ()
+                                        ),
                                     )
                                 ),
                             })
@@ -4459,6 +4465,12 @@ class UnifiedMCPAgent:
                                     render_investigation_checkpoint(
                                         user_prompt, self.evidence.receipts(),
                                         available_read_tools=read_tools,
+                                        candidate_hypotheses=(
+                                            task_plan.candidate_hypotheses
+                                            if task_plan is not None
+                                            and task_plan.operation == "investigate"
+                                            else ()
+                                        ),
                                     )
                                     + "\nHOST MISSING SOURCE REQUIREMENTS: "
                                     + json.dumps(
