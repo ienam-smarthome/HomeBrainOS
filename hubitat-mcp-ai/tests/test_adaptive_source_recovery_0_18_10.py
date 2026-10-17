@@ -29,7 +29,9 @@ class AlmostFullPageMCP:
             + ("// Other unrelated Groovy code\n" * 6150)
             + "void updated() {\n initialize()\n}\n"
         )
-        self.code = body[:186457].ljust(186457, " ")
+        self.code = (body[:186457 - 44].ljust(186457 - 44, " ")
+                     + "void updated() {\\n  initialize()\\n}\\n".replace("\\n", "\n").ljust(44, " "))
+        assert len(self.code) == 186457
         self.calls = []
         self.shrink_recovers = shrink_recovers
 
@@ -136,3 +138,51 @@ def test_method_definitions_prioritized_and_late_symbols_not_starved():
     }
     assert any("void updated() {" in snippet for snippet in excerpts)
     assert any("private Long calculateExpiry()" in snippet for snippet in excerpts)
+
+
+
+def test_full_source_request_is_unresolved_without_full_coverage():
+    from shared_investigation_completion import apply_shared_investigation_completion
+    from types import SimpleNamespace
+    prompt = ("Inspect the complete Groovy source of installed app 4019 "
+              "and examine updated() and initialize().")
+    evidence = [{
+        "tool":"homebrain_read_groovy_source", "success":True,
+        "effect":"read", "mutates":False,
+        "details":{"sourceRetrieved":True,
+                   "fullImplementationVerified":False,
+                   "verifiedCharacters":95999,
+                   "declaredTotalCharacters":186457,
+                   "verifiedPages":2},
+    }]
+    outcome = SimpleNamespace(route="unified-mcp-agent",
+        request_class="live-read",message="Incomplete analysis",
+        evidence=evidence,metrics={"outcome":"success","counters":{}},
+        investigation_coverage=None)
+    result = apply_shared_investigation_completion(outcome, prompt)
+    assert result.metrics["outcome"] == "unresolved"
+    assert result.investigation_coverage["objectiveSatisfied"] is False
+    assert result.investigation_coverage["chunkCoverage"]["chunksObserved"] == 2
+    assert result.investigation_coverage["chunkCoverage"]["verifiedCharacters"] == 95999
+
+
+def test_complete_workbench_source_is_reported_as_full_coverage():
+    from shared_investigation_completion import apply_shared_investigation_completion
+    from types import SimpleNamespace
+    evidence = [{
+        "tool":"homebrain_read_groovy_source", "success":True,
+        "effect":"read", "mutates":False,
+        "details":{"sourceRetrieved":True,"fullImplementationVerified":True,
+                   "verifiedCharacters":186457,
+                   "declaredTotalCharacters":186457,"verifiedPages":11},
+    }]
+    outcome = SimpleNamespace(route="unified-mcp-agent",
+        request_class="live-read",message="Source read.",
+        evidence=evidence,metrics={"outcome":"success","counters":{}},
+        investigation_coverage=None)
+    result = apply_shared_investigation_completion(
+        outcome,"Inspect the full Groovy source of installed app 4019.")
+    assert result.investigation_coverage["fullImplementationVerified"] is True
+    assert result.investigation_coverage["chunkCoverage"]["coverage"] == "complete"
+    assert result.investigation_coverage["chunkCoverage"]["chunksObserved"] == 11
+    assert result.metrics["outcome"] == "success"
