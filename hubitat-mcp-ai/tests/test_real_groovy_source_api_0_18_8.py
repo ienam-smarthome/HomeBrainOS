@@ -21,7 +21,7 @@ class LiveShapeMCP:
                    " return settings.motionOffLockoutMinutes ?: 30\n}\n"
                    "void startMotionLockoutForDevice() {\n"
                    "state.motionLockout = [device: now() + 60000L]\n}\n")
-        self.code += "  // harmless implementation line\n" * 1400
+        self.code += "  // harmless implementation line\n" * 2800
     async def list_tools(self):
         return [
             SimpleNamespace(name="hub_search_tools",input_schema={}),
@@ -46,9 +46,9 @@ class LiveShapeMCP:
                 assert op=="hub_get_source"
                 leaf=args["args"]
                 assert leaf["id"]=="1453" and leaf["type"]=="app"
-                assert leaf["length"]==20000
+                assert leaf["length"]==48000
                 start=leaf["offset"]
-                chunk=self.code[start:start+20000]
+                chunk=self.code[start:start+48000]
                 data={"success":True,"appId":1453,"source":chunk,"offset":start,
                       "chunkLength":len(chunk),"totalLength":len(self.code),
                       "hasMore":start+len(chunk)<len(self.code),
@@ -73,6 +73,6 @@ def test_real_groovy_gateway_reads_sequential_offset_pages():
                  and call[1]["tool"]=="hub_get_source"]
         assert len(sources)>=2
         assert sources[0]["offset"]==0
-        assert sources[1]["offset"]==20000
+        assert sources[1]["offset"]==48000
         assert sum(1 for gateway,_,_ in receipt.calls if gateway=="hub_read_apps_code")>=3
     asyncio.run(run())
