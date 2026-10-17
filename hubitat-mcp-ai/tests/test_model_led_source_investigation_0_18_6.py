@@ -54,7 +54,7 @@ def test_source_reader_can_select_actual_read_leaf():
 def test_model_receives_source_evidence_not_hardcoded_answer(monkeypatch):
     import groovy_source_investigation as source
     called = []
-    async def fake_inspect(self, app_id):
+    async def fake_inspect(self, app_id, symbols=None):
         called.append(app_id)
         return GroovySourceReport(
             f"Model-readable source snippet for app {app_id}. "
