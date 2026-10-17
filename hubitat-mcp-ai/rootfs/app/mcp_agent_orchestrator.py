@@ -17,7 +17,7 @@ from agent_prompt_policy import (
 )
 from chat_transport import ChatTransport
 from source_analysis_completion import source_trace_ready_for_synthesis
-from source_method_projection import source_method_packet
+from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from paid_model_routing import (
@@ -3624,6 +3624,8 @@ class UnifiedMCPAgent:
         catalog = build_request_tool_catalog(all_tools)
         groovy_source_app = requested_groovy_app_id(user_prompt)
         source_investigation = groovy_source_app is not None
+        # Request-local collector; never share source text between questions.
+        source_chunks = SourceChunkCollector(user_prompt)
         adaptive_investigation = (
             model_led_investigation_request(user_prompt)
             and not _explicit_mutation_request(user_prompt)
@@ -5049,10 +5051,10 @@ class UnifiedMCPAgent:
                         ):
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
-                # The compact final evidence packet only retains a short
-                # prefix of each tool payload. For verified one-piece driver
-                # source, preserve full *relevant method candidates* from the
-                # original current-turn source before that packet truncation.
+                # The compact final evidence packet retains a short prefix
+                # per tool. Collect verified contiguous source pages within
+                # this request; only on full reconstruction project complete
+                # relevant candidate method bodies, including late-file code.
                 # No new MCP read, command, or Groovy evaluation occurs.
                 if (
                     source_investigation or (
@@ -5066,8 +5068,8 @@ class UnifiedMCPAgent:
                         and result is not None
                         and self._tool_succeeded(result)
                     ):
-                        method_packet = source_method_packet(
-                            result.data, arguments, user_prompt,
+                        method_packet = source_chunks.observe(
+                            result.data, arguments,
                         )
                         if method_packet:
                             messages.append({

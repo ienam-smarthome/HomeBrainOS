@@ -16,6 +16,7 @@ from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
 from source_analysis_completion import (
     source_analysis_failed, source_failure_summary, source_method_claim_gap,
+    source_runtime_evidence_status,
 )
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
@@ -205,6 +206,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         draft_message = str(getattr(outcome, "message", "") or "")
         synthesis_failed = source_analysis_failed(draft_message)
         method_gap = source_method_claim_gap(draft_message)
+        runtime = source_runtime_evidence_status(request, evidence)
+        runtime_gap = runtime["required"] and not runtime["satisfied"]
         coverage = {
             "domain": "source_code",
             "status": ("full-source-observed" if full else
@@ -215,6 +218,7 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "objectiveSatisfied": bool(
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
+                and not runtime_gap
             ),
             "analysisAnswerVerified": not synthesis_failed,
             "analysisStatus": (
@@ -223,6 +227,12 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 if method_gap else "model-answer-present-not-method-certified"
             ),
             "fullSourceRequested": complete_requested,
+            "runtimeEvidence": runtime,
+            "questionResolved": bool(
+                found and (full or not complete_requested)
+                and not synthesis_failed and not method_gap
+                and not runtime_gap
+            ),
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
             "chunkCoverage": segments,
@@ -265,10 +275,19 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "was not verified. Unseen methods and code-level root causes "
                 "must remain unverified."
             )
+        if runtime_gap:
+            message += (
+                "\n\n**Runtime correlation incomplete:** The source implementation "
+                "was read, but this question also requires current-turn scoped "
+                "device state, event history and logs. Unchecked sources: "
+                + ", ".join(runtime["missing"]) + ". "
+                "Driver source alone cannot establish the device's current "
+                "physical connectivity or which offline handler actually ran."
+            )
         return _CoverageOutcome(
             outcome, coverage,
             _safe_metrics(outcome, partial=(
-                synthesis_failed or method_gap or not found
+                synthesis_failed or method_gap or runtime_gap or not found
                 or (complete_requested and not full)
             )),
             message,
