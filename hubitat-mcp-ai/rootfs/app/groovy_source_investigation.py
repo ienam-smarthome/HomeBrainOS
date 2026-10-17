@@ -27,7 +27,7 @@ _SYMBOLS = ("motionOffLockoutMinutes", "getMotionLockoutDurationMinutes",
             "startMotionLockoutForDevice", "startMotionLockoutForAllLights",
             "isDeviceMotionLockedOut", "state.motionLockout",
             "getMotionLockoutStatusSummary", "updated()", "initialize()")
-MAX_CHUNKS = 16
+MAX_CHUNKS = 32
 MAX_CHARS = 250000
 SOURCE_READ_LENGTH = 48000
 MAX_SYMBOLS = 12
@@ -267,12 +267,19 @@ class GroovySourceService:
         total: int | None = None
         version: Any = None
         offset = 0
+        chunk_size = SOURCE_READ_LENGTH
+        retries = 0
+        incomplete_reason = ""
+        # The MCP gateway may return a 47,999-character chunk for a requested
+        # 48,000-character page while advertising a larger nextOffset. Never
+        # silently skip a character. Retry the same offset with a smaller page,
+        # and only append a segment after its offset and nextOffset agree.
         for index in range(MAX_CHUNKS):
             leaf_args = dict(base_args)
             if operation == "hub_get_source":
-                leaf_args.update({"offset": offset, "length": SOURCE_READ_LENGTH})
+                leaf_args.update({"offset": offset, "length": chunk_size})
             elif index > 0:
-                leaf_args.update({"offset": offset, "limit": 65536})
+                leaf_args.update({"offset": offset, "limit": min(chunk_size, 48000)})
             began = time.monotonic()
             try:
                 wire_args = (leaf_args if gateway == operation
@@ -282,36 +289,71 @@ class GroovySourceService:
                 chunk, meta = _source_body(result.data if ok else {})
             except Exception:
                 ok, chunk, meta = False, "", {}
-            self._record(gateway, operation, leaf_args, began, ok and bool(chunk),
-                         f"Raw source chunk {index+1}: {len(chunk)} chars")
             if not ok or not chunk:
+                incomplete_reason = f"No raw text returned at offset {offset}"
+                self._record(gateway, operation, leaf_args, began, False,
+                             incomplete_reason)
+                if operation == "hub_get_source" and chunk_size > 8000:
+                    chunk_size = 16000 if chunk_size > 16000 else 8000
+                    retries += 1
+                    continue
+                break
+            actual_offset = meta.get("offset", offset)
+            advertised_next = meta.get("nextOffset")
+            expected_next = offset + len(chunk)
+            chunk_total = next((
+                meta[field] for field in ("totalChars", "totalLength", "sourceLength")
+                if isinstance(meta.get(field), int) and meta[field] > 0
+            ), None)
+            returned_id = meta.get("appId")
+            chunk_version = meta.get("version") or meta.get("codeVersion")
+
+            fault = ""
+            if not isinstance(actual_offset, int) or actual_offset != offset:
+                fault = f"Unexpected source offset at {offset}"
+            elif isinstance(advertised_next, int) and advertised_next > offset and advertised_next != expected_next:
+                fault = f"Source nextOffset disagrees with returned text length at {offset}"
+            elif chunk_total is not None and total is not None and chunk_total != total:
+                fault = f"Source length changed during retrieval at {offset}"
+            elif (returned_id is not None and code_id
+                  and str(returned_id).isdigit() and str(returned_id) != code_id):
+                fault = f"Source identity changed during retrieval at {offset}"
+            elif version is not None and chunk_version is not None and str(chunk_version) != str(version):
+                fault = f"Source version changed during retrieval at {offset}"
+            elif chunk_total is not None and expected_next > chunk_total:
+                fault = f"Returned source extends beyond declared length at {offset}"
+            if fault:
+                incomplete_reason = fault
+                self._record(gateway, operation, leaf_args, began, False, fault)
+                if operation == "hub_get_source" and chunk_size > 8000:
+                    chunk_size = 16000 if chunk_size > 16000 else 8000
+                    retries += 1
+                    continue
+                break
+
+            if len(body) + len(chunk) > MAX_CHARS:
+                incomplete_reason = "Source exceeds bounded retrieval allowance"
+                self._record(gateway, operation, leaf_args, began, False,
+                             incomplete_reason)
                 break
             body += chunk
-            version = meta.get("version") or meta.get("codeVersion") or version
-            for field in ("totalChars", "totalLength", "sourceLength"):
-                if isinstance(meta.get(field), int) and meta[field] >= 0:
-                    total = meta[field]
-            if len(body) >= MAX_CHARS:
+            offset = expected_next
+            if chunk_total is not None:
+                total = chunk_total
+            if chunk_version is not None:
+                version = chunk_version
+            self._record(gateway, operation, leaf_args, began, True,
+                         f"Verified source chars {actual_offset}..{expected_next}")
+            if total is not None and offset == total:
                 break
-            next_offset = meta.get("nextOffset")
-            actual_offset = meta.get("offset", offset)
-            if not isinstance(actual_offset, int) or actual_offset != offset:
-                body = body[:-len(chunk)]
+            if total is not None and offset > total:
+                incomplete_reason = "Received more source text than declared total"
                 break
-            expected_next = offset + len(chunk)
-            if (isinstance(next_offset, int) and next_offset > offset
-                    and next_offset != expected_next):
-                # Server skip/truncation: do not certify disjoint pages as full.
+            if not meta.get("hasMore", True) and total is None:
                 break
-            if total is not None and len(body) >= total:
-                break
-            if total is not None and len(body) < total:
-                offset = expected_next
-                continue
-            if isinstance(next_offset, int) and next_offset == expected_next:
-                offset = expected_next
-                continue
-            break
+        else:
+            incomplete_reason = "Reached bounded source-read call limit"
+
         if not body:
             return GroovySourceReport(
                 title + f"\n- Verified source operation: {operation} via {gateway}."
@@ -321,14 +363,19 @@ class GroovySourceService:
                   "defaultValue declaration, getter, stored lockout expiry or "
                   "updated()/initialize() behaviour."
             )
-        complete = total is not None and len(body) == total
+        complete = total is not None and offset == total and len(body) == total
         lines = [
             title, f"- Source reader: {operation} via {gateway}.",
             f"- Source text retrieved: {len(body)} characters; "
             + ("complete by declared length." if complete else
                "full source coverage unverified."),
             f"- Retrieved text SHA-256: {hashlib.sha256(body.encode()).hexdigest()}.",
+            f"- Verified contiguous range: 0..{offset}"
+            + (f" / {total} characters." if total is not None else " (total unknown)."),
+            f"- Smaller-page recovery attempts: {retries}.",
         ]
+        if incomplete_reason and not complete:
+            lines.append(f"- Retrieval limitation: {incomplete_reason}.")
         if code_id:
             lines.append(f"- Verified code ID: {code_id}.")
         if version is not None:
