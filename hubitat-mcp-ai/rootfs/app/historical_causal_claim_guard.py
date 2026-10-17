@@ -25,6 +25,10 @@ _DATE = re.compile(
     r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Dec(?:ember)?)\s+\d{1,2}\b"
 )
+_CLEARLY_UNVERIFIED = re.compile(
+    r"(?i)\b(?:unknown whether|cannot determine whether|not established "
+    r"whether|unverified whether|no evidence whether)\b"
+)
 _SOURCE_FALSE_ABSENCE = re.compile(
     r"(?i)\b(?:driver|Groovy|implementation)\s+source(?:\s+code)?\s+"
     r"(?:was|were|has)\s+not\s+(?:been\s+)?(?:retrieved|read|provided|checked)\b"
@@ -132,7 +136,7 @@ def assess_historical_claims(
     unverified: set[str] = set()
     for match in _APP_ACTOR.finditer(message):
         context = _claim_context(message, match)
-        if not _ACT.search(context):
+        if not _ACT.search(context) or _CLEARLY_UNVERIFIED.search(context):
             continue
         app_id = match.group(1)
         if not _matching_record(app_id, context, events):
