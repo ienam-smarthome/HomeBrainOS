@@ -72,6 +72,7 @@ from request_metrics import RequestMetrics
 from room_status_snapshot import format_room_status, linked_parent_ids, parse_room_status_request, resolve_room
 from rule_authoring_service import RuleAuthoringService
 from rule_machine_analysis import RuleMachineAnalysisService, parse_rule_analysis_request
+from groovy_source_investigation import GroovySourceService, requested_groovy_app_id
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
 from semantic_planner import SemanticPlanner, is_semantic_control_candidate
@@ -1629,6 +1630,16 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             )
             if pending_confirmation is not None:
                 return pending_confirmation
+
+            # Source requests address the installed user-code implementation,
+            # not a Rule Machine snapshot or current app settings. Resolve via
+            # live MCP source metadata, without paying for unrelated AI rounds.
+            groovy_app = requested_groovy_app_id(user_prompt)
+            if groovy_app is not None:
+                async def inspect_source() -> str:
+                    report = await GroovySourceService(self.mcp, self.evidence).inspect(groovy_app)
+                    return report.message
+                return await self._direct_outcome(inspect_source, request_class="live-read")
 
             # Model/host investigation contracts outrank snapshot presenters:
             # the quick rule report only has current config and sensor states.
