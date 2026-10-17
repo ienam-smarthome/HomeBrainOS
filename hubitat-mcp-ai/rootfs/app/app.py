@@ -107,6 +107,8 @@ def load_options() -> dict[str, Any]:
         "ollama_paid_routing_mode": "hybrid",
         "ollama_paid_deep_model": "deepseek-v4-pro",
         "ollama_free_quota_paid_fallback_enabled": False,
+        "anthropic_api_key": "",
+        "anthropic_model": "claude-sonnet-4-6",
         "ollama_local_enabled": False,
         "ollama_local_base_url": "http://localhost:11434",
         "ollama_local_model": "",
@@ -311,6 +313,8 @@ agent = UnifiedMCPAgent(
     paid_budget_usd=None,  # no HomeBrain budget; provider credit settings apply
     paid_deep_model=str(OPTIONS.get("ollama_paid_deep_model") or "deepseek-v4-pro"),
     free_quota_paid_fallback_enabled=_bool(OPTIONS.get("ollama_free_quota_paid_fallback_enabled"), False),
+    claude_api_key=str(OPTIONS.get("anthropic_api_key") or ""),
+    claude_model=str(OPTIONS.get("anthropic_model") or "claude-sonnet-4-6"),
     local_base_url=(
         str(OPTIONS.get("ollama_local_base_url") or "")
         if _bool(OPTIONS.get("ollama_local_enabled"), False)
@@ -514,7 +518,7 @@ class ChatRequest(BaseModel):
     history: list[HistoryItem] = Field(default_factory=list)
     session_id: str | None = Field(default=None, min_length=1, max_length=160)
     request_id: str | None = Field(default=None, min_length=1, max_length=160)
-    model_tier: Literal["auto", "free", "paid"] = "auto"
+    model_tier: Literal["auto", "free", "paid", "claude"] = "free"
 
     @model_validator(mode="after")
     def require_message(self) -> "ChatRequest":
@@ -704,6 +708,13 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     except asyncio.CancelledError:
         raise
     except httpx.HTTPStatusError as exc:
+        if request.model_tier == "claude" and exc.response.status_code in (401, 402, 403):
+            raise HTTPException(
+                status_code=503,
+                detail="Claude API rejected authentication or billing. Check the "
+                       "Anthropic API key, account credits and model access. "
+                       "No Ollama/free fallback was attempted.",
+            ) from exc
         if request.model_tier == "paid" and exc.response.status_code == 402:
             raise HTTPException(
                 status_code=402,
@@ -760,6 +771,12 @@ async def health() -> dict[str, Any]:
             "local_enabled": _bool(OPTIONS.get("ollama_local_enabled"), False),
             "local_configured": agent.local_configured,
             "local_model": agent.local_model_name or None,
+        },
+        "claude": {
+            "configured": agent.transport.claude.configured,
+            "model": agent.transport.claude.model,
+            "provider": "Anthropic API",
+            "billing": "Anthropic API account",
         },
         "paid_routing": {
             "enabled": agent.transport.paid_credit_guard.enabled,
