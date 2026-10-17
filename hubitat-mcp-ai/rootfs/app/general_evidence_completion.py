@@ -69,7 +69,7 @@ def _kind(receipt: dict[str, Any]) -> str | None:
             and isinstance(raw["args"].get("args"), dict)):
         return None  # malformed double-wrapped gateway call
     args = _args(receipt)
-    if op == "homebrain_read_groovy_source":
+    if op in {"homebrain_read_groovy_source", "hub_get_source"}:
         details = receipt.get("details") or {}
         return "source_code" if isinstance(details, dict) and details.get("sourceRetrieved") is True else None
     if op == "hub_get_logs":
