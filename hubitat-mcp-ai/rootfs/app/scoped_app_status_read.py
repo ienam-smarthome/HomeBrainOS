@@ -16,12 +16,16 @@ _SCOPED_STATUS = re.compile(
 )
 _APP_ID = re.compile(r"(?i)\bapp\s*(?:id\s*)?#?\s*(\d{3,7})\b")
 _HISTORY = re.compile(r"(?i)\b(?:historical|history|recent\s+executions?|logs?|why|investigat|diagnos)\b")
+_SOURCE_ANALYSIS = re.compile(
+    r"(?i)\b(?:groovy|source(?:[- ]code)?|implementation|defaultvalue|"
+    r"state\.motionlockout|code\s+path|getter\s+(?:fallback|logic))\b"
+)
 
 
 def scoped_status_app_id(question: str) -> int | None:
     text = str(question or "")
     m = _APP_ID.search(text)
-    if not m or not _SCOPED_STATUS.search(text) or _HISTORY.search(text):
+    if not m or not _SCOPED_STATUS.search(text) or _HISTORY.search(text) or _SOURCE_ANALYSIS.search(text):
         return None
     return int(m.group(1))
 

@@ -23,6 +23,17 @@ _NUMBER_WORDS = {
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
 }
 
+# The current-settings fast path is not a source-code inspection tool.
+# A compound "read the Groovy source and explain lockout defaults / state"
+# question must reach the investigative planner instead of returning only
+# settings before the code-related portion can be attempted.
+_SOURCE_ANALYSIS = re.compile(
+    r"\b(?:groovy|source(?:[- ]code)?|implementation|defaultvalue|"
+    r"state\.motionlockout|source\s+retrieval|code\s+path|"
+    r"getter\s+(?:fallback|logic)|function\s+body)\b",
+    re.I,
+)
+
 
 def current_lockout_config_app_id(prompt: str) -> str | None:
     """Narrow single-app current-settings intent, never a historical inquiry."""
@@ -32,6 +43,8 @@ def current_lockout_config_app_id(prompt: str) -> str | None:
     if not match or "lockout" not in folded and "lock-out" not in folded:
         return None
     if not re.search(r"\b(?:configur\w*|persisted|settings?|duration|trigger mode)\b", folded):
+        return None
+    if _SOURCE_ANALYSIS.search(text):
         return None
     if re.search(
         r"\b(?:investigat\w*|reconstruct|"
