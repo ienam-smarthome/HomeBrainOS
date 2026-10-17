@@ -53,7 +53,7 @@ class RequestMetrics:
         "resolution_cache_hit", "resolution_cache_metadata_miss",
         "control_local_identity_cache_hit", "control_identity_lookup",
         "identity_cache_hit", "identity_refresh",
-        "evidence_sufficiency_stop",
+        "evidence_sufficiency_stop", "source_trace_sufficiency_stop",
         "investigation_snapshot_shortcut_bypassed",
         "investigation_read_reflection", "investigation_general_evidence_retry",
         "investigation_write_blocked", "investigation_reflection_synthesized",
