@@ -15,7 +15,7 @@ def test_paid_routing_needs_real_investigation():
     for question in ["Which lights are on?", "Show the livingroom rule", "Show sensor status"]:
         assert choose_paid_model(_q(question), "hybrid") is None
     assert choose_paid_model(_q("Investigate why Bedroom 1 Light came on"), "hybrid") == "deepseek-v4-pro"
-    assert choose_paid_model(_q("Analyse the recent history of the livingroom rule"), "hybrid") == "deepseek-v4-pro"
+    assert choose_paid_model(_q("Analyse the recent history of the livingroom rule"), "hybrid") == "deepseek-v4.1-flash"
     assert choose_paid_model(_q("Summarise rule execution history"), "hybrid") == "deepseek-v4.1-flash"
 
 
