@@ -224,6 +224,8 @@ def test_failed_read_never_marks_competing_explanation_checked():
     ("Independently investigate why Bedroom 3 Mesh is offline and compare three competing explanations. Read-only.", True),
     ("Diagnose MQTT issues and test alternative hypotheses. Read-only.", True),
     ("Compare possible causes for repeated scheduled jobs. Read-only.", True),
+    ("Investigate thoroughly why Livingroom Light 1 turned on at 12:00:03; "
+     "check app logs and possible alternative causes. Read-only.", False),
     ("Why did the hallway light turn on?", False),
     ("Investigate the current status of Bedroom 3 Mesh.", False),
     ("Turn on Hallway Light", False),
