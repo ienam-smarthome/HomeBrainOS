@@ -225,3 +225,96 @@ def test_prospective_rule_explanation_does_not_become_diagnostic_telemetry():
     assert plan_investigation(
         "Explain how to create a VRB rule for a hallway motion sensor."
     ) is None
+
+
+def test_source_workbench_complete_outweighs_partial_direct_probe():
+    """2026-10-17: direct 0..10000 must not mask four verified workbench pages."""
+    evidence = [
+        receipt("hub_read_apps_code", "hub_get_source", {
+            "id": "1453", "type": "app", "offset": 0, "length": 10000,
+        }, details={
+            "sourceRetrieved": True, "offset": 0, "chunkLength": 10000,
+            "totalLength": 186457, "sourceCodeId": "1453",
+        }),
+        receipt("homebrain_read_groovy_source", None, {
+            "appId": "1453",
+        }, details={
+            "sourceRetrieved": False, "fullImplementationVerified": False,
+            "verifiedCharacters": 0, "verifiedPages": 0,
+        }),
+        receipt("homebrain_read_groovy_source", None, {
+            "appId": "4019",
+        }, details={
+            "sourceRetrieved": True, "fullImplementationVerified": True,
+            "verifiedCharacters": 186457, "declaredTotalCharacters": 186457,
+            "verifiedPages": 4, "sourceCodeId": "1453",
+        }),
+    ]
+    observed = build_observed_agent_outcome(
+        outcome(evidence), {"outcome": "success", "counters": {}, "timings_ms": {}},
+    )
+    answer = serialize(apply_shared_investigation_completion(
+        observed, "Investigate the complete Groovy source for installed app 4019.",
+    ))
+    coverage = answer["investigation_coverage"]
+    assert coverage["fullImplementationVerified"] is True
+    assert coverage["chunkCoverage"] == {
+        "fullImplementationVerified": True,
+        "coverage": "complete",
+        "chunksObserved": 4,
+        "verifiedCharacters": 186457,
+        "totalLength": 186457,
+        "validationMethod": "local-source-workbench",
+    }
+    assert coverage["directChunkCoverage"]["coverage"] == "partial"
+    assert coverage["directChunkCoverage"]["chunksObserved"] == 1
+    assert coverage["objectiveSatisfied"] is True
+    assert answer["metrics"]["outcome"] == "success"
+
+
+def test_direct_complete_survives_partial_local_source_workbench():
+    evidence = [
+        receipt("hub_read_apps_code", "hub_get_source", {
+            "id": "1099", "type": "app", "offset": 0, "length": 100,
+        }, details={"sourceRetrieved": True, "offset": 0, "chunkLength": 100,
+                    "totalLength": 200, "sourceCodeId": "1099"}),
+        receipt("hub_read_apps_code", "hub_get_source", {
+            "id": "1099", "type": "app", "offset": 100, "length": 100,
+        }, details={"sourceRetrieved": True, "offset": 100, "chunkLength": 100,
+                    "totalLength": 200, "sourceCodeId": "1099"}),
+        receipt("homebrain_read_groovy_source", None, {"appId": "5551"},
+                details={"sourceRetrieved": True, "fullImplementationVerified": False,
+                         "verifiedCharacters": 100, "declaredTotalCharacters": 200,
+                         "verifiedPages": 1, "sourceCodeId": "1099"}),
+    ]
+    observed = build_observed_agent_outcome(
+        outcome(evidence), {"outcome": "success", "counters": {}, "timings_ms": {}},
+    )
+    answer = serialize(apply_shared_investigation_completion(
+        observed, "Inspect complete Groovy source for installed app 5551.",
+    ))
+    coverage = answer["investigation_coverage"]
+    assert coverage["fullImplementationVerified"] is True
+    assert coverage["chunkCoverage"]["coverage"] == "complete"
+    assert coverage["chunkCoverage"]["chunksObserved"] == 2
+    assert coverage["workbenchChunkCoverage"]["coverage"] == "partial"
+
+
+def test_workbench_full_flag_with_inconsistent_counts_fails_closed():
+    evidence = [
+        receipt("homebrain_read_groovy_source", None, {"appId": "5551"},
+                details={"sourceRetrieved": True, "fullImplementationVerified": True,
+                         "verifiedCharacters": 190, "declaredTotalCharacters": 200,
+                         "verifiedPages": 2, "sourceCodeId": "1099"}),
+    ]
+    observed = build_observed_agent_outcome(
+        outcome(evidence), {"outcome": "success", "counters": {}, "timings_ms": {}},
+    )
+    answer = serialize(apply_shared_investigation_completion(
+        observed, "Inspect the complete Groovy source for installed app 5551.",
+    ))
+    coverage = answer["investigation_coverage"]
+    assert coverage["fullImplementationVerified"] is False
+    assert coverage["chunkCoverage"]["coverage"] == "partial"
+    assert coverage["objectiveSatisfied"] is False
+    assert answer["metrics"]["outcome"] == "unresolved"
