@@ -227,8 +227,8 @@ def test_explicit_paid_mixed_rounds_show_local_budget_boundary_without_invoice_c
     }
     response = build_agent_response(outcome, model="gemma4:31b",
                                     elapsed_ms=56030, version="0.18.17")
-    routing = response["paid_routing"]
-    assert routing["used"] is True
+    assert response["paid_routing"]["used"] is True
+    routing = response["model_continuity"]
     assert routing["paid_rounds"] == 6
     assert routing["free_rounds_after_paid"] == 3
     assert routing["mixed_models"] is True
@@ -249,7 +249,10 @@ def test_paid_model_no_budget_exhaustion_never_warns_about_midway_switch():
     ]
     response = build_agent_response(outcome, model="gemma4:31b",
                                     elapsed_ms=5000, version="0.18.17")
-    assert response["paid_routing"]["paid_rounds"] == 1
-    assert response["paid_routing"]["free_rounds_after_paid"] == 1
-    assert response["paid_routing"]["estimated_budget_exhausted"] is False
+    assert response["paid_routing"] == {
+        "requested": True, "used": True, "reason": "used",
+    }
+    assert response["model_continuity"]["paid_rounds"] == 1
+    assert response["model_continuity"]["free_rounds_after_paid"] == 1
+    assert response["model_continuity"]["estimated_budget_exhausted"] is False
     assert "**Model continuity:**" not in response["message"]
