@@ -318,3 +318,59 @@ def test_workbench_full_flag_with_inconsistent_counts_fails_closed():
     assert coverage["chunkCoverage"]["coverage"] == "partial"
     assert coverage["objectiveSatisfied"] is False
     assert answer["metrics"]["outcome"] == "unresolved"
+
+
+def test_provisional_comparisons_survive_evidence_safe_final_projection():
+    prior = {
+        "domain": "device_telemetry",
+        "evidenceComplete": False,
+        "hypothesisComparisonStatus": "model-proposed-source-checks-not-causal-verdicts",
+        "hypothesisComparisons": [
+            {
+                "candidate": "Endpoint has no power",
+                "discriminating_question": "Was a physical packet received?",
+                "source_kind": "device_history",
+                "source_state": "source-class-checked-verdict-unverified",
+                "hypothesis_verdict": "unverified",
+            },
+            {
+                "candidate": "Driver's MQTT status is cached",
+                "discriminating_question": "Is the broker reporting a current connection?",
+                "source_kind": "app_logs",
+                "source_state": "source-class-not-checked",
+                "hypothesis_verdict": "unverified",
+            },
+        ],
+    }
+    base = outcome([
+        receipt("hub_read_devices", "hub_list_device_events", {
+            "deviceId": "7103", "hoursBack": 24, "limit": 20,
+        }, details={"historySourceIntegrityVerified": False}),
+    ], coverage=prior)
+    observed = build_observed_agent_outcome(base, {
+        "outcome": "success", "counters": {}, "timings_ms": {},
+    })
+    result = serialize(apply_shared_investigation_completion(
+        observed, "Independently investigate why this device is offline and "
+                  "compare competing explanations. Read-only.",
+    ))
+    coverage = result["investigation_coverage"]
+    assert len(coverage["hypothesisComparisons"]) == 2
+    assert coverage["hypothesisComparisonStatus"].startswith("model-proposed")
+    assert "Competing explanations (provisional" in result["message"]
+    assert "Endpoint has no power" in result["message"]
+    assert "Driver's MQTT status is cached" in result["message"]
+    assert "hypothesis still unverified" in result["message"]
+    assert "relevant source class not checked" in result["message"]
+    assert result["metrics"]["outcome"] == "unresolved"
+
+
+def test_competing_explanations_do_not_appear_without_model_proposal():
+    base = outcome(coverage={"domain": "device_telemetry", "evidenceComplete": False})
+    observed = build_observed_agent_outcome(base, {
+        "outcome": "unresolved", "counters": {}, "timings_ms": {},
+    })
+    result = serialize(apply_shared_investigation_completion(
+        observed, "Why is this device offline?",
+    ))
+    assert "Competing explanations (provisional" not in result["message"]

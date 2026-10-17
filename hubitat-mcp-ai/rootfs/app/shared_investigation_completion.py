@@ -376,6 +376,31 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 render_telemetry_clock_qualification(clock_check)
                 + "\n\n" + message
             )
+    # Preserve explicitly requested, model-proposed alternatives even when
+    # the safety-oriented typed evidence renderer replaces the model's prose.
+    # A successful source-class read is NOT support, contradiction or proof
+    # of an individual proposed explanation.
+    proposed = coverage.get("hypothesisComparisons")
+    if isinstance(proposed, list) and proposed:
+        comparisons: list[str] = []
+        for candidate in proposed[:3]:
+            if not isinstance(candidate, dict):
+                continue
+            explanation = str(candidate.get("candidate") or "").strip()[:140]
+            question = str(candidate.get("discriminating_question") or "").strip()[:180]
+            checked = candidate.get("source_state") == "source-class-checked-verdict-unverified"
+            if explanation and question:
+                comparisons.append(
+                    "- **Possible explanation:** " + explanation
+                    + "\n  **Distinguishing evidence:** " + question
+                    + (" (relevant source class checked; hypothesis still unverified)."
+                       if checked else " (relevant source class not checked).")
+                )
+        if len(comparisons) >= 2:
+            message += (
+                "\n\n**Competing explanations (provisional; not a causal verdict):**\n"
+                + "\n".join(comparisons)
+            )
     if partial:
         limitations: list[str] = []
         if missing:
