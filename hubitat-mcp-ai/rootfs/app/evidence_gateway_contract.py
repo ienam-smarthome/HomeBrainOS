@@ -36,6 +36,16 @@ def normalize_gateway_read(name: str, arguments: dict[str, Any]) -> dict[str, An
         return arguments
     payload = deepcopy(arguments)
     leaf = payload.get("tool")
+    # A model can place the *entire* read envelope under outer "args".
+    # The upstream gateway then returns a capability listing instead of
+    # executing the leaf. Repair only this exact read-only shape.
+    if leaf is None and set(payload) == {"args"}:
+        inner = payload["args"]
+        if (isinstance(inner, dict) and inner.get("tool") in _READ_LEAVES
+                and isinstance(inner.get("args"), dict)
+                and set(inner) == {"tool", "args"}):
+            payload = inner
+            leaf = payload["tool"]
     if leaf not in _READ_LEAVES:
         return payload
     args = payload.get("args")
