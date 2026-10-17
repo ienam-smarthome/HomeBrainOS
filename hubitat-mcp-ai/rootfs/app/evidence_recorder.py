@@ -120,6 +120,11 @@ class EvidenceRecorder:
         if details:
             receipt["details"] = self.redact(details)
         receipts.append(receipt)
+        # The API request coordinator has an independent deadline. Copy only
+        # successfully completed redacted read receipts while the tool loop is
+        # active, so cancellation cannot erase evidence before final synthesis.
+        from request_runtime import remember_verified_read_receipt
+        remember_verified_read_receipt(receipt)
 
     def has_live_evidence(self) -> bool:
         """Report whether a successful receipt supports a current-state claim."""
