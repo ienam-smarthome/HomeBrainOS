@@ -153,3 +153,39 @@ def test_ui_has_explicit_nonpersistent_model_control_and_request_body_field():
     assert "localStorage.setItem('hmcp_model_tier'" not in page
     assert "sessionStorage.setItem('hmcp_model_tier'" not in page
     assert "request_model_tier" not in page
+
+
+def test_free_tier_does_not_fallback_to_paid_on_actual_provider_quota_response(tmp_path):
+    from chat_transport import ChatTransport
+    import httpx
+
+    async def run():
+        ledger = str(tmp_path / "credits.json")
+        transport = ChatTransport(
+            api_key="test-credential", base_url="https://ollama.com",
+            paid_routing_enabled=True, paid_routing_mode="paid",
+            paid_budget_usd=3, free_quota_paid_fallback_enabled=True,
+        )
+        transport.paid_credit_guard.path = Path(ledger)
+        attempts = []
+        async def reject_free(_messages, _tools, **params):
+            attempts.append(params["model_name"])
+            request = httpx.Request("POST", "https://ollama.com/api/chat")
+            response = httpx.Response(
+                402, json={"code": "free_quota_exhausted"}, request=request,
+            )
+            raise httpx.HTTPStatusError(
+                "Free quota exhausted", request=request, response=response,
+            )
+        transport._chat_round = reject_free
+        selected = set_request_model_tier("free")
+        try:
+            with pytest.raises(httpx.HTTPStatusError):
+                await transport._try_cloud_accounts(message(), [])
+            assert attempts == ["gemma4:31b"]
+            assert not Path(ledger).exists()
+        finally:
+            reset_request_model_tier(selected)
+            await transport.close()
+
+    asyncio.run(run())
