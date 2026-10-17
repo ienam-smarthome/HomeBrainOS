@@ -29,6 +29,8 @@ from performance_host_plan import is_scheduler_only_evidence_request
 from performance_causality_guard import performance_validation_needed
 from performance_evidence_first import build_performance_synthesis_contract
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
+from adaptive_investigation_policy import source_evidence_request
+from source_evidence_metadata import contiguous_source_coverage
 from request_metrics import increment_active_metric
 from synthesis_context import build_tool_evidence_packet
 from skill_investigation import render_skill_investigation
@@ -576,6 +578,34 @@ class FinalAnswerCoordinator:
             final_messages.append({
                 "role": "user",
                 "content": render_investigation_assessment(contract, evidence),
+            })
+        if source_evidence_request(original_user):
+            spans = contiguous_source_coverage(evidence)
+            final_messages.append({
+                "role": "user",
+                "content": (
+                    "HOST SOURCE ANALYSIS FINALISATION (no tool calls allowed): "
+                    "The user requested explanation of the actual driver "
+                    "implementation and correlation with observations. "
+                    + (
+                        "Full contiguous source-offset coverage has been verified. "
+                        if spans.get("fullImplementationVerified") else
+                        "Only partial or unverified source coverage is available. "
+                    )
+                    + "Source retrieval alone is not code-path review. "
+                      "Explain only those methods and branches that appear "
+                      "in the source text present in this current-turn transcript. "
+                      "Tie specific driver operations to scoped logs/events "
+                      "when the connection is supported. Explicitly distinguish "
+                      "the driver's MQTT client session from the physical "
+                      "endpoint ONLY if the source establishes that distinction. "
+                      "If exact getter/write/watchdog methods were not examined, "
+                      "name the missing analysis; do not invent it. "
+                      "There are NO tools in this final phase, so do not "
+                      "request another function or complain about missing "
+                      "structured actions. Produce a useful read-only "
+                      "evidence-qualified explanation now."
+                ),
             })
         final_messages.append({
             "role": "user",

@@ -14,6 +14,7 @@ from typing import Any
 from general_evidence_completion import assess_task_source_coverage
 from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
+from source_analysis_completion import source_analysis_failed, source_failure_summary
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
 )
@@ -199,12 +200,24 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             r"(?i)\b(?:entire|complete|full(?:\s+source|\s+implementation)?|"
             r"all\s+(?:relevant\s+)?code\s+paths)\b", request,
         ))
+        draft_message = str(getattr(outcome, "message", "") or "")
+        synthesis_failed = source_analysis_failed(draft_message)
         coverage = {
             "domain": "source_code",
             "status": ("full-source-observed" if full else
                        "source-segment-observed" if found else "source-unverified"),
             "evidenceComplete": found,
-            "objectiveSatisfied": bool(found and (full or not complete_requested)),
+            # Source retrieval is not completion of the requested
+            # method-and-runtime investigation if synthesis failed.
+            "objectiveSatisfied": bool(
+                found and (full or not complete_requested)
+                and not synthesis_failed
+            ),
+            "analysisAnswerVerified": not synthesis_failed,
+            "analysisStatus": (
+                "synthesis-failed-source-observed" if synthesis_failed
+                else "model-answer-present-not-method-certified"
+            ),
             "fullSourceRequested": complete_requested,
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
@@ -228,7 +241,10 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "Configuration, discovery and cached file references do not count."
             ),
         }
-        message = str(getattr(outcome, "message", "") or "")
+        message = (
+            source_failure_summary(evidence) if synthesis_failed
+            else draft_message
+        )
         if not found:
             message += (
                 "\n\n**Source evidence unavailable:** The current investigation "
@@ -244,7 +260,9 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             )
         return _CoverageOutcome(
             outcome, coverage,
-            _safe_metrics(outcome, partial=(not found or (complete_requested and not full))),
+            _safe_metrics(outcome, partial=(
+                synthesis_failed or not found or (complete_requested and not full)
+            )),
             message,
         )
     # System-wide section and performance source checks have different proof
