@@ -20,6 +20,33 @@ _INTENT = re.compile(r"\b(?:analy[sz]e|inspect|audit|review|investigate|verify|c
 _WRITES = re.compile(
     r"\b(?:change|modify|update|enable|disable|delete|remove|create|edit|pause|resume|turn\s+on|turn\s+off)\b", re.I
 )
+_PAST_RULE_ACTION = re.compile(
+    r"(?i)\b(?:issued|sent|executed|ran|fired|triggered|invoked|"
+    r"acknowledged|commanded|performed|actually\s+run|execution\s+logs?|"
+    r"command\s+(?:event|history|logs?|acknowledg\w*|provenance)|"
+    r"(?:off|on)\s+commands?)\b|\b(?:on|off)\s*\(\s*\)"
+)
+_HISTORY_VERIFICATION = re.compile(
+    r"(?i)\b(?:verify|check|confirm|investigate|determine|establish|"
+    r"correlate|reconstruct|prove|whether|did|when|what|who|how|"
+    r"execution\s+(?:history|logs?))\b"
+)
+
+
+def historical_rule_execution_request(prompt: str) -> bool:
+    """Historic app execution/command provenance must not use config snapshot.
+
+    Recognise this intent independently from the general analytical planner:
+    'verify whether app 3950 issued OFF at 01:30' is evidence work, even when
+    it contains none of the planner's telemetry or generic causation phrases.
+    A current trigger/settings review remains eligible for the fast path.
+    """
+    value = str(prompt or "")
+    return bool(
+        _APP_ID.search(value)
+        and _PAST_RULE_ACTION.search(value)
+        and _HISTORY_VERIFICATION.search(value)
+    )
 
 
 def parse_rule_analysis_request(prompt: str) -> tuple[str, str | None] | None:
@@ -28,6 +55,8 @@ def parse_rule_analysis_request(prompt: str) -> tuple[str, str | None] | None:
     # Installed Groovy-source analysis cannot be answered by this configuration-
     # and-sensor-health-only Rule Machine report.
     if requested_groovy_app_id(value) is not None:
+        return None
+    if historical_rule_execution_request(value):
         return None
     if not _INTENT.search(value) or _WRITES.search(value):
         return None
