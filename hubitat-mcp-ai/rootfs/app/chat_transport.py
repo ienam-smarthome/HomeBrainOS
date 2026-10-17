@@ -279,7 +279,8 @@ class ChatTransport:
                     "Claude Paid requires a Claude API key configured in "
                     "the HomeBrain add-on. No Ollama/free fallback was attempted."
                 )
-            return await self.claude.chat(messages, tools)
+            prepared_messages, prepared_tools = prepare_reasoning_turn(messages, tools)
+            return await self.claude.chat(prepared_messages, prepared_tools)
         manual_paid_cloud = (
             self.paid_credit_guard.enabled
             and explicit_paid_request()
