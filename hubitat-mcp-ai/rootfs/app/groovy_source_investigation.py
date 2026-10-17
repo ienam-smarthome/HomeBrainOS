@@ -52,7 +52,7 @@ def source_code_id(config: dict[str, Any], app_id: str) -> str | None:
     if not isinstance(app, dict) or str(app.get("id") or app.get("appId") or "") != app_id:
         return None
     for item in _containers(app):
-        for key in ("codeId", "appCodeId", "sourceCodeId", "appTypeId", "appCodeID"):
+        for key in ("codeId", "appCodeId", "sourceCodeId", "appCodeID"):
             value = item.get(key)
             if isinstance(value, (str, int)) and str(value).isdigit():
                 return str(value)
@@ -78,6 +78,10 @@ def _source_operations(tools: list[Any], discovery: Any) -> list[tuple[str, str]
                 and _READ_OP.fullmatch(operation) and not _DENY_OP.search(operation)):
             found.add((gateway, operation))
     for tool in tools:
+        # Some MCP servers advertise source reads as top-level functions,
+        # rather than as an operation inside the apps/code facade.
+        if _READ_OP.fullmatch(tool.name) and not _DENY_OP.search(tool.name):
+            found.add((tool.name, tool.name))
         schema = getattr(tool, "input_schema", {}) or {}
         properties = schema.get("properties") or {}
         enum = (properties.get("tool") or {}).get("enum") or []
@@ -134,7 +138,8 @@ class GroovySourceService:
                 began: float, ok: bool, summary: str) -> None:
         self.evidence.record(
             gateway,
-            {"tool": operation, "args": args} if gateway != "hub_search_tools" else args,
+            args if gateway in {"hub_search_tools", operation}
+            else {"tool": operation, "args": args},
             success=ok, elapsed_ms=round((time.monotonic()-began)*1000),
             summary=summary[:200], supports_live_claim=False,
             evidence_kind="groovy_source_discovery" if gateway == "hub_search_tools"
@@ -208,9 +213,9 @@ class GroovySourceService:
                 leaf_args.update({"offset": offset, "limit": 65536})
             began = time.monotonic()
             try:
-                result = await self.mcp.call_tool(gateway, {
-                    "tool": operation, "args": leaf_args,
-                })
+                wire_args = (leaf_args if gateway == operation
+                             else {"tool": operation, "args": leaf_args})
+                result = await self.mcp.call_tool(gateway, wire_args)
                 ok = tool_succeeded(result)
                 chunk, meta = _source_body(result.data if ok else {})
             except Exception:
