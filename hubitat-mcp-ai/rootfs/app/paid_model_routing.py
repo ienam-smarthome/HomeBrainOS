@@ -1,9 +1,9 @@
-"""Opt-in, conservative Ollama paid-model selection and estimated spend guard.
+"""Per-request Ollama model routing with an optional legacy spend guard.
 
-The ledger reserves an estimated upper-bound *before* each paid model round.
-It is not an Ollama billing limit: provider accounting and reasoning-token
-usage may differ. Leave Ollama auto-reload disabled and monitor vendor usage.
-Never log prompts, account keys or raw evidence.
+Production HomeBrain now uses no local cumulative budget or reservation ledger:
+Ollama account credit and auto-reload settings control billing. Older explicit
+guard users/tests may still provide a finite budget. Never log account keys,
+prompts, or raw evidence.
 """
 from __future__ import annotations
 
@@ -121,16 +121,19 @@ def choose_paid_model(messages: list[dict], mode: str) -> str | None:
 
 
 class PaidCreditGuard:
-    """Single-process conservative reservation counter backed by /data JSON."""
+    """Paid-model gate: production is uncapped, finite legacy guards remain optional."""
 
     def __init__(self, *, enabled: bool, mode: str = "hybrid",
-                 budget_usd: float = 6.50,
+                 budget_usd: float | None = 6.50,
                  deep_model: str = "deepseek-v4-pro",
                  ledger_path: str = "/data/ollama_paid_usage.json"):
         self.enabled = bool(enabled)
         self.mode = mode
         self.deep_model = deep_model if deep_model in {"deepseek-v4-pro", "glm-5.3"} else "deepseek-v4-pro"
-        self.budget_usd = max(0.0, float(budget_usd))
+        # None means the HomeBrain add-on has no cumulative local cap.
+        # Existing callers supplying a number retain the legacy limiter.
+        # The production UI/configuration deliberately passes None.
+        self.budget_usd = None if budget_usd is None else max(0.0, float(budget_usd))
         self.path = Path(ledger_path)
         self._lock = asyncio.Lock()
 
@@ -150,16 +153,19 @@ class PaidCreditGuard:
             increment_active_metric("paid_routing_disabled")
             record_active_paid_guard("disabled", budget_usd=self.budget_usd)
             return None
-        if self.budget_usd <= 0:
+        if self.budget_usd is not None and self.budget_usd <= 0:
             increment_active_metric("paid_routing_budget_disabled")
             record_active_paid_guard("zero_budget", budget_usd=self.budget_usd)
             return None
-        reserved = await self._reserve(messages, tools, model)
-        increment_active_metric("paid_model_reserved" if reserved else "paid_routing_reservation_blocked")
-        return reserved
+        selected = await self._reserve(messages, tools, model)
+        if self.budget_usd is not None:
+            increment_active_metric("paid_model_reserved" if selected else "paid_routing_reservation_blocked")
+        else:
+            increment_active_metric("paid_model_selected" if selected else "paid_routing_disabled")
+        return selected
 
     async def _reserve(self, messages: list[dict], tools: list[dict], model: str | None) -> str | None:
-        if not self.enabled or self.budget_usd <= 0 or not model:
+        if not self.enabled or (self.budget_usd is not None and self.budget_usd <= 0) or not model:
             if model:
                 record_active_paid_guard("disabled" if not self.enabled else "zero_budget",
                                          budget_usd=self.budget_usd)
@@ -167,6 +173,12 @@ class PaidCreditGuard:
         if model not in MODEL_RATES:
             record_active_paid_guard("unknown_model", budget_usd=self.budget_usd)
             return None
+        if self.budget_usd is None:
+            # No local budget, ledger reads or persistent spend reservations.
+            # Ollama alone handles remaining credits and provider-side charges.
+            # Never delete the legacy ledger: it is simply no longer consulted.
+            record_active_paid_guard("no_local_budget")
+            return model
         # Pessimistic character/token ratio of 1:1 for the complete model
         # packet, including tools. Allow 8,192 output tokens per round.
         # This is a reservation, NOT a confirmed invoice amount.
