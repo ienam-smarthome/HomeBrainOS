@@ -343,7 +343,7 @@ class GroovySourceService:
             lines.append("Source excerpts (retrieved-text-relative line numbers):")
             lines.extend(excerpts)
         else:
-            lines.append("No target lockout symbols found in retrieved source segment.")
+            lines.append("No requested code symbols found in retrieved source text.")
         if not complete:
             lines.append("Do not assert that a function is absent or a state write "
                          "never occurs without complete implementation coverage.")
