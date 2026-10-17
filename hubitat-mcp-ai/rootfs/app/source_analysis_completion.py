@@ -99,6 +99,62 @@ def source_trace_ready_for_synthesis(
     return bool(device_configs & scoped_events & scoped_logs)
 
 
+_RUNTIME_REQUEST = re.compile(
+    r"(?i)\\b(?:correlat\\w*|runtime\\s+observations?|"
+    r"current(?:ly)?|today|offline\\s+state|"
+    r"actual\\s+(?:state|failure|cause)|incident|"
+    r"historical\\s+(?:logs?|events?))\\b"
+)
+_DEVICE_ID_IN_QUESTION = re.compile(
+    r"(?i)\\bdevice\\s*(?:id\\s*)?#?\\s*(\\d{2,9})\\b"
+)
+
+
+def source_runtime_evidence_status(
+    request: str, receipts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Explicit source+runtime investigations also require scoped live reads.
+
+    A Groovy source download cannot establish the runtime failure of a
+    physical device. Only current-request successful, non-mutating receipts
+    count; never assume past conversation data or unscoped logs.
+    """
+    required = bool(_RUNTIME_REQUEST.search(str(request or "")))
+    status: dict[str, Any] = {
+        "required": required, "satisfied": not required,
+        "checked": [], "missing": [],
+    }
+    if not required:
+        return status
+    specified = _DEVICE_ID_IN_QUESTION.search(str(request or ""))
+    wanted_id = specified.group(1) if specified else None
+    targets: dict[str, set[str]] = {
+        "device_state": set(), "device_history": set(), "device_logs": set(),
+    }
+    for receipt in receipts:
+        if (not isinstance(receipt, dict)
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("effect") != "read"):
+            continue
+        op, args = _leaf(receipt), _args(receipt)
+        device = str(args.get("deviceId") or "")
+        if not device.isdigit() or (wanted_id and device != wanted_id):
+            continue
+        if op == "hub_get_device":
+            if args.get("mode") in ("summary", "status", "attributes"):
+                targets["device_state"].add(device)
+        elif op == "hub_list_device_events":
+            targets["device_history"].add(device)
+        elif op == "hub_get_logs":
+            targets["device_logs"].add(device)
+    status["checked"] = [key for key, ids in targets.items() if ids]
+    status["missing"] = [key for key, ids in targets.items() if not ids]
+    shared = set.intersection(*targets.values())
+    status["satisfied"] = bool(shared)
+    return status
+
+
 def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
     """Truthful final read-out when code interpretation never completed."""
     coverage = contiguous_source_coverage(receipts)
@@ -144,4 +200,5 @@ def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
 __all__ = [
     "source_analysis_failed", "source_trace_ready_for_synthesis",
     "source_failure_summary", "source_method_claim_gap",
+    "source_runtime_evidence_status",
 ]
