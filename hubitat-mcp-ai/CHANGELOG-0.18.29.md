@@ -13,7 +13,7 @@ The backend translated almost all `httpx.HTTPStatusError` exceptions into this s
 - For requests explicitly using `model_tier=claude`, classify Anthropic HTTP 400, 401, 402, 403, 404, 413, 429, 5xx and 529; preserve the upstream HTTP status in HomeBrain's response (apart from unrecognized statuses).
 - For HTTP 400, inspect only a bounded upstream error message **internally** to assign a limited category: tool transcript/result, tool schema, message format, model parameter or unknown request validation. Return a stable explanatory category and allowlisted provider error type **without ever echoing the raw error body**.
 - Return safe numeric `Retry-After` for rate limits. Log the HTTP status and diagnostic category only, without exception traceback or provider response body that might contain private evidence or API secrets.
-- Do not mislabel an Anthropic error as an Ollama issue or Hubitat/MCP outage. Preserve strict explicit Claude routing; no paid/free provider fallback, retry or Hubitat writes.
+- Also distinguish Ollama Cloud HTTP 400/401/402/403/404/413/5xx failures, especially the Free-default route; never echo the raw upstream body. Do not mislabel either provider as a Hubitat/MCP outage. Preserve strict explicit Claude routing; no paid/free provider fallback, retry or Hubitat writes.
 - Support staff can diagnose the root cause from the new safe `HTTP NNN; type=X; category=Y` result. No live billing/API call was made during these tests.
 
 ## Validation
