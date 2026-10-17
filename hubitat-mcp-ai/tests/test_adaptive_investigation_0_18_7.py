@@ -15,7 +15,6 @@ from mcp_client import MCPTool
 def test_adaptive_eligibility_spans_unrelated_subjects():
     for request in (
         "Inspect the Groovy implementation of installed app 4019. Read-only.",
-        "Investigate why Bathroom Light 1 turned on using button events and logs. Read-only.",
         "Analyse all scheduled jobs and identify unnecessary executions, read-only.",
         "Diagnose intermittent Zigbee device connectivity from telemetry. Read-only.",
         "Audit unusual energy monitoring activity using logs and metrics. Read-only.",
@@ -27,12 +26,13 @@ def test_simple_status_and_actions_do_not_enter_readonly_planner():
     for request in (
         "Is my bathroom light on?",
         "What is the current temperature?",
-        "Why did Bathroom Light 1 turn on at 08:45?",
         "What caused Lounge Lamp to turn on earlier?",
         "Show the current persisted lockout setting for app 4019.",
         "Turn off Bathroom Light 1.",
         "Analyse the logs. Also switch on Bathroom Light 1.",
         "Change the bathroom automation settings.",
+        "Why did Bathroom Light 1 turn on at 08:45?",
+        "Investigate why Bathroom Light 1 turned on using button events and logs. Read-only.",
     ):
         assert not model_led_investigation_request(request), request
 
