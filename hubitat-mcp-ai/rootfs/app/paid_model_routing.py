@@ -136,6 +136,8 @@ class PaidCreditGuard:
 
     async def select_fallback(self, messages: list[dict], tools: list[dict]) -> str | None:
         """Reserve credit for an explicitly rejected free-tier request."""
+        if request_model_tier() == "free":
+            return None
         return await self._reserve(messages, tools, self.deep_model)
 
     async def select(self, messages: list[dict], tools: list[dict]) -> str | None:
