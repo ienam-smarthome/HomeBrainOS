@@ -71,15 +71,19 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
     def missing_results() -> None:
         nonlocal pending
         if pending:
-            converted.append({
-                "role": "user",
-                "content": [
-                    {"type": "tool_result", "tool_use_id": item["id"],
-                     "content": "HomeBrain did not execute this proposed tool.",
-                     "is_error": True}
-                    for item in pending
-                ],
-            })
+            blocks = [
+                {"type": "tool_result", "tool_use_id": item["id"],
+                 "content": "HomeBrain did not execute this proposed tool.",
+                 "is_error": True}
+                for item in pending
+            ]
+            if converted and converted[-1]["role"] == "user" and isinstance(
+                converted[-1]["content"], list
+            ) and all(b.get("type") == "tool_result"
+                      for b in converted[-1]["content"]):
+                converted[-1]["content"].extend(blocks)
+            else:
+                converted.append({"role": "user", "content": blocks})
             pending = []
 
     for message in messages:
