@@ -62,11 +62,12 @@ def fixture_tools():
 def test_free_is_default_in_context_api_and_rendered_selector():
     from app import ChatRequest
 
-    assert request_model_tier() == "free"
+    assert request_model_tier() == "auto"
     assert ChatRequest(query="Why did the light turn on?").model_tier == "free"
     assert ChatRequest(query="Why?", model_tier="claude").model_tier == "claude"
     page = render_page("HomeBrain", "0.18.28")
-    assert '<option value="free" selected>' in page
+    assert '<option value="free">' in page
+    assert "modelTier.value='free'" in page
     assert '<option value="claude">' in page
     assert "anthropic API" in page or "Anthropic API" in page
     assert "model_tier:selectedTier" in page
