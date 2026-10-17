@@ -128,32 +128,54 @@ def _validated_symbols(symbols: list[str] | None) -> tuple[str, ...]:
 
 
 def _excerpts(body: str, symbols: list[str] | None = None) -> tuple[list[str], list[str]]:
-    """Bounded, line-numbered slices for the caller's code questions.
+    """Extract fair, bounded source evidence for all requested code symbols.
 
-    Source verification is independent of whether a requested symbol appears.
-    Multiple occurrences can reveal separate declaration/read/write sites.
+    Scan the ENTIRE retrieved text to establish which symbols exist before
+    allocating snippet space. Prefer method definitions over incidental uses,
+    give every matched symbol one excerpt first, then include other relevant
+    read/write sites while space remains. No fixed application names.
     """
     lines = body.splitlines()
-    result: list[str] = []
-    found: list[str] = []
+    requested = _validated_symbols(symbols)
+    matches = {
+        symbol: [i for i, line in enumerate(lines)
+                 if symbol.casefold() in line.casefold()]
+        for symbol in requested
+    }
+    found = [symbol for symbol in requested if matches[symbol]]
+    def priority(index: int, symbol: str) -> tuple[int, int]:
+        line = lines[index]
+        bare = symbol.removesuffix("()").split(".")[-1]
+        definition = re.search(
+            r"\b(?:void|def|int|long|boolean|String|Integer|Long|Map|List)"
+            r"\s+" + re.escape(bare) + r"\s*\(", line, re.I,
+        )
+        if definition:
+            return (0, index)
+        if re.search(r"\binput\b", line) and bare.casefold() in line.casefold():
+            return (1, index)
+        return (2, index)
+
+    snippets: list[str] = []
     selected: set[int] = set()
-    budget = 0
-    for symbol in _validated_symbols(symbols):
-        indexes = [i for i, line in enumerate(lines) if symbol.casefold() in line.casefold()]
-        if indexes:
-            found.append(symbol)
-        for index in indexes[:4]:
-            start, stop = max(0, index - 5), min(len(lines), index + 16)
-            span = range(start, stop)
-            if index in selected:
-                continue
-            passage = "\n".join(f"{i+1}: {lines[i]}" for i in span)
-            if budget + len(passage) > MAX_EXCERPT_CHARS:
-                return result, found
-            result.append(passage)
-            budget += len(passage)
-            selected.update(span)
-    return result, found
+    used = 0
+    # First pass: ensure late-file methods don't vanish behind early symbols.
+    # Second pass: offer alternative call, state-write and state-read sites.
+    for pass_index in range(2):
+        for symbol in requested:
+            ranked = sorted(matches[symbol], key=lambda i: priority(i, symbol))
+            candidates = ranked[:1] if pass_index == 0 else ranked[1:4]
+            for index in candidates:
+                if index in selected:
+                    continue
+                start, stop = max(0, index - 5), min(len(lines), index + 26)
+                passage = "\n".join(f"{i+1}: {lines[i]}" for i in range(start, stop))
+                if used + len(passage) > MAX_EXCERPT_CHARS:
+                    continue
+                snippets.append(passage)
+                used += len(passage)
+                selected.update(range(start, stop))
+    return snippets, found
 
 
 @dataclass(slots=True)
