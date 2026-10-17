@@ -218,3 +218,16 @@ def test_failed_read_never_marks_competing_explanation_checked():
     assert all(row["source_state"] == "source-class-not-checked"
                for row in packet["competing_hypothesis_checks"])
     assert len(packet["next_unchecked_discriminators"]) == 2
+
+
+@pytest.mark.parametrize("question,expected", [
+    ("Independently investigate why Bedroom 3 Mesh is offline and compare three competing explanations. Read-only.", True),
+    ("Diagnose MQTT issues and test alternative hypotheses. Read-only.", True),
+    ("Compare possible causes for repeated scheduled jobs. Read-only.", True),
+    ("Why did the hallway light turn on?", False),
+    ("Investigate the current status of Bedroom 3 Mesh.", False),
+    ("Turn on Hallway Light", False),
+])
+def test_explicit_hypothesis_comparison_does_not_affect_plain_causal_paths(question, expected):
+    from investigation_checkpoint import requests_explicit_hypothesis_comparison
+    assert requests_explicit_hypothesis_comparison(question) is expected
