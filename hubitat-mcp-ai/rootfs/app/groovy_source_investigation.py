@@ -189,6 +189,26 @@ class GroovySourceService:
             self._record("hub_read_apps_code", "hub_get_app_config",
                          leaf_args, began, ok, "Read installed app metadata")
         code_id = source_code_id(config, app_id)
+        if not code_id and "hub_read_apps_code" in names:
+            began = time.monotonic()
+            leaf = {"scope": "instances"}
+            try:
+                result = await self.mcp.call_tool("hub_read_apps_code", {
+                    "tool": "hub_list_apps", "args": leaf,
+                })
+                ok = tool_succeeded(result)
+                inventory = result.data if ok else {}
+                apps = inventory.get("apps", []) if isinstance(inventory, dict) else []
+                for app in apps if isinstance(apps, list) else []:
+                    if isinstance(app, dict):
+                        code_id = source_code_id({"app": app}, app_id)
+                        if code_id:
+                            break
+            except Exception:
+                ok = False
+            self._record("hub_read_apps_code", "hub_list_apps",
+                         leaf, began, ok,
+                         "Read installed app identity and verified code type")
         operations = _source_operations(tools, discovery)
         if not operations:
             return GroovySourceReport(
