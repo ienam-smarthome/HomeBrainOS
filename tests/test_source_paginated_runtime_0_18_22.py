@@ -25,7 +25,7 @@ def sample_source():
     # The actual requested method lives beyond the first 4,000 chars.
     return (
         '// Driver source\n'
-        + ('// configuration, preferences and harmless comments\n' * 140)
+        + ('// configuration, preferences and harmless comments\n' * 420)
         + 'def initialize() { runIn(300, "deviceHealthCheck") }\n'
         + 'def connect() {\n'
         + '  interfaces.mqtt.connect("tcp://broker", "hubitat_device")\n'
@@ -67,7 +67,7 @@ def test_six_page_source_yields_one_complete_method_evidence_packet():
     text = sample_source()
     assert len(text) > 4000
     offsets = list(range(0, len(text), 4000))
-    assert len(offsets) >= 2
+    assert len(offsets) >= 6
     collector, results = run_pages(text, offsets)
     assert all(x is None for x in results[:-1])
     packet = results[-1]
