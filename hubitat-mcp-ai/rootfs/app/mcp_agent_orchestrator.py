@@ -374,7 +374,15 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"disable|enable|restart|block|allow|configure)\b",
         text,
     )
-    if _READ_QUERY_PREFIX.search(text) and not secondary_write:
+    # "Verify whether app 3950 issued OFF" is evidence verification,
+    # not an instruction to issue OFF. A later independent imperative still
+    # routes through confirmation via secondary_write.
+    historical_verification_lead = re.match(
+        r"(?i)^\s*(?:verify|check|confirm|determine|establish)\s+"
+        r"(?:whether|if)\b",
+        text,
+    )
+    if (_READ_QUERY_PREFIX.search(text) or historical_verification_lead) and not secondary_write:
         return False
     # An imperative investigative lead-in can still be a READ, even when
     # describing a historical command (e.g. "Investigate thoroughly why
