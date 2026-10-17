@@ -63,14 +63,19 @@ def test_model_admits_required_method_bodies_were_not_shown():
         "model-admitted-unreviewed-methods"
     )
     assert resolved.metrics["outcome"] == "unresolved"
-    assert resolved.message == ADMITTED_GAP
+    assert resolved.message.startswith(ADMITTED_GAP)
+    assert "Runtime correlation incomplete" in resolved.message
 
 
 def test_verified_method_body_explanation_without_admitted_gap_is_not_blocked():
     answer = ("The code's parse method updates device state; the broker's "
               "upstream packet source still remains unverified.")
     assert not source_method_claim_gap(answer)
-    result = apply_shared_investigation_completion(_result(answer), REQUEST)
+    source_only_request = ("Investigate complete Groovy source code for driver "
+                           "3686 and trace the mqttStatus setter methods.")
+    result = apply_shared_investigation_completion(
+        _result(answer), source_only_request,
+    )
     assert result.investigation_coverage["objectiveSatisfied"] is True
     assert result.metrics["outcome"] == "success"
 
