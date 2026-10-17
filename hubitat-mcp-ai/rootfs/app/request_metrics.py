@@ -16,6 +16,7 @@ class RequestMetricState:
     timings_ms: dict[str, int] = field(default_factory=dict)
     outcome: str | None = None
     model_round_details: list[dict[str, str]] = field(default_factory=list)
+    paid_guard: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +117,10 @@ class RequestMetrics:
         "mcp_queue_wait", "mcp_session_lock_wait", "mcp_http",
         "mcp_shared_wait", "local_tool", "verification", "total",
     })
+    ALLOWED_PAID_GUARD_STATUSES = frozenset({
+        "disabled", "zero_budget", "round_exceeds_budget", "invalid_ledger",
+        "storage_unavailable", "reserved", "unknown_model",
+    })
     ALLOWED_OUTCOMES = frozenset({
         "success", "needs_input", "refused", "unresolved", "cancelled", "failed",
     })
@@ -203,7 +208,32 @@ class RequestMetrics:
         }
         if state.model_round_details:
             result["model_round_details"] = state.model_round_details
+        if state.paid_guard:
+            result["paid_guard"] = state.paid_guard
         return deepcopy(result)
+
+    def record_paid_guard(self, status: str, *, budget_usd: float | None = None,
+                          already_reserved_usd: float | None = None,
+                          estimated_round_usd: float | None = None) -> None:
+        if status not in self.ALLOWED_PAID_GUARD_STATUSES:
+            raise ValueError('Unsupported paid guard status')
+        state = self._state.get()
+        if state is None:
+            return
+        amounts = {
+            'configured_budget_usd': budget_usd,
+            'already_reserved_usd': already_reserved_usd,
+            'estimated_round_usd': estimated_round_usd,
+        }
+        # A bounded, allowlisted diagnostic without prompts, keys or paths.
+        state.paid_guard = {'status': status}
+        for key, value in amounts.items():
+            if value is not None:
+                state.paid_guard[key] = round(float(value), 4)
+        if budget_usd is not None and already_reserved_usd is not None:
+            state.paid_guard['remaining_estimated_budget_usd'] = round(
+                max(0.0, float(budget_usd) - float(already_reserved_usd)), 4
+            )
 
     def active_request_identity(self) -> object | None:
         """Return the current request state object for request-local coordination."""
@@ -216,6 +246,16 @@ def active_request_identity() -> object | None:
 
     metrics = _ACTIVE_REQUEST_METRICS.get()
     return metrics.active_request_identity() if metrics is not None else None
+
+
+def record_active_paid_guard(status: str, *, budget_usd: float | None = None,
+                             already_reserved_usd: float | None = None,
+                             estimated_round_usd: float | None = None) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.record_paid_guard(status, budget_usd=budget_usd,
+                                  already_reserved_usd=already_reserved_usd,
+                                  estimated_round_usd=estimated_round_usd)
 
 
 def increment_active_metric(name: str, amount: int = 1) -> None:
@@ -246,4 +286,5 @@ __all__ = [
     "RequestMetricState", "RequestMetricToken", "RequestMetrics",
     "active_request_identity", "increment_active_metric", "add_active_metric_ms",
     "observe_active_metric_max", "record_active_provider_model",
+    "record_active_paid_guard",
 ]
