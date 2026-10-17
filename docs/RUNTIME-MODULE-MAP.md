@@ -63,7 +63,7 @@ The repository drift test compares this table directly with the live directory. 
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
 | `adaptive_investigation_policy.py` | General read-only model-led investigation routing across multiple domains. |
-| `source_evidence_metadata.py` | Privacy-safe direct Groovy source receipts and contiguous source coverage checks. |
+| `source_evidence_metadata.py` | Privacy-safe source receipts, verified pages, adaptive recovery diagnostics and contiguous coverage checks. |
 | `groovy_source_investigation.py` | Discover MCP source reads for installed Hubitat apps, separate instance/code IDs and extract bounded Groovy excerpts without guessing code or affecting hub state. |
 | `tool_free_knowledge_policy.py` | Strict opt-in static technical explanations without MCP discovery or tool execution; excludes live device/app requests. |
 | `scoped_app_status_read.py` | Deterministic read-only app configuration execution for explicit app-ID status questions; truthful incomplete status on failed/missing reads. |
