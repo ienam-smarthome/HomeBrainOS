@@ -146,8 +146,9 @@ async def test_deadline_accepts_real_slotted_observed_outcome_and_serializes_rec
     response = build_agent_response(
         result, model="gemma4:31b", elapsed_ms=140, version="0.16.142"
     )
-    assert response["success"] is True
+    assert response["success"] is False
     assert response["route"] == "investigation-timeout"
+    assert response["status_verification"] == "incomplete-timeout"
     assert response["request_class"] == "live-read"
     assert response["evidence"][0]["sub_tool"] == "hub_get_jobs"
     assert all(receipt["mutates"] is False for receipt in response["evidence"])

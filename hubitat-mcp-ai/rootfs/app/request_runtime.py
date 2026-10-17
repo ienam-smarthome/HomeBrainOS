@@ -6,6 +6,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from copy import copy, deepcopy
 from typing import Any
 
 _ACTIVE: contextvars.ContextVar["RequestProgress | None"] = contextvars.ContextVar(
@@ -38,6 +39,7 @@ class RequestProgress:
     stage: str = "Starting request"
     started: float = field(default_factory=time.monotonic)
     checkpoint: Any = None
+    verified_reads: list[dict[str, Any]] = field(default_factory=list)
     completed: bool = False
 
     def public(self) -> dict[str, Any]:
@@ -69,14 +71,65 @@ def remember_verified_outcome(outcome: Any) -> None:
         state.checkpoint = outcome
 
 
-def safe_partial_outcome(outcome: Any, *, reason: str) -> Any:
-    """Only expose successful source reads; drop unverified model prose."""
-    from copy import copy
+def remember_verified_read_receipt(receipt: dict[str, Any]) -> None:
+    """Keep a bounded, redacted read trail before the agent's final answer.
+
+    Recording does not assert that the requested historical/causal question
+    was resolved. Mutations, failures, and untrusted model output are excluded.
+    """
+    state = _ACTIVE.get()
+    if (
+        state is not None
+        and len(state.verified_reads) < 64
+        and isinstance(receipt, dict)
+        and receipt.get("success") is True
+        and receipt.get("mutates") is False
+        and receipt.get("effect") == "read"
+    ):
+        state.verified_reads.append(deepcopy(receipt))
+
+
+def _successful_read_receipt(row: Any) -> bool:
+    """Accept verified reads including older receipts lacking effect metadata.
+
+    For old checkpoints, only an explicitly read-named operation is eligible;
+    an unknown or write-capable name with missing metadata fails closed.
+    """
+    if not isinstance(row, dict) or row.get("success") is not True:
+        return False
+    if row.get("mutates") is True or row.get("effect") not in ("read", None):
+        return False
+    if row.get("mutates") is False or row.get("effect") == "read":
+        return True
+    arguments = row.get("arguments")
+    named = (
+        str(row.get("sub_tool") or "")
+        or str(arguments.get("tool") or "") if isinstance(arguments, dict)
+        else str(row.get("sub_tool") or row.get("tool") or "")
+    )
+    return named.startswith((
+        "hub_get_", "hub_list_", "hub_read_", "hub_search_",
+        "homebrain_read_", "homebrain_device_history",
+    ))
+
+
+def safe_partial_outcome(
+    outcome: Any, *, reason: str,
+    additional_reads: list[dict[str, Any]] | None = None,
+) -> Any:
+    """Only expose successful read receipts; drop unverified model prose."""
     safe = copy(outcome)
     receipts = [
-        dict(row) for row in (getattr(outcome, "evidence", None) or [])
-        if isinstance(row, dict)
+        deepcopy(row) for row in (getattr(outcome, "evidence", None) or [])
+        if _successful_read_receipt(row)
     ]
+    for row in additional_reads or []:
+        if (
+            isinstance(row, dict) and row.get("success") is True
+            and row.get("mutates") is False and row.get("effect") == "read"
+            and row not in receipts and len(receipts) < 64
+        ):
+            receipts.append(deepcopy(row))
     proven = sorted({
         str(row.get("sub_tool") or (row.get("arguments") or {}).get("tool") or
             row.get("tool") or "")
@@ -95,3 +148,18 @@ def safe_partial_outcome(outcome: Any, *, reason: str) -> Any:
     safe.choices = []
     safe.confirmation_required = False
     return safe
+
+
+def safe_receipt_partial_outcome(
+    verified_reads: list[dict[str, Any]], *, reason: str,
+) -> Any:
+    """Make an evidence-only partial answer when cancellation beats synthesis.
+
+    Import lazily: the orchestrator can import request_runtime itself.
+    """
+    from mcp_agent_orchestrator import AgentOutcome
+    evidence_only = AgentOutcome(
+        message="", request_class="live-read",
+        evidence=list(verified_reads), choices=[],
+    )
+    return safe_partial_outcome(evidence_only, reason=reason)

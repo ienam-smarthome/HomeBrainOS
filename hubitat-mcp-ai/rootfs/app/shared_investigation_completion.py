@@ -116,6 +116,11 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     calls after the original agent has finished. A missing source is marked as
     incomplete, never automatically fabricated or treated as a Hubitat fault.
     """
+    # A timed-out investigation has no verified model conclusion. Preserve
+    # its receipt-only partial response rather than evaluating it as a
+    # normally completed investigation and adding a new narrative.
+    if str(getattr(outcome, "route", "")) == "investigation-timeout":
+        return outcome
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
     goal = plan_investigation(request)
