@@ -397,3 +397,42 @@ def test_targeted_rule_failure_uses_investigative_model_not_inventory(monkeypatc
     assert response.status_code == 200, response.text
     assert response.json()["route"] == "unified-mcp-agent"
     assert calls == ["why is rule 2957 not working?"]
+
+
+def test_api_model_choice_scoped_to_one_request_and_rejected_if_invalid(monkeypatch, tmp_path):
+    from paid_model_routing import request_model_tier
+
+    module = load_app(monkeypatch, tmp_path)
+    observed = []
+
+    async def answer_result(prompt, history, *, session_id):
+        observed.append((prompt, request_model_tier()))
+        return SimpleNamespace(
+            message="Status returned.",
+            request_class="live-read",
+            evidence=[],
+        )
+
+    monkeypatch.setattr(module.agent, "process_user_request_result", answer_result)
+    with TestClient(module.app) as client:
+        paid = client.post("/api/ask", json={
+            "query": "Lights?", "session_id": "model-choice", "model_tier": "paid",
+        })
+        free = client.post("/api/ask", json={
+            "query": "Lights?", "session_id": "model-choice", "model_tier": "free",
+        })
+        auto = client.post("/api/chat", json={
+            "prompt": "Lights?", "session_id": "model-choice",
+        })
+        invalid = client.post("/api/ask", json={
+            "query": "Lights?", "model_tier": "premium",
+        })
+
+    assert paid.status_code == 200
+    assert paid.json()["model_tier_requested"] == "paid"
+    assert free.status_code == 200
+    assert free.json()["model_tier_requested"] == "free"
+    assert auto.status_code == 200
+    assert invalid.status_code == 422
+    assert observed == [("Lights?", "paid"), ("Lights?", "free"), ("Lights?", "auto")]
+    assert request_model_tier() == "auto"
