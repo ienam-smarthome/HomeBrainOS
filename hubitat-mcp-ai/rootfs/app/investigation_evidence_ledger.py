@@ -18,7 +18,11 @@ _ABSENCE = re.compile(
     r"(?P<date>\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{4}-\d{2}-\d{2})"
     r"|\b(?:no|zero)\s+(?:commands?|command\s+events?)"
     r"\b[^\n.!?]{0,100}\b(?:on|for|from|dated)\s+"
-    r"(?P<iso>\d{4}-\d{2}-\d{2})",
+    r"(?P<iso>\d{4}-\d{2}-\d{2})"
+    r"|\bno\s+commands?\s+issued\s+[^\n.!?]{0,120}?"
+    r"(?:were|was)\s+(?:identified|recorded|found)\s+"
+    r"for\s+(?:the\s+date\s+of\s+)?"
+    r"(?P<issued_date>\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{4}-\d{2}-\d{2})",
 )
 
 # Additional natural-language form seen in a live failing investigation:
@@ -104,7 +108,15 @@ def reconcile_command_denials(message: str, evidence: list[dict[str, Any]]) -> t
         return message, []
     contradictions: list[dict[str, Any]] = []
     def replacement(match: re.Match[str]) -> str:
-        day = _date_key(match.group("date") or match.group("iso") or "")
+        # A command at 07:25 cannot refute absence precisely AT 08:16.
+        # Reconcile whole-date denials only; preserve focal-time negatives.
+        if re.search(
+            r"(?i)\b(?:at|around|approximately)\s+\d{1,2}:\d{2}",
+            match.group(0),
+        ):
+            return match.group(0)
+        day = _date_key(match.group("date") or match.group("iso")
+                        or match.group("issued_date") or "")
         relevant = [fact for fact in facts if fact.timestamp.startswith(day)] if day else []
         if not relevant:
             return match.group(0)
@@ -115,7 +127,7 @@ def reconcile_command_denials(message: str, evidence: list[dict[str, Any]]) -> t
         return (
             f"A {fact.name} was recorded{device} at {fact.timestamp}{source}"
             f" ({len(relevant)} distinct matching command event(s) observed). "
-            "This does not establish that the separate requested device-state transition occurred."
+            "This does not establish that the separate requested device-state transition occurred"
         )
     corrected = _ABSENCE.sub(replacement, str(message or ""))
     corrected = _MIXED_ABSENCE.sub(replacement, corrected)

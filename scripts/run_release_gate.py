@@ -4,8 +4,10 @@ import subprocess
 import sys
 
 
-# The repository test tree now contains only maintained runtime and platform tests.
-RELEASE_GATE_TESTS = ["tests"]
+# Test both maintained trees: core/runtime regressions and add-on-specific
+# Groovy workbench/transport tests. A green gate must not silently omit the
+# second tree merely because its path differs from the root test directory.
+RELEASE_GATE_TESTS = ["tests", "hubitat-mcp-ai/tests"]
 
 
 def main() -> int:

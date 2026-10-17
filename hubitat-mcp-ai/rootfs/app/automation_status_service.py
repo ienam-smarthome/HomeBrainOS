@@ -82,9 +82,9 @@ class AutomationStatusService:
         # enumerate the entire installed app and Rule Machine inventory.
         # Qualify the word "show": it is not sufficient evidence of list intent.
         targeted_history = bool(
-            re.search(r"\\b(?:history|historical|events?|timeline|logs?|activity|executions?)\\b", value)
-            and re.search(r"\\b(?:automation|automations|rule|rules|app|apps)\\b", value)
-            and not re.search(r"\\b(?:all|every|entire|whole)\\s+(?:automations|rules|apps)\\b", value)
+            re.search(r"\b(?:history|historical|events?|timeline|logs?|activity|executions?)\b", value)
+            and re.search(r"\b(?:automation|automations|rule|rules|app|apps)\b", value)
+            and not re.search(r"\b(?:all|every|entire|whole)\s+(?:automations|rules|apps)\b", value)
         )
         if targeted_history:
             return False
