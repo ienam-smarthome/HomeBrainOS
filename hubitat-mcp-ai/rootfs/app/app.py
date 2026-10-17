@@ -677,6 +677,13 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     except asyncio.CancelledError:
         raise
     except httpx.HTTPStatusError as exc:
+        if request.model_tier == "paid" and exc.response.status_code == 402:
+            raise HTTPException(
+                status_code=402,
+                detail="DeepSeek Pro could not continue: Ollama rejected paid "
+                       "billing for this request. Check your Ollama account "
+                       "credits or select Free. HomeBrain did not switch models.",
+            ) from exc
         limited = describe_ollama_rate_limit(exc)
         if limited:
             detail, retry_after = limited
