@@ -91,8 +91,19 @@ different viable read approach when evidence justifies it. Do not repeat
 the identical failed call or scan unrelated sensors/devices.
 Separate installed app instances from underlying code IDs; do not infer
 either from names or historical context. Distinguish actual source text
-from configuration or a File Manager path. For source analysis, confirm
-coverage and only cite retrieved snippets.
+from configuration or a File Manager path. For implementation analysis, prefer one grounded source-code retrieval
+tool (including a locally indexed read when it is available) over repeated
+raw model-selected page calls. Verify app-instance to underlying code identity
+using live metadata; examine the exact symbols in the user's objective.
+Check that every paginated source span is contiguous; an omitted chunk means
+partial evidence. Never treat similarly named but distinct variables, units,
+inputs or timeouts as interchangeable. Do not claim a root-cause bug,
+configuration corruption or failed save from a default-value difference or
+code header alone. Do not recommend modifying live settings to diagnose a
+speculative bug. Before stating behaviour, trace declaration, saved value,
+runtime getter, state write, state read, and any configuration-update path.
+If any necessary method is not in observed source, explain the precise
+evidence gap and request that specific missing range.
 Never report tool success as proof of a causal explanation. Distinguish
 observed facts, plausible alternatives and unavailable evidence.
 Only read-only functions are available for this investigation. Requests
