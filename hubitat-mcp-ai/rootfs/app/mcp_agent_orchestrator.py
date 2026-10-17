@@ -515,6 +515,8 @@ class UnifiedMCPAgent:
         paid_budget_usd: float = 6.50,
         paid_deep_model: str = "deepseek-v4-pro",
         free_quota_paid_fallback_enabled: bool = False,
+        claude_api_key: str = "",
+        claude_model: str = "claude-sonnet-4-6",
         tool_limit: int = 48,
         max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
@@ -553,6 +555,8 @@ class UnifiedMCPAgent:
             paid_budget_usd=paid_budget_usd,
             paid_deep_model=paid_deep_model,
             free_quota_paid_fallback_enabled=free_quota_paid_fallback_enabled,
+            claude_api_key=claude_api_key,
+            claude_model=claude_model,
         )
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))

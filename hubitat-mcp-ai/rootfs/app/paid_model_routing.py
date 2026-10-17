@@ -30,7 +30,7 @@ _REQUEST_MODEL_TIER: ContextVar[str] = ContextVar(
 
 
 def set_request_model_tier(tier: str) -> Token:
-    if tier not in ('auto', 'free', 'paid'):
+    if tier not in ('auto', 'free', 'paid', 'claude'):
         raise ValueError('Unsupported request model tier')
     return _REQUEST_MODEL_TIER.set(tier)
 
@@ -57,7 +57,7 @@ def explicit_paid_request() -> bool:
     tier = request_model_tier()
     if tier == 'free':
         return False
-    if tier == 'paid':
+    if tier in ('paid', 'claude'):
         return True
     text = _ORIGINAL_PAID_REQUEST.get()
     return bool(text is not None and _EXPLICIT_PAID.search(text))
@@ -90,6 +90,9 @@ def choose_paid_model(messages: list[dict], mode: str) -> str | None:
         return None
     if tier == "paid":
         return "deepseek-v4-pro"
+    if tier == "claude":
+        # Claude is a separate API provider, never an Ollama-paid model.
+        return None
     mode = str(mode or "hybrid").lower()
     if mode not in {"hybrid", "manual", "paid"}:
         return None

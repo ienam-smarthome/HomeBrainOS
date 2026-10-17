@@ -62,6 +62,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
+| `anthropic_transport.py` | Adapts explicit Claude API requests and tool-use IDs to HomeBrain's existing MCP executor, without cross-provider fallback. |
 | `adaptive_investigation_policy.py` | General read-only model-led investigation routing across multiple domains. |
 | `source_evidence_metadata.py` | Privacy-safe source receipts, verified pages, adaptive recovery diagnostics and contiguous coverage checks. |
 | `historical_causal_claim_guard.py` | Flags unverified named-app command execution claims against returned current-turn history; produces a cautious evidence-only answer rather than fabricated root cause. |

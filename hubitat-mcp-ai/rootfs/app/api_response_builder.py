@@ -598,17 +598,32 @@ def build_agent_response(
             if model_used:
                 usage[model_used] = usage.get(model_used, 0) + 1
         if usage:
-            paid_count = sum(
-                count for model_used, count in usage.items()
-                if model_used.casefold().startswith(("deepseek-v4", "glm-5.3"))
+            provider_rounds = [
+                entry for entry in rounds
+                if isinstance(entry, dict)
+            ]
+            claude_count = sum(
+                1 for entry in provider_rounds
+                if str(entry.get("provider") or "") == "anthropic"
             )
+            paid_count = sum(
+                1 for entry in provider_rounds
+                if str(entry.get("provider") or "") != "anthropic"
+                and str(entry.get("model") or "").casefold().startswith(
+                    ("deepseek-v4", "glm-5.3")
+                )
+            ) + claude_count
             free_count = sum(usage.values()) - paid_count
             result["model_usage"] = {
                 "models": usage,
                 "paid_rounds": paid_count,
                 "free_rounds": free_count,
                 "paid_used": paid_count > 0,
-                "charges_controlled_by": "ollama-account",
+                "charges_controlled_by": (
+                    "anthropic-account" if claude_count == paid_count
+                    else "ollama-and-anthropic-accounts" if claude_count
+                    else "ollama-account"
+                ),
             }
             if paid_count and free_count and not counters.get("paid_model_requested"):
                 result["model_continuity"] = {
@@ -618,8 +633,12 @@ def build_agent_response(
                 }
     if int(counters.get("paid_model_requested") or 0):
         paid_used = any(
-            isinstance(item, dict) and str(item.get("model") or "").casefold().startswith(
-                ("deepseek-v4", "glm-5.3")
+            isinstance(item, dict)
+            and (
+                str(item.get("provider") or "") == "anthropic"
+                or str(item.get("model") or "").casefold().startswith(
+                    ("deepseek-v4", "glm-5.3")
+                )
             )
             for item in rounds
         )
@@ -688,7 +707,7 @@ def build_agent_response(
             result["message"] = (
                 result["message"].rstrip()
                 + "\n\n**Paid model not used:** This answer was not verified as a "
-                  "DeepSeek/GLM paid-model response. HomeBrain routing status: "
+                  "selected paid-provider response. HomeBrain routing status: "
                 + reason.replace("_", " ")
                 + ". The Ollama account credit balance alone cannot authorise a paid request."
             )

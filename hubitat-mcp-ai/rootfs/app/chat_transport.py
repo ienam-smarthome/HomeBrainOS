@@ -14,6 +14,7 @@ from household_ollama_accounts import (
 )
 from request_metrics import increment_active_metric, record_active_provider_model
 from paid_model_routing import PaidCreditGuard, explicit_paid_request, request_model_tier
+from anthropic_transport import AnthropicMessagesTransport
 
 
 class PaidModelUnavailable(RuntimeError):
@@ -99,6 +100,8 @@ class ChatTransport:
         paid_budget_usd: float | None = None,
         paid_deep_model: str = "deepseek-v4-pro",
         free_quota_paid_fallback_enabled: bool = False,
+        claude_api_key: str = "",
+        claude_model: str = "claude-sonnet-4-6",
     ) -> None:
         self.api_key = str(api_key or "").strip()
         self.model_name = str(model_name or "").strip()
@@ -131,6 +134,10 @@ class ChatTransport:
         self.client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
+        )
+        self.claude = AnthropicMessagesTransport(
+            self.client, api_key=str(claude_api_key or "").strip(),
+            model=str(claude_model or "").strip(), timeout=self.timeout_seconds,
         )
 
     @property
@@ -266,6 +273,14 @@ class ChatTransport:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        if request_model_tier() == "claude":
+            if not self.claude.configured:
+                raise PaidModelUnavailable(
+                    "Claude Paid requires a Claude API key configured in "
+                    "the HomeBrain add-on. No Ollama/free fallback was attempted."
+                )
+            prepared_messages, prepared_tools = prepare_reasoning_turn(messages, tools)
+            return await self.claude.chat(prepared_messages, prepared_tools)
         manual_paid_cloud = (
             self.paid_credit_guard.enabled
             and explicit_paid_request()
