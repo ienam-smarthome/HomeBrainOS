@@ -210,9 +210,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "fullImplementationVerified": bool(full),
             "chunkCoverage": segments,
             **auxiliary_coverage,
+            "methodBodyCoverage": {
+                "status": "not-certified-by-source-span-receipts",
+                "note": "Whole-file retrieval does not independently certify "
+                        "that every relevant method body, caller, or runtime "
+                        "branch was reviewed by the model.",
+            },
             "completionNote": (
                 "Source text spans the declared full implementation length "
-                "with no observed offset gap."
+                "with no observed offset gap. Method and runtime coverage "
+                "remain separate evidence obligations."
                 if full else
                 "Some source text was read, but full implementation coverage "
                 "was not established. Do not infer that an unseen method is absent."
