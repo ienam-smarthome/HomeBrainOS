@@ -39,7 +39,7 @@ def test_free_overrides_hybrid_manual_and_paid_routing_modes():
     finally:
         reset_request_model_tier(tier)
         reset_original_paid_request(original)
-    assert request_model_tier() == "auto"
+    assert request_model_tier() == "free"
 
 
 def test_paid_explicit_selector_works_even_in_manual_mode_without_prompt_magic():
@@ -69,7 +69,7 @@ def test_invalid_tiers_rejected_without_corrupting_current_selection():
     for invalid in ("premium", "", "PAID", True, None):
         with pytest.raises(ValueError):
             set_request_model_tier(invalid)
-    assert request_model_tier() == "auto"
+    assert request_model_tier() == "free"
 
 
 def test_request_scope_prevents_cross_request_paid_consent():
@@ -87,7 +87,7 @@ def test_request_scope_prevents_cross_request_paid_consent():
     free, paid = asyncio.run(_gather_workers(worker))
     assert free == ("free", None, False)
     assert paid == ("paid", "deepseek-v4-pro", True)
-    assert request_model_tier() == "auto"
+    assert request_model_tier() == "free"
 
 
 async def _gather_workers(worker):
