@@ -163,3 +163,58 @@ def test_failed_read_not_silently_treated_as_checked_success():
     ])
     assert packet["sources"][0]["checked"] is False
     assert any("unavailable" in item for item in packet["open_questions"])
+
+
+def test_hypothesis_comparison_distinguishes_read_coverage_from_proof():
+    from general_task_engine import InvestigativeHypothesis
+
+    candidates = (
+        InvestigativeHypothesis("A local automation commanded ON",
+                               "Was a relevant app command recorded?", "app_logs"),
+        InvestigativeHypothesis("A sensor report was stale",
+                               "Was fresh telemetry recorded?", "device_history"),
+    )
+    evidence = [
+        {"tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+         "success": True, "effect": "read", "mutates": False,
+         "arguments": {"tool": "hub_list_device_events",
+                       "args": {"deviceId": "51", "attribute": "switch"}},
+         "details": {"eventCount": 0}},
+    ]
+    packet = build_evidence_checkpoint(
+        "Investigate unexpected light events", evidence,
+        candidate_hypotheses=candidates,
+    )
+    checks = packet["competing_hypothesis_checks"]
+    assert len(checks) == 2
+    assert checks[0]["source_state"] == "source-class-not-checked"
+    assert checks[1]["source_state"] == "source-class-checked-verdict-unverified"
+    assert all(item["hypothesis_verdict"] == "unverified" for item in checks)
+    assert packet["next_unchecked_discriminators"] == [
+        "Was a relevant app command recorded?"
+    ]
+    rendered = render_investigation_checkpoint(
+        "Investigate unexpected light events", evidence,
+        candidate_hypotheses=candidates,
+    )
+    assert "unverified" in rendered
+    assert "successful" not in rendered.casefold() or "proof" in rendered.casefold()
+
+
+def test_failed_read_never_marks_competing_explanation_checked():
+    from general_task_engine import InvestigativeHypothesis
+
+    candidates = (
+        InvestigativeHypothesis("Scheduler overload", "Who owns the jobs?",
+                               "scheduled_jobs"),
+        InvestigativeHypothesis("CPU contention", "What is measured busy time?",
+                               "performance_stats"),
+    )
+    packet = build_evidence_checkpoint("Diagnose scheduler workload", [
+        {"tool": "hub_read_diagnostics", "sub_tool": "hub_get_jobs",
+         "success": False, "effect": "read", "mutates": False,
+         "arguments": {"tool": "hub_get_jobs", "args": {}}},
+    ], candidate_hypotheses=candidates)
+    assert all(row["source_state"] == "source-class-not-checked"
+               for row in packet["competing_hypothesis_checks"])
+    assert len(packet["next_unchecked_discriminators"]) == 2

@@ -58,6 +58,45 @@ def _bounded_strings(value: Any, *, count: int, width: int) -> tuple[str, ...]:
 
 
 @dataclass(frozen=True, slots=True)
+class InvestigativeHypothesis:
+    """One model-proposed explanation and a read-source discriminator.
+
+    This is an investigation QUESTION, never a finding or authorization.
+    """
+
+    explanation: str
+    distinguishing_question: str
+    evidence_kind: str
+
+
+def _bounded_hypotheses(value: Any) -> tuple[InvestigativeHypothesis, ...]:
+    """Accept only short, schema-known source checks, not model MCP commands."""
+    if not isinstance(value, list):
+        return ()
+    found: list[InvestigativeHypothesis] = []
+    seen: set[str] = set()
+    for candidate in value[:8]:
+        if not isinstance(candidate, dict):
+            continue
+        explanation = candidate.get("explanation")
+        question = candidate.get("distinguishingQuestion")
+        kind = candidate.get("evidenceKind")
+        if not (isinstance(explanation, str) and isinstance(question, str)
+                and isinstance(kind, str) and kind in EVIDENCE_KINDS):
+            continue
+        explanation = " ".join(explanation.split())[:140].strip()
+        question = " ".join(question.split())[:180].strip()
+        if not explanation or not question or explanation.casefold() in seen:
+            continue
+        seen.add(explanation.casefold())
+        found.append(InvestigativeHypothesis(explanation, question, kind))
+        if len(found) == 3:
+            break
+    # A single model guess is not a competing-hypothesis investigation.
+    return tuple(found) if len(found) >= 2 else ()
+
+
+@dataclass(frozen=True, slots=True)
 class GeneralTaskPlan:
     domain: str
     operation: str
@@ -66,6 +105,7 @@ class GeneralTaskPlan:
     capability_queries: tuple[str, ...]
     evidence_goals: tuple[str, ...]
     required_evidence_kinds: tuple[str, ...] = ()
+    candidate_hypotheses: tuple[InvestigativeHypothesis, ...] = ()
 
     @classmethod
     def from_model(cls, response: str) -> "GeneralTaskPlan | None":
@@ -99,6 +139,10 @@ class GeneralTaskPlan:
         kinds = tuple(x for x in _bounded_strings(
             value.get("requiredEvidenceKinds"), count=5, width=48,
         ) if x in EVIDENCE_KINDS)
+        hypotheses = (
+            _bounded_hypotheses(value.get("candidateHypotheses"))
+            if operation == "investigate" else ()
+        )
         return cls(
             domain=domain,
             operation=operation,
@@ -107,6 +151,7 @@ class GeneralTaskPlan:
             capability_queries=capabilities,
             evidence_goals=goals,
             required_evidence_kinds=kinds,
+            candidate_hypotheses=hypotheses,
         )
 
     def instruction(self) -> str:
@@ -117,6 +162,13 @@ class GeneralTaskPlan:
             "objective": self.objective,
             "evidence_goals": list(self.evidence_goals),
             "required_source_kinds": list(self.required_evidence_kinds),
+            "candidate_hypotheses": [
+                {"explanation": item.explanation,
+                 "distinguishing_question": item.distinguishing_question,
+                 "evidence_kind": item.evidence_kind,
+                 "status": "unverified-model-proposal"}
+                for item in self.candidate_hypotheses
+            ] if self.operation == "investigate" else [],
         }
         intent_guard = (
             "\\nPROPOSAL-ONLY EXECUTION BOUNDARY: The user requested a design "
@@ -133,7 +185,12 @@ class GeneralTaskPlan:
               "operation when needed. Use tool receipts to decide what was "
               "established; do not claim execution or a causal explanation "
               "from a proposed plan. The original user message and MCP safety "
-              "gates remain authoritative. Report unresolved objectives."
+              "gates remain authoritative. Report unresolved objectives. "
+              "For investigation, compare the candidate hypotheses against "
+              "current-turn scoped evidence. A source checked is NOT evidence "
+              "that its proposed explanation is true. Do not dismiss alternatives "
+              "from empty or incomplete history; revise candidates when receipts "
+              "contradict them."
             + intent_guard
         )
 
@@ -151,7 +208,14 @@ class GeneralTaskPlanner:
         '"automation app logs and configuration"],'
         '"evidenceGoals":["Observed state transition",'
         '"Verified command provenance"],'
-        '"requiredEvidenceKinds":["device_history","app_logs"]}\\n'
+        '"requiredEvidenceKinds":["device_history","app_logs"],'
+        '"candidateHypotheses":['
+        '{"explanation":"A hub command preceded the switch transition",'
+        '"distinguishingQuestion":"Was a producer command recorded at the focal time?",'
+        '"evidenceKind":"device_history"},'
+        '{"explanation":"An external bridge or physical input initiated it",'
+        '"distinguishingQuestion":"Is independently timestamped controller evidence available?",'
+        '"evidenceKind":"device_logs"}]}\\n'
         "Allowed domains: device, automations, rooms, diagnostics, hub, "
         "integrations, system_state, code, other. "
         "Allowed operations: read, investigate, propose, write. "
@@ -162,6 +226,11 @@ class GeneralTaskPlanner:
         "scheduled_jobs, performance_stats, tool_guide, source_code. "
         "For investigate operations choose 1-3 indispensable read-source "
         "classes for requiredEvidenceKinds; for simple state reads use []. "
+        "For investigate operations propose TWO or THREE genuinely competing "
+        "candidateHypotheses when materially plausible, each with an explanation, "
+        "distinguishingQuestion and evidenceKind from the allowed source kinds. "
+        "They are provisional tests, NOT supported facts or confidence scores. "
+        "Do not add them for read, propose or write tasks. "
         "Checked sources are not proof of a historical cause or event. "
         "Infer the purpose of the request from meaning, not keyword matches. "
         "A request may need several skills and MCP gateway searches. "
@@ -215,5 +284,6 @@ class GeneralTaskPlanner:
 
 
 __all__ = [
-    "GeneralTaskPlan", "GeneralTaskPlanner", "DOMAINS", "OPERATIONS", "SKILLS",
+    "GeneralTaskPlan", "GeneralTaskPlanner", "InvestigativeHypothesis",
+    "DOMAINS", "OPERATIONS", "SKILLS",
 ]
