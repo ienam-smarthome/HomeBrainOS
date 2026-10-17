@@ -182,7 +182,6 @@ def build_method_scope_evidence(
             if key in selected:
                 continue
             selected.add(key)
-            excerpt = _lines_excerpt(source, method.first, method.last)
             line_start = _line_of(source, method.first)
             line_end = _line_of(source, method.last-1)
             structural = method.brace_closed and not method.lexical_uncertainty
@@ -190,10 +189,23 @@ def build_method_scope_evidence(
                 "balanced candidate body" if structural else
                 "boundary uncertain (unclosed body or unsupported string syntax)"
             )
-            if spent + len(excerpt) <= budget:
+            # Avoid constructing line-numbered 100k-character snippets when
+            # the finite model evidence budget makes them impossible to show.
+            if method.last - method.first > max(0, budget-spent):
                 notes.append(
                     f"  - {method.name} lines {line_start}-{line_end}: "
-                    f"{label}; full method body included in excerpt."
+                    f"{label}; complete method body NOT shown (excerpt budget)."
+                )
+                continue
+            excerpt = _lines_excerpt(source, method.first, method.last)
+            if spent + len(excerpt) <= budget:
+                status = (
+                    "full candidate method body shown" if structural else
+                    "bounded source range shown; method endpoint NOT verified"
+                )
+                notes.append(
+                    f"  - {method.name} lines {line_start}-{line_end}: "
+                    f"{label}; {status}."
                 )
                 excerpts.append(excerpt)
                 spent += len(excerpt)
