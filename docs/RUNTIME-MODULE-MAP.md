@@ -62,6 +62,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
+| `tool_free_knowledge_policy.py` | Strict opt-in static technical explanations without MCP discovery or tool execution; excludes live device/app requests. |
 | `scoped_app_status_read.py` | Deterministic read-only app configuration execution for explicit app-ID status questions; truthful incomplete status on failed/missing reads. |
 | `investigation_evidence_ledger.py` | Deduplicates checked command-event receipts and detects explicit false command-absence claims; read-only. |
 | `lockout_claim_consistency.py` | Reports contradictory lockout duration claims without changing Hubitat settings. |

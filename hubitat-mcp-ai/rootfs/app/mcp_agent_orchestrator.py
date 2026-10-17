@@ -16,6 +16,7 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
+from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from paid_model_routing import (
     set_original_paid_request,
     reset_original_paid_request,
@@ -350,9 +351,24 @@ def _explicit_mutation_request(prompt: str) -> bool:
     """
 
     text = str(prompt or "").strip()
+    # Explicit model-selection is not device-control intent. A question like
+    # "Use paid model. Why did Bathroom Light 1 turn on?" must stay read-only.
+    # Strip only a leading routing directive; subsequent writes remain writes.
+    text = re.sub(
+        r"(?i)^\s*(?:use paid model|premium model|paid investigation)"
+        r"\s*[.!:,;\-]*\s*", "", text,
+    )
     if not text:
         return False
-    if _READ_QUERY_PREFIX.search(text):
+    # Keep *mixed* requests in the guarded write path. Do not let a question
+    # lead-in hide a later independent command to change hub state.
+    secondary_write = re.search(
+        r"(?i)(?:[.!?]\s+(?:also\s+|then\s+)?|\band\s+(?:then\s+|also\s+)?)"
+        r"(?:please\s+)?(?:turn|switch|set|change|create|delete|"
+        r"disable|enable|restart|block|allow|configure)\b",
+        text,
+    )
+    if _READ_QUERY_PREFIX.search(text) and not secondary_write:
         return False
     # An imperative investigative lead-in can still be a READ, even when
     # describing a historical command (e.g. "Investigate thoroughly why
@@ -363,7 +379,7 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"^\s*(?:investigate|diagnose|explain|analyse|analyze|reconstruct)"
         r"\b", text, re.I,
     )
-    if investigative_lead and re.search(
+    if investigative_lead and not secondary_write and re.search(
         r"\b(?:why|what caused|what triggered|how did)\b", text, re.I,
     ):
         return False
@@ -3456,7 +3472,8 @@ class UnifiedMCPAgent:
                 or self._mutation_call_seen.get()
             ):
                 request_class = "write"
-            elif self._is_conversational_prompt(user_prompt) and not evidence:
+            elif (self._is_conversational_prompt(user_prompt)
+                  or eligible_tool_free_knowledge(user_prompt)) and not evidence:
                 request_class = "conversational"
             else:
                 request_class = "live-read"
@@ -3538,6 +3555,15 @@ class UnifiedMCPAgent:
         session_id: str = "default",
     ) -> str:
         request_started = time.monotonic()
+        # Explicit tool-free *static* technical questions need no catalog,
+        # Hubitat reads, source searches or multi-round tool selection.
+        # The classifier rejects live state, device/app IDs and write intents.
+        if eligible_tool_free_knowledge(user_prompt) and not _explicit_mutation_request(user_prompt):
+            reply = await self.transport.chat(tool_free_messages(user_prompt), [])
+            content = str(reply.get("content") or "").strip()
+            if reply.get("tool_calls") or not content:
+                return "The tool-free technical explanation did not complete; no Hubitat tools were called."
+            return content
         # Keep the full live registry searchable; tool_limit bounds *declared*
         # model functions, not the server capabilities retained for discovery.
         # The initial model view remains small and permission-filtered by MCP.
