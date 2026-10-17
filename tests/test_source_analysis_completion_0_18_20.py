@@ -136,8 +136,10 @@ def test_normal_supported_source_answer_is_not_replaced():
         outcome(text, complete_receipts()), REQUEST,
     )
     assert answer.investigation_coverage["analysisAnswerVerified"] is True
-    assert answer.investigation_coverage["objectiveSatisfied"] is True
-    assert answer.message == text
+    assert answer.investigation_coverage["objectiveSatisfied"] is False
+    assert answer.metrics["outcome"] == "unresolved"
+    assert answer.message.startswith(text)
+    assert "Runtime correlation incomplete" in answer.message
     assert build_agent_response(
         answer, model="deepseek-v4-pro", elapsed_ms=500,
         version="0.18.20",
