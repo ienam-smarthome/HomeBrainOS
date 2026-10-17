@@ -48,6 +48,7 @@ from history_time_windows import (
 from homebrain_agent import UnifiedMCPAgent
 from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
+from groovy_source_investigation import requested_groovy_app_id
 from mcp_client import HubitatMCPClient
 from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
@@ -592,7 +593,8 @@ async def _agent_request(request: ChatRequest) -> Any:
         # A direct/specialized completion may have bypassed its own evidence
         # assessment. Preserve the original investigative goal at the API
         # boundary rather than disguising an incomplete read as an answer.
-        goal = plan_investigation(request.message)
+        goal = (None if requested_groovy_app_id(request.message)
+                else plan_investigation(request.message))
         if (
             goal is not None
             and getattr(outcome, "request_class", "") == "live-read"
@@ -622,6 +624,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
+            and requested_groovy_app_id(request.message) is None
             and plan_investigation(request.message) is None
             and not is_comprehensive_system_audit_request(request.message)
             and not is_broad_automation_runtime_diagnostic(request.message)
