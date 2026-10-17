@@ -148,8 +148,7 @@ def test_direct_source_tool_uses_direct_arguments_not_facade():
                 assert args == {"codeId": "1453"}
                 return SimpleNamespace(
                     data={"sourceCode": "private int getMotionLockoutDurationMinutes() {\n"
-                                        " return Math.max(1, Math.min(1440, 30))\n}\n",
-                          "totalChars": 90}, is_error=False,
+                                        " return Math.max(1, Math.min(1440, 30))\n}\n"}, is_error=False,
                 )
             return await super().call_tool(name, args)
     async def run():
