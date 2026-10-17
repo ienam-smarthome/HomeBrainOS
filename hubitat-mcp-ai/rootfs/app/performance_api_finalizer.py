@@ -11,6 +11,7 @@ from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
 from investigation_intelligence import plan_investigation, assess_investigation
+from groovy_source_investigation import requested_groovy_app_id
 from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
@@ -1507,7 +1508,8 @@ async def finalize_performance_api_outcome(
 
     outcome.message = guarded
     outcome.evidence = evidence
-    contract = plan_investigation(user_prompt)
+    contract = (None if requested_groovy_app_id(user_prompt)
+                else plan_investigation(user_prompt))
     if contract is not None and hasattr(outcome, "investigation_coverage"):
         completeness = assess_investigation(contract, evidence)
         if contract.domain == "scheduler_ownership" and scheduled_digest:
