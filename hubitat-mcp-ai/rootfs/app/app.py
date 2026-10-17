@@ -745,11 +745,39 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                 detail=detail,
                 headers={"Retry-After": retry_after} if retry_after else None,
             ) from exc
-        logger.exception("Upstream provider HTTP error")
+        # Ollama errors should be distinguishable from Anthropic errors too.
+        # The Free selector is now the default; never instruct the user to
+        # change provider without knowing which upstream service failed.
+        # Avoid dumping the exception: provider error bodies are untrusted
+        # and might include account or user evidence.
+        ollama_status = exc.response.status_code
+        ollama_errors = {
+            400: "Ollama rejected the model request or tool/message format.",
+            401: "Ollama Cloud authentication was rejected. Check the Ollama API key.",
+            402: (
+                "Ollama rejected free allowance or billing for this request."
+                if request.model_tier == "free"
+                else "Ollama account allowance or paid billing was rejected."
+            ),
+            403: "Ollama Cloud refused access to this model or API key.",
+            404: "The requested Ollama model or API endpoint was not found.",
+            413: "The Ollama request exceeded provider request limits.",
+            500: "The Ollama model provider encountered an internal error.",
+            502: "The Ollama model provider returned a gateway error.",
+            503: "The Ollama model provider is temporarily unavailable.",
+            504: "The Ollama model provider timed out.",
+            529: "The Ollama model provider is overloaded.",
+        }
+        logger.warning("Ollama upstream HTTP status: %s", ollama_status)
         raise HTTPException(
-            status_code=502,
-            detail="The model provider returned an HTTP error. Hubitat and MCP may remain available.",
-        ) from exc
+            status_code=ollama_status if ollama_status in ollama_errors else 502,
+            detail=(
+                f"{ollama_errors.get(ollama_status, 'Ollama model request failed.')} "
+                f"(Ollama HTTP {ollama_status})."
+                + (" Free selection did not switch to a paid provider."
+                   if request.model_tier == "free" else "")
+            ),
+        ) from None
     except Exception as exc:
         logger.exception("Unified MCP request failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
