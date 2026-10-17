@@ -14,6 +14,11 @@ from household_ollama_accounts import (
 )
 from request_metrics import increment_active_metric, record_active_provider_model
 from paid_model_routing import PaidCreditGuard, explicit_paid_request, request_model_tier
+
+
+class PaidModelUnavailable(RuntimeError):
+    """Strict Paid request has no permitted paid route; never silently use free."""
+
 from provider_rate_limit_policy import confirmed_free_allowance_exhaustion
 
 
@@ -91,7 +96,7 @@ class ChatTransport:
         cloud_first: bool = False,
         paid_routing_enabled: bool = False,
         paid_routing_mode: str = "hybrid",
-        paid_budget_usd: float = 6.50,
+        paid_budget_usd: float | None = None,
         paid_deep_model: str = "deepseek-v4-pro",
         free_quota_paid_fallback_enabled: bool = False,
     ) -> None:
@@ -188,6 +193,12 @@ class ChatTransport:
         if not self.configured:
             raise RuntimeError("Ollama Online API key is not configured")
         paid_model = await self.paid_credit_guard.select(messages, tools)
+        if request_model_tier() == "paid" and paid_model is None:
+            raise PaidModelUnavailable(
+                "Paid mode requires enabled paid routing and an available "
+                "DeepSeek model. Check the add-on paid-routing setting; "
+                "no free-model fallback was attempted."
+            )
         selected_model = paid_model or self.model_name
         account_keys = [("primary", self.api_key)]
         if self.household_cloud_failover_enabled and self.household_cloud_accounts:
@@ -272,10 +283,13 @@ class ChatTransport:
         try:
             return await self._try_cloud_accounts(messages, tools)
         except Exception:
+            if request_model_tier() == "paid":
+                # Strict explicit Paid: preserve provider failure rather than
+                # generating a partly Gemma/local-model investigation.
+                raise
             if self.local_configured and (self.cloud_first or manual_paid_cloud):
-                # An explicitly paid request prefers cloud. If cloud fails,
-                # local fallback remains available and is reported in metrics.
-                # This is independent of household cloud-account usage.
+                # Non-strict routing preserves existing local fallback
+                # behaviour and reports actual participating models.
                 try:
                     result = await self._try_local(messages, tools)
                     increment_active_metric("ollama_cloud_to_local_fallback")
