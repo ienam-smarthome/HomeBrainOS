@@ -156,6 +156,7 @@ from skill_focal_window import build_focal_source_plan, execute_focal_source_pla
 from skill_investigation_followup import execute_unverified_next_reads
 from investigation_checkpoint import (
     is_investigative_question, render_investigation_checkpoint,
+    requests_explicit_hypothesis_comparison, build_evidence_checkpoint,
 )
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
@@ -611,6 +612,9 @@ class UnifiedMCPAgent:
         self._current_user_objective: ContextVar[str] = ContextVar("homebrain_current_user_objective", default="")
         self._investigation_reflection_used: ContextVar[bool] = ContextVar(
             "homebrain_investigation_reflection_used", default=False
+        )
+        self._investigation_hypotheses: ContextVar[tuple[Any, ...]] = ContextVar(
+            "homebrain_request_hypothesis_comparisons", default=()
         )
         self._investigation_baseline: ContextVar[tuple[str, int] | None] = ContextVar(
             "homebrain_investigation_baseline", default=None
@@ -3457,6 +3461,7 @@ class UnifiedMCPAgent:
         objective_token = self._current_user_objective.set(str(user_prompt))
         reflection_token = self._investigation_reflection_used.set(False)
         baseline_token = self._investigation_baseline.set(None)
+        hypothesis_token = self._investigation_hypotheses.set(())
         try:
             message = await self._process_user_request(
                 user_prompt,
@@ -3488,6 +3493,20 @@ class UnifiedMCPAgent:
                 if contract is not None and request_class == "live-read"
                 else None
             )
+            candidates = self._investigation_hypotheses.get()
+            if candidates and request_class == "live-read":
+                checkpoint = build_evidence_checkpoint(
+                    user_prompt, evidence, candidate_hypotheses=candidates,
+                )
+                comparisons = checkpoint["competing_hypothesis_checks"]
+                if comparisons:
+                    coverage = {
+                        **(coverage or {}),
+                        "hypothesisComparisons": comparisons,
+                        "hypothesisComparisonStatus": (
+                            "model-proposed-source-checks-not-causal-verdicts"
+                        ),
+                    }
             return AgentOutcome(
                 message=message,
                 request_class=request_class,
@@ -3498,6 +3517,7 @@ class UnifiedMCPAgent:
                 investigation_coverage=coverage,
             )
         finally:
+            self._investigation_hypotheses.reset(hypothesis_token)
             self._investigation_baseline.reset(baseline_token)
             self._investigation_reflection_used.reset(reflection_token)
             self._current_user_objective.reset(objective_token)
@@ -3713,10 +3733,20 @@ class UnifiedMCPAgent:
                     adaptive_investigation
                     and (source_investigation or not is_causal_investigation(user_prompt))
                 )
+                or (
+                    requests_explicit_hypothesis_comparison(user_prompt)
+                    and not _explicit_mutation_request(user_prompt)
+                )
             )
             and not self._is_conversational_prompt(user_prompt)
             else None
         )
+        # An explicitly requested comparison can use the existing planner
+        # even when bounded causal evidence reads remain authoritative.
+        # Keep the tentative hypotheses request-scoped and never record them
+        # as MCP evidence.
+        if task_plan is not None and task_plan.operation == "investigate":
+            self._investigation_hypotheses.set(task_plan.candidate_hypotheses)
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
