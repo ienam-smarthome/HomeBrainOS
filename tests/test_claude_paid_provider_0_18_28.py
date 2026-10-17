@@ -74,10 +74,14 @@ def test_free_is_default_in_context_api_and_rendered_selector():
     assert "localStorage.setItem('hmcp_model_tier'" not in page
 
 
-def test_auto_retains_backward_compatible_hybrid_but_default_is_never_auto_paid():
-    assert choose_paid_model([
-        {"role": "user", "content": "Investigate why light turned off"}
-    ], "hybrid") is None
+def test_auto_retains_backward_compatible_hybrid_but_explicit_free_never_escalates():
+    free = set_request_model_tier("free")
+    try:
+        assert choose_paid_model([
+            {"role": "user", "content": "Investigate why light turned off"}
+        ], "hybrid") is None
+    finally:
+        reset_request_model_tier(free)
     token = set_request_model_tier("auto")
     try:
         assert choose_paid_model([
