@@ -233,3 +233,68 @@ def test_failed_read_never_marks_competing_explanation_checked():
 def test_explicit_hypothesis_comparison_does_not_affect_plain_causal_paths(question, expected):
     from investigation_checkpoint import requests_explicit_hypothesis_comparison
     assert requests_explicit_hypothesis_comparison(question) is expected
+
+
+def test_hubitat_device_log_does_not_verify_upstream_mqtt_packet_discriminator():
+    from general_task_engine import InvestigativeHypothesis
+
+    candidates = (
+        InvestigativeHypothesis(
+            "Endpoint is silent on MQTT", "Did an actual upstream MQTT packet arrive?",
+            "device_logs", "upstream",
+        ),
+        InvestigativeHypothesis(
+            "Hubitat driver state is cached", "Does the stored Hubitat value differ?",
+            "device_state", "hubitat",
+        ),
+    )
+    receipts = [
+        {"tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+         "success": True, "mutates": False, "effect": "read",
+         "arguments": {"tool": "hub_get_logs", "args": {
+             "deviceId": "7103", "since": "24h", "limit": 100,
+         }}, "details": {"logCount": 38}},
+        {"tool": "hub_read_devices", "sub_tool": "hub_get_device",
+         "success": True, "mutates": False, "effect": "read",
+         "arguments": {"tool": "hub_get_device", "args": {
+             "deviceId": "7103",
+         }}},
+    ]
+    packet = build_evidence_checkpoint(
+        "Investigate offline MQTT device", receipts,
+        candidate_hypotheses=candidates,
+    )
+    upstream, hubitat = packet["competing_hypothesis_checks"]
+    assert upstream["source_state"] == "source-class-checked-verdict-unverified"
+    assert upstream["origin_state"] == "upstream-origin-not-independently-verified"
+    assert upstream["discriminator_verified"] is False
+    assert upstream["hypothesis_verdict"] == "unverified"
+    assert "Did an actual upstream MQTT packet arrive?" in packet[
+        "next_unchecked_discriminators"
+    ]
+    assert hubitat["origin_state"] == "hubitat-source-class-observed"
+    assert hubitat["discriminator_verified"] is False
+    assert all(c["hypothesis_verdict"] == "unverified"
+               for c in packet["competing_hypothesis_checks"])
+
+
+def test_physical_delivery_cannot_be_established_from_successful_device_history():
+    from general_task_engine import InvestigativeHypothesis
+
+    candidates = (
+        InvestigativeHypothesis("Socket is unpowered",
+                                "Did the physical socket respond?",
+                                "device_history", "physical"),
+        InvestigativeHypothesis("A switch command was dispatched",
+                                "Was on() recorded by Hubitat?",
+                                "device_history", "hubitat"),
+    )
+    packet = build_evidence_checkpoint("Investigate an offline socket", [
+        {"tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+         "success": True, "effect": "read", "mutates": False,
+         "arguments": {"tool": "hub_list_device_events",
+                       "args": {"deviceId": "7103", "limit": 20}}}
+    ], candidate_hypotheses=candidates)
+    physical, recorded = packet["competing_hypothesis_checks"]
+    assert physical["origin_state"] == "physical-origin-not-independently-verified"
+    assert recorded["origin_state"] == "hubitat-source-class-observed"
