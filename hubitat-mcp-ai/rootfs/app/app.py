@@ -46,6 +46,10 @@ from history_time_windows import (
     set_history_window_request,
 )
 from homebrain_agent import UnifiedMCPAgent
+from adaptive_investigation_policy import model_led_investigation_request
+from rule_machine_analysis import historical_rule_execution_request
+from investigation_policy import is_causal_investigation, is_history_investigation
+from mcp_agent_orchestrator import _explicit_mutation_request
 from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from groovy_source_investigation import requested_groovy_app_id
@@ -55,6 +59,7 @@ from performance_api_finalizer import finalize_performance_api_outcome
 from request_runtime import (
     RequestProgress, begin_progress, end_progress,
     set_request_stage, remember_verified_outcome, safe_partial_outcome,
+    safe_receipt_partial_outcome,
     install_sensitive_log_redaction,
 )
 from performance_host_plan import (
@@ -429,6 +434,12 @@ class RequestCoordinator:
                         return safe_partial_outcome(
                             progress.checkpoint,
                             reason=f"{deadline_seconds:g}s time limit",
+                            additional_reads=progress.verified_reads,
+                        )
+                    if progress.verified_reads:
+                        return safe_receipt_partial_outcome(
+                            progress.verified_reads,
+                            reason=f"{deadline_seconds:g}s time limit",
                         )
                     raise HTTPException(
                         status_code=504,
@@ -617,6 +628,27 @@ async def _agent_request(request: ChatRequest) -> Any:
         reset_history_window_request(token)
 
 
+def _needs_investigation_deadline(prompt: str) -> bool:
+    """Bound any genuine read-only investigation, not just system-wide audits.
+
+    Keep conversational questions, current-state snapshots and all possible
+    state-changing requests on their existing independent routes.
+    """
+    if _explicit_mutation_request(prompt):
+        return False
+    return bool(
+        is_broad_performance_request(prompt)
+        or is_comprehensive_system_audit_request(prompt)
+        or is_broad_automation_runtime_diagnostic(prompt)
+        or model_led_investigation_request(prompt)
+        or historical_rule_execution_request(prompt)
+        or requested_groovy_app_id(prompt) is not None
+        or is_causal_investigation(prompt)
+        or is_history_investigation(prompt)
+        or plan_investigation(prompt) is not None
+    )
+
+
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     from scoped_app_status_read import scoped_status_app_id, read_scoped_app_status
     tier_token = set_request_model_tier(request.model_tier)
@@ -649,11 +681,6 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
                 raise HTTPException(status_code=503, detail="Ollama Online is disabled")
             operation = _agent_request(request)
-        comprehensive = (
-            is_broad_performance_request(request.message)
-            or is_comprehensive_system_audit_request(request.message)
-            or is_broad_automation_runtime_diagnostic(request.message)
-        )
         outcome = await request_coordinator.run(
             request.coordination_key,
             operation,
@@ -661,7 +688,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             request_id=request.request_id or "",
             deadline_seconds=max(10.0, float(
                 OPTIONS.get("investigation_deadline_seconds") or 90
-            )) if comprehensive else None,
+            )) if _needs_investigation_deadline(request.message) else None,
         )
         # Single cross-route evidence assessment: even early host completions,
         # semantic fast paths and specialist routes pass this boundary before
