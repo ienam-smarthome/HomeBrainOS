@@ -19,7 +19,7 @@ from request_metrics import record_active_provider_model
 _ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 _ANTHROPIC_VERSION = "2023-06-01"
 _ANTHROPIC_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
-_TOOL_ERROR_POSITION = re.compile(r"(?<![a-z])tools(?:\\.|\\[)(\\d+)(?:\\]|\\.)")
+_TOOL_ERROR_POSITION = re.compile(r"(?<![a-z])tools(?:\.|\[)(\d+)(?:\]|\.)")
 
 
 class ClaudeToolSchemaError(ValueError):
