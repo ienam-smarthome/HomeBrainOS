@@ -5,6 +5,8 @@ discover compatible read operations, and bound source reads and output.
 """
 from __future__ import annotations
 
+from groovy_method_scope import build_method_scope_evidence
+
 import hashlib
 import re
 import time
@@ -408,12 +410,31 @@ class GroovySourceService:
             lines.append(f"- Verified code ID: {code_id}.")
         if version is not None:
             lines.append(f"- Source version: {str(version)[:32]}.")
-        excerpts, found_symbols = _excerpts(body, symbols)
         requested_symbols = _validated_symbols(symbols)
+        # Retrieval completeness and method-body coverage are different
+        # claims. Allocate excerpt space to complete, balanced method
+        # candidates first; use the remaining budget for non-method reads,
+        # writes, declarations and neighboring references.
+        method_notes, method_excerpts = build_method_scope_evidence(
+            body, requested_symbols,
+            budget=min(10500, MAX_EXCERPT_CHARS),
+        )
+        reference_excerpts, found_symbols = _excerpts(body, symbols)
+        remaining = MAX_EXCERPT_CHARS - sum(len(x) for x in method_excerpts)
+        excerpts = list(method_excerpts)
+        for excerpt in reference_excerpts:
+            if len(excerpt) <= remaining and excerpt not in excerpts:
+                excerpts.append(excerpt)
+                remaining -= len(excerpt)
         lines.append("- Matched symbols: " + (", ".join(found_symbols) if found_symbols else "none in retrieved text") + ".")
         missing_symbols = [name for name in requested_symbols if name not in found_symbols]
         if missing_symbols:
             lines.append("- Symbols not located in retrieved text: " + ", ".join(missing_symbols) + ".")
+        lines.append(
+            "Method-scope evidence (lexical index, NOT guaranteed complete "
+            "call graph or runtime state proof):"
+        )
+        lines.extend(method_notes)
         if excerpts:
             lines.append("Source excerpts (retrieved-text-relative line numbers):")
             lines.extend(excerpts)
