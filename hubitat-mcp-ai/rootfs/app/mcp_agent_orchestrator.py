@@ -17,6 +17,7 @@ from agent_prompt_policy import (
 )
 from chat_transport import ChatTransport
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
+from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from paid_model_routing import (
     set_original_paid_request,
     reset_original_paid_request,
@@ -3592,6 +3593,15 @@ class UnifiedMCPAgent:
         catalog = build_request_tool_catalog(all_tools)
         groovy_source_app = requested_groovy_app_id(user_prompt)
         source_investigation = groovy_source_app is not None
+        adaptive_investigation = (
+            model_led_investigation_request(user_prompt)
+            and not _explicit_mutation_request(user_prompt)
+        )
+        if adaptive_investigation:
+            # Restrict available model tools to actually registered READ
+            # capabilities. A planner can choose the next evidence source,
+            # never expand permissions or authorise a device mutation.
+            catalog.activate_investigation_read_view(max_declared=self.tool_limit)
         if source_investigation:
             # Expose a safe evidence capability; the model decides whether
             # to call it and how to investigate. No deterministic final answer.
@@ -3685,7 +3695,7 @@ class UnifiedMCPAgent:
             await self.general_task_planner.plan(
                 user_prompt, history=self._history(conversation_history),
             )
-            if self.general_task_engine_enabled
+            if (self.general_task_engine_enabled or adaptive_investigation)
             and not self._is_conversational_prompt(user_prompt)
             else None
         )
@@ -3721,6 +3731,13 @@ class UnifiedMCPAgent:
                 else []
             )
             capability_discovery = discovery.content
+            if adaptive_investigation:
+                # Discovery must not grant the model a mutating gateway.
+                catalog.activate_investigation_read_view(max_declared=self.tool_limit)
+                if source_investigation:
+                    catalog.replace_declared([
+                        *catalog.declared_names, _LOCAL_GROOVY_SOURCE_TOOL,
+                    ])
             if capability_additions:
                 logger.info(
                     "Original-request discovery expanded registry with: %s",
@@ -3739,6 +3756,8 @@ class UnifiedMCPAgent:
             system_prompt += "\n\n" + skill_guidance
         if task_plan is not None:
             system_prompt += "\n\n" + task_plan.instruction()
+        if adaptive_investigation:
+            system_prompt += "\n\n" + READ_ONLY_AGENT_DIRECTIVE
         contract = None if source_investigation else plan_investigation(user_prompt)
         if contract is not None:
             system_prompt += (
@@ -4137,6 +4156,13 @@ class UnifiedMCPAgent:
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
         for _ in range(active_round_budget):
+            if adaptive_investigation:
+                catalog.activate_investigation_read_view(max_declared=self.tool_limit)
+                if source_investigation:
+                    catalog.replace_declared([
+                        *catalog.declared_names, _LOCAL_GROOVY_SOURCE_TOOL,
+                    ])
+                tools = catalog.schemas()
             if self._investigation_reflection_used.get() and not causal_completion_mode:
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
                 tools = catalog.schemas()
@@ -4258,6 +4284,10 @@ class UnifiedMCPAgent:
                         )
                         capability_grounding.record_discovery(len(additions))
                         if additions:
+                            if adaptive_investigation:
+                                catalog.activate_investigation_read_view(
+                                    max_declared=self.tool_limit
+                                )
                             tools = catalog.schemas()
                             logger.info(
                                 "Capability recovery expanded registry with: %s",
