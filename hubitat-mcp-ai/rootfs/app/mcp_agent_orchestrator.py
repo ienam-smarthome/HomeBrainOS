@@ -16,6 +16,7 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
+from source_analysis_completion import source_trace_ready_for_synthesis
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from paid_model_routing import (
@@ -5123,6 +5124,21 @@ class UnifiedMCPAgent:
                                 "gateway needed to finish the original task."
                             ),
                         })
+            # Source-led device investigation: once real contiguous code,
+            # device configuration, scoped history and logs are collected,
+            # stop model-driven duplicate page reads and synthesize once.
+            # This asserts tool-read sufficiency, NOT source method behaviour
+            # or causal verification. Writes never enter this route.
+            if (
+                not round_has_mutation
+                and source_trace_ready_for_synthesis(
+                    user_prompt, self.evidence.receipts(),
+                )
+            ):
+                increment_active_metric("source_trace_sufficiency_stop")
+                increment_active_metric("investigative_finalization")
+                return await self._final_answer(messages)
+
             if causal_subject_no_intervals:
                 increment_active_metric("causal_subject_empty_stop")
                 messages.append({
