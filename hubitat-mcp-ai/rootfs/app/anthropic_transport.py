@@ -18,6 +18,83 @@ from request_metrics import record_active_provider_model
 _ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 _ANTHROPIC_VERSION = "2023-06-01"
 
+# Never echo provider error bodies. Anthropic error messages may include
+# snippets of model-input instructions, tool arguments, or private content.
+_KNOWN_ERROR_TYPES = frozenset({
+    "invalid_request_error", "authentication_error", "permission_error",
+    "not_found_error", "rate_limit_error", "api_error", "overloaded_error",
+    "billing_error",
+})
+
+
+def describe_anthropic_http_error(
+    exc: httpx.HTTPStatusError,
+) -> tuple[int, str, str | None, str, str]:
+    """Return actionable, redacted status and a stable diagnostic category.
+
+    Only the upstream HTTP status and allowlisted error *type* are ever echoed.
+    A limited keyword classification may improve 400 diagnostics, but the
+    upstream message body itself is never surfaced or logged.
+    """
+    response = exc.response
+    status = response.status_code
+    error_type = "unknown"
+    hint = ""
+    try:
+        data = response.json()
+        if isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict):
+                supplied_type = str(error.get("type") or "")
+                if supplied_type in _KNOWN_ERROR_TYPES:
+                    error_type = supplied_type
+                hint = str(error.get("message") or "")[:2048].casefold()
+    except (ValueError, TypeError, UnicodeError):
+        pass
+
+    reason = "provider-http-error"
+    if status == 400:
+        if "tool_use" in hint or "tool_result" in hint:
+            reason = "tool-result-format"
+            detail = "Claude rejected the tool-call/result transcript."
+        elif "input_schema" in hint or "tools" in hint:
+            reason = "tool-schema"
+            detail = "Claude rejected a tool definition or schema."
+        elif "message" in hint or "assistant" in hint or "prefill" in hint:
+            reason = "message-format"
+            detail = "Claude rejected the conversation message format."
+        elif "model" in hint:
+            reason = "model-parameter"
+            detail = "Claude rejected the model or model parameters."
+        else:
+            reason = "invalid-request"
+            detail = "Claude rejected the API request format."
+    elif status == 401:
+        reason, detail = "authentication", "Claude rejected the Anthropic API key."
+    elif status == 402:
+        reason, detail = "billing", "Claude API billing or credits are unavailable."
+    elif status == 403:
+        reason, detail = "permission", "Claude API access is not permitted for this key."
+    elif status == 404:
+        reason, detail = "model-unavailable", "Claude model or API endpoint is unavailable to this account."
+    elif status == 413:
+        reason, detail = "request-too-large", "Claude request is too large for the API."
+    elif status == 429:
+        reason, detail = "rate-limit", "Claude API rate limit or token quota was reached."
+    elif status in (500, 502, 503, 504, 529):
+        reason, detail = "provider-unavailable", "Claude API is temporarily unavailable."
+    else:
+        detail = "Claude API request failed."
+
+    retry_after = str(response.headers.get("retry-after") or "").strip()
+    retry_after = retry_after if retry_after.isdigit() and int(retry_after) <= 86400 else None
+    # Do not treat the Anthropic response as a Hubitat or MCP error.
+    safe = (
+        f"{detail} (Anthropic HTTP {status}; type={error_type}; "
+        f"category={reason}). No Ollama/Free fallback was attempted."
+    )
+    return status, safe, retry_after, error_type, reason
+
 
 def _string(value: Any) -> str:
     if isinstance(value, str):
