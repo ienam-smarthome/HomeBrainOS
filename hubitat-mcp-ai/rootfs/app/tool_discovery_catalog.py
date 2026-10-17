@@ -209,11 +209,15 @@ class ToolDiscoveryCatalog:
             return None
 
         schema_ops = self._schema_operations(tool)
-        if schema_ops and operation not in schema_ops:
-            return (
-                f"Operation {operation!r} is not allowed by gateway {gateway!r}; "
-                f"allowed operations include {sorted(schema_ops)}."
-            )
+        if schema_ops:
+            if operation not in schema_ops:
+                return (
+                    f"Operation {operation!r} is not allowed by gateway {gateway!r}; "
+                    f"allowed operations include {sorted(schema_ops)}."
+                )
+            # An explicit live enum is authoritative. Do not reject a valid
+            # operation just because an older prose description omitted it.
+            return None
 
         description_ops = self._description_operations(tool)
         if description_ops and operation not in description_ops:
