@@ -8,6 +8,7 @@ into model guidance; only read receipts and coverage limitations.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from investigation_policy import is_causal_investigation, is_history_investigation
@@ -32,6 +33,25 @@ def is_investigative_question(question: str) -> bool:
                                               "rule", "hub", "sensor", "mqtt",
                                               "motion", "lockout", "occupancy",
                                               "light", "scheduled", "offline"))
+        )
+    )
+
+
+def requests_explicit_hypothesis_comparison(question: str) -> bool:
+    """Opt-in deep comparison, not a general causal/history fast-path override.
+
+    The request must be investigative AND explicitly ask for contrasting
+    hypotheses. It never supplies permissions, tools or causal conclusions.
+    """
+    text = " ".join(str(question or "").casefold().split())
+    return bool(
+        is_investigative_question(question)
+        and re.search(
+            r"\b(?:competing|hypothes(?:is|es)|alternativ(?:e|es)|"
+            r"compare (?:possible |plausible )?(?:causes|explanations)|"
+            r"distinguish (?:between |among )?(?:possible |plausible )?"
+            r"(?:causes|explanations))\b",
+            text,
         )
     )
 
@@ -178,6 +198,7 @@ def render_investigation_checkpoint(
 
 
 __all__ = [
-    "is_investigative_question", "build_evidence_checkpoint",
+    "is_investigative_question", "requests_explicit_hypothesis_comparison",
+    "build_evidence_checkpoint",
     "render_investigation_checkpoint",
 ]
