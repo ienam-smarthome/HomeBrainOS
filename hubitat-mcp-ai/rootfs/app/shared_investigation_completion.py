@@ -225,8 +225,9 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 and not synthesis_failed and not method_gap
                 and not runtime_gap and not historical_gap
             ),
-            "analysisAnswerVerified": not synthesis_failed,
+            "analysisAnswerVerified": not (synthesis_failed or historical_gap),
             "analysisStatus": (
+                "historical-app-command-not-verified" if historical_gap else
                 "synthesis-failed-source-observed" if synthesis_failed
                 else "model-admitted-relevant-methods-not-reviewed"
                 if method_gap else "model-answer-present-not-method-certified"
