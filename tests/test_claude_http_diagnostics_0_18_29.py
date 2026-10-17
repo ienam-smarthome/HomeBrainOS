@@ -121,3 +121,39 @@ def test_homebrain_api_exposes_safe_claude_status_without_generic_502(
     assert f"category={category}" in detail
     assert "sk-ant-secret" not in detail
     assert "Hubitat and MCP may remain available" not in detail
+
+
+@pytest.mark.parametrize("status,reason", [
+    (400, "rejected the model request"),
+    (401, "authentication was rejected"),
+    (402, "free allowance or billing"),
+    (404, "not found"),
+    (503, "temporarily unavailable"),
+])
+def test_free_ollama_failure_identifies_provider_and_status_without_secrets(
+    monkeypatch, tmp_path, status, reason,
+):
+    import importlib
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing-options.json"))
+    sys.modules.pop("app", None)
+    module = importlib.import_module("app")
+
+    async def reject(_request):
+        req = httpx.Request("POST", "https://ollama.com/api/chat")
+        resp = httpx.Response(
+            status, request=req, json={"error": "sk-private-secret user private history"},
+        )
+        raise httpx.HTTPStatusError("provider rejected", request=req, response=resp)
+    monkeypatch.setattr(module, "_agent_request", reject)
+    with TestClient(module.app) as client:
+        response = client.post("/api/ask", json={
+            "query": "Investigate why Bedroom 1 light switched on yesterday",
+            "session_id": f"free-provider-status-{status}",
+        })
+    assert response.status_code == status
+    msg = response.json()["detail"]
+    assert f"Ollama HTTP {status}" in msg
+    assert reason in msg
+    assert "sk-private-secret" not in msg
+    assert "did not switch to a paid provider" in msg
