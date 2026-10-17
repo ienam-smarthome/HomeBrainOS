@@ -69,6 +69,7 @@ from performance_host_plan import (
 )
 from provider_rate_limit_policy import describe_ollama_rate_limit
 from chat_transport import PaidModelUnavailable
+from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
@@ -709,13 +710,23 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     except asyncio.CancelledError:
         raise
     except httpx.HTTPStatusError as exc:
-        if request.model_tier == "claude" and exc.response.status_code in (401, 402, 403):
+        if request.model_tier == "claude":
+            status, detail, retry_after, error_type, category = (
+                describe_anthropic_http_error(exc)
+            )
+            # Never log the exception itself: HTTP error bodies may contain
+            # portions of a prompt, tool arguments or provider credentials.
+            logger.warning(
+                "Anthropic API HTTP %s; type=%s; category=%s",
+                status, error_type, category,
+            )
             raise HTTPException(
-                status_code=503,
-                detail="Claude API rejected authentication or billing. Check the "
-                       "Anthropic API key, account credits and model access. "
-                       "No Ollama/free fallback was attempted.",
-            ) from exc
+                status_code=status if status in {
+                    400, 401, 402, 403, 404, 413, 429, 500, 502, 503, 504, 529,
+                } else 502,
+                detail=detail,
+                headers={"Retry-After": retry_after} if retry_after else None,
+            ) from None
         if request.model_tier == "paid" and exc.response.status_code == 402:
             raise HTTPException(
                 status_code=402,
