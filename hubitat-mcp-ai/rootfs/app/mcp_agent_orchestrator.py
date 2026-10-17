@@ -3565,6 +3565,10 @@ class UnifiedMCPAgent:
             )
             data = {"success": True, "sourceRetrieved": report.retrieved,
                     "fullImplementationVerified": report.complete,
+                    "verifiedCharacters": report.verified_characters,
+                    "declaredTotalCharacters": report.declared_total,
+                    "verifiedPages": report.verified_pages,
+                    "sourceCodeId": report.source_code_id,
                     "report": report.message,
                     "coverage": "partial-or-unverified" if not report.retrieved
                                 else "excerpts-returned; verify full-source claim"}

@@ -35,6 +35,17 @@ def source_read_metadata(
             "sourceRetrieved": data.get("sourceRetrieved") is True,
             "fullImplementationVerified": data.get("fullImplementationVerified") is True,
         }
+        for result_key, data_key in (
+            ("verifiedCharacters", "verifiedCharacters"),
+            ("declaredTotalCharacters", "declaredTotalCharacters"),
+            ("verifiedPages", "verifiedPages"),
+        ):
+            value = data.get(data_key)
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _MAX_SOURCE_TEXT:
+                result[result_key] = value
+        code_id = data.get("sourceCodeId")
+        if isinstance(code_id, (int, str)) and str(code_id).isdigit():
+            result["sourceCodeId"] = str(code_id)
         return result
 
     leaf = arguments.get("args")

@@ -21,11 +21,13 @@ _READ_LEAVES = frozenset({
     "hub_get_device", "hub_get_device_attribute", "hub_list_devices",
     "hub_list_device_events", "hub_get_logs", "hub_get_jobs",
     "hub_get_performance_stats", "hub_get_metrics", "hub_get_app_config",
+    "hub_get_source", "hub_list_apps",
 })
 _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "hub_get_device_attribute": ("deviceId", "attribute"),
     "hub_get_device": ("deviceId",),
     "hub_get_app_config": ("appId",),
+    "hub_get_source": ("id", "type"),
 }
 
 

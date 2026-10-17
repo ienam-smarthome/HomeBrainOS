@@ -27,7 +27,7 @@ _SYMBOLS = ("motionOffLockoutMinutes", "getMotionLockoutDurationMinutes",
             "startMotionLockoutForDevice", "startMotionLockoutForAllLights",
             "isDeviceMotionLockedOut", "state.motionLockout",
             "getMotionLockoutStatusSummary", "updated()", "initialize()")
-MAX_CHUNKS = 16
+MAX_CHUNKS = 32
 MAX_CHARS = 250000
 SOURCE_READ_LENGTH = 48000
 MAX_SYMBOLS = 12
@@ -128,32 +128,54 @@ def _validated_symbols(symbols: list[str] | None) -> tuple[str, ...]:
 
 
 def _excerpts(body: str, symbols: list[str] | None = None) -> tuple[list[str], list[str]]:
-    """Bounded, line-numbered slices for the caller's code questions.
+    """Extract fair, bounded source evidence for all requested code symbols.
 
-    Source verification is independent of whether a requested symbol appears.
-    Multiple occurrences can reveal separate declaration/read/write sites.
+    Scan the ENTIRE retrieved text to establish which symbols exist before
+    allocating snippet space. Prefer method definitions over incidental uses,
+    give every matched symbol one excerpt first, then include other relevant
+    read/write sites while space remains. No fixed application names.
     """
     lines = body.splitlines()
-    result: list[str] = []
-    found: list[str] = []
+    requested = _validated_symbols(symbols)
+    matches = {
+        symbol: [i for i, line in enumerate(lines)
+                 if symbol.casefold() in line.casefold()]
+        for symbol in requested
+    }
+    found = [symbol for symbol in requested if matches[symbol]]
+    def priority(index: int, symbol: str) -> tuple[int, int]:
+        line = lines[index]
+        bare = symbol.removesuffix("()").split(".")[-1]
+        definition = re.search(
+            r"\b(?:void|def|int|long|boolean|String|Integer|Long|Map|List)"
+            r"\s+" + re.escape(bare) + r"\s*\(", line, re.I,
+        )
+        if definition:
+            return (0, index)
+        if re.search(r"\binput\b", line) and bare.casefold() in line.casefold():
+            return (1, index)
+        return (2, index)
+
+    snippets: list[str] = []
     selected: set[int] = set()
-    budget = 0
-    for symbol in _validated_symbols(symbols):
-        indexes = [i for i, line in enumerate(lines) if symbol.casefold() in line.casefold()]
-        if indexes:
-            found.append(symbol)
-        for index in indexes[:4]:
-            start, stop = max(0, index - 5), min(len(lines), index + 16)
-            span = range(start, stop)
-            if index in selected:
-                continue
-            passage = "\n".join(f"{i+1}: {lines[i]}" for i in span)
-            if budget + len(passage) > MAX_EXCERPT_CHARS:
-                return result, found
-            result.append(passage)
-            budget += len(passage)
-            selected.update(span)
-    return result, found
+    used = 0
+    # First pass: ensure late-file methods don't vanish behind early symbols.
+    # Second pass: offer alternative call, state-write and state-read sites.
+    for pass_index in range(2):
+        for symbol in requested:
+            ranked = sorted(matches[symbol], key=lambda i: priority(i, symbol))
+            candidates = ranked[:1] if pass_index == 0 else ranked[1:4]
+            for index in candidates:
+                if index in selected:
+                    continue
+                start, stop = max(0, index - 5), min(len(lines), index + 26)
+                passage = "\n".join(f"{i+1}: {lines[i]}" for i in range(start, stop))
+                if used + len(passage) > MAX_EXCERPT_CHARS:
+                    continue
+                snippets.append(passage)
+                used += len(passage)
+                selected.update(range(start, stop))
+    return snippets, found
 
 
 @dataclass(slots=True)
@@ -161,6 +183,10 @@ class GroovySourceReport:
     message: str
     retrieved: bool = False
     complete: bool = False
+    verified_characters: int = 0
+    declared_total: int | None = None
+    verified_pages: int = 0
+    source_code_id: str | None = None
 
 
 class GroovySourceService:
@@ -267,12 +293,20 @@ class GroovySourceService:
         total: int | None = None
         version: Any = None
         offset = 0
+        chunk_size = SOURCE_READ_LENGTH
+        retries = 0
+        verified_pages = 0
+        incomplete_reason = ""
+        # The MCP gateway may return a 47,999-character chunk for a requested
+        # 48,000-character page while advertising a larger nextOffset. Never
+        # silently skip a character. Retry the same offset with a smaller page,
+        # and only append a segment after its offset and nextOffset agree.
         for index in range(MAX_CHUNKS):
             leaf_args = dict(base_args)
             if operation == "hub_get_source":
-                leaf_args.update({"offset": offset, "length": SOURCE_READ_LENGTH})
+                leaf_args.update({"offset": offset, "length": chunk_size})
             elif index > 0:
-                leaf_args.update({"offset": offset, "limit": 65536})
+                leaf_args.update({"offset": offset, "limit": min(chunk_size, 48000)})
             began = time.monotonic()
             try:
                 wire_args = (leaf_args if gateway == operation
@@ -282,36 +316,72 @@ class GroovySourceService:
                 chunk, meta = _source_body(result.data if ok else {})
             except Exception:
                 ok, chunk, meta = False, "", {}
-            self._record(gateway, operation, leaf_args, began, ok and bool(chunk),
-                         f"Raw source chunk {index+1}: {len(chunk)} chars")
             if not ok or not chunk:
+                incomplete_reason = f"No raw text returned at offset {offset}"
+                self._record(gateway, operation, leaf_args, began, False,
+                             incomplete_reason)
+                if operation == "hub_get_source" and chunk_size > 8000:
+                    chunk_size = 16000 if chunk_size > 16000 else 8000
+                    retries += 1
+                    continue
+                break
+            actual_offset = meta.get("offset", offset)
+            advertised_next = meta.get("nextOffset")
+            expected_next = offset + len(chunk)
+            chunk_total = next((
+                meta[field] for field in ("totalChars", "totalLength", "sourceLength")
+                if isinstance(meta.get(field), int) and meta[field] > 0
+            ), None)
+            returned_id = meta.get("appId")
+            chunk_version = meta.get("version") or meta.get("codeVersion")
+
+            fault = ""
+            if not isinstance(actual_offset, int) or actual_offset != offset:
+                fault = f"Unexpected source offset at {offset}"
+            elif isinstance(advertised_next, int) and advertised_next > offset and advertised_next != expected_next:
+                fault = f"Source nextOffset disagrees with returned text length at {offset}"
+            elif chunk_total is not None and total is not None and chunk_total != total:
+                fault = f"Source length changed during retrieval at {offset}"
+            elif (returned_id is not None and code_id
+                  and str(returned_id).isdigit() and str(returned_id) != code_id):
+                fault = f"Source identity changed during retrieval at {offset}"
+            elif version is not None and chunk_version is not None and str(chunk_version) != str(version):
+                fault = f"Source version changed during retrieval at {offset}"
+            elif chunk_total is not None and expected_next > chunk_total:
+                fault = f"Returned source extends beyond declared length at {offset}"
+            if fault:
+                incomplete_reason = fault
+                self._record(gateway, operation, leaf_args, began, False, fault)
+                if operation == "hub_get_source" and chunk_size > 8000:
+                    chunk_size = 16000 if chunk_size > 16000 else 8000
+                    retries += 1
+                    continue
+                break
+
+            if len(body) + len(chunk) > MAX_CHARS:
+                incomplete_reason = "Source exceeds bounded retrieval allowance"
+                self._record(gateway, operation, leaf_args, began, False,
+                             incomplete_reason)
                 break
             body += chunk
-            version = meta.get("version") or meta.get("codeVersion") or version
-            for field in ("totalChars", "totalLength", "sourceLength"):
-                if isinstance(meta.get(field), int) and meta[field] >= 0:
-                    total = meta[field]
-            if len(body) >= MAX_CHARS:
+            verified_pages += 1
+            offset = expected_next
+            if chunk_total is not None:
+                total = chunk_total
+            if chunk_version is not None:
+                version = chunk_version
+            self._record(gateway, operation, leaf_args, began, True,
+                         f"Verified source chars {actual_offset}..{expected_next}")
+            if total is not None and offset == total:
                 break
-            next_offset = meta.get("nextOffset")
-            actual_offset = meta.get("offset", offset)
-            if not isinstance(actual_offset, int) or actual_offset != offset:
-                body = body[:-len(chunk)]
+            if total is not None and offset > total:
+                incomplete_reason = "Received more source text than declared total"
                 break
-            expected_next = offset + len(chunk)
-            if (isinstance(next_offset, int) and next_offset > offset
-                    and next_offset != expected_next):
-                # Server skip/truncation: do not certify disjoint pages as full.
+            if not meta.get("hasMore", True) and total is None:
                 break
-            if total is not None and len(body) >= total:
-                break
-            if total is not None and len(body) < total:
-                offset = expected_next
-                continue
-            if isinstance(next_offset, int) and next_offset == expected_next:
-                offset = expected_next
-                continue
-            break
+        else:
+            incomplete_reason = "Reached bounded source-read call limit"
+
         if not body:
             return GroovySourceReport(
                 title + f"\n- Verified source operation: {operation} via {gateway}."
@@ -321,14 +391,19 @@ class GroovySourceService:
                   "defaultValue declaration, getter, stored lockout expiry or "
                   "updated()/initialize() behaviour."
             )
-        complete = total is not None and len(body) == total
+        complete = total is not None and offset == total and len(body) == total
         lines = [
             title, f"- Source reader: {operation} via {gateway}.",
             f"- Source text retrieved: {len(body)} characters; "
             + ("complete by declared length." if complete else
                "full source coverage unverified."),
             f"- Retrieved text SHA-256: {hashlib.sha256(body.encode()).hexdigest()}.",
+            f"- Verified contiguous range: 0..{offset}"
+            + (f" / {total} characters." if total is not None else " (total unknown)."),
+            f"- Smaller-page recovery attempts: {retries}.",
         ]
+        if incomplete_reason and not complete:
+            lines.append(f"- Retrieval limitation: {incomplete_reason}.")
         if code_id:
             lines.append(f"- Verified code ID: {code_id}.")
         if version is not None:
@@ -347,7 +422,13 @@ class GroovySourceService:
         if not complete:
             lines.append("Do not assert that a function is absent or a state write "
                          "never occurs without complete implementation coverage.")
-        return GroovySourceReport("\n\n".join(lines), True, complete)
+        return GroovySourceReport(
+            "\n\n".join(lines), True, complete,
+            verified_characters=offset,
+            declared_total=total,
+            verified_pages=verified_pages,
+            source_code_id=code_id,
+        )
 
 
 __all__ = ["requested_groovy_app_id", "source_code_id",
