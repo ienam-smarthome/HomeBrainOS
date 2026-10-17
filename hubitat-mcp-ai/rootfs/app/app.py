@@ -682,7 +682,8 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                         advisory=automation_status.is_advisory_request(request.message)
                     )
         else:
-            if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+            if (request.model_tier != "claude" and
+                    not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True)):
                 raise HTTPException(status_code=503, detail="Ollama Online is disabled")
             operation = _agent_request(request)
         outcome = await request_coordinator.run(
