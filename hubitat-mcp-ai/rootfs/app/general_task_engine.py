@@ -159,7 +159,7 @@ class GeneralTaskPlanner:
         "integrations, code_management. "
         "Allowed requiredEvidenceKinds values: device_state, device_history, "
         "device_logs, app_config, app_logs, room_inventory, native_rules, "
-        "scheduled_jobs, performance_stats, tool_guide. "
+        "scheduled_jobs, performance_stats, tool_guide, source_code. "
         "For investigate operations choose 1-3 indispensable read-source "
         "classes for requiredEvidenceKinds; for simple state reads use []. "
         "Checked sources are not proof of a historical cause or event. "

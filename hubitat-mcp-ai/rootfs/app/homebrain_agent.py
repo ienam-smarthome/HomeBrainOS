@@ -58,7 +58,8 @@ from location_event_queries import (
     present_mode_at_time,
     present_mode_last_entered,
 )
-from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
+from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent, _explicit_mutation_request
+from adaptive_investigation_policy import model_led_investigation_request
 from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
 from request_classification import (
@@ -1629,6 +1630,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             )
             if pending_confirmation is not None:
                 return pending_confirmation
+
+            # Complex READ investigations go to the general model/tool loop.
+            # Static status presenters and the semantic device-control path
+            # cannot prematurely finalise an unfamiliar investigative goal.
+            # Only the existing host safety policy decides write authorisation.
+            if (model_led_investigation_request(user_prompt)
+                    and not _explicit_mutation_request(user_prompt)):
+                self.request_metrics.increment("investigation_snapshot_shortcut_bypassed")
+                base_process = super(UnifiedMCPAgent, self).process_user_request_result
+                return await base_process(
+                    user_prompt, conversation_history, session_id=session_id,
+                )
 
             # Source requests stay on the model-led investigation route.
             # Deterministic shortcut presenters only handle narrow snapshots,

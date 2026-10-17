@@ -23,6 +23,7 @@ EVIDENCE_KINDS = frozenset({
     "performance_stats",
     "tool_guide",
     "command_history",
+    "source_code",
 })
 
 _READ_OPERATIONS: dict[str, str] = {
@@ -68,6 +69,9 @@ def _kind(receipt: dict[str, Any]) -> str | None:
             and isinstance(raw["args"].get("args"), dict)):
         return None  # malformed double-wrapped gateway call
     args = _args(receipt)
+    if op == "homebrain_read_groovy_source":
+        details = receipt.get("details") or {}
+        return "source_code" if isinstance(details, dict) and details.get("sourceRetrieved") is True else None
     if op == "hub_get_logs":
         if args.get("deviceId") or args.get("device_id"):
             return "device_logs"

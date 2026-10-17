@@ -11,6 +11,7 @@ from copy import deepcopy
 from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
+from adaptive_investigation_policy import source_evidence_request
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
 )
@@ -121,6 +122,37 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     )
     prior = getattr(outcome, "investigation_coverage", None)
     evidence = list(getattr(outcome, "evidence", []) or [])
+    # Code-reading obligations are not historical command-provenance
+    # obligations. A successful config read or empty source read is NOT
+    # source-code evidence and cannot close the actual objective.
+    if source_evidence_request(request):
+        source = assess_task_source_coverage(("source_code",), evidence)
+        found = source.sources_checked
+        coverage = {
+            "domain": "source_code",
+            "status": "source-segment-observed" if found else "source-unverified",
+            "evidenceComplete": found,  # source class only; NOT full code coverage
+            "sourceCoverage": source.to_dict(),
+            "fullImplementationVerified": False,
+            "completionNote": (
+                "Source text was returned, but complete installed-code coverage "
+                "has not been independently established."
+                if found else
+                "No raw implementation source was verified this turn. "
+                "Configuration, discovery and cached file references do not count."
+            ),
+        }
+        message = str(getattr(outcome, "message", "") or "")
+        if not found:
+            message += (
+                "\n\n**Source evidence unavailable:** The current investigation "
+                "did not retrieve verifiable Groovy implementation text. "
+                "Its runtime method and expiry semantics remain unverified."
+            )
+        return _CoverageOutcome(
+            outcome, coverage, _safe_metrics(outcome, partial=not found),
+            message,
+        )
     # System-wide section and performance source checks have different proof
     # obligations from an individual historical ON/OFF investigation.
     system_audit = assess_system_audit_sources(
