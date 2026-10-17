@@ -363,7 +363,7 @@ def _explicit_mutation_request(prompt: str) -> bool:
     # Keep *mixed* requests in the guarded write path. Do not let a question
     # lead-in hide a later independent command to change hub state.
     secondary_write = re.search(
-        r"(?i)(?:[.!?]\s+|\band\s+(?:then\s+|also\s+)?)"
+        r"(?i)(?:[.!?]\s+(?:also\s+|then\s+)?|\band\s+(?:then\s+|also\s+)?)"
         r"(?:please\s+)?(?:turn|switch|set|change|create|delete|"
         r"disable|enable|restart|block|allow|configure)\b",
         text,
