@@ -1091,15 +1091,25 @@ def groovy_source_tool() -> MCPTool:
         (
             "Investigate raw Groovy source for a named installed Hubitat app. "
             "Search the live MCP read-tool registry, verify installed app/code "
-            "association, retrieve source chunks when possible, and return "
-            "verifiable excerpts and explicit coverage gaps. Use this as "
-            "evidence during your own investigation, not as a final answer. "
-            "An installed appId is not a Groovy codeId. Read-only."
+            "association, retrieve the complete implementation in sequential "
+            "non-overlapping chunks, and return short verifiable line-numbered "
+            "excerpts and exact full-source coverage status. Prefer this one "
+            "source workbench tool over repeated manual hub_get_source pages. "
+            "Choose optional symbols specific to the question, then reason "
+            "from the returned code yourself. This is evidence, not a final "
+            "diagnosis. An installed appId is not a Groovy codeId. Read-only."
         ),
         {
             "type": "object",
             "properties": {
                 "appId": {"type": "string", "pattern": "^[0-9]{2,7}$"},
+                "symbols": {
+                    "type": "array", "maxItems": 12,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                    "description": "Optional code identifiers or method names to examine, "
+                                   "chosen from the user's investigative objective. "
+                                   "Return bounded surrounding source lines and all matches."
+                },
             },
             "required": ["appId"],
             "additionalProperties": False,
