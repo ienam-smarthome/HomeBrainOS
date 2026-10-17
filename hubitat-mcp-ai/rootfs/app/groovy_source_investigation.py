@@ -78,9 +78,16 @@ def _source_operations(tools: list[Any], discovery: Any) -> list[tuple[str, str]
                 and _READ_OP.fullmatch(operation) and not _DENY_OP.search(operation)):
             found.add((gateway, operation))
     for tool in tools:
+        # A gateway named hub_read_apps_code is a TOOL CONTAINER, not a
+        # source-read operation. Do not send bare {"appId": ...} to it.
+        # Only actual source-read functions qualify.
+        if tool.name == "hub_read_apps_code":
+            pass
         # Some MCP servers advertise source reads as top-level functions,
         # rather than as an operation inside the apps/code facade.
-        if _READ_OP.fullmatch(tool.name) and not _DENY_OP.search(tool.name):
+        if (tool.name != "hub_read_apps_code"
+                and _READ_OP.fullmatch(tool.name)
+                and not _DENY_OP.search(tool.name)):
             found.add((tool.name, tool.name))
         schema = getattr(tool, "input_schema", {}) or {}
         properties = schema.get("properties") or {}

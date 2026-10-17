@@ -19,6 +19,7 @@ LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 LOCAL_QUERY_TOOL = "homebrain_query_devices"
 LOCAL_RESOLVE_TOOL = "homebrain_resolve_device"
 LOCAL_DEVICE_HISTORY_TOOL = "homebrain_device_history"
+LOCAL_GROOVY_SOURCE_TOOL = "homebrain_read_groovy_source"
 LOCAL_DEVICE_INVENTORY_TOOL = "homebrain_device_inventory"
 LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
@@ -41,6 +42,7 @@ EVIDENCE_KINDS = {
     LOCAL_QUERY_TOOL: "deterministic_attribute_query",
     LOCAL_RESOLVE_TOOL: "deterministic_targeted_device_resolution",
     LOCAL_DEVICE_HISTORY_TOOL: "deterministic_device_event_history",
+    LOCAL_GROOVY_SOURCE_TOOL: "groovy_source_investigation_evidence",
     LOCAL_DEVICE_INVENTORY_TOOL: "deterministic_device_inventory",
     LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
     LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
@@ -1076,6 +1078,30 @@ def hub_info_tool() -> MCPTool:
                 },
             },
             "required": ["scope"],
+            "additionalProperties": False,
+        },
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
+    )
+
+
+def groovy_source_tool() -> MCPTool:
+    """AI-selectable, bounded read-only source retrieval, not a final answer."""
+    return MCPTool(
+        LOCAL_GROOVY_SOURCE_TOOL,
+        (
+            "Investigate raw Groovy source for a named installed Hubitat app. "
+            "Search the live MCP read-tool registry, verify installed app/code "
+            "association, retrieve source chunks when possible, and return "
+            "verifiable excerpts and explicit coverage gaps. Use this as "
+            "evidence during your own investigation, not as a final answer. "
+            "An installed appId is not a Groovy codeId. Read-only."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "appId": {"type": "string", "pattern": "^[0-9]{2,7}$"},
+            },
+            "required": ["appId"],
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
