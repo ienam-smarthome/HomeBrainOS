@@ -50,6 +50,19 @@ def model_led_investigation_request(prompt: str) -> bool:
     return True
 
 
+def source_evidence_request(prompt: str) -> bool:
+    """Code evidence is not interchangeable with device/command history."""
+    text = str(prompt or "")
+    return bool(
+        _ANALYTICAL.search(text)
+        and re.search(
+            r"(?i)\b(?:groovy|source[- ]code|source\s+implementation|"
+            r"actual\s+source|code\s+implementation|source\s+of)\b",
+            text,
+        )
+    )
+
+
 READ_ONLY_AGENT_DIRECTIVE = """
 HOST ADAPTIVE INVESTIGATION CONTRACT
 The user asked for an investigation, not a snapshot. Make a short evidence
