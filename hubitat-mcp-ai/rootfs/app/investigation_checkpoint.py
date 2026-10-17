@@ -47,7 +47,7 @@ def requests_explicit_hypothesis_comparison(question: str) -> bool:
     return bool(
         is_investigative_question(question)
         and re.search(
-            r"\b(?:competing|hypothes(?:is|es)|alternativ(?:e|es)|"
+            r"\b(?:competing|hypothes(?:is|es)|"
             r"compare (?:possible |plausible )?(?:causes|explanations)|"
             r"distinguish (?:between |among )?(?:possible |plausible )?"
             r"(?:causes|explanations))\b",
