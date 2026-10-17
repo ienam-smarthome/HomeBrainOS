@@ -382,6 +382,12 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"(?:whether|if)\b",
         text,
     )
+    if historical_verification_lead and secondary_write:
+        # The existing broad mutation parser may decline an otherwise clear
+        # trailing imperative when the whole prompt starts "Verify whether".
+        # Preserve the independent state-changing request instead of silently
+        # treating the combined prompt as read-only.
+        return True
     if (_READ_QUERY_PREFIX.search(text) or historical_verification_lead) and not secondary_write:
         return False
     # An imperative investigative lead-in can still be a READ, even when
