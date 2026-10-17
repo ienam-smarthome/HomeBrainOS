@@ -303,6 +303,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         "domain": domain,
         "status": "partial-evidence" if partial else "source-checks-complete",
         "evidenceComplete": False if partial else domain_proof_complete,
+        # A read-source category being checked does not answer a causal
+        # question. Report these as separate, independently meaningful
+        # dimensions so a successful probe cannot masquerade as diagnosis.
+        "sourceChecksComplete": source_coverage.sources_checked,
+        "rootCauseVerified": (
+            False if domain == "device_telemetry" or causal else None
+        ),
         "assessmentScope": "all-api-routes-read-only",
         "sourceCoverage": source_coverage.to_dict(),
         "sourceIntegrityWarnings": integrity,
@@ -413,6 +420,58 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "\n\n**Competing explanations (provisional; not a causal verdict):**\n"
                 + "\n".join(comparisons)
             )
+    # Keep successful Groovy/driver-source retrieval visible after the safe
+    # target-history projection replaces free-form model prose. This attests
+    # only that source text was retrieved, never that the method's behaviour,
+    # live MQTT transport or physical root cause was proven.
+    if domain == "device_telemetry":
+        source_receipts: list[dict[str, Any]] = []
+        for row in evidence:
+            if not isinstance(row, dict) or row.get("success") is not True:
+                continue
+            if row.get("sub_tool") != "hub_get_source":
+                continue
+            details = row.get("details")
+            if not isinstance(details, dict) or details.get("sourceRetrieved") is not True:
+                continue
+            length, total = details.get("chunkLength"), details.get("totalLength")
+            code_id = details.get("sourceCodeId")
+            if (type(length) is int and type(total) is int
+                    and total > 0 and 0 < length <= total
+                    and isinstance(code_id, (int, str))
+                    and str(code_id).isdigit()):
+                source_receipts.append({
+                    "codeId": str(code_id)[:20],
+                    "verifiedOffsetUnits": length,
+                    "declaredTotalOffsetUnits": total,
+                    "fullSourceAtRead": (
+                        details.get("offset") == 0 and length == total
+                    ),
+                    "methodBehaviourVerified": False,
+                })
+        if source_receipts:
+            # The most informative successful read is retained; duplicates
+            # must not inflate independent evidence claims.
+            selected = max(source_receipts, key=lambda item: (
+                item["fullSourceAtRead"], item["verifiedOffsetUnits"]
+            ))
+            coverage["additionalSourceCodeEvidence"] = selected
+            message += (
+                "\n\n**Retrieved implementation evidence:** "
+                "Code ID " + selected["codeId"] + " — "
+                + str(selected["verifiedOffsetUnits"]) + "/"
+                + str(selected["declaredTotalOffsetUnits"])
+                + " source-offset units returned. This proves source retrieval "
+                  "only; a root cause requires analysing relevant method "
+                  "branches and corroborating runtime/upstream evidence."
+            )
+    # The final reported outcome is separate from source/category completeness.
+    # A successful source read must never convert an unresolved diagnosis to a
+    # resolved physical/device cause.
+    coverage["questionResolved"] = (
+        False if metrics.get("outcome") == "unresolved" or domain == "device_telemetry"
+        else None
+    )
     if partial:
         limitations: list[str] = []
         if missing:
