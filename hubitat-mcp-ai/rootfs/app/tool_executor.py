@@ -34,6 +34,7 @@ from reasoning_policy import (
     should_defer_deterministic_presentation,
 )
 from request_metrics import add_active_metric_ms, increment_active_metric
+from source_evidence_metadata import source_read_metadata
 from tool_registry import ToolEffect, classify_tool_effect
 
 
@@ -511,7 +512,8 @@ class ToolExecutor:
                     evidence_kind=evidence_kind,
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,
-                    details=self.result_details(result),
+                    details=(source_read_metadata(name, receipt_arguments, result.data)
+                             or self.result_details(result)),
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             if effect.mutates:
