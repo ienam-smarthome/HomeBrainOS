@@ -22,6 +22,26 @@ from request_metrics import increment_active_metric, record_active_paid_guard
 _ORIGINAL_PAID_REQUEST: ContextVar[str | None] = ContextVar(
     'homebrain_original_paid_request', default=None
 )
+# Explicit selection is scoped to one API request, never shared between
+# concurrent sessions. "auto" leaves existing manual/hybrid mode untouched.
+_REQUEST_MODEL_TIER: ContextVar[str] = ContextVar(
+    'homebrain_request_model_tier', default='auto'
+)
+
+
+def set_request_model_tier(tier: str) -> Token:
+    if tier not in ('auto', 'free', 'paid'):
+        raise ValueError('Unsupported request model tier')
+    return _REQUEST_MODEL_TIER.set(tier)
+
+
+def reset_request_model_tier(token: Token) -> None:
+    _REQUEST_MODEL_TIER.reset(token)
+
+
+def request_model_tier() -> str:
+    return _REQUEST_MODEL_TIER.get()
+
 _EXPLICIT_PAID = re.compile(r'\b(use paid model|premium model|paid investigation)\b', re.I)
 
 
@@ -34,6 +54,11 @@ def reset_original_paid_request(token: Token) -> None:
 
 
 def explicit_paid_request() -> bool:
+    tier = request_model_tier()
+    if tier == 'free':
+        return False
+    if tier == 'paid':
+        return True
     text = _ORIGINAL_PAID_REQUEST.get()
     return bool(text is not None and _EXPLICIT_PAID.search(text))
 
@@ -58,6 +83,13 @@ def choose_paid_model(messages: list[dict], mode: str) -> str | None:
     Paid routing is strictly advisory: tool permission and write-confirmation
     enforcement remain in the existing HomeBrain orchestrator.
     """
+    tier = request_model_tier()
+    # Per-request selection outranks admin automation modes but NEVER the
+    # paid-credit guard, enabled flag, or read/write permission boundaries.
+    if tier == "free":
+        return None
+    if tier == "paid":
+        return "deepseek-v4-pro"
     mode = str(mode or "hybrid").lower()
     if mode not in {"hybrid", "manual", "paid"}:
         return None
@@ -104,6 +136,8 @@ class PaidCreditGuard:
 
     async def select_fallback(self, messages: list[dict], tools: list[dict]) -> str | None:
         """Reserve credit for an explicitly rejected free-tier request."""
+        if request_model_tier() == "free":
+            return None
         return await self._reserve(messages, tools, self.deep_model)
 
     async def select(self, messages: list[dict], tools: list[dict]) -> str | None:

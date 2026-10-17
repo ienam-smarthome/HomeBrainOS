@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable
+from typing import Any, Awaitable, Literal
 
 import uvicorn
 import httpx
@@ -63,6 +63,7 @@ from performance_host_plan import (
     is_whole_hub_optimization_request,
 )
 from provider_rate_limit_policy import describe_ollama_rate_limit
+from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
 from webui import render_page
@@ -502,6 +503,7 @@ class ChatRequest(BaseModel):
     history: list[HistoryItem] = Field(default_factory=list)
     session_id: str | None = Field(default=None, min_length=1, max_length=160)
     request_id: str | None = Field(default=None, min_length=1, max_length=160)
+    model_tier: Literal["auto", "free", "paid"] = "auto"
 
     @model_validator(mode="after")
     def require_message(self) -> "ChatRequest":
@@ -617,6 +619,7 @@ async def _agent_request(request: ChatRequest) -> Any:
 
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     from scoped_app_status_read import scoped_status_app_id, read_scoped_app_status
+    tier_token = set_request_model_tier(request.model_tier)
     try:
         operation: Awaitable[Any]
         scoped_id = scoped_status_app_id(request.message)
@@ -691,6 +694,8 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     except Exception as exc:
         logger.exception("Unified MCP request failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        reset_request_model_tier(tier_token)
 
 
 async def _answer(request: ChatRequest, connection: Request | None = None) -> str:
@@ -719,6 +724,12 @@ async def health() -> dict[str, Any]:
             "local_enabled": _bool(OPTIONS.get("ollama_local_enabled"), False),
             "local_configured": agent.local_configured,
             "local_model": agent.local_model_name or None,
+        },
+        "paid_routing": {
+            "enabled": agent.transport.paid_credit_guard.enabled,
+            "mode": agent.transport.paid_credit_guard.mode,
+            "model": agent.transport.paid_credit_guard.deep_model,
+            "estimated_budget_limit_usd": agent.transport.paid_credit_guard.budget_usd,
         },
         "tts": home_assistant_tts.status(),
         "one_time_rule_cleanup": one_time_rule_cleanup_scheduler.status(),
@@ -1070,12 +1081,14 @@ async def chat(request: ChatRequest, connection: Request) -> dict[str, Any]:
 async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
     started = time.perf_counter()
     outcome = await _answer_result(request, connection)
-    return build_agent_response(
+    result = build_agent_response(
         outcome,
         model=agent.model_name,
         elapsed_ms=round((time.perf_counter() - started) * 1000),
         version=VERSION,
     )
+    result["model_tier_requested"] = request.model_tier
+    return result
 
 
 if __name__ == "__main__":
