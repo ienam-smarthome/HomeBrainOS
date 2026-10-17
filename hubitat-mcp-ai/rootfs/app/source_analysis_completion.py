@@ -34,7 +34,7 @@ def source_analysis_failed(message: str) -> bool:
 
 
 _METHOD_GAP = re.compile(
-    r"(?is)(?:methods?|implementations?|code\s+paths?).{0,230}?"
+    r"(?is)(?:methods?|implementations?|code\s+paths?).{0,900}?"
     r"(?:not\s+(?:present|visible|shown)|outside\s+the\s+(?:visible\s+)?"
     r"(?:excerpt|source\s+span)|cannot\s+be\s+traced|"
     r"could\s+not\s+be\s+(?:traced|reviewed))"
