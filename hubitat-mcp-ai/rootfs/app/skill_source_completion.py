@@ -6,8 +6,10 @@ Nothing here executes a tool or changes the Hubitat hub.
 from __future__ import annotations
 
 from typing import Any
+import re
 
 from investigation_intelligence import plan_investigation
+from rule_machine_analysis import historical_rule_execution_request
 
 
 def _args(row: dict[str, Any]) -> dict[str, Any]:
@@ -51,3 +53,95 @@ def pending_device_log_read(
 
 
 __all__ = ["pending_device_log_read"]
+
+
+def pending_historical_command_read(
+    request: str, receipts: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Require one real command-history read for an exact historic app action.
+
+    Generic evidence obligation, not a device/app-specific patch. Resolve
+    subject and lookback only from same-turn verified source receipts. Never
+    interpret a switch-state event, a triggered listener, or zero app logs as
+    command history. Do not duplicate a previously attempted command query.
+    """
+    if not historical_rule_execution_request(request):
+        return None
+    target = re.search(
+        r"(?i)\bdevice\s*(?:id\s*)?[#:]?\s*(\d{2,7})\b",
+        request,
+    )
+    action_match = re.search(
+        r"(?i)\b(?:on|off)\s*(?:\(\s*\))?\s+commands?\b"
+        r"|\bcommand[- ](on|off)\b"
+        r"|\b(off|on)\s*\(\s*\)",
+        request,
+    )
+    if not target or not action_match:
+        return None
+    action = (
+        action_match.group(1) or action_match.group(2)
+        or action_match.group(0).strip().split()[0]
+    ).casefold()
+    if action not in {"on", "off"}:
+        return None
+    device_id = target.group(1)
+    verified_id = False
+    verified_label = ""
+    horizon: int | None = None
+    for row in receipts:
+        if not isinstance(row, dict):
+            continue
+        args = _args(row)
+        operation = str(
+            row.get("sub_tool") or
+            (row.get("arguments") or {}).get("tool") or row.get("tool") or ""
+        )
+        if (
+            operation == "hub_list_device_events"
+            and str(args.get("deviceId") or "") == device_id
+            and str(args.get("attribute") or "").casefold()
+                == f"command-{action}"
+        ):
+            return None  # Already attempted: failed != unattempted
+        if row.get("success") is not True:
+            continue
+        if str(args.get("deviceId") or "") == device_id and operation in {
+            "hub_get_device", "hub_list_device_events",
+        }:
+            verified_id = True
+        details = row.get("details")
+        if (
+            row.get("tool") == "homebrain_device_history"
+            and isinstance(details, dict)
+            and str(args.get("name") or "") == device_id
+        ):
+            verified_id = True
+            label = str(details.get("label") or "").strip()
+            if label:
+                verified_label = label[:120]
+        if (
+            operation == "hub_list_device_events"
+            and str(args.get("deviceId") or "") == device_id
+            and str(args.get("attribute") or "").casefold() == "switch"
+        ) or (
+            row.get("tool") == "homebrain_device_history"
+            and str(args.get("name") or "") == device_id
+            and str(args.get("attribute") or "").casefold() == "switch"
+        ):
+            val = args.get("hoursBack", args.get("hours_back"))
+            try:
+                hours = int(val)
+                if 1 <= hours <= 720:
+                    horizon = max(horizon or 0, hours)
+            except (TypeError, ValueError):
+                pass
+    if not (verified_id and verified_label and horizon):
+        return None
+    return {
+        "deviceId": device_id, "label": verified_label,
+        "hoursBack": horizon, "action": action,
+    }
+
+
+__all__.append("pending_historical_command_read")
