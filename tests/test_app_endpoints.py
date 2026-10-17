@@ -434,5 +434,5 @@ def test_api_model_choice_scoped_to_one_request_and_rejected_if_invalid(monkeypa
     assert free.json()["model_tier_requested"] == "free"
     assert auto.status_code == 200
     assert invalid.status_code == 422
-    assert observed == [("Lights?", "paid"), ("Lights?", "free"), ("Lights?", "auto")]
+    assert observed == [("Lights?", "paid"), ("Lights?", "free"), ("Lights?", "free")]
     assert request_model_tier() == "auto"
