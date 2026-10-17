@@ -55,7 +55,7 @@ def test_historical_command_questions_bypass_snapshot(question):
 
 
 @pytest.mark.parametrize("question", [
-    "Review app 3950 current settings and configured trigger.",
+    "Review app 3950 current settings.",
     "Inspect Rule Machine app 3950 referenced sensor states.",
     "Analyse rule 3950 condition and required expression.",
 ])
@@ -70,6 +70,12 @@ def test_non_app_events_and_explicit_write_do_not_activate_read_override():
     )
     assert _explicit_mutation_request(
         "Please disable app 3950 and delete the rule."
+    )
+    assert _explicit_mutation_request(
+        "Verify whether app 3950 issued OFF yesterday. Then disable app 3950."
+    )
+    assert _explicit_mutation_request(
+        "Check if app 3950 executed and then turn off device 7103."
     )
 
 
@@ -91,7 +97,7 @@ async def test_named_app_historical_query_enters_model_evidence_route(monkeypatc
         called.append((user_prompt, session_id))
         return AgentOutcome(
             message="Model-led historical read path selected (test stub).",
-            request_class="live-read", evidence=[],
+            request_class="live-read", evidence=[], choices=[],
         )
 
     monkeypatch.setattr(
