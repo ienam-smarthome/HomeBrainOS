@@ -36,7 +36,6 @@ options:
   ollama_cloud_first: false
   ollama_paid_routing_enabled: false
   ollama_paid_routing_mode: "hybrid"
-  ollama_paid_budget_usd: 6.5
   ollama_paid_deep_model: "deepseek-v4-pro"
   ollama_free_quota_paid_fallback_enabled: false
   ollama_local_enabled: false
@@ -117,7 +116,6 @@ schema:
   ollama_cloud_first: bool
   ollama_paid_routing_enabled: bool
   ollama_paid_routing_mode: str
-  ollama_paid_budget_usd: float
   ollama_paid_deep_model: str
   ollama_free_quota_paid_fallback_enabled: bool
   ollama_local_enabled: bool
