@@ -33,6 +33,19 @@ def source_analysis_failed(message: str) -> bool:
     return bool(_GENERIC_SOURCE_FAILURE.search(text) and len(text) < 1200)
 
 
+_METHOD_GAP = re.compile(
+    r"(?is)(?:methods?|implementations?|code\s+paths?).{0,900}?"
+    r"(?:not\s+(?:present|visible|shown)|outside\s+the\s+(?:visible\s+)?"
+    r"(?:excerpt|source\s+span)|cannot\s+be\s+traced|"
+    r"could\s+not\s+be\s+(?:traced|reviewed))"
+)
+
+
+def source_method_claim_gap(message: str) -> bool:
+    """The answer itself admits material method/code paths were not examined."""
+    return bool(_METHOD_GAP.search(str(message or "")))
+
+
 def _leaf(row: dict[str, Any]) -> str:
     arguments = row.get("arguments") or {}
     return str(row.get("sub_tool") or (
@@ -130,5 +143,5 @@ def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
 
 __all__ = [
     "source_analysis_failed", "source_trace_ready_for_synthesis",
-    "source_failure_summary",
+    "source_failure_summary", "source_method_claim_gap",
 ]

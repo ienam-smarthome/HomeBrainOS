@@ -601,10 +601,18 @@ class FinalAnswerCoordinator:
                       "endpoint ONLY if the source establishes that distinction. "
                       "If exact getter/write/watchdog methods were not examined, "
                       "name the missing analysis; do not invent it. "
-                      "There are NO tools in this final phase, so do not "
-                      "request another function or complain about missing "
-                      "structured actions. Produce a useful read-only "
-                      "evidence-qualified explanation now."
+                      "When a HOST SOURCE-DERIVED METHOD EVIDENCE packet "
+                      "is present, prioritize its line-numbered candidate "
+                      "method bodies over a truncated raw MCP tool-result "
+                      "prefix. State which specific method bodies support "
+                      "each implementation claim and which relevant bodies "
+                      "were not shown in full. Do not treat an unknown "
+                      "method body as absent merely because it was omitted "
+                      "from the bounded excerpt. There are NO tools in "
+                      "this final phase, so do not request another function "
+                      "or complain about missing structured actions. "
+                      "Produce a useful read-only evidence-qualified "
+                      "explanation now."
                 ),
             })
         final_messages.append({
