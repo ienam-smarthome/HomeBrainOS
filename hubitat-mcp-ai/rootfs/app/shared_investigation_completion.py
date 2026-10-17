@@ -8,6 +8,7 @@ visible regardless of which route produced the original answer.
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
@@ -138,11 +139,39 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             for row in evidence
         )
         full = found and (segments["fullImplementationVerified"] or local_complete)
+        # Direct source reads expose individual spans; the local workbench
+        # verifies a complete contiguous file internally and exposes safe
+        # page/character counts instead of raw source in evidence receipts.
+        local_detail = next((
+            row["details"] for row in evidence
+            if isinstance(row, dict) and row.get("success") is True
+            and row.get("tool") == "homebrain_read_groovy_source"
+            and isinstance(row.get("details"), dict)
+            and row["details"].get("sourceRetrieved") is True
+        ), None)
+        if local_detail is not None and segments.get("chunksObserved", 0) == 0:
+            reported_pages = local_detail.get("verifiedPages")
+            reported_total = local_detail.get("declaredTotalCharacters")
+            reported_chars = local_detail.get("verifiedCharacters")
+            segments = {
+                "fullImplementationVerified": bool(local_complete),
+                "coverage": "complete" if local_complete else "partial",
+                "chunksObserved": reported_pages if isinstance(reported_pages, int) else 0,
+                "verifiedCharacters": reported_chars,
+                "totalLength": reported_total,
+                "validationMethod": "local-source-workbench",
+            }
+        complete_requested = bool(re.search(
+            r"(?i)\b(?:entire|complete|full(?:\s+source|\s+implementation)?|"
+            r"all\s+(?:relevant\s+)?code\s+paths)\b", request,
+        ))
         coverage = {
             "domain": "source_code",
             "status": ("full-source-observed" if full else
                        "source-segment-observed" if found else "source-unverified"),
             "evidenceComplete": found,
+            "objectiveSatisfied": bool(found and (full or not complete_requested)),
+            "fullSourceRequested": complete_requested,
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
             "chunkCoverage": segments,
@@ -172,7 +201,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "must remain unverified."
             )
         return _CoverageOutcome(
-            outcome, coverage, _safe_metrics(outcome, partial=not found),
+            outcome, coverage,
+            _safe_metrics(outcome, partial=(not found or (complete_requested and not full))),
             message,
         )
     # System-wide section and performance source checks have different proof
