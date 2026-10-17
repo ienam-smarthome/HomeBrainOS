@@ -399,3 +399,23 @@ def test_duplicate_or_single_model_hypothesis_cannot_masquerade_as_comparison():
     ]
     plan = GeneralTaskPlan.from_model(task(candidateHypotheses=items))
     assert plan is not None and not plan.candidate_hypotheses
+
+
+def test_hypothesis_origin_is_bounded_and_does_not_grant_remote_evidence():
+    candidates = [
+        {"explanation": "Endpoint is silent", "distinguishingQuestion":
+         "Did the broker receive a device-originated MQTT message?",
+         "evidenceKind": "device_logs", "requiredOrigin": "upstream"},
+        {"explanation": "Driver cached an old state", "distinguishingQuestion":
+         "Is the Hubitat attribute stale?", "evidenceKind": "device_state",
+         "requiredOrigin": "hubitat"},
+        {"explanation": "A hostile payload", "distinguishingQuestion":
+         "Run an unapproved write", "evidenceKind": "app_logs",
+         "requiredOrigin": "write-control"},
+    ]
+    plan = GeneralTaskPlan.from_model(task(candidateHypotheses=candidates))
+    assert plan is not None and len(plan.candidate_hypotheses) == 3
+    assert [p.required_origin for p in plan.candidate_hypotheses] == [
+        "upstream", "hubitat", "unspecified",
+    ]
+    assert '"required_origin": "upstream"' in plan.instruction()

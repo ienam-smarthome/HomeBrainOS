@@ -137,12 +137,29 @@ def build_evidence_checkpoint(
                 or not isinstance(discriminator, str)):
             continue
         checked = assess_task_source_coverage((kind,), receipts).sources_checked
+        required_origin = getattr(candidate, "required_origin", "unspecified")
+        if required_origin not in ("hubitat", "upstream", "physical", "unspecified"):
+            required_origin = "unspecified"
+        # The current Hubitat MCP inventory cannot independently prove an
+        # upstream broker packet or physical endpoint response. Do not mark
+        # the discriminator answered merely because a Hubitat source class
+        # was queried successfully. A later trusted origin-specific source
+        # receipt contract can extend this conservatively.
+        origin_state = (
+            f"{required_origin}-origin-not-independently-verified"
+            if required_origin in ("upstream", "physical")
+            else "hubitat-source-class-observed" if required_origin == "hubitat" and checked
+            else "origin-not-established"
+        )
         comparisons.append({
             "candidate": explanation[:140],
             "discriminating_question": discriminator[:180],
             "source_kind": kind,
             "source_state": ("source-class-checked-verdict-unverified"
                              if checked else "source-class-not-checked"),
+            "required_origin": required_origin,
+            "origin_state": origin_state,
+            "discriminator_verified": False,
             "hypothesis_verdict": "unverified",
         })
     return {
@@ -153,7 +170,10 @@ def build_evidence_checkpoint(
         "competing_hypothesis_checks": comparisons,
         "next_unchecked_discriminators": [
             row["discriminating_question"] for row in comparisons
-            if row["source_state"] == "source-class-not-checked"
+            if (
+                row["source_state"] == "source-class-not-checked"
+                or row["required_origin"] in ("upstream", "physical")
+            )
         ][:3],
         "declared_read_tools": list(available_read_tools)[:24],
         "source_success_is_not_causal_proof": True,
@@ -184,7 +204,9 @@ def render_investigation_checkpoint(
           "never invent an operation or treat an event listener as an initiator. "
           "Compare only model-proposed competing hypotheses as UNVERIFIED "
           "questions, never findings. A checked source class cannot establish "
-          "or refute one without matching scoped evidence. Prioritize a "
+          "or refute one without matching scoped evidence. An upstream MQTT "
+          "broker or physical-packet requirement is not met by Hubitat's "
+          "cached status, logs or driver source alone. Prioritize a "
           "still-unchecked discriminator when a safe relevant read exists. "
           "Do not repeat checked sources without a specific new field. "
           "Never send a write call, credentials, or unbounded inventory scan. "

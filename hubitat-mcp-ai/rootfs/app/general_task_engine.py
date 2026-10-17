@@ -36,6 +36,7 @@ DOMAIN_SKILL = {
     "integrations": "integrations",
     "code": "code_management",
 }
+EVIDENCE_ORIGINS = frozenset({"hubitat", "upstream", "physical", "unspecified"})
 ChatCallable = Callable[
     [list[dict[str, Any]], list[dict[str, Any]]],
     Awaitable[dict[str, Any]],
@@ -67,6 +68,7 @@ class InvestigativeHypothesis:
     explanation: str
     distinguishing_question: str
     evidence_kind: str
+    required_origin: str = "unspecified"
 
 
 def _bounded_hypotheses(value: Any) -> tuple[InvestigativeHypothesis, ...]:
@@ -89,7 +91,10 @@ def _bounded_hypotheses(value: Any) -> tuple[InvestigativeHypothesis, ...]:
         if not explanation or not question or explanation.casefold() in seen:
             continue
         seen.add(explanation.casefold())
-        found.append(InvestigativeHypothesis(explanation, question, kind))
+        origin = candidate.get("requiredOrigin", "unspecified")
+        if not isinstance(origin, str) or origin not in EVIDENCE_ORIGINS:
+            origin = "unspecified"
+        found.append(InvestigativeHypothesis(explanation, question, kind, origin))
         if len(found) == 3:
             break
     # A single model guess is not a competing-hypothesis investigation.
@@ -166,6 +171,7 @@ class GeneralTaskPlan:
                 {"explanation": item.explanation,
                  "distinguishing_question": item.distinguishing_question,
                  "evidence_kind": item.evidence_kind,
+                 "required_origin": item.required_origin,
                  "status": "unverified-model-proposal"}
                 for item in self.candidate_hypotheses
             ] if self.operation == "investigate" else [],
@@ -212,10 +218,10 @@ class GeneralTaskPlanner:
         '"candidateHypotheses":['
         '{"explanation":"A hub command preceded the switch transition",'
         '"distinguishingQuestion":"Was a producer command recorded at the focal time?",'
-        '"evidenceKind":"device_history"},'
+        '"evidenceKind":"device_history","requiredOrigin":"hubitat"},'
         '{"explanation":"An external bridge or physical input initiated it",'
         '"distinguishingQuestion":"Is independently timestamped controller evidence available?",'
-        '"evidenceKind":"device_logs"}]}\\n'
+        '"evidenceKind":"device_logs","requiredOrigin":"upstream"}]}\\n'
         "Allowed domains: device, automations, rooms, diagnostics, hub, "
         "integrations, system_state, code, other. "
         "Allowed operations: read, investigate, propose, write. "
@@ -229,7 +235,13 @@ class GeneralTaskPlanner:
         "For investigate operations propose TWO or THREE genuinely competing "
         "candidateHypotheses when materially plausible, each with an explanation, "
         "distinguishingQuestion and evidenceKind from the allowed source kinds. "
-        "They are provisional tests, NOT supported facts or confidence scores. "
+        "Give each candidate requiredOrigin: hubitat for hub-recorded data, "
+        "upstream for independent broker/integration/source-side records, "
+        "physical for device-originated delivery or acknowledgement, or "
+        "unspecified when unknown. Merely querying a Hubitat device log "
+        "CANNOT satisfy an upstream broker packet or physical delivery "
+        "requirement. They are provisional tests, NOT supported facts or "
+        "confidence scores. "
         "Do not add them for read, propose or write tasks. "
         "Checked sources are not proof of a historical cause or event. "
         "Infer the purpose of the request from meaning, not keyword matches. "
