@@ -574,6 +574,15 @@ def build_agent_response(
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
     }
+    if getattr(outcome, "route", "") == "investigation-timeout":
+        # Returning verified tool receipts does not mean the requested
+        # investigation was completed or a historical cause established.
+        result["success"] = False
+        result["status_verification"] = "incomplete-timeout"
+        result["metrics"]["outcome"] = "unresolved"
+        result["outcome_presentation"] = deepcopy(
+            present_request_outcome("unresolved")
+        )
     if getattr(outcome, "route", "") == "scoped-app-status":
         result["success"] = bool(getattr(outcome, "complete", False))
         result["status_verification"] = "partial" if not result["success"] else "configuration_read"
