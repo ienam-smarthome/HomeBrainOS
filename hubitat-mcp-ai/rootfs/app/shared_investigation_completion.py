@@ -130,37 +130,71 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     if source_evidence_request(request):
         source = assess_task_source_coverage(("source_code",), evidence)
         found = source.sources_checked
-        segments = contiguous_source_coverage(evidence)
-        local_complete = any(
-            isinstance(row, dict) and row.get("success") is True
-            and isinstance(row.get("details"), dict)
-            and row["details"].get("sourceRetrieved") is True
-            and row["details"].get("fullImplementationVerified") is True
-            for row in evidence
-        )
-        full = found and (segments["fullImplementationVerified"] or local_complete)
-        # Direct source reads expose individual spans; the local workbench
-        # verifies a complete contiguous file internally and exposes safe
-        # page/character counts instead of raw source in evidence receipts.
-        local_detail = next((
+        direct_segments = contiguous_source_coverage(evidence)
+        # One direct source read must not eclipse a later complete workbench
+        # retrieval. Both source paths are independently verifiable: raw
+        # gateway receipts carry individual spans, while the bounded local
+        # workbench records its internally checked pages and declared total.
+        workbench_details = [
             row["details"] for row in evidence
             if isinstance(row, dict) and row.get("success") is True
             and row.get("tool") == "homebrain_read_groovy_source"
             and isinstance(row.get("details"), dict)
             and row["details"].get("sourceRetrieved") is True
-        ), None)
-        if local_detail is not None and segments.get("chunksObserved", 0) == 0:
+        ]
+
+        def _workbench_complete(detail: dict[str, Any]) -> bool:
+            observed = detail.get("verifiedCharacters")
+            declared = detail.get("declaredTotalCharacters")
+            pages = detail.get("verifiedPages")
+            return bool(
+                detail.get("fullImplementationVerified") is True
+                and isinstance(observed, int) and not isinstance(observed, bool)
+                and isinstance(declared, int) and not isinstance(declared, bool)
+                and isinstance(pages, int) and not isinstance(pages, bool)
+                and observed > 0 and observed == declared and pages > 0
+            )
+
+        # Prefer a fully checked workbench result, then the greatest observed
+        # partial coverage. An earlier failed ID lookup cannot override the
+        # final verified read for the installed app.
+        local_detail = max(
+            workbench_details,
+            key=lambda detail: (
+                _workbench_complete(detail),
+                detail.get("verifiedCharacters")
+                if type(detail.get("verifiedCharacters")) is int else 0,
+            ),
+            default=None,
+        )
+        local_complete = bool(
+            local_detail is not None and _workbench_complete(local_detail)
+        )
+        segments = direct_segments
+        auxiliary_coverage: dict[str, Any] = {}
+        if local_detail is not None:
             reported_pages = local_detail.get("verifiedPages")
             reported_total = local_detail.get("declaredTotalCharacters")
             reported_chars = local_detail.get("verifiedCharacters")
-            segments = {
-                "fullImplementationVerified": bool(local_complete),
+            workbench_segments = {
+                "fullImplementationVerified": local_complete,
                 "coverage": "complete" if local_complete else "partial",
-                "chunksObserved": reported_pages if isinstance(reported_pages, int) else 0,
-                "verifiedCharacters": reported_chars,
-                "totalLength": reported_total,
+                "chunksObserved": reported_pages if type(reported_pages) is int else 0,
+                "verifiedCharacters": reported_chars
+                if type(reported_chars) is int else None,
+                "totalLength": reported_total
+                if type(reported_total) is int else None,
                 "validationMethod": "local-source-workbench",
             }
+            if local_complete or not direct_segments["fullImplementationVerified"]:
+                segments = workbench_segments
+                if direct_segments.get("chunksObserved", 0):
+                    auxiliary_coverage["directChunkCoverage"] = direct_segments
+            else:
+                auxiliary_coverage["workbenchChunkCoverage"] = workbench_segments
+        full = found and (
+            direct_segments["fullImplementationVerified"] or local_complete
+        )
         complete_requested = bool(re.search(
             r"(?i)\b(?:entire|complete|full(?:\s+source|\s+implementation)?|"
             r"all\s+(?:relevant\s+)?code\s+paths)\b", request,
@@ -175,9 +209,17 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
             "chunkCoverage": segments,
+            **auxiliary_coverage,
+            "methodBodyCoverage": {
+                "status": "not-certified-by-source-span-receipts",
+                "note": "Whole-file retrieval does not independently certify "
+                        "that every relevant method body, caller, or runtime "
+                        "branch was reviewed by the model.",
+            },
             "completionNote": (
                 "Source text spans the declared full implementation length "
-                "with no observed offset gap."
+                "with no observed offset gap. Method and runtime coverage "
+                "remain separate evidence obligations."
                 if full else
                 "Some source text was read, but full implementation coverage "
                 "was not established. Do not infer that an unseen method is absent."
