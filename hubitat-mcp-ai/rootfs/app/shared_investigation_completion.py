@@ -14,6 +14,9 @@ from typing import Any
 from general_evidence_completion import assess_task_source_coverage
 from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
+from historical_causal_claim_guard import (
+    assess_historical_claims, render_unverified_claim_warning,
+)
 from source_analysis_completion import (
     source_analysis_failed, source_failure_summary, source_method_claim_gap,
     source_runtime_evidence_status,
@@ -206,6 +209,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         draft_message = str(getattr(outcome, "message", "") or "")
         synthesis_failed = source_analysis_failed(draft_message)
         method_gap = source_method_claim_gap(draft_message)
+        historical = assess_historical_claims(draft_message, evidence)
+        historical_gap = bool(historical["unverifiedCommandActors"])
         runtime = source_runtime_evidence_status(request, evidence)
         runtime_gap = runtime["required"] and not runtime["satisfied"]
         coverage = {
@@ -218,20 +223,22 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "objectiveSatisfied": bool(
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
-                and not runtime_gap
+                and not runtime_gap and not historical_gap
             ),
-            "analysisAnswerVerified": not synthesis_failed,
+            "analysisAnswerVerified": not (synthesis_failed or historical_gap),
             "analysisStatus": (
+                "historical-app-command-not-verified" if historical_gap else
                 "synthesis-failed-source-observed" if synthesis_failed
                 else "model-admitted-relevant-methods-not-reviewed"
                 if method_gap else "model-answer-present-not-method-certified"
             ),
             "fullSourceRequested": complete_requested,
+            "historicalCausalClaim": historical,
             "runtimeEvidence": runtime,
             "questionResolved": bool(
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
-                and not runtime_gap
+                and not runtime_gap and not historical_gap
             ),
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
@@ -259,6 +266,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             ),
         }
         message = (
+            render_unverified_claim_warning(historical, evidence)
+            if historical_gap else
             source_failure_summary(evidence) if synthesis_failed
             else draft_message
         )
@@ -287,8 +296,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         return _CoverageOutcome(
             outcome, coverage,
             _safe_metrics(outcome, partial=(
-                synthesis_failed or method_gap or runtime_gap or not found
-                or (complete_requested and not full)
+                synthesis_failed or method_gap or runtime_gap or historical_gap
+                or not found or (complete_requested and not full)
             )),
             message,
         )

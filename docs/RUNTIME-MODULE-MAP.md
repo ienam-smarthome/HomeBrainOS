@@ -64,6 +64,7 @@ The repository drift test compares this table directly with the live directory. 
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
 | `adaptive_investigation_policy.py` | General read-only model-led investigation routing across multiple domains. |
 | `source_evidence_metadata.py` | Privacy-safe source receipts, verified pages, adaptive recovery diagnostics and contiguous coverage checks. |
+| `historical_causal_claim_guard.py` | Flags unverified named-app command execution claims against returned current-turn history; produces a cautious evidence-only answer rather than fabricated root cause. |
 | `source_method_projection.py` | Projects bounded, line-numbered whole candidate method bodies from verified driver source into model synthesis without additional device reads; does not certify runtime semantics. |
 | `source_analysis_completion.py` | Stops repeat source reads after complete scoped device/source evidence and provides an evidence-limited failure report if model source analysis does not complete. |
 | `groovy_source_investigation.py` | Discover MCP source reads for installed Hubitat apps, separate instance/code IDs and extract bounded Groovy excerpts without guessing code or affecting hub state. |
