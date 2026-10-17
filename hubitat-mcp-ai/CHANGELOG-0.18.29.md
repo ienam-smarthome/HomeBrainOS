@@ -17,7 +17,7 @@ The backend translated almost all `httpx.HTTPStatusError` exceptions into this s
 - Support staff can diagnose the root cause from the new safe `HTTP NNN; type=X; category=Y` result. No live billing/API call was made during these tests.
 
 ## Validation
-HTTP error simulation and endpoint tests cover bad Anthropic tool schema (400), authentication (401), billing (402), model unavailable (404), rate limit (429), provider overloaded (529), malicious body redaction and sanitized Retry-After; all three CI workflows must pass before merge.
+HTTP error simulation and endpoint tests cover bad Anthropic tool schema (400), authentication (401), billing (402), model unavailable (404), rate limit (429), provider overloaded (529), Ollama Free HTTP errors (400/401/402/404/503), malicious body redaction and sanitized Retry-After; all three CI workflows must pass before merge.
 
 ## Next
 Install 0.18.29. Reproduce **one low-cost simple Claude question** such as "Say OK" and copy the new sanitized error message; no API key. If it succeeds, test an evidence read to isolate tool-schema/transcript failures. Do not claim the underlying provider failure has been fixed until that live output is collected.
