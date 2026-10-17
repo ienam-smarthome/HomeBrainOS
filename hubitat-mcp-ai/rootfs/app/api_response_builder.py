@@ -623,16 +623,20 @@ def build_agent_response(
             status == "round_exceeds_budget"
             and int(counters.get("paid_routing_reservation_blocked") or 0) > 0
         )
-        result["paid_routing"] = {
-            "requested": True, "used": paid_used, "reason": reason,
-            "paid_rounds": len(paid_rounds),
-            "free_rounds_after_paid": fallback_count,
-            "mixed_models": bool(paid_rounds and fallback_count),
-            "estimated_budget_exhausted": budget_exhausted,
-            "accounting": "cumulative-conservative-reservations-not-provider-charges",
-        }
+        # Keep the established paid_routing response contract stable. Only
+        # add the new supplemental field when more than one model family was
+        # actually used, so older clients still see the original object.
+        result["paid_routing"] = {"requested": True, "used": paid_used, "reason": reason}
         if guard:
             result["paid_routing"]["local_guard"] = deepcopy(guard)
+        if paid_rounds and fallback_count:
+            result["model_continuity"] = {
+                "paid_rounds": len(paid_rounds),
+                "free_rounds_after_paid": fallback_count,
+                "mixed_models": True,
+                "estimated_budget_exhausted": budget_exhausted,
+                "accounting": "cumulative-conservative-reservations-not-provider-charges",
+            }
         if budget_exhausted and paid_rounds and fallback_count:
             result["message"] = (
                 result["message"].rstrip()
