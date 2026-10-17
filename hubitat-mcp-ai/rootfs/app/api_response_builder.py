@@ -578,8 +578,36 @@ def build_agent_response(
         result["success"] = bool(getattr(outcome, "complete", False))
         result["status_verification"] = "partial" if not result["success"] else "configuration_read"
     counters = metrics.get("counters") if isinstance(metrics.get("counters"), dict) else {}
+    rounds = metrics.get("model_round_details") or []
+    # Report actual participating models even when Auto hybrid selected paid.
+    if isinstance(rounds, list) and rounds:
+        usage: dict[str, int] = {}
+        for entry in rounds:
+            if not isinstance(entry, dict):
+                continue
+            model_used = str(entry.get("model") or "").strip()
+            if model_used:
+                usage[model_used] = usage.get(model_used, 0) + 1
+        if usage:
+            paid_count = sum(
+                count for model_used, count in usage.items()
+                if model_used.casefold().startswith(("deepseek-v4", "glm-5.3"))
+            )
+            free_count = sum(usage.values()) - paid_count
+            result["model_usage"] = {
+                "models": usage,
+                "paid_rounds": paid_count,
+                "free_rounds": free_count,
+                "paid_used": paid_count > 0,
+                "charges_controlled_by": "ollama-account",
+            }
+            if paid_count and free_count and not counters.get("paid_model_requested"):
+                result["model_continuity"] = {
+                    "paid_rounds": paid_count, "free_rounds_after_paid": free_count,
+                    "mixed_models": True, "estimated_budget_exhausted": False,
+                    "accounting": "ollama-provider-credits-no-local-budget",
+                }
     if int(counters.get("paid_model_requested") or 0):
-        rounds = metrics.get("model_round_details") or []
         paid_used = any(
             isinstance(item, dict) and str(item.get("model") or "").casefold().startswith(
                 ("deepseek-v4", "glm-5.3")

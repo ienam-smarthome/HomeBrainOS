@@ -35,7 +35,7 @@ class RequestMetrics:
     """Collect privacy-safe request counters and stage timings."""
 
     ALLOWED_COUNTERS = frozenset({
-        "paid_model_requested", "paid_model_reserved",
+        "paid_model_requested", "paid_model_reserved", "paid_model_selected",
         "paid_routing_disabled", "paid_routing_budget_disabled",
         "paid_routing_reservation_blocked",
         "model_rounds", "tool_calls", "tool_discovery_calls", "mcp_retries",
@@ -119,7 +119,7 @@ class RequestMetrics:
     })
     ALLOWED_PAID_GUARD_STATUSES = frozenset({
         "disabled", "zero_budget", "round_exceeds_budget", "invalid_ledger",
-        "storage_unavailable", "reserved", "unknown_model",
+        "storage_unavailable", "reserved", "no_local_budget", "unknown_model",
     })
     ALLOWED_OUTCOMES = frozenset({
         "success", "needs_input", "refused", "unresolved", "cancelled", "failed",

@@ -63,6 +63,7 @@ from performance_host_plan import (
     is_whole_hub_optimization_request,
 )
 from provider_rate_limit_policy import describe_ollama_rate_limit
+from chat_transport import PaidModelUnavailable
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
@@ -99,7 +100,6 @@ def load_options() -> dict[str, Any]:
         "ollama_cloud_first": False,
         "ollama_paid_routing_enabled": False,
         "ollama_paid_routing_mode": "hybrid",
-        "ollama_paid_budget_usd": 6.50,
         "ollama_paid_deep_model": "deepseek-v4-pro",
         "ollama_free_quota_paid_fallback_enabled": False,
         "ollama_local_enabled": False,
@@ -303,7 +303,7 @@ agent = UnifiedMCPAgent(
     cloud_first=_bool(OPTIONS.get("ollama_cloud_first"), False),
     paid_routing_enabled=_bool(OPTIONS.get("ollama_paid_routing_enabled"), False),
     paid_routing_mode=str(OPTIONS.get("ollama_paid_routing_mode") or "hybrid"),
-    paid_budget_usd=float(OPTIONS.get("ollama_paid_budget_usd") or 0),
+    paid_budget_usd=None,  # no HomeBrain budget; provider credit settings apply
     paid_deep_model=str(OPTIONS.get("ollama_paid_deep_model") or "deepseek-v4-pro"),
     free_quota_paid_fallback_enabled=_bool(OPTIONS.get("ollama_free_quota_paid_fallback_enabled"), False),
     local_base_url=(
@@ -672,9 +672,18 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         )
     except HTTPException:
         raise
+    except PaidModelUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except asyncio.CancelledError:
         raise
     except httpx.HTTPStatusError as exc:
+        if request.model_tier == "paid" and exc.response.status_code == 402:
+            raise HTTPException(
+                status_code=402,
+                detail="DeepSeek Pro could not continue: Ollama rejected paid "
+                       "billing for this request. Check your Ollama account "
+                       "credits or select Free. HomeBrain did not switch models.",
+            ) from exc
         limited = describe_ollama_rate_limit(exc)
         if limited:
             detail, retry_after = limited
@@ -729,7 +738,8 @@ async def health() -> dict[str, Any]:
             "enabled": agent.transport.paid_credit_guard.enabled,
             "mode": agent.transport.paid_credit_guard.mode,
             "model": agent.transport.paid_credit_guard.deep_model,
-            "estimated_budget_limit_usd": agent.transport.paid_credit_guard.budget_usd,
+            "budget_policy": "ollama-account-only",
+            "local_budget_enabled": False,
         },
         "tts": home_assistant_tts.status(),
         "one_time_rule_cleanup": one_time_rule_cleanup_scheduler.status(),
