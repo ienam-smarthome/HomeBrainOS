@@ -153,7 +153,7 @@ from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
-from skill_source_completion import pending_device_log_read
+from skill_source_completion import pending_device_log_read, pending_historical_command_read
 from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
 from skill_investigation_followup import execute_unverified_next_reads
 from investigation_checkpoint import (
@@ -3388,6 +3388,75 @@ class UnifiedMCPAgent:
                 # A failed or unavailable source must never masquerade as a
                 # checked-empty device history or abort the investigation.
                 logger.debug("Required scoped device log read unavailable: %s", exc)
+        # Mandatory historical command provenance is a distinct event stream
+        # from switch states and app logs. Complete one targeted, verified,
+        # read-only command history check before final synthesis when the
+        # objective explicitly demands it. This reuses the existing device
+        # history source implementation; it is not a new model/tool privilege.
+        command_plan = (
+            pending_historical_command_read(
+                objective, self.evidence.receipts(),
+            )
+            if not _explicit_mutation_request(objective) else None
+        )
+        if command_plan is not None:
+            try:
+                live_catalog = build_request_tool_catalog(
+                    await self.mcp.list_tools()
+                )
+                if live_catalog.available_tool("hub_read_devices") is not None:
+                    old_receipt_count = len(self.evidence.receipts())
+                    command_rows = await self.device_history._read_command_events(
+                        device_id=command_plan["deviceId"],
+                        label=command_plan["label"],
+                        hours_back=command_plan["hoursBack"],
+                        actions=(command_plan["action"],),
+                    )
+                    new_receipts = self.evidence.receipts()[old_receipt_count:]
+                    attempted = any(
+                        str(row.get("sub_tool") or "") == "hub_list_device_events"
+                        and str((row.get("arguments") or {}).get("args", {}).get("attribute") or "")
+                            == f"command-{command_plan['action']}"
+                        for row in new_receipts if isinstance(row, dict)
+                    )
+                    if attempted:
+                        increment_active_metric(
+                            "historical_command_obligation_reads"
+                        )
+                    messages.append({
+                        "role": "tool",
+                        "tool_name": "hub_read_devices",
+                        "content": redact_secrets(json.dumps({
+                            "requiredHistoricalCommandRead": True,
+                            "deviceId": command_plan["deviceId"],
+                            "attribute": f"command-{command_plan['action']}",
+                            "lookbackHours": command_plan["hoursBack"],
+                            "sourceQuerySucceeded": any(
+                                row.get("success") is True
+                                for row in new_receipts
+                                if isinstance(row, dict)
+                            ),
+                            "returnedCommandEvents": command_rows[:12],
+                            "note": (
+                                "State event producers and triggered listeners "
+                                "are not command issuers or physical ACK proof. "
+                                "Empty command-history results, even after a "
+                                "successful query, do not prove no historic "
+                                "command executed; retention may be incomplete."
+                            ),
+                        }, default=str, ensure_ascii=False)[:6800]),
+                    })
+                else:
+                    increment_active_metric(
+                        "historical_command_obligation_unavailable"
+                    )
+            except Exception as exc:
+                increment_active_metric(
+                    "historical_command_obligation_unavailable"
+                )
+                logger.debug(
+                    "Required historical command read unavailable: %s", exc
+                )
         content = await self.final_answers.answer(messages)
         # Terminal safety net. Earlier synthesis may skip causal validation if
         # a classifier or repair path fails; never send an unverified external
