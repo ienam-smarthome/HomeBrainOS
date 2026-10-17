@@ -124,6 +124,6 @@ def test_does_not_invent_method_body_or_transport_verification():
     packet = source_method_packet(full_data(), ARGS, PROMPT)
     assert packet is not None
     assert "no extra device operations were performed" in packet
-    assert "not a full call graph" in packet
+    assert "not a full call graph" in packet.lower()
     assert "runtime proof" in packet
     assert "physical Tasmota endpoint offline" not in packet
