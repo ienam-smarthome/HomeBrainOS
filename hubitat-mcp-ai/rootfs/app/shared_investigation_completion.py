@@ -12,6 +12,7 @@ from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
 from adaptive_investigation_policy import source_evidence_request
+from source_evidence_metadata import contiguous_source_coverage
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
 )
@@ -128,15 +129,29 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     if source_evidence_request(request):
         source = assess_task_source_coverage(("source_code",), evidence)
         found = source.sources_checked
+        segments = contiguous_source_coverage(evidence)
+        local_complete = any(
+            isinstance(row, dict) and row.get("success") is True
+            and isinstance(row.get("details"), dict)
+            and row["details"].get("sourceRetrieved") is True
+            and row["details"].get("fullImplementationVerified") is True
+            for row in evidence
+        )
+        full = found and (segments["fullImplementationVerified"] or local_complete)
         coverage = {
             "domain": "source_code",
-            "status": "source-segment-observed" if found else "source-unverified",
-            "evidenceComplete": found,  # source class only; NOT full code coverage
+            "status": ("full-source-observed" if full else
+                       "source-segment-observed" if found else "source-unverified"),
+            "evidenceComplete": found,
             "sourceCoverage": source.to_dict(),
-            "fullImplementationVerified": False,
+            "fullImplementationVerified": bool(full),
+            "chunkCoverage": segments,
             "completionNote": (
-                "Source text was returned, but complete installed-code coverage "
-                "has not been independently established."
+                "Source text spans the declared full implementation length "
+                "with no observed offset gap."
+                if full else
+                "Some source text was read, but full implementation coverage "
+                "was not established. Do not infer that an unseen method is absent."
                 if found else
                 "No raw implementation source was verified this turn. "
                 "Configuration, discovery and cached file references do not count."
@@ -148,6 +163,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "\n\n**Source evidence unavailable:** The current investigation "
                 "did not retrieve verifiable Groovy implementation text. "
                 "Its runtime method and expiry semantics remain unverified."
+            )
+        elif not full:
+            message += (
+                "\n\n**Partial source coverage:** Some implementation text "
+                "was retrieved, but continuous coverage of the installed source "
+                "was not verified. Unseen methods and code-level root causes "
+                "must remain unverified."
             )
         return _CoverageOutcome(
             outcome, coverage, _safe_metrics(outcome, partial=not found),
