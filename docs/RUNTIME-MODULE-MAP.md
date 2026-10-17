@@ -65,6 +65,7 @@ The repository drift test compares this table directly with the live directory. 
 | `adaptive_investigation_policy.py` | General read-only model-led investigation routing across multiple domains. |
 | `source_evidence_metadata.py` | Privacy-safe source receipts, verified pages, adaptive recovery diagnostics and contiguous coverage checks. |
 | `groovy_source_investigation.py` | Discover MCP source reads for installed Hubitat apps, separate instance/code IDs and extract bounded Groovy excerpts without guessing code or affecting hub state. |
+| `groovy_method_scope.py` | Conservative Groovy method-boundary and code-symbol index; prioritizes whole method excerpts while marking uncertain syntax and evidence-budget omissions, independent of full-file coverage. |
 | `tool_free_knowledge_policy.py` | Strict opt-in static technical explanations without MCP discovery or tool execution; excludes live device/app requests. |
 | `scoped_app_status_read.py` | Deterministic read-only app configuration execution for explicit app-ID status questions; truthful incomplete status on failed/missing reads. |
 | `investigation_evidence_ledger.py` | Deduplicates checked command-event receipts and detects explicit false command-absence claims; read-only. |
