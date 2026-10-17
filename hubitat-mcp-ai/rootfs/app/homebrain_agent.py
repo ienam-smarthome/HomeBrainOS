@@ -72,7 +72,10 @@ from request_classification import (
 from request_metrics import RequestMetrics
 from room_status_snapshot import format_room_status, linked_parent_ids, parse_room_status_request, resolve_room
 from rule_authoring_service import RuleAuthoringService
-from rule_machine_analysis import RuleMachineAnalysisService, parse_rule_analysis_request
+from rule_machine_analysis import (
+    RuleMachineAnalysisService, parse_rule_analysis_request,
+    historical_rule_execution_request,
+)
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
 from semantic_planner import SemanticPlanner, is_semantic_control_candidate
@@ -1635,9 +1638,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             # Static status presenters and the semantic device-control path
             # cannot prematurely finalise an unfamiliar investigative goal.
             # Only the existing host safety policy decides write authorisation.
-            if (model_led_investigation_request(user_prompt)
+            historical_rule_goal = historical_rule_execution_request(user_prompt)
+            if ((model_led_investigation_request(user_prompt) or historical_rule_goal)
                     and not _explicit_mutation_request(user_prompt)):
                 self.request_metrics.increment("investigation_snapshot_shortcut_bypassed")
+                if historical_rule_goal:
+                    self.request_metrics.increment("historical_rule_execution_routed")
                 base_process = super(UnifiedMCPAgent, self).process_user_request_result
                 return await base_process(
                     user_prompt, conversation_history, session_id=session_id,
