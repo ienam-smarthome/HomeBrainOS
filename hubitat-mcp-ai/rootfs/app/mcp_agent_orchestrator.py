@@ -3560,6 +3560,7 @@ class UnifiedMCPAgent:
         else:
             report = await GroovySourceService(self.mcp, self.evidence).inspect(app_id)
             data = {"success": True, "sourceRetrieved": report.retrieved,
+                    "fullImplementationVerified": report.complete,
                     "report": report.message,
                     "coverage": "partial-or-unverified" if not report.retrieved
                                 else "excerpts-returned; verify full-source claim"}
