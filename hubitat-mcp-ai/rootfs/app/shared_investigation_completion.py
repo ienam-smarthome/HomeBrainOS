@@ -14,7 +14,9 @@ from typing import Any
 from general_evidence_completion import assess_task_source_coverage
 from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
-from source_analysis_completion import source_analysis_failed, source_failure_summary
+from source_analysis_completion import (
+    source_analysis_failed, source_failure_summary, source_method_claim_gap,
+)
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
 )
@@ -202,6 +204,7 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         ))
         draft_message = str(getattr(outcome, "message", "") or "")
         synthesis_failed = source_analysis_failed(draft_message)
+        method_gap = source_method_claim_gap(draft_message)
         coverage = {
             "domain": "source_code",
             "status": ("full-source-observed" if full else
@@ -211,12 +214,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             # method-and-runtime investigation if synthesis failed.
             "objectiveSatisfied": bool(
                 found and (full or not complete_requested)
-                and not synthesis_failed
+                and not synthesis_failed and not method_gap
             ),
             "analysisAnswerVerified": not synthesis_failed,
             "analysisStatus": (
                 "synthesis-failed-source-observed" if synthesis_failed
-                else "model-answer-present-not-method-certified"
+                else "model-admitted-relevant-methods-not-reviewed"
+                if method_gap else "model-answer-present-not-method-certified"
             ),
             "fullSourceRequested": complete_requested,
             "sourceCoverage": source.to_dict(),
@@ -224,7 +228,10 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "chunkCoverage": segments,
             **auxiliary_coverage,
             "methodBodyCoverage": {
-                "status": "not-certified-by-source-span-receipts",
+                "status": (
+                    "model-admitted-unreviewed-methods" if method_gap
+                    else "not-certified-by-source-span-receipts"
+                ),
                 "note": "Whole-file retrieval does not independently certify "
                         "that every relevant method body, caller, or runtime "
                         "branch was reviewed by the model.",
@@ -261,7 +268,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         return _CoverageOutcome(
             outcome, coverage,
             _safe_metrics(outcome, partial=(
-                synthesis_failed or not found or (complete_requested and not full)
+                synthesis_failed or method_gap or not found
+                or (complete_requested and not full)
             )),
             message,
         )
