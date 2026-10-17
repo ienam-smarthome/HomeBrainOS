@@ -267,11 +267,22 @@ class GroovySourceService:
             if len(body) >= MAX_CHARS:
                 break
             next_offset = meta.get("nextOffset")
-            if isinstance(next_offset, int) and next_offset > offset:
-                offset = next_offset
-                continue
+            actual_offset = meta.get("offset", offset)
+            if not isinstance(actual_offset, int) or actual_offset != offset:
+                body = body[:-len(chunk)]
+                break
+            expected_next = offset + len(chunk)
+            if (isinstance(next_offset, int) and next_offset > offset
+                    and next_offset != expected_next):
+                # Server skip/truncation: do not certify disjoint pages as full.
+                break
+            if total is not None and len(body) >= total:
+                break
             if total is not None and len(body) < total:
-                offset = len(body)
+                offset = expected_next
+                continue
+            if isinstance(next_offset, int) and next_offset == expected_next:
+                offset = expected_next
                 continue
             break
         if not body:
