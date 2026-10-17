@@ -407,3 +407,63 @@ def test_final_comparison_preserves_unverified_upstream_packet_proof_boundary():
     assert "independent upstream evidence has NOT been verified" in result["message"]
     assert "discriminator and hypothesis still unverified" in result["message"]
     assert result["metrics"]["outcome"] == "unresolved"
+
+
+def test_telemetry_coverage_and_driver_source_do_not_pretend_root_cause_resolved():
+    prior = {
+        "domain": "device_telemetry",
+        "evidenceComplete": True,
+        "requirements": [{"key": "status", "state": "observed"}],
+    }
+    rows = [
+        receipt("hub_read_devices", "hub_get_device", {"deviceId": "7103"}),
+        receipt("hub_read_devices", "hub_list_device_events", {"deviceId": "7103"}),
+        receipt("hub_read_diagnostics", "hub_get_logs", {
+            "deviceId": "7103", "limit": 50,
+        }, details={"logCount": 20}),
+        receipt("hub_read_apps_code", "hub_get_source", {
+            "id": "3686", "type": "driver",
+        }, details={
+            "sourceRetrieved": True, "sourceCodeId": "3686",
+            "offset": 0, "chunkLength": 20531, "totalLength": 20531,
+        }),
+    ]
+    observed = build_observed_agent_outcome(outcome(rows, coverage=prior), {
+        "outcome": "unresolved", "counters": {}, "timings_ms": {},
+    })
+    answer = serialize(apply_shared_investigation_completion(
+        observed,
+        "Use paid model. Investigate why the MQTT device is offline and "
+        "compare the most plausible causes using MCP evidence. Read-only.",
+    ))
+    coverage = answer["investigation_coverage"]
+    assert coverage["sourceChecksComplete"] is True
+    assert coverage["rootCauseVerified"] is False
+    assert coverage["questionResolved"] is False
+    source = coverage["additionalSourceCodeEvidence"]
+    assert source["codeId"] == "3686"
+    assert source["fullSourceAtRead"] is True
+    assert source["methodBehaviourVerified"] is False
+    assert "20,531" not in answer["message"] or "source-offset units" in answer["message"]
+    assert "Code ID 3686" in answer["message"]
+    assert "This proves source retrieval only" in answer["message"]
+    assert answer["metrics"]["outcome"] == "unresolved"
+
+
+def test_failed_or_unverified_source_does_not_appear_as_verified_extra_code():
+    prior = {"domain": "device_telemetry", "evidenceComplete": False}
+    rows = [
+        receipt("hub_read_apps_code", "hub_get_source", {
+            "id": "3686", "type": "driver",
+        }, details={
+            "sourceRetrieved": False, "sourceCodeId": "3686",
+            "offset": 0, "chunkLength": 999, "totalLength": 20531,
+        }),
+    ]
+    observed = build_observed_agent_outcome(outcome(rows, coverage=prior), {
+        "outcome": "unresolved", "counters": {}, "timings_ms": {},
+    })
+    answer = serialize(apply_shared_investigation_completion(
+        observed, "Investigate why a device reports offline.",
+    ))
+    assert "additionalSourceCodeEvidence" not in answer["investigation_coverage"]

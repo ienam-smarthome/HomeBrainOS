@@ -201,3 +201,58 @@ def test_builder_blocks_live_performance_log_causality_even_if_orchestrator_retu
     assert "likely driving the high busy percentage" not in message
     assert "do not establish that it causes the measured performance result" in message
     assert "did not read the rule/app configuration" in message
+
+
+def test_explicit_paid_mixed_rounds_show_local_budget_boundary_without_invoice_claim():
+    outcome = FakeOutcome()
+    outcome.metrics = {
+        "outcome": "unresolved",
+        "counters": {
+            "paid_model_requested": 1,
+            "paid_model_reserved": 6,
+            "paid_routing_reservation_blocked": 3,
+            "model_rounds": 9,
+        },
+        "timings_ms": {"total": 56000},
+        "model_round_details": [
+            *[{"model": "deepseek-v4-pro", "provider": "ollama-cloud"} for _ in range(6)],
+            *[{"model": "gemma4:31b", "provider": "ollama-cloud"} for _ in range(3)],
+        ],
+        "paid_guard": {
+            "status": "round_exceeds_budget",
+            "configured_budget_usd": 3,
+            "already_reserved_usd": 2.852,
+            "estimated_round_usd": 0.1696,
+        },
+    }
+    response = build_agent_response(outcome, model="gemma4:31b",
+                                    elapsed_ms=56030, version="0.18.17")
+    assert response["paid_routing"]["used"] is True
+    routing = response["model_continuity"]
+    assert routing["paid_rounds"] == 6
+    assert routing["free_rounds_after_paid"] == 3
+    assert routing["mixed_models"] is True
+    assert routing["estimated_budget_exhausted"] is True
+    assert "reservations-not-provider-charges" in routing["accounting"]
+    assert "6 recorded round(s)" in response["message"]
+    assert "3 round(s)" in response["message"]
+    assert "not an Ollama invoice" in response["message"]
+    assert response["model"] == "gemma4:31b"
+
+
+def test_paid_model_no_budget_exhaustion_never_warns_about_midway_switch():
+    outcome = FakeOutcome()
+    outcome.metrics["counters"]["paid_model_requested"] = 1
+    outcome.metrics["model_round_details"] = [
+        {"model": "deepseek-v4-pro", "provider": "ollama-cloud"},
+        {"model": "gemma4:31b", "provider": "ollama-cloud"},
+    ]
+    response = build_agent_response(outcome, model="gemma4:31b",
+                                    elapsed_ms=5000, version="0.18.17")
+    assert response["paid_routing"] == {
+        "requested": True, "used": True, "reason": "used",
+    }
+    assert response["model_continuity"]["paid_rounds"] == 1
+    assert response["model_continuity"]["free_rounds_after_paid"] == 1
+    assert response["model_continuity"]["estimated_budget_exhausted"] is False
+    assert "**Model continuity:**" not in response["message"]
