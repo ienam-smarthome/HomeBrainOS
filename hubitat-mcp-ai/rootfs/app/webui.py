@@ -92,8 +92,8 @@ def render_page(title: str, version: str) -> str:
 <div class="model-tier-picker">
 <label for="modelTier">AI model</label>
 <select id="modelTier" aria-label="AI model for this question">
-<option value="free" selected>Free · Gemma (default)</option>
 <option value="auto">Auto · hybrid routing (may charge)</option>
+<option value="free">Free · Gemma (default)</option>
 <option value="paid">Paid · DeepSeek Pro (Ollama)</option>
 <option value="claude">Paid · Claude (Anthropic API)</option>
 </select>
@@ -176,7 +176,7 @@ document.getElementById('title').textContent=TITLE;document.getElementById('vers
 const query=document.getElementById('query'),ask=document.getElementById('ask'),answer=document.getElementById('answer');
 const modelTier=document.getElementById('modelTier'),modelTierNote=document.getElementById('modelTierNote');
 function describeModelTier(){const mode=modelTier.value;modelTierNote.textContent=mode==='free'?'Free: use the configured default model; never upgrade this request to paid.':mode==='paid'?'Paid: DeepSeek Pro only. No Gemma fallback or HomeBrain budget; Ollama account credits apply.':mode==='claude'?'Paid: Claude via the Anthropic API. Anthropic bills separately; no Gemma or DeepSeek fallback.':'Auto: opt-in to existing hybrid routing (may use Ollama paid credits).';}
-modelTier.onchange=describeModelTier;describeModelTier();
+modelTier.value='free';modelTier.onchange=describeModelTier;describeModelTier();
 query.value=localStorage.getItem('hmcp_last_query')||'';
 const apiPath=path=>`${location.pathname.replace(/\/?$/,'/')}${path}`;
 function healthClass(status){return status==='healthy'?'health-ok':status==='critical'?'health-critical':status==='attention'?'health-warn':'health-neutral'}
