@@ -35,6 +35,6 @@ def test_remote_tools_are_preserved_alongside_local_tools() -> None:
 def test_empty_remote_tools_still_yields_full_local_set() -> None:
     catalog = build_request_tool_catalog([])
 
-    # Twelve safe-read tools (including the deterministic whole-home device
-    # inventory) plus the one control tool.
-    assert len(catalog.available_names) == 13
+    # Thirteen safe-read tools (including the model-selectable Groovy source
+    # evidence reader) plus the one control tool.
+    assert len(catalog.available_names) == 14
