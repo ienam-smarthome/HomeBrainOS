@@ -3558,7 +3558,11 @@ class UnifiedMCPAgent:
             data = {"success": False, "sourceRetrieved": False,
                     "error": "appId must be a numeric installed application ID"}
         else:
-            report = await GroovySourceService(self.mcp, self.evidence).inspect(app_id)
+            raw_symbols = arguments.get("symbols")
+            symbols = raw_symbols if isinstance(raw_symbols, list) else None
+            report = await GroovySourceService(self.mcp, self.evidence).inspect(
+                app_id, symbols=symbols,
+            )
             data = {"success": True, "sourceRetrieved": report.retrieved,
                     "fullImplementationVerified": report.complete,
                     "report": report.message,
@@ -3784,9 +3788,15 @@ class UnifiedMCPAgent:
                 "selecting safe read tools, weighing alternatives and "
                 "synthesizing an evidence-backed answer. Installed app ID "
                 f"{groovy_source_app} is NOT necessarily the user-code ID. "
-                "Use homebrain_read_groovy_source, hub_search_tools and "
-                "hub_get_tool_guide where helpful. Check the live tool "
-                "description and schema; never invent a source sub-operation. "
+                "Prefer homebrain_read_groovy_source first for a whole-source "
+                "inspection. Supply the appId and an optional symbols list "
+                "derived from the actual question. This workbench retrieves "
+                "contiguous source and returns bounded code excerpts; use it "
+                "as evidence while you lead the investigation. If unavailable, "
+                "discover alternative read tools via hub_search_tools and "
+                "hub_get_tool_guide. Do not make overlapping, repeated manual "
+                "hub_get_source reads when one workbench call can cover the "
+                "file. Check live tool schemas; never invent sub-operations. "
                 "If a reader is missing, consider another read-only route "
                 "that the live MCP catalog positively advertises. "
                 "Do not inspect unrelated sensors unless the question "
