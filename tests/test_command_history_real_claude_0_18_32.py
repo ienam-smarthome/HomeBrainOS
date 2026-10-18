@@ -185,3 +185,67 @@ async def test_final_source_completion_executes_exact_read_once_from_claude_shap
     finally:
         agent._current_user_objective.reset(obj)
         agent.evidence.reset(proof)
+
+
+def test_state_event_does_not_justify_unqualified_command_dispatch_claim():
+    from historical_causal_claim_guard import reconcile_historical_dispatch_claim
+    text = ("The hub recorded switch=off. The command dispatch is established; "
+            "the commanding app is unverified.")
+    corrected, changed = reconcile_historical_dispatch_claim(
+        text, REQUEST, observed_claude_receipts(),
+    )
+    assert changed is True
+    assert "command dispatch is established" not in corrected
+    assert "command dispatch remains unverified" in corrected
+    assert "The hub recorded switch=off" in corrected
+
+
+def test_empty_successful_command_history_is_not_positive_command_evidence():
+    from historical_causal_claim_guard import reconcile_historical_dispatch_claim
+    receipts = observed_claude_receipts() + [{
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True, "arguments": {
+            "tool": "hub_list_device_events",
+            "args": {"deviceId": "7103", "attribute": "command-off"},
+        }, "details": {"events": [], "eventCount": 0},
+    }]
+    corrected, changed = reconcile_historical_dispatch_claim(
+        "The command dispatch was confirmed.", REQUEST, receipts,
+    )
+    assert changed is True
+    assert "remains unverified" in corrected
+
+
+def test_positive_matching_command_event_does_not_trigger_false_rewrite():
+    from historical_causal_claim_guard import reconcile_historical_dispatch_claim
+    receipts = observed_claude_receipts() + [{
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True, "arguments": {
+            "tool": "hub_list_device_events",
+            "args": {"deviceId": "7103", "attribute": "command-off"},
+        }, "details": {"events": [{
+            "name": "command-off",
+            "date": "2026-10-12T01:30:00+0100",
+        }]},
+    }]
+    text, changed = reconcile_historical_dispatch_claim(
+        "The command dispatch is established.", REQUEST, receipts,
+    )
+    assert changed is False
+    assert text == "The command dispatch is established."
+
+
+def test_unrelated_device_command_event_cannot_authorize_target_dispatch():
+    from historical_causal_claim_guard import reconcile_historical_dispatch_claim
+    receipts = observed_claude_receipts() + [{
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True, "arguments": {
+            "tool": "hub_list_device_events",
+            "args": {"deviceId": "9999", "attribute": "command-off"},
+        }, "details": {"events": [{"name": "command-off"}]},
+    }]
+    text, changed = reconcile_historical_dispatch_claim(
+        "The command dispatch has been verified.", REQUEST, receipts,
+    )
+    assert changed is True
+    assert "remains unverified" in text
