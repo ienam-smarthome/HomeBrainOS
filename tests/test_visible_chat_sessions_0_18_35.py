@@ -35,7 +35,7 @@ def test_browser_history_is_bounded_and_never_persists_technical_receipts():
     assert "sessionStorage.getItem(historyKey)" in page
     assert "function deleteChat(id)" in page
     assert "sessionStorage.removeItem('hmcp_history_'+id)" in page
-    assert "JSON.stringify(data)" in page  # transient current-answer technical copy
+    assert "JSON.stringify(data,null,2)" in page  # transient current-answer technical copy
     assert "JSON.stringify(safe)" in page     # only bounded visible-text history persisted
 
 
@@ -47,7 +47,8 @@ def test_new_and_restored_chats_are_separate_fresh_session_contexts():
     assert "sessionId=target.id;historyKey='hmcp_history_'+sessionId" in page
     assert "conversationHistory=target.messages.slice(-8)" in page
     assert "session_id:requestSessionId" in page
-    assert "const selectedTier=modelTier.value,history=conversationHistory.slice(-8)" in page
+    assert "const selectedTier=modelTier.value;" in page
+    assert "const history=conversationHistory.slice(-8)" in page
     assert "if(sequence===requestSequence&&requestSessionId===sessionId)" in page
     assert "requestSequence++" in page
     assert "activeRequest.abort()" in page
