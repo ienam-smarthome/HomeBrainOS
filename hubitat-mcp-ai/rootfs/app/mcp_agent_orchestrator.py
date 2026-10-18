@@ -4536,8 +4536,8 @@ class UnifiedMCPAgent:
                             ) is not None:
                                 completed = await self._final_answer(messages)
                                 if not re.search(
-                                    r"(?<![\\w-])" + re.escape(mismatched_label)
-                                    + r"(?![\\w-])",
+                                    r"(?<![\w-])" + re.escape(mismatched_label)
+                                    + r"(?![\w-])",
                                     completed, re.IGNORECASE,
                                 ):
                                     return completed
