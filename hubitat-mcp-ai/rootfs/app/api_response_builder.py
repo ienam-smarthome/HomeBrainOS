@@ -620,7 +620,8 @@ def build_agent_response(
                 "free_rounds": free_count,
                 "paid_used": paid_count > 0,
                 "charges_controlled_by": (
-                    "anthropic-account" if claude_count == paid_count
+                    "ollama-free-allowance" if paid_count == 0
+                    else "anthropic-account" if claude_count == paid_count
                     else "ollama-and-anthropic-accounts" if claude_count
                     else "ollama-account"
                 ),

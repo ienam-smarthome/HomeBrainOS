@@ -89,6 +89,7 @@ class RequestMetrics:
         "rule_analysis_partial", "historical_rule_execution_routed",
         "historical_command_obligation_reads",
         "historical_command_obligation_unavailable",
+        "read_only_model_write_blocked",
         "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
         "causal_focal_window_reads", "causal_focal_window_evidence_recovered",
         "causal_focal_history_gap_stop",
