@@ -31,6 +31,17 @@ def render_page(title: str, version: str) -> str:
 <style>
 :root{color-scheme:dark;--bg:#0b0b0c;--card:#1f1f21;--tile:#303033;--text:#fff;--muted:#b9b9bd;--blue:#2f7df6;--green:#166534;--red:#991b1b;--amber:#b45309}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}.wrap{max-width:960px;margin:auto;padding:16px}h1{font-size:30px;margin:4px 0 10px}.card{background:var(--card);border-radius:14px;padding:12px;margin:8px 0}.row,.grid{display:flex;gap:8px;flex-wrap:wrap}.pill{padding:8px 12px;border-radius:999px;background:#3a3a3d;font-size:13px}.pill.ok{background:var(--green)}.pill.error{background:var(--red)}.pill strong{margin-left:4px}.status-card{padding:8px 10px;gap:6px;margin:8px 0}.status-card .pill{padding:5px 8px;font-size:11px;line-height:1.15}.status-card .pill strong{margin-left:3px;font-size:11px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.tile{background:var(--tile);border-radius:12px;padding:10px;min-width:0}.big{font-size:20px;font-weight:700;overflow-wrap:anywhere;word-break:break-word}.top-stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:7px}.top-stats .tile{margin:0;padding:7px 5px;min-height:66px;font-size:12px;line-height:1.15}.top-stats .big{font-size:19px}.top-stats .muted{font-size:10px;line-height:1.15;margin-top:2px}.quick-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:7px}.quick-grid button,.quick-grid .quick-link{margin:0;min-height:42px;padding:7px 5px;border-radius:10px;font-size:11px;line-height:1.15}.quick-link{display:flex;align-items:center;justify-content:center;background:#333;color:#fff;text-decoration:none;text-align:center}.muted{color:var(--muted);font-size:13px}input,button{width:100%;border:0;border-radius:12px;padding:14px;margin:7px 0;font:inherit}input{background:#fff;color:#111}button{background:var(--blue);color:#fff;cursor:pointer}.query-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:7px 0}.query-actions button{margin:0}.answer-options{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:6px 0}.answer-options label{margin:0}.browser-shortcut{display:none;width:auto;margin:0;padding:8px 10px;font-size:12px}.browser-shortcut.visible{display:inline-block}.secondary{background:#333}.confirm{background:var(--green)}.answer{background:#000;border-radius:12px;padding:14px;min-height:52px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.answer-meta{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}.badge{background:#243044;border-radius:999px;padding:4px 8px;font-size:12px}.outcome-badge{font-weight:700}.outcome-positive{background:#14532d;color:#bbf7d0}.outcome-warning{background:#78350f;color:#fde68a}.outcome-neutral{background:#3f3f46;color:#e4e4e7}.outcome-critical{background:#7f1d1d;color:#fecaca}.answer-text{white-space:pre-wrap}.technical{margin-top:12px;color:var(--muted)}.technical summary{cursor:pointer}.technical pre{white-space:pre-wrap;overflow:auto;max-height:260px;background:#111;padding:10px;border-radius:8px}.busy{opacity:.65}
+.chat-toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:2px 0 7px}
+.chat-toolbar strong{font-size:14px}.chat-toolbar button{width:auto;margin:0;padding:8px 12px;font-size:12px}
+.chat-list{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:thin}
+.chat-item{display:flex;gap:3px;flex:0 0 auto;min-width:0;max-width:210px}
+.chat-item .chat-pick{font-size:12px;max-width:175px;margin:0;padding:8px;background:#29292d;border:1px solid #45454c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-item .chat-pick.active{border:1px solid #74a7ff;background:#243044}
+.chat-item .chat-delete{width:auto;margin:0;padding:6px 8px;background:#333;font-size:12px}
+.chat-notice{font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.4}
+.chat-transcript{display:grid;gap:6px;margin:0 0 8px}
+.chat-bubble{padding:9px 11px;border-radius:10px;background:#111;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:200px;overflow:auto}
+.chat-bubble.user{background:#263242}.chat-bubble strong{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .model-tier-picker{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:7px 0 3px}
 .model-tier-picker label{font-size:12px;color:var(--muted)}
 .model-tier-picker select{width:auto;max-width:100%;background:#303033;color:#fff;border:1px solid #56565c;border-radius:9px;padding:8px 10px;font-size:13px}
@@ -88,6 +99,10 @@ def render_page(title: str, version: str) -> str:
 <a class="quick-link" href="http://192.168.1.239/hub2/createFullLocalBackup" target="_blank" rel="noopener noreferrer">💾 Local backup</a>
 </section>
 <section class="card">
+<div class="chat-toolbar"><strong>Chats</strong><button id="newChat" class="secondary" type="button">+ New chat</button></div>
+<div id="chatList" class="chat-list" aria-label="Saved conversations"></div>
+<div id="chatNotice" class="chat-notice">Chats are saved in this browser only, not synced or encrypted. Delete chats on shared devices.</div>
+<div id="chatTranscript" class="chat-transcript" aria-label="Earlier messages"></div>
 <input id="query" placeholder="Ask your Hubitat…" autocomplete="off">
 <div class="model-tier-picker">
 <label for="modelTier">AI model</label>
@@ -170,7 +185,7 @@ def render_page(title: str, version: str) -> str:
 <script>
 const TITLE=__TITLE__,VERSION=__VERSION__;
 const newSessionId=()=>globalThis.crypto?.randomUUID?.()||`hmcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-const sessionId=sessionStorage.getItem('hmcp_session_id')||newSessionId();
+let sessionId=sessionStorage.getItem('hmcp_session_id')||newSessionId();
 sessionStorage.setItem('hmcp_session_id',sessionId);
 document.getElementById('title').textContent=TITLE;document.getElementById('version').textContent='v'+VERSION;
 const query=document.getElementById('query'),ask=document.getElementById('ask'),answer=document.getElementById('answer');
@@ -259,7 +274,118 @@ const AUTOMATION_STATUSES=['active','disabled','paused','broken','unknown'];
 function cleanAutomationName(value){return String(value||'').replace(/\s*\(Paused\)\s*/gi,' ').replace(/\s*\*BROKEN\*\s*/gi,' ').replace(/\s{2,}/g,' ').trim()}
 function renderAutomationItems(data){const root=document.createElement('div');root.className='automation-view';const items=(Array.isArray(data.automation_items)?data.automation_items:[]).filter(item=>AUTOMATION_STATUSES.includes(String(item.status||'').toLowerCase()));const toolbar=document.createElement('div');toolbar.className='automation-toolbar';const search=document.createElement('input');search.type='search';search.placeholder='Search apps and rules…';search.setAttribute('aria-label','Search automation items');const expand=document.createElement('button');expand.className='secondary';expand.textContent='Expand all';const collapse=document.createElement('button');collapse.className='secondary';collapse.textContent='Collapse all';toolbar.append(search,expand,collapse);root.appendChild(toolbar);const filters=document.createElement('div');filters.className='automation-filters';let selected='all';['all',...AUTOMATION_STATUSES].forEach(status=>{const button=document.createElement('button');button.className='automation-filter'+(status==='all'?' selected':'');button.dataset.status=status;button.textContent=status==='all'?'All':status[0].toUpperCase()+status.slice(1);button.onclick=()=>{selected=status;filters.querySelectorAll('button').forEach(node=>node.classList.toggle('selected',node===button));apply()};filters.appendChild(button)});root.appendChild(filters);const sections=new Map();AUTOMATION_STATUSES.forEach(status=>{const matching=items.filter(item=>String(item.status).toLowerCase()===status);if(!matching.length)return;const details=document.createElement('details');details.className=`automation-section automation-section-${status}`;details.dataset.status=status;details.open=['paused','broken','unknown'].includes(status);const summary=document.createElement('summary');summary.textContent=`${status[0].toUpperCase()+status.slice(1)} (${matching.length})`;const list=document.createElement('ul');matching.sort((a,b)=>String(a.name).localeCompare(String(b.name))).forEach(item=>{const row=document.createElement('li');row.dataset.search=`${item.name||''} ${item.type||''}`.toLowerCase();const label=document.createElement('span');label.className=`status-label status-${status}`;label.textContent=status.toUpperCase();const name=document.createElement('span');name.textContent=cleanAutomationName(item.name);const kind=document.createElement('span');kind.className='automation-kind';kind.textContent=item.type==='rule'?'Rule Machine':'App';row.append(label,name,kind);list.appendChild(row)});details.append(summary,list);root.appendChild(details);sections.set(status,details)});const empty=document.createElement('div');empty.className='automation-empty';empty.textContent='No automation items match this filter.';empty.hidden=true;root.appendChild(empty);function apply(){const term=search.value.trim().toLowerCase();let visibleSections=0;sections.forEach((details,status)=>{let visibleRows=0;details.querySelectorAll('li').forEach(row=>{const show=(!term||row.dataset.search.includes(term))&&(selected==='all'||selected===status);row.hidden=!show;if(show)visibleRows+=1});details.hidden=visibleRows===0;if(visibleRows){visibleSections+=1;details.querySelector('summary').textContent=`${status[0].toUpperCase()+status.slice(1)} (${visibleRows})`}});empty.hidden=visibleSections!==0}search.oninput=apply;expand.onclick=()=>sections.forEach(details=>{if(!details.hidden)details.open=true});collapse.onclick=()=>sections.forEach(details=>details.open=false);return root}
 function speechText(value){return normalizeAnswerMarkup(value).replace(/```[\s\S]*?```/g,' ').replace(/\[(ACTIVE|DISABLED|PAUSED|BROKEN|UNKNOWN)\]/gi,'$1').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\s*\((?:IDs?|device IDs?)\s*:\s*[^)]+\)/gi,'').replace(/\b(?:IDs?|device IDs?)\s*[:#]\s*[\d,\s]+/gi,'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/\bRTT\b/gi,'response time').replace(/\bCPU\b/g,'C P U').replace(/&/g,' and ').replace(/\s+\/\s+/g,' or ').replace(/→/g,' to ').replace(/←/g,' from ').replace(/(\d+(?:\.\d+)?)\s*%/g,'$1 percent').replace(/:\s*\n/g,'.\n').replace(/^\s*#{1,6}\s*/gm,'').replace(/^\s*[-*+]\s+/gm,'').replace(/>/g,' over ').replace(/=/g,' ').replace(/(\d+(?:\.\d+)?)h\b/gi,'$1 hours').replace(/[*_`]/g,'').replace(/\n+/g,'. ').replace(/\s+/g,' ').replace(/\s+\./g,'.').replace(/\.{2,}/g,'.').trim()}
-const historyKey=`hmcp_history_${sessionId}`;let suggestedAction=null,conversationHistory=[];try{const storedHistory=JSON.parse(sessionStorage.getItem(historyKey)||'[]');if(Array.isArray(storedHistory))conversationHistory=storedHistory.slice(-8)}catch(error){sessionStorage.removeItem(historyKey)}
+const CHAT_STORAGE_KEY='hmcp_chats_v1',CHAT_LIMIT=20,CHAT_MESSAGE_LIMIT=32,CHAT_CONTENT_LIMIT=6000;
+const chatList=document.getElementById('chatList'),chatTranscript=document.getElementById('chatTranscript'),chatNotice=document.getElementById('chatNotice');
+let historyKey='hmcp_history_'+sessionId,suggestedAction=null,conversationHistory=[];
+function normalizedMessages(value){
+  if(!Array.isArray(value))return [];
+  return value.filter(row=>row&&['user','assistant'].includes(row.role)&&typeof row.content==='string')
+    .slice(-CHAT_MESSAGE_LIMIT).map(row=>({role:row.role,content:row.content.slice(0,CHAT_CONTENT_LIMIT)}));
+}
+function loadSavedChats(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY)||'[]');
+    if(!Array.isArray(parsed))return [];
+    return parsed.filter(row=>row&&typeof row.id==='string'&&/^[a-zA-Z0-9_-]{6,160}$/.test(row.id))
+      .slice(0,CHAT_LIMIT).map(row=>({
+        id:row.id,title:String(row.title||'New chat').slice(0,70),
+        updated:Number.isFinite(row.updated)?row.updated:0,
+        messages:normalizedMessages(row.messages),
+      }));
+  }catch(error){return []}
+}
+let chats=loadSavedChats();
+if(!chats.some(chat=>chat.id===sessionId)){
+  let older=[];
+  try{older=normalizedMessages(JSON.parse(sessionStorage.getItem(historyKey)||'[]'))}catch(error){}
+  chats.unshift({id:sessionId,title:older.find(item=>item.role==='user')?.content.slice(0,70)||'New chat',updated:Date.now(),messages:older});
+}
+function currentChat(){return chats.find(chat=>chat.id===sessionId)}
+conversationHistory=(currentChat()?.messages||[]).slice(-8);
+function saveChats(){
+  chats.sort((a,b)=>b.updated-a.updated);
+  chats=chats.slice(0,CHAT_LIMIT);
+  const safe=chats.map(chat=>({
+    id:chat.id,title:chat.title,updated:chat.updated,
+    messages:normalizedMessages(chat.messages),
+  }));
+  try{localStorage.setItem(CHAT_STORAGE_KEY,JSON.stringify(safe))}
+  catch(error){chatNotice.textContent='Browser storage is unavailable or full; chat history may not survive reopening this browser.'}
+  try{
+    sessionStorage.setItem('hmcp_session_id',sessionId);
+    sessionStorage.setItem(historyKey,JSON.stringify(conversationHistory.slice(-8)));
+  }catch(error){}
+}
+function renderChatList(){
+  chatList.replaceChildren();
+  chats.slice().sort((a,b)=>b.updated-a.updated).forEach(chat=>{
+    const item=document.createElement('div');item.className='chat-item';
+    const pick=document.createElement('button');
+    pick.type='button';pick.className='chat-pick secondary'+(chat.id===sessionId?' active':'');
+    pick.textContent=chat.title||'New chat';pick.title=chat.title||'New chat';
+    pick.setAttribute('aria-current',chat.id===sessionId?'true':'false');
+    pick.onclick=()=>openChat(chat.id);
+    const remove=document.createElement('button');remove.type='button';remove.className='chat-delete secondary';
+    remove.textContent='×';remove.title='Delete saved chat';remove.setAttribute('aria-label','Delete '+(chat.title||'chat'));
+    remove.onclick=()=>deleteChat(chat.id);
+    item.append(pick,remove);chatList.appendChild(item);
+  });
+}
+function renderTranscript(messages){
+  chatTranscript.replaceChildren();
+  for(const message of messages){
+    const box=document.createElement('div');
+    box.className='chat-bubble '+message.role;
+    const speaker=document.createElement('strong');
+    speaker.textContent=message.role==='user'?'You':'HomeBrain';
+    const body=document.createElement('div');body.textContent=message.content;
+    box.append(speaker,body);chatTranscript.appendChild(box);
+  }
+}
+function stopPendingChatRequest(){
+  if(activeRequest){activeRequest.abort();activeRequest=null;requestSequence++}
+  stopAudio();suggestedAction=null;
+}
+function openChat(id){
+  const target=chats.find(chat=>chat.id===id);if(!target)return;
+  stopPendingChatRequest();
+  sessionId=target.id;historyKey='hmcp_history_'+sessionId;
+  conversationHistory=target.messages.slice(-8);
+  query.value='';
+  modelTier.value='free';describeModelTier();
+  const rows=target.messages,hasFinal=rows.length>=2&&rows.at(-2)?.role==='user'&&rows.at(-1)?.role==='assistant';
+  renderTranscript(hasFinal?rows.slice(0,-2):rows);
+  if(hasFinal){
+    // Restored replies deliberately have NO live confirmation, choices, or actions.
+    query.value=rows.at(-2).content;
+    showAnswer({route:'saved-chat',message:rows.at(-1).content});
+    query.value='';
+  }else{
+    answer.classList.remove('busy');answer.textContent='Ready for a new question.';
+  }
+  renderChatList();saveChats();
+}
+function newChat(){
+  stopPendingChatRequest();
+  sessionId=newSessionId();historyKey='hmcp_history_'+sessionId;
+  const chat={id:sessionId,title:'New chat',updated:Date.now(),messages:[]};
+  chats.unshift(chat);
+  conversationHistory=[];query.value='';modelTier.value='free';describeModelTier();
+  renderTranscript([]);answer.classList.remove('busy');answer.textContent='Ready for a new question.';
+  saveChats();renderChatList();query.focus();
+}
+function deleteChat(id){
+  const target=chats.find(chat=>chat.id===id);if(!target)return;
+  if(!window.confirm('Delete saved chat "'+(target.title||'New chat')+'"? This cannot be undone.'))return;
+  chats=chats.filter(chat=>chat.id!==id);
+  try{sessionStorage.removeItem('hmcp_history_'+id)}catch(error){}
+  if(id===sessionId){
+    const next=chats.slice().sort((a,b)=>b.updated-a.updated)[0];
+    if(next)openChat(next.id);else newChat();
+  }else{saveChats();renderChatList()}
+}
+document.getElementById('newChat').onclick=newChat;
+
 function firmwareUpdateAvailable(data,rawMessage){if(data?.update_available===true)return true;const evidence=Array.isArray(data?.evidence)?data.evidence:[];if(evidence.some(item=>item?.update_available===true||item?.data?.update_available===true||item?.result?.update_available===true))return true;return /\bfirmware update is available\b/i.test(rawMessage)||/\bhub firmware\s+\S+\s+is installed and\s+\S+\s+is available\b/i.test(rawMessage)}
 function choicePrompt(question,choice){const original=String(question||'').trim();const directAction=original.match(/^\s*(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||original.match(/^\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||'';if(directAction)return `${directAction} ${choice}`;const attribute=original.match(/\b(temperature|humidity|battery|power)\b/i)?.[1]||'';if(attribute)return `What is the ${choice} ${attribute}?`;return original?`${original} Device clarification: use exactly ${choice}.`:choice}
 function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
