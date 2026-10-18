@@ -4529,6 +4529,26 @@ class UnifiedMCPAgent:
                         )
                         if focused_explanation is not None:
                             increment_active_metric("requested_device_drift_guard")
+                            # Don't let a fallback short-circuit the mandatory
+                            # read-only command source completion in _final_answer.
+                            if pending_scoped_explanation_command_read(
+                                user_prompt, self.evidence.receipts(),
+                            ) is not None:
+                                completed = await self._final_answer(messages)
+                                if not re.search(
+                                    r"(?<![\\w-])" + re.escape(mismatched_label)
+                                    + r"(?![\\w-])",
+                                    completed, re.IGNORECASE,
+                                ):
+                                    return completed
+                                # If final synthesis still reintroduces the
+                                # unrelated subject, render the verified
+                                # target after the command read has completed.
+                                refreshed = render_requested_device_explanation(
+                                    user_prompt, self.evidence.receipts(),
+                                    mismatched_label,
+                                )
+                                return refreshed or focused_explanation
                             return focused_explanation
                     device_claim_decision = device_claim_grounding.decide(
                         mismatched_label
