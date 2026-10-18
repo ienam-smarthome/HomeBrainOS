@@ -16,6 +16,7 @@ from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
 from historical_causal_claim_guard import (
     assess_historical_claims, render_unverified_claim_warning,
+    reconcile_historical_dispatch_claim,
 )
 from source_analysis_completion import (
     source_analysis_failed, source_failure_summary, source_method_claim_gap,
@@ -380,6 +381,17 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     }
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
+    message, dispatch_reconciled = reconcile_historical_dispatch_claim(
+        message, request, evidence,
+    )
+    if dispatch_reconciled:
+        coverage["commandDispatchClaimReconciled"] = True
+        counters = metrics.setdefault("counters", {})
+        counters["historical_dispatch_claims_reconciled"] = int(
+            counters.get("historical_dispatch_claims_reconciled") or 0
+        ) + 1
+        if metrics.get("outcome") in (None, "success"):
+            metrics["outcome"] = "unresolved"
     if domain == "device_telemetry":
         clock_check = assess_telemetry_clock_consistency(evidence)
         if clock_check is not None:
