@@ -117,7 +117,8 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "Ask another question to replace this request." in response.text
     assert "Update hub firmware" in response.text
     assert "suggestedAction==='firmware-update'" in response.text
-    assert "JSON.stringify({query:text,history,session_id:sessionId,request_id:requestId,model_tier:selectedTier})" in response.text
+    assert "JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier})" in response.text
+    assert "requestSessionId===sessionId" in response.text
     assert "api/request-progress" in response.text
     assert "data.confirmation_required===true" in response.text
     assert "/please confirm/i.test(rawMessage)" not in response.text
