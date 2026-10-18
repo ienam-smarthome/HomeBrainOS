@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 import time
 from typing import Any
 
@@ -130,6 +131,82 @@ def _tool_calls(value: Any) -> list[dict[str, Any]]:
             if isinstance(c, dict) and isinstance(c.get("function"), dict)]
 
 
+def _project_provider_schema(name: str, schema: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Translate only known-safe root combinators, leaving originals intact.
+
+    Anthropic rejects top-level oneOf/anyOf/allOf in tool input_schema.
+    oneOf made solely of required-key alternatives can be expressed in a
+    tool description for generation, then *enforced* against the original
+    schema before any generated command reaches HomeBrain's executor.
+    Any other root composition fails closed: never silently widen schemas.
+    """
+    if "allOf" in schema or "anyOf" in schema:
+        raise ClaudeToolSchemaError(
+            f"Claude tool {name} uses unsupported root allOf/anyOf; "
+            "no provider request was sent."
+        )
+    projected = deepcopy(schema)
+    alternatives = projected.pop("oneOf", None)
+    if alternatives is None:
+        return projected, ""
+    if (
+        not isinstance(alternatives, list)
+        or len(alternatives) < 2
+        or not isinstance(projected.get("properties"), dict)
+    ):
+        raise ClaudeToolSchemaError(
+            f"Claude tool {name} has an untranslatable root oneOf; "
+            "no provider request was sent."
+        )
+    available_keys = projected["properties"]
+    validated: list[list[str]] = []
+    for branch in alternatives:
+        if (
+            not isinstance(branch, dict) or set(branch) != {"required"}
+            or not isinstance(branch["required"], list)
+            or not branch["required"]
+            or not all(
+                isinstance(key, str) and key in available_keys
+                for key in branch["required"]
+            )
+            or len(branch["required"]) != len(set(branch["required"]))
+        ):
+            raise ClaudeToolSchemaError(
+                f"Claude tool {name} has an untranslatable root oneOf branch; "
+                "no provider request was sent."
+            )
+        validated.append(branch["required"])
+    # Human-readable generated-input guidance, with all source properties
+    # and required keys still declared exactly as they were.
+    choices = " OR ".join(
+        "(" + " and ".join(f"`{key}`" for key in branch) + ")"
+        for branch in validated
+    )
+    return projected, (
+        "Use exactly ONE of the following parameter groups: "
+        + choices + ". Do not supply fields from multiple groups. "
+        "The host independently enforces this constraint."
+    )
+
+
+def _check_original_oneof(
+    tool_name: str, input_args: dict[str, Any], original_schema: dict[str, Any],
+) -> None:
+    """Guard a projected oneOf against model-generated arguments before MCP."""
+    choices = original_schema.get("oneOf")
+    if not isinstance(choices, list):
+        return
+    matched = sum(
+        all(key in input_args for key in branch["required"])
+        for branch in choices
+    )
+    if matched != 1:
+        raise ClaudeToolSchemaError(
+            f"Claude tool {tool_name} arguments violate original exclusive "
+            "parameter groups; no Hubitat command was sent."
+        )
+
+
 def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Check provider-facing tool roots without weakening Hubitat constraints.
 
@@ -171,11 +248,16 @@ def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 f"Claude tool {name} at index {index} has an invalid root "
                 "input_schema; no provider request was sent."
             )
-        # Preserve the original constraints, nested schemas and required list.
+        provider_schema, guidance = _project_provider_schema(name, parameters)
+        description = str(fn.get("description") or name)
+        if guidance:
+            description += "\n" + guidance
+        # Root oneOf is only removed from the provider-visible projection;
+        # all remaining constraints are identical to the original declaration.
         translated.append({
             "name": name,
-            "description": str(fn.get("description") or name)[:8192],
-            "input_schema": parameters,
+            "description": description[:8192],
+            "input_schema": provider_schema,
         })
     return translated
 
@@ -297,6 +379,14 @@ class AnthropicMessagesTransport:
             raise RuntimeError("Claude API key and model must be configured in add-on options")
         system, converted = convert_messages(messages)
         tool_declarations = convert_tools(tools)
+        # Trusted request-local originals: never validate against a model-
+        # authored or provider-projected schema when authorizing an action.
+        source_schemas = {
+            row["function"]["name"]: row["function"]["parameters"]
+            for row in tools
+            if isinstance(row, dict) and row.get("type") == "function"
+            and isinstance(row.get("function"), dict)
+        }
         request: dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4096,
@@ -344,6 +434,9 @@ class AnthropicMessagesTransport:
                 if not (isinstance(name, str) and isinstance(tool_id, str)
                         and tool_id.startswith("toolu_") and isinstance(arguments, dict)):
                     raise RuntimeError("Claude API returned an invalid tool-use block")
+                schema = source_schemas.get(name)
+                if isinstance(schema, dict):
+                    _check_original_oneof(name, arguments, schema)
                 calls.append({
                     "id": tool_id,
                     "function": {"name": name, "arguments": arguments},
