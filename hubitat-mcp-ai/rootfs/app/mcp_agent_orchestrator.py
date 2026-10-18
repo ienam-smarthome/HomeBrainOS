@@ -390,6 +390,16 @@ def _explicit_mutation_request(prompt: str) -> bool:
         return True
     if (_READ_QUERY_PREFIX.search(text) or historical_verification_lead) and not secondary_write:
         return False
+    # Explanatory prompts are never write requests merely because their
+    # subject is a command such as "switch=off" or "command-off".
+    # Independent later imperatives still win via secondary_write above.
+    explanatory_lead = re.match(
+        r"(?i)^\s*(?:explain|compare|distinguish|describe|identify|"
+        r"summarize|summarise|review|analyse|analyze|investigate|"
+        r"diagnose|reconstruct|interpret)\b", text,
+    )
+    if explanatory_lead and not secondary_write:
+        return False
     # An imperative investigative lead-in can still be a READ, even when
     # describing a historical command (e.g. "Investigate thoroughly why
     # the light turned on?"). The broad control-verb parser must not turn
@@ -4751,6 +4761,7 @@ class UnifiedMCPAgent:
             round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
             blocked_proposal_writes: list[str] = []
+            blocked_unauthorized_writes: list[str] = []
             round_has_mutation = False
             for call in calls:
                 function = call.get("function") or {}
@@ -4763,6 +4774,12 @@ class UnifiedMCPAgent:
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
+                if effect.mutates and not self._mutation_requested_by_user.get():
+                    # Model-generated actions do not grant authority to
+                    # mutate. Refuse the entire proposal round, including
+                    # companion reads, and keep this request read-only.
+                    blocked_unauthorized_writes.append(name)
+                    continue
                 if (task_plan is not None and task_plan.operation == "propose"
                         and effect.mutates):
                     blocked_proposal_writes.append(name)
@@ -4786,12 +4803,24 @@ class UnifiedMCPAgent:
                     and self.confirmation_policy.requires_confirmation(effect)
                 ):
                     sensitive.append((name, arguments))
-            if blocked_proposal_writes:
+            if blocked_unauthorized_writes or blocked_proposal_writes:
                 # Prevent a model-selected write from silently converting a
                 # read-only design request into a mutation or confirmation.
                 # Reject the complete model round atomically, including any
                 # companion reads, to preserve a coherent tool transcript.
-                increment_active_metric("proposal_write_attempts_blocked")
+                if blocked_unauthorized_writes:
+                    increment_active_metric("read_only_model_write_blocked")
+                else:
+                    increment_active_metric("proposal_write_attempts_blocked")
+                blocked_message = (
+                    "Read-only user request: model-proposed write was blocked. "
+                    "No Hubitat command was executed or queued. Continue "
+                    "with read-only evidence tools and a grounded conclusion."
+                    if blocked_unauthorized_writes else
+                    "Proposal-only task: no tool calls in this round "
+                    "were executed. Continue using read-only discovery "
+                    "and provide a proposal without changing Hubitat."
+                )
                 messages.append(assistant)
                 for call in calls:
                     name = str((call.get("function") or {}).get("name") or "")
@@ -4800,9 +4829,7 @@ class UnifiedMCPAgent:
                         "tool_name": name,
                         "content": json.dumps({
                             "error": (
-                                "Proposal-only task: no tool calls in this round "
-                                "were executed. Continue using read-only discovery "
-                                "and provide a proposal without changing Hubitat."
+                                blocked_message
                             ),
                         }),
                     })
