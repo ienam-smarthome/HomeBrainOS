@@ -192,7 +192,7 @@ const query=document.getElementById('query'),ask=document.getElementById('ask'),
 const modelTier=document.getElementById('modelTier'),modelTierNote=document.getElementById('modelTierNote');
 function describeModelTier(){const mode=modelTier.value;modelTierNote.textContent=mode==='free'?'Free: use the configured default model; never upgrade this request to paid.':mode==='paid'?'Paid: DeepSeek Pro only. No Gemma fallback or HomeBrain budget; Ollama account credits apply.':mode==='claude'?'Paid: Claude via the Anthropic API. Anthropic bills separately; no Gemma or DeepSeek fallback.':'Auto: opt-in to existing hybrid routing (may use Ollama paid credits).';}
 modelTier.value='free';modelTier.onchange=describeModelTier;describeModelTier();
-query.value=localStorage.getItem('hmcp_last_query')||'';
+query.value='';try{localStorage.removeItem('hmcp_last_query')}catch(error){}
 const apiPath=path=>`${location.pathname.replace(/\/?$/,'/')}${path}`;
 function healthClass(status){return status==='healthy'?'health-ok':status==='critical'?'health-critical':status==='attention'?'health-warn':'health-neutral'}
 function healthTime(value){if(!value)return'never';const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}
@@ -399,7 +399,6 @@ async function submit(text){
   const normalized=text.toLowerCase().replace(/[.!]/g,'').trim();
   if(suggestedAction==='firmware-update'&&['yes','yes please','proceed','do it'].includes(normalized))text='Install the available Hubitat firmware update';
   suggestedAction=null;stopAudio();query.value=text;
-  try{localStorage.setItem('hmcp_last_query',text)}catch(error){}
   if(activeRequest)activeRequest.abort();
   const controller=new AbortController();activeRequest=controller;
   const sequence=++requestSequence,requestId=newSessionId(),requestSessionId=sessionId;
