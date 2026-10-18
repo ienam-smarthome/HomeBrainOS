@@ -398,8 +398,18 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"summarize|summarise|review|analyse|analyze|investigate|"
         r"diagnose|reconstruct|interpret)\b", text,
     )
+    if explanatory_lead and secondary_write:
+        return True
     if explanatory_lead and not secondary_write:
         return False
+    # A request to execute an explicitly named device command is a real
+    # user authorization even when it does not spell out its argument values.
+    if re.match(
+        r"(?i)^\s*(?:please\s+)?(?:run|execute|issue|send)\s+"
+        r"(?:the\s+)?(?:(?:routine|sensitive)\s+)?"
+        r"(?:device|hubitat)\s+command\b", text,
+    ):
+        return True
     # An imperative investigative lead-in can still be a READ, even when
     # describing a historical command (e.g. "Investigate thoroughly why
     # the light turned on?"). The broad control-verb parser must not turn
@@ -4774,15 +4784,15 @@ class UnifiedMCPAgent:
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
+                if (task_plan is not None and task_plan.operation == "propose"
+                        and effect.mutates):
+                    blocked_proposal_writes.append(name)
+                    continue
                 if effect.mutates and not self._mutation_requested_by_user.get():
                     # Model-generated actions do not grant authority to
                     # mutate. Refuse the entire proposal round, including
                     # companion reads, and keep this request read-only.
                     blocked_unauthorized_writes.append(name)
-                    continue
-                if (task_plan is not None and task_plan.operation == "propose"
-                        and effect.mutates):
-                    blocked_proposal_writes.append(name)
                     continue
                 if (
                     not self.rule_write_enabled
