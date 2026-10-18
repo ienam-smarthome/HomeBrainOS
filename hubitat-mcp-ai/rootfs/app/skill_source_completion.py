@@ -174,3 +174,97 @@ def pending_historical_command_read(
 
 
 __all__.append("pending_historical_command_read")
+
+
+def pending_scoped_explanation_command_read(
+    request: str, receipts: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Fill command-source gaps for a dated, device-named explanation.
+
+    This complements (does not widen) the app-execution planner above. The
+    user's historical explanation need not know an internal numeric device ID.
+    A successful targeted device lookup MUST bind the exact label to its ID.
+    Only a single, observed identity and a previously observed 1..720h horizon
+    can justify the additional read. Historical absence is never inferred.
+    """
+    request_text = str(request or "")
+    if (
+        not re.search(r"\b20\d{2}\b", request_text)
+        or not re.search(r"(?i)\bcommand[- ](on|off)\b", request_text)
+        or not re.search(r"(?i)\b(?:evidence|event|history|issued|executed)\b", request_text)
+    ):
+        return None
+    action = re.search(r"(?i)\bcommand[- ](on|off)\b", request_text).group(1).lower()
+    verified: dict[str, str] = {}
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("evidence_kind") != "targeted_device_lookup":
+            continue
+        details = row.get("details")
+        state = details.get("reportedDeviceState") if isinstance(details, dict) else None
+        if not isinstance(state, dict):
+            continue
+        device_id = str(state.get("deviceId") or "").strip()
+        label = str(state.get("label") or "").strip()
+        if (
+            device_id.isdigit() and label and
+            re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])",
+                      request_text, re.IGNORECASE)
+        ):
+            verified[device_id] = label
+    if len(verified) != 1:
+        return None
+    device_id, label = next(iter(verified.items()))
+    horizons = []
+    for row in receipts:
+        if not isinstance(row, dict):
+            continue
+        operation = str(row.get("sub_tool") or (
+            row.get("arguments") or {}).get("tool") or "")
+        args = _args(row)
+        if operation != "hub_list_device_events":
+            continue
+        if str(args.get("deviceId") or "") != device_id:
+            continue
+        if str(args.get("attribute") or "").lower() == f"command-{action}":
+            return None  # A successful OR failed attempted read is final.
+        if row.get("success") is not True:
+            continue
+        hours = args.get("hoursBack", args.get("hours_back"))
+        try:
+            hours = int(hours)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if 1 <= hours <= 720:
+            horizons.append(hours)
+    if not horizons:
+        return None
+    return {
+        "deviceId": device_id, "label": label,
+        "action": action, "hoursBack": max(horizons),
+    }
+
+
+def block_unscoped_historical_logs(
+    request: str, receipts: list[dict[str, Any]],
+    tool_name: str, arguments: dict[str, Any],
+) -> bool:
+    """Avoid newest-first whole-hub logs contaminating dated device answers.
+
+    This is deliberately limited to single-target, explicit dated command
+    questions after a successful identity lookup. General audits and
+    exploratory searches remain unaffected.
+    """
+    if tool_name not in ("hub_read_diagnostics", "hub_manage_logs", "hub_get_logs"):
+        return False
+    if tool_name != "hub_get_logs" and str(arguments.get("tool") or "") != "hub_get_logs":
+        return False
+    inner = arguments.get("args") if isinstance(arguments.get("args"), dict) else arguments
+    if any(str(inner.get(k) or "").strip() for k in
+           ("deviceId", "appId", "pattern", "source", "deviceName")):
+        return False
+    return pending_scoped_explanation_command_read(request, receipts) is not None
+
+
+__all__ += ["pending_scoped_explanation_command_read", "block_unscoped_historical_logs"]
