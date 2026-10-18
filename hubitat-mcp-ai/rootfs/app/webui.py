@@ -392,9 +392,61 @@ function showAnswer(data){answer.replaceChildren();const meta=document.createEle
 async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadOneTimeCleanup();loadJournal()}
 const renderAnswer=showAnswer;showAnswer=data=>{renderAnswer(data);const question=query.value.trim();if(question){const asked=document.createElement('div');asked.style.cssText='color:var(--muted);font-size:13px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid #252525';asked.textContent='Question: '+question;answer.prepend(asked)}};
 let activeRequest=null,requestSequence=0;
-async function submit(text){text=(text||query.value).trim();if(!text)return;const normalized=text.toLowerCase().replace(/[.!]/g,'').trim();if(suggestedAction==='firmware-update'&&['yes','yes please','proceed','do it'].includes(normalized))text='Install the available Hubitat firmware update';suggestedAction=null;stopAudio();query.value=text;localStorage.setItem('hmcp_last_query',text);if(activeRequest)activeRequest.abort();const controller=new AbortController();activeRequest=controller;const sequence=++requestSequence;const requestId=newSessionId();const selectedTier=modelTier.value;const history=conversationHistory.slice(-8);answer.classList.add('busy');answer.textContent='Starting request… Ask another question to replace this request.';
-const progressTimer=setInterval(async()=>{if(sequence!==requestSequence||controller.signal.aborted)return;try{const response=await fetch(apiPath('api/request-progress')+'?session_id='+encodeURIComponent(sessionId)+'&request_id='+encodeURIComponent(requestId),{signal:controller.signal});if(!response.ok)return;const progress=await response.json();if(sequence===requestSequence&&activeRequest===controller&&!progress.completed&&progress.stage&&progress.stage!=='Waiting for request'){answer.textContent=progress.stage+' · '+(progress.elapsed_seconds||0).toFixed(0)+'s elapsed';}}catch(error){}},1500);
-try{const response=await fetch(apiPath('api/ask'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,history,session_id:sessionId,request_id:requestId,model_tier:selectedTier}),signal:controller.signal});const data=await jsonResponse(response);if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'HTTP '+response.status);if(sequence===requestSequence){conversationHistory.push({role:'user',content:text},{role:'assistant',content:data.message||data.detail||''});conversationHistory=conversationHistory.slice(-8);sessionStorage.setItem(historyKey,JSON.stringify(conversationHistory));showAnswer(data)}}catch(error){if(error.name!=='AbortError'&&sequence===requestSequence)showAnswer({success:false,route:'error',message:'Request failed: '+error.message})}finally{clearInterval(progressTimer);if(sequence===requestSequence){activeRequest=null;answer.classList.remove('busy');status()}}}
+// A saved reply is only a transcript; never restore stale mutation confirmation buttons.
+if(currentChat()?.messages?.length)openChat(sessionId);else{saveChats();renderChatList()}
+async function submit(text){
+  text=(text||query.value).trim();if(!text)return;
+  const normalized=text.toLowerCase().replace(/[.!]/g,'').trim();
+  if(suggestedAction==='firmware-update'&&['yes','yes please','proceed','do it'].includes(normalized))text='Install the available Hubitat firmware update';
+  suggestedAction=null;stopAudio();query.value=text;
+  try{localStorage.setItem('hmcp_last_query',text)}catch(error){}
+  if(activeRequest)activeRequest.abort();
+  const controller=new AbortController();activeRequest=controller;
+  const sequence=++requestSequence,requestId=newSessionId(),requestSessionId=sessionId;
+  const selectedTier=modelTier.value,history=conversationHistory.slice(-8),chat=currentChat();
+  if(chat)renderTranscript(chat.messages);
+  answer.classList.add('busy');answer.textContent='Starting request… Ask another question to replace this request.';
+  const progressTimer=setInterval(async()=>{
+    if(sequence!==requestSequence||controller.signal.aborted)return;
+    try{
+      const response=await fetch(apiPath('api/request-progress')+'?session_id='+encodeURIComponent(requestSessionId)+'&request_id='+encodeURIComponent(requestId),{signal:controller.signal});
+      if(!response.ok)return;
+      const progress=await response.json();
+      if(sequence===requestSequence&&activeRequest===controller&&!progress.completed&&progress.stage&&progress.stage!=='Waiting for request')
+        answer.textContent=progress.stage+' · '+(progress.elapsed_seconds||0).toFixed(0)+'s elapsed';
+    }catch(error){}
+  },1500);
+  try{
+    const response=await fetch(apiPath('api/ask'),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier}),
+      signal:controller.signal,
+    });
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'HTTP '+response.status);
+    if(sequence===requestSequence&&requestSessionId===sessionId){
+      const reply=String(data.message||data.detail||'');
+      conversationHistory.push({role:'user',content:text},{role:'assistant',content:reply});
+      conversationHistory=conversationHistory.slice(-8);
+      if(chat){
+        chat.messages.push({role:'user',content:text},{role:'assistant',content:reply});
+        chat.messages=chat.messages.slice(-CHAT_MESSAGE_LIMIT);
+        if(chat.title==='New chat')chat.title=text.slice(0,70);
+        chat.updated=Date.now();
+        renderTranscript(chat.messages.slice(0,-2));
+      }
+      saveChats();renderChatList();showAnswer(data);
+    }
+  }catch(error){
+    if(error.name!=='AbortError'&&sequence===requestSequence&&requestSessionId===sessionId)
+      showAnswer({success:false,route:'error',message:'Request failed: '+error.message});
+  }finally{
+    clearInterval(progressTimer);
+    if(sequence===requestSequence&&requestSessionId===sessionId){
+      activeRequest=null;answer.classList.remove('busy');status();
+    }
+  }
+}
 ask.onclick=()=>submit();query.onkeydown=event=>{if(event.key==='Enter')submit()};document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>submit(button.dataset.q));
 document.getElementById('refresh').onclick=async()=>{try{const data=await jsonResponse(await fetch(apiPath('api/refresh'),{method:'POST'}));answer.textContent=`MCP tools refreshed: ${data.tools}.`;status()}catch(error){answer.textContent='Refresh failed: '+error.message}};
 document.getElementById('runHealthAudit').onclick=async()=>{const button=document.getElementById('runHealthAudit');button.disabled=true;button.textContent='🩺 Checking…';try{const data=await jsonResponse(await fetch(apiPath('api/health-audit/run'),{method:'POST'}));renderHealthAuditV2(data);document.getElementById('healthAuditDetails').open=true}catch(error){document.getElementById('healthAuditMeta').textContent='System check failed: '+error.message}finally{button.disabled=false;button.textContent='🩺 Run system check now'}};
