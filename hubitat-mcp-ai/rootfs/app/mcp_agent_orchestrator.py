@@ -153,7 +153,11 @@ from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
-from skill_source_completion import pending_device_log_read, pending_historical_command_read
+from skill_source_completion import (
+    pending_device_log_read, pending_historical_command_read,
+    pending_scoped_explanation_command_read, block_unscoped_historical_logs,
+)
+from requested_device_explanation import render_requested_device_explanation
 from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
 from skill_investigation_followup import execute_unverified_next_reads
 from investigation_checkpoint import (
@@ -3418,8 +3422,13 @@ class UnifiedMCPAgent:
         # objective explicitly demands it. This reuses the existing device
         # history source implementation; it is not a new model/tool privilege.
         command_plan = (
-            pending_historical_command_read(
-                objective, self.evidence.receipts(),
+            (
+                pending_historical_command_read(
+                    objective, self.evidence.receipts(),
+                )
+                or pending_scoped_explanation_command_read(
+                    objective, self.evidence.receipts(),
+                )
             )
             if not _explicit_mutation_request(objective) else None
         )
@@ -4509,6 +4518,38 @@ class UnifiedMCPAgent:
                         known_devices,
                         receipt_device_ids | extract_event_reporter_device_ids(messages),
                     )
+                    if mismatched_label:
+                        # A broad unrelated log row is not a new user target.
+                        # Preserve a truthful, source-grounded explanation for
+                        # the explicitly requested device, without spending
+                        # another model round chasing a stray named sensor.
+                        focused_explanation = render_requested_device_explanation(
+                            user_prompt, self.evidence.receipts(),
+                            mismatched_label,
+                        )
+                        if focused_explanation is not None:
+                            increment_active_metric("requested_device_drift_guard")
+                            # Don't let a fallback short-circuit the mandatory
+                            # read-only command source completion in _final_answer.
+                            if pending_scoped_explanation_command_read(
+                                user_prompt, self.evidence.receipts(),
+                            ) is not None:
+                                completed = await self._final_answer(messages)
+                                if not re.search(
+                                    r"(?<![\w-])" + re.escape(mismatched_label)
+                                    + r"(?![\w-])",
+                                    completed, re.IGNORECASE,
+                                ):
+                                    return completed
+                                # If final synthesis still reintroduces the
+                                # unrelated subject, render the verified
+                                # target after the command read has completed.
+                                refreshed = render_requested_device_explanation(
+                                    user_prompt, self.evidence.receipts(),
+                                    mismatched_label,
+                                )
+                                return refreshed or focused_explanation
+                            return focused_explanation
                     device_claim_decision = device_claim_grounding.decide(
                         mismatched_label
                     )
@@ -5021,6 +5062,20 @@ class UnifiedMCPAgent:
                             "Use homebrain_device_history/homebrain_resolve_device for "
                             "the named subject, or a scoped labelFilter/roomFilter when "
                             "a genuinely new device identity is required."
+                        )
+                    })
+                elif block_unscoped_historical_logs(
+                    user_prompt, self.evidence.receipts(), name, arguments,
+                ):
+                    round_tool_failure = True
+                    increment_active_metric("unscoped_historical_logs_blocked")
+                    content = json.dumps({
+                        "error": (
+                            "This question names one device and a historical "
+                            "date. Unfiltered recent hub logs are unrelated to "
+                            "that time and cannot establish its command actor. "
+                            "Use target-scoped device event/command history "
+                            "and matching historical app logs if available."
                         )
                     })
                 elif missing_related_attribute:

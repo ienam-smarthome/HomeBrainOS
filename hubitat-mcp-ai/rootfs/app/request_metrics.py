@@ -90,6 +90,7 @@ class RequestMetrics:
         "historical_command_obligation_reads",
         "historical_command_obligation_unavailable",
         "read_only_model_write_blocked",
+        "requested_device_drift_guard", "unscoped_historical_logs_blocked",
         "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
         "causal_focal_window_reads", "causal_focal_window_evidence_recovered",
         "causal_focal_history_gap_stop",
