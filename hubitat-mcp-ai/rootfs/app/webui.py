@@ -403,7 +403,8 @@ async function submit(text){
   if(activeRequest)activeRequest.abort();
   const controller=new AbortController();activeRequest=controller;
   const sequence=++requestSequence,requestId=newSessionId(),requestSessionId=sessionId;
-  const selectedTier=modelTier.value,history=conversationHistory.slice(-8),chat=currentChat();
+  const selectedTier=modelTier.value;
+  const history=conversationHistory.slice(-8),chat=currentChat();
   if(chat)renderTranscript(chat.messages);
   answer.classList.add('busy');answer.textContent='Starting request… Ask another question to replace this request.';
   const progressTimer=setInterval(async()=>{
@@ -422,8 +423,7 @@ async function submit(text){
       body:JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier}),
       signal:controller.signal,
     });
-    const data=await jsonResponse(response);
-    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'HTTP '+response.status);
+    const data=await jsonResponse(response);if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'HTTP '+response.status);
     if(sequence===requestSequence&&requestSessionId===sessionId){
       const reply=String(data.message||data.detail||'');
       conversationHistory.push({role:'user',content:text},{role:'assistant',content:reply});
