@@ -214,4 +214,63 @@ def render_unverified_claim_warning(
     )
 
 
-__all__ = ["assess_historical_claims", "render_unverified_claim_warning"]
+_UNVERIFIED_DISPATCH_ASSERTION = re.compile(
+    r"(?i)\b(?:the\s+)?command\s+dispatch\s+"
+    r"(?:is|was|has\s+been)\s+(?:established|confirmed|verified)\b"
+)
+
+
+def reconcile_historical_dispatch_claim(
+    message: str, request: str, evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Do not mistake a recorded switch state for a dispatched command.
+
+    Only a successful, target-scoped command-history read containing a named
+    command event can support an unconditional command-dispatch assertion.
+    An empty command page does not prove that no command occurred.
+    """
+    from rule_machine_analysis import historical_rule_execution_request
+    if not historical_rule_execution_request(request):
+        return message, False
+    ids = re.findall(
+        r"(?i)\bdevice\s*(?:id\s*)?[#:]?\s*(\d{2,7})\b", request,
+    )
+    if len(set(ids)) != 1:
+        return message, False
+    device_id = ids[0]
+    observed = False
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if receipt.get("sub_tool") != "hub_list_device_events":
+            continue
+        outer = receipt.get("arguments")
+        args = outer.get("args") if isinstance(outer, dict) else {}
+        if not isinstance(args, dict):
+            continue
+        if (str(args.get("deviceId") or "") != device_id
+                or not str(args.get("attribute") or "").startswith("command-")):
+            continue
+        details = receipt.get("details")
+        rows = details.get("events") if isinstance(details, dict) else None
+        if isinstance(rows, list) and any(
+            isinstance(row, dict)
+            and str(row.get("name") or "").casefold()
+                == str(args["attribute"]).casefold()
+            for row in rows
+        ):
+            observed = True
+            break
+    if observed:
+        return message, False
+    corrected, count = _UNVERIFIED_DISPATCH_ASSERTION.subn(
+        "a device state transition is recorded, but command dispatch remains unverified",
+        str(message or ""),
+    )
+    return corrected, bool(count)
+
+
+__all__ = [
+    "assess_historical_claims", "render_unverified_claim_warning",
+    "reconcile_historical_dispatch_claim",
+]
