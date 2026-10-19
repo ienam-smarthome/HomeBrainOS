@@ -166,6 +166,7 @@ def focused_command_observation(prompt: str, evidence: list[dict[str, Any]]) -> 
 
 def incident_log_window_coverage(
     prompt: str, receipts: list[dict[str, Any]],
+    *, app_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Check whether any successful app-log *query* contains the local incident."""
     boundary = requested_event_boundary(prompt)
@@ -181,6 +182,8 @@ def incident_log_window_coverage(
             continue
         args = _args(row)
         if not str(args.get("appId") or "").isdigit():
+            continue
+        if app_id is not None and str(args.get("appId")) != str(app_id):
             continue
         start, end = _at(args.get("since")), _at(args.get("until"))
         if start is None or end is None:
