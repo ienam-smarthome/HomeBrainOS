@@ -311,6 +311,8 @@ function loadSavedChats(){
   }catch(error){return []}
 }
 let chats=loadSavedChats();
+// Empty tabs have no recorded conversation or draft and need not accumulate.
+chats=chats.filter(chat=>chat.messages.length>0||chat.id===sessionId);
 if(!chats.some(chat=>chat.id===sessionId)){
   let older=[];
   try{older=normalizedMessages(JSON.parse(sessionStorage.getItem(historyKey)||'[]'))}catch(error){}
@@ -392,6 +394,7 @@ function stopPendingChatRequest(){
 function openChat(id){
   const target=chats.find(chat=>chat.id===id);if(!target)return;
   stopPendingChatRequest();
+  chats=chats.filter(chat=>chat.id===id||chat.messages.length>0);
   sessionId=target.id;historyKey='hmcp_history_'+sessionId;
   conversationHistory=target.messages.slice(-8);
   query.value='';
@@ -411,6 +414,7 @@ function openChat(id){
 }
 function newChat(){
   stopPendingChatRequest();
+  chats=chats.filter(chat=>chat.messages.length>0);
   sessionId=newSessionId();historyKey='hmcp_history_'+sessionId;
   const chat={id:sessionId,title:'New chat',updated:Date.now(),messages:[]};
   chats.unshift(chat);
