@@ -33,6 +33,22 @@ def render_page(title: str, version: str) -> str:
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}.wrap{max-width:960px;margin:auto;padding:16px}h1{font-size:30px;margin:4px 0 10px}.card{background:var(--card);border-radius:14px;padding:12px;margin:8px 0}.row,.grid{display:flex;gap:8px;flex-wrap:wrap}.pill{padding:8px 12px;border-radius:999px;background:#3a3a3d;font-size:13px}.pill.ok{background:var(--green)}.pill.error{background:var(--red)}.pill strong{margin-left:4px}.status-card{padding:8px 10px;gap:6px;margin:8px 0}.status-card .pill{padding:5px 8px;font-size:11px;line-height:1.15}.status-card .pill strong{margin-left:3px;font-size:11px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.tile{background:var(--tile);border-radius:12px;padding:10px;min-width:0}.big{font-size:20px;font-weight:700;overflow-wrap:anywhere;word-break:break-word}.top-stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:7px}.top-stats .tile{margin:0;padding:7px 5px;min-height:66px;font-size:12px;line-height:1.15}.top-stats .big{font-size:19px}.top-stats .muted{font-size:10px;line-height:1.15;margin-top:2px}.quick-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:7px}.quick-grid button,.quick-grid .quick-link{margin:0;min-height:42px;padding:7px 5px;border-radius:10px;font-size:11px;line-height:1.15}.quick-link{display:flex;align-items:center;justify-content:center;background:#333;color:#fff;text-decoration:none;text-align:center}.muted{color:var(--muted);font-size:13px}input,button{width:100%;border:0;border-radius:12px;padding:14px;margin:7px 0;font:inherit}input{background:#fff;color:#111}button{background:var(--blue);color:#fff;cursor:pointer}.query-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:7px 0}.query-actions button{margin:0}.answer-options{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:6px 0}.answer-options label{margin:0}.browser-shortcut{display:none;width:auto;margin:0;padding:8px 10px;font-size:12px}.browser-shortcut.visible{display:inline-block}.secondary{background:#333}.confirm{background:var(--green)}.answer{background:#000;border-radius:12px;padding:14px;min-height:52px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.answer-meta{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}.badge{background:#243044;border-radius:999px;padding:4px 8px;font-size:12px}.outcome-badge{font-weight:700}.outcome-positive{background:#14532d;color:#bbf7d0}.outcome-warning{background:#78350f;color:#fde68a}.outcome-neutral{background:#3f3f46;color:#e4e4e7}.outcome-critical{background:#7f1d1d;color:#fecaca}.answer-text{white-space:pre-wrap}.technical{margin-top:12px;color:var(--muted)}.technical summary{cursor:pointer}.technical pre{white-space:pre-wrap;overflow:auto;max-height:260px;background:#111;padding:10px;border-radius:8px}.busy{opacity:.65}
 .chat-toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:2px 0 7px}
 .chat-toolbar strong{font-size:14px}.chat-toolbar button{width:auto;margin:0;padding:8px 12px;font-size:12px}
+.chat-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.chat-turn{background:#141416;border:1px solid #38383e;border-radius:10px;overflow:hidden}
+.chat-turn[hidden]{display:none}
+.chat-turn summary{display:flex;align-items:center;gap:7px;cursor:pointer;padding:10px 12px;list-style:none;min-width:0}
+.chat-turn summary::-webkit-details-marker{display:none}
+.chat-turn summary:before{content:"▸";color:#a3b6d1;flex:0 0 auto}
+.chat-turn[open]>summary:before{content:"▾"}
+.chat-summary-label{font-size:11px;color:#a3b6d1;flex:0 0 auto}
+.chat-summary-text{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.chat-turn-body{display:grid;gap:5px;padding:0 8px 8px}
+.chat-turn .chat-bubble{margin:0;max-height:none;white-space:normal}
+.chat-turn .chat-bubble .answer-text{font-size:12px;line-height:1.4}
+.chat-turn .chat-bubble .answer-text h3{font-size:14px}
+.chat-turn .chat-bubble .answer-text .answer-markdown-table{font-size:12px}
+.chat-current .answer{margin-top:0;border-radius:0 0 10px 10px}
+@media(max-width:520px){.chat-actions button{padding:7px 8px;font-size:11px}.chat-toolbar{align-items:flex-start}}
 .chat-list{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:thin}
 .chat-item{display:flex;gap:3px;flex:0 0 auto;min-width:0;max-width:210px}
 .chat-item .chat-pick{font-size:12px;max-width:175px;margin:0;padding:8px;background:#29292d;border:1px solid #45454c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -41,7 +57,7 @@ def render_page(title: str, version: str) -> str:
 .chat-notice{font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.4}
 .chat-transcript{display:grid;gap:6px;margin:0 0 8px}
 .chat-bubble{padding:9px 11px;border-radius:10px;background:#111;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:200px;overflow:auto}
-.chat-bubble.user{background:#263242}.chat-bubble strong{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+.chat-bubble.user{background:#263242}.chat-bubble>strong{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .model-tier-picker{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:7px 0 3px}
 .model-tier-picker label{font-size:12px;color:var(--muted)}
 .model-tier-picker select{width:auto;max-width:100%;background:#303033;color:#fff;border:1px solid #56565c;border-radius:9px;padding:8px 10px;font-size:13px}
@@ -99,7 +115,7 @@ def render_page(title: str, version: str) -> str:
 <a class="quick-link" href="http://192.168.1.239/hub2/createFullLocalBackup" target="_blank" rel="noopener noreferrer">💾 Local backup</a>
 </section>
 <section class="card">
-<div class="chat-toolbar"><strong>Chats</strong><button id="newChat" class="secondary" type="button">+ New chat</button></div>
+<div class="chat-toolbar"><strong>Chats</strong><div class="chat-actions"><button id="collapseChats" class="secondary" type="button">Collapse all</button><button id="expandChats" class="secondary" type="button">Expand all</button><button id="newChat" class="secondary" type="button">+ New chat</button></div></div>
 <div id="chatList" class="chat-list" aria-label="Saved conversations"></div>
 <div id="chatNotice" class="chat-notice">Chats are saved in this browser only, not synced or encrypted. Delete chats on shared devices.</div>
 <div id="chatTranscript" class="chat-transcript" aria-label="Earlier messages"></div>
@@ -116,7 +132,7 @@ def render_page(title: str, version: str) -> str:
 <div class="model-tier-note" id="modelTierNote" role="status">Free is the default. Paid uses Ollama account credits, with no additional HomeBrain budget. Claude bills your Anthropic API account separately.</div>
 <div class="query-actions"><button id="ask">Ask</button><button class="secondary" id="speak">🎤 Speak</button></div>
 <div class="answer-options"><label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud</label><button class="secondary browser-shortcut" id="openBrowser" type="button">🌐 Open in browser</button></div>
-<div class="answer" id="answer">Ready</div>
+<details id="currentTurn" class="chat-turn chat-current" hidden><summary id="currentTurnSummary">Latest answer</summary><div class="answer" id="answer">Ready</div></details>
 </section>
 <section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
 <section class="card" id="systemHealthCard">
@@ -295,6 +311,8 @@ function loadSavedChats(){
   }catch(error){return []}
 }
 let chats=loadSavedChats();
+// Empty tabs have no recorded conversation or draft and need not accumulate.
+chats=chats.filter(chat=>chat.messages.length>0||chat.id===sessionId);
 if(!chats.some(chat=>chat.id===sessionId)){
   let older=[];
   try{older=normalizedMessages(JSON.parse(sessionStorage.getItem(historyKey)||'[]'))}catch(error){}
@@ -331,17 +349,44 @@ function renderChatList(){
     item.append(pick,remove);chatList.appendChild(item);
   });
 }
+function chatSummary(label,text){
+  const summary=document.createElement('summary');
+  const category=document.createElement('span');category.className='chat-summary-label';category.textContent=label;
+  const excerpt=document.createElement('span');excerpt.className='chat-summary-text';
+  excerpt.textContent=String(text||'').replace(/\s+/g,' ').trim()||'Previous message';
+  excerpt.title=String(text||'');
+  summary.append(category,excerpt);
+  return summary;
+}
 function renderTranscript(messages){
   chatTranscript.replaceChildren();
-  for(const message of messages){
-    const box=document.createElement('div');
-    box.className='chat-bubble '+message.role;
-    const speaker=document.createElement('strong');
-    speaker.textContent=message.role==='user'?'You':'HomeBrain';
-    const body=document.createElement('div');body.textContent=message.content;
-    box.append(speaker,body);chatTranscript.appendChild(box);
+  // Keep each historical question and its answer together. Native details
+  // elements are keyboard-accessible, collapsed by default, and never
+  // alter the saved transcript or the last-eight-message API context.
+  for(let i=0;i<messages.length;){
+    const question=messages[i];
+    const hasReply=question.role==='user'&&messages[i+1]?.role==='assistant';
+    const rows=hasReply?[question,messages[i+1]]:[question];
+    i+=rows.length;
+    const turn=document.createElement('details');turn.className='chat-turn';
+    turn.appendChild(chatSummary(question.role==='user'?'Q':'A',question.content));
+    const body=document.createElement('div');body.className='chat-turn-body';
+    (hasReply?rows.slice(1):rows).forEach(row=>{
+      const bubble=document.createElement('div');bubble.className='chat-bubble '+row.role;
+      const speaker=document.createElement('strong');speaker.textContent=row.role==='user'?'You':'HomeBrain';
+      bubble.append(speaker,renderMessage(row.content));
+      body.appendChild(bubble);
+    });
+    turn.appendChild(body);chatTranscript.appendChild(turn);
   }
 }
+function setAllChatTurns(open){
+  chatTranscript.querySelectorAll('details.chat-turn').forEach(turn=>{turn.open=open});
+  const current=document.getElementById('currentTurn');
+  if(current&&!current.hidden)current.open=open;
+}
+document.getElementById('collapseChats').onclick=()=>setAllChatTurns(false);
+document.getElementById('expandChats').onclick=()=>setAllChatTurns(true);
 function stopPendingChatRequest(){
   if(activeRequest){activeRequest.abort();activeRequest=null;requestSequence++}
   stopAudio();suggestedAction=null;
@@ -349,6 +394,7 @@ function stopPendingChatRequest(){
 function openChat(id){
   const target=chats.find(chat=>chat.id===id);if(!target)return;
   stopPendingChatRequest();
+  chats=chats.filter(chat=>chat.id===id||chat.messages.length>0);
   sessionId=target.id;historyKey='hmcp_history_'+sessionId;
   conversationHistory=target.messages.slice(-8);
   query.value='';
@@ -362,16 +408,19 @@ function openChat(id){
     query.value='';
   }else{
     answer.classList.remove('busy');answer.textContent='Ready for a new question.';
+    document.getElementById('currentTurn').hidden=true;
   }
   renderChatList();saveChats();
 }
 function newChat(){
   stopPendingChatRequest();
+  chats=chats.filter(chat=>chat.messages.length>0);
   sessionId=newSessionId();historyKey='hmcp_history_'+sessionId;
   const chat={id:sessionId,title:'New chat',updated:Date.now(),messages:[]};
   chats.unshift(chat);
   conversationHistory=[];query.value='';modelTier.value='free';describeModelTier();
   renderTranscript([]);answer.classList.remove('busy');answer.textContent='Ready for a new question.';
+  document.getElementById('currentTurn').hidden=true;
   saveChats();renderChatList();query.focus();
 }
 function deleteChat(id){
@@ -388,9 +437,17 @@ document.getElementById('newChat').onclick=newChat;
 
 function firmwareUpdateAvailable(data,rawMessage){if(data?.update_available===true)return true;const evidence=Array.isArray(data?.evidence)?data.evidence:[];if(evidence.some(item=>item?.update_available===true||item?.data?.update_available===true||item?.result?.update_available===true))return true;return /\bfirmware update is available\b/i.test(rawMessage)||/\bhub firmware\s+\S+\s+is installed and\s+\S+\s+is available\b/i.test(rawMessage)}
 function choicePrompt(question,choice){const original=String(question||'').trim();const directAction=original.match(/^\s*(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||original.match(/^\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||'';if(directAction)return `${directAction} ${choice}`;const attribute=original.match(/\b(temperature|humidity|battery|power)\b/i)?.[1]||'';if(attribute)return `What is the ${choice} ${attribute}?`;return original?`${original} Device clarification: use exactly ${choice}.`:choice}
-function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=data.route==='saved-chat'?null:firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&data.route!=='saved-chat'&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
+function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route==='saved-chat'?null:data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=data.route==='saved-chat'?null:firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&data.route!=='saved-chat'&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
 async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadOneTimeCleanup();loadJournal()}
-const renderAnswer=showAnswer;showAnswer=data=>{renderAnswer(data);const question=query.value.trim();if(question){const asked=document.createElement('div');asked.style.cssText='color:var(--muted);font-size:13px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid #252525';asked.textContent='Question: '+question;answer.prepend(asked)}};
+const renderAnswer=showAnswer;showAnswer=data=>{
+  renderAnswer(data);
+  const current=document.getElementById('currentTurn');
+  current.hidden=false;current.open=data.route!=='saved-chat';
+  const question=query.value.trim();
+  const summary=document.getElementById('currentTurnSummary');
+  summary.replaceWith(chatSummary('Q',question||'Latest answer'));
+  current.querySelector('summary').id='currentTurnSummary';
+};
 let activeRequest=null,requestSequence=0;
 // A saved reply is only a transcript; never restore stale mutation confirmation buttons.
 if(currentChat()?.messages?.length)openChat(sessionId);else{saveChats();renderChatList()}
@@ -405,6 +462,9 @@ async function submit(text){
   const selectedTier=modelTier.value;
   const history=conversationHistory.slice(-8),chat=currentChat();
   if(chat)renderTranscript(chat.messages);
+  const latest=document.getElementById('currentTurn');latest.hidden=false;latest.open=true;
+  document.getElementById('currentTurnSummary').replaceWith(chatSummary('Q',text));
+  latest.querySelector('summary').id='currentTurnSummary';
   answer.classList.add('busy');answer.textContent='Starting request… Ask another question to replace this request.';
   const progressTimer=setInterval(async()=>{
     if(sequence!==requestSequence||controller.signal.aborted)return;

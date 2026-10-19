@@ -117,7 +117,7 @@ def focused_command_observation(prompt: str, evidence: list[dict[str, Any]]) -> 
         return None
     target_utc = target.astimezone(timezone.utc)
     explicitly_named_ids = set(_DEVICE_ID.findall(prompt))
-    matches: list[tuple[str, str, str, str]] = []
+    matches: list[tuple[str, str, str, str, str]] = []
     for row in evidence:
         if not isinstance(row, dict):
             continue
@@ -141,12 +141,12 @@ def focused_command_observation(prompt: str, evidence: list[dict[str, Any]]) -> 
             # The original user intent must mention this action, not a model guess.
             if not re.search(r"\b" + re.escape(action) + r"\b", str(prompt), re.I):
                 continue
-            matches.append((device_id, action, str(app_id), at.isoformat()))
+            matches.append((device_id, action, str(app_id), at.isoformat(), str(issuer.get('name') or '')[:120]))
     if not matches:
         return None
     # Multiple issuers or multiple target devices make attribution ambiguous.
     unique = set(matches)
-    if len({(d,a,app) for d,a,app,_ in unique}) != 1:
+    if len({tuple(item[:3]) for item in unique}) != 1:
         return None
     chosen = min(unique, key=lambda rec: abs(
         (_at(rec[3]).astimezone(timezone.utc)-target_utc).total_seconds()
@@ -155,6 +155,7 @@ def focused_command_observation(prompt: str, evidence: list[dict[str, Any]]) -> 
         "deviceId": chosen[0],
         "command": chosen[1],
         "recordedIssuerAppId": chosen[2],
+        "recordedIssuerName": chosen[4],
         "recordedCommandTimestamp": chosen[3],
         "source": "same-turn Hubitat device-event command record",
         "commandRecorded": True,
@@ -218,6 +219,31 @@ def calibrate_command_causality(
     text = str(message or "")
     fixes: list[str] = []
     if recorded:
+        # Only reconcile a denial of the *same named command issuer* actually
+        # observed in this request. Other uncertainty (triggers, delivery,
+        # physical action) must not be rewritten as verified.
+        issuer_name = str(recorded.get("recordedIssuerName") or "").strip()
+        denial = re.compile(
+            r'(?im)^I (?:could not|cannot|couldn.t) verify the claim about '
+            r'["“](?P<issuer>[^"”\n]{1,160})["”] against evidence actually '
+            r'collected for that device this turn, so I will not provide '
+            r'an unverified answer\.?(?:\n\n|$)'
+        )
+        match = denial.search(text)
+        if (
+            match is not None and issuer_name
+            and match.group("issuer").strip().casefold() == issuer_name.casefold()
+        ):
+            text = (
+                text[:match.start()]
+                + "**Recorded command verified:** Hubitat recorded app "
+                + recorded["recordedIssuerAppId"]
+                + " issuing `command-" + recorded["command"] + "` at "
+                + recorded["recordedCommandTimestamp"]
+                + ". Its upstream trigger and physical outcome remain unverified.\n\n"
+                + text[match.end():]
+            )
+            fixes.append("contradictory_recorded_issuer_denial")
         patterns = (
             (r"(?i)\bthe evidence establishes that this was an automated action rather than a physical or external interaction\b",
              "the records identify a Hubitat app issuing an OFF command; independent physical and external actions were not exhaustively checked"),
