@@ -14,6 +14,10 @@ from scheduler_identity_reconciliation import (
     reconcile_scheduler_candidates,
     render_scheduler_candidate_reconciliation,
 )
+from automation_dependency_probe import (
+    inspect_automation_dependencies,
+    render_dependency_findings,
+)
 from frozen_core import health_audit_service_core as _core
 
 
@@ -872,6 +876,7 @@ def render_comprehensive_system_audit(
     ai_advisory: str | None = None,
     scheduled_jobs: dict[str, Any] | None = None,
     scheduler_error: str | None = None,
+    automation_dependencies: dict[str, Any] | None = None,
 ) -> str:
     """Render checked data, neutral quiet-device observations and repair status."""
     sections = snapshot.get("sections") or {}
@@ -1150,6 +1155,7 @@ def render_comprehensive_system_audit(
         "", render_scheduler_candidate_reconciliation(
             reconcile_scheduler_candidates(scheduled_jobs, automations),
         ),
+        "", render_dependency_findings(automation_dependencies),
     ))
     lines.extend(("", "### Performance leaders (not automatic faults)"))
     if isinstance(performance, dict):
@@ -1485,6 +1491,7 @@ async def run_comprehensive_chat_audit(
     performance_error: str | None = None
     job_summary: dict[str, Any] | None = None
     job_error: str | None = None
+    automation_dependencies: dict[str, Any] | None = None
     targeted_logs: list[dict[str, Any]] = []
     historical_logs: dict[str, Any] | None = None
     context_reconciliation: dict[str, Any] | None = None
@@ -1789,12 +1796,32 @@ async def run_comprehensive_chat_audit(
                     "summary": f"live-context cross-check failed: {type(exc).__name__}",
                 })
 
+    # Deterministic read-only follow-up: only IDs from current inventory
+    # and scheduler evidence, with a strict wall-clock and concurrency budget.
+    # Current app configuration does not establish callback execution.
+    if isinstance(job_summary, dict):
+        try:
+            automation_dependencies, dependency_receipts = (
+                await inspect_automation_dependencies(
+                    mcp,
+                    (snapshot.get("sections") or {}).get("automations"),
+                    job_summary, checked_at=checked_at, max_elapsed=6.0,
+                )
+            )
+            evidence.extend(dependency_receipts)
+        except Exception as exc:
+            automation_dependencies = {
+                "selected": [], "sourceStatus": "error",
+                "failure": type(exc).__name__,
+            }
+
     message = render_comprehensive_system_audit(
         snapshot, stats, performance_error=performance_error,
         targeted_logs=targeted_logs, historical_logs=historical_logs,
         context_reconciliation=context_reconciliation,
         sensecap_known_unpowered=sensecap_known_unpowered,
         scheduled_jobs=job_summary, scheduler_error=job_error,
+        automation_dependencies=automation_dependencies,
     )
     if callable(analysis_chat):
         # Explicit opt-in: one short, tool-free model pass, never executing
@@ -1844,6 +1871,7 @@ async def run_comprehensive_chat_audit(
                     context_reconciliation=context_reconciliation,
                     sensecap_known_unpowered=sensecap_known_unpowered,
                     scheduled_jobs=job_summary, scheduler_error=job_error,
+                    automation_dependencies=automation_dependencies,
                     ai_advisory=advisory,
                 )
                 evidence.append({
