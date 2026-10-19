@@ -151,7 +151,7 @@ def _explicit_action_ids(page: dict[str, Any]) -> list[str]:
         if not isinstance(section, dict):
             continue
         title = str(section.get("title") or "")
-        if re.search(r"(?i)\b(?:action|then)\b", title):
+        if re.search(r"(?i)\b(?:actions?|then)\b", title):
             visit(section.get("inputs", []), True, 0)
             visit(section.get("devices", []), True, 0)
     return sorted(found, key=int)[:20]
