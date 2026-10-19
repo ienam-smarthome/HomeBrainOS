@@ -39,6 +39,7 @@ from health_audit_service import (
     run_comprehensive_chat_audit,
 )
 from investigation_intelligence import plan_investigation, assess_investigation
+from composite_system_audit_policy import is_cross_domain_hub_audit_request
 from shared_investigation_completion import apply_shared_investigation_completion
 from history_time_windows import (
     parse_history_window_request,
@@ -575,9 +576,11 @@ async def _agent_request(request: ChatRequest) -> Any:
         broad_automation_diagnostic = is_broad_automation_runtime_diagnostic(
             request.message
         )
-        if (not is_whole_hub_optimization_request(request.message)
-                and (is_comprehensive_system_audit_request(request.message)
-                     or broad_automation_diagnostic)):
+        cross_domain_audit = is_cross_domain_hub_audit_request(request.message)
+        if (cross_domain_audit or
+                (not is_whole_hub_optimization_request(request.message)
+                 and (is_comprehensive_system_audit_request(request.message)
+                      or broad_automation_diagnostic))):
             # Broad failures receive the existing evidence-rich read-only
             # System Check, plus an optional tool-free AI synthesis. This is
             # separate from the manual audit's existing opt-in setting.
@@ -643,6 +646,7 @@ def _needs_investigation_deadline(prompt: str) -> bool:
         return False
     return bool(
         is_broad_performance_request(prompt)
+        or is_cross_domain_hub_audit_request(prompt)
         or is_comprehensive_system_audit_request(prompt)
         or is_broad_automation_runtime_diagnostic(prompt)
         or model_led_investigation_request(prompt)
