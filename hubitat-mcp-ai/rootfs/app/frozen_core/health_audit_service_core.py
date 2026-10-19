@@ -1229,6 +1229,26 @@ class HealthAuditService:
                         "attention_count": len(attention),
                         "disabled_count": int(counts.get("disabled") or 0),
                         "attention": attention,
+                        # Save a bounded, evidence-derived identity/status
+                        # index for later scheduler-key reconciliation. This
+                        # records installed configuration metadata only,
+                        # never establishes job ownership or rule execution.
+                        "inventory_identities": [
+                            {
+                                "id": str(item["id"]),
+                                "name": str(
+                                    item.get("display_name")
+                                    or item.get("name") or ""
+                                )[:100],
+                                "type": str(item.get("type") or "app"),
+                                "status": str(item.get("status") or "unknown"),
+                                "status_basis": str(
+                                    item.get("status_basis") or "not reported"
+                                ),
+                            }
+                            for item in automation.automation_items[:500]
+                            if str(item.get("id") or "").isdigit()
+                        ],
                     }
                     for item in attention:
                         status = str(item.get("status") or "unknown")
