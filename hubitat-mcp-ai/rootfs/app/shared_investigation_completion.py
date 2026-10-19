@@ -12,6 +12,10 @@ import re
 from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
+from historical_command_source_contract import (
+    focused_command_observation, incident_log_window_coverage,
+    calibrate_command_causality,
+)
 from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
 from historical_causal_claim_guard import (
@@ -129,7 +133,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     # This final historical gate must not turn proposal-only read requests into
     # historical-cause investigations merely for mentioning rule triggers.
     request_text = str(request or "").strip().casefold()
-    causal = is_causal_investigation(request) and (
+    # Requests to compare *who issued a command* are causal provenance
+    # investigations even if they don't contain the literal words "why",
+    # "cause" or "trigger". The previous grammar silently skipped the
+    # final gate whenever an upstream stage omitted a coverage object.
+    command_issuer_intent = bool(re.search(
+        r"\b(?:command\s+(?:issuers?|producers?|origins?|sources?)|"
+        r"who\s+(?:issued|sent|called)\s+(?:the\s+)?(?:on|off)\s+command)\b",
+        request_text,
+    ))
+    causal = (is_causal_investigation(request) or command_issuer_intent) and (
         request_text.endswith("?") or request_text.startswith((
             "why ", "investigate ", "explain ", "analyse ", "analyze ",
             "diagnose ", "determine ", "what caused ", "what triggered ",
@@ -341,6 +354,21 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     else:
         existing = {}
     source_coverage = assess_task_source_coverage(required, evidence)
+    # Positive, target-scoped command events are a different proof dimension
+    # from source availability and physical/transport causation. In particular,
+    # a mixed history page may record an app producer while its truncation
+    # still prevents claiming complete historical coverage.
+    command_observation = (
+        focused_command_observation(request, evidence)
+        if causal else None
+    )
+    incident_log_window = (
+        incident_log_window_coverage(
+            request, evidence,
+            app_id=(command_observation or {}).get("recordedIssuerAppId"),
+        )
+        if causal else None
+    )
     integrity = _historical_integrity_issues(evidence)
     missing = list(source_coverage.missing)
 
@@ -373,6 +401,10 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         "assessmentScope": "all-api-routes-read-only",
         "sourceCoverage": source_coverage.to_dict(),
         "sourceIntegrityWarnings": integrity,
+        **({"recordedCommandProvenance": command_observation}
+           if command_observation is not None else {}),
+        **({"incidentAppLogWindow": incident_log_window}
+           if incident_log_window is not None else {}),
         "causalInitiatorVerified": None,
         "completionNote": (
             "A successful tool request proves that a source was queried, not "
@@ -381,6 +413,12 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     }
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
+    if command_observation is not None or incident_log_window is not None:
+        message, calibrated = calibrate_command_causality(
+            message, command_observation, incident_log_window,
+        )
+        if calibrated:
+            coverage["causalClaimsReconciled"] = calibrated
     message, dispatch_reconciled = reconcile_historical_dispatch_claim(
         message, request, evidence,
     )
