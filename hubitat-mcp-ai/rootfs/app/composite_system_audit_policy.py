@@ -21,6 +21,11 @@ _ACTION = re.compile(
     r"analys\w*|analyz\w*|optimis\w*|optimiz\w*|"
     r"recommend\w*|find\s+(?:issues|problems|faults))\b", re.I,
 )
+_CONFIG_DEPENDENCY = re.compile(
+    r"\b(?:configur\w*|dependenc\w*|triggers?|targets?|overlap\w*|"
+    r"shared\s+(?:devices?|actions?))\b", re.I,
+)
+
 _DOMAINS = {
     "health": re.compile(r"\b(?:health|firmware|memory|backup|temperature|stability|uptime)\b", re.I),
     "logs": re.compile(r"\b(?:logs?|errors?|warnings?|exceptions?|failures?|faults?)\b", re.I),
@@ -41,12 +46,21 @@ def is_cross_domain_hub_audit_request(question: str) -> bool:
     present = {name for name, pattern in _DOMAINS.items() if pattern.search(text)}
     # Distinguish a multi-domain reliability review from a review of just
     # performance, just scheduler ownership, or a single device's status.
-    return bool(
+    conventional_audit = (
         len(present) >= 4
         and "logs" in present
         and "automation" in present
         and ("devices" in present or "health" in present)
     )
+    # A full-hub dependency audit legitimately spans scheduler, installed
+    # automations and device action targets without explicitly asking for logs.
+    # Requiring the literal word "logs" incorrectly sent these requests to the
+    # iterative model agent instead of the deterministic configuration probe.
+    configuration_audit = (
+        {"automation", "scheduler", "devices"} <= present
+        and bool(_CONFIG_DEPENDENCY.search(text))
+    )
+    return conventional_audit or configuration_audit
 
 
 __all__ = ["is_cross_domain_hub_audit_request"]
