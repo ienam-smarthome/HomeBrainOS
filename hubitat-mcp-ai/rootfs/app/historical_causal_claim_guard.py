@@ -238,6 +238,19 @@ def reconcile_historical_dispatch_claim(
     if len(set(ids)) != 1:
         return message, False
     device_id = ids[0]
+    # A verified mixed event page can be just as authoritative about a
+    # recorded Hubitat off()/on() invocation as an attribute-filtered query.
+    # Source coverage must never claim missing command history merely because
+    # the MCP server returned the event inside an unfiltered device page.
+    from historical_command_source_contract import (
+        focused_command_observation,
+    )
+    observed_command = focused_command_observation(request, evidence)
+    if (
+        observed_command is not None
+        and observed_command["deviceId"] == device_id
+    ):
+        return message, False
     observed = False
     for receipt in evidence:
         if not isinstance(receipt, dict) or receipt.get("success") is not True:
