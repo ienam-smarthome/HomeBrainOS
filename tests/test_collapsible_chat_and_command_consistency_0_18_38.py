@@ -131,7 +131,7 @@ setAllChatTurns(false);
 if(chatTranscript.children.some(x=>x.open)||elems.currentTurn.open)throw Error('Collapse all failed');
 elems.currentTurn.hidden=true;
 setAllChatTurns(true);
-if(!elems.currentTurn.open)throw Error('Unexpected current state');
+if(elems.currentTurn.open)throw Error('Hidden latest turn must not be expanded');
 """
     file = tmp_path / "chat_accordion_test.js"
     file.write_text(node_test, encoding="utf-8")
