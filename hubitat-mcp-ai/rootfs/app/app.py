@@ -671,6 +671,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             and requested_groovy_app_id(request.message) is None
             and plan_investigation(request.message) is None
             and not is_comprehensive_system_audit_request(request.message)
+            and not is_cross_domain_hub_audit_request(request.message)
             and not is_broad_automation_runtime_diagnostic(request.message)
             and not is_whole_hub_optimization_request(request.message)
         ):
