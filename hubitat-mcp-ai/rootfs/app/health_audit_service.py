@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from automation_diagnostic_policy import is_targeted_device_transition_investigation
+from performance_job_analysis import summarize_job_workload
+from audit_priority_planner import render_audit_priorities, render_audit_scheduled_jobs
 from frozen_core import health_audit_service_core as _core
 
 
@@ -864,6 +866,8 @@ def render_comprehensive_system_audit(
     context_reconciliation: dict[str, Any] | None = None,
     sensecap_known_unpowered: bool = False,
     ai_advisory: str | None = None,
+    scheduled_jobs: dict[str, Any] | None = None,
+    scheduler_error: str | None = None,
 ) -> str:
     """Render checked data, neutral quiet-device observations and repair status."""
     sections = snapshot.get("sections") or {}
@@ -890,6 +894,11 @@ def render_comprehensive_system_audit(
         "These may overlap the main alerts; log rows are not separate outages.",
         f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
         "**Read-only:** no devices, rules, apps or settings have been changed.",
+        "",
+        render_audit_priorities(
+            snapshot, targeted_logs,
+            sensecap_known_unpowered=sensecap_known_unpowered,
+        ),
         "",
         "### Coverage",
         f"- Devices: {devices.get('total', 'unavailable')} in the MCP-visible "
@@ -1130,6 +1139,11 @@ def render_comprehensive_system_audit(
     else:
         lines.append("- Performance scope is unknown because that source was unavailable.")
 
+    lines.extend((
+        "", render_audit_scheduled_jobs(
+            scheduled_jobs, unavailable=scheduler_error,
+        ),
+    ))
     lines.extend(("", "### Performance leaders (not automatic faults)"))
     if isinstance(performance, dict):
         for kind, key in (("Device", "deviceStats"), ("App", "appStats")):
@@ -1462,6 +1476,8 @@ async def run_comprehensive_chat_audit(
 
     stats: dict[str, Any] | None = None
     performance_error: str | None = None
+    job_summary: dict[str, Any] | None = None
+    job_error: str | None = None
     targeted_logs: list[dict[str, Any]] = []
     historical_logs: dict[str, Any] | None = None
     context_reconciliation: dict[str, Any] | None = None
@@ -1501,6 +1517,56 @@ async def run_comprehensive_chat_audit(
                     if valid_performance else "performance read unavailable or incomplete"
                 ),
             })
+
+            # A comprehensive audit must not claim to inspect the scheduler
+            # without retrieving its live queued-job evidence. Use the same
+            # existing read-only diagnostics gateway; bound latency and
+            # preserve a precise source receipt if the tool is unavailable.
+            job_args = _gateway_arguments(gateway, "hub_get_jobs", {})
+            job_started = time.monotonic()
+            try:
+                jobs_response = await asyncio.wait_for(
+                    mcp.call_tool(gateway.name, job_args), timeout=4.0,
+                )
+                if not tool_succeeded(jobs_response):
+                    raise ValueError("scheduler jobs read failed")
+                job_summary = summarize_job_workload(jobs_response.data)
+                if job_summary.get("status") != "parsed":
+                    raise ValueError(
+                        str(job_summary.get("reason") or "unknown scheduler response")
+                    )
+                evidence.append({
+                    "tool": gateway.name,
+                    "sub_tool": "hub_get_jobs",
+                    "arguments": job_args,
+                    "timestamp": checked_at,
+                    "success": True,
+                    "supports_live_claim": True,
+                    "evidence_kind": "chat_audit_scheduler_jobs",
+                    "elapsed_ms": round((time.monotonic() - job_started) * 1000),
+                    "mutates": False,
+                    "effect": "read",
+                    "summary": (
+                        f"{job_summary['rowsExamined']} scheduler rows analysed; "
+                        f"{job_summary['reportedJobs']} reported"
+                    ),
+                })
+            except Exception as exc:
+                job_summary = None
+                job_error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                evidence.append({
+                    "tool": gateway.name,
+                    "sub_tool": "hub_get_jobs",
+                    "arguments": job_args,
+                    "timestamp": checked_at,
+                    "success": False,
+                    "supports_live_claim": False,
+                    "evidence_kind": "chat_audit_scheduler_jobs",
+                    "elapsed_ms": round((time.monotonic() - job_started) * 1000),
+                    "mutates": False,
+                    "effect": "read",
+                    "summary": "Scheduler source unavailable: " + job_error,
+                })
 
             for target in _fault_first_log_targets(
                 snapshot, stats, previous_snapshot=previous_snapshot,
@@ -1721,6 +1787,7 @@ async def run_comprehensive_chat_audit(
         targeted_logs=targeted_logs, historical_logs=historical_logs,
         context_reconciliation=context_reconciliation,
         sensecap_known_unpowered=sensecap_known_unpowered,
+        scheduled_jobs=job_summary, scheduler_error=job_error,
     )
     if callable(analysis_chat):
         # Explicit opt-in: one short, tool-free model pass, never executing
@@ -1769,6 +1836,7 @@ async def run_comprehensive_chat_audit(
                     targeted_logs=targeted_logs, historical_logs=historical_logs,
                     context_reconciliation=context_reconciliation,
                     sensecap_known_unpowered=sensecap_known_unpowered,
+                    scheduled_jobs=job_summary, scheduler_error=job_error,
                     ai_advisory=advisory,
                 )
                 evidence.append({
