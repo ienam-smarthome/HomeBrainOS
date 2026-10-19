@@ -10,6 +10,10 @@ from typing import Any
 from automation_diagnostic_policy import is_targeted_device_transition_investigation
 from performance_job_analysis import summarize_job_workload
 from audit_priority_planner import render_audit_priorities, render_audit_scheduled_jobs
+from scheduler_identity_reconciliation import (
+    reconcile_scheduler_candidates,
+    render_scheduler_candidate_reconciliation,
+)
 from frozen_core import health_audit_service_core as _core
 
 
@@ -1142,6 +1146,9 @@ def render_comprehensive_system_audit(
     lines.extend((
         "", render_audit_scheduled_jobs(
             scheduled_jobs, unavailable=scheduler_error,
+        ),
+        "", render_scheduler_candidate_reconciliation(
+            reconcile_scheduler_candidates(scheduled_jobs, automations),
         ),
     ))
     lines.extend(("", "### Performance leaders (not automatic faults)"))
