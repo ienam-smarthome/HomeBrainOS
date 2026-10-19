@@ -133,7 +133,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     # This final historical gate must not turn proposal-only read requests into
     # historical-cause investigations merely for mentioning rule triggers.
     request_text = str(request or "").strip().casefold()
-    causal = is_causal_investigation(request) and (
+    # Requests to compare *who issued a command* are causal provenance
+    # investigations even if they don't contain the literal words "why",
+    # "cause" or "trigger". The previous grammar silently skipped the
+    # final gate whenever an upstream stage omitted a coverage object.
+    command_issuer_intent = bool(re.search(
+        r"\b(?:command\s+(?:issuers?|producers?|origins?|sources?)|"
+        r"who\s+(?:issued|sent|called)\s+(?:the\s+)?(?:on|off)\s+command)\b",
+        request_text,
+    ))
+    causal = (is_causal_investigation(request) or command_issuer_intent) and (
         request_text.endswith("?") or request_text.startswith((
             "why ", "investigate ", "explain ", "analyse ", "analyze ",
             "diagnose ", "determine ", "what caused ", "what triggered ",
