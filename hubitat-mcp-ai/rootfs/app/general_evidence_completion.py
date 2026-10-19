@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from typing import Any
+from historical_command_source_contract import mixed_command_events
 
 EVIDENCE_KINDS = frozenset({
     "device_state",
@@ -147,6 +148,13 @@ def assess_task_source_coverage(
         kind = _kind(row)
         if kind:
             seen.add(kind)
+        # A single unfiltered, target-scoped Hubitat device-event read can
+        # return both switch events and real command-on/off records. This is
+        # positive command-history evidence even though the request omitted
+        # attribute=command-off. Do not count empty generic history pages,
+        # malformed events or mere model narration as command source checks.
+        if mixed_command_events(row):
+            seen.add("command_history")
     checked = tuple(kind for kind in needs if kind in seen)
     missing = tuple(kind for kind in needs if kind not in seen)
     return EvidenceCoverage(needs, checked, missing)
