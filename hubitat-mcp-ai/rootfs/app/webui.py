@@ -57,7 +57,7 @@ def render_page(title: str, version: str) -> str:
 .chat-notice{font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.4}
 .chat-transcript{display:grid;gap:6px;margin:0 0 8px}
 .chat-bubble{padding:9px 11px;border-radius:10px;background:#111;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:200px;overflow:auto}
-.chat-bubble.user{background:#263242}.chat-bubble strong{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+.chat-bubble.user{background:#263242}.chat-bubble>strong{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 .model-tier-picker{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:7px 0 3px}
 .model-tier-picker label{font-size:12px;color:var(--muted)}
 .model-tier-picker select{width:auto;max-width:100%;background:#303033;color:#fff;border:1px solid #56565c;border-radius:9px;padding:8px 10px;font-size:13px}
@@ -369,7 +369,7 @@ function renderTranscript(messages){
     const turn=document.createElement('details');turn.className='chat-turn';
     turn.appendChild(chatSummary(question.role==='user'?'Q':'A',question.content));
     const body=document.createElement('div');body.className='chat-turn-body';
-    rows.forEach(row=>{
+    (hasReply?rows.slice(1):rows).forEach(row=>{
       const bubble=document.createElement('div');bubble.className='chat-bubble '+row.role;
       const speaker=document.createElement('strong');speaker.textContent=row.role==='user'?'You':'HomeBrain';
       bubble.append(speaker,renderMessage(row.content));
