@@ -156,6 +156,18 @@ class _FakeMCP:
                 name, arguments, {}, "",
                 _performance() if self.performance_ok else {"success": False},
             )
+        if leaf == "hub_get_jobs":
+            return MCPToolResult(name, arguments, {}, "", {
+                "scheduledJobs": {
+                    "count": 2,
+                    "jobs": [
+                        {"appId": "9001", "method": "heartbeat",
+                         "nextRun": "2026-10-08T12:00:00+00:00"},
+                        {"appId": "9001", "method": "refresh",
+                         "nextRun": "2026-10-08T12:05:00+00:00"},
+                    ],
+                },
+            })
         assert leaf == "hub_get_logs"
         return MCPToolResult(name, arguments, {}, "", {"logs": [
             {
@@ -180,12 +192,16 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
     assert result.request_class == "live-read"
     assert result.request_class == "live-read"
     assert result.evidence[0]["mutates"] is False
-    assert len(mcp.calls) == 4
+    assert len(mcp.calls) == 5
     assert [call[1]["args"]["tool"] for call in mcp.calls] == [
-        "hub_get_performance_stats", "hub_get_logs", "hub_get_logs", "hub_get_logs",
+        "hub_get_performance_stats", "hub_get_jobs",
+        "hub_get_logs", "hub_get_logs", "hub_get_logs",
     ]
-    assert mcp.calls[1][1]["args"]["args"]["appId"] == "9001"
-    assert mcp.calls[2][1]["args"]["args"]["deviceId"] == "7001"
+    assert mcp.calls[2][1]["args"]["args"]["appId"] == "9001"
+    assert mcp.calls[3][1]["args"]["args"]["deviceId"] == "7001"
+    assert "2 scheduled entries reported" in result.message
+    assert any(e.get("evidence_kind") == "chat_audit_scheduler_jobs"
+               and e.get("success") for e in result.evidence)
     assert "websocket connection retrying" in result.message
     scoped_section = result.message.split(
         "- Follow-up for device LG webOS TV:", 1
