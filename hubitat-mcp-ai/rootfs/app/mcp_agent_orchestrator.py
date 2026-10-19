@@ -181,6 +181,7 @@ from known_automation_topology import (
 )
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
+from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from request_classification import (
     matches as _matches,
     requests_mutation as _requests_mutation,
@@ -752,7 +753,9 @@ class UnifiedMCPAgent:
             r"(?:hi|hello|hey|thanks|thank you|good morning|good evening)[.!? ]*",
             r"(?:help|what can you do|who are you)[.!? ]*",
         )
-        return any(re.fullmatch(pattern, normalized) for pattern in conversational)
+        return bool(conversation_reference_intent(prompt)) or any(
+            re.fullmatch(pattern, normalized) for pattern in conversational
+        )
 
     @staticmethod
     def _result_summary(result: MCPToolResult) -> str:
@@ -3724,6 +3727,26 @@ class UnifiedMCPAgent:
         session_id: str = "default",
     ) -> str:
         request_started = time.monotonic()
+        # Conversation references are answered from the supplied *same-session*
+        # transcript, never via Hubitat inventory/tool discovery. Host-owned
+        # exact recall uses zero model rounds; interpretation uses one provider
+        # round with no MCP tools or write permissions.
+        if conversation_reference_intent(user_prompt) and not _explicit_mutation_request(user_prompt):
+            recalled, recall_messages = conversation_reference_answer(
+                user_prompt, self._history(conversation_history),
+            )
+            increment_active_metric("conversation_recall_no_mcp")
+            if recalled is not None:
+                return recalled
+            if recall_messages is not None:
+                result = await self.transport.chat(recall_messages, [])
+                value = str(result.get("content") or "").strip()
+                if result.get("tool_calls") or not value:
+                    return (
+                        "I could not establish that from the available chat "
+                        "history; no Hubitat tools were called."
+                    )
+                return value
         # Explicit tool-free *static* technical questions need no catalog,
         # Hubitat reads, source searches or multi-round tool selection.
         # The classifier rejects live state, device/app IDs and write intents.
