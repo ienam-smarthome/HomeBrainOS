@@ -15,6 +15,7 @@ from performance_host_plan import (
     wants_scheduler_evidence,
 )
 from performance_api_finalizer import _normalize_recommendation_table
+from composite_system_audit_policy import is_cross_domain_hub_audit_request
 
 
 WHOLE_HUB = (
@@ -23,8 +24,9 @@ WHOLE_HUB = (
 )
 
 
-def test_exact_claude_comparison_prompt_reaches_scheduler_performance_review():
+def test_multidomain_optimization_needs_audit_not_only_performance_stats():
     assert is_whole_hub_optimization_request(WHOLE_HUB)
+    assert is_cross_domain_hub_audit_request(WHOLE_HUB)
     assert is_broad_performance_request(WHOLE_HUB)
     assert wants_scheduler_evidence(WHOLE_HUB)
     assert not is_whole_hub_optimization_request("Run a full system check")
@@ -65,7 +67,35 @@ def test_valid_markdown_table_is_unchanged():
     assert _normalize_recommendation_table(original) == (original, False)
 
 
-def test_whole_hub_intent_preempts_health_audit_even_with_logs(monkeypatch, tmp_path):
+def test_cross_domain_audit_preempts_narrow_performance_summary(monkeypatch, tmp_path):
+    import importlib
+
+    monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing-options.json"))
+    sys.modules.pop("app", None)
+    module = importlib.import_module("app")
+    calls = []
+
+    async def audit(service, mcp, **kwargs):
+        calls.append(("audit", kwargs))
+        return SimpleNamespace(
+            message="Read-only comprehensive audit with source coverage",
+            route="comprehensive-system-audit",
+            request_class="live-read", evidence=[], metrics={},
+        )
+
+    async def unexpected(*args, **kwargs):
+        raise AssertionError("Composite diagnostics must not use only performance stats")
+
+    monkeypatch.setattr(module, "run_comprehensive_chat_audit", audit)
+    monkeypatch.setattr(module, "collect_broad_performance_outcome", unexpected)
+    monkeypatch.setattr(module, "finalize_performance_api_outcome", unexpected)
+    request = SimpleNamespace(message=WHOLE_HUB, history=[], session_id="test")
+    result = asyncio.run(module._agent_request(request))
+    assert result.route == "comprehensive-system-audit"
+    assert calls == [("audit", {})]
+
+
+def test_scheduler_only_optimisation_preserves_performance_route(monkeypatch, tmp_path):
     import importlib
 
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing-options.json"))
@@ -74,21 +104,23 @@ def test_whole_hub_intent_preempts_health_audit_even_with_logs(monkeypatch, tmp_
     calls = []
 
     async def performance(agent, prompt):
-        calls.append(("performance", prompt))
-        return SimpleNamespace(message="Optimisation evidence collected.", route="unified-mcp-agent",
+        calls.append("performance")
+        return SimpleNamespace(message="Scheduled workload", route="unified-mcp-agent",
                                request_class="live-read", evidence=[], metrics={})
-
-    async def finalize(agent, mcp, outcome, prompt):
-        calls.append(("finalize", prompt))
-        return outcome
-
+    async def finalizer(*args):
+        calls.append("finalizer")
+        return args[2]
     async def unexpected(*args, **kwargs):
-        raise AssertionError("Generic health audit must not intercept optimisation intent")
+        raise AssertionError("Scheduler-only optimisation must not run the full audit")
 
-    monkeypatch.setattr(module, "collect_broad_performance_outcome", performance)
-    monkeypatch.setattr(module, "finalize_performance_api_outcome", finalize)
     monkeypatch.setattr(module, "run_comprehensive_chat_audit", unexpected)
-    request = SimpleNamespace(message=WHOLE_HUB, history=[], session_id="test")
-    result = asyncio.run(module._agent_request(request))
-    assert result.message == "Optimisation evidence collected."
-    assert calls == [("performance", WHOLE_HUB), ("finalize", WHOLE_HUB)]
+    monkeypatch.setattr(module, "collect_broad_performance_outcome", performance)
+    monkeypatch.setattr(module, "finalize_performance_api_outcome", finalizer)
+    request = SimpleNamespace(
+        message="Analyse all scheduled jobs by handler and suggest efficiency improvements.",
+        history=[], session_id="test",
+    )
+    assert not is_cross_domain_hub_audit_request(request.message)
+    outcome = asyncio.run(module._agent_request(request))
+    assert outcome.message == "Scheduled workload"
+    assert calls == ["performance", "finalizer"]
