@@ -181,6 +181,7 @@ from known_automation_topology import (
 )
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
+from historical_command_source_contract import history_window_instruction
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from request_classification import (
     matches as _matches,
@@ -3941,6 +3942,12 @@ class UnifiedMCPAgent:
             conversation_history,
             skill_domains=task_plan.skill_domains if task_plan is not None else None,
         )
+        # Tell the model the exact UTC equivalent of a user-supplied UK
+        # historical event clock before it selects log/history tools. This
+        # is calendar arithmetic, not proof that an event occurred.
+        incident_window = history_window_instruction(user_prompt)
+        if incident_window:
+            system_prompt += "\n\n" + incident_window
         # Progressive on-demand skill loading (repo-owned instructions only).
         skill_guidance = render_skills_for_request(user_prompt)
         if skill_guidance:
