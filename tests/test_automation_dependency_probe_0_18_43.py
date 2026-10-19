@@ -78,11 +78,15 @@ def test_only_typed_ids_from_action_scoped_config_count_as_device_edges():
     b = summarise_config(page("3931", device_id="7339"), "3931")
     assert a["typedActionDeviceIds"] == ["7339"]
     assert b["typedActionDeviceIds"] == ["7339"]
+    assert a["modeTriggerCandidates"] == ["Evening", "Sunset"]
     verdict = analyse_dependency_probes([
         {"id": "3992", **a}, {"id": "3931", **b},
     ])
     assert len(verdict["typedActionDeviceOverlaps"]) == 1
     assert verdict["typedActionDeviceOverlaps"][0]["targetDeviceIds"] == ["7339"]
+    assert verdict["typedActionDeviceOverlaps"][0]["sharedConfiguredModeTriggers"] == [
+        "evening", "sunset",
+    ]
     assert verdict["historicalExecutionVerified"] is False
     assert verdict["callbackOwnersVerified"] is False
 
