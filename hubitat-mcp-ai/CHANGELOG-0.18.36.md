@@ -1,0 +1,14 @@
+# v0.18.36 — Chat-only recall and evidence-grounded current-state output
+
+## Live v0.18.35 observations
+In a new browser-local chat, a follow-up asking “Which device did I just ask about?” used four Gemma provider rounds, two Hubitat tool calls and ~9.7 seconds even though the previous user question already contained the device name. The same Free test on two simple single-device status questions reported `8W` for Bedroom 3 Mesh and TRV temperatures, setpoint and mode not present in the successful targeted Hubitat-state receipts. The model may have seen other transient content, but **no other successful source was recorded in those returned receipts**, and the API was presenting them as fully supported.
+
+## General architecture correction
+1. **Conversation-only intent boundary:** a pure request referring to the previous question/answer/discussion reads only the caller-provided eight-message same-session history. Exact previous question/answer is returned without a provider round. Subject/topic recall uses one model round with **no MCP tools**, a bounded context and an explicit no-live-claim instruction. Missing history yields explicit “not available” instead of fabricated subject/device. The boundary rejects a mixed request containing a separate real-time read or device control, preserving existing discovery and confirmation gates.
+2. **Source-grounded current-state answer:** the final API serializer examines a simple single-device status reply only when the request has one successful typed targeted-device lookup and optional matching deterministic resolver, **without other successful source classes**. If the draft asserts a temperature, power, setpoint, humidity, mode or operating-state value absent/different in `reportedDeviceState.reportedAttributes`, replace the unreliable draft with a compact report of actual returned fields. Preserve known health/switch/transport attributes and do not misrepresent them as physical acknowledgement. Surface `evidence_validation.unsupported_status_fields_removed` for transparently corrected answers.
+3. Neither feature invents a device, expands MCP capabilities, makes Hubitat changes, modifies paid routing, reuses stale conversation as fresh readings, or changes complex forensic/causal explanations. **Free remains the default. Claude/DeepSeek remain explicit paid options.**
+
+## Validation
+Dedicated regression suite covers contextual recall from verified user-provided session history, exact zero-model lookups, one-model/no-tool topic recall, empty chat, mixed control refusal, disallowed unrelated Hubitat calls, latest documented current-state receipts (7103/4718), a positive multi-attribute receipt, additional independent read suppression, unchanged write-class response, and API correction reporting.
+
+CI: require all three workflows, then merge; live HomeBrain upgrade and verification still required after.
