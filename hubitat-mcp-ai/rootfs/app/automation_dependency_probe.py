@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from mcp_client import tool_succeeded
+from causal_rule_decision_context import configured_mode_triggers
 
 _MAX_APPS = 6
 _MAX_PARAGRAPHS = 24
@@ -163,6 +164,7 @@ def summarise_config(data: dict[str, Any], ident: str) -> dict[str, Any] | None:
         return None
     page = verified["page"]
     action_labels: set[str] = set()
+    configured_trigger_lines: list[str] = []
     trigger_present = False
     action_present = False
     paragraph_count = 0
@@ -183,6 +185,8 @@ def summarise_config(data: dict[str, Any], ident: str) -> dict[str, Any] | None:
                 continue
             if re.search(r"(?i)\b(?:trigger|when|if|mode change)\b", paragraph):
                 trigger_present = True
+                if len(configured_trigger_lines) < 16:
+                    configured_trigger_lines.append(paragraph[:180])
             if re.search(r"(?i)\b(?:then|on\s*:|off\s*:|toggle\s*:)\b", paragraph):
                 action_present = True
             for item in _ACTION.findall(paragraph)[:4]:
@@ -195,6 +199,7 @@ def summarise_config(data: dict[str, Any], ident: str) -> dict[str, Any] | None:
         "triggerTextPresent": trigger_present,
         "actionTextPresent": action_present,
         "actionLabelCandidates": sorted(action_labels)[:8],
+        "modeTriggerCandidates": configured_mode_triggers(configured_trigger_lines),
         "typedActionDeviceIds": _explicit_action_ids(page),
         "scannedParagraphs": min(paragraph_count, 24 * _MAX_PARAGRAPHS),
     }
@@ -217,10 +222,15 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
                 set(first.get("actionLabelCandidates") or [])
                 & set(second.get("actionLabelCandidates") or [])
             )
+            shared_modes = sorted(
+                set(x.casefold() for x in (first.get("modeTriggerCandidates") or []))
+                & set(x.casefold() for x in (second.get("modeTriggerCandidates") or []))
+            )[:5]
             if ids:
                 id_matches.append({
                     "appIds": [first["id"], second["id"]],
                     "targetDeviceIds": ids[:8],
+                    "sharedConfiguredModeTriggers": shared_modes,
                     "proof": "matching typed action-device IDs in current configurations",
                     "executionVerified": False,
                 })
@@ -228,6 +238,7 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
                 text_matches.append({
                     "appIds": [first["id"], second["id"]],
                     "sharedActionText": labels[:3],
+                    "sharedConfiguredModeTriggers": shared_modes,
                     "proof": "identical action wording; device identity unverified",
                     "executionVerified": False,
                 })
@@ -366,7 +377,10 @@ def render_dependency_findings(report: dict[str, Any] | None) -> str:
         lines.append(
             f"- **Configuration-level shared target:** apps "
             f"{'/'.join(overlap['appIds'])} have matching typed action-device IDs "
-            f"{', '.join(overlap['targetDeviceIds'])}. Not proof that either fired."
+            f"{', '.join(overlap['targetDeviceIds'])}. "
+            + (f"Shared configured modes: {', '.join(overlap['sharedConfiguredModeTriggers'])}. "
+               if overlap.get('sharedConfiguredModeTriggers') else "")
+            + "Not proof that either fired or that their conditions were true."
         )
     for overlap in summary.get("textOnlyActionCandidates") or []:
         lines.append(
