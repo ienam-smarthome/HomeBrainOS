@@ -61,6 +61,8 @@ The repository drift test compares this table directly with the live directory. 
 | `known_automation_topology.py` | Parses user-configured Aqara/SmartThings-style external automation topology and matches focal live trigger timing to configured target actions without promoting configuration into execution provenance. |
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
+| `composite_system_audit_policy.py` | Routes whole-hub audits spanning warnings/errors, apps/rules and device or health checks into the evidence-rich System Check rather than partial performance-only synthesis. |
+| `performance_timeout_digest.py` | Produces a bounded, evidence-only performance report if final AI synthesis times out, with no speculative repair claims. |
 | `provenance_app_log_planner.py` | Selects one read-only app-log request for a verified command issuer and incident time, preventing duplicate checks. |
 | `historical_command_source_contract.py` | Identifies positive command events within mixed Hubitat history, derives UK-local incident times correctly in UTC, and separates recorded command producers from causal/physical evidence. |
 | `conversation_recall.py` | Gives pure chat-reference questions a session-local, tool-free answer or one bounded model round, without pretending prior discussion proves Hubitat state. |
