@@ -183,7 +183,7 @@ def summarise_config(data: dict[str, Any], ident: str) -> dict[str, Any] | None:
             # Model/HTML and URL examples sometimes contain sensitive values.
             if _URL.search(paragraph) or _SECRET.search(paragraph):
                 continue
-            if re.search(r"(?i)\b(?:trigger|when|if|mode change)\b", paragraph):
+            if re.search(r"(?i)\b(?:trigger|when|if|mode\s+(?:changes?\s+to|becomes?|switched\s+to))\b", paragraph):
                 trigger_present = True
                 if len(configured_trigger_lines) < 16:
                     configured_trigger_lines.append(paragraph[:180])
