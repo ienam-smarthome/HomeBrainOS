@@ -182,6 +182,7 @@ from known_automation_topology import (
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from historical_command_source_contract import history_window_instruction
+from provenance_app_log_planner import pending_provenance_app_log_read
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from request_classification import (
     matches as _matches,
@@ -3493,6 +3494,63 @@ class UnifiedMCPAgent:
                 )
                 logger.debug(
                     "Required historical command read unavailable: %s", exc
+                )
+        # Source-directed historical evidence obligation. Only an actual,
+        # successful, target-scoped command-on/off event with a verified app
+        # producer and matching device identity can authorize this log read.
+        # Prefer the diagnostic log gateway to guessing appId parameters on
+        # hub_list_device_events; execute at most once per incident/app/window.
+        source_log_plan = (
+            pending_provenance_app_log_read(
+                objective, self.evidence.receipts(),
+            )
+            if not _explicit_mutation_request(objective) else None
+        )
+        if source_log_plan is not None:
+            try:
+                log_catalog = build_request_tool_catalog(
+                    await self.mcp.list_tools()
+                )
+                log_tool = log_catalog.available_tool("hub_read_diagnostics")
+                log_args = {
+                    "tool": source_log_plan["tool"],
+                    "args": source_log_plan["args"],
+                }
+                if (
+                    log_tool is not None
+                    and log_catalog.gateway_operation_error(
+                        "hub_read_diagnostics", log_args,
+                    ) is None
+                    and not classify_tool_effect(log_tool, log_args).mutates
+                ):
+                    result = await self.executor.execute(
+                        "hub_read_diagnostics", log_args, tool=log_tool,
+                        supports_live_claim=True,
+                        evidence_kind="authoritative_native_app_logs",
+                    )
+                    messages.append({
+                        "role": "tool", "tool_name": "hub_read_diagnostics",
+                        "content": result.content,
+                    })
+                    increment_active_metric(
+                        "historical_provenance_app_log_reads"
+                    )
+                    # A queried log source is not proof of a causal trigger;
+                    # report failures/empty rows without inventing absence.
+                    if not result.success:
+                        increment_active_metric(
+                            "historical_provenance_app_log_failures"
+                        )
+                else:
+                    increment_active_metric(
+                        "historical_provenance_app_log_unavailable"
+                    )
+            except Exception as exc:
+                increment_active_metric(
+                    "historical_provenance_app_log_unavailable"
+                )
+                logger.debug(
+                    "Verified producer's app-log source unavailable: %s", exc,
                 )
         content = await self.final_answers.answer(messages)
         # Terminal safety net. Earlier synthesis may skip causal validation if
