@@ -61,7 +61,8 @@ def test_reopen_does_not_restore_live_confirmation_or_auto_speech():
     assert "readAnswers&&data.route!=='saved-chat'" in page
     assert "stopAudio();suggestedAction=null" in page
     assert "renderTranscript(hasFinal?rows.slice(0,-2):rows)" in page
-    assert "body.textContent=message.content" in page
+    assert "bubble.append(speaker,renderMessage(row.content))" in page
+    assert "body.textContent=message.content" not in page
     assert 'data.confirmation_required===true' in page  # still allowed live
 
 
