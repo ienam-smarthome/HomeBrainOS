@@ -213,7 +213,7 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
 def test_audit_remains_available_when_performance_gateway_fails() -> None:
     mcp = _FakeMCP(performance_ok=False)
     result = asyncio.run(run_comprehensive_chat_audit(_FakeAudit(), mcp))
-    assert len(mcp.calls) == 2
+    assert len(mcp.calls) == 3
     assert "Low battery: Livingroom TRV" in result.message
     assert "Performance statistics unavailable" in result.message
     assert "No repairs performed" in result.message
@@ -393,7 +393,7 @@ def test_unsaturated_sample_skips_historical_request() -> None:
             return snapshot
     mcp = _FakeMCP()
     result = asyncio.run(run_comprehensive_chat_audit(FewLogs(), mcp))
-    assert len(mcp.calls) == 3
+    assert len(mcp.calls) == 4
     assert "Older-log follow-up" not in result.message
 
 
@@ -497,7 +497,7 @@ def test_fault_followup_executes_even_if_performance_stats_unavailable() -> None
 
     mcp = _FakeMCP(performance_ok=False)
     result = asyncio.run(run_comprehensive_chat_audit(D1Audit(), mcp))
-    assert len(mcp.calls) == 2
+    assert len(mcp.calls) == 3
     assert mcp.calls[-1][1]["args"]["args"]["appId"] == "4129"
     assert "Scoped investigation target: app SenseCap D1 Settings (ID 4129)" in result.message
     assert "SenseCap D1 live push" in result.message
