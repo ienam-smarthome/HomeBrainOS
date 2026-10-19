@@ -207,8 +207,58 @@ def incident_log_window_coverage(
     }
 
 
+def calibrate_command_causality(
+    message: str, recorded: dict[str, Any] | None,
+    log_window: dict[str, Any] | None,
+) -> tuple[str, list[str]]:
+    """Preserve observed issuer but remove unsupported exclusivity/ACK claims."""
+    text = str(message or "")
+    fixes: list[str] = []
+    if recorded:
+        patterns = (
+            (r"(?i)\bthe evidence establishes that this was an automated action rather than a physical or external interaction\b",
+             "the records identify a Hubitat app issuing an OFF command; independent physical and external actions were not exhaustively checked"),
+            (r"(?i)\bthe device responded to this command within approximately \d+\s*ms\b",
+             "Hubitat recorded a switch-state event shortly after the command; physical acknowledgement was not independently verified"),
+            (r"(?im)^\s*\*\s*\*\*Physical Interaction \(Contradicted\):\*\*.*$",
+             "* **Physical interaction (not independently verified):** The observed app command does not exclude separate physical interaction."),
+            (r"(?im)^\s*\*\s*\*\*External/Cloud Integration \(Unsupported\):\*\*.*$",
+             "* **External integration (not independently verified):** The observed command producer identifies a Hubitat app, not every possible upstream trigger."),
+        )
+        for expression, correction in patterns:
+            text, n = re.subn(expression, correction, text)
+            if n:
+                fixes.append("upstream_or_physical_overclaim")
+        text += (
+            "\n\n**Verified versus unverified:** Hubitat recorded "
+            f"a `command-{recorded['command']}` for device {recorded['deviceId']} "
+            f"at {recorded['recordedCommandTimestamp']}, produced by app "
+            f"{recorded['recordedIssuerAppId']}. This verifies the recorded "
+            "Hubitat command issuer, not the automation's preceding trigger, "
+            "MQTT delivery, physical switch actuation or the later offline cause."
+        )
+    if log_window and not log_window["correctTimeWindowChecked"]:
+        text, n = re.subn(
+            r"(?i)(?:a\s+)?targeted log read for App\s+\d+\s+returned\s+no\s+"
+            r"entries\s+for\s+the\s+window\s+surrounding\s+the\s+event",
+            "an app-log query returned no entries, but its time window did "
+            "not include the requested incident",
+            text,
+        )
+        if n:
+            fixes.append("misaligned_app_log_claim")
+        text += (
+            "\n\n**Log-window correction:** The completed app-log query "
+            "did not cover the requested event time "
+            f"({log_window['requestedEventUTC']} UTC). Its empty result "
+            "cannot exclude automation execution logs during that incident. "
+            "A read covering the correct UTC window is still needed."
+        )
+    return text, list(dict.fromkeys(fixes))
+
+
 __all__ = [
     "requested_event_boundary", "history_window_instruction",
     "mixed_command_events", "focused_command_observation",
-    "incident_log_window_coverage",
+    "incident_log_window_coverage", "calibrate_command_causality",
 ]
