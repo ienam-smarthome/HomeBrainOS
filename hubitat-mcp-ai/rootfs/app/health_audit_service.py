@@ -452,6 +452,11 @@ def _performance_population_total(
     return None
 
 
+def _redact_audit_urls(text: str) -> str:
+    """Mask full log URLs, including private coordinate and credential params."""
+    return re.sub(r'(?i)https?://[^\s<>"\x27)\]]+', "[URL redacted]", text)
+
+
 def _concise_log_message(message: Any) -> str:
     """Read MCP structured log entry.message instead of displaying raw JSON blobs."""
     text = " ".join(str(message or "").split())
@@ -480,7 +485,7 @@ def _concise_log_message(message: Any) -> str:
                 text = " ".join(str(parsed).split())
             except (TypeError, ValueError):
                 pass
-    return re.sub(r"[\r\n\t]+", " ", text)[:280]
+    return _redact_audit_urls(re.sub(r"[\r\n\t]+", " ", text))[:280]
 
 
 def _audit_followups(
@@ -1392,7 +1397,7 @@ def render_comprehensive_system_audit(
             "was used to infer missing evidence."
         ),
     ))
-    return "\n".join(lines)
+    return _redact_audit_urls("\n".join(lines))
 
 
 def _complete_ai_advisory(content: str, *, max_chars: int = 1800) -> str:
