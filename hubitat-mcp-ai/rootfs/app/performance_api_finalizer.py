@@ -16,6 +16,7 @@ from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
+from performance_timeout_digest import render_performance_timeout_digest
 from performance_inventory_check import render_scheduler_inventory_crosscheck
 from performance_host_plan import is_scheduler_only_evidence_request
 from scheduler_report_sanitizer import sanitize_scheduler_overview
@@ -1400,9 +1401,21 @@ async def finalize_performance_api_outcome(
             synthesis_timeout,
         )
         # Never reuse the unsupported first model draft as a recommendation.
+        # Preserve the already-verified read receipts, including a final
+        # mandatory log read, and make their measured fields useful even if
+        # the provider has stalled. Never reuse an unfinished model draft.
         timeout_outcome = safe_partial_outcome(
-            outcome, reason=f"{synthesis_timeout:g}s AI synthesis limit"
+            outcome,
+            reason=f"{synthesis_timeout:g}s AI synthesis limit",
+            additional_reads=evidence,
         )
+        timeout_outcome.message = render_performance_timeout_digest(
+            captured=captured,
+            evidence=timeout_outcome.evidence,
+            job_digest=scheduled_digest,
+            timeout_seconds=synthesis_timeout,
+        )
+        _counter(timeout_outcome, "performance_api_timeout_evidence_digest")
         _set_timing(
             timeout_outcome, "performance_api_finalize",
             round((time.monotonic() - started) * 1000),
