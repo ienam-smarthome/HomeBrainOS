@@ -19,7 +19,7 @@ from automation_dependency_probe import (
     select_automation_probes, summarise_config, analyse_dependency_probes,
     inspect_automation_dependencies, render_dependency_findings,
 )
-from health_audit_service import render_comprehensive_system_audit
+from health_audit_service import render_comprehensive_system_audit, _redact_audit_urls
 
 
 def installed():
@@ -224,3 +224,30 @@ def test_audit_report_integrates_dependency_section_as_unverified_when_missing()
     assert "### Automation configuration and dependency investigation" in rendered
     assert "Not checked" in rendered
     assert "No repairs performed" in rendered
+
+
+def test_audit_log_privacy_redacts_coordinates_and_credentials():
+    raw = ("OpenWeatherMap request failed for URL "
+           "https://api.openweathermap.org/data/4.0/onecall?"
+           "lat=51.466483&lon=-0.018197&appid=SENSITIVE123: Read timed out.")
+    cleaned = _redact_audit_urls(raw)
+    assert "OpenWeatherMap request failed" in cleaned
+    assert "Read timed out" in cleaned
+    assert "[URL redacted]" in cleaned
+    for sensitive in ("51.466483", "-0.018197", "SENSITIVE123",
+                      "api.openweathermap.org"):
+        assert sensitive not in cleaned
+
+    snapshot = {"checked_at": "2026-10-19T14:44:00+00:00",
+                "issues": [{"severity": "warning", "title": "Weather error",
+                            "detail": raw}],
+                "sections": {
+                    "devices": {"total": 1, "offline": [], "no_recent_activity": []},
+                    "automations": {"total": 1},
+                    "logs": {"available": True, "entries_checked": 1},
+                }}
+    whole_report = render_comprehensive_system_audit(snapshot, None)
+    assert "Read timed out" in whole_report
+    assert "[URL redacted]" in whole_report
+    assert "51.466483" not in whole_report
+    assert "SENSITIVE123" not in whole_report
