@@ -146,7 +146,7 @@ def focused_command_observation(prompt: str, evidence: list[dict[str, Any]]) -> 
         return None
     # Multiple issuers or multiple target devices make attribution ambiguous.
     unique = set(matches)
-    if len({(d,a,app) for d,a,app,_ in unique}) != 1:
+    if len({tuple(item[:3]) for item in unique}) != 1:
         return None
     chosen = min(unique, key=lambda rec: abs(
         (_at(rec[3]).astimezone(timezone.utc)-target_utc).total_seconds()
