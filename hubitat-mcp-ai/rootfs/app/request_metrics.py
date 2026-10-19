@@ -39,6 +39,7 @@ class RequestMetrics:
         "paid_routing_disabled", "paid_routing_budget_disabled",
         "paid_routing_reservation_blocked",
         "model_rounds", "tool_calls", "tool_discovery_calls", "mcp_retries",
+        "conversation_recall_no_mcp",
         "mcp_concurrent_peak",
         "evidence_retries", "grounding_refusals", "confirmation_queued",
         "confirmation_expired", "confirmation_evicted",

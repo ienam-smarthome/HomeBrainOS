@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from current_state_claim_contract import ground_current_device_status
 from investigation_evidence_ledger import reconcile_command_denials
 from lockout_claim_consistency import annotate_lockout_disagreement
 import re
@@ -522,6 +523,9 @@ def build_agent_response(
         str(getattr(outcome, "message", "")),
         evidence,
     )
+    message, state_claims_corrected = ground_current_device_status(
+        message, evidence, str(getattr(outcome, "request_class", "")),
+    )
     message = _guard_exclusive_history_date_claim(message, evidence)
     message, command_contradictions = reconcile_command_denials(message, evidence)
     message, lockout_discrepancy = annotate_lockout_disagreement(message)
@@ -574,6 +578,10 @@ def build_agent_response(
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
     }
+    if state_claims_corrected:
+        result["evidence_validation"]["unsupported_status_fields_removed"] = (
+            state_claims_corrected
+        )
     if getattr(outcome, "route", "") == "investigation-timeout":
         # Returning verified tool receipts does not mean the requested
         # investigation was completed or a historical cause established.

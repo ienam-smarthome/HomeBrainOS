@@ -61,6 +61,8 @@ The repository drift test compares this table directly with the live directory. 
 | `known_automation_topology.py` | Parses user-configured Aqara/SmartThings-style external automation topology and matches focal live trigger timing to configured target actions without promoting configuration into execution provenance. |
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
+| `conversation_recall.py` | Gives pure chat-reference questions a session-local, tool-free answer or one bounded model round, without pretending prior discussion proves Hubitat state. |
+| `current_state_claim_contract.py` | Reconciles simple current single-device status claims with same-turn targeted reported attributes when no independent source supports unreported measurements. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
 | `anthropic_transport.py` | Adapts explicit Claude API requests and tool-use IDs to HomeBrain's existing MCP executor, without cross-provider fallback. |
 | `requested_device_explanation.py` | Source-faithful read-only summary of the named device when model output drifts to an irrelevant log device. |
