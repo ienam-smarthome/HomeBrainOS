@@ -56,8 +56,16 @@ def is_cross_domain_hub_audit_request(question: str) -> bool:
     # automations and device action targets without explicitly asking for logs.
     # Requiring the literal word "logs" incorrectly sent these requests to the
     # iterative model agent instead of the deterministic configuration probe.
+    # "Shared targets" and "device targets" denote device-action edges
+    # even when the noun "device" does not appear (real CI regression).
+    # Do not treat arbitrary targets, such as optimisation goals, as devices.
+    target_domain = bool(re.search(
+        r"\b(?:(?:shared|device|action)\s+targets?|target\s+devices?)\b",
+        text, re.I,
+    ))
     configuration_audit = (
-        {"automation", "scheduler", "devices"} <= present
+        {"automation", "scheduler"} <= present
+        and ("devices" in present or target_domain)
         and bool(_CONFIG_DEPENDENCY.search(text))
     )
     return conventional_audit or configuration_audit
