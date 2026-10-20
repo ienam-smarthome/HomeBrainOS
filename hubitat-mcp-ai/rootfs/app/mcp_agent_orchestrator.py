@@ -3824,6 +3824,16 @@ class UnifiedMCPAgent:
         session_id: str = "default",
     ) -> str:
         request_started = time.monotonic()
+        # A compound, persistent cumulative-usage objective is outside the
+        # verified fixed-clock Rule Machine compiler. Identify that capability
+        # boundary BEFORE registry reads or model rounds, which otherwise
+        # fabricate a generic write intent then conceal all useful diagnosis
+        # behind UNVERIFIED_MUTATION_REFUSAL. This must not create any action.
+        unsupported_stateful = RuleAuthoringService.unsupported_stateful_authoring_message(
+            user_prompt
+        )
+        if unsupported_stateful is not None:
+            return unsupported_stateful
         # Conversation references are answered from the supplied *same-session*
         # transcript, never via Hubitat inventory/tool discovery. Host-owned
         # exact recall uses zero model rounds; interpretation uses one provider

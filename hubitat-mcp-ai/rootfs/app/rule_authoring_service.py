@@ -304,6 +304,71 @@ class RuleAuthoringService:
         re.I,
     )
 
+    # Stateful usage budgets are not clock-time schedules. The supported
+    # Rule Machine compiler can author fixed-time/daily actions, but has no
+    # verified translation for an accumulated duration, pause/resume and
+    # reset-on-restored-access state machine. This is a *capability boundary*,
+    # not an instruction to silently invent several incomplete RM rules.
+    #
+    # Require evidence of an explicit rule-authoring request AND stateful
+    # counter semantics; simple "block TV after 1 hour" and descriptive
+    # read-only questions must stay on their existing paths.
+    _STATEFUL_USAGE = re.compile(
+        r"\b(?:cumulative|accumulat(?:ed|e|ing|ion)|running\s+total|"
+        r"total\s+(?:of\s+)?\d+\s+(?:minutes?|mins?|hours?|hrs?)|"
+        r"across\s+(?:separate\s+)?(?:sessions?|uses?)|"
+        r"pause\s+(?:the\s+)?(?:timer|counter|counting)|"
+        r"preserv(?:e|ing)\s+(?:the\s+)?(?:counter|elapsed|timer))\b",
+        re.I,
+    )
+    _RESET_ON_RESTORATION = re.compile(
+        r"\b(?:unblock(?:ed|ing)?|allow(?:ed|ing)?|restor(?:e|ed|ing))\b"
+        r"[\s\S]{0,110}\b(?:reset|restart|fresh|new|zero|60.minute|one.hour)\b"
+        r"|\b(?:reset|restart|fresh|new)\b"
+        r"[\s\S]{0,110}\b(?:unblock(?:ed|ing)?|restor(?:e|ed|ing)|"
+        r"allow(?:ed|ing)?)\b",
+        re.I,
+    )
+
+    @classmethod
+    def unsupported_stateful_authoring_message(cls, prompt: str) -> str | None:
+        """Explain an uncompiled stateful rule before the model can invent writes.
+
+        No Hubitat I/O, no newly queued confirmation, no changes to existing
+        rules. This intake classifies a *requested automation shape* rather
+        than recognizing individual device names or memorizing specific IDs.
+        """
+        text = " ".join(str(prompt or "").strip().split())
+        if (
+            not cls._ACTION_REQUEST.match(text)
+            or cls._DESIGN_ONLY.search(text)
+            or not re.search(r"\b(?:automation|rule|controller)\b", text, re.I)
+            or not cls._STATEFUL_USAGE.search(text)
+            or not cls._RESET_ON_RESTORATION.search(text)
+        ):
+            return None
+        return (
+            "**No automation was created or queued.** This request needs a "
+            "persistent cumulative-usage controller, not a fixed-time Rule "
+            "Machine schedule. HomeBrain's current verified rule compiler "
+            "cannot safely author a pause/resume counter with reset upon "
+            "manual access restoration; creating several speculative rules "
+            "would risk inconsistent timers and unintended blocking.\n\n"
+            "**Proposed behaviour (not installed):** accumulate device ON "
+            "duration across separate sessions; pause without clearing it "
+            "when the monitored device turns OFF; block the nominated access "
+            "control once the accumulated total reaches the requested limit; "
+            "start a fresh allowance only after confirmed manual unblocking; "
+            "restore accumulated time and blocked/unblocked transitions after "
+            "Hubitat restarts. Verify that another existing rule does not "
+            "independently block the same access-control target.\n\n"
+            "**Required next implementation:** a dedicated, persisted "
+            "Hubitat controller app or a fully validated equivalent rule "
+            "architecture, with exact device/command verification, conflict "
+            "checks, tests and explicit confirmation before installation. "
+            "The existing rules and device states remain unchanged."
+        )
+
     def is_action_request(self, prompt: str) -> bool:
         """Explicit user scheduling authority, independent of AI task labels.
 
