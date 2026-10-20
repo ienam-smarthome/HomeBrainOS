@@ -725,20 +725,24 @@ def device_resolver_tool() -> MCPTool:
     return MCPTool(
         LOCAL_RESOLVE_TOOL,
         (
-            "Resolve one Hubitat device name via bounded targeted label lookups. "
-            "Returns exact device ID, label, capabilities and advertised commands. "
-            "Use a numeric ID and hub_get_device for an explicitly supplied ID. "
-            "For an Internet access request, do NOT assume a synthetic "
-            "blockInternet/allowInternet command: devices in the authoritative "
-            "Internet room are regular Switch controls (off=blocked, on=allowed). "
-            "FIRST inspect Internet room membership, select its uniquely matching "
-            "access-control device, then verify real on/off commands on that exact "
-            "device. A similarly named TV power plug or ADB device outside the "
-            "Internet room is NOT an Internet access control. "
-            "required_command only filters advertised literal device commands "
-            "such as lock, unlock, on, off or setLevel, never semantic intentions. "
-            "Do not treat absence of blockInternet as proof the Internet control "
-            "is missing; the authoritative Internet-room Switch is the source."
+            "Resolve one Hubitat device name with bounded targeted lookups. "
+            "The returned device ID, room and actual advertised commands are evidence. "
+            "Internet blocking is a semantic intent, NOT a required driver command. "
+            "For Google TV or another internet-control target, first identify the "
+            "authoritative device in the Internet room rather than an ordinary "
+            "TV power socket or ADB device. Existing HomeBrain Internet-room "
+            "Switch semantics are switch=off (access blocked) and switch=on "
+            "(access allowed); the deterministic controller uses actual off/on. "
+            "Some Internet-room drivers ALSO advertise blockInternet, "
+            "allowInternet, addTime or resetUsage: these are legitimate "
+            "advertised commands, not necessarily fictional or unsupported. "
+            "Their parameters, side effects, usage accounting and persistence "
+            "must be established from that exact driver before suggesting "
+            "or executing them. Do not assume all Internet controls have "
+            "these optional commands. required_command filters only an exact "
+            "command that the selected device actually advertises. "
+            "Read-only diagnostic requests must NEVER call control commands "
+            "or attempt to change device state."
         ),
         {
             "type": "object",
@@ -753,11 +757,12 @@ def device_resolver_tool() -> MCPTool:
                     "minLength": 1,
                     "description": (
                         "Optional. The exact device command this request requires "
-                        "(e.g. lock, unlock, off, on, setLevel). Never use " 
-                        "blockInternet/allowInternet for an Internet-room Switch. When "
-                        "set, resolution is scoped to only the devices that "
-                        "actually advertise this command before matching by name, "
-                        "so a same-named but incapable device is never returned."
+                        "(e.g. lock, unlock, off, on, blockInternet). "
+                        "Optional driver commands such as blockInternet may be "
+                        "used as literal capability filters only AFTER being "
+                        "observed on that exact device; never presume they "
+                        "exist on every Internet-room Switch. When set, "
+                        "matching excludes devices that do not advertise it."
                     ),
                 },
             },
