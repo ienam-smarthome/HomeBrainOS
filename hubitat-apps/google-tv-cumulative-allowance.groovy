@@ -275,7 +275,7 @@ private void sendBlockCommand() {
         internetControl.off()
         log.warn "TV cumulative allowance exhausted; requested Internet block, attempt " + count
     } catch (Exception exc) {
-        atomicState.lastError = "Block request failed: " + exc.getClass().simpleName
+        atomicState.lastError = "Block request failed: " + (exc.message ?: "unknown error")
         log.error atomicState.lastError
     }
     runIn(10, "verifyBlock", [overwrite: true])
