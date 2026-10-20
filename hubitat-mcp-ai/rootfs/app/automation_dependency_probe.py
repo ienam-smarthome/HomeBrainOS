@@ -211,8 +211,8 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
     id_matches, text_matches = [], []
     for pos, first in enumerate(successes):
         for second in successes[pos + 1:]:
-            if not first.get("actionTextPresent") or not second.get("actionTextPresent"):
-                continue
+            # Structured action-scoped device IDs are independent evidence:
+            # some MCP configuration pages omit human-readable action text.
             ids = sorted(
                 set(first.get("typedActionDeviceIds") or [])
                 & set(second.get("typedActionDeviceIds") or []),
@@ -234,7 +234,7 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
                     "proof": "matching typed action-device IDs in current configurations",
                     "executionVerified": False,
                 })
-            elif labels:
+            elif labels and first.get("actionTextPresent") and second.get("actionTextPresent"):
                 text_matches.append({
                     "appIds": [first["id"], second["id"]],
                     "sharedActionText": labels[:3],
