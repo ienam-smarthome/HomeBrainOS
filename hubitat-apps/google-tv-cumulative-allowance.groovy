@@ -200,3 +200,152 @@ def internetSwitchChanged(evt) {
     }
     evaluate(timestamp)
 }
+
+def usageTick() {
+    if (!enforcementEnabled()) return
+    long timestamp = now()
+    String liveInternet = currentSwitch(internetControl)
+    String liveTv = currentSwitch(tvPlug)
+    // A delayed/missed event must not let a stale "on" keep consuming time.
+    if (liveInternet != atomicState.internetState ||
+        liveTv != atomicState.tvState) {
+        checkpoint(timestamp)
+        if (liveInternet != atomicState.internetState &&
+            (liveInternet == "on" || liveInternet == "off"))
+            internetSwitchChanged([value: liveInternet])
+        if (liveTv != atomicState.tvState &&
+            (liveTv == "on" || liveTv == "off"))
+            tvSwitchChanged([value: liveTv])
+        return
+    }
+    checkpoint(timestamp)
+    evaluate(timestamp)
+}
+
+private void evaluate(long timestamp) {
+    unschedule("usageTick")
+    if (!enforcementEnabled()) {
+        atomicState.activeSinceMs = null
+        unschedule("awaitUnblockPoll")
+        return
+    }
+    if (atomicState.awaitingUnblock == true || atomicState.internetState != "on") {
+        atomicState.activeSinceMs = null
+        runIn(60, "awaitUnblockPoll", [overwrite: true])
+        return
+    }
+    unschedule("awaitUnblockPoll")
+    if (usedMs() >= budgetMs()) {
+        stopCounting()
+        requestInternetBlock()
+        return
+    }
+    if (!countingAllowed()) {
+        atomicState.activeSinceMs = null
+        return
+    }
+    if (parsedLong(atomicState.activeSinceMs) == null) {
+        atomicState.activeSinceMs = timestamp
+    }
+    long remaining = Math.max(1L, budgetMs() - usedMs())
+    int seconds = (int)Math.max(1L, Math.min(60L, (long)Math.ceil(remaining / 1000.0d)))
+    runIn(seconds, "usageTick", [overwrite: true])
+}
+
+private void requestInternetBlock() {
+    if (!enforcementEnabled() || atomicState.internetState != "on") return
+    atomicState.awaitingUnblock = true
+    atomicState.blockPending = true
+    atomicState.activeSinceMs = null
+    atomicState.lastError = null
+    sendBlockCommand()
+}
+
+private void sendBlockCommand() {
+    if (!enforcementEnabled() || atomicState.blockPending != true) return
+    long count = (parsedLong(atomicState.blockAttempts) ?: 0L) + 1L
+    atomicState.blockAttempts = count
+    try {
+        // For this Internet-room control, off is the blocking switch command.
+        // Never call on/allowInternet here; an unblock must come from outside.
+        internetControl.off()
+        log.warn "TV cumulative allowance exhausted; requested Internet block, attempt " + count
+    } catch (Exception exc) {
+        atomicState.lastError = "Block request failed: " + exc.getClass().simpleName
+        log.error atomicState.lastError
+    }
+    runIn(10, "verifyBlock", [overwrite: true])
+}
+
+def verifyBlock() {
+    if (!enforcementEnabled() || atomicState.blockPending != true) return
+    String actual = currentSwitch(internetControl)
+    if (actual == "off") {
+        atomicState.internetState = "off"
+        atomicState.blockPending = false
+        atomicState.awaitingUnblock = true
+        atomicState.lastBlockedMs = now()
+        log.info "Google TV Internet switch reports OFF (blocked state)."
+        runIn(60, "awaitUnblockPoll", [overwrite: true])
+    } else if ((parsedLong(atomicState.blockAttempts) ?: 0L) < 3L) {
+        sendBlockCommand()
+    } else {
+        atomicState.blockPending = false
+        atomicState.lastError = "Internet block NOT verified after three attempts."
+        log.error atomicState.lastError
+        runIn(60, "awaitUnblockPoll", [overwrite: true])
+    }
+}
+
+def awaitUnblockPoll() {
+    if (!enforcementEnabled()) return
+    String observed = currentSwitch(internetControl)
+    String previous = (atomicState.internetState ?: "").toString()
+    if (previous == "off" && observed == "on") {
+        internetSwitchChanged([value: "on"])
+        return
+    }
+    if (observed == "off") {
+        atomicState.internetState = "off"
+        atomicState.awaitingUnblock = true
+    }
+    if (atomicState.awaitingUnblock == true) {
+        runIn(60, "awaitUnblockPoll", [overwrite: true])
+    } else {
+        evaluate(now())
+    }
+}
+
+def appButtonHandler(String buttonName) {
+    if (buttonName != "resetCounter" || !validDevices()) return
+    long timestamp = now()
+    atomicState.usedMs = 0L
+    atomicState.activeSinceMs = null
+    atomicState.lastResetMs = timestamp
+    atomicState.lastError = null
+    atomicState.blockPending = false
+    atomicState.blockAttempts = 0
+    atomicState.awaitingUnblock = currentSwitch(internetControl) != "on"
+    unschedule("verifyBlock")
+    log.info "Admin reset counter via app settings; Internet remains unchanged."
+    evaluate(timestamp)
+}
+
+private String statusText() {
+    if (!validDevices()) return "Choose TV ID 4221 and Internet ID 6923."
+    long consumed = usedMs()
+    Long started = parsedLong(atomicState.activeSinceMs)
+    if (started != null && countingAllowed())
+        consumed = Math.min(budgetMs(),
+            consumed + Math.min(120000L, Math.max(0L, now() - started)))
+    long remaining = Math.max(0L, budgetMs() - consumed)
+    String status = !enforcementEnabled() ? "DISABLED" :
+        atomicState.awaitingUnblock == true ? "WAITING FOR UNBLOCK" :
+        countingAllowed() ? "COUNTING" : "PAUSED"
+    String issue = atomicState.lastError ? " | ERROR: " + atomicState.lastError : ""
+    return "Controller: " + status +
+        " | TV switch: " + currentSwitch(tvPlug) +
+        " | Internet switch: " + currentSwitch(internetControl) +
+        " | Consumed: " + (int)(consumed / 60000L) + " min" +
+        " | Remaining: " + (int)Math.ceil(remaining / 60000.0d) + " min" + issue
+}
