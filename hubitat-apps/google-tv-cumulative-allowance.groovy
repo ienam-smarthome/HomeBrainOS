@@ -100,3 +100,103 @@ private boolean countingAllowed() {
         atomicState.internetState == "on" &&
         atomicState.tvState == "on"
 }
+
+def initialize() {
+    unsubscribe()
+    unschedule()
+    atomicState.activeSinceMs = null
+    if (!validDevices()) {
+        log.warn "TV allowance disabled: select exact IDs 4221 and 6923."
+        return
+    }
+    String tvNow = currentSwitch(tvPlug)
+    String internetNow = currentSwitch(internetControl)
+    String previousInternet = (atomicState.internetState ?: "").toString()
+    if (atomicState.initialized != true) {
+        atomicState.usedMs = 0L
+        atomicState.awaitingUnblock = internetNow != "on"
+        atomicState.blockPending = false
+        atomicState.blockAttempts = 0
+        atomicState.lastResetMs = now()
+        atomicState.initialized = true
+    } else if (previousInternet == "off" && internetNow == "on") {
+        // A transition may have occurred while Hubitat was restarting.
+        resetAllowance(now(), "access restored across restart")
+    } else if (internetNow != "on") {
+        atomicState.awaitingUnblock = true
+    }
+    atomicState.tvState = tvNow
+    atomicState.internetState = internetNow
+    subscribe(tvPlug, "switch", tvSwitchChanged)
+    subscribe(internetControl, "switch", internetSwitchChanged)
+    if (!enforcementEnabled()) {
+        log.info "Allowance installed but DISABLED; no Internet control commands."
+        return
+    }
+    if (countingAllowed()) atomicState.activeSinceMs = now()
+    evaluate(now())
+}
+
+private void checkpoint(long timestamp) {
+    Long started = parsedLong(atomicState.activeSinceMs)
+    if (started == null) return
+    long elapsed = Math.max(0L, timestamp - started)
+    // Do not charge hours while Hubitat is offline or its clock jumps.
+    // The 60-second checkpoints bound normal reboot loss to about one minute.
+    if (elapsed > 120000L) {
+        log.warn "Unverified clock gap; only 120 seconds may be credited."
+        elapsed = 120000L
+    }
+    atomicState.usedMs = Math.min(budgetMs(), usedMs() + elapsed)
+    atomicState.activeSinceMs = timestamp
+}
+
+private void stopCounting() {
+    atomicState.activeSinceMs = null
+    unschedule("usageTick")
+}
+
+private void resetAllowance(long timestamp, String reason) {
+    atomicState.usedMs = 0L
+    atomicState.lastResetMs = timestamp
+    atomicState.awaitingUnblock = false
+    atomicState.blockPending = false
+    atomicState.blockAttempts = 0
+    atomicState.activeSinceMs = null
+    atomicState.lastError = null
+    unschedule("verifyBlock")
+    unschedule("awaitUnblockPoll")
+    log.info "New TV allowance: " + reason
+}
+
+def tvSwitchChanged(evt) {
+    if (!validDevices()) return
+    long timestamp = now()
+    checkpoint(timestamp)  // settle prior ON span before processing new state
+    String nextState = (evt?.value ?: "").toString().toLowerCase()
+    if (nextState != "on" && nextState != "off") return
+    atomicState.tvState = nextState
+    stopCounting()
+    evaluate(timestamp)
+}
+
+def internetSwitchChanged(evt) {
+    if (!validDevices()) return
+    long timestamp = now()
+    checkpoint(timestamp)
+    String previous = (atomicState.internetState ?: "").toString()
+    String incoming = (evt?.value ?: "").toString().toLowerCase()
+    if (incoming != "on" && incoming != "off") return
+    atomicState.internetState = incoming
+    stopCounting()
+    if (previous == "off" && incoming == "on") {
+        // The event proves a state change, NOT whether a person caused it.
+        resetAllowance(timestamp, "Internet off to on")
+    } else if (incoming == "off") {
+        atomicState.awaitingUnblock = true
+        atomicState.blockPending = false
+        atomicState.lastBlockedMs = timestamp
+        unschedule("verifyBlock")
+    }
+    evaluate(timestamp)
+}
