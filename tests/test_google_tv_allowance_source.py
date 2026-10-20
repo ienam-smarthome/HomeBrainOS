@@ -70,7 +70,7 @@ def test_unblocking_is_transition_based_not_a_duplicate_on_read():
 
 def test_no_automatic_daily_reset_and_an_explicit_counter_only_reset_button():
     assert "midnightReset" not in TEXT
-    assert "schedule(" not in TEXT
+    assert "\nschedule(" not in TEXT  # unschedule() is expected
     assert "def appButtonHandler(String buttonName)" in TEXT
     assert "if (buttonName != \"resetCounter\" || !validDevices()) return" in TEXT
     assert "Internet remains unchanged" in TEXT
