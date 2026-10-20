@@ -32,6 +32,9 @@ LIVE_DEPENDENCY_PROMPT = (
      "shared targets and configuration dependencies.", True),
     ("Review the full hub: automations, device targets and scheduled jobs "
      "to identify overlapping rule triggers.", True),
+    ("Audit the entire hub automations, scheduled jobs and shared action targets.", True),
+    ("Audit my entire Hubitat hub for scheduled jobs, automations, performance "
+     "targets and dependencies.", False),
     ("Analyse all scheduled jobs and group by handler.", False),
     ("Review my hub performance and reduce overhead, read-only.", False),
     ("Check the schedule for my one Bedroom 1 Light rule.", False),
