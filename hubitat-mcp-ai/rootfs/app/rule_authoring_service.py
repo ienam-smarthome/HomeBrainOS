@@ -871,7 +871,7 @@ class RuleAuthoringService:
             # the authoritative Internet room. Their user-facing semantics are
             # intentionally inverted from the literal switch wording:
             # switch=on means Internet allowed; switch=off means Internet
-            # blocked. Do not require synthetic blockInternet/allowInternet
+            # blocked. Do not require optional blockInternet/allowInternet
             # driver commands. First scope fuzzy identity matching to the
             # Internet room so a normal device such as "Google TV Streamer
             # (ADB)" cannot win merely because its label is a closer match.
