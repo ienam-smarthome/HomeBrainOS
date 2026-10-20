@@ -185,3 +185,42 @@ def test_pronoun_only_target_falls_through_instead_of_a_doomed_device_search():
     assert parse_immediate_internet_access_intent("enable it") is None
     assert parse_immediate_internet_access_intent("block that") is None
     assert parse_immediate_internet_access_intent("allow this device") is None
+
+
+def test_conditional_internet_limit_is_not_mistaken_for_a_device_name():
+    """Live 0.18.44 regression: a compound automation is never immediate control.
+
+    Parsing the entire text as target caused an instant failed Internet-room
+    lookup, preventing the agent from considering the TV source or time budget.
+    No direct write should be attempted for any of these requests.
+    """
+
+    prompts = [
+        (
+            "block Google TV (6923) if TV (4221) has been on for a total "
+            "of 1 hour. Restart timer once Google TV has been unblocked"
+        ),
+        "block Google TV if the television has been on for one hour",
+        "block internet for the tablet when total usage reaches 60 minutes",
+        "restrict internet for the streamer unless a parent approves it",
+        "block Google TV; reset the counter when it is manually unblocked",
+        "allow internet for the tablet once a supervisor approves",
+        "block the streamer depending on TV viewing time",
+        "block google tv while the TV is in use",
+    ]
+    for prompt in prompts:
+        assert parse_immediate_internet_access_intent(prompt) is None, prompt
+
+
+def test_simple_internet_access_commands_still_use_immediate_fast_path():
+    for prompt, expected in (
+        ("block Google TV", ("Google TV", "blockInternet")),
+        ("block internet access for the tablet", ("tablet", "blockInternet")),
+        ("allow Google TV", ("Google TV", "allowInternet")),
+        ("unblock Google TV", ("Google TV", "allowInternet")),
+    ):
+        assert parse_immediate_internet_access_intent(prompt) == expected, prompt
+
+    assert parse_immediate_internet_access_intent(
+        "block Google TV after 1 minute"
+    ) is None
