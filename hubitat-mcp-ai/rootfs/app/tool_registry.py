@@ -725,26 +725,16 @@ def device_resolver_tool() -> MCPTool:
     return MCPTool(
         LOCAL_RESOLVE_TOOL,
         (
-            "Resolve one Hubitat device name with bounded targeted lookups. "
             "The returned device ID, room and actual advertised commands are evidence. "
-            "Internet blocking is a semantic intent, NOT a required driver command. "
-            "For Google TV or another internet-control target, first identify the "
-            "authoritative device in the Internet room rather than an ordinary "
-            "TV power socket or ADB device. Existing HomeBrain Internet-room "
-            "Switch semantics are off=blocked, on=allowed: switch=off (access blocked) and switch=on "
-            "(access allowed); the deterministic controller uses actual off/on. "
-            "Some Internet-room drivers ALSO advertise blockInternet/allowInternet: "
-            "that is, the literal blockInternet, "
-            "allowInternet, addTime or resetUsage: these are legitimate "
-            "advertised commands, not necessarily fictional or unsupported. "
-            "Their parameters, side effects, usage accounting and persistence "
-            "must be established from that exact driver before suggesting "
-            "or executing them; do NOT assume blockInternet must exist. "
-            "Do not assume all Internet controls have "
-            "these optional commands. required_command filters only an exact "
-            "command that the selected device actually advertises. "
-            "Read-only diagnostic requests must NEVER call control commands "
-            "or attempt to change device state."
+            "Internet blocking is a semantic intent. For an Internet room control: "
+            "off=blocked, on=allowed; switch=off (access blocked), "
+            "switch=on (access allowed). Check Internet room identity, not a "
+            "TV power plug or ADB device. "
+            "Some Internet-room drivers ALSO advertise blockInternet/allowInternet, "
+            "addTime and resetUsage. Their parameters, side effects, usage accounting and persistence "
+            "need driver verification; do NOT assume behaviour. "
+            "Do not assume all Internet controls have optional commands. "
+            "Read-only diagnostic requests must NEVER call control commands."
         ),
         {
             "type": "object",
