@@ -337,6 +337,19 @@ _RULE_AUTHORING_WORDS = re.compile(r"\b(?:automation|rule|schedule)\b", re.I)
 # it fall through to that loop instead of being hijacked into a doomed
 # device lookup.
 _APP_OR_AUTOMATION_TARGET = re.compile(r"\bapps?\b", re.I)
+# The immediate Internet fast path must only accept a *single, unconditional*
+# access command. Its open-ended target regex would otherwise swallow a
+# conditional/cumulative automation request as one giant device name, e.g.
+# "block Google TV (6923) if TV (4221) has been on for a total of 1 hour.
+# Restart timer once Google TV has been unblocked". Such requests require
+# separate source/target resolution and a stateful automation plan; never
+# dispatch an immediate block or an all-text Internet-room lookup.
+_COMPOUND_INTERNET_ACCESS = re.compile(
+    r"\b(?:if|when|whenever|unless|once|while|before|after|"
+    r"as\s+soon\s+as|provided\s+that|depending\s+on|based\s+on)\b"
+    r"|[;]|[.!?]\s+\S",
+    re.I,
+)
 _BLOCK_INTERNET = re.compile(
     r"^(?:please\s+)?(?:block|disable|restrict)\s+"
     r"(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)?"
@@ -399,6 +412,11 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
     can deterministically compile the schedule without the timing suffix being
     swallowed into the device name.
 
+    Excludes conditional and compound commands (including multi-sentence
+    cumulative usage limits), which cannot safely be executed as an immediate
+    Internet switch command. They fall through to the semantic authoring
+    route, where both devices and trigger/action constraints can be resolved.
+
     Also excludes any "app"/"apps" wording: "disable humidity controller
     app" names a Hubitat app/automation, not a device, and this parser has
     no way to act on that -- it can only search the device inventory. See
@@ -415,6 +433,7 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
         or _RULE_AUTHORING_WORDS.search(text) is not None
         or _has_future_routine_timing(text)
         or _APP_OR_AUTOMATION_TARGET.search(text) is not None
+        or _COMPOUND_INTERNET_ACCESS.search(text) is not None
     ):
         return None
     for pattern, command in (
