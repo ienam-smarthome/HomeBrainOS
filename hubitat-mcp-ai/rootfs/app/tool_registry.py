@@ -731,7 +731,7 @@ def device_resolver_tool() -> MCPTool:
             "For Google TV or another internet-control target, first identify the "
             "authoritative device in the Internet room rather than an ordinary "
             "TV power socket or ADB device. Existing HomeBrain Internet-room "
-            "Switch semantics are switch=off (access blocked) and switch=on "
+            "Switch semantics are off=blocked, on=allowed: switch=off (access blocked) and switch=on "
             "(access allowed); the deterministic controller uses actual off/on. "
             "Some Internet-room drivers ALSO advertise blockInternet, "
             "allowInternet, addTime or resetUsage: these are legitimate "
