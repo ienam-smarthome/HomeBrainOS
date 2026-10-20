@@ -29,6 +29,10 @@ def mainPage() {
                 defaultValue: 60, required: true, range: "1..1440"
             input "enableController", "bool", title: "Enable blocking (off by default)",
                 defaultValue: false, required: true
+            input "conflictReviewed", "bool",
+                title: "I have reviewed other rules controlling Internet ID 6923",
+                defaultValue: false, required: true
+            paragraph "Both enable and conflict review must be TRUE to run. No other rule is changed."
             paragraph "An observed Internet-control off → on transition resets the allowance. " +
                 "The switch attribute does not identify who unblocked it. " +
                 "Existing rule 3985 is not changed and could independently block the same target."
@@ -66,7 +70,7 @@ private boolean validDevices() {
 }
 
 private boolean enforcementEnabled() {
-    return settings.enableController == true && validDevices()
+    return settings.enableController == true && settings.conflictReviewed == true && validDevices()
 }
 
 private long budgetMs() {
