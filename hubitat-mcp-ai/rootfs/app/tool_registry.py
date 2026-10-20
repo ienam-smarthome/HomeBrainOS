@@ -725,22 +725,20 @@ def device_resolver_tool() -> MCPTool:
     return MCPTool(
         LOCAL_RESOLVE_TOOL,
         (
-            "Resolve one user-supplied Hubitat device name using bounded targeted "
-            "label-filtered lookups. Returns the authoritative device ID, label, "
-            "capabilities, and commands without loading the full device inventory. "
-            "Use this before authoring any rule for a named device. "
-            "IMPORTANT: if the request implies the device must be able to perform "
-            "a specific command -- e.g. 'block'/'disable'/'restrict' internet "
-            "access implies blockInternet, 'allow'/'unblock'/'restore' internet "
-            "access implies allowInternet, 'lock' implies lock -- always pass "
-            "required_command with that exact command name. A house can contain "
-            "two different devices with overlapping or identical names where only "
-            "one actually supports the requested command (e.g. a plain power "
-            "switch labelled 'TV' next to a separate network-integration device "
-            "that is the only one supporting blockInternet/allowInternet); "
-            "name-only resolution will confidently return the wrong one. Passing "
-            "required_command scopes matching to devices that actually advertise "
-            "it, finding the correct device instead."
+            "Resolve one Hubitat device name via bounded targeted label lookups. "
+            "Returns exact device ID, label, capabilities and advertised commands. "
+            "Use a numeric ID and hub_get_device for an explicitly supplied ID. "
+            "For an Internet access request, do NOT assume a synthetic "
+            "blockInternet/allowInternet command: devices in the authoritative "
+            "Internet room are regular Switch controls (off=blocked, on=allowed). "
+            "FIRST inspect Internet room membership, select its uniquely matching "
+            "access-control device, then verify real on/off commands on that exact "
+            "device. A similarly named TV power plug or ADB device outside the "
+            "Internet room is NOT an Internet access control. "
+            "required_command only filters advertised literal device commands "
+            "such as lock, unlock, on, off or setLevel, never semantic intentions. "
+            "Do not treat absence of blockInternet as proof the Internet control "
+            "is missing; the authoritative Internet-room Switch is the source."
         ),
         {
             "type": "object",
@@ -755,7 +753,8 @@ def device_resolver_tool() -> MCPTool:
                     "minLength": 1,
                     "description": (
                         "Optional. The exact device command this request requires "
-                        "(e.g. blockInternet, allowInternet, lock, unlock). When "
+                        "(e.g. lock, unlock, off, on, setLevel). Never use " 
+                        "blockInternet/allowInternet for an Internet-room Switch. When "
                         "set, resolution is scoped to only the devices that "
                         "actually advertise this command before matching by name, "
                         "so a same-named but incapable device is never returned."
