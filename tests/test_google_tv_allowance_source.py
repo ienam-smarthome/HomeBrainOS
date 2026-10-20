@@ -46,6 +46,15 @@ def test_one_way_control_no_implicit_unblock_or_rule_changes():
     assert "NOT verified after three attempts" in TEXT
 
 
+def test_hubitat_sandbox_error_reporting_does_not_reflect_on_exception_type():
+    # Hubitat's Groovy expression whitelist rejects MethodCallExpression
+    # exc.getClass(); the error handler must access message directly.
+    assert "getClass(" not in TEXT
+    assert "exc.class" not in TEXT
+    assert '(exc.message ?: "unknown error")' in TEXT
+    assert "log.error atomicState.lastError" in TEXT
+
+
 def test_persistent_usage_and_restart_handling_are_explicit():
     assert "atomicState.usedMs" in TEXT
     assert "atomicState.activeSinceMs" in TEXT
