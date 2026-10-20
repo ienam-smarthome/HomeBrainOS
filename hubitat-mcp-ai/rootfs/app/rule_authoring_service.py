@@ -871,7 +871,7 @@ class RuleAuthoringService:
             # the authoritative Internet room. Their user-facing semantics are
             # intentionally inverted from the literal switch wording:
             # switch=on means Internet allowed; switch=off means Internet
-            # blocked. Do not require synthetic blockInternet/allowInternet
+            # blocked. Do not require optional blockInternet/allowInternet
             # driver commands. First scope fuzzy identity matching to the
             # Internet room so a normal device such as "Google TV Streamer
             # (ADB)" cannot win merely because its label is a closer match.
@@ -998,7 +998,7 @@ class RuleAuthoringService:
 
             # Re-read the selected control surface by its authoritative label
             # and verify the real Switch command we will schedule. This keeps
-            # command verification intact while avoiding any fake capability.
+            # command verification on the existing off/on interface even when optional driver-specific Internet commands are also advertised.
             resolve_arguments = {
                 "name": selected_label,
                 "required_command": actual_start_command,

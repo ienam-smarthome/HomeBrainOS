@@ -1364,7 +1364,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     ) -> AgentOutcome:
         """Execute immediate Internet access against authoritative room controls.
 
-        ``blockInternet`` / ``allowInternet`` are semantic intent labels only.
+        ``blockInternet`` / ``allowInternet`` are semantic labels for this route. The live Internet control 6923 also advertises those literal driver commands, but this deterministic route intentionally verifies and uses the separate off/on Switch contract.
         Hubitat devices assigned to the authoritative ``Internet`` room are
         ordinary Switch controls: ``off`` means Internet blocked and ``on``
         means Internet allowed. Resolve inside that room first, verify the real
