@@ -356,7 +356,7 @@ _READ_QUERY_PREFIX = re.compile(
 # mutation. Stop at an independent positive clause or sentence boundary.
 _NEGATED_WRITE_CLAUSE = re.compile(
     r"\b(?:do\s+not|don't|never)\s+(?:actually\s+)?"
-    r"(?:turn|switch|power|set|change|create|delete|disable|enable|"
+    r"(?:turn|switch|power|set|change|alter|create|delete|disable|enable|"
     r"restart|block|unblock|allow|configure|execute|run|send|issue|"
     r"install|remove|pause|resume|update|write|apply|schedule|"
     r"start|stop|toggle|lock|unlock)\b"
@@ -405,6 +405,20 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"disable|enable|restart|block|unblock|allow|configure)\b",
         text,
     )
+    # Only an actual separately requested action grants mutation authority.
+    # A subordinate "and change" within a single question ("Why did the
+    # light turn on and change brightness?") is descriptive, not imperative;
+    # a later independent sentence ("Why did it turn on? Then block it")
+    # remains a real write. Prohibitions were already removed above.
+    if secondary_write is not None:
+        first_question_mark = text.find("?")
+        if (
+            first_question_mark >= 0
+            and secondary_write.start() < first_question_mark
+            and _READ_QUERY_PREFIX.search(text)
+        ):
+            return False
+        return True
     # "Verify whether app 3950 issued OFF" is evidence verification,
     # not an instruction to issue OFF. A later independent imperative still
     # routes through confirmation via secondary_write.
