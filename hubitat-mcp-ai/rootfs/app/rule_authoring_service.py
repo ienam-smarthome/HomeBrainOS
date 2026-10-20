@@ -998,7 +998,7 @@ class RuleAuthoringService:
 
             # Re-read the selected control surface by its authoritative label
             # and verify the real Switch command we will schedule. This keeps
-            # command verification intact while avoiding any fake capability.
+            # command verification on the existing off/on interface even when optional driver-specific Internet commands are also advertised.
             resolve_arguments = {
                 "name": selected_label,
                 "required_command": actual_start_command,
