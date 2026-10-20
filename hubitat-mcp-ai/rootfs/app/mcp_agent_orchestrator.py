@@ -3829,11 +3829,10 @@ class UnifiedMCPAgent:
         # boundary BEFORE registry reads or model rounds, which otherwise
         # fabricate a generic write intent then conceal all useful diagnosis
         # behind UNVERIFIED_MUTATION_REFUSAL. This must not create any action.
-        unsupported_stateful = (
-            self.rule_authoring.unsupported_stateful_authoring_message(user_prompt)
+        unsupported_stateful = RuleAuthoringService.unsupported_stateful_authoring_message(
+            user_prompt
         )
         if unsupported_stateful is not None:
-            increment_active_metric("stateful_rule_compiler_boundary")
             return unsupported_stateful
         # Conversation references are answered from the supplied *same-session*
         # transcript, never via Hubitat inventory/tool discovery. Host-owned
