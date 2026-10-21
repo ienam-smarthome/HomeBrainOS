@@ -430,8 +430,8 @@ async def inspect_automation_dependencies(
                     mcp.call_tool(gateway.name, arguments), timeout=min(2.5, remaining),
                 )
                 data = response.data if tool_succeeded(response) else None
-                if isinstance(data, dict) and data.get("success") is not False \\
-                        and isinstance(data.get("appsUsing"), list):
+                if (isinstance(data, dict) and data.get("success") is not False
+                        and isinstance(data.get("appsUsing"), list)):
                     observed = {str(app.get("id")) for app in data["appsUsing"][:200]
                                 if isinstance(app, dict)}
                     matched = sorted({item["id"] for item in attempts
@@ -479,7 +479,7 @@ def render_dependency_findings(report: dict[str, Any] | None) -> str:
     lines.append(
         f"- Targeted {len(targets)} known installed app ID(s); "
         f"{checked} configuration pages verified. "
-        "RM settings values, when separately inspected, are not retained or displayed; no source code retrieved."
+        "No raw settings values or source code retained/displayed; bounded RM settings may be inspected in memory."
     )
     for item in (report.get("attempts") or targets)[:_MAX_APPS]:
         status = "verified current config" if item.get("configVerified") else "config unavailable"
