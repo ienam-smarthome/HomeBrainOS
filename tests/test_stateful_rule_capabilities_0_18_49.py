@@ -149,6 +149,13 @@ def test_incomplete_or_existing_rule_proposals_blocked(modify, expected):
     assert expected in cumulative_rule_proposal_error(proposal)
 
 
+def test_block_device_must_match_immediate_reset_trigger_device():
+    proposal = valid_rule()
+    proposal["args"]["addActions"][5]["deviceIds"] = ["4221"]
+    reason = cumulative_rule_proposal_error(proposal)
+    assert "same verified access-control device IDs" in reason
+
+
 def test_malformed_proposal_fails_closed_without_readable_schema():
     assert "structured" in cumulative_rule_proposal_error({"tool": "hub_set_rule", "args": None})
     assert cumulative_rule_proposal_error({"tool": "hub_get_rule"}) is None
