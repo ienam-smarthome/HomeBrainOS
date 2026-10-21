@@ -199,6 +199,7 @@ from automation_diagnostic_policy import (
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from rule_machine_analysis import requires_rule_logic_inspection
+from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
     cumulative_rule_proposal_error,
@@ -4287,6 +4288,19 @@ class UnifiedMCPAgent:
             *self._history(conversation_history),
             {"role": "user", "content": str(user_prompt).strip()},
         ]
+        if deep_rule_review:
+            app_match = re.search(
+                r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*"
+                r"(?:id\s*)?#?\s*(\d{2,7})\b",
+                user_prompt, re.IGNORECASE,
+            )
+            if app_match is not None:
+                await prefetch_native_rule_evidence(
+                    self.mcp, self.evidence,
+                    app_id=app_match.group(1),
+                    available_names=catalog.available_names,
+                    messages=messages,
+                )
         completed_calls: set[str] = set()
         grounding = GroundingPolicy(
             logs_requested=_matches(user_prompt, _LOG_TERMS),
