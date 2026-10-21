@@ -343,7 +343,7 @@ class RuleAuthoringService:
         return bool(
             cls._ACTION_REQUEST.match(text)
             and not cls._DESIGN_ONLY.search(text)
-            and re.search(r"\\b(?:automation|rule|controller)\\b", text, re.I)
+            and re.search(r"\b(?:automation|rule|controller)\b", text, re.I)
             and cls._STATEFUL_USAGE.search(text)
             and cls._RESET_ON_RESTORATION.search(text)
         )
