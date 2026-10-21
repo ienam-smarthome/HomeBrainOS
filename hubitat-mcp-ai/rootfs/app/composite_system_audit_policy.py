@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from automation_diagnostic_policy import is_targeted_device_transition_investigation
+from targeted_rule_scope_policy import is_targeted_rule_investigation
 
 _GLOBAL = re.compile(
     r"\b(?:whole|entire|full|comprehensive|system[\s-]?wide|"
@@ -41,7 +42,7 @@ def is_cross_domain_hub_audit_request(question: str) -> bool:
     text = " ".join(str(question or "").split())
     if len(text) < 18 or not _GLOBAL.search(text) or not _ACTION.search(text):
         return False
-    if is_targeted_device_transition_investigation(text):
+    if is_targeted_rule_investigation(text) or is_targeted_device_transition_investigation(text):
         return False
     present = {name for name, pattern in _DOMAINS.items() if pattern.search(text)}
     # Distinguish a multi-domain reliability review from a review of just
