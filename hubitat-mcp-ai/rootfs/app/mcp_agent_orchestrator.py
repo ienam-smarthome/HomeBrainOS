@@ -4609,6 +4609,15 @@ class UnifiedMCPAgent:
                         f"Machine proposal validation failed. Exact reason: {reason} "
                         f"Rejected payload: {rejected}"
                     )
+                if review_first:
+                    return self._unverified_mutation_guard(
+                        str(assistant.get("content") or "").strip()
+                        or (
+                            "Read-only inspection did not verify the complete "
+                            "rule trigger and action structure. No duplicate "
+                            "was created."
+                        )
+                    )
                 if stateful_authoring:
                     return (
                         "No automation was created or queued. Live Rule Machine "
