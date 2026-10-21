@@ -113,6 +113,23 @@ def valid_rule():
     }
 
 
+def test_cumulative_rule_uses_periodic_counter_not_a_single_delay():
+    from tool_registry import rule_machine_proposal_error
+
+    payload = valid_rule()
+    # Cumulative routing passes user_prompt=None to the generic validator,
+    # then separately checks the time-accounting topology.
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine", payload, user_prompt=None
+    ) is None
+    assert cumulative_rule_proposal_error(payload) is None
+    # The generic one-shot validator would reject this shape for "after 1 hr".
+    assert "60-minute delay" in rule_machine_proposal_error(
+        "hub_manage_rule_machine", payload,
+        user_prompt="Create a rule to block internet after 1 hour",
+    )
+
+
 def test_complete_typed_reference_rule_passes_structural_review():
     assert cumulative_rule_proposal_error(valid_rule()) is None
 
