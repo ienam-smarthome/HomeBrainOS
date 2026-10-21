@@ -302,6 +302,11 @@ def calibrate_api_outcome(outcome: Any, request: str) -> Any:
             )
             if corrected:
                 issues = (*issues, "rule_review_partial_headline")
+    from native_rule_claim_guard import calibrate_native_rule_claims
+    new_message, native_issues = calibrate_native_rule_claims(
+        new_message, evidence, coverage, str(request or ""),
+    )
+    issues = (*issues, *native_issues)
     if not issues:
         return outcome
     metrics = dict(getattr(outcome, "metrics", None) or {})
