@@ -664,7 +664,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     try:
         operation: Awaitable[Any]
         scoped_id = scoped_status_app_id(request.message)
-        if scoped_id is not None:
+        if scoped_id is not None and not requires_rule_logic_inspection(request.message):
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
