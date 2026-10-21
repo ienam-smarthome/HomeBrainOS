@@ -199,6 +199,7 @@ from automation_diagnostic_policy import (
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from rule_machine_analysis import requires_rule_logic_inspection
+from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
     cumulative_rule_proposal_error,
@@ -4231,6 +4232,13 @@ class UnifiedMCPAgent:
                 "Distinguish verified configuration, actual execution "
                 "history and unverified runtime behaviour. If an ordered "
                 "action tree cannot be obtained, say so specifically. "
+                "A separate reset rule cannot be assumed to modify a "
+                "different rule's LOCAL variable just because its name "
+                "matches; verify whether the counter is a shared Hub "
+                "Variable or a genuinely cross-rule supported reference. "
+                "Do not call an initialized-only log proof of minute-by-minute "
+                "execution. Do not say the investigation is complete when "
+                "execution or variable scope remains unverified. "
                 "No changes or confirmations are authorized."
             )
         if stateful_capability_instruction:
@@ -4287,6 +4295,19 @@ class UnifiedMCPAgent:
             *self._history(conversation_history),
             {"role": "user", "content": str(user_prompt).strip()},
         ]
+        if deep_rule_review:
+            app_match = re.search(
+                r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*"
+                r"(?:id\s*)?#?\s*(\d{2,7})\b",
+                user_prompt, re.IGNORECASE,
+            )
+            if app_match is not None:
+                await prefetch_native_rule_evidence(
+                    self.mcp, self.evidence,
+                    app_id=app_match.group(1),
+                    available_names=catalog.available_names,
+                    messages=messages,
+                )
         completed_calls: set[str] = set()
         grounding = GroundingPolicy(
             logs_requested=_matches(user_prompt, _LOG_TERMS),
