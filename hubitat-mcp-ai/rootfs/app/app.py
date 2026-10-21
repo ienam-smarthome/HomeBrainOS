@@ -48,7 +48,7 @@ from history_time_windows import (
 )
 from homebrain_agent import UnifiedMCPAgent
 from adaptive_investigation_policy import model_led_investigation_request
-from rule_machine_analysis import historical_rule_execution_request
+from rule_machine_analysis import historical_rule_execution_request, requires_rule_logic_inspection
 from investigation_policy import is_causal_investigation, is_history_investigation
 from mcp_agent_orchestrator import _explicit_mutation_request
 from hub_timezone import HubTimezoneResolver
