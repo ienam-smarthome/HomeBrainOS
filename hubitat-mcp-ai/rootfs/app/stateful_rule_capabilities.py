@@ -136,3 +136,105 @@ async def inspect_stateful_rule_capabilities(
         ),
         tuple(checked), (),
     )
+
+def cumulative_rule_proposal_error(arguments: dict[str, Any]) -> str | None:
+    """Check that a proposed SINGLE-RULE accumulated-usage topology is complete.
+
+    This complements the upstream schema/confirmation gates; it does not
+    claim correctness of every condition or execute any action. A partial
+    create with a periodic trigger and an off command is NOT a valid
+    cumulative allowance. The model may retry with the live guide.
+    """
+    if arguments.get("tool") != "hub_set_rule":
+        return None
+    payload = arguments.get("args")
+    if not isinstance(payload, dict):
+        return "Cumulative automation needs a direct structured rule payload."
+    if payload.get("appId") not in (None, ""):
+        return "Requested NEW cumulative automation must not edit an existing Rule Machine rule."
+
+    triggers = payload.get("addTriggers") or ([payload["addTrigger"]] if isinstance(payload.get("addTrigger"), dict) else [])
+    actions = payload.get("addActions") or ([payload["addAction"]] if isinstance(payload.get("addAction"), dict) else [])
+    if not isinstance(triggers, list) or not isinstance(actions, list):
+        return "Cumulative automation requires complete typed trigger and action arrays."
+    if not any(
+        isinstance(t, dict) and str(t.get("capability", "")).casefold() == "periodic schedule"
+        and isinstance(t.get("periodic"), dict)
+        and str(t["periodic"].get("frequency", "")).casefold() == "minutes"
+        and t["periodic"].get("everyN") == 1
+        for t in triggers
+    ):
+        return "Missing the native every-1-minute periodic schedule trigger."
+    if not any(
+        isinstance(t, dict) and str(t.get("capability", "")).casefold() == "switch"
+        and str(t.get("state", "")).casefold() == "off"
+        for t in triggers
+    ):
+        return (
+            "Missing an Internet-control switch-OFF event trigger; a periodic-only "
+            "rule can miss a quick block/unblock and immediately block again."
+        )
+
+    capabilities = [
+        str(a.get("capability") or "").casefold() if isinstance(a, dict) else ""
+        for a in actions
+    ]
+    if "ifthen" not in capabilities or "endif" not in capabilities:
+        return "Missing complete IF/END-IF conditional action structure."
+    depth = 0
+    for cap in capabilities:
+        if cap == "ifthen":
+            depth += 1
+        elif cap in {"elseif", "else"}:
+            if depth == 0:
+                return "ELSE/ELSE-IF lacks a matching IF action."
+        elif cap == "endif":
+            depth -= 1
+            if depth < 0:
+                return "END-IF has no matching IF action."
+    if depth:
+        return "Unclosed IF/END-IF block in cumulative-allowance actions."
+
+    variable_actions = [
+        a for a in actions if isinstance(a, dict)
+        and str(a.get("capability") or "").casefold() in {"setvariable", "setlocalvariable"}
+    ]
+    if not variable_actions:
+        return "No variable actions; cannot accumulate and reset usage."
+    increments = [
+        a for a in variable_actions
+        if str(a.get("numOp") or "").casefold() == "add number"
+        or (isinstance(a.get("math"), dict)
+            and str(a["math"].get("op")) == "+")
+    ]
+    if not increments:
+        return "No supported arithmetic increment of accumulated usage."
+    resets = [
+        a for a in variable_actions
+        if a.get("value") in (0, 0.0, "0") and not a.get("numOp")
+    ]
+    if not resets:
+        return "No explicit zero reset of the accumulated-usage variable."
+    targets = {str(a.get("variable") or "").casefold() for a in increments}
+    if not targets or not any(str(a.get("variable") or "").casefold() in targets for a in resets):
+        return "Increment and reset must address the same verified variable."
+    if not any(
+        isinstance(a, dict)
+        and (
+            (str(a.get("capability") or "").casefold() == "switch"
+             and str(a.get("action") or "").casefold() == "off")
+            or (str(a.get("capability") or "").casefold() == "runcommand"
+                and str(a.get("command") or "").casefold() == "off")
+        )
+        for a in actions
+    ):
+        return "No explicit Internet-control OFF action at the usage limit."
+    if not any(
+        isinstance(a, dict)
+        and str(a.get("capability") or "").casefold() in {"ifthen", "elseif"}
+        and isinstance(a.get("expression"), dict)
+        and "variable" in str(a["expression"]).casefold()
+        for a in actions
+    ):
+        return "No variable-limit conditional verified before the block."
+    return None
