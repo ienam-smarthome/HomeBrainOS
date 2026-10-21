@@ -29,11 +29,16 @@ the status shortcut broadly matched the word "status" anywhere.
 3. At the API level, **both** the `scoped-app-status` shortcut and the
    generic automation-inventory shortcut independently check that deep
    Rule Machine logic inspection is not required.
-4. The legacy fallback for a simple status query no longer mentions
+4. A true short status-only request that returns no configuration status
+   fields additionally checks the installed native Rule Machine
+   `hub_get_rule_health` read-only endpoint when available. It reports only
+   positively observed paused/stopped/broken booleans, never infers from
+   labels or upgrades health to proof of execution.
+5. The legacy fallback for a simple status query no longer mentions
    "motion and countdown" for arbitrary native apps. An app config read
    with no supported enabled/paused fields is accurately described as a
    partial config-only read.
-5. Tests replay the prior v0.18.51 detailed prompt, short-form variants,
+6. Tests replay the prior v0.18.51 detailed prompt, short-form variants,
    simple app enabled-status questions and an actual API dispatch with
    the broad inventory matcher intentionally forced to true.
 
