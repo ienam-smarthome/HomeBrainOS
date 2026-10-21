@@ -54,7 +54,7 @@ async def test_preflight_only_reads_exact_live_capability_sections():
     assert all(name == "hub_get_tool_guide" for name, section in mcp.called)
     assert len(receipts) == 4
     assert all(row[1]["evidence_kind"] == "stateful_rule_capability_reference" for row in receipts)
-    assert "native" in preflight.instruction.casefold()
+    assert "rule machine" in preflight.instruction.casefold()
     assert "confirmation" in preflight.instruction
     assert "Do not pause, edit, delete" in preflight.instruction
 
