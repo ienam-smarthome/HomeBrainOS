@@ -331,6 +331,46 @@ class RuleAuthoringService:
     )
 
     @classmethod
+    def is_existing_rule_review_first(cls, prompt: str) -> bool:
+        """An explicitly conditional create must inspect an existing rule first.
+
+        This recognises an entire user *workflow*, not arbitrary mentions of
+        "rule" or a ban on creating. A new rule must not be proposed when the
+        user says to inspect the installed equivalent and avoid duplication.
+        Stage one is read-only; any later write needs new confirmation and
+        independent validation. Unrelated immediate writes retain their
+        ordinary write path.
+        """
+        text = " ".join(str(prompt or "").strip().split())
+        if not cls._ACTION_REQUEST.match(text) or cls._DESIGN_ONLY.search(text):
+            return False
+        first_review = re.search(
+            r"\b(?:first\s+(?:inspect|review|check|verify|audit|examine)|"
+            r"(?:inspect|review|check|verify|audit|examine)\s+first|"
+            r"before\s+(?:creating|adding|building)\b.{0,100}"
+            r"(?:inspect|review|check|verify))\b",
+            text, re.I,
+        )
+        existing = re.search(r"\b(?:existing|already\s+(?:installed|created|present))\s+"
+                             r"(?:rule|automation|app)\b", text, re.I)
+        avoid_duplicate = re.search(
+            r"\b(?:do\s+not|don't|avoid|never)\s+"
+            r"(?:create\s+(?:a\s+)?duplicate|duplicate\b|create\s+(?:another|a\s+new)\b)"
+            r"|\bif\s+(?:that|the|an?\s+existing)\s+(?:rule|automation)\b"
+            r".{0,140}\b(?:do\s+not|don't|avoid)\b.{0,35}\b(?:create|duplicate)\b",
+            text, re.I,
+        )
+        # This branch must not suppress an independent requested device/rule
+        # mutation such as "then pause the old rule" or "also block internet".
+        extra_change = re.search(
+            r"\b(?:then|also|and\s+also)\s+"
+            r"(?:please\s+)?(?:pause|disable|enable|delete|remove|"
+            r"block|unblock|modify|change|turn\s+off|turn\s+on)\b",
+            text, re.I,
+        )
+        return bool(first_review and existing and avoid_duplicate and not extra_change)
+
+    @classmethod
     def is_stateful_authoring_request(cls, prompt: str) -> bool:
         """Route compound usage budgets to live capability-driven authoring.
 
