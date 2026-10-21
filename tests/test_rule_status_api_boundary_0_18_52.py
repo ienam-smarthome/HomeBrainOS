@@ -61,11 +61,26 @@ async def test_actual_api_routing_rejects_status_and_inventory_shortcuts(monkeyp
     assert not outcome.confirmation_required
 
 
-def test_partial_app_status_message_is_generic_not_motion_lockout_template():
-    # This status route is for arbitrary apps. It must never report motion
-    # and countdown as if every application is a lighting/lockout app.
+@pytest.mark.asyncio
+async def test_partial_app_status_message_is_generic_not_motion_lockout_template():
     from scoped_app_status_read import read_scoped_app_status
-    import inspect
-    text = inspect.getsource(read_scoped_app_status)
-    assert "motion and countdown remain unverified" not in text
-    assert "runtime behaviour or rule execution" in text
+
+    class ReadOnlyAppMCP:
+        async def list_tools(self):
+            return [SimpleNamespace(name="hub_read_apps_code")]
+
+        async def call_tool(self, name, arguments):
+            assert name == "hub_read_apps_code"
+            assert arguments["tool"] == "hub_get_app_config"
+            return SimpleNamespace(
+                is_error=False,
+                data={"success": True, "app": {"id": 4239},
+                      "page": {"sections": []}},
+            )
+
+    result = await read_scoped_app_status(ReadOnlyAppMCP(), 4239)
+    assert "motion and countdown remain unverified" not in result.message
+    assert "runtime behaviour or rule execution" in result.message
+    assert "enabled, paused or status" in result.message
+    assert result.complete is False
+    assert len(result.evidence) == 1 and result.evidence[0]["success"]
