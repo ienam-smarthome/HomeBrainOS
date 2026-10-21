@@ -199,6 +199,7 @@ from automation_diagnostic_policy import (
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from rule_machine_analysis import requires_rule_logic_inspection
+from targeted_rule_scope_policy import named_rule_app_ids
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
@@ -4296,15 +4297,13 @@ class UnifiedMCPAgent:
             {"role": "user", "content": str(user_prompt).strip()},
         ]
         if deep_rule_review:
-            app_match = re.search(
-                r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*"
-                r"(?:id\s*)?#?\s*(\d{2,7})\b",
-                user_prompt, re.IGNORECASE,
-            )
-            if app_match is not None:
+            # Explicit coordinated native rules ("apps 4239 and 4241")
+            # must BOTH receive read-only health and variable evidence.
+            # A device ID referenced later in the prompt is not an app ID.
+            for app_id in named_rule_app_ids(user_prompt, max_items=3):
                 await prefetch_native_rule_evidence(
                     self.mcp, self.evidence,
-                    app_id=app_match.group(1),
+                    app_id=app_id,
                     available_names=catalog.available_names,
                     messages=messages,
                 )
