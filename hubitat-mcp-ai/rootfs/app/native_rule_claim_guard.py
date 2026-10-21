@@ -147,6 +147,35 @@ def calibrate_native_rule_claims(
             issues.append("native_rule_truncated_command_history")
 
     global_names = _verified_global_names(receipts)
+    if global_names:
+        # The source-qualified global variable definition refutes a
+        # same-name variable being *only* local. It does not establish
+        # action-level cross-app synchronization.
+        lines = draft.splitlines(keepends=True)
+        corrected = False
+        for i, line in enumerate(lines):
+            if ("Possible explanation" in line
+                    and re.search(r"(?i)\bis defined as a local variable\b", line)
+                    and any(name.casefold() in line.casefold() for name in global_names)):
+                variable = next(
+                    name for name in sorted(global_names)
+                    if name.casefold() in line.casefold()
+                )
+                lines[i] = (
+                    "- **Variable definition checked:** " + variable +
+                    " is reported by the Hub Variable reader with source=hub; "
+                    "the local-only interpretation is not supported. "
+                    "The two apps' exact action references still need "
+                    "separate verification.\n"
+                )
+                # The next 'distinguishing evidence' question was resolved
+                # for variable definition (not for action references).
+                if i + 1 < len(lines) and "Distinguishing evidence:" in lines[i + 1]:
+                    lines[i + 1] = ""
+                corrected = True
+        if corrected:
+            draft = "".join(lines)
+            issues.append("native_rule_global_scope_hypothesis_resolved")
     if global_names and not _has_verified_cross_app_refs(receipts):
         # A hub_get_variable(source=hub) read proves global availability,
         # not that the compiled actions of two distinct apps address it.
