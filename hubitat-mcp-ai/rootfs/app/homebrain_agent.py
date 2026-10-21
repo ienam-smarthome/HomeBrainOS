@@ -75,6 +75,7 @@ from rule_authoring_service import RuleAuthoringService
 from rule_machine_analysis import (
     RuleMachineAnalysisService, parse_rule_analysis_request,
     historical_rule_execution_request,
+    requires_rule_logic_inspection,
 )
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
@@ -1639,7 +1640,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             # cannot prematurely finalise an unfamiliar investigative goal.
             # Only the existing host safety policy decides write authorisation.
             historical_rule_goal = historical_rule_execution_request(user_prompt)
-            if ((model_led_investigation_request(user_prompt) or historical_rule_goal)
+            deep_rule_goal = requires_rule_logic_inspection(user_prompt)
+            if ((model_led_investigation_request(user_prompt)
+                    or historical_rule_goal or deep_rule_goal)
                     and not _explicit_mutation_request(user_prompt)):
                 self.request_metrics.increment("investigation_snapshot_shortcut_bypassed")
                 if historical_rule_goal:
