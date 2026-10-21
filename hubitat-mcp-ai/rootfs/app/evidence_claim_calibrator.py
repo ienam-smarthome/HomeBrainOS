@@ -285,6 +285,23 @@ def calibrate_api_outcome(outcome: Any, request: str) -> Any:
     new_message, issues = calibrate_supported_conclusions(
         getattr(outcome, "message", ""), evidence, domain=domain,
     )
+    # A native-rule configuration review can legitimately establish some
+    # rule instructions while still lacking execution/command evidence.
+    # Do not let the headline contradict explicit partial source coverage.
+    if (
+        isinstance(coverage, dict)
+        and coverage.get("evidenceComplete") is False
+    ):
+        from rule_machine_analysis import requires_rule_logic_inspection
+        if requires_rule_logic_inspection(str(request or "")):
+            new_message, corrected = re.subn(
+                r"(?i)(\\b(?:the\\s+)?(?:read-only\\s+)?investigation"
+                r"\\s+of[^.\\n]{0,240}?)\\s+is\\s+complete\\.",
+                r"\\1 remains partial.",
+                new_message,
+            )
+            if corrected:
+                issues = (*issues, "rule_review_partial_headline")
     if not issues:
         return outcome
     metrics = dict(getattr(outcome, "metrics", None) or {})
