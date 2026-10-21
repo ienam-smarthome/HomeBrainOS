@@ -77,7 +77,7 @@ def select_automation_probes(
                *, prefer_rm: bool = False):
         selected = []
         for item in sorted(installed.values(), key=lambda r: (
-            0 if (prefer_rm and is_rule_machine_app(r)) else 1,
+            0 if (prefer_rm and (r.get("type") == "rule" or is_rule_machine_app(r))) else 1,
             int(r["id"]),
         )):
             if item["id"] in existing or not predicate(item):
@@ -358,9 +358,18 @@ async def inspect_automation_dependencies(
     # and immediately projected onto allowlisted key family counts and numeric
     # *references*, never returned or persisted. Never promote references into
     # action edges or claim that they prove rule execution.
-    eligible = [item for item in attempts if item.get("configVerified")
-                and not item.get("typedActionDeviceIds")
-                and (item.get("rmAppTypeVerified") or is_rule_machine_app(item))][:2]
+    eligible = sorted(
+        (item for item in attempts if item.get("configVerified")
+         and not item.get("typedActionDeviceIds")
+         and (item.get("rmAppTypeVerified") or is_rule_machine_app(item))),
+        # Spend the two RM-specific reads on lighting rules as a pair when
+        # present; disabled-app scheduling candidates still receive normal
+        # config reads but cannot displace both lighting comparisons.
+        key=lambda item: (
+            0 if item.get("reason") == "lighting dependency comparison candidate" else 1,
+            int(item["id"]),
+        ),
+    )[:2]
 
     async def inspect_rm(item: dict[str, Any]) -> None:
         async with semaphore:
