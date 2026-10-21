@@ -24,6 +24,7 @@ class FakeMCP:
         self.variables = variables if variables is not None else [
             {"name": "TV_Minutes_Used", "type": "Number", "value": "42"},
             {"name": "credential", "type": "String", "value": "privatepassword"},
+            {"name": "access_pin", "type": "Number", "value": "987654"},
         ]
 
     async def call_tool(self, gateway, args):
@@ -74,6 +75,7 @@ async def test_native_rule_prefetch_reads_only_health_and_owned_variables():
         }]
         assert "TV_Minutes_Used" in messages[-1]["content"]
         assert "privatepassword" not in messages[-1]["content"]
+        assert "987654" not in messages[-1]["content"]
         assert "Local variables belong to their owning app" in messages[-1]["content"]
         assert "does NOT prove" in messages[-1]["content"]
     finally:
@@ -172,3 +174,46 @@ def test_complete_coverage_or_other_domains_keep_existing_conclusions():
         }, metrics={},
     )
     assert calibrate_api_outcome(unrelated, "Explain my network").message == text
+
+
+@pytest.mark.asyncio
+async def test_wrong_app_id_response_is_never_promoted_to_4239_health():
+    class WrongHub(FakeMCP):
+        async def call_tool(self, gateway, args):
+            if args["tool"] == "hub_get_rule_health":
+                self.calls.append((gateway, args))
+                return SimpleNamespace(is_error=False, data={
+                    "ok": True, "appId": 9999, "paused": True, "broken": True,
+                })
+            return await super().call_tool(gateway, args)
+
+    hub = WrongHub()
+    recorder = EvidenceRecorder()
+    token = recorder.begin()
+    try:
+        messages = []
+        await prefetch_native_rule_evidence(
+            hub, recorder, app_id="4239",
+            available_names={"hub_read_rules"}, messages=messages,
+        )
+        health_receipt = recorder.receipts()[0]
+        assert not health_receipt["success"]
+        assert not health_receipt["supports_live_claim"]
+        assert "healthReadFailed" in messages[-1]["content"]
+        assert '"paused": true' not in messages[-1]["content"]
+    finally:
+        recorder.reset(token)
+
+
+def test_secret_named_numeric_variable_is_not_exposed():
+    variables, parsed = _variables({"localVariables": [
+        {"name": "TV_Minutes_Used", "value": "42"},
+        {"name": "adminPin", "value": "1234"},
+        {"name": "api_key", "value": 7654321},
+    ]})
+    assert parsed
+    assert variables == [
+        {"name": "TV_Minutes_Used", "value": 42},
+        {"name": "adminPin"},
+        {"name": "api_key"},
+    ]
