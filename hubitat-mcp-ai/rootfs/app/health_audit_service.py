@@ -360,6 +360,9 @@ def is_comprehensive_system_audit_request(prompt: str) -> bool:
     underlying MCP action is a fixed read. Specific repair commands continue
     through the normal agent and its tool-based confirmation checks.
     """
+    from targeted_rule_scope_policy import is_targeted_rule_investigation
+    if is_targeted_rule_investigation(prompt):
+        return False
     words = " ".join(str(prompt or "").casefold().split())
     if any(phrase in words for phrase in (
         "comprehensive system audit", "full system audit",
