@@ -128,3 +128,47 @@ def test_missing_health_booleans_and_nonnumeric_variable_values_not_inferred():
         {"name": "Missing"},
     ]
     assert _variables({"localVariables": {}}) == ([], False)
+
+
+def test_partial_rule_review_headline_calibrated_without_erasing_findings():
+    from evidence_claim_calibrator import calibrate_api_outcome
+    original = SimpleNamespace(
+        message=(
+            'The read-only investigation of Rule Machine app **4239** '
+            'and its companion reset rule **4241** is complete.\n\n'
+            'Counter TV_Minutes_Used reported 42; logs show initialized only.'
+        ),
+        evidence=[],
+        investigation_coverage={
+            "domain": "causal_provenance", "evidenceComplete": False,
+            "status": "partial-evidence",
+        },
+        metrics={"outcome": "unresolved", "counters": {}},
+    )
+    result = calibrate_api_outcome(
+        original,
+        "Inspect Rule Machine app 4239 ordered actions and counter reset conditions.",
+    )
+    assert "remains partial" in result.message
+    assert "is complete" not in result.message
+    assert "TV_Minutes_Used reported 42" in result.message
+    assert result.metrics["counters"]["evidence_claim_calibrations"] >= 1
+    # Preserve the actual original evidence/response object.
+    assert "is complete" in original.message
+
+
+def test_complete_coverage_or_other_domains_keep_existing_conclusions():
+    from evidence_claim_calibrator import calibrate_api_outcome
+    text = "The investigation of Rule Machine app 4239 is complete."
+    completed = SimpleNamespace(
+        message=text, evidence=[], investigation_coverage={
+            "evidenceComplete": True, "domain": "rule_machine"
+        }, metrics={},
+    )
+    assert calibrate_api_outcome(completed, "Inspect app 4239 ordered actions").message == text
+    unrelated = SimpleNamespace(
+        message=text, evidence=[], investigation_coverage={
+            "evidenceComplete": False, "domain": "other"
+        }, metrics={},
+    )
+    assert calibrate_api_outcome(unrelated, "Explain my network").message == text
