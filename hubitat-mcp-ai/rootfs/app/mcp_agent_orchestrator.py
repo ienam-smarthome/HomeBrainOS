@@ -3876,7 +3876,10 @@ class UnifiedMCPAgent:
         request_started = time.monotonic()
         # Stateful automation requests require live Rule Machine capability
         # discovery, not unconditional refusal or a speculative direct write.
-        review_first = self._review_first_mode.get()
+        # Some legacy tool-free tests instantiate the agent with __new__
+        # and deliberately bypass normal service/ContextVar initialization.
+        review_context = getattr(self, "_review_first_mode", None)
+        review_first = bool(review_context.get()) if review_context is not None else False
         stateful_authoring = (
             not review_first
             and RuleAuthoringService.is_stateful_authoring_request(user_prompt)
