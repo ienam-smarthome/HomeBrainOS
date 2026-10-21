@@ -93,6 +93,8 @@ async def read_scoped_app_status(mcp: HubitatMCPClient, app_id: int) -> ScopedAp
             + "\n".join("- " + line for line in snippets)
         )
     else:
-        message = (f"App {app_id} configuration was retrieved, but this result has no "
-                   "interpretable status fields. Enabled state, readiness, motion and countdown remain unverified.")
+        message = (f"App {app_id} configuration was retrieved, but the returned page "
+                   "does not expose verified enabled, paused or status fields. "
+                   "A configuration identity read alone cannot establish runtime "
+                   "behaviour or rule execution.")
     return ScopedAppStatusOutcome(message, evidence=evidence, complete=bool(snippets))
