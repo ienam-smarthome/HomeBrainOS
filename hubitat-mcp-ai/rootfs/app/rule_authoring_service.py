@@ -315,7 +315,7 @@ class RuleAuthoringService:
     # read-only questions must stay on their existing paths.
     _STATEFUL_USAGE = re.compile(
         r"\b(?:cumulative|accumulat(?:ed|e|ing|ion)|running\s+total|"
-        r"total\s+(?:of\s+)?\d+\s+(?:minutes?|mins?|hours?|hrs?)|"
+        r"total\s+(?:of\s+)?\d+\s*(?:minutes?|mins?|hours?|hrs?)|"
         r"across\s+(?:separate\s+)?(?:sessions?|uses?)|"
         r"pause\s+(?:the\s+)?(?:timer|counter|counting)|"
         r"preserv(?:e|ing)\s+(?:the\s+)?(?:counter|elapsed|timer))\b",
@@ -323,8 +323,8 @@ class RuleAuthoringService:
     )
     _RESET_ON_RESTORATION = re.compile(
         r"\b(?:unblock(?:ed|ing)?|allow(?:ed|ing)?|restor(?:e|ed|ing))\b"
-        r"[\s\S]{0,110}\b(?:reset|restart|fresh|new|zero|60.minute|one.hour)\b"
-        r"|\b(?:reset|restart|fresh|new)\b"
+        r"[\s\S]{0,110}\b(?:reset|restart|resume|fresh|new|zero|60.minute|one.hour|1\s*(?:hour|hr))\b"
+        r"|\b(?:reset|restart|resume|fresh|new)\b"
         r"[\s\S]{0,110}\b(?:unblock(?:ed|ing)?|restor(?:e|ed|ing)|"
         r"allow(?:ed|ing)?)\b",
         re.I,
