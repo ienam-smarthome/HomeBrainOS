@@ -4232,6 +4232,13 @@ class UnifiedMCPAgent:
                 "Distinguish verified configuration, actual execution "
                 "history and unverified runtime behaviour. If an ordered "
                 "action tree cannot be obtained, say so specifically. "
+                "A separate reset rule cannot be assumed to modify a "
+                "different rule's LOCAL variable just because its name "
+                "matches; verify whether the counter is a shared Hub "
+                "Variable or a genuinely cross-rule supported reference. "
+                "Do not call an initialized-only log proof of minute-by-minute "
+                "execution. Do not say the investigation is complete when "
+                "execution or variable scope remains unverified. "
                 "No changes or confirmations are authorized."
             )
         if stateful_capability_instruction:
