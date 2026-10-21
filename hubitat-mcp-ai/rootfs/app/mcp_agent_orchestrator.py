@@ -4119,7 +4119,7 @@ class UnifiedMCPAgent:
                 "evidence plainly. Never write to Hubitat."
             )
         if stateful_capability_instruction:
-            system_prompt += "\\n\\n" + stateful_capability_instruction
+            system_prompt += "\n\n" + stateful_capability_instruction
         if capability_discovery:
             system_prompt += (
                 "\n\nHOST ORIGINAL-REQUEST CAPABILITY DISCOVERY\n"
