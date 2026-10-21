@@ -9,11 +9,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_RM_TYPE = re.compile(r"^(?:Rule-5(?:\\.\\d+)?|Rule Machine(?: 5(?:\\.\\d+)?)?)$", re.I)
-_REFERENCE_KEY = re.compile(r"^onOffSwitch\\.[1-9]\\d{0,4}$")
-_TRIGGER_KEY = re.compile(r"^tCapab[1-9]\\d{0,4}$")
-_TIME_KEY = re.compile(r"^(?:startingA|endingA|selectHoursC)[1-9]\\d{0,4}$")
-_DEVICE_ID = re.compile(r"^[1-9]\\d{1,8}$")
+_RM_TYPE = re.compile(r"^(?:Rule-5(?:\.\d+)?|Rule Machine(?: 5(?:\.\d+)?)?)$", re.I)
+_REFERENCE_KEY = re.compile(r"^onOffSwitch\.[1-9]\d{0,4}$")
+_TRIGGER_KEY = re.compile(r"^tCapab[1-9]\d{0,4}$")
+_TIME_KEY = re.compile(r"^(?:startingA|endingA|selectHoursC)[1-9]\d{0,4}$")
+_DEVICE_ID = re.compile(r"^[1-9]\d{1,8}$")
 _MAX_KEYS = 256
 _MAX_REFS = 24
 
