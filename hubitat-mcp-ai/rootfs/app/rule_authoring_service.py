@@ -357,7 +357,7 @@ class RuleAuthoringService:
                              r"(?:rule|automation|app)\b", text, re.I)
         avoid_duplicate = re.search(
             r"\b(?:do\s+not|don't|avoid|never)\s+"
-            r"(?:create\s+(?:a\s+)?duplicate|duplicate\b|create\s+(?:another|a\s+new)\b)"
+            r"(?:creat(?:e|ing)\s+(?:a\s+)?duplicate|duplicate\b|create\s+(?:another|a\s+new)\b)"
             r"|\bif\s+(?:that|the|an?\s+existing)\s+(?:rule|automation)\b"
             r".{0,140}\b(?:do\s+not|don't|avoid)\b.{0,35}\b(?:create|duplicate)\b",
             text, re.I,
