@@ -229,6 +229,32 @@ def cumulative_rule_proposal_error(arguments: dict[str, Any]) -> str | None:
         for a in actions
     ):
         return "No explicit Internet-control OFF action at the usage limit."
+    # Both the reset event and the block command must name the SAME
+    # access-control device(s). Merely finding an unrelated Switch OFF
+    # action elsewhere would leave the timer unsafe or power down the TV.
+    reset_targets = {
+        str(device_id)
+        for trigger in triggers if isinstance(trigger, dict)
+        and str(trigger.get("capability") or "").casefold() == "switch"
+        and str(trigger.get("state") or "").casefold() == "off"
+        for device_id in (trigger.get("deviceIds") or [])
+    }
+    block_targets = {
+        str(device_id)
+        for action in actions if isinstance(action, dict)
+        and (
+            (str(action.get("capability") or "").casefold() == "switch"
+             and str(action.get("action") or "").casefold() == "off")
+            or (str(action.get("capability") or "").casefold() == "runcommand"
+                and str(action.get("command") or "").casefold() == "off")
+        )
+        for device_id in (action.get("deviceIds") or [])
+    }
+    if not reset_targets or reset_targets != block_targets:
+        return (
+            "The Internet-control OFF trigger and blocking OFF action must "
+            "target the same verified access-control device IDs."
+        )
     if not any(
         isinstance(a, dict)
         and str(a.get("capability") or "").casefold() in {"ifthen", "elseif"}
