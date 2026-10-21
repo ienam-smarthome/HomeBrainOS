@@ -198,7 +198,10 @@ from automation_diagnostic_policy import (
 )
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
-from stateful_rule_capabilities import inspect_stateful_rule_capabilities
+from stateful_rule_capabilities import (
+    inspect_stateful_rule_capabilities,
+    cumulative_rule_proposal_error,
+)
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
@@ -5009,6 +5012,13 @@ class UnifiedMCPAgent:
                 proposal_error = rule_machine_proposal_error(
                     name, arguments, user_prompt=user_prompt
                 )
+                if (
+                    proposal_error is None
+                    and stateful_authoring
+                    and name == RULE_MACHINE_GATEWAY
+                    and arguments.get("tool") == "hub_set_rule"
+                ):
+                    proposal_error = cumulative_rule_proposal_error(arguments)
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
                 if tool is not None and effect.mutates:
