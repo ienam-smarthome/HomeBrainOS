@@ -60,10 +60,10 @@ def requires_rule_logic_inspection(prompt: str) -> bool:
     Authorization for writes is evaluated separately; this is just routing.
     """
     value = str(prompt or "").strip()
-    return bool(
-        is_targeted_rule_investigation(value)
-        or (_APP_ID.search(value) and _RULE_LOGIC_EVIDENCE.search(value))
-    )
+    # Being about a particular rule does NOT make a simple status or
+    # configuration question a deep action-tree investigation. The scoped
+    # audit policy is deliberately broader than this fast-path bypass.
+    return bool(named_rule_app_ids(value) and _RULE_LOGIC_EVIDENCE.search(value))
 
 
 def historical_rule_execution_request(prompt: str) -> bool:
