@@ -3288,6 +3288,41 @@ class UnifiedMCPAgent:
         return await self.transport.chat(redact_model_messages(self._bounded_messages(messages)), tools)
 
     def _unverified_mutation_guard(self, content: str) -> str:
+        if self._review_first_mode.get():
+            # The conditional create was downgraded to a read-only review.
+            # Keep evidence-based findings instead of manufacturing a
+            # failed-write verdict. Never repeat an unsupported write claim.
+            wrote = any(
+                receipt.get("success") and receipt.get("mutates")
+                for receipt in self.evidence.receipts()
+            )
+            if wrote:
+                return (
+                    "The rule review unexpectedly recorded a modifying action. "
+                    "Its effects need independent Hubitat verification."
+                )
+            claimed_write = re.search(
+                r"(?i)\\b(?:i|we|homebrain|the agent)\\s+"
+                r"(?:(?:have|has)\\s+)?"
+                r"(?:created|modified|updated|paused|deleted|installed|"
+                r"enabled|disabled|blocked|unblocked|queued)\\b"
+                r"|\\b(?:new\\s+rule\\s+is\\s+live|rule\\s+created\\s+successfully)\\b",
+                str(content or ""),
+            )
+            if claimed_write:
+                return (
+                    "Read-only review completed without a successful Hubitat "
+                    "write receipt, but the generated answer made an "
+                    "unverified action claim. Nothing was queued or created "
+                    "in this review stage. Inspect the existing rule before "
+                    "deciding whether changes are needed."
+                )
+            return (
+                "**Read-only existing-rule review — no automation or device "
+                "was changed or queued for approval.**\\n\\n"
+                + (str(content or "").strip() or
+                   "No verified rule findings were produced in this attempt.")
+            )
         mutation_expected = (
             self._mutation_requested_by_user.get()
             or self._mutation_call_seen.get()
