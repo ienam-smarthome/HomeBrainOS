@@ -295,9 +295,9 @@ def calibrate_api_outcome(outcome: Any, request: str) -> Any:
         from rule_machine_analysis import requires_rule_logic_inspection
         if requires_rule_logic_inspection(str(request or "")):
             new_message, corrected = re.subn(
-                r"(?i)(\\b(?:the\\s+)?(?:read-only\\s+)?investigation"
-                r"\\s+of[^.\\n]{0,240}?)\\s+is\\s+complete\\.",
-                r"\\1 remains partial.",
+                r"(?i)(\b(?:the\s+)?(?:read-only\s+)?investigation"
+                r"\s+of[^.\n]{0,240}?)\s+is\s+complete\.",
+                r"\1 remains partial.",
                 new_message,
             )
             if corrected:
