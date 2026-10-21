@@ -342,7 +342,9 @@ class RuleAuthoringService:
         ordinary write path.
         """
         text = " ".join(str(prompt or "").strip().split())
-        if not cls._ACTION_REQUEST.match(text) or cls._DESIGN_ONLY.search(text):
+        # "Do not create a duplicate" is a constraint on a conditional
+        # creation, NOT a prohibition on inspecting the existing rule.
+        if not cls._ACTION_REQUEST.match(text):
             return False
         first_review = re.search(
             r"\b(?:first\s+(?:inspect|review|check|verify|audit|examine)|"
