@@ -17,6 +17,7 @@ from typing import Any
 
 from mcp_client import tool_succeeded
 from causal_rule_decision_context import configured_mode_triggers
+from rm_settings_dependency import is_rule_machine_app, interpret_rm_settings
 
 _MAX_APPS = 6
 _MAX_PARAGRAPHS = 24
@@ -72,9 +73,13 @@ def select_automation_probes(
             "type": str(item.get("type") or "app"),
         }
 
-    def choose(predicate, reason: str, maximum: int, existing: set[str]):
+    def choose(predicate, reason: str, maximum: int, existing: set[str],
+               *, prefer_rm: bool = False):
         selected = []
-        for item in sorted(installed.values(), key=lambda r: int(r["id"])):
+        for item in sorted(installed.values(), key=lambda r: (
+            0 if (prefer_rm and is_rule_machine_app(r)) else 1,
+            int(r["id"]),
+        )):
             if item["id"] in existing or not predicate(item):
                 continue
             selected.append({**item, "reason": reason})
@@ -98,7 +103,7 @@ def select_automation_probes(
         lambda row: bool(re.search(r"(?i)\b(?:lighting|light|lamp|dimmer)\b", row["name"]))
         and row["status"] in _STATUS,
         "lighting dependency comparison candidate",
-        _MAX_APPS - len(disabled) - len(heartbeat), visited,
+        _MAX_APPS - len(disabled) - len(heartbeat), visited, prefer_rm=True,
     )
     return (disabled + heartbeat + lighting)[:_MAX_APPS]
 
@@ -196,6 +201,7 @@ def summarise_config(data: dict[str, Any], ident: str) -> dict[str, Any] | None:
     return {
         "id": ident,
         "configVerified": True,
+        "rmAppTypeVerified": is_rule_machine_app(None, verified),
         "triggerTextPresent": trigger_present,
         "actionTextPresent": action_present,
         "actionLabelCandidates": sorted(action_labels)[:8],
@@ -208,7 +214,7 @@ def summarise_config(data: dict[str, Any], ident: str) -> dict[str, Any] | None:
 def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
     """Compare direct ID edges separately from name-only action evidence."""
     successes = [x for x in probes if x.get("configVerified") is True]
-    id_matches, text_matches = [], []
+    id_matches, text_matches, reference_matches = [], [], []
     for pos, first in enumerate(successes):
         for second in successes[pos + 1:]:
             # Structured action-scoped device IDs are independent evidence:
@@ -222,6 +228,17 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
                 set(first.get("actionLabelCandidates") or [])
                 & set(second.get("actionLabelCandidates") or [])
             )
+            references = sorted(
+                set(first.get("rmReferenceDeviceIds") or [])
+                & set(second.get("rmReferenceDeviceIds") or []), key=int,
+            )
+            if references:
+                reference_matches.append({
+                    "appIds": [first["id"], second["id"]],
+                    "deviceIds": references[:8],
+                    "proof": "same indexed RM device reference; action direction unknown",
+                    "executionVerified": False,
+                })
             shared_modes = sorted(
                 set(x.casefold() for x in (first.get("modeTriggerCandidates") or []))
                 & set(x.casefold() for x in (second.get("modeTriggerCandidates") or []))
@@ -247,6 +264,8 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
         "configurationReadsVerified": len(successes),
         "typedActionDeviceOverlaps": id_matches[:5],
         "textOnlyActionCandidates": text_matches[:5],
+        "rmDeviceReferenceMatches": reference_matches[:5],
+        "rmReferencesObserved": sum(len(x.get("rmReferenceDeviceIds") or []) for x in successes),
         "callbackOwnersVerified": False,
         "historicalExecutionVerified": False,
         "evidenceScope": "current read-only app configurations, not rule execution history",
@@ -335,6 +354,108 @@ async def inspect_automation_dependencies(
             }
 
     attempts = await asyncio.gather(*(inspect(item) for item in selected))
+    # Bounded RM-only second phase: the raw settings object is used in memory
+    # and immediately projected onto allowlisted key family counts and numeric
+    # *references*, never returned or persisted. Never promote references into
+    # action edges or claim that they prove rule execution.
+    eligible = [item for item in attempts if item.get("configVerified")
+                and not item.get("typedActionDeviceIds")
+                and (item.get("rmAppTypeVerified") or is_rule_machine_app(item))][:2]
+
+    async def inspect_rm(item: dict[str, Any]) -> None:
+        async with semaphore:
+            remaining = max_elapsed - (time.monotonic() - start)
+            if remaining <= 0:
+                item["rmSettingsStatus"] = "budget-exhausted"
+                return
+            arguments = {"tool": "hub_get_app_config",
+                         "args": {"appId": item["id"], "includeSettings": True}}
+            began = time.monotonic()
+            status = False
+            detail = "unavailable"
+            try:
+                response = await asyncio.wait_for(
+                    mcp.call_tool(gateway.name, arguments), timeout=min(2.5, remaining),
+                )
+                data = response.data if tool_succeeded(response) else None
+                if isinstance(data, dict) and _app_record(data, item["id"]):
+                    # If the app-config identity only exposes ID and label, an
+                    # RM type from the current installed identity index is
+                    # authoritative for this same validated numeric app ID.
+                    app = data.get("app") or {}
+                    if not is_rule_machine_app(None, data) and is_rule_machine_app(item):
+                        data = {**data, "app": {**app, "type": item["type"]}}
+                    projected = interpret_rm_settings(data, item["id"])
+                    item.update(projected)
+                    status = projected["rmSettingsInspected"]
+                    detail = "RM indexed settings projected into non-action references" if status else "RM settings schema unverified"
+                else:
+                    detail = "wrong app ID or missing config page"
+            except (Exception, asyncio.CancelledError) as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                detail = type(exc).__name__
+            item["rmSettingsStatus"] = "interpreted-references-only" if status else detail
+            evidence.append({
+                "tool": gateway.name, "sub_tool": "hub_get_app_config",
+                "arguments": arguments, "timestamp": checked_at,
+                "success": bool(status), "supports_live_claim": bool(status),
+                "evidence_kind": "chat_audit_rm_settings_shape",
+                "mutates": False, "effect": "read",
+                "elapsed_ms": round(1000 * (time.monotonic() - began)),
+                "summary": f"App {item['id']}: {detail}; no settings values or labels retained",
+            })
+
+    await asyncio.gather(*(inspect_rm(item) for item in eligible))
+
+    # Device-oriented tool contract: hub_list_device_dependents takes a
+    # deviceId, never an appId. Validate installed-app IDs in the response;
+    # this is a reference relationship, not action direction or execution.
+    found = sorted({ident for item in attempts
+                    for ident in item.get("rmReferenceDeviceIds", [])}, key=int)[:2]
+    dependent_edges: list[dict[str, Any]] = []
+
+    async def check_dependents(device_id: str) -> None:
+        async with semaphore:
+            remaining = max_elapsed - (time.monotonic() - start)
+            if remaining <= 0:
+                return
+            arguments = {"tool": "hub_list_device_dependents",
+                         "args": {"deviceId": device_id}}
+            began = time.monotonic()
+            status = False
+            matched: list[str] = []
+            try:
+                response = await asyncio.wait_for(
+                    mcp.call_tool(gateway.name, arguments), timeout=min(2.5, remaining),
+                )
+                data = response.data if tool_succeeded(response) else None
+                if isinstance(data, dict) and data.get("success") is not False \\
+                        and isinstance(data.get("appsUsing"), list):
+                    observed = {str(app.get("id")) for app in data["appsUsing"][:200]
+                                if isinstance(app, dict)}
+                    matched = sorted({item["id"] for item in attempts
+                                      if item["id"] in observed and
+                                      device_id in item.get("rmReferenceDeviceIds", [])}, key=int)
+                    status = True
+                    dependent_edges.append({"deviceId": device_id,
+                                            "corroboratedSelectedAppIds": matched,
+                                            "actionDirectionVerified": False})
+            except (Exception, asyncio.CancelledError) as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+            evidence.append({
+                "tool": gateway.name, "sub_tool": "hub_list_device_dependents",
+                "arguments": arguments, "timestamp": checked_at,
+                "success": status, "supports_live_claim": status,
+                "evidence_kind": "chat_audit_rm_device_dependents",
+                "mutates": False, "effect": "read",
+                "elapsed_ms": round(1000 * (time.monotonic() - began)),
+                "summary": f"Device {device_id}: {len(matched)} inspected RM app reference(s) corroborated; no action direction",
+            })
+
+    await asyncio.gather(*(check_dependents(device_id) for device_id in found))
+    outcome["deviceDependentEdges"] = dependent_edges[:2]
     outcome["attempts"] = attempts
     outcome["sourceStatus"] = "partially-verified" if any(
         a.get("configVerified") for a in attempts
@@ -358,7 +479,7 @@ def render_dependency_findings(report: dict[str, Any] | None) -> str:
     lines.append(
         f"- Targeted {len(targets)} known installed app ID(s); "
         f"{checked} configuration pages verified. "
-        "No raw settings or source code retrieved."
+        "RM settings values, when separately inspected, are not retained or displayed; no source code retrieved."
     )
     for item in (report.get("attempts") or targets)[:_MAX_APPS]:
         status = "verified current config" if item.get("configVerified") else "config unavailable"
@@ -373,6 +494,12 @@ def render_dependency_findings(report: dict[str, Any] | None) -> str:
                 f"action text {'present' if item.get('actionTextPresent') else 'not established'}; "
                 f"{len(item.get('typedActionDeviceIds') or [])} typed action-device ID(s)."
             )
+            if item.get("rmSettingsInspected"):
+                lines.append(
+                    f"  - RM indexed configuration: "
+                    f"{len(item.get('rmReferenceDeviceIds') or [])} typed device reference(s), "
+                    "action/trigger direction unverified; no raw settings displayed."
+                )
     for overlap in summary.get("typedActionDeviceOverlaps") or []:
         lines.append(
             f"- **Configuration-level shared target:** apps "
@@ -382,6 +509,19 @@ def render_dependency_findings(report: dict[str, Any] | None) -> str:
                if overlap.get('sharedConfiguredModeTriggers') else "")
             + "Not proof that either fired or that their conditions were true."
         )
+    for overlap in summary.get("rmDeviceReferenceMatches") or []:
+        lines.append(
+            f"- **RM reference-level shared device (not a rule conflict):** "
+            f"apps {'/'.join(overlap['appIds'])} reference device ID(s) "
+            f"{', '.join(overlap['deviceIds'])}; action direction and execution unverified."
+        )
+    for edge in report.get("deviceDependentEdges") or []:
+        if edge.get("corroboratedSelectedAppIds"):
+            lines.append(
+                f"- **Dependency index corroboration:** device {edge['deviceId']} "
+                f"references app(s) {', '.join(edge['corroboratedSelectedAppIds'])}; "
+                "the app action, trigger and execution remain unverified."
+            )
     for overlap in summary.get("textOnlyActionCandidates") or []:
         lines.append(
             f"- **Text-only possible overlap:** apps "
