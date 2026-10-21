@@ -187,6 +187,6 @@ async def test_live_route_never_exposes_write_tools_and_retains_read_findings(mo
     assert not outcome.confirmation_required
     assert any(name == "hub_read_apps_code" for name, _ in hub.calls)
     assert all(not name.startswith("hub_manage_") for name, _ in hub.calls)
-    assert "App 4239 exists" in outcome.message
+    assert "App 4239 exists" in outcome.message, (outcome.message, len(fake_transport.calls), [(len(tools or []), messages[-1].get("role")) for messages, tools in fake_transport.calls], hub.calls)
     assert "cannot verify" in outcome.message
     assert outcome.message != UNVERIFIED_MUTATION_REFUSAL
