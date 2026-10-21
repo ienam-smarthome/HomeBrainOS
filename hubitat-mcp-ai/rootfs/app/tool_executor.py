@@ -144,11 +144,42 @@ class ToolExecutor:
     def result_details(result: MCPToolResult) -> dict[str, Any] | None:
         """Return bounded structured proof that is useful in technical receipts."""
 
-        history = history_temporal_evidence_details(result.data)
+        data = result.data
+        if (
+            result.name == "hub_read_variables"
+            and result.arguments.get("tool") == "hub_get_variable"
+            and isinstance(data, dict)
+        ):
+            args = result.arguments.get("args") or {}
+            wanted = str(args.get("name") or "").strip()
+            observed = str(data.get("name") or "").strip()
+            if wanted and wanted == observed and data.get("source"):
+                # Preserve typed scope of a *single* verified Hub Variable,
+                # without leaking arbitrary string values/credentials into
+                # the public evidence transcript.
+                fields: dict[str, Any] = {
+                    "variableName": observed[:80],
+                    "variableScope": str(data["source"])[:32],
+                }
+                if not any(
+                    secret in observed.casefold()
+                    for secret in ("password", "secret", "token", "api_key", "pin", "credential")
+                ):
+                    value = data.get("value")
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        fields["numericValue"] = value
+                    elif isinstance(value, str) and len(value) <= 16:
+                        try:
+                            fields["numericValue"] = (
+                                float(value) if "." in value else int(value)
+                            )
+                        except ValueError:
+                            pass
+                return fields
+
+        history = history_temporal_evidence_details(data)
         if history is not None:
             return history
-
-        data = result.data
         if (result.name == "homebrain_read_groovy_source"
                 and isinstance(data, dict)):
             # Audit *whether* raw source was actually returned, not the source.
