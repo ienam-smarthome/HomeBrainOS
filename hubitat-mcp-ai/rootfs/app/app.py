@@ -579,20 +579,24 @@ async def _agent_request(request: ChatRequest) -> Any:
         )
         cross_domain_audit = is_cross_domain_hub_audit_request(request.message)
         targeted_rule = is_targeted_rule_investigation(request.message)
+        comprehensive_audit = (
+            cross_domain_audit
+            or is_comprehensive_system_audit_request(request.message)
+        )
         if (not targeted_rule and (cross_domain_audit or
                 (not is_whole_hub_optimization_request(request.message)
-                 and (is_comprehensive_system_audit_request(request.message)
-                      or broad_automation_diagnostic)))):
-            # Broad failures receive the existing evidence-rich read-only
-            # System Check, plus an optional tool-free AI synthesis. This is
-            # separate from the manual audit's existing opt-in setting.
+                 and (comprehensive_audit or broad_automation_diagnostic)))):
+            # Cross-domain and explicitly comprehensive audits use their own
+            # tool-free AI opt-in, regardless of whether a broader automation
+            # diagnostic phrase also matches. The latter should not silently
+            # add a 12-second model timeout to a deterministic full-hub report.
             reasoned = (
-                _bool(OPTIONS.get("automation_diagnostic_ai_analysis_enabled"), True)
-                if broad_automation_diagnostic else
                 _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False)
+                if comprehensive_audit else
+                _bool(OPTIONS.get("automation_diagnostic_ai_analysis_enabled"), True)
             )
             if reasoned:
-                if broad_automation_diagnostic:
+                if broad_automation_diagnostic and not comprehensive_audit:
                     return await run_comprehensive_chat_audit(
                         health_audit, mcp, analysis_chat=agent.transport.chat,
                         analysis_focus=request.message,
