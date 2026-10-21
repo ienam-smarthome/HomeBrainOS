@@ -9,10 +9,13 @@ only documented fields with direct observation of missing/failed readers.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
 from mcp_client import tool_succeeded
+
+_SENSITIVE_NAME = re.compile(r"(?i)(?:password|secret|token|api[_-]?key|pin|credential|auth[_-]?code)")
 
 
 def _reliable_data(reply: Any) -> dict[str, Any] | None:
@@ -52,9 +55,11 @@ def _variables(data: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
         value = raw.get("value")
         # Numeric values are especially useful for usage counters. No
         # arbitrary string values (possibly secrets) enter the model packet.
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if (not _SENSITIVE_NAME.search(name)
+                and isinstance(value, (int, float)) and not isinstance(value, bool)):
             row["value"] = value
-        elif isinstance(value, str) and len(value) <= 18:
+        elif (not _SENSITIVE_NAME.search(name)
+              and isinstance(value, str) and len(value) <= 18):
             try:
                 row["value"] = float(value) if "." in value else int(value)
             except ValueError:
@@ -93,6 +98,12 @@ async def prefetch_native_rule_evidence(
             data = _reliable_data(raw)
         except Exception:
             data = None
+        if isinstance(data, dict):
+            actual_id = data.get("appId")
+            if actual_id is None and isinstance(data.get("app"), dict):
+                actual_id = data["app"].get("id")
+            if actual_id is not None and str(actual_id) != app_id:
+                data = None
         success = data is not None
         details: dict[str, Any] = {"appId": app_id, "source": leaf}
         if success and key == "health":
@@ -114,7 +125,12 @@ async def prefetch_native_rule_evidence(
             "hub_read_rules", args, success=success,
             elapsed_ms=round((time.monotonic() - started) * 1000),
             summary=leaf + (" read" if success else " unavailable"),
-            supports_live_claim=success,
+            supports_live_claim=bool(
+                success and (
+                    facts.get("healthFieldsReadable") if key == "health"
+                    else facts.get("localVariablesReadable")
+                )
+            ),
             evidence_kind="native_rule_evidence",
             effect="read", mutates=False,
             details=details,
