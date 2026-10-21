@@ -13,6 +13,7 @@ from device_state_summary import device_attributes
 from mcp_client import tool_succeeded
 from room_status_snapshot import _device_health, _parent_reliability
 from groovy_source_investigation import requested_groovy_app_id
+from targeted_rule_scope_policy import is_targeted_rule_investigation, named_rule_app_ids
 
 _APP_ID = re.compile(r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
 _PARENT_ID = re.compile(r"\bparent\s+(?:device\s+)?(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
@@ -59,7 +60,10 @@ def requires_rule_logic_inspection(prompt: str) -> bool:
     Authorization for writes is evaluated separately; this is just routing.
     """
     value = str(prompt or "").strip()
-    return bool(_APP_ID.search(value) and _RULE_LOGIC_EVIDENCE.search(value))
+    return bool(
+        is_targeted_rule_investigation(value)
+        or (_APP_ID.search(value) and _RULE_LOGIC_EVIDENCE.search(value))
+    )
 
 
 def historical_rule_execution_request(prompt: str) -> bool:
