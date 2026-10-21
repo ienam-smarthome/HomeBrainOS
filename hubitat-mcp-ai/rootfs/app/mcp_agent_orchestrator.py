@@ -198,6 +198,7 @@ from automation_diagnostic_policy import (
 )
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
+from rule_machine_analysis import requires_rule_logic_inspection
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
     cumulative_rule_proposal_error,
@@ -3880,6 +3881,10 @@ class UnifiedMCPAgent:
         # and deliberately bypass normal service/ContextVar initialization.
         review_context = getattr(self, "_review_first_mode", None)
         review_first = bool(review_context.get()) if review_context is not None else False
+        deep_rule_review = (
+            requires_rule_logic_inspection(user_prompt)
+            and not _explicit_mutation_request(user_prompt)
+        )
         stateful_authoring = (
             not review_first
             and RuleAuthoringService.is_stateful_authoring_request(user_prompt)
@@ -3918,6 +3923,17 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+        if deep_rule_review:
+            # Expose available native rule/config/variables/health readers,
+            # not device controls or management gateways. Read-only tool
+            # review must be possible without fuzzy discovery guessing.
+            catalog.activate_investigation_read_view(max_declared=self.tool_limit)
+            catalog.replace_declared([
+                *catalog.declared_names,
+                "hub_read_rules",
+                "hub_read_apps_code",
+                "hub_get_tool_guide",
+            ])
         if review_first:
             # No rule/device write gateway is visible, even if a fuzzy search
             # later discovers one. A conditional create is NOT authority to
@@ -3941,7 +3957,7 @@ class UnifiedMCPAgent:
             model_led_investigation_request(user_prompt)
             and not _explicit_mutation_request(user_prompt)
         )
-        if adaptive_investigation:
+        if adaptive_investigation or deep_rule_review:
             # Restrict available model tools to actually registered READ
             # capabilities. A planner can choose the next evidence source,
             # never expand permissions or authorise a device mutation.
@@ -4107,7 +4123,7 @@ class UnifiedMCPAgent:
                 else []
             )
             capability_discovery = discovery.content
-            if adaptive_investigation or review_first:
+            if adaptive_investigation or review_first or deep_rule_review:
                 # Discovery must not grant the model a mutating gateway.
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
                 if source_investigation:
@@ -4199,6 +4215,23 @@ class UnifiedMCPAgent:
                 "from configuration alone. A claim of full-source coverage "
                 "requires verified chunk completeness. Report missing "
                 "evidence plainly. Never write to Hubitat."
+            )
+        if deep_rule_review:
+            system_prompt += (
+                "\n\nHOST DETAILED RULE MACHINE LOGIC REVIEW (READ-ONLY)\n"
+                "Inspect the exact installed Rule Machine app ID in the "
+                "request. Read actual triggers, ordered conditional actions, "
+                "variable definitions/current values and paused/enabled "
+                "state via installed Hubitat MCP read tools. Prefer "
+                "hub_get_rule_health, hub_list_rule_local_variables, "
+                "hub_get_app_config, hub_get_visual_rule and any native rule "
+                "export only if the installed guide confirms that it is a "
+                "read operation. Never infer condition branches merely from "
+                "a successful app configuration identity fetch. "
+                "Distinguish verified configuration, actual execution "
+                "history and unverified runtime behaviour. If an ordered "
+                "action tree cannot be obtained, say so specifically. "
+                "No changes or confirmations are authorized."
             )
         if stateful_capability_instruction:
             system_prompt += "\n\n" + stateful_capability_instruction

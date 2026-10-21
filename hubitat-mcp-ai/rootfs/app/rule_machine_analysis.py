@@ -33,6 +33,36 @@ _HISTORY_VERIFICATION = re.compile(
 )
 
 
+_DEEP_RULE_LOGIC = re.compile(
+    r"(?i)\b(?:triggers?|ordered\s+actions?|actions?\s+(?:to\s+run|sequence|tree)|"
+    r"if\s*[/\-]\s*else|if\s+then|else\s*[- ]if|"
+    r"counter(?:s)?|variables?|reset\s+(?:conditions?|logic|behaviou?r)|"
+    r"cumulative|allowance|pause\s+and\s+resume|"
+    r"(?:block|unblock)\s+(?:logic|conditions?|after\s+\d+))\b"
+)
+_DETAIL_INTENT = re.compile(
+    r"(?i)^\s*(?:(?:please|can you|could you)\s+)?"
+    r"(?:inspect|review|verify|check|audit|analyse|analyze|investigate|"
+    r"read|show|explain|determine)\b"
+)
+
+
+def requires_rule_logic_inspection(prompt: str) -> bool:
+    """A named native-rule *logic* review cannot be a status/config snapshot.
+
+    A name, status flag, variable existence or successful configuration-page
+    read is not evidence of a complete ordered action tree. Send these goals
+    to bounded read-only rule tool investigation, not the single-page app
+    status or sensor-health rule snapshot.
+    """
+    value = str(prompt or "").strip()
+    return bool(
+        _APP_ID.search(value)
+        and _DETAIL_INTENT.search(value)
+        and _DEEP_RULE_LOGIC.search(value)
+    )
+
+
 def historical_rule_execution_request(prompt: str) -> bool:
     """Historic app execution/command provenance must not use config snapshot.
 
@@ -57,6 +87,8 @@ def parse_rule_analysis_request(prompt: str) -> tuple[str, str | None] | None:
     if requested_groovy_app_id(value) is not None:
         return None
     if historical_rule_execution_request(value):
+        return None
+    if requires_rule_logic_inspection(value):
         return None
     if not _INTENT.search(value) or _WRITES.search(value):
         return None
