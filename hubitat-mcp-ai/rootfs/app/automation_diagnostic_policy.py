@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from targeted_rule_scope_policy import is_targeted_rule_investigation
+
 _SUBJECT = re.compile(r"\b(?:automations?|rules?|apps?|rule\s+machine)\b", re.I)
 _DIAGNOSTIC = re.compile(
     r"\b(?:why|audit|inspect|diagnos(?:e|is|tic)|investigat(?:e|ion)|troubleshoot|"
@@ -146,6 +148,7 @@ def is_broad_automation_runtime_diagnostic(prompt: str) -> bool:
     return bool(
         is_automation_runtime_diagnostic(text)
         and has_broad_automation_scope(text)
+        and not is_targeted_rule_investigation(text)
         and not is_targeted_device_transition_investigation(text)
         and not _MUTATION.search(text)
     )

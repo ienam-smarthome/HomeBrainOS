@@ -13,6 +13,7 @@ from device_state_summary import device_attributes
 from mcp_client import tool_succeeded
 from room_status_snapshot import _device_health, _parent_reliability
 from groovy_source_investigation import requested_groovy_app_id
+from targeted_rule_scope_policy import is_targeted_rule_investigation, named_rule_app_ids
 
 _APP_ID = re.compile(r"\b(?:rule\s+machine\s+)?(?:app|rule)\s*(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
 _PARENT_ID = re.compile(r"\bparent\s+(?:device\s+)?(?:id\s*)?#?\s*(\d{2,7})\b", re.I)
@@ -38,7 +39,7 @@ _HISTORY_VERIFICATION = re.compile(
 # natural prompts often begin "Perform a detailed ...", "Can you ..."
 # or "What are ...", followed by the exact app ID and several obligations.
 _RULE_LOGIC_EVIDENCE = re.compile(
-    r"(?i)\b(?:triggers?|trigger\s+events?|action\s+list|"
+    r"(?i)\b(?:triggers?|trigger\s+events?|action\s+(?:list|history)|overlap(?:ping|s)?|"
     r"ordered\s+(?:if\s*[/\-]\s*else\s+)?actions?|"
     r"actions?\s+(?:to\s+run|sequence|tree|steps?)|"
     r"if\s*[/\-]\s*else|if\s+then|else\s*[- ]if|"
@@ -59,7 +60,10 @@ def requires_rule_logic_inspection(prompt: str) -> bool:
     Authorization for writes is evaluated separately; this is just routing.
     """
     value = str(prompt or "").strip()
-    return bool(_APP_ID.search(value) and _RULE_LOGIC_EVIDENCE.search(value))
+    # Being about a particular rule does NOT make a simple status or
+    # configuration question a deep action-tree investigation. The scoped
+    # audit policy is deliberately broader than this fast-path bypass.
+    return bool(named_rule_app_ids(value) and _RULE_LOGIC_EVIDENCE.search(value))
 
 
 def historical_rule_execution_request(prompt: str) -> bool:
