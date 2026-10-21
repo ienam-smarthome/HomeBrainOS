@@ -34,8 +34,26 @@ LIVE_4239_PROMPT = (
 )
 
 
+LIVE_PERFORM_PROMPT = (
+    'Perform a detailed read-only investigation of Rule Machine app 4239, '
+    '"Internet: Google TV block after 1hr total TV-on time". Retrieve its '
+    'actual trigger events, complete ordered IF/ELSE actions, variable '
+    'definitions and current counter values. Verify that TV device 4221 '
+    'accumulates 60 minutes, Internet device 6923 is blocked at the limit, '
+    'and the counter resets after blocking so a fresh allowance starts '
+    'when Internet is restored. Check enabled/paused status and identify '
+    'any race conditions. Distinguish configuration evidence from actual '
+    'execution evidence. Report any unreadable sections. Do not create, '
+    'modify, pause, enable or disable any automation or device.'
+)
+
+
 @pytest.mark.parametrize("prompt", [
     LIVE_4239_PROMPT,
+    LIVE_PERFORM_PROMPT,
+    'What are app 4239\'s trigger events, variable reset conditions and enabled status?',
+    'Can you provide a detailed investigation into app ID 4239 counter and ordered actions?',
+    'For app 4239 I need the current status and the full IF/ELSE action tree.',
     "Inspect Rule Machine app 4239 triggers, actions, variables and enabled status.",
     "Review app 4239 current status and IF/ELSE actions.",
     "Check app 4239 cumulative time counter and reset logic.",
