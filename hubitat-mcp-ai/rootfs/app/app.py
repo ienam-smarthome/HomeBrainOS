@@ -48,7 +48,7 @@ from history_time_windows import (
 )
 from homebrain_agent import UnifiedMCPAgent
 from adaptive_investigation_policy import model_led_investigation_request
-from rule_machine_analysis import historical_rule_execution_request
+from rule_machine_analysis import historical_rule_execution_request, requires_rule_logic_inspection
 from investigation_policy import is_causal_investigation, is_history_investigation
 from mcp_agent_orchestrator import _explicit_mutation_request
 from hub_timezone import HubTimezoneResolver
@@ -664,10 +664,11 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     try:
         operation: Awaitable[Any]
         scoped_id = scoped_status_app_id(request.message)
-        if scoped_id is not None:
+        if scoped_id is not None and not requires_rule_logic_inspection(request.message):
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
+            and not requires_rule_logic_inspection(request.message)
             and requested_groovy_app_id(request.message) is None
             and plan_investigation(request.message) is None
             and not is_comprehensive_system_audit_request(request.message)

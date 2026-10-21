@@ -23,12 +23,32 @@ _SOURCE_ANALYSIS = re.compile(
 )
 
 
+# The early status shortcut must only consume *simple status questions*.
+# A complex multi-part instruction may mention "enabled/paused status" as one
+# small part of a Rule Machine logic review; it must never be swallowed here.
+_QUICK_STATUS_START = re.compile(
+    r"(?i)^\s*(?:(?:please|can you|could you|would you)\s+)?"
+    r"(?:what(?:'s| is| was)|is|are|does|has|show|check|verify|report|"
+    r"tell me|give me|display|get|read|current)\b"
+)
+_COMPLEX_STATUS_REQUEST = re.compile(
+    r"(?i)\b(?:actual\s+(?:actions?|triggers?)|actions?\b|"
+    r"conditions?|variable|counter|reset|cumulative|"
+    r"after\s+\d+\s*(?:min|hour|hr)|"
+    r"logic|behaviou?r|run\s+history|execution\s+evidence|"
+    r"rule\s+machine\s+capabilities|unreadable\s+sections)\b"
+)
+
+
 def scoped_status_app_id(question: str) -> int | None:
     text = str(question or "")
     m = _APP_ID.search(text)
     if (not m or not _SCOPED_STATUS.search(text) or _HISTORY.search(text)
             or _SOURCE_ANALYSIS.search(text)
-            or requires_rule_logic_inspection(text)):
+            or requires_rule_logic_inspection(text)
+            or not _QUICK_STATUS_START.search(text)
+            or _COMPLEX_STATUS_REQUEST.search(text)
+            or len(text.split()) > 26):
         return None
     return int(m.group(1))
 
@@ -54,7 +74,8 @@ async def read_scoped_app_status(mcp: HubitatMCPClient, app_id: int) -> ScopedAp
         return ScopedAppStatusOutcome(
             f"Unable to verify app {app_id} status: MCP tool discovery failed. No app configuration was read."
         )
-    if "hub_read_apps_code" not in {tool.name for tool in tools}:
+    tool_names = {tool.name for tool in tools}
+    if "hub_read_apps_code" not in tool_names:
         return ScopedAppStatusOutcome(
             f"Unable to verify app {app_id} status: hub_read_apps_code is not available in the current MCP catalog."
         )
@@ -93,6 +114,49 @@ async def read_scoped_app_status(mcp: HubitatMCPClient, app_id: int) -> ScopedAp
             + "\n".join("- " + line for line in snippets)
         )
     else:
-        message = (f"App {app_id} configuration was retrieved, but this result has no "
-                   "interpretable status fields. Enabled state, readiness, motion and countdown remain unverified.")
+        # The installed app page is not a status reader. Native Rule Machine
+        # exposes a separate read-only compiled-rule health endpoint. When
+        # available, use it to answer status-only requests; do not infer a
+        # status from the app label or a page with no matching fields.
+        if "hub_read_rules" in tool_names:
+            health_args = {"tool": "hub_get_rule_health", "args": {"appId": str(app_id)}}
+            try:
+                health_response = await mcp.call_tool("hub_read_rules", health_args)
+                health_ok = tool_succeeded(health_response)
+                health = (health_response.data
+                          if isinstance(health_response.data, dict) else {})
+            except Exception:
+                health_ok = False
+                health = {}
+            evidence.append({
+                "tool": "hub_read_rules",
+                "sub_tool": "hub_get_rule_health",
+                "arguments": health_args,
+                "success": health_ok,
+                "mutates": False,
+                "effect": "read",
+                "supports_live_claim": health_ok,
+                "summary": "Native rule health read" if health_ok else "Native rule health unavailable",
+            })
+            if health_ok:
+                # Distinguish observed booleans from null/unknown. A false
+                # paused value is not a blanket proof of full readiness.
+                fields = [
+                    f"{key}={str(health[key]).lower()}"
+                    for key in ("paused", "stopped", "broken")
+                    if isinstance(health.get(key), bool)
+                ]
+                if fields:
+                    return ScopedAppStatusOutcome(
+                        f"App {app_id}: verified native Rule Machine health fields: "
+                        + ", ".join(fields)
+                        + ". The configuration page supplied no additional status "
+                        "details. Actual trigger/action logic and runtime execution "
+                        "are not verified by this status snapshot.",
+                        evidence=evidence, complete=True,
+                    )
+        message = (f"App {app_id} configuration was retrieved, but neither that page "
+                   "nor the available Rule Machine health evidence exposed verified "
+                   "enabled, paused or status fields. A configuration identity read "
+                   "alone cannot establish runtime behaviour or rule execution.")
     return ScopedAppStatusOutcome(message, evidence=evidence, complete=bool(snippets))

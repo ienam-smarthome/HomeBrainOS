@@ -33,34 +33,33 @@ _HISTORY_VERIFICATION = re.compile(
 )
 
 
-_DEEP_RULE_LOGIC = re.compile(
-    r"(?i)\b(?:triggers?|ordered\s+actions?|actions?\s+(?:to\s+run|sequence|tree)|"
+# Rule Machine logic reads must not be consumed by a one-page status lookup.
+# The predicate is based on the *requested evidence*, not the first verb:
+# natural prompts often begin "Perform a detailed ...", "Can you ..."
+# or "What are ...", followed by the exact app ID and several obligations.
+_RULE_LOGIC_EVIDENCE = re.compile(
+    r"(?i)\b(?:triggers?|trigger\s+events?|action\s+list|"
+    r"ordered\s+(?:if\s*[/\-]\s*else\s+)?actions?|"
+    r"actions?\s+(?:to\s+run|sequence|tree|steps?)|"
     r"if\s*[/\-]\s*else|if\s+then|else\s*[- ]if|"
-    r"counter(?:s)?|variables?|reset\s+(?:conditions?|logic|behaviou?r)|"
+    r"counter(?:s)?|variables?|"
+    r"reset\s+(?:conditions?|logic|behaviou?r|on|when)|"
     r"cumulative|allowance|pause\s+and\s+resume|"
     r"(?:block|unblock)\s+(?:logic|conditions?|after\s+\d+))\b"
-)
-_DETAIL_INTENT = re.compile(
-    r"(?i)^\s*(?:(?:please|can you|could you)\s+)?"
-    r"(?:inspect|review|verify|check|audit|analyse|analyze|investigate|"
-    r"read|show|explain|determine)\b"
 )
 
 
 def requires_rule_logic_inspection(prompt: str) -> bool:
-    """A named native-rule *logic* review cannot be a status/config snapshot.
+    """Is the user asking to examine the real contents of a named rule?
 
-    A name, status flag, variable existence or successful configuration-page
-    read is not evidence of a complete ordered action tree. Send these goals
-    to bounded read-only rule tool investigation, not the single-page app
-    status or sensor-health rule snapshot.
+    A successful app configuration/identity read cannot establish ordered
+    conditions, accumulated minutes, variable transitions or rule execution.
+    Do not anchor this predicate to an opening verb: the original user
+    request may be a question or start "Perform a detailed investigation".
+    Authorization for writes is evaluated separately; this is just routing.
     """
     value = str(prompt or "").strip()
-    return bool(
-        _APP_ID.search(value)
-        and _DETAIL_INTENT.search(value)
-        and _DEEP_RULE_LOGIC.search(value)
-    )
+    return bool(_APP_ID.search(value) and _RULE_LOGIC_EVIDENCE.search(value))
 
 
 def historical_rule_execution_request(prompt: str) -> bool:
