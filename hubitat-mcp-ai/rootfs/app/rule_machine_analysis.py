@@ -39,7 +39,7 @@ _HISTORY_VERIFICATION = re.compile(
 # natural prompts often begin "Perform a detailed ...", "Can you ..."
 # or "What are ...", followed by the exact app ID and several obligations.
 _RULE_LOGIC_EVIDENCE = re.compile(
-    r"(?i)\b(?:triggers?|trigger\s+events?|action\s+list|"
+    r"(?i)\b(?:triggers?|trigger\s+events?|action\s+(?:list|history)|overlap(?:ping|s)?|"
     r"ordered\s+(?:if\s*[/\-]\s*else\s+)?actions?|"
     r"actions?\s+(?:to\s+run|sequence|tree|steps?)|"
     r"if\s*[/\-]\s*else|if\s+then|else\s*[- ]if|"
