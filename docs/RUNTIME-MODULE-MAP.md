@@ -171,7 +171,8 @@ The repository drift test compares this table directly with the live directory. 
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
 | `room_status_snapshot.py` | Parses explicit room-state requests and renders a deterministic detailed inventory summary with offline-sensor health precedence. |
 | `rule_machine_analysis.py` | Deterministic read-only analysis of explicit Rule Machine app IDs, verified configured sensor dependencies, and linked-parent health. |
-| `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
+| `rule_authoring_service.py` | Compiles supported fixed-time schedules, and classifies stateful automation goals for capability-driven authoring. |
+| `stateful_rule_capabilities.py` | Performs live read-only Rule Machine capability preflight and rejects incomplete cumulative-usage proposal topology before confirmation. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
 | `scheduler_secondary_inventory.py` | Performs a bounded sample of targeted `hub_get_device` reads for scheduler candidates absent from the context resource; exact returned-ID matches prove source-scoped entity presence only, while failures/timeouts remain unresolved and never imply deletion or ownership. |
 | `scheduler_report_sanitizer.py` | Replaces recognized model-authored scheduled-job and log-cadence tables with source-derived counts and source-labelled observations; leaves unrelated AI interpretation intact. |
