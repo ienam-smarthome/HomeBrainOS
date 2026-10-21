@@ -28,6 +28,11 @@ def is_rule_machine_app(item: dict[str, Any] | None,
             value = source.get(key)
             if isinstance(value, str) and _RM_TYPE.fullmatch(value.strip()):
                 return True
+            # The normalized automation inventory uses "rule" for entries
+            # independently returned by hub_list_rules. This is not a
+            # user-facing name and is an authoritative RM-family source.
+            if key == "type" and value == "rule":
+                return True
     return False
 
 
