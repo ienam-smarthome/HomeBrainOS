@@ -717,6 +717,9 @@ class UnifiedMCPAgent:
         self._mutation_requested_by_user: ContextVar[bool] = ContextVar(
             "hubitat_mutation_requested_by_user", default=False
         )
+        self._review_first_mode: ContextVar[bool] = ContextVar(
+            "hubitat_review_existing_before_create", default=False
+        )
         self.confirmed_actions = ConfirmedActionCoordinator(
             self.confirmation_policy,
             self.executor,
@@ -3676,8 +3679,15 @@ class UnifiedMCPAgent:
         evidence_token = self.evidence.begin()
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(False)
+        review_token = self._review_first_mode.set(
+            RuleAuthoringService.is_existing_rule_review_first(user_prompt)
+        )
+        # The user requested creation ONLY AFTER verifying an existing rule.
+        # This invocation performs stage-one review with read-only authority;
+        # a later write still needs a fresh structured proposal and approval.
         mutation_request_token = self._mutation_requested_by_user.set(
             _explicit_mutation_request(user_prompt)
+            and not self._review_first_mode.get()
         )
         class_token = self._request_class.set("tool-driven")
         objective_token = self._current_user_objective.set(str(user_prompt))
@@ -3746,6 +3756,7 @@ class UnifiedMCPAgent:
             self._request_class.reset(class_token)
             self._mutation_requested_by_user.reset(mutation_request_token)
             self._mutation_call_seen.reset(mutation_token)
+            self._review_first_mode.reset(review_token)
             self.evidence.reset(evidence_token)
             self._choices.reset(choices_token)
             reset_original_paid_request(paid_request_token)
@@ -3830,8 +3841,10 @@ class UnifiedMCPAgent:
         request_started = time.monotonic()
         # Stateful automation requests require live Rule Machine capability
         # discovery, not unconditional refusal or a speculative direct write.
-        stateful_authoring = RuleAuthoringService.is_stateful_authoring_request(
-            user_prompt
+        review_first = self._review_first_mode.get()
+        stateful_authoring = (
+            not review_first
+            and RuleAuthoringService.is_stateful_authoring_request(user_prompt)
         )
         # Conversation references are answered from the supplied *same-session*
         # transcript, never via Hubitat inventory/tool discovery. Host-owned
@@ -3867,6 +3880,11 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+        if review_first:
+            # No rule/device write gateway is visible, even if a fuzzy search
+            # later discovers one. A conditional create is NOT authority to
+            # bypass a requested review of an existing working automation.
+            catalog.activate_investigation_read_view(max_declared=self.tool_limit)
         if stateful_authoring:
             if not self.rule_write_enabled:
                 return RULE_WRITES_DISABLED_MESSAGE
@@ -3947,7 +3965,7 @@ class UnifiedMCPAgent:
         # fell through to a model search for the fictional blockInternet
         # command and an unnecessary "what starts the countdown?" question.
         # Pure design questions must still remain read-only.
-        if self.rule_authoring.is_action_request(user_prompt):
+        if self.rule_authoring.is_action_request(user_prompt) and not review_first:
             if not self.rule_write_enabled:
                 return RULE_WRITES_DISABLED_MESSAGE
             if RULE_MACHINE_GATEWAY not in catalog.available_names:
@@ -3999,6 +4017,7 @@ class UnifiedMCPAgent:
             )
             and not self._is_conversational_prompt(user_prompt)
             and not stateful_authoring
+            and not review_first
             else None
         )
         # An explicitly requested comparison can use the existing planner
@@ -4050,7 +4069,7 @@ class UnifiedMCPAgent:
                 else []
             )
             capability_discovery = discovery.content
-            if adaptive_investigation:
+            if adaptive_investigation or review_first:
                 # Discovery must not grant the model a mutating gateway.
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
                 if source_investigation:
@@ -4069,6 +4088,28 @@ class UnifiedMCPAgent:
             conversation_history,
             skill_domains=task_plan.skill_domains if task_plan is not None else None,
         )
+        if review_first:
+            system_prompt += (
+                "\n\nHOST REVIEW-BEFORE-CREATE BOUNDARY (read-only stage)\n"
+                "The user made creation CONDITIONAL on first verifying an "
+                "existing automation. Do not create, update, pause, delete, "
+                "enable or disable ANY rule or device in this request. "
+                "First find the exact named installed Rule Machine instance; "
+                "inspect its actual trigger and ordered IF/ELSE/action structure, "
+                "hub/local variables, enabled/paused status and, when possible, "
+                "rule health. Start with hub_read_rules and hub_read_apps_code; "
+                "use hub_get_app_config page data and hub_get_rule_health, "
+                "hub_list_rule_local_variables, or documented native exports "
+                "ONLY when available in the installed read-only catalog. "
+                "Page identity, variable existence and a rule name are NOT "
+                "proof of the action list or actual 60-minute behaviour. "
+                "If content is incomplete, state precisely what is missing "
+                "rather than recommending a duplicate or claiming success. "
+                "If the rule is already suitable, explain why a second rule "
+                "should not be created; if defective, report the exact gaps "
+                "and request separate approval before any modification. "
+                "No live write is authorized in this stage."
+            )
         # Tell the model the exact UTC equivalent of a user-supplied UK
         # historical event clock before it selects log/history tools. This
         # is calendar arithmetic, not proof that an event occurred.
@@ -4500,7 +4541,7 @@ class UnifiedMCPAgent:
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
         for _ in range(active_round_budget):
-            if adaptive_investigation:
+            if adaptive_investigation or review_first:
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
                 if source_investigation:
                     catalog.replace_declared([
