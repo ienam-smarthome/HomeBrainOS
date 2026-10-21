@@ -383,7 +383,11 @@ async def inspect_automation_dependencies(
                     # RM type from the current installed identity index is
                     # authoritative for this same validated numeric app ID.
                     app = data.get("app") or {}
-                    if not is_rule_machine_app(None, data) and is_rule_machine_app(item):
+                    if (not is_rule_machine_app(None, data)
+                            and is_rule_machine_app(item)
+                            and str(app.get("type") or "").casefold() in ("", "app", "rule")):
+                        # Only supplement an absent/generic source type, never
+                        # override an explicitly different native app type.
                         data = {**data, "app": {**app, "type": item["type"]}}
                     projected = interpret_rm_settings(data, item["id"])
                     item.update(projected)
