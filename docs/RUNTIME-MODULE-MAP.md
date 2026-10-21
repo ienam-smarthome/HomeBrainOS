@@ -171,6 +171,7 @@ The repository drift test compares this table directly with the live directory. 
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
 | `room_status_snapshot.py` | Parses explicit room-state requests and renders a deterministic detailed inventory summary with offline-sensor health precedence. |
 | `rule_machine_analysis.py` | Deterministic read-only analysis of explicit Rule Machine app IDs, verified configured sensor dependencies, and linked-parent health. |
+| `native_rule_evidence_prefetch.py` | Reads native rule health and numeric local-variable metadata through a bounded read-only MCP gateway before deep Rule Machine interpretation. |
 | `rule_authoring_service.py` | Compiles supported fixed-time schedules, and classifies stateful automation goals for capability-driven authoring. |
 | `stateful_rule_capabilities.py` | Performs live read-only Rule Machine capability preflight and rejects incomplete cumulative-usage proposal topology before confirmation. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
