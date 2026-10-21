@@ -668,6 +668,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
+            and not requires_rule_logic_inspection(request.message)
             and requested_groovy_app_id(request.message) is None
             and plan_investigation(request.message) is None
             and not is_comprehensive_system_audit_request(request.message)
