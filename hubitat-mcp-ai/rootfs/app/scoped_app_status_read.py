@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from mcp_client import HubitatMCPClient, tool_succeeded
+from rule_machine_analysis import requires_rule_logic_inspection
 
 _SCOPED_STATUS = re.compile(
     r"(?i)\b(?:status|enabled|disabled|readiness|lockout|current\s+state)\b"
@@ -25,7 +26,9 @@ _SOURCE_ANALYSIS = re.compile(
 def scoped_status_app_id(question: str) -> int | None:
     text = str(question or "")
     m = _APP_ID.search(text)
-    if not m or not _SCOPED_STATUS.search(text) or _HISTORY.search(text) or _SOURCE_ANALYSIS.search(text):
+    if (not m or not _SCOPED_STATUS.search(text) or _HISTORY.search(text)
+            or _SOURCE_ANALYSIS.search(text)
+            or requires_rule_logic_inspection(text)):
         return None
     return int(m.group(1))
 
