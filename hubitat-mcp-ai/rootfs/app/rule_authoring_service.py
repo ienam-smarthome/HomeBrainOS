@@ -315,7 +315,7 @@ class RuleAuthoringService:
     # read-only questions must stay on their existing paths.
     _STATEFUL_USAGE = re.compile(
         r"\b(?:cumulative|accumulat(?:ed|e|ing|ion)|running\s+total|"
-        r"total\s+(?:of\s+)?\d+\s+(?:minutes?|mins?|hours?|hrs?)|"
+        r"total\s+(?:of\s+)?\d+\s*(?:minutes?|mins?|hours?|hrs?)|"
         r"across\s+(?:separate\s+)?(?:sessions?|uses?)|"
         r"pause\s+(?:the\s+)?(?:timer|counter|counting)|"
         r"preserv(?:e|ing)\s+(?:the\s+)?(?:counter|elapsed|timer))\b",
@@ -323,50 +323,29 @@ class RuleAuthoringService:
     )
     _RESET_ON_RESTORATION = re.compile(
         r"\b(?:unblock(?:ed|ing)?|allow(?:ed|ing)?|restor(?:e|ed|ing))\b"
-        r"[\s\S]{0,110}\b(?:reset|restart|fresh|new|zero|60.minute|one.hour)\b"
-        r"|\b(?:reset|restart|fresh|new)\b"
+        r"[\s\S]{0,110}\b(?:reset|restart|resume|fresh|new|zero|60.minute|one.hour|1\s*(?:hour|hr))\b"
+        r"|\b(?:reset|restart|resume|fresh|new)\b"
         r"[\s\S]{0,110}\b(?:unblock(?:ed|ing)?|restor(?:e|ed|ing)|"
         r"allow(?:ed|ing)?)\b",
         re.I,
     )
 
     @classmethod
-    def unsupported_stateful_authoring_message(cls, prompt: str) -> str | None:
-        """Explain an uncompiled stateful rule before the model can invent writes.
+    def is_stateful_authoring_request(cls, prompt: str) -> bool:
+        """Route compound usage budgets to live capability-driven authoring.
 
-        No Hubitat I/O, no newly queued confirmation, no changes to existing
-        rules. This intake classifies a *requested automation shape* rather
-        than recognizing individual device names or memorizing specific IDs.
+        This is an intake classifier, NOT a proof the connected RM supports
+        every requested operation. The actual read-only guide preflight and
+        confirmation pipeline decide what can be safely proposed. Do not
+        restrict this to a particular TV, room, app or variable name.
         """
         text = " ".join(str(prompt or "").strip().split())
-        if (
-            not cls._ACTION_REQUEST.match(text)
-            or cls._DESIGN_ONLY.search(text)
-            or not re.search(r"\b(?:automation|rule|controller)\b", text, re.I)
-            or not cls._STATEFUL_USAGE.search(text)
-            or not cls._RESET_ON_RESTORATION.search(text)
-        ):
-            return None
-        return (
-            "**No automation was created or queued.** This request needs a "
-            "persistent cumulative-usage controller, not a fixed-time Rule "
-            "Machine schedule. HomeBrain's current verified rule compiler "
-            "cannot safely author a pause/resume counter with reset upon "
-            "manual access restoration; creating several speculative rules "
-            "would risk inconsistent timers and unintended blocking.\n\n"
-            "**Proposed behaviour (not installed):** accumulate device ON "
-            "duration across separate sessions; pause without clearing it "
-            "when the monitored device turns OFF; block the nominated access "
-            "control once the accumulated total reaches the requested limit; "
-            "start a fresh allowance only after confirmed manual unblocking; "
-            "restore accumulated time and blocked/unblocked transitions after "
-            "Hubitat restarts. Verify that another existing rule does not "
-            "independently block the same access-control target.\n\n"
-            "**Required next implementation:** a dedicated, persisted "
-            "Hubitat controller app or a fully validated equivalent rule "
-            "architecture, with exact device/command verification, conflict "
-            "checks, tests and explicit confirmation before installation. "
-            "The existing rules and device states remain unchanged."
+        return bool(
+            cls._ACTION_REQUEST.match(text)
+            and not cls._DESIGN_ONLY.search(text)
+            and re.search(r"\b(?:automation|rule|controller)\b", text, re.I)
+            and cls._STATEFUL_USAGE.search(text)
+            and cls._RESET_ON_RESTORATION.search(text)
         )
 
     def is_action_request(self, prompt: str) -> bool:

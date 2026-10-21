@@ -198,6 +198,10 @@ from automation_diagnostic_policy import (
 )
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
+from stateful_rule_capabilities import (
+    inspect_stateful_rule_capabilities,
+    cumulative_rule_proposal_error,
+)
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
@@ -3824,16 +3828,11 @@ class UnifiedMCPAgent:
         session_id: str = "default",
     ) -> str:
         request_started = time.monotonic()
-        # A compound, persistent cumulative-usage objective is outside the
-        # verified fixed-clock Rule Machine compiler. Identify that capability
-        # boundary BEFORE registry reads or model rounds, which otherwise
-        # fabricate a generic write intent then conceal all useful diagnosis
-        # behind UNVERIFIED_MUTATION_REFUSAL. This must not create any action.
-        unsupported_stateful = RuleAuthoringService.unsupported_stateful_authoring_message(
+        # Stateful automation requests require live Rule Machine capability
+        # discovery, not unconditional refusal or a speculative direct write.
+        stateful_authoring = RuleAuthoringService.is_stateful_authoring_request(
             user_prompt
         )
-        if unsupported_stateful is not None:
-            return unsupported_stateful
         # Conversation references are answered from the supplied *same-session*
         # transcript, never via Hubitat inventory/tool discovery. Host-owned
         # exact recall uses zero model rounds; interpretation uses one provider
@@ -3868,6 +3867,16 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+        if stateful_authoring:
+            if not self.rule_write_enabled:
+                return RULE_WRITES_DISABLED_MESSAGE
+            catalog.replace_declared([
+                *catalog.declared_names,
+                "hub_get_tool_guide",
+                "hub_read_devices",
+                "hub_read_rules",
+                RULE_MACHINE_GATEWAY,
+            ])
         groovy_source_app = requested_groovy_app_id(user_prompt)
         source_investigation = groovy_source_app is not None
         # Request-local collector; never share source text between questions.
@@ -3989,6 +3998,7 @@ class UnifiedMCPAgent:
                 )
             )
             and not self._is_conversational_prompt(user_prompt)
+            and not stateful_authoring
             else None
         )
         # An explicitly requested comparison can use the existing planner
@@ -3997,6 +4007,17 @@ class UnifiedMCPAgent:
         # as MCP evidence.
         if task_plan is not None and task_plan.operation == "investigate":
             self._investigation_hypotheses.set(task_plan.candidate_hypotheses)
+        stateful_capability_instruction = ""
+        if stateful_authoring:
+            preflight = await inspect_stateful_rule_capabilities(
+                self.mcp,
+                self.evidence.record,
+                catalog.available_names,
+            )
+            if not preflight.ready:
+                return preflight.instruction
+            stateful_capability_instruction = preflight.instruction
+
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
@@ -4100,6 +4121,8 @@ class UnifiedMCPAgent:
                 "requires verified chunk completeness. Report missing "
                 "evidence plainly. Never write to Hubitat."
             )
+        if stateful_capability_instruction:
+            system_prompt += "\n\n" + stateful_capability_instruction
         if capability_discovery:
             system_prompt += (
                 "\n\nHOST ORIGINAL-REQUEST CAPABILITY DISCOVERY\n"
@@ -4506,6 +4529,15 @@ class UnifiedMCPAgent:
                         "No Hubitat action was queued or executed because Rule "
                         f"Machine proposal validation failed. Exact reason: {reason} "
                         f"Rejected payload: {rejected}"
+                    )
+                if stateful_authoring:
+                    return (
+                        "No automation was created or queued. Live Rule Machine "
+                        "capability guides were checked, but HomeBrain did not "
+                        "produce a complete validated structured rule proposal. "
+                        "No existing rule or device was changed. "
+                        "Retrieve the live addTrigger/addAction discovery schemas "
+                        "and retry before requesting any confirmation."
                     )
                 # A model that selects no new source must not replace a
                 # receipt-grounded partial investigation with an unrelated
@@ -4978,8 +5010,19 @@ class UnifiedMCPAgent:
                 ):
                     return RULE_WRITES_DISABLED_MESSAGE
                 proposal_error = rule_machine_proposal_error(
-                    name, arguments, user_prompt=user_prompt
+                    name, arguments,
+                    # A cumulative elapsed-usage budget is NOT a single
+                    # delay step. Its separate topology validator enforces
+                    # periodic accumulation and reset instead.
+                    user_prompt=None if stateful_authoring else user_prompt,
                 )
+                if (
+                    proposal_error is None
+                    and stateful_authoring
+                    and name == RULE_MACHINE_GATEWAY
+                    and arguments.get("tool") == "hub_set_rule"
+                ):
+                    proposal_error = cumulative_rule_proposal_error(arguments)
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
                 if tool is not None and effect.mutates:

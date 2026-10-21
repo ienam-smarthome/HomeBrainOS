@@ -1,4 +1,4 @@
-"""v0.18.48 regression: compound usage budgets must fail transparently, not silently."""
+"""0.18.49: stateful usage authoring uses live capability guides, never a blanket refusal."""
 from __future__ import annotations
 
 import sys
@@ -38,11 +38,7 @@ ACTUAL_REQUEST = (
     "then reset when internet access is restored.",
 ])
 def test_stateful_rule_authoring_detected_without_device_specific_nouns(prompt):
-    answer = RuleAuthoringService.unsupported_stateful_authoring_message(prompt)
-    assert answer is not None
-    assert "No automation was created or queued" in answer
-    assert "persistent cumulative-usage controller" in answer
-    assert "existing rules and device states remain unchanged" in answer
+    assert RuleAuthoringService.is_stateful_authoring_request(prompt) is True
 
 
 @pytest.mark.parametrize("prompt", [
@@ -56,23 +52,34 @@ def test_stateful_rule_authoring_detected_without_device_specific_nouns(prompt):
     "Investigate total of 1 hour of usage and reset on unblocking.",
 ])
 def test_compound_gate_does_not_swallow_reads_or_supported_schedules(prompt):
-    assert RuleAuthoringService.unsupported_stateful_authoring_message(prompt) is None
+    assert RuleAuthoringService.is_stateful_authoring_request(prompt) is False
 
 
 @pytest.mark.asyncio
-async def test_unsupported_rule_does_no_hubitat_io_and_reports_capability_boundary():
-    class NoCallsMCP:
-        def __getattr__(self, name):
-            raise AssertionError("No Hubitat tool should be touched: " + name)
+async def test_no_authoring_gateway_fails_closed_without_hub_writes():
+    class RestrictedMCP:
+        calls = 0
 
-    agent = UnifiedMCPAgent(NoCallsMCP(), "unused")
-    result = await agent.process_user_request_result(ACTUAL_REQUEST)
-    assert result.request_class == "write"
-    assert not result.confirmation_required
-    assert result.confirmation_count == 0
-    assert result.evidence == []
-    assert "No automation was created or queued" in result.message
-    assert "Rule Machine" in result.message
-    assert "UNVERIFIED_MUTATION_REFUSAL" not in result.message
-    assert "action actually ran" not in result.message
-    assert "existing rules and device states remain unchanged" in result.message
+        async def list_tools(self):
+            return []
+
+        def __getattr__(self, name):
+            raise AssertionError("No permitted MCP capability: " + name)
+
+    mcp = RestrictedMCP()
+    agent = UnifiedMCPAgent(mcp, "unused")
+    outcome = await agent.process_user_request_result(ACTUAL_REQUEST)
+    assert outcome.request_class == "write"
+    assert not outcome.confirmation_required
+    assert not outcome.evidence
+    assert outcome.message.startswith("No automation was created or queued.")
+    assert "hub_manage_rule_machine" in outcome.message
+    assert mcp.calls == 0
+
+
+@pytest.mark.parametrize("prompt", [
+    "create a rule to block google tv internet after TV has been on for a total "
+    "of 1hr. Once, unblocked resume timer for 1hour then block Google TV",
+])
+def test_real_claude_wording_reaches_capability_path(prompt):
+    assert RuleAuthoringService.is_stateful_authoring_request(prompt)
