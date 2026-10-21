@@ -23,12 +23,32 @@ _SOURCE_ANALYSIS = re.compile(
 )
 
 
+# The early status shortcut must only consume *simple status questions*.
+# A complex multi-part instruction may mention "enabled/paused status" as one
+# small part of a Rule Machine logic review; it must never be swallowed here.
+_QUICK_STATUS_START = re.compile(
+    r"(?i)^\s*(?:(?:please|can you|could you|would you)\s+)?"
+    r"(?:what(?:'s| is| was)|is|are|does|has|show|check|verify|report|"
+    r"tell me|give me|display|get|read|current)\b"
+)
+_COMPLEX_STATUS_REQUEST = re.compile(
+    r"(?i)\b(?:actual\s+(?:actions?|triggers?)|actions?\b|"
+    r"conditions?|variable|counter|reset|cumulative|"
+    r"after\s+\d+\s*(?:min|hour|hr)|"
+    r"logic|behaviou?r|run\s+history|execution\s+evidence|"
+    r"rule\s+machine\s+capabilities|unreadable\s+sections)\b"
+)
+
+
 def scoped_status_app_id(question: str) -> int | None:
     text = str(question or "")
     m = _APP_ID.search(text)
     if (not m or not _SCOPED_STATUS.search(text) or _HISTORY.search(text)
             or _SOURCE_ANALYSIS.search(text)
-            or requires_rule_logic_inspection(text)):
+            or requires_rule_logic_inspection(text)
+            or not _QUICK_STATUS_START.search(text)
+            or _COMPLEX_STATUS_REQUEST.search(text)
+            or len(text.split()) > 26):
         return None
     return int(m.group(1))
 
