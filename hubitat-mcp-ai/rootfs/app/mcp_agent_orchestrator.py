@@ -5010,7 +5010,11 @@ class UnifiedMCPAgent:
                 ):
                     return RULE_WRITES_DISABLED_MESSAGE
                 proposal_error = rule_machine_proposal_error(
-                    name, arguments, user_prompt=user_prompt
+                    name, arguments,
+                    # A cumulative elapsed-usage budget is NOT a single
+                    # delay step. Its separate topology validator enforces
+                    # periodic accumulation and reset instead.
+                    user_prompt=None if stateful_authoring else user_prompt,
                 )
                 if (
                     proposal_error is None
