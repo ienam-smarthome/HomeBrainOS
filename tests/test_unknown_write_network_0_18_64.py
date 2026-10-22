@@ -28,7 +28,8 @@ def test_network_exception_from_ask_fetch_marks_unknown_without_retry():
     assert "'same rule or device command again yet." in page
     assert "check the exact Rule Machine rule name and current " in page
     assert "state; inspect HomeBrain add-on logs" in page
-    assert "Request ID: '+requestId" in page
+    assert "Request ID: " in page
+    assert "requestId+'. Browser error:" in page
     assert "Browser error:" in page
     # No automatic retry loop or an invented successful write state.
     section = page.split("const response=await fetch(apiPath('api/ask')", 1)[1]
