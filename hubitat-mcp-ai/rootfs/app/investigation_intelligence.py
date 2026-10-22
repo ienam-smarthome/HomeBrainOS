@@ -37,6 +37,45 @@ class InvestigationPlan:
 
 
 _PLANS = {
+    "existing_rule_verification": InvestigationPlan(
+        domain="existing_rule_verification",
+        objective="Verify an existing installed Rule Machine app from its current "
+                  "identity, health and persisted rule logic; do not propose creation.",
+        requirements=(
+            EvidenceRequirement(
+                "identity", "Confirm the named installed app ID from targeted hub reads",
+                "hub_get_rule_health / exact-ID app inventory",
+            ),
+            EvidenceRequirement(
+                "stored_logic", "Validate the actual ordered triggers, actions, "
+                "conditions and delays, not only the response field names",
+                "typed parsed hub_get_app_config or authoritative rule export",
+            ),
+            EvidenceRequirement(
+                "health", "Inspect source-provided rule stopped/broken state",
+                "hub_get_rule_health",
+            ),
+            EvidenceRequirement(
+                "duplicates", "Enumerate exact-name matching installed rule IDs",
+                "complete exact-name hub_list_apps / hub_list_rules", necessary=False,
+            ),
+            EvidenceRequirement(
+                "dependencies", "Inspect overlapping rule/device references",
+                "targeted hub_get_app_config / hub_list_device_dependents",
+                necessary=False,
+            ),
+        ),
+        stop_rule="Existing-rule verification only. Generic field-name receipts "
+                  "do not verify ordered actions, duplicate absence, delays or "
+                  "effective controller settings. Keep any missing or contradictory "
+                  "facts unverified. Never create, modify or execute a rule.",
+        forbidden_inferences=(
+            "A successful hub_get_app_config call is not proof of its action order.",
+            "A label match is not a confirmed device ID or action-device link.",
+            "Conflicting controller summaries cannot establish the effective delay.",
+            "Stored configuration and healthy status do not prove runtime execution.",
+        ),
+    ),
     "rule_design_review": InvestigationPlan(
         domain="rule_design_review",
         objective="Review a proposed new Rule Machine automation using existing device, "
@@ -143,6 +182,12 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     text = " ".join(str(request or "").casefold().split())
     if not text:
         return None
+    # Prioritise the actual requested scope, not the combination of the words
+    # "read-only" and "do not create". Those occur in existing-rule audits too.
+    # This changes investigation reporting only, not write authorisation.
+    from targeted_rule_scope_policy import is_existing_rule_verification_request
+    if is_existing_rule_verification_request(request):
+        return _PLANS["existing_rule_verification"]
     # Explicit future design with a separate no-write instruction is not a
     # past manual-off/lockout investigation, even if the proposed rule must
     # preserve the existing lockout. This source contract must win first.
@@ -254,7 +299,40 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
     lockout_times: list[datetime] = []
     for row in source:
         leaf, args, events = _leaf(row), _args(row), _events(row)
-        if plan.domain == "rule_design_review":
+        if plan.domain == "existing_rule_verification":
+            details = row.get("details") if isinstance(row.get("details"), dict) else {}
+            if leaf in ("hub_list_apps", "hub_list_rules"):
+                checked.update(("identity", "duplicates"))
+            if leaf == "hub_get_rule_health" and args.get("appId") not in (None, ""):
+                checked.update(("identity", "health"))
+                health = details.get("verifiedHealth")
+                if (row.get("evidence_kind") == "native_rule_evidence"
+                        and str(details.get("appId") or "") == str(args["appId"])
+                        and isinstance(health, dict)
+                        and any(isinstance(health.get(k), bool)
+                                for k in ("stopped", "broken"))):
+                    found.update(("identity", "health"))
+            if leaf == "hub_get_app_config" and args.get("appId") not in (None, ""):
+                checked.update(("identity", "stored_logic"))
+                # Only a semantic projection validated against actual stored
+                # fields may establish the action tree. Generic response-field
+                # summaries and model prose deliberately do not qualify.
+                if (row.get("evidence_kind") == "typed_existing_rule_facts"
+                        and str(details.get("appId") or "") == str(args["appId"])
+                        and details.get("semanticFieldsValidated") is True
+                        and details.get("orderedActionsValidated") is True
+                        and details.get("conditionsValidated") is True
+                        and isinstance(details.get("triggerCount"), int)
+                        and isinstance(details.get("actionCount"), int)):
+                    found.update(("identity", "stored_logic"))
+            if leaf == "hub_list_device_dependents" and args.get("deviceId") not in (None, ""):
+                checked.add("dependencies")
+            if (row.get("evidence_kind") == "typed_existing_rule_name_matches"
+                    and details.get("completeExactNameLookup") is True
+                    and isinstance(details.get("matchingAppIds"), list)):
+                checked.add("duplicates")
+                found.add("duplicates")
+        elif plan.domain == "rule_design_review":
             # Receipts here prove *source access*, not that the returned
             # source's actual label/capabilities or action syntax were checked.
             # In particular the generic receipt for hub_get_app_config only
