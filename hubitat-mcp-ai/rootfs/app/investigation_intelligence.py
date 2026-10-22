@@ -37,6 +37,35 @@ class InvestigationPlan:
 
 
 _PLANS = {
+    "rule_design_review": InvestigationPlan(
+        domain="rule_design_review",
+        objective="Review a proposed new Rule Machine automation using existing device, "
+                  "app and documented capability evidence; do not create or queue it.",
+        requirements=(
+            EvidenceRequirement("devices", "Read the actual identities and capabilities "
+                                "of the named devices", "targeted hub_get_device records"),
+            EvidenceRequirement("current_rule", "Read the exact existing controller's "
+                                "current configuration", "targeted hub_get_app_config"),
+            EvidenceRequirement("native_capabilities", "Read authoritative available "
+                                "Rule Machine tool capabilities/operations",
+                                "hub_get_tool_guide / validated native RM schemas"),
+            EvidenceRequirement("dependencies", "Check actual target device references",
+                                "hub_list_device_dependents", necessary=False),
+        ),
+        stop_rule="Proposal only. A successful identity or configuration read does not "
+                  "prove the rule's full conditions, durations, cancel behaviour or "
+                  "native writer API schema. Never claim creation or queue confirmation.",
+        forbidden_inferences=(
+            "A device ID asserted by the user is not proof of the device label or room.",
+            "The existing rule's past OFF events are not proof of its present delay settings.",
+            "A Wait-for-Event timeout can release on event OR timeout, not necessarily after "
+            "a continuous motion-inactive duration.",
+            "A Required Expression need not prevent a pending OFF after 06:00; "
+            "the action needs an independent final time check.",
+            "No broad claim that hub_set_rule can compile a multi-step design without "
+            "validated native gateway schemas.",
+        ),
+    ),
     "manual_motion_lockout": InvestigationPlan(
         domain="manual_motion_lockout",
         objective="Determine if an actual manual OFF event engaged a motion lockout.",
@@ -114,6 +143,13 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     text = " ".join(str(request or "").casefold().split())
     if not text:
         return None
+    # Explicit future design with a separate no-write instruction is not a
+    # past manual-off/lockout investigation, even if the proposed rule must
+    # preserve the existing lockout. This source contract must win first.
+    if "rule" in text or "automation" in text:
+        from rule_authoring_service import RuleAuthoringService
+        if RuleAuthoringService.is_read_only_rule_design_request(request):
+            return _PLANS["rule_design_review"]
     analytic = any(stem in text for stem in (
         "investigat", "diagnos", "analys", "analyz", "reconstruct",
         "correlat", "why ", "determine",
@@ -218,7 +254,20 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
     lockout_times: list[datetime] = []
     for row in source:
         leaf, args, events = _leaf(row), _args(row), _events(row)
-        if plan.domain == "manual_motion_lockout":
+        if plan.domain == "rule_design_review":
+            # Receipts here prove *source access*, not that the returned
+            # source's actual label/capabilities or action syntax were checked.
+            # In particular the generic receipt for hub_get_app_config only
+            # includes the response field names; it does not show actions.
+            if leaf == "hub_get_device" and args.get("deviceId") not in (None, ""):
+                checked.add("devices")
+            if leaf == "hub_get_app_config" and args.get("appId") not in (None, ""):
+                checked.add("current_rule")
+            if leaf == "hub_get_tool_guide":
+                checked.add("native_capabilities")
+            if leaf == "hub_list_device_dependents" and args.get("deviceId") not in (None, ""):
+                checked.add("dependencies")
+        elif plan.domain == "manual_motion_lockout":
             if row.get("tool") == "homebrain_motion_lockout_investigation":
                 detail = row.get("details") or {}
                 if isinstance(detail, dict):
