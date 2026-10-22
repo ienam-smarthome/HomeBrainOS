@@ -26,6 +26,13 @@ def classify_completed_request(counters: Mapping[str, int] | None) -> str:
     """Classify a normally returned request from fixed privacy-safe counters."""
 
     values = counters or {}
+    # The original native write response is missing. Even if a later
+    # read-only lookup finds the rule, execution/health was not confirmed.
+    # 'Unresolved' is more accurate than either green success or a false
+    # assertion that the Hubitat creation failed.
+    if (int(values.get("rule_create_timeout_found", 0) or 0) > 0
+            or int(values.get("rule_create_timeout_unknown", 0) or 0) > 0):
+        return "unresolved"
     for counter, outcome in _OUTCOME_COUNTER_PRECEDENCE:
         if int(values.get(counter, 0) or 0) > 0:
             return outcome
