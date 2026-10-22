@@ -83,11 +83,23 @@ def _device_record(value: Any, expected_id: str, *, depth: int = 0) -> dict[str,
 
 
 def _capability_labels(device: dict[str, Any]) -> set[str]:
-    values = device.get("capabilities")
-    if isinstance(values, dict):
-        values = list(values)
-    result = set()
-    if isinstance(values, list):
+    # Upstream hub_get_device(mode="details") returns capabilities under
+    # sections.attributes.capabilities, not at the device-record root.
+    # A top-level capabilities array occurs in other live device read modes;
+    # support both without inferring from device name or driver type.
+    sections = device.get("sections")
+    attributes = (
+        sections.get("attributes") if isinstance(sections, dict) else None
+    )
+    sources = [device.get("capabilities")]
+    if isinstance(attributes, dict):
+        sources.append(attributes.get("capabilities"))
+    result: set[str] = set()
+    for values in sources:
+        if isinstance(values, dict):
+            values = list(values)
+        if not isinstance(values, list):
+            continue
         for value in values:
             if isinstance(value, dict):
                 value = value.get("name") or value.get("capability")
@@ -164,8 +176,12 @@ async def propose_night_idle(
     # Identity/capability checks are targeted and cannot silently replace
     # FP400 by the similarly named FP300 Toilet sensor.
     for device_id, capability in (("7805", "switch"), ("7978", "motionsensor")):
+        # Request only attributes; omitting sections can force the entire
+        # expanded device snapshot into a paginated json-fragment. The
+        # current MCP server exposes caps in sections.attributes.
         arguments = {"tool": "hub_get_device",
-                     "args": {"deviceId": device_id, "mode": "details"}}
+                     "args": {"deviceId": device_id, "mode": "details",
+                              "sections": ["attributes"]}}
         started = time.monotonic()
         try:
             result = await mcp.call_tool("hub_read_devices", arguments)
