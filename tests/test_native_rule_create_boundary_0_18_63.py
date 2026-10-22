@@ -41,8 +41,8 @@ Do not modify app 4019 or issue device commands.
     TEST_WRITE,
     "Create a Rule Machine automation for light 7805. Create it "
     "disabled from the outset, not active then disabled.",
-    "Please build a native Hubitat rule. Do not create the rule active, "
-    "because it must be disabled when initially created.",
+    "Create a native Hubitat Rule Machine automation. Do not create the "
+    "rule active, because it must be disabled when initially created.",
 ])
 def test_safe_disabled_first_requirement_does_not_depend_on_llm(prompt):
     assert _explicit_mutation_request(prompt)
