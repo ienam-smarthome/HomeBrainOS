@@ -585,9 +585,16 @@ class ConfirmedActionCoordinator:
                     if (is_create
                             and approved_arguments.get("tool") == "hub_set_rule"
                             and isinstance(execution.error, httpx.TransportError)):
-                        return await self._reconcile_rule_create_timeout(
+                        reconciliation = await self._reconcile_rule_create_timeout(
                             approved_arguments, catalog,
                         )
+                        remaining = len(pending.actions) - len(outcomes)
+                        if remaining > 0:
+                            reconciliation += (
+                                f"\\n\\n{remaining} follow-up action(s) "
+                                "were NOT attempted after the uncertain create."
+                            )
+                        return reconciliation
                     break
                 if is_create:
                     data = self.rule_result_data(execution)
