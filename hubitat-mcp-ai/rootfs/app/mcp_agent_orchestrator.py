@@ -398,6 +398,12 @@ def _explicit_mutation_request(prompt: str) -> bool:
     )
     if not text:
         return False
+    # The user may describe a rule they WANT to build while explicitly
+    # withholding present authority to create or queue it. Do not let the
+    # opening phrase "I want to create" override an explicit review-only
+    # instruction later in the same request.
+    if RuleAuthoringService.is_read_only_rule_design_request(text):
+        return False
     # Prevent explicit prohibitions from granting write permission.
     text = _without_prohibited_actions(text)
     if not text.strip():
@@ -3320,11 +3326,18 @@ class UnifiedMCPAgent:
                     "in this review stage. Inspect the existing rule before "
                     "deciding whether changes are needed."
                 )
-            return (
+            banner = (
+                "**Read-only rule design review — no automation or device was "
+                "changed or queued for approval.**\n\n"
+                if RuleAuthoringService.is_read_only_rule_design_request(
+                    self._current_user_objective.get()
+                ) else
                 "**Read-only existing-rule review — no automation or device "
                 "was changed or queued for approval.**\n\n"
-                + (str(content or "").strip() or
-                   "No verified rule findings were produced in this attempt.")
+            )
+            return banner + (
+                str(content or "").strip()
+                or "No verified rule findings were produced in this attempt."
             )
         mutation_expected = (
             self._mutation_requested_by_user.get()
@@ -3719,6 +3732,7 @@ class UnifiedMCPAgent:
         mutation_token = self._mutation_call_seen.set(False)
         review_token = self._review_first_mode.set(
             RuleAuthoringService.is_existing_rule_review_first(user_prompt)
+            or RuleAuthoringService.is_read_only_rule_design_request(user_prompt)
         )
         # The user requested creation ONLY AFTER verifying an existing rule.
         # This invocation performs stage-one review with read-only authority;
@@ -3883,6 +3897,7 @@ class UnifiedMCPAgent:
         # and deliberately bypass normal service/ContextVar initialization.
         review_context = getattr(self, "_review_first_mode", None)
         review_first = bool(review_context.get()) if review_context is not None else False
+        proposal_only = RuleAuthoringService.is_read_only_rule_design_request(user_prompt)
         deep_rule_review = (
             requires_rule_logic_inspection(user_prompt)
             and not _explicit_mutation_request(user_prompt)
@@ -4144,7 +4159,34 @@ class UnifiedMCPAgent:
             conversation_history,
             skill_domains=task_plan.skill_domains if task_plan is not None else None,
         )
-        if review_first:
+        if proposal_only:
+            system_prompt += (
+                "\n\nHOST RULE DESIGN / REVIEW-ONLY BOUNDARY\n"
+                "The user explicitly requested a proposed automation plan "
+                "and withheld permission to create, modify, queue or execute "
+                "any rule or device command. The current request is read-only, "
+                "even if the user mentions a future desired creation. "
+                "Use live source verification: resolve EACH explicitly named "
+                "device ID to its actual current label, room and capabilities "
+                "BEFORE describing the planned logic. Never silently substitute "
+                "a different sensor when an ID is mismatched. Read the exact "
+                "existing rule/app IDs mentioned by the user, plus any other "
+                "relevant current controller configured for the same target; "
+                "corroborate target refs with a device-dependents query when "
+                "available. Prefer config/source read tools to unrelated "
+                "history: historical events may prove command producers but "
+                "not a rule's complete current trigger/action settings. "
+                "Give a complete plan with triggers, modes, time boundaries, "
+                "continuously inactive delay cancellation, light-on-while-"
+                "already-inactive case, and competition with existing rules. "
+                "Validate any proposed native Rule Machine operations against "
+                "the actual tool guide; never assume unverified IF/WAIT/"
+                "Required Expression support or fabricate write JSON. "
+                "State gaps, contradictions and unknowns explicitly, and "
+                "never ask for write confirmation in this turn. No Hubitat "
+                "writes are authorised.\n"
+            )
+        elif review_first:
             system_prompt += (
                 "\n\nHOST REVIEW-BEFORE-CREATE BOUNDARY (read-only stage)\n"
                 "The user made creation CONDITIONAL on first verifying an "
@@ -4315,7 +4357,11 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
-        lockout_intent = not source_investigation and is_motion_lockout_investigation(user_prompt)
+        # A proposed rule may mention the manual-off lockout as a safety
+        # constraint. That is not a request to replace the rule-design review
+        # with a bounded historical lockout investigation.
+        lockout_intent = (not source_investigation and not proposal_only
+                          and is_motion_lockout_investigation(user_prompt))
         lockout_prefetch = (
             await prefetch_motion_lockout(
                 self, user_prompt, catalog=catalog, messages=messages
