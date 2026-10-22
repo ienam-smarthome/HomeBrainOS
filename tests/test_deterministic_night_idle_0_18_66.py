@@ -71,12 +71,19 @@ class NativeRuleMCP:
             device_id = str(args["args"]["deviceId"])
             if device_id not in {"7805", "7978"}:
                 raise AssertionError("Unexpected device ID: " + device_id)
-            data = {"id": device_id,
-                    "label": ("Livingroom Light 1" if device_id == "7805"
-                              else "FP400 motion sensor"),
+            # Exact upstream hub_get_device(mode=details) response shape:
+            # capabilities are nested under sections.attributes.
+            assert args["args"].get("sections") == ["attributes"]
+            data = {
+                "id": device_id, "mode": "details",
+                "label": ("Livingroom Light 1" if device_id == "7805"
+                          else "FP400 motion sensor"),
+                "sections": {"attributes": {
                     "capabilities": ([] if self.missing_caps else [
-                        "Switch" if device_id == "7805" else "MotionSensor"
-                    ])}
+                        {"name": "Switch" if device_id == "7805" else "MotionSensor"}
+                    ])
+                }},
+            }
         elif name == "hub_get_tool_guide":
             assert args["section"] == "set_rule_reference_actions"
             data = {"content": "missing" if self.bad_guide else
