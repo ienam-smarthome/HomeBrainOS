@@ -75,7 +75,9 @@ def _safe_plan(request: str) -> str:
         "motion sensor must be confirmed first.\n\n"
         f"1. Enforce the requested window **{window}** at entry **and immediately "
         "before every OFF**; verify how the installed Rule Machine interprets "
-        "the crossing-midnight range.\n"
+        "the crossing-midnight range. The installed Rule Machine's "
+        "cross-midnight condition semantics still require source/schema "
+        "verification.\n"
         "2. Consider three entry events: motion becomes inactive, the light "
         "turns ON while motion is already inactive, and the window opens "
         "while the light is already ON and motion inactive.\n"
@@ -118,7 +120,8 @@ _SAFETY_NOTE = (
     "eligibility alone is not proof that a previously pending OFF is "
     "cancelled at 06:00.\n\n"
     "**Existing controller:** An OFF-only rule is not automatically independent "
-    "of app 4019's manual-off lockout. Verify its persisted lockout trigger "
+    "of the existing controller's manual-off lockout. Verify the persisted "
+    "lockout trigger "
     "conditions and existing inactive-OFF configuration before claiming "
     "that a second controller is safe. Historical OFF commands confirm "
     "a command issuer, not the configured delay or absence of conflicts."
@@ -170,6 +173,36 @@ def calibrate_rule_design_review(
     text = _LOCKOUT_ABSOLUTE.sub(
         "it cannot be assumed to be independent of the existing lockout", text,
     )
+    # The normal evidence receipt often exposes only a list of response
+    # field names, not the actual labelled device/settings values. Source
+    # success alone cannot certify a displayed room, delay or lockout mode.
+    # Preserve the model's observations as leads, not independently proven
+    # facts, until typed, sanitized semantic receipts are available.
+    typed_details_verified = any(
+        row.get("success") is True
+        and row.get("evidence_kind") == "typed_rule_design_facts"
+        and isinstance(row.get("details"), dict)
+        and row["details"].get("semanticFieldsValidated") is True
+        for row in receipts if isinstance(row, dict)
+    )
+    provenance = (
+        "**Evidence qualification:** Current device and app pages were "
+        "queried, but generic receipts listing response fields do not "
+        "independently certify their labels, rooms, current inactivity "
+        "duration, complete actions or lockout trigger settings. These "
+        "reported interpretations require typed source confirmation "
+        "before any new rule is authorised.\n\n"
+    )
+    if not typed_details_verified and "**Evidence qualification:**" not in text:
+        # Keep the existing review/no-write banner as the first line.
+        leading = re.match(
+            r"\A(\*\*Read-only[^\n]*\*\*\s*)", text, re.I,
+        )
+        if leading:
+            index = leading.end()
+            text = text[:index] + provenance + text[index:]
+        else:
+            text = provenance + text
     if "### Rule design feasibility gate (read-only)" not in text:
         text += _SAFETY_NOTE
     return text
