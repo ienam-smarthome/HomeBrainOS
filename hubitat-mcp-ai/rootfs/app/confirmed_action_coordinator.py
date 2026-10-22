@@ -17,6 +17,8 @@ wrong tradeoff, the same reasoning that already applied to Rule Machine.
 from __future__ import annotations
 
 import time
+
+import httpx
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -423,6 +425,87 @@ class ConfirmedActionCoordinator:
             return new_rule_id
         return value
 
+    @staticmethod
+    def _native_rule_inventory(value: Any, *, depth: int = 0) -> list[dict[str, Any]] | None:
+        """Require a typed rules collection; gateway metadata is NOT an empty list."""
+        if depth > 4 or not isinstance(value, dict):
+            return None
+        rows = value.get("rules")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+        for key in ("data", "result", "output"):
+            nested = ConfirmedActionCoordinator._native_rule_inventory(
+                value.get(key), depth=depth + 1,
+            )
+            if nested is not None:
+                return nested
+        return None
+
+    async def _reconcile_rule_create_timeout(
+        self, arguments: dict[str, Any], catalog: ToolDiscoveryCatalog,
+    ) -> str:
+        """Single read-only recovery. NEVER retry or repeat a timed-out write."""
+        rule_name = self.queued_rule_name(arguments).strip()
+        query = {"tool": "hub_list_rules", "args": {}}
+        try:
+            found = await self.executor.execute(
+                "hub_read_rules", query,
+                tool=catalog.available_tool("hub_read_rules")
+                     or MCPTool("hub_read_rules", "Read native rules", {}),
+                mutates=False,
+                evidence_kind="rule_create_timeout_reconciliation",
+            )
+        except Exception:
+            found = None
+        rows = (
+            self._native_rule_inventory(found.result.data)
+            if found is not None and found.success and found.result is not None
+            else None
+        )
+        caution = (
+            "The original confirmed create request TIMED OUT after being sent "
+            "to Hubitat. A timeout cannot undo a rule that the hub may have "
+            "saved. HomeBrain has NOT submitted another write. **Do not retry "
+            "rule creation.**"
+        )
+        if rows is None:
+            increment_active_metric("rule_create_timeout_unknown")
+            return caution + (
+                "\n\nThe read-only Rule Machine reconciliation could not "
+                "retrieve a complete rules list. The creation outcome remains "
+                "UNKNOWN. Check the exact rule in Hubitat directly."
+            )
+        matches = [
+            row for row in rows
+            if str(row.get("name") or row.get("label") or "").strip().casefold()
+            == rule_name.casefold()
+        ]
+        if len(matches) == 1:
+            item = matches[0]
+            app_id = item.get("appId") or item.get("id") or item.get("ruleId")
+            increment_active_metric("rule_create_timeout_found")
+            suffix = f" (appId: {app_id})" if app_id not in (None, "") else ""
+            return caution + (
+                f"\n\n**Read-only Rule Machine lookup FOUND** exactly one "
+                f"existing rule named **{rule_name}**{suffix}. This confirms "
+                "its current presence, **not** that the timed-out write "
+                "returned successfully or that all actions and runtime "
+                "conditions were independently verified. Inspect its "
+                "triggers/actions in Hubitat before operating it."
+            )
+        increment_active_metric("rule_create_timeout_unknown")
+        if matches:
+            return caution + (
+                f"\n\nRead-only lookup found **{len(matches)} matching "
+                f"rules** named **{rule_name}**. Check duplicates directly."
+            )
+        return caution + (
+            f"\n\nThe latest native rule list did not yet show "
+            f"**{rule_name}**, but Hubitat might still be processing the "
+            "original write. The outcome remains UNKNOWN. Do not retry "
+            "until the hub's installed-rule inventory is checked again."
+        )
+
     async def resume(
         self,
         pending: PendingConfirmation,
@@ -495,6 +578,23 @@ class ConfirmedActionCoordinator:
             if tool_name == self.RULE_GATEWAY:
                 verified = self._record_rule_verification(execution, approved_arguments)
                 if not verified:
+                    # In particular, httpx.ReadTimeout after an approved
+                    # hub_set_rule create is *not* proof the hub did not
+                    # commit. One read-only exact-name lookup is permitted;
+                    # a second hub_set_rule call is NEVER performed.
+                    if (is_create
+                            and approved_arguments.get("tool") == "hub_set_rule"
+                            and isinstance(execution.error, httpx.TransportError)):
+                        reconciliation = await self._reconcile_rule_create_timeout(
+                            approved_arguments, catalog,
+                        )
+                        remaining = len(pending.actions) - len(outcomes)
+                        if remaining > 0:
+                            reconciliation += (
+                                f"\n\n{remaining} follow-up action(s) "
+                                "were NOT attempted after the uncertain create."
+                            )
+                        return reconciliation
                     break
                 if is_create:
                     data = self.rule_result_data(execution)
