@@ -515,9 +515,14 @@ class HistoryItem(BaseModel):
     content: str
 
 
+# Multi-stage Rule Machine design/creation requests routinely exceed 2,000 chars.
+# Retain a finite input bound, but do not reject ordinary structured prompts.
+MAX_CHAT_PROMPT_CHARS = 12000
+
+
 class ChatRequest(BaseModel):
-    prompt: str | None = Field(default=None, max_length=2000)
-    query: str | None = Field(default=None, max_length=2000)
+    prompt: str | None = Field(default=None, max_length=MAX_CHAT_PROMPT_CHARS)
+    query: str | None = Field(default=None, max_length=MAX_CHAT_PROMPT_CHARS)
     history: list[HistoryItem] = Field(default_factory=list)
     session_id: str | None = Field(default=None, min_length=1, max_length=160)
     request_id: str | None = Field(default=None, min_length=1, max_length=160)
