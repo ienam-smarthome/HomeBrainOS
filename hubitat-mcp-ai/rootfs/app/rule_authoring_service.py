@@ -861,12 +861,30 @@ class RuleAuthoringService:
             isinstance(result.data, dict) and result.data.get("success") is False
         )
         rows = self._rule_rows(result.data)
+        # A gateway discovery/metadata response is NOT an empty rules
+        # inventory. The older parser treated any successful object with no
+        # rules array as an empty set, allowing duplicate active rules after
+        # the wrong read gateway answered with {gateway,mode,tools}.
+        def has_rule_collection(value: Any, depth: int = 0) -> bool:
+            if depth > 4 or not isinstance(value, dict):
+                return False
+            if isinstance(value.get("rules"), list):
+                return True
+            return any(
+                has_rule_collection(value.get(key), depth + 1)
+                for key in ("data", "result", "output")
+            )
+        if not has_rule_collection(result.data):
+            success = False
         self._record_evidence(
             "hub_read_rules",
             arguments,
             success=success,
             elapsed_ms=round((time.monotonic() - started) * 1000),
-            summary=f"{len(rows)} existing Rule Machine rules checked for duplicates",
+            summary=(
+                f"{len(rows)} existing Rule Machine rules checked for duplicates"
+                if success else "Rule inventory unavailable: no actual rules array"
+            ),
             supports_live_claim=True,
             evidence_kind="rule_duplicate_check",
         )
