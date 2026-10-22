@@ -33,7 +33,15 @@ _EXTRA_ACTION = re.compile(
 def recognise_night_idle_creation(prompt: str) -> str | None:
     """Return the EXACT requested name for the bounded authoring grammar."""
     prompt = str(prompt or "").strip()
-    if not _CREATION.search(prompt) or not _ACTIVE.search(prompt):
+    if not _CREATION.search(prompt):
+        return None
+    # ACTIVE must modify the *creation request*, not appear only in a
+    # subsequent clause such as "cancel when motion becomes active".
+    name_candidate = _RULE_NAME.search(prompt)
+    if name_candidate is None:
+        return None
+    intro = prompt[:name_candidate.start()]
+    if not _ACTIVE.search(intro) or re.search(r"\bdisabled\b", intro, re.I):
         return None
     if _DENY.search(prompt):
         # "do not create duplicates" is a safety restriction, not a ban.
