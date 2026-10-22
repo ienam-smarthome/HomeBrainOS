@@ -24,7 +24,8 @@ def test_network_exception_from_ask_fetch_marks_unknown_without_retry():
     assert "route:'network-outcome-unknown'" in page
     assert "status_verification:'write-outcome-unknown'" in page
     assert "The result of any requested Hubitat write is UNKNOWN" in page
-    assert "Do NOT submit the same rule or device command again yet" in page
+    assert "'Do NOT submit the '" in page
+    assert "'same rule or device command again yet." in page
     assert "check the exact Rule Machine rule name and current state" in page
     assert "Request ID: '+requestId" in page
     assert "Browser error:" in page
@@ -60,8 +61,8 @@ async def test_backend_disconnect_cancels_and_logs_request_id_not_payload(caplog
         assert exc.value.status_code == 499
         assert cancelled.is_set()
         assert any(
-            "request_id=test-request-123" in record.message % record.args
-            and "direct verification" in record.message % record.args
+            "request_id=test-request-123" in record.getMessage()
+            and "direct verification" in record.getMessage()
             for record in caplog.records
         )
         assert coordinator.progress("test-session", "test-request-123")["completed"] is False
