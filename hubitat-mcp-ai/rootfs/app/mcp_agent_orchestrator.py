@@ -3350,12 +3350,7 @@ class UnifiedMCPAgent:
             for receipt in self.evidence.receipts()
         ):
             increment_active_metric("write_unverified_no_confirmation")
-            return (
-                "No Hubitat change was verified or queued for approval. "
-                "HomeBrain did not produce an executable, confirmed native "
-                "write in this request. Do not assume a new rule exists; "
-                "verify the current rule inventory before trying again."
-            )
+            return UNVERIFIED_MUTATION_REFUSAL
         return content
 
     async def _execute_focal_plan(
