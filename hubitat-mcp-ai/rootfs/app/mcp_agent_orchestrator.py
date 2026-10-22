@@ -7,7 +7,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from agent_prompt_policy import (
@@ -198,6 +198,7 @@ from automation_diagnostic_policy import (
 )
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
+from native_rule_creation_staging import demands_atomic_disabled_rule_creation, render_atomic_staging_stop
 from rule_design_claim_guard import calibrate_rule_design_review
 from rule_machine_analysis import requires_rule_logic_inspection
 from targeted_rule_scope_policy import named_rule_app_ids
@@ -3348,7 +3349,13 @@ class UnifiedMCPAgent:
             receipt.get("success") and receipt.get("mutates")
             for receipt in self.evidence.receipts()
         ):
-            return UNVERIFIED_MUTATION_REFUSAL
+            increment_active_metric("write_unverified_no_confirmation")
+            return (
+                "No Hubitat change was verified or queued for approval. "
+                "HomeBrain did not produce an executable, confirmed native "
+                "write in this request. Do not assume a new rule exists; "
+                "verify the current rule inventory before trying again."
+            )
         return content
 
     async def _execute_focal_plan(
@@ -4035,6 +4042,15 @@ class UnifiedMCPAgent:
                     if message is not None:
                         return message
 
+        # Honor a user's inert-from-birth requirement before any model
+        # interpretation or native write. The current rule-creation contract
+        # has no independently validated atomic disabled-at-create method;
+        # creating active then disabling it violates the user's instruction.
+        if (self._mutation_requested_by_user.get()
+                and demands_atomic_disabled_rule_creation(user_prompt)):
+            increment_active_metric("rule_create_staging_unverified")
+            return render_atomic_staging_stop()
+
         # The user's explicit time-bound rule command is the authority for
         # authoring intent. Do NOT let the semantic planner's advisory
         # operation="propose" suppress this deterministic compiler: doing so
@@ -4100,6 +4116,15 @@ class UnifiedMCPAgent:
         # even when bounded causal evidence reads remain authoritative.
         # Keep the tentative hypotheses request-scoped and never record them
         # as MCP evidence.
+        # Advisory task planning cannot reduce a user-authorised
+        # create-with-confirmation request to proposal-only. The actual tool
+        # schema, safety requirements and confirmation policy still decide
+        # whether any specific write can be queued.
+        if (task_plan is not None
+                and task_plan.operation == "propose"
+                and self._mutation_requested_by_user.get()):
+            increment_active_metric("planner_write_intent_corrected")
+            task_plan = replace(task_plan, operation="write")
         if task_plan is not None and task_plan.operation == "investigate":
             self._investigation_hypotheses.set(task_plan.candidate_hypotheses)
         stateful_capability_instruction = ""
@@ -5186,6 +5211,7 @@ class UnifiedMCPAgent:
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
                 if (task_plan is not None and task_plan.operation == "propose"
+                        and not self._mutation_requested_by_user.get()
                         and effect.mutates):
                     blocked_proposal_writes.append(name)
                     continue
