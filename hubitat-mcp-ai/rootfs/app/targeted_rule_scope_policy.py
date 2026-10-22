@@ -75,4 +75,41 @@ def is_targeted_rule_investigation(question: str) -> bool:
     )
 
 
-__all__ = ["named_rule_app_ids", "is_targeted_rule_investigation"]
+# A future-rule proposal can name an installed controller for comparison.
+# Such a proposal remains subject to the existing no-write design safeguards.
+_FUTURE_RULE_PROPOSAL = re.compile(
+    r"\b(?:want|need|wish|intend|plan|planning|propose|would\s+like)"
+    r"\s+(?:to\s+)?(?:create|add|build|make|design)\b"
+    r"|\b(?:new|future|proposed)\s+(?:rule|automation)\b"
+    r"|\b(?:design|implementation)\s+plan\s+for\s+(?:a\s+)?(?:rule|automation)\b",
+    re.I,
+)
+
+
+def is_existing_rule_verification_request(question: str) -> bool:
+    """Inspect a named *installed* app, not design another rule.
+
+    This only labels an investigation. It grants no read/write permissions.
+    Genuine future proposals that cite an existing controller as context
+    must still use the established read-only proposal safeguards.
+    """
+    return bool(
+        is_targeted_rule_investigation(question)
+        and not _FUTURE_RULE_PROPOSAL.search(str(question or ""))
+    )
+
+
+def is_new_rule_design_review_request(question: str) -> bool:
+    """Limit proposal-only *presentation* to future-design questions.
+
+    Keep RuleAuthoringService's fail-closed no-write classifier unchanged;
+    that classifier can still independently block authoring in either case.
+    """
+    from rule_authoring_service import RuleAuthoringService
+    return bool(
+        RuleAuthoringService.is_read_only_rule_design_request(question)
+        and not is_existing_rule_verification_request(question)
+    )
+
+__all__ = ["named_rule_app_ids", "is_targeted_rule_investigation",
+           "is_existing_rule_verification_request", "is_new_rule_design_review_request"]
