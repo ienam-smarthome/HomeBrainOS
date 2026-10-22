@@ -63,6 +63,7 @@ The repository drift test compares this table directly with the live directory. 
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
 | `automation_dependency_probe.py` | Bounded evidence-driven app configuration reads, typed current action-device edges, and weaker text-only shared-action candidates; explicitly excludes job ownership/execution claims. |
 | `rm_settings_dependency.py` | Safely projects bounded Rule Machine 5.x indexed settings onto provenance-labelled device references and key-family counts without retaining raw settings or inferring actions. |
+| `rule_design_claim_guard.py` | Calibrates unsupported native writer, timeout, overnight and manual-lockout claims for explicit read-only Rule Machine proposals; does not author or queue rules. |
 | `scheduler_identity_reconciliation.py` | Compares source-recognized installed app identities/status with encoded scheduler-key candidate IDs, explicitly separating an ID overlap from proof of ownership or execution. |
 | `audit_priority_planner.py` | Prioritises exact offline/log/heartbeat source combinations and labels scheduler ownership, timestamp clustering and disabled-app dependencies without asserting unseen failures. |
 | `composite_system_audit_policy.py` | Routes whole-hub audits spanning warnings/errors, apps/rules and device or health checks into the evidence-rich System Check rather than partial performance-only synthesis. |

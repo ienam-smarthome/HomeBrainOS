@@ -198,6 +198,7 @@ from automation_diagnostic_policy import (
 )
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
+from rule_design_claim_guard import calibrate_rule_design_review
 from rule_machine_analysis import requires_rule_logic_inspection
 from targeted_rule_scope_policy import named_rule_app_ids
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
@@ -3760,6 +3761,8 @@ class UnifiedMCPAgent:
             )):
                 message = redact_secrets(message)
             evidence = self.evidence.receipts()
+            if RuleAuthoringService.is_read_only_rule_design_request(user_prompt):
+                message = calibrate_rule_design_review(message, evidence)
             if (
                 self._mutation_requested_by_user.get()
                 or self._mutation_call_seen.get()
