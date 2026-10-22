@@ -4745,18 +4745,13 @@ class UnifiedMCPAgent:
             calls = assistant.get("tool_calls") or []
             if not calls:
                 if last_proposal_error is not None:
-                    name, rejected_arguments, reason = last_proposal_error
+                    _name, _rejected_arguments, reason = last_proposal_error
                     increment_active_metric("proposal_validation_failures")
-                    rejected = json.dumps(
-                        {"tool": name, "arguments": rejected_arguments},
-                        sort_keys=True,
-                        ensure_ascii=False,
-                        default=str,
-                    )
                     return (
                         "No Hubitat action was queued or executed because Rule "
                         f"Machine proposal validation failed. Exact reason: {reason} "
-                        f"Rejected payload: {rejected}"
+                        "The rejected gateway payload is not shown because it "
+                        "may contain private identifiers or tool tokens."
                     )
                 if review_first:
                     return self._unverified_mutation_guard(
@@ -5945,18 +5940,12 @@ class UnifiedMCPAgent:
                 "request."
             )
         if last_proposal_error is not None:
-            name, rejected_arguments, reason = last_proposal_error
+            _name, _rejected_arguments, reason = last_proposal_error
             increment_active_metric("proposal_validation_failures")
-            rejected = json.dumps(
-                {"tool": name, "arguments": rejected_arguments},
-                sort_keys=True,
-                ensure_ascii=False,
-                default=str,
-            )
             return (
                 "No Hubitat action was queued or executed because Rule Machine "
-                f"proposal validation failed. Exact reason: {reason} Rejected "
-                f"payload: {rejected}"
+                f"proposal validation failed. Exact reason: {reason} "
+                "The rejected gateway payload is withheld from this reply."
             )
         return await self._final_answer(messages)
 
