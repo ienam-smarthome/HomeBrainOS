@@ -253,6 +253,44 @@ def normalize_rule_machine_proposal(
             if isinstance(value, dict):
                 normalized_payload[singular] = normalized_payload.pop(plural)
                 changed = True
+    # The native RM gateway takes capability-tagged action rows. Models
+    # sometimes emit an unambiguous legacy wrapper such as
+    # {"ifThen":{"expression":...}} instead of
+    # {"capability":"ifThen","expression":...}. Convert ONLY well-formed,
+    # single-key known wrappers. This is a syntax correction, never a
+    # semantic repair of an unsafe rule or authority to execute it.
+    action_shorthand = {
+        "ifThen", "elseIf", "else", "endIf",
+        "delay", "cancelDelay", "waitExpression",
+    }
+    def canonical_action(item: dict[str, Any]) -> dict[str, Any]:
+        nonlocal changed
+        if not isinstance(item, dict) or "capability" in item:
+            return item
+        wrapped = [key for key in action_shorthand if key in item]
+        if len(wrapped) != 1:
+            return item
+        key = wrapped[0]
+        fields = item[key]
+        if not isinstance(fields, dict):
+            return item
+        extras = {k: v for k, v in item.items() if k != key}
+        # Do not overwrite nested fields, and never guess a different
+        # action subtype from multiple conflicting wrappers.
+        if action_shorthand.intersection(extras) or set(fields) & set(extras):
+            return item
+        if "capability" in fields:
+            return item
+        changed = True
+        return {"capability": key, **fields, **extras}
+    actions = normalized_payload.get("addActions")
+    if isinstance(actions, list):
+        normalized_payload["addActions"] = [
+            canonical_action(row) for row in actions
+        ]
+    action = normalized_payload.get("addAction")
+    if isinstance(action, dict):
+        normalized_payload["addAction"] = canonical_action(action)
     if not changed:
         return arguments
     normalized = dict(arguments)
