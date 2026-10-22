@@ -1043,6 +1043,29 @@ class HubitatMCPClient:
             )
         return tool_result
 
+    @staticmethod
+    def _confirmed_rule_creation_request(payload: dict[str, Any]) -> bool:
+        """Only confirmed *new* native rule creates merit an extended read timeout.
+
+        A mutation must never be replayed simply because its HTTP response
+        timed out: Hubitat may have committed it already.
+        """
+        if payload.get("method") != "tools/call":
+            return False
+        params = payload.get("params")
+        if not isinstance(params, dict) or params.get("name") != "hub_manage_rule_machine":
+            return False
+        envelope = params.get("arguments")
+        if not isinstance(envelope, dict) or envelope.get("tool") != "hub_set_rule":
+            return False
+        args = envelope.get("args")
+        return (
+            isinstance(args, dict)
+            and args.get("confirm") is True
+            and bool(str(args.get("name") or "").strip())
+            and args.get("appId") in (None, "")
+        )
+
     async def _post(
         self,
         payload: dict[str, Any],
@@ -1060,10 +1083,23 @@ class HubitatMCPClient:
             if attempt > 1:
                 record_mcp_retry_attempt()
             try:
+                # Multi-action Rule Machine installation can take longer
+                # than the 25s timeout used for normal reads. Restrict the
+                # extended READ timeout to a user-confirmed create, preserving
+                # original connect/pool/write limits and NO mutation retries.
+                timeout_options = (
+                    {"timeout": httpx.Timeout(
+                        self.timeout_seconds,
+                        read=max(90.0, self.timeout_seconds),
+                    )}
+                    if self._confirmed_rule_creation_request(payload)
+                    else {}
+                )
                 response = await self._http.post(
                     self.endpoint_url,
                     json=payload,
                     headers=headers,
+                    **timeout_options,
                 )
             except httpx.TransportError:
                 if attempt >= attempt_limit:
