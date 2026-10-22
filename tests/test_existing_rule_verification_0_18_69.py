@@ -28,8 +28,8 @@ CURRENT_RULE = (
 
 FUTURE_RULE = (
     "I want to create a new Rule Machine automation. Review the existing "
-    "controller app 4019 and propose an implementation plan, without "
-    "creating or modifying anything. This is a read-only design review."
+    "controller app 4019 and propose an implementation plan. Do not "
+    "create or modify anything. This is a read-only design review."
 )
 
 
