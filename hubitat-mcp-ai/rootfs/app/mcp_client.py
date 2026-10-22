@@ -1075,8 +1075,11 @@ class HubitatMCPClient:
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
 
+        # Never replay a confirmed native create after a timeout, even if
+        # an upstream tool declaration incorrectly advertises readOnlyHint.
         attempt_limit = (
-            self.retry_attempts if self._request_is_retryable(payload) else 1
+            1 if self._confirmed_rule_creation_request(payload)
+            else (self.retry_attempts if self._request_is_retryable(payload) else 1)
         )
         response: httpx.Response | None = None
         for attempt in range(1, attempt_limit + 1):
