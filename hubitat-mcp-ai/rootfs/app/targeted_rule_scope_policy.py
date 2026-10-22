@@ -80,7 +80,8 @@ def is_targeted_rule_investigation(question: str) -> bool:
 _FUTURE_RULE_PROPOSAL = re.compile(
     r"\b(?:want|need|wish|intend|plan|planning|propose|would\s+like)"
     r"\s+(?:to\s+)?(?:create|add|build|make|design)\b"
-    r"|\b(?:new|future|proposed)\s+(?:rule|automation)\b"
+    r"|\b(?:design|propose|draft|outline)\s+(?:a|an|the)?\s*"
+    r"(?:new|future|proposed)\s+(?:rule|automation)\b"
     r"|\b(?:design|implementation)\s+plan\s+for\s+(?:a\s+)?(?:rule|automation)\b",
     re.I,
 )
