@@ -198,6 +198,7 @@ from automation_diagnostic_policy import (
 )
 from request_metrics import increment_active_metric
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
+from night_idle_rule_authoring import propose_night_idle, recognise_night_idle_creation
 from native_rule_creation_staging import demands_atomic_disabled_rule_creation, render_atomic_staging_stop
 from rule_design_claim_guard import calibrate_rule_design_review
 from rule_machine_analysis import requires_rule_logic_inspection
@@ -4045,6 +4046,30 @@ class UnifiedMCPAgent:
                 and demands_atomic_disabled_rule_creation(user_prompt)):
             increment_active_metric("rule_create_staging_unverified")
             return render_atomic_staging_stop()
+
+        # A supported native night-idle OFF has a deterministic action
+        # compiler. Do not run the free model through repeated tool-discovery
+        # rounds for this exact authoring grammar. The compiler only builds a
+        # proposal, verifies exact devices/current rule names and documented
+        # subtypes, then delegates to the existing confirmation gate. Writes
+        # are never executed on this path without a new user confirmation.
+        if (self._mutation_requested_by_user.get()
+                and not review_first
+                and recognise_night_idle_creation(user_prompt) is not None):
+            if not self.rule_write_enabled:
+                return RULE_WRITES_DISABLED_MESSAGE
+            intent = await propose_night_idle(
+                user_prompt,
+                mcp=self.mcp,
+                record_evidence=self.evidence.record,
+                rules=self.rule_authoring,
+                available_gateways=set(catalog.available_names),
+            )
+            if intent is not None and intent.handled:
+                increment_active_metric("rule_night_idle_fastpath")
+                return self._rule_proposal_confirmation.resolve(
+                    intent, user_prompt=user_prompt, session_id=session_id,
+                )
 
         # The user's explicit time-bound rule command is the authority for
         # authoring intent. Do NOT let the semantic planner's advisory
