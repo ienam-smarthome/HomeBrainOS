@@ -614,6 +614,7 @@ def build_agent_response(
         result["success"] = False
         result["status_verification"] = "no-write-performed"
         result["metrics"]["outcome"] = "unresolved"
+        result["metric_rows"] = present_request_metrics(result["metrics"])
         result["outcome_presentation"] = deepcopy(
             present_request_outcome("unresolved")
         )
