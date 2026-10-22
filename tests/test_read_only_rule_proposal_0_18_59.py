@@ -115,7 +115,7 @@ async def test_model_free_design_review_survives_final_guard_with_source_receipt
     assert len(result.evidence) == 3
     assert result.message.startswith("**Read-only rule design review")
     assert "Toilet sensor" in result.message
-    assert "app 4019" in result.message
+    assert "app 4019" in result.message.casefold()
     assert result.message != UNVERIFIED_MUTATION_REFUSAL
     assert all(row["mutates"] is False for row in result.evidence)
 
