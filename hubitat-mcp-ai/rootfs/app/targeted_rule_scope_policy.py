@@ -86,16 +86,33 @@ _FUTURE_RULE_PROPOSAL = re.compile(
 )
 
 
-def is_existing_rule_verification_request(question: str) -> bool:
-    """Inspect a named *installed* app, not design another rule.
+_DEEP_INSTALLED_RULE_EVIDENCE = re.compile(
+    r"\b(?:persisted|ordered|duplicates?|exact[ -]?name|compare|"
+    r"contradict\w*|overlap\w*|interfer\w*|cross[ -]?check|"
+    r"cancelable|cancellable|nested|"
+    r"action\s+(?:sequence|tree|order)|triggers?.{0,24}actions?)\b",
+    re.I,
+)
+_HISTORICAL_RULE_EVENT = re.compile(
+    r"\b(?:historical|yesterday|earlier|latest|previous|"
+    r"past\s+(?:off|on|event|command|execution)|actually\s+engaged)\b",
+    re.I,
+)
 
-    This only labels an investigation. It grants no read/write permissions.
-    Genuine future proposals that cite an existing controller as context
-    must still use the established read-only proposal safeguards.
+
+def is_existing_rule_verification_request(question: str) -> bool:
+    """A *deep*, named installed-rule audit, not a status fast-path or proposal.
+
+    Ordinary current-configuration/status reads must preserve the pre-existing
+    direct Rule Machine analyser; historical lockout/event questions must keep
+    their dedicated provenance route. This predicate grants no authority.
     """
+    text = str(question or "")
     return bool(
-        is_targeted_rule_investigation(question)
-        and not _FUTURE_RULE_PROPOSAL.search(str(question or ""))
+        is_targeted_rule_investigation(text)
+        and _DEEP_INSTALLED_RULE_EVIDENCE.search(text)
+        and not _HISTORICAL_RULE_EVENT.search(text)
+        and not _FUTURE_RULE_PROPOSAL.search(text)
     )
 
 
