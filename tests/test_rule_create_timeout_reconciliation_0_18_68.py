@@ -194,3 +194,26 @@ def test_reconciled_timeout_is_unresolved_not_failed_or_success():
     assert classify_completed_request({
         "mutation_verification_failures": 1,
     }) == "failed"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_rule_create_never_retries_even_if_gateway_claims_readonly():
+    class TimeoutHTTP:
+        def __init__(self):
+            self.calls = 0
+        async def post(self, *args, **kwargs):
+            self.calls += 1
+            raise httpx.ReadTimeout("")
+    mcp = HubitatMCPClient(
+        "http://127.0.0.1:9000", retry_attempts=5
+    )
+    await mcp._http.aclose()
+    fake = TimeoutHTTP()
+    mcp._http = fake
+    mcp._tools[GATEWAY] = MCPTool(
+        GATEWAY, "manage rules", {"type": "object"},
+        annotations={"readOnlyHint": True}
+    )
+    with pytest.raises(httpx.ReadTimeout):
+        await mcp._post(rpc())
+    assert fake.calls == 1
