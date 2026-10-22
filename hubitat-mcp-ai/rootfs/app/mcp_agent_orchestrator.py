@@ -202,7 +202,10 @@ from night_idle_rule_authoring import propose_night_idle, recognise_night_idle_c
 from native_rule_creation_staging import demands_atomic_disabled_rule_creation, render_atomic_staging_stop
 from rule_design_claim_guard import calibrate_rule_design_review
 from rule_machine_analysis import requires_rule_logic_inspection
-from targeted_rule_scope_policy import named_rule_app_ids
+from targeted_rule_scope_policy import (
+    named_rule_app_ids, is_existing_rule_verification_request,
+    is_new_rule_design_review_request,
+)
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
@@ -3764,7 +3767,7 @@ class UnifiedMCPAgent:
             )):
                 message = redact_secrets(message)
             evidence = self.evidence.receipts()
-            if RuleAuthoringService.is_read_only_rule_design_request(user_prompt):
+            if is_new_rule_design_review_request(user_prompt):
                 message = calibrate_rule_design_review(
                     message, evidence, request=user_prompt,
                 )
@@ -3905,7 +3908,8 @@ class UnifiedMCPAgent:
         # and deliberately bypass normal service/ContextVar initialization.
         review_context = getattr(self, "_review_first_mode", None)
         review_first = bool(review_context.get()) if review_context is not None else False
-        proposal_only = RuleAuthoringService.is_read_only_rule_design_request(user_prompt)
+        proposal_only = is_new_rule_design_review_request(user_prompt)
+        existing_rule_verification = is_existing_rule_verification_request(user_prompt)
         deep_rule_review = (
             requires_rule_logic_inspection(user_prompt)
             and not _explicit_mutation_request(user_prompt)
@@ -4235,6 +4239,22 @@ class UnifiedMCPAgent:
                 "State gaps, contradictions and unknowns explicitly, and "
                 "never ask for write confirmation in this turn. No Hubitat "
                 "writes are authorised.\n"
+            )
+        elif existing_rule_verification:
+            system_prompt += (
+                "\n\nHOST EXISTING RULE VERIFICATION BOUNDARY (read-only)\n"
+                "This task inspects installed Rule Machine apps, not a proposed "
+                "new rule. Never produce a new-rule feasibility gate, a proposed "
+                "writer schema, or a confirmation request. Resolve exact app IDs "
+                "and exact-name duplicate matches from an appropriately complete "
+                "inventory. Read targeted health and persisted configuration. "
+                "Extract the actual ordered trigger/action and condition values; "
+                "a receipt listing only response field names is not proof of "
+                "those values. Reconcile competing controller summaries with "
+                "the underlying settings before claiming an effective delay. "
+                "Separate configuration verification from observed execution. "
+                "Keep missing evidence unverified. No Hubitat writes are "
+                "authorised by this investigation.\n"
             )
         elif review_first:
             system_prompt += (

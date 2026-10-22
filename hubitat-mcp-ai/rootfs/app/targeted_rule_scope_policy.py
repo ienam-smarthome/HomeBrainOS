@@ -75,4 +75,59 @@ def is_targeted_rule_investigation(question: str) -> bool:
     )
 
 
-__all__ = ["named_rule_app_ids", "is_targeted_rule_investigation"]
+# A future-rule proposal can name an installed controller for comparison.
+# Such a proposal remains subject to the existing no-write design safeguards.
+_FUTURE_RULE_PROPOSAL = re.compile(
+    r"\b(?:want|need|wish|intend|plan|planning|propose|would\s+like)"
+    r"\s+(?:to\s+)?(?:create|add|build|make|design)\b"
+    r"|\b(?:design|propose|draft|outline)\s+(?:a|an|the)?\s*"
+    r"(?:new|future|proposed)\s+(?:rule|automation)\b"
+    r"|\b(?:design|implementation)\s+plan\s+for\s+(?:a\s+)?(?:rule|automation)\b",
+    re.I,
+)
+
+
+_DEEP_INSTALLED_RULE_EVIDENCE = re.compile(
+    r"\b(?:persisted|ordered|duplicates?|exact[ -]?name|compare|"
+    r"contradict\w*|overlap\w*|interfer\w*|cross[ -]?check|"
+    r"cancelable|cancellable|nested|"
+    r"action\s+(?:sequence|tree|order)|triggers?.{0,24}actions?)\b",
+    re.I,
+)
+_HISTORICAL_RULE_EVENT = re.compile(
+    r"\b(?:historical|yesterday|earlier|latest|previous|"
+    r"past\s+(?:off|on|event|command|execution)|actually\s+engaged)\b",
+    re.I,
+)
+
+
+def is_existing_rule_verification_request(question: str) -> bool:
+    """A *deep*, named installed-rule audit, not a status fast-path or proposal.
+
+    Ordinary current-configuration/status reads must preserve the pre-existing
+    direct Rule Machine analyser; historical lockout/event questions must keep
+    their dedicated provenance route. This predicate grants no authority.
+    """
+    text = str(question or "")
+    return bool(
+        is_targeted_rule_investigation(text)
+        and _DEEP_INSTALLED_RULE_EVIDENCE.search(text)
+        and not _HISTORICAL_RULE_EVENT.search(text)
+        and not _FUTURE_RULE_PROPOSAL.search(text)
+    )
+
+
+def is_new_rule_design_review_request(question: str) -> bool:
+    """Limit proposal-only *presentation* to future-design questions.
+
+    Keep RuleAuthoringService's fail-closed no-write classifier unchanged;
+    that classifier can still independently block authoring in either case.
+    """
+    from rule_authoring_service import RuleAuthoringService
+    return bool(
+        RuleAuthoringService.is_read_only_rule_design_request(question)
+        and not is_existing_rule_verification_request(question)
+    )
+
+__all__ = ["named_rule_app_ids", "is_targeted_rule_investigation",
+           "is_existing_rule_verification_request", "is_new_rule_design_review_request"]
