@@ -37,6 +37,7 @@ FUTURE_RULE = (
     CURRENT_RULE,
     "Audit the triggers and action sequence for app 4246. Do not change anything.",
     "Verify Rule Machine app 4246 persisted triggers and actions, enabled state. Do not create another rule.",
+    "Review app 4246 persisted action tree. Do not create a new rule.",
     "Check whether app 4019 interferes with rule 4246: compare triggers and delays. Read only.",
 ])
 def test_named_installed_rule_uses_existing_verification(question):
