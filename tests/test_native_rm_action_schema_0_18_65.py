@@ -135,3 +135,23 @@ def test_model_payload_never_reflected_in_failed_rule_error():
     assert "Rejected payload:" not in code
     assert "proposal validation failed twice" in code
     assert "not reflected back as" in code
+
+
+def test_generic_if_action_preserves_documented_sunrise_sunset_conditions():
+    rule = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Sunlight guarded test",
+            "addTriggers": [{"capability": "Motion", "deviceIds": ["7978"], "state": "inactive"}],
+            "addActions": [
+                {"capability": "ifThen", "expression": {
+                    "operator": "AND",
+                    "conditions": [{"capability": "Between two times",
+                                    "start": {"type": "sunset", "offset": -15},
+                                    "end": {"type": "sunrise", "offset": 10}}]}},
+                {"capability": "switch", "action": "off", "deviceIds": ["7805"]},
+                {"capability": "endIf"},
+            ],
+        },
+    }
+    assert rule_machine_proposal_error(GATEWAY, rule) is None
