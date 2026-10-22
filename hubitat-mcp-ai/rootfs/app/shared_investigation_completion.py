@@ -411,6 +411,27 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "that the device was responsive or an upstream action occurred."
         ),
     }
+    if domain == "rule_design_review":
+        # The historical source-kind list is intentionally empty for design
+        # reviews; vacuous empty-set coverage must not become a green
+        # "sourceChecksComplete: true" result while the actual device, rule,
+        # or native-schema requirements remain unverified.
+        coverage["sourceChecksComplete"] = bool(existing.get("evidenceComplete") is True)
+        coverage["sourceCoverage"] = {
+            "requiredSourceKinds": [],
+            "checkedSourceKinds": [],
+            "missingSourceKinds": [],
+            "sourceKindsChecked": None,
+            "note": "Historical event source classes are not applicable to a "
+                    "future rule design. Inspect the domain-specific device, "
+                    "current-rule and native-capability requirements instead.",
+        }
+        coverage["completionNote"] = (
+            "Generic successful source reads establish that the records were "
+            "queried, not that current rule actions, durations, device labels "
+            "or the combined Rule Machine authoring schema were independently "
+            "validated by typed evidence."
+        )
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
     if command_observation is not None or incident_log_window is not None:
