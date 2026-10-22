@@ -3762,7 +3762,9 @@ class UnifiedMCPAgent:
                 message = redact_secrets(message)
             evidence = self.evidence.receipts()
             if RuleAuthoringService.is_read_only_rule_design_request(user_prompt):
-                message = calibrate_rule_design_review(message, evidence)
+                message = calibrate_rule_design_review(
+                    message, evidence, request=user_prompt,
+                )
             if (
                 self._mutation_requested_by_user.get()
                 or self._mutation_call_seen.get()
