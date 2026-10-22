@@ -4309,6 +4309,31 @@ class UnifiedMCPAgent:
                 "execution or variable scope remains unverified. "
                 "No changes or confirmations are authorized."
             )
+        if (self._mutation_requested_by_user.get()
+                and re.search(r"(?i)\\b(?:rule machine|automation|rule)\\b", user_prompt)
+                and not proposal_only):
+            system_prompt += (
+                "\n\nNATIVE RULE MACHINE AUTHORING CONSTRAINTS (HOST VERIFIED)\n"
+                "For hub_manage_rule_machine tool=hub_set_rule, put name, "
+                "addTriggers and addActions directly under args. Each action "
+                "is a FLAT object with an explicit capability, e.g. "
+                "{'capability':'ifThen','expression':{'conditions':[...],"
+                "'operator':'AND'}}, {'capability':'delay','minutes':10,"
+                "'cancelable':true}, {'capability':'cancelDelay'}, "
+                "{'capability':'endIf'}, {'capability':'switch','action':'off',"
+                "'deviceIds':[lightId]}. Never invent wrapper forms like "
+                "{'ifThen':{...}}, {'delay':{...}}, {'cancelDelay':{}}. "
+                "Certain Time (and optional date) is a TRIGGER, not a "
+                "condition inside IF; use a Between two times condition "
+                "with clock start/end objects. When 23:00 and 06:00 BOTH "
+                "trigger the rule, every trigger runs the same action list: "
+                "cancellation must occur first, and switch-off must be "
+                "inside a second final IF guard AFTER a cancelable delay. "
+                "Do not submit an incomplete substitute, bypass existing "
+                "rule conflict inspection, or claim Hubitat execution from "
+                "a validated JSON proposal. The host will reject malformed "
+                "and semantically unguarded action plans before confirmation.\n"
+            )
         if stateful_capability_instruction:
             system_prompt += "\n\n" + stateful_capability_instruction
         if capability_discovery:
@@ -4720,18 +4745,13 @@ class UnifiedMCPAgent:
             calls = assistant.get("tool_calls") or []
             if not calls:
                 if last_proposal_error is not None:
-                    name, rejected_arguments, reason = last_proposal_error
+                    _name, _rejected_arguments, reason = last_proposal_error
                     increment_active_metric("proposal_validation_failures")
-                    rejected = json.dumps(
-                        {"tool": name, "arguments": rejected_arguments},
-                        sort_keys=True,
-                        ensure_ascii=False,
-                        default=str,
-                    )
                     return (
                         "No Hubitat action was queued or executed because Rule "
                         f"Machine proposal validation failed. Exact reason: {reason} "
-                        f"Rejected payload: {rejected}"
+                        "The rejected gateway payload is not shown because it "
+                        "may contain private identifiers or tool tokens."
                     )
                 if review_first:
                     return self._unverified_mutation_guard(
@@ -5295,16 +5315,16 @@ class UnifiedMCPAgent:
                 proposal_error_retries += 1
                 if proposal_error_retries >= 2:
                     increment_active_metric("proposal_validation_failures")
-                    rejected = json.dumps(
-                        {"tool": failed_name, "arguments": failed_arguments},
-                        sort_keys=True,
-                        ensure_ascii=False,
-                        default=str,
-                    )
+                    # Never echo the model's full proposed native write payload:
+                    # it can contain identifiers, tool-guide best-practice
+                    # tokens, user rule labels and potentially sensitive data.
+                    # The validator reason is sufficient for corrective work.
                     return (
                         "No Hubitat action was queued or executed because Rule "
                         "Machine proposal validation failed twice. Exact reason: "
-                        f"{failed_reason} Rejected payload: {rejected}"
+                        f"{failed_reason} The proposed write is retained only "
+                        "in the in-request validator, not reflected back as "
+                        "a raw gateway payload."
                     )
                 messages.append(assistant)
                 errors_by_name = dict(proposal_errors)
@@ -5920,18 +5940,12 @@ class UnifiedMCPAgent:
                 "request."
             )
         if last_proposal_error is not None:
-            name, rejected_arguments, reason = last_proposal_error
+            _name, _rejected_arguments, reason = last_proposal_error
             increment_active_metric("proposal_validation_failures")
-            rejected = json.dumps(
-                {"tool": name, "arguments": rejected_arguments},
-                sort_keys=True,
-                ensure_ascii=False,
-                default=str,
-            )
             return (
                 "No Hubitat action was queued or executed because Rule Machine "
-                f"proposal validation failed. Exact reason: {reason} Rejected "
-                f"payload: {rejected}"
+                f"proposal validation failed. Exact reason: {reason} "
+                "The rejected gateway payload is withheld from this reply."
             )
         return await self._final_answer(messages)
 

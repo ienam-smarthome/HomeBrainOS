@@ -253,11 +253,230 @@ def normalize_rule_machine_proposal(
             if isinstance(value, dict):
                 normalized_payload[singular] = normalized_payload.pop(plural)
                 changed = True
+    # The native RM gateway takes capability-tagged action rows. Models
+    # sometimes emit an unambiguous legacy wrapper such as
+    # {"ifThen":{"expression":...}} instead of
+    # {"capability":"ifThen","expression":...}. Convert ONLY well-formed,
+    # single-key known wrappers. This is a syntax correction, never a
+    # semantic repair of an unsafe rule or authority to execute it.
+    action_shorthand = {
+        "ifThen", "elseIf", "else", "endIf",
+        "delay", "cancelDelay", "waitExpression",
+    }
+    def canonical_action(item: dict[str, Any]) -> dict[str, Any]:
+        nonlocal changed
+        if not isinstance(item, dict) or "capability" in item:
+            return item
+        wrapped = [key for key in action_shorthand if key in item]
+        if len(wrapped) != 1:
+            return item
+        key = wrapped[0]
+        fields = item[key]
+        if not isinstance(fields, dict):
+            return item
+        extras = {k: v for k, v in item.items() if k != key}
+        # Do not overwrite nested fields, and never guess a different
+        # action subtype from multiple conflicting wrappers.
+        if action_shorthand.intersection(extras) or set(fields) & set(extras):
+            return item
+        if "capability" in fields:
+            return item
+        changed = True
+        return {"capability": key, **fields, **extras}
+    actions = normalized_payload.get("addActions")
+    if isinstance(actions, list):
+        normalized_payload["addActions"] = [
+            canonical_action(row) for row in actions
+        ]
+    action = normalized_payload.get("addAction")
+    if isinstance(action, dict):
+        normalized_payload["addAction"] = canonical_action(action)
     if not changed:
         return arguments
     normalized = dict(arguments)
     normalized["args"] = normalized_payload
     return normalized
+
+
+def _rm_action_condition_error(actions: list[dict[str, Any]]) -> str | None:
+    """Check basic RM 5.x IF syntax, not runtime behaviour or wizard schemas."""
+    depth = 0
+    for position, action in enumerate(actions, 1):
+        kind = str(action.get("capability") or "").strip()
+        if not kind:
+            wrappers = sorted(
+                set(action) & {"ifThen", "elseIf", "endIf", "delay", "cancelDelay"}
+            )
+            if wrappers:
+                return (
+                    f"action {position} lacks capability; native addActions "
+                    f"requires capability='{wrappers[0]}' as a direct field"
+                )
+            return f"action {position} requires capability"
+        if kind in {"ifThen", "elseIf", "waitExpression", "repeatWhile"}:
+            expr = action.get("expression")
+            if not isinstance(expr, dict) or not isinstance(
+                expr.get("conditions"), list
+            ) or not expr["conditions"]:
+                return f"action {position} {kind} requires expression.conditions"
+            if kind == "elseIf" and not depth:
+                return f"action {position} elseIf has no preceding ifThen"
+            if kind == "ifThen":
+                depth += 1
+            if depth > 16:
+                return "native Rule Machine IF nesting exceeds the safe limit"
+            for index, condition in enumerate(expr["conditions"], 1):
+                if not isinstance(condition, dict) or not str(
+                    condition.get("capability") or ""
+                ).strip():
+                    return (
+                        f"action {position} condition {index} requires capability"
+                    )
+                if condition["capability"] == "Certain Time (and optional date)":
+                    return (
+                        f"action {position} condition {index} uses a time TRIGGER; "
+                        "inside IF use capability='Between two times' with "
+                        "clock start/end or separate time comparisons"
+                    )
+                if condition["capability"] == "Between two times":
+                    for edge in ("start", "end"):
+                        item = condition.get(edge)
+                        if not isinstance(item, dict) or item.get("type") not in {
+                            "clock", "sunrise", "sunset",
+                        }:
+                            return (
+                                f"action {position} condition {index} needs "
+                                f"Between two times {edge} type clock/sunrise/sunset"
+                            )
+                        if item["type"] == "clock" and re.fullmatch(
+                            r"(?:[01]\d|2[0-3]):[0-5]\d",
+                            str(item.get("time") or ""),
+                        ) is None:
+                            return (
+                                f"action {position} condition {index} "
+                                f"{edge}.time needs HH:mm"
+                            )
+                        if (item["type"] != "clock"
+                                and ("offset" not in item
+                                     or isinstance(item.get("offset"), bool)
+                                     or not isinstance(item.get("offset"), (int, float)))):
+                            return (
+                                f"action {position} condition {index} "
+                                f"{edge}.offset needs numeric minutes"
+                            )
+        elif kind == "endIf":
+            if not depth:
+                return f"action {position} endIf has no preceding ifThen"
+            depth -= 1
+        elif kind == "else":
+            if not depth:
+                return f"action {position} else has no preceding ifThen"
+        elif kind == "delay":
+            if not any(
+                isinstance(action.get(k), int) and not isinstance(
+                    action.get(k), bool
+                ) and action[k] > 0
+                for k in ("seconds", "minutes", "hours")
+            ) and not str(action.get("variable") or "").strip():
+                return (
+                    f"action {position} delay needs minutes/seconds/hours "
+                    "or a verified duration variable"
+                )
+            if "cancelable" in action and not isinstance(
+                action["cancelable"], bool
+            ):
+                return f"action {position} cancelable must be boolean"
+    if depth:
+        return f"{depth} native Rule Machine IF block(s) are missing endIf"
+    return None
+
+
+def _safe_two_clock_night_idle_program(
+    triggers: list[dict[str, Any]], actions: list[dict[str, Any]],
+) -> bool:
+    """Allow multiple daily clock triggers only for a narrow guarded topology.
+
+    This is a *structural* validation based on documented RM 5.x subtype
+    fields; live execution semantics and conflicts must still be checked.
+    """
+    if len(actions) != 7:
+        return False
+    if [str(x.get("capability")) for x in actions] != [
+        "cancelDelay", "ifThen", "delay", "ifThen", "switch", "endIf", "endIf",
+    ]:
+        return False
+    stop = actions[4]
+    if stop.get("action") != "off" or not isinstance(
+        stop.get("deviceIds"), list
+    ) or len(stop["deviceIds"]) != 1:
+        return False
+    if actions[2].get("cancelable") is not True:
+        return False
+    if not any(isinstance(actions[2].get(k), int)
+               and not isinstance(actions[2].get(k), bool)
+               and actions[2][k] > 0
+               for k in ("minutes", "hours", "seconds")):
+        return False
+    conditions = []
+    for index in (1, 3):
+        expr = actions[index].get("expression")
+        if not isinstance(expr, dict) or expr.get("operator") != "AND":
+            return False
+        rows = expr.get("conditions")
+        if not isinstance(rows, list) or len(rows) != 3:
+            return False
+        conditions.append(rows)
+    if conditions[0] != conditions[1]:
+        return False
+    light = str(stop["deviceIds"][0])
+    motion = None
+    start = end = None
+    known_light = known_motion = False
+    for row in conditions[0]:
+        if not isinstance(row, dict):
+            return False
+        capability = row.get("capability")
+        ids = row.get("deviceIds")
+        if capability == "Switch":
+            known_light = (isinstance(ids, list) and len(ids) == 1
+                           and str(ids[0]) == light and row.get("state") == "on")
+        elif capability == "Motion":
+            if not isinstance(ids, list) or len(ids) != 1 or row.get("state") != "inactive":
+                return False
+            motion = str(ids[0])
+            known_motion = bool(motion)
+        elif capability == "Between two times":
+            start_value = row.get("start")
+            end_value = row.get("end")
+            if not isinstance(start_value, dict) or not isinstance(end_value, dict):
+                return False
+            if start_value.get("type") != "clock" or end_value.get("type") != "clock":
+                return False
+            start, end = start_value.get("time"), end_value.get("time")
+        else:
+            return False
+    if not (known_light and known_motion and start and end and start > end):
+        return False
+    required = {
+        ("Motion", motion, "active"), ("Motion", motion, "inactive"),
+        ("Switch", light, "on"), ("Switch", light, "off"),
+    }
+    found = set()
+    clocks = set()
+    for trigger in triggers:
+        cap = trigger.get("capability")
+        if cap == "Certain Time (and optional date)":
+            if trigger.get("time") != "A specific time":
+                return False
+            clocks.add(trigger.get("atTime"))
+        elif cap in {"Motion", "Switch"}:
+            ids = trigger.get("deviceIds")
+            if not isinstance(ids, list) or len(ids) != 1:
+                return False
+            found.add((cap, str(ids[0]), trigger.get("state")))
+        else:
+            return False
+    return found == required and clocks == {start, end}
 
 
 def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
@@ -391,6 +610,10 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
                         "'YYYY-MM-DDTHH:MM:SS' (one-time)"
                     )
 
+    action_syntax_error = _rm_action_condition_error(actions)
+    if action_syntax_error:
+        return action_syntax_error
+
     for index, action in enumerate(actions, 1):
         capability = str(action.get("capability") or "").strip()
         if not capability:
@@ -425,12 +648,20 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
         and trigger.get("time") == "A specific time"
     }
     if len(daily_times) > 1 and len(actions) > 1:
-        return (
-            "one rule cannot safely pair multiple daily times with multiple "
-            "actions: every trigger can run the same action list. Submit one "
-            "independently named rule per time/action pair in the same confirmation "
-            "group (for example block at 09:00 and allow at 19:00)"
-        )
+        if not _safe_two_clock_night_idle_program(triggers, actions):
+            return (
+                "one rule cannot safely pair multiple daily times with "
+                "multiple actions unless a strict guarded cancellation "
+                "topology is verified. Multiple daily times execute the "
+                "SAME action list. For a "
+                "night idle OFF rule with 23:00 and 06:00 boundaries, use a "
+                "verified seven-action guarded sequence: cancelDelay, ifThen "
+                "(Motion inactive AND Switch on AND Between two times), "
+                "cancelable delay, identical final ifThen, switch off, endIf, "
+                "endIf; include motion active/inactive, switch on/off and "
+                "both boundary time triggers. Other multiple-time/multiple-"
+                "action topologies must be separately validated."
+            )
     return None
 
 
