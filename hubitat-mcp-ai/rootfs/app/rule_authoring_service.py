@@ -331,6 +331,57 @@ class RuleAuthoringService:
     )
 
     @classmethod
+    def is_read_only_rule_design_request(cls, prompt: str) -> bool:
+        """Explicit review/proposal-only authoring: no present write authority.
+
+        The user can discuss a desired future rule while withholding authority
+        to create it. Require a rule subject, positive review objective AND a
+        separate explicit no-write instruction. Fail closed on independent
+        commands to modify state in the same prompt; never erase such writes.
+        """
+        text = " ".join(str(prompt or "").split())
+        if not re.search(r"\\b(?:rule\\s*machine|automation|rule)\\b", text, re.I):
+            return False
+        review = re.search(
+            r"\\b(?:read[ -]?only|proposal[ -]?only|review|inspect|"
+            r"implementation\\s+plan|show\\s+(?:me\\s+)?(?:the\\s+)?"
+            r"(?:plan|proposal)|design\\s+only)\\b", text, re.I,
+        )
+        no_write = re.search(
+            r"\\b(?:do\\s+not|don't|never)\\s+"
+            r"(?:(?:actually|yet|now)\\s+)?"
+            r"(?:create|write|modify|change|disable|enable|execute|"
+            r"run|queue|make|apply|install|schedule)\\b"
+            r"|\\b(?:i\\s+will|i'll)\\s+"
+            r"(?:explicitly\\s+)?authori[sz]e\\s+"
+            r"(?:creation|changes|writing)\\s+(?:later|separately)\\b",
+            text, re.I,
+        )
+        if not (review and no_write):
+            return False
+        # An actual independent imperative elsewhere in the prompt keeps
+        # normal write-intent/confirmation semantics. Future desired-state
+        # clauses ("if motion becomes active, cancel ...") are not commands.
+        independent = re.search(
+            r"(?i)(?:^|[.!?;]\\s+|\\b(?:also|then)\\s+)"
+            r"(?:please\\s+)?(?:create|write|modify|change|disable|"
+            r"enable|delete|remove|turn|switch|block|unblock|"
+            r"restart|apply|execute|run|set)\\b"
+            r"[^.!?;]{0,70}\\b(?:now|immediately|today)\\b",
+            text,
+        )
+        if independent:
+            return False
+        if re.match(
+            r"(?i)^\\s*(?:please\\s+)?(?:create|write|modify|"
+            r"change|disable|enable|turn|switch|block|unblock|"
+            r"delete|remove|apply|execute)\\b",
+            text,
+        ):
+            return False
+        return True
+
+    @classmethod
     def is_existing_rule_review_first(cls, prompt: str) -> bool:
         """An explicitly conditional create must inspect an existing rule first.
 
