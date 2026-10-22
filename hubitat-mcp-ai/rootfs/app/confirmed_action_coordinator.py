@@ -591,7 +591,7 @@ class ConfirmedActionCoordinator:
                         remaining = len(pending.actions) - len(outcomes)
                         if remaining > 0:
                             reconciliation += (
-                                f"\\n\\n{remaining} follow-up action(s) "
+                                f"\n\n{remaining} follow-up action(s) "
                                 "were NOT attempted after the uncertain create."
                             )
                         return reconciliation
