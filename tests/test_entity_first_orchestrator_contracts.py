@@ -100,8 +100,9 @@ async def test_invalid_rule_proposal_returns_exact_failed_outcome():
 
     assert "No Hubitat action was queued or executed" in outcome.message
     assert "Exact reason:" in outcome.message
-    assert "Rejected payload:" in outcome.message
-    assert '"not-an-action-object"' in outcome.message
+    assert "Rejected payload:" not in outcome.message
+    assert '"not-an-action-object"' not in outcome.message
+    assert "rejected gateway payload is not shown" in outcome.message
     assert "every addActions item must be an object" in outcome.message
     assert len(ai.requests) == 2
 
