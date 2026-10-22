@@ -451,8 +451,31 @@ const renderAnswer=showAnswer;showAnswer=data=>{
 let activeRequest=null,requestSequence=0;
 // A saved reply is only a transcript; never restore stale mutation confirmation buttons.
 if(currentChat()?.messages?.length)openChat(sessionId);else{saveChats();renderChatList()}
+const MAX_CHAT_PROMPT_CHARS=12000;
+function askApiErrorMessage(response,data,length){
+  if(response.status===422&&Array.isArray(data?.detail)){
+    const error=data.detail.find(item=>Array.isArray(item?.loc)&&
+      item.loc.some(field=>field==='prompt'||field==='query')&&
+      item.type==='string_too_long');
+    if(error){
+      const maximum=Number(error.ctx?.max_length)||MAX_CHAT_PROMPT_CHARS;
+      return 'Question exceeds the '+maximum.toLocaleString()+'-character limit ('+
+        length.toLocaleString()+' characters). Shorten the question and retry.';
+    }
+    return 'Request validation failed (HTTP 422). Check the question and selected model.';
+  }
+  return typeof data?.detail==='string'?data.detail:'HTTP '+response.status;
+}
 async function submit(text){
   text=(text||query.value).trim();if(!text)return;
+  if(text.length>MAX_CHAT_PROMPT_CHARS){
+    query.value=text;
+    showAnswer({success:false,route:'validation-error',
+      message:'Question exceeds the '+MAX_CHAT_PROMPT_CHARS.toLocaleString()+
+        '-character limit ('+text.length.toLocaleString()+
+        ' characters). Shorten the question and retry; nothing was submitted.'});
+    return;
+  }
   const normalized=text.toLowerCase().replace(/[.!]/g,'').trim();
   if(suggestedAction==='firmware-update'&&['yes','yes please','proceed','do it'].includes(normalized))text='Install the available Hubitat firmware update';
   suggestedAction=null;stopAudio();query.value=text;
@@ -482,7 +505,7 @@ async function submit(text){
       body:JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier}),
       signal:controller.signal,
     });
-    const data=await jsonResponse(response);if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'HTTP '+response.status);
+    const data=await jsonResponse(response);if(!response.ok)throw new Error(askApiErrorMessage(response,data,text.length));
     if(sequence===requestSequence&&requestSessionId===sessionId){
       const reply=String(data.message||data.detail||'');
       conversationHistory.push({role:'user',content:text},{role:'assistant',content:reply});
