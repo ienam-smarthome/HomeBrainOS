@@ -272,6 +272,59 @@ def analyse_dependency_probes(probes: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+_PAIR_NOISE = frozenset({
+    "lighting", "auto", "automatic", "off", "on", "low", "high",
+    "rule", "rules", "schedule", "scheduled", "motion", "mode",
+    "when", "then", "the", "a", "an", "to", "for", "of", "at",
+})
+
+
+def _lighting_tokens(name: str) -> set[str]:
+    """Planning tokens only; never evidence of device identity or rule overlap."""
+    return {
+        token for token in re.findall(r"[a-z]+|[0-9]+", str(name or "").casefold())
+        if token not in _PAIR_NOISE
+    }
+
+
+def select_rm_settings_probes(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prefer a potentially related lighting pair over two low numeric IDs.
+
+    A similarity score only chooses which *two* current RM configurations to
+    inspect under the existing limits. It is never published as an action or
+    shared-target proof. Exact typed device evidence still comes from MCP.
+    """
+    eligible = sorted(
+        (item for item in attempts if item.get("configVerified")
+         and not item.get("typedActionDeviceIds")
+         and (item.get("rmAppTypeVerified") or is_rule_machine_app(item))),
+        key=lambda item: (
+            0 if item.get("reason") == "lighting dependency comparison candidate" else 1,
+            int(item["id"]),
+        ),
+    )
+    lighting = [item for item in eligible
+                if item.get("reason") == "lighting dependency comparison candidate"]
+    best_pair: tuple[dict[str, Any], dict[str, Any]] | None = None
+    best_score = 0
+    for offset, first in enumerate(lighting):
+        for second in lighting[offset + 1:]:
+            shared = _lighting_tokens(first.get("name") or "") & _lighting_tokens(
+                second.get("name") or ""
+            )
+            # A generic word such as "light" or "dimmer" alone cannot
+            # establish a useful subject match. Require two shared tokens
+            # and at least one non-generic location/object token.
+            if len(shared) < 2 or not (shared - {"light", "lamp", "dimmer"}):
+                continue
+            score = len(shared)
+            if score > best_score:
+                best_pair, best_score = (first, second), score
+    if best_pair is not None:
+        return list(best_pair)
+    return eligible[:2]
+
+
 async def inspect_automation_dependencies(
     mcp: Any,
     installed: dict[str, Any] | None,
@@ -358,18 +411,7 @@ async def inspect_automation_dependencies(
     # and immediately projected onto allowlisted key family counts and numeric
     # *references*, never returned or persisted. Never promote references into
     # action edges or claim that they prove rule execution.
-    eligible = sorted(
-        (item for item in attempts if item.get("configVerified")
-         and not item.get("typedActionDeviceIds")
-         and (item.get("rmAppTypeVerified") or is_rule_machine_app(item))),
-        # Spend the two RM-specific reads on lighting rules as a pair when
-        # present; disabled-app scheduling candidates still receive normal
-        # config reads but cannot displace both lighting comparisons.
-        key=lambda item: (
-            0 if item.get("reason") == "lighting dependency comparison candidate" else 1,
-            int(item["id"]),
-        ),
-    )[:2]
+    eligible = select_rm_settings_probes(attempts)
 
     async def inspect_rm(item: dict[str, Any]) -> None:
         async with semaphore:
