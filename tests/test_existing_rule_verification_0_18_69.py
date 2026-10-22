@@ -33,16 +33,16 @@ FUTURE_RULE = (
 )
 
 
-@pytest.mark.parametrize("request", [
+@pytest.mark.parametrize("question", [
     CURRENT_RULE,
     "Audit the triggers and action sequence for app 4246. Do not change anything.",
     "Verify Rule Machine app 4246 health, conditions, enabled state. Do not create another rule.",
     "Check whether app 4019 interferes with rule 4246: compare triggers and delays. Read only.",
 ])
-def test_named_installed_rule_uses_existing_verification(request):
-    assert is_existing_rule_verification_request(request)
-    assert not is_new_rule_design_review_request(request)
-    goal = plan_investigation(request)
+def test_named_installed_rule_uses_existing_verification(question):
+    assert is_existing_rule_verification_request(question)
+    assert not is_new_rule_design_review_request(question)
+    goal = plan_investigation(question)
     assert goal is not None
     assert goal.domain == "existing_rule_verification"
     assert "native_capabilities" not in {x.key for x in goal.requirements}
