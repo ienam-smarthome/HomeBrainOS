@@ -595,6 +595,29 @@ def build_agent_response(
         result["success"] = bool(getattr(outcome, "complete", False))
         result["status_verification"] = "partial" if not result["success"] else "configuration_read"
     counters = metrics.get("counters") if isinstance(metrics.get("counters"), dict) else {}
+    blocked_write_reason = any(
+        int(counters.get(key, 0) or 0) > 0
+        for key in (
+            "rule_create_staging_unverified",
+            "proposal_write_attempts_blocked",
+            "write_unverified_no_confirmation",
+        )
+    )
+    # An API exchange that successfully returned a refusal is not a
+    # completed Hubitat write. Never show a positive 'Success' badge when
+    # all attempted proposals were blocked and nothing is pending approval.
+    if (result["request_class"] == "write"
+            and blocked_write_reason
+            and not result["confirmation_required"]
+            and not any(row.get("success") and row.get("mutates")
+                        for row in evidence if isinstance(row, dict))):
+        result["success"] = False
+        result["status_verification"] = "no-write-performed"
+        result["metrics"]["outcome"] = "unresolved"
+        result["metric_rows"] = present_request_metrics(result["metrics"])
+        result["outcome_presentation"] = deepcopy(
+            present_request_outcome("unresolved")
+        )
     rounds = metrics.get("model_round_details") or []
     # Report actual participating models even when Auto hybrid selected paid.
     if isinstance(rounds, list) and rounds:
