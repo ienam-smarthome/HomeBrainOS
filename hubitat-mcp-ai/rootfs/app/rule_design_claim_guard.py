@@ -36,15 +36,15 @@ _LOCKOUT_ABSOLUTE = re.compile(
 # known plan/write sections as a whole, preserving independent device and
 # existing-controller findings (with their own evidence qualification).
 _PLAN_SECTION = re.compile(
-    r"^###\\s*(?:\\d+[.)]\\s*)?(?:Proposed\\s+(?:Implementation\\s+Plan|"
-    r"Rule\\s+Machine\\s+Implementation|RM\\s+Implementation)|"
-    r"Logic\\s+Specification)\\b[^\\n]*\\n.*?(?=^###\\s+|\\Z)",
+    r"^###\s*(?:\d+[.)]\s*)?(?:Proposed\s+(?:Implementation\s+Plan|"
+    r"Rule\s+Machine\s+Implementation|RM\s+Implementation)|"
+    r"Logic\s+Specification)\b[^\n]*\n.*?(?=^###\s+|\Z)",
     re.I | re.M | re.S,
 )
 _WRITER_SECTION = re.compile(
-    r"^###\\s*(?:\\d+[.)]\\s*)?(?:Technical\\s+Feasibility"
-    r"(?:\\s*[&/]\\s*Verification)?|Can\\s+(?:my\\s+)?"
-    r"(?:native\\s+)?tools\\s+create)\\b[^\\n]*\\n.*?(?=^###\\s+|\\Z)",
+    r"^###\s*(?:\d+[.)]\s*)?(?:Technical\s+Feasibility"
+    r"(?:\s*[&/]\s*Verification)?|Can\s+(?:my\s+)?"
+    r"(?:native\s+)?tools\s+create)\b[^\n]*\n.*?(?=^###\s+|\Z)",
     re.I | re.M | re.S,
 )
 
@@ -53,49 +53,49 @@ def _safe_plan(request: str) -> str:
     # Source of timings is solely the current user request, never an inferred
     # device state or an allegedly decoded unsupported native action.
     match = re.search(
-        r"\\bbetween\\s+(\\d{1,2}:\\d{2})\\s+(?:and|to)\\s+"
-        r"(\\d{1,2}:\\d{2})\\b", request, re.I,
+        r"\bbetween\s+(\d{1,2}:\d{2})\s+(?:and|to)\s+"
+        r"(\d{1,2}:\d{2})\b", request, re.I,
     )
     window = (
         f"{match.group(1)}–{match.group(2)}" if match
         else "the user-specified time window"
     )
     duration = re.search(
-        r"\\b(?:continuously\\s+|for\\s+|remained\\s+inactive\\s+"
-        r"(?:continuously\\s+)?for\\s+)(\\d+)\\s*(minutes?|mins?)\\b",
+        r"\b(?:continuously\s+|for\s+|remained\s+inactive\s+"
+        r"(?:continuously\s+)?for\s+)(\d+)\s*(minutes?|mins?)\b",
         request, re.I,
     )
     if duration is None:
-        duration = re.search(r"\\b(\\d+)\\s*(minutes?|mins?)\\b", request, re.I)
+        duration = re.search(r"\b(\d+)\s*(minutes?|mins?)\b", request, re.I)
     idle = f"{duration.group(1)} minutes" if duration else "the requested duration"
     return (
-        "### 3. Proposed rule behaviour — design only, NOT executable Rule Machine actions\\n"
+        "### 3. Proposed rule behaviour — design only, NOT executable Rule Machine actions\n"
         "The following is a **requirements-level design**, not a verified "
         "native action sequence or approved write payload. The correct "
-        "motion sensor must be confirmed first.\\n\\n"
+        "motion sensor must be confirmed first.\n\n"
         f"1. Enforce the requested window **{window}** at entry **and immediately "
         "before every OFF**; verify how the installed Rule Machine interprets "
-        "the crossing-midnight range.\\n"
+        "the crossing-midnight range.\n"
         "2. Consider three entry events: motion becomes inactive, the light "
         "turns ON while motion is already inactive, and the window opens "
-        "while the light is already ON and motion inactive.\\n"
+        "while the light is already ON and motion inactive.\n"
         f"3. Track **{idle} of uninterrupted inactivity** while the light is ON. "
         "Motion active must invalidate the pending OFF and restart the full "
         "inactivity interval on the next eligible inactivity event. "
-        "Light-OFF and window-close must also invalidate pending OFF work.\\n"
+        "Light-OFF and window-close must also invalidate pending OFF work.\n"
         "4. Immediately before sending OFF, independently check that the "
         "time remains in the allowed window, light is ON, sensor inactive, "
-        "and the complete uninterrupted interval is satisfied. Never send ON.\\n"
+        "and the complete uninterrupted interval is satisfied. Never send ON.\n"
         "5. Compare existing rules that already switch this light OFF. "
         "A second longer-delay rule may be ineffective if the existing "
         "controller sends OFF sooner. Confirm the manual-off lockout "
-        "trigger policy rather than assuming OFF-only guarantees safety.\\n\\n"
+        "trigger policy rather than assuming OFF-only guarantees safety.\n\n"
         "A verified Rule Machine *duration-based expression* or correctly "
         "cancellable timer might implement this, but neither specific "
         "native encoding nor event cancellation is established by the "
         "current evidence. In particular, **Wait for Event: motion active "
         "with a timeout** is not proof of continuous inactivity: it can "
-        "complete on the event **or** on timeout.\\n\\n"
+        "complete on the event **or** on timeout.\n\n"
     )
 
 
@@ -146,11 +146,11 @@ def calibrate_rule_design_review(
     # an incorrect IF/WAIT/OFF recipe would still leave contradictory advice.
     text, _ = _PLAN_SECTION.subn(lambda _m: _safe_plan(request), text)
     text, _ = _WRITER_SECTION.subn(
-        "### 4. Native implementation feasibility\\n"
+        "### 4. Native implementation feasibility\n"
         "The current evidence does not verify whether `hub_set_rule` supports "
         "the required combined trigger, duration, cancellation and final "
         "time-guard semantics. No native write payload or pending confirmation "
-        "can be justified by this review.\\n\\n", text,
+        "can be justified by this review.\n\n", text,
     )
     text = _UNSUPPORTED_CREATION.sub(
         "the documented Rule Machine gateway only after a separate, validated "
