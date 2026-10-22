@@ -34,7 +34,9 @@ def test_network_exception_from_ask_fetch_marks_unknown_without_retry():
     # No automatic retry loop or an invented successful write state.
     section = page.split("const response=await fetch(apiPath('api/ask')", 1)[1]
     section = section.split("if(sequence===requestSequence", 1)[0]
-    assert section.count("fetch(") == 1
+    # The split starts immediately AFTER the initial fetch call, so any
+    # further fetch() token in this section would be an automatic retry.
+    assert section.count("fetch(") == 0
     assert "signal:controller.signal" in section
 
 
