@@ -341,18 +341,28 @@ def _rm_action_condition_error(actions: list[dict[str, Any]]) -> str | None:
                 if condition["capability"] == "Between two times":
                     for edge in ("start", "end"):
                         item = condition.get(edge)
-                        if not isinstance(item, dict) or item.get("type") != "clock":
+                        if not isinstance(item, dict) or item.get("type") not in {
+                            "clock", "sunrise", "sunset",
+                        }:
                             return (
                                 f"action {position} condition {index} needs "
-                                f"Between two times {edge} clock specification"
+                                f"Between two times {edge} type clock/sunrise/sunset"
                             )
-                        if re.fullmatch(
+                        if item["type"] == "clock" and re.fullmatch(
                             r"(?:[01]\d|2[0-3]):[0-5]\d",
                             str(item.get("time") or ""),
                         ) is None:
                             return (
                                 f"action {position} condition {index} "
                                 f"{edge}.time needs HH:mm"
+                            )
+                        if (item["type"] != "clock"
+                                and ("offset" not in item
+                                     or isinstance(item.get("offset"), bool)
+                                     or not isinstance(item.get("offset"), (int, float)))):
+                            return (
+                                f"action {position} condition {index} "
+                                f"{edge}.offset needs numeric minutes"
                             )
         elif kind == "endIf":
             if not depth:
