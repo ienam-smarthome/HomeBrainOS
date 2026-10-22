@@ -504,6 +504,14 @@ async function submit(text){
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier}),
       signal:controller.signal,
+    }).catch(error=>{
+      if(error?.name==='AbortError')throw error;
+      // A network/ingress disconnect is NOT evidence that a Hubitat
+      // mutation failed. The backend may already have submitted a write
+      // before its HTTP response was lost. Never automatically retry.
+      const failure=new Error(String(error?.message||'Network connection lost'));
+      failure.name='HomeBrainNetworkError';
+      throw failure;
     });
     const data=await jsonResponse(response);if(!response.ok)throw new Error(askApiErrorMessage(response,data,text.length));
     if(sequence===requestSequence&&requestSessionId===sessionId){
@@ -520,8 +528,23 @@ async function submit(text){
       saveChats();renderChatList();showAnswer(data);
     }
   }catch(error){
-    if(error.name!=='AbortError'&&sequence===requestSequence&&requestSessionId===sessionId)
-      showAnswer({success:false,route:'error',message:'Request failed: '+error.message});
+    if(error.name!=='AbortError'&&sequence===requestSequence&&requestSessionId===sessionId){
+      if(error.name==='HomeBrainNetworkError'){
+        showAnswer({
+          success:false,route:'network-outcome-unknown',
+          status_verification:'write-outcome-unknown',
+          message:'Connection to HomeBrain was lost before the answer arrived. '+
+            'The result of any requested Hubitat write is UNKNOWN: it may '+
+            'have completed, failed or been cancelled. Do NOT submit the '+
+            'same rule or device command again yet. First open Hubitat '+
+            'directly and check the exact Rule Machine rule name and current '+
+            'state; inspect HomeBrain add-on logs if needed. Request ID: '+
+            requestId+'. Browser error: '+String(error.message||'connection lost').slice(0,160)
+        });
+      }else{
+        showAnswer({success:false,route:'error',message:'Request failed: '+error.message});
+      }
+    }
   }finally{
     clearInterval(progressTimer);
     if(sequence===requestSequence&&requestSessionId===sessionId){
