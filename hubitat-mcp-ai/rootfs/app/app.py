@@ -453,6 +453,15 @@ class RequestCoordinator:
                         detail="Investigation exceeded its time limit before verified results were collected. Please retry a smaller question.",
                     )
                 if connection is not None and await connection.is_disconnected():
+                    # A browser connection failure is NOT a native MCP write
+                    # receipt or evidence that an earlier write was rolled back.
+                    # Log a safe request ID for incident correlation, never
+                    # user content or tokens. Do not auto retry the action.
+                    logger.warning(
+                        "Chat request disconnected; request_id=%s. "
+                        "Any earlier Hubitat write outcome requires direct verification.",
+                        progress.request_id,
+                    )
                     progress.stage = "Cancelled: browser disconnected"
                     task.cancel("client disconnected")
                     with suppress(asyncio.CancelledError, asyncio.TimeoutError):
