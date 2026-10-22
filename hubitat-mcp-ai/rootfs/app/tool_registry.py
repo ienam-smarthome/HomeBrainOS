@@ -650,7 +650,10 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
     if len(daily_times) > 1 and len(actions) > 1:
         if not _safe_two_clock_night_idle_program(triggers, actions):
             return (
-                "multiple daily times execute the SAME action list. For a "
+                "one rule cannot safely pair multiple daily times with "
+                "multiple actions unless a strict guarded cancellation "
+                "topology is verified. Multiple daily times execute the "
+                "SAME action list. For a "
                 "night idle OFF rule with 23:00 and 06:00 boundaries, use a "
                 "verified seven-action guarded sequence: cancelDelay, ifThen "
                 "(Motion inactive AND Switch on AND Between two times), "
