@@ -10,7 +10,7 @@ from typing import Any
 _OVERLOAD = re.compile(r"\bLimitExceededException\b.{0,160}?\bApp\s+([1-9]\d{0,8})\s+generates\s+excessive\s+hub\s+load\b", re.I)
 _DENIAL = re.compile(r"(?i)\b(?:no|none|without|absent|not\s+(?:found|observed|recorded))\b[^.!?\n]{0,150}?(?:LimitExceededException|excessive[\s-]+hub[\s-]+load|load\s+exceptions?)\b")
 _ONLY = re.compile(r"(?i)(?:\bcausation\b|\bexceptions?\b)[^.!?\n]{0,110}?\bonly\s+(?:proven|confirmed|observed|recorded)\s+for\b")
-_PROVEN = re.compile(r"(?i)\bproven\s+causation\b")
+_PROVEN = re.compile(r"(?i)^\s*(?:[-*+]\s*)?proven\s+causation\s*:")
 _APP = re.compile(r"(?i)\bApp\s+([1-9]\d{0,8})\b")
 _SENTENCE = re.compile(r"(?<=[.!?])([ \t]+)")
 _EXCLUSIVE = re.compile(r"(?i)(?:\bonly\b[^.!?\n]{0,90}\b(?:exceptions?|errors?|excessive\s+hub\s+load)\b|\b(?:exceptions?|errors?|excessive\s+hub\s+load)\b[^.!?\n]{0,90}\bonly\b)")
