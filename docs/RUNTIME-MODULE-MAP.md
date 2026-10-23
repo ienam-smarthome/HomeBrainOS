@@ -116,6 +116,7 @@ The repository drift test compares this table directly with the live directory. 
 | `evidence_claim_calibrator.py` | Cross-route factual-confidence and wording checks against bounded history and device-scoped watchdog receipts; deduplicates redundant standalone summaries while preserving observations and source limits. |
 | `system_audit_coverage.py` | Route-matched read-only whole-hub audit section/source contracts, separating bounded log inventory and performance evidence from individual device causal-history proofs. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round and injects the current-turn evidence ledger. |
+| `analytical_answer_quality.py` | Domain-agnostic question-first answer contract and one bounded no-tools improvement pass for omissions, subject to the existing factual validator. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
 | `health_audit_scheduler.py` | Runs the stored read-only system health audit on a configurable morning schedule using hub-local time. |
 | `health_audit_service.py` | Performs deterministic Hub/MCP/device/battery/automation/log health checks, persists snapshots, and tracks new/resolved findings. |
