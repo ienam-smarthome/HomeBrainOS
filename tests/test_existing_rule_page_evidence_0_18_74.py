@@ -77,7 +77,7 @@ def test_different_expected_id_or_page_rejected_even_when_content_looks_valid():
 
 
 @pytest.mark.parametrize("invalid", [
-    {"success": False, **page()},
+    {**page(), "success": False},
     {"app": {"id": "4246"}, "page": {"sections": {}}},
     {"app": {"id": "4246"}, "page": {"sections": "not a list"}},
     {"app": {"id": "4246"}, "page": []},
