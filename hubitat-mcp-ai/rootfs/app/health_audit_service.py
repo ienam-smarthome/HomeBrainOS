@@ -883,6 +883,7 @@ def render_comprehensive_system_audit(
     context_reconciliation: dict[str, Any] | None = None,
     sensecap_known_unpowered: bool = False,
     ai_advisory: str | None = None,
+    ai_analysis_status: str | None = None,
     scheduled_jobs: dict[str, Any] | None = None,
     scheduler_error: str | None = None,
     automation_dependencies: dict[str, Any] | None = None,
@@ -912,6 +913,21 @@ def render_comprehensive_system_audit(
         "These may overlap the main alerts; log rows are not separate outages.",
         f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
         "**Read-only:** no devices, rules, apps or settings have been changed.",
+        *([
+            "**AI reasoning:** Disabled by the saved add-on setting "
+            "`comprehensive_audit_ai_analysis_enabled=false`. "
+            "This is a deterministic evidence report; enable the setting "
+            "to request a no-tools model interpretation."
+        ] if ai_analysis_status == "disabled_by_configuration" else []),
+        *([
+            "**AI reasoning:** A model interpretation was requested but "
+            "did not complete (" + (
+                "time limit reached" if ai_analysis_status == "timed_out"
+                else "empty reply" if ai_analysis_status == "empty_response"
+                else "model unavailable"
+            ) + "). Deterministic evidence remains available."
+        ] if ai_analysis_status in ("timed_out", "empty_response", "unavailable")
+          else []),
         "",
         *([
             "### Reasoned answer (AI interpretation; not independent evidence)",
@@ -1441,6 +1457,7 @@ async def run_comprehensive_chat_audit(
     audit: Any,
     mcp: Any,
     *, analysis_chat: Any = None, analysis_focus: str | None = None,
+    ai_disabled_by_configuration: bool = False,
 ) -> Any:
     """Reuse the full System Check, then inspect performance outliers safely."""
     from automation_status_service import AutomationStatusOutcome
@@ -1830,6 +1847,9 @@ async def run_comprehensive_chat_audit(
         scheduled_jobs=job_summary, scheduler_error=job_error,
         automation_dependencies=automation_dependencies,
     )
+    ai_analysis_status = (
+        "disabled_by_configuration" if ai_disabled_by_configuration else None
+    )
     if callable(analysis_chat):
         # Explicit opt-in: one short, tool-free model pass, never executing
         # suggestions. The deterministic report remains authoritative.
@@ -1882,6 +1902,7 @@ async def run_comprehensive_chat_audit(
                 max_chars=3000,
             )
             if advisory:
+                ai_analysis_status = "completed"
                 message = render_comprehensive_system_audit(
                     snapshot, stats, performance_error=performance_error,
                     targeted_logs=targeted_logs, historical_logs=historical_logs,
@@ -1890,6 +1911,7 @@ async def run_comprehensive_chat_audit(
                     scheduled_jobs=job_summary, scheduler_error=job_error,
                     automation_dependencies=automation_dependencies,
                     ai_advisory=advisory,
+                    ai_analysis_status=ai_analysis_status,
                 )
                 evidence.append({
                     "tool": "optional_ai_advisory", "timestamp": checked_at,
@@ -1898,7 +1920,13 @@ async def run_comprehensive_chat_audit(
                     "mutates": False, "effect": "read",
                     "summary": "Tool-free optional AI analysis; no additional facts or actions",
                 })
+            else:
+                ai_analysis_status = "empty_response"
         except Exception as exc:
+            ai_analysis_status = (
+                "timed_out" if isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+                else "unavailable"
+            )
             evidence.append({
                 "tool": "optional_ai_advisory", "timestamp": checked_at,
                 "success": False, "supports_live_claim": False,
@@ -1906,10 +1934,23 @@ async def run_comprehensive_chat_audit(
                 "mutates": False, "effect": "read",
                 "summary": f"Optional AI analysis unavailable: {type(exc).__name__}",
             })
+    if ai_analysis_status in (
+        "disabled_by_configuration", "timed_out", "unavailable", "empty_response",
+    ):
+        message = render_comprehensive_system_audit(
+            snapshot, stats, performance_error=performance_error,
+            targeted_logs=targeted_logs, historical_logs=historical_logs,
+            context_reconciliation=context_reconciliation,
+            sensecap_known_unpowered=sensecap_known_unpowered,
+            scheduled_jobs=job_summary, scheduler_error=job_error,
+            automation_dependencies=automation_dependencies,
+            ai_analysis_status=ai_analysis_status,
+        )
     return AutomationStatusOutcome(
         message=message,
         route="comprehensive-system-audit",
         evidence=evidence,
+        ai_analysis_status=ai_analysis_status,
     )
 
 
