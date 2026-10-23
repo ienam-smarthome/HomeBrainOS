@@ -69,7 +69,17 @@ def is_cross_domain_hub_audit_request(question: str) -> bool:
         and ("devices" in present or target_domain)
         and bool(_CONFIG_DEPENDENCY.search(text))
     )
-    return conventional_audit or configuration_audit
+    # Comprehensive diagnostic questions can request health + devices + logs
+    # + performance + scheduling *without* mentioning any automation. Do not
+    # send those legitimate whole-hub cross-source investigations through the
+    # general model tool loop (which can run past the investigation deadline).
+    # Requiring independently named source classes protects targeted readings.
+    diagnostics_audit = (
+        {"logs", "scheduler", "performance"} <= present
+        and bool({"devices", "health"} & present)
+        and len(present) >= 4
+    )
+    return conventional_audit or configuration_audit or diagnostics_audit
 
 
 __all__ = ["is_cross_domain_hub_audit_request"]

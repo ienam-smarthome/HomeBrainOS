@@ -597,9 +597,10 @@ async def _agent_request(request: ChatRequest) -> Any:
             cross_domain_audit
             or is_comprehensive_system_audit_request(request.message)
         )
-        if (not targeted_rule and (cross_domain_audit or
-                (not is_whole_hub_optimization_request(request.message)
-                 and (comprehensive_audit or broad_automation_diagnostic)))):
+        if (not targeted_rule and not _explicit_mutation_request(request.message)
+                and (cross_domain_audit or
+                     (not is_whole_hub_optimization_request(request.message)
+                      and (comprehensive_audit or broad_automation_diagnostic)))):
             # Cross-domain and explicitly comprehensive audits use their own
             # tool-free AI opt-in, regardless of whether a broader automation
             # diagnostic phrase also matches. The latter should not silently
