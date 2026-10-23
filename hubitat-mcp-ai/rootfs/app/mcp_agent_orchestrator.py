@@ -208,6 +208,7 @@ from targeted_rule_scope_policy import (
     is_new_rule_design_review_request,
 )
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
+from existing_rule_settings_evidence import prefetch_installed_app_settings
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
     cumulative_rule_proposal_error,
@@ -4459,7 +4460,7 @@ class UnifiedMCPAgent:
             *self._history(conversation_history),
             {"role": "user", "content": str(user_prompt).strip()},
         ]
-        if deep_rule_review:
+        if deep_rule_review or existing_rule_verification:
             # Explicit coordinated native rules ("apps 4239 and 4241")
             # must BOTH receive read-only health and variable evidence.
             # A device ID referenced later in the prompt is not an app ID.
@@ -4470,6 +4471,13 @@ class UnifiedMCPAgent:
                     available_names=catalog.available_names,
                     messages=messages,
                 )
+                if existing_rule_verification:
+                    await prefetch_installed_app_settings(
+                        self.mcp, self.evidence,
+                        app_id=app_id,
+                        available_names=catalog.available_names,
+                        messages=messages,
+                    )
         completed_calls: set[str] = set()
         grounding = GroundingPolicy(
             logs_requested=_matches(user_prompt, _LOG_TERMS),
