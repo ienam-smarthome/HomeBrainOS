@@ -54,7 +54,7 @@ def test_cross_source_device_exception_preserves_zero_direct_app_rows():
 
 def test_cross_source_does_not_misattribute_or_invent_evidence():
     for item in (
-        {"kind": "app", **_device()},
+        {**_device(), "kind": "app"},
         {"kind": "device", "id": "7182", "groups": [{
             "count": 24, "summary": (
                 "dev|7182|Display|LimitExceededException: "
