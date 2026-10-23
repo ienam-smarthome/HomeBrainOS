@@ -122,6 +122,31 @@ async def test_saved_opt_out_keeps_host_only_bounded_audit(monkeypatch):
     assert calls == [{}]
 
 
+@pytest.mark.asyncio
+async def test_explicit_write_is_not_swallowed_by_system_check(monkeypatch):
+    import app as module
+
+    async def unexpected_audit(*args, **kwargs):
+        raise AssertionError("Write request must not be diverted to read-only audit")
+
+    async def controlled_agent(*args, **kwargs):
+        return SimpleNamespace(
+            message="Write request is governed by the agent confirmation gate.",
+            route="unified-mcp-agent", request_class="write", evidence=[],
+        )
+
+    monkeypatch.setattr(module, "run_comprehensive_chat_audit", unexpected_audit)
+    monkeypatch.setattr(
+        module.agent, "process_user_request_result", controlled_agent,
+    )
+    request = (
+        "Switch Bedroom 3 Light 1 OFF now, then check my Hubitat health, "
+        "device errors, scheduled jobs, warning logs and performance."
+    )
+    result = await module._agent_request(module.ChatRequest(prompt=request))
+    assert result.route == "unified-mcp-agent"
+
+
 def test_other_existing_full_audit_syntax_is_unchanged():
     q = ("Run a comprehensive hub audit: inspect all automation rules, "
          "installed apps, sensors, errors and device states.")
