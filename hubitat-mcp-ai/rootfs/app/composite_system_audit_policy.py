@@ -52,7 +52,7 @@ def is_cross_domain_hub_audit_request(question: str) -> bool:
         r"my\s+hubitat\s+system|my\s+smart[\s-]?home)\b",
         text, re.I,
     ))
-    if 2 <= len(app_ids) <= 8 and not explicitly_whole:
+    if 1 <= len(app_ids) <= 8 and not explicitly_whole:
         return False
     if is_targeted_rule_investigation(text) or is_targeted_device_transition_investigation(text):
         return False
