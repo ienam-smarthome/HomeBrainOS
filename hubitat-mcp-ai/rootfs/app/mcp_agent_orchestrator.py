@@ -201,6 +201,7 @@ from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from night_idle_rule_authoring import propose_night_idle, recognise_night_idle_creation
 from native_rule_creation_staging import demands_atomic_disabled_rule_creation, render_atomic_staging_stop
 from rule_design_claim_guard import calibrate_rule_design_review
+from existing_rule_claim_guard import calibrate_existing_rule_verification
 from rule_machine_analysis import requires_rule_logic_inspection
 from targeted_rule_scope_policy import (
     named_rule_app_ids, is_existing_rule_verification_request,
@@ -3335,7 +3336,7 @@ class UnifiedMCPAgent:
             banner = (
                 "**Read-only rule design review — no automation or device was "
                 "changed or queued for approval.**\n\n"
-                if RuleAuthoringService.is_read_only_rule_design_request(
+                if is_new_rule_design_review_request(
                     self._current_user_objective.get()
                 ) else
                 "**Read-only existing-rule review — no automation or device "
@@ -3788,6 +3789,11 @@ class UnifiedMCPAgent:
                 if contract is not None and request_class == "live-read"
                 else None
             )
+            if (request_class == "live-read" and contract is not None
+                    and contract.domain == "existing_rule_verification"):
+                message = calibrate_existing_rule_verification(
+                    message, evidence, coverage, request=user_prompt,
+                )
             candidates = self._investigation_hypotheses.get()
             if candidates and request_class == "live-read":
                 checkpoint = build_evidence_checkpoint(
