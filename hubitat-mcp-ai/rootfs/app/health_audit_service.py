@@ -371,6 +371,17 @@ def is_comprehensive_system_audit_request(prompt: str) -> bool:
         "run system check", "full system check",
     )):
         return True
+    # A few explicitly identified app instances are a scoped investigation,
+    # not a whole-hub audit. Names such as "Device Status Report" must not
+    # accidentally count as a request to audit the device inventory.
+    # Explicit system-wide audit phrases above take precedence even when
+    # particular app IDs are named as examples.
+    named_apps = set(re.findall(r"\\bapp\\s*#?\\s*([1-9]\\d{1,8})\\b", words))
+    if 2 <= len(named_apps) <= 8 and not any(term in words for term in (
+        "whole hub", "entire hub", "all apps", "all devices",
+        "system-wide", "system wide", "my hubitat system",
+    )):
+        return False
     # A named historical ON/OFF event remains a targeted causal question even
     # if the user asks to inspect its device history, app logs and evidence.
     # Global System Check is neither the answer nor a cheap preflight.
