@@ -230,7 +230,9 @@ def _page_read_observations(receipts: list[dict[str, Any]]) -> list[str]:
                 shapes_found = [
                     f"{key}={shapes[key]}"
                     for key in ("numbered_or_bulleted", "html_markup",
-                                "over_limit", "multiline", "non_string")
+                                "over_limit", "multiline", "non_string",
+                                "physical_lines_inspected",
+                                "multiline_action_rows")
                     if type(shapes.get(key)) is int and 0 < shapes[key] <= 4096
                 ]
                 if shapes_found:
