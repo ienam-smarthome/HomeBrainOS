@@ -71,7 +71,8 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
     known_unpowered = "sensecap d1" in host and "intentionally" in host and "unpowered" in host
     unverified_automation_impact = (
         "offline-device evidence" in host
-        and "action direction and execution remain unverified" in host
+        and "automation configuration and dependency investigation" in host
+        and "execution unverified" in host
     )
     unverified_job_ownership = (
         "scheduler-key attribution unverified" in host
