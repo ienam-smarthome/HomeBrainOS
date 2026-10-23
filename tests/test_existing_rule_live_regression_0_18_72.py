@@ -42,9 +42,9 @@ configuration text and runtime behaviour requiring event/log evidence.
 
 Show actual source fields. Do not mark unsupported findings VERIFIED.
 Report investigation_coverage and evidenceComplete.
-This is an investigation of installed rules, NOT a new-rule design request.
+This is an investigation of installed rules, NOT a new-rule design question.
 Do not propose, create, modify, execute or disable anything.
-Do not request confirmation."""
+Do not question confirmation."""
 
 
 def test_live_rule_audit_is_not_write_intent():
@@ -53,7 +53,7 @@ def test_live_rule_audit_is_not_write_intent():
     assert plan is not None and plan.domain == "existing_rule_verification"
 
 
-@pytest.mark.parametrize("request", [
+@pytest.mark.parametrize("question", [
     LIVE_READ_ONLY_RULE_AUDIT
     + "\nDo not create, modify, execute or disable anything.",
     "Review the persisted actions of Rule Machine app 4246. Determine whether "
@@ -61,11 +61,11 @@ def test_live_rule_audit_is_not_write_intent():
     "Perform a READ-ONLY verification of Rule Machine app 4246's ordered "
     "actions and conditions. Could app 4019 switch Livingroom Light 1 OFF?",
 ])
-def test_hypothetical_switch_off_still_read_only(request):
-    assert _explicit_mutation_request(request) is False
+def test_hypothetical_switch_off_still_read_only(question):
+    assert _explicit_mutation_request(question) is False
 
 
-@pytest.mark.parametrize("request", [
+@pytest.mark.parametrize("question", [
     "Review the persisted actions of Rule Machine app 4246. Then switch "
     "Livingroom Light 1 OFF.",
     "Perform a READ-ONLY verification of Rule Machine app 4246's ordered "
@@ -74,8 +74,8 @@ def test_hypothetical_switch_off_still_read_only(request):
     "Disable app 4019 now.",
     "Disable Rule Machine app 4246. Inspect persisted actions first.",
 ])
-def test_independent_explicit_writes_remain_writes(request):
-    assert _explicit_mutation_request(request) is True
+def test_independent_explicit_writes_remain_writes(question):
+    assert _explicit_mutation_request(question) is True
 
 
 def test_app_inventory_and_configuration_do_not_create_fake_devices():
