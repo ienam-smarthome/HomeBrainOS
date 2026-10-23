@@ -57,7 +57,7 @@ def test_live_output_no_longer_claims_unverified_failures_or_ghost_jobs():
     assert "no wasted work was verified" in message
     assert "did not establish its" in message
     assert "does not establish hub-wide CPU contention" in message
-    assert "state=offline" in message
+    assert "reported offline via healthStatus" in message
     assert "24.3%" in message
 
 
