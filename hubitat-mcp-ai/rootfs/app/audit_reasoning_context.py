@@ -13,6 +13,7 @@ _MAX_PACKET = 14000
 _SECTION_LIMITS = (
     ("Prioritised evidence-backed checks", 1700),
     ("Coverage", 650),
+    ("Requested app checks", 1700),
     ("Measured System Check stage timings", 1300),
     ("Temporary user-reported device condition", 570),
     ("Observed alerts", 1300),
