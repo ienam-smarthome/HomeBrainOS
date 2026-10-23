@@ -145,7 +145,7 @@ def test_full_hub_automation_audit_does_not_auto_opt_into_ai(monkeypatch):
         application.ChatRequest(prompt=question, model_tier="free")
     ))
     assert response.message == "Host-assembled audit"
-    assert invoked == [{}]
+    assert invoked == [{"ai_disabled_by_configuration": True}]
 
 
 def test_explicit_comprehensive_ai_opt_in_still_supported(monkeypatch):

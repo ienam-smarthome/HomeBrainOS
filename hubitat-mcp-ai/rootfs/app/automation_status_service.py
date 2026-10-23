@@ -55,6 +55,7 @@ class AutomationStatusOutcome:
     attention_count: int = 0
     conflict_count: int = 0
     route: str = "automation-status"
+    ai_analysis_status: str | None = None
     devices: list[dict[str, Any]] = field(default_factory=list)
 
 

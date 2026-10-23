@@ -50,7 +50,7 @@ def test_live_prompt_routes_to_host_audit_without_general_model(monkeypatch):
 
     received = []
 
-    async def run_host(audit, gateway):
+    async def run_host(audit, gateway, **kwargs):
         received.append((audit, gateway))
         return SimpleNamespace(
             route="comprehensive-system-audit",

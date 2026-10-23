@@ -620,7 +620,9 @@ async def _agent_request(request: ChatRequest) -> Any:
                     health_audit, mcp, analysis_chat=agent.transport.chat,
                     analysis_focus=request.message,
                 )
-            return await run_comprehensive_chat_audit(health_audit, mcp)
+            return await run_comprehensive_chat_audit(
+                health_audit, mcp, ai_disabled_by_configuration=True,
+            )
         if is_broad_performance_request(request.message):
             set_request_stage("Collecting Hubitat performance and scheduled jobs")
             outcome = await collect_broad_performance_outcome(agent, request.message)

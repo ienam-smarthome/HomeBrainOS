@@ -119,7 +119,7 @@ async def test_saved_opt_out_keeps_host_only_bounded_audit(monkeypatch):
     monkeypatch.setattr(module, "run_comprehensive_chat_audit", fake_audit)
     result = await module._agent_request(module.ChatRequest(prompt=LIVE_REQUEST))
     assert result.route == "comprehensive-system-audit"
-    assert calls == [{}]
+    assert calls == [{"ai_disabled_by_configuration": True}]
 
 
 @pytest.mark.asyncio

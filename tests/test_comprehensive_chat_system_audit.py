@@ -224,7 +224,7 @@ def test_chat_request_uses_full_audit_before_general_agent(monkeypatch) -> None:
 
     invoked = []
 
-    async def fake_full_audit(audit, mcp):
+    async def fake_full_audit(audit, mcp, **kwargs):
         invoked.append((audit, mcp))
         return type("Outcome", (), {"message": "Full audit completed"})()
 
