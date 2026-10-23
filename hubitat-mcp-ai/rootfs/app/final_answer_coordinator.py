@@ -692,9 +692,13 @@ class FinalAnswerCoordinator:
             causal=causal,
         )
         if not issues:
-            return await self._revise_incomplete_answer(
-                original_user, draft, evidence, final_messages, causal=causal,
-            )
+            # Existing causal/focal analyzers already enforce their own one-pass
+            # or bounded specialized repairs. Avoid extra rounds for those paths.
+            if contract is not None and not causal:
+                return await self._revise_incomplete_answer(
+                    original_user, draft, evidence, final_messages, causal=causal,
+                )
+            return draft
 
         # Fixed categories only: telemetry must not include private query
         # words, device names, event IDs or arbitrary validation issue text.
