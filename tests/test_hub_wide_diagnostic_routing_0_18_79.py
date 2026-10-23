@@ -147,6 +147,17 @@ async def test_explicit_write_is_not_swallowed_by_system_check(monkeypatch):
     assert result.route == "unified-mcp-agent"
 
 
+@pytest.mark.parametrize("prompt,expected", [
+    ("Change my Hubitat light OFF now, and then check the logs.", True),
+    ("Please change my lamp on", True),
+    ("Explain the change in light OFF event history.", False),
+    ("Check whether the light changed to OFF.", False),
+])
+def test_bounded_change_imperatives_are_not_descriptive_reads(prompt, expected):
+    from mcp_agent_orchestrator import _explicit_mutation_request
+    assert _explicit_mutation_request(prompt) is expected
+
+
 def test_other_existing_full_audit_syntax_is_unchanged():
     q = ("Run a comprehensive hub audit: inspect all automation rules, "
          "installed apps, sensors, errors and device states.")
