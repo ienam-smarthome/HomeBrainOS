@@ -9,6 +9,25 @@ from __future__ import annotations
 
 import re
 
+_UNVERIFIED_OFFLINE_TITLE = re.compile(
+    r"(?i)\bConfirmed\s+Device\s+Outages?\s*\(Errors?\)"
+)
+_OFFLINE_AUTOMATION_CERTAINTY = re.compile(
+    r"(?i)\b(?:any|all)\s+automations?\s+relying\s+on\s+"
+    r"(?:these|those|the)\s+devices?\s+as\s+triggers?\s+or\s+targets?"
+    r"\s+will\s+fail\s+to\s+execute\b[^\n]*"
+)
+_GHOST_JOB_CLAIM = re.compile(
+    r"(?i)\b(?:the\s+hub\s+may\s+be\s+wasting\s+resources\s+executing\s+)?"
+    r"(?:[\"']?ghost[\"']?\s+scheduled\s+jobs?|"
+    r"(?:these|those)\s+disabled\s+apps?\s+(?:still\s+)?execut(?:e|ing)\s+jobs?)"
+    r"[^\n]*"
+)
+_PCT_BUSY_CAUSAL = re.compile(
+    r"(?i)\bhigh\s+" + "\x60?" + r"pctBusy" + "\x60?" +
+    r"\s+values?\s+increas(?:e|es)\s+the\s+risk\b[^\n]*"
+)
+
 _TOPN_NEGATIVE = re.compile(
     r"(?i)\b(?:target apps? (?:are|is) not (?:high[- ]load|major)[^\n]*|"
     r"(?:these|those|the target) apps?\s+are\s+unlikely\s+to\s+be\s+"
@@ -50,6 +69,15 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
                            or "20 top-ranked" in host)
     saturated_logs = "log window saturated" in host
     known_unpowered = "sensecap d1" in host and "intentionally" in host and "unpowered" in host
+    unverified_automation_impact = (
+        "offline-device evidence" in host
+        and "automation configuration and dependency investigation" in host
+        and "execution unverified" in host
+    )
+    unverified_job_ownership = (
+        "scheduler-key attribution unverified" in host
+        or "0 rows have explicit, source-recognised owner fields" in host
+    )
     corrected: list[str] = []
     reasons: set[str] = set()
     section = ""
@@ -68,6 +96,36 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
         if line.startswith("### "):
             in_table = "target app summary" in clean
         result = line
+        if unverified_automation_impact:
+            if _UNVERIFIED_OFFLINE_TITLE.search(result):
+                result = _UNVERIFIED_OFFLINE_TITLE.sub(
+                    "Reported Offline Device States (Not Proven Automation Failures)",
+                    result,
+                )
+                reasons.add("offline_effect_unverified")
+            if _OFFLINE_AUTOMATION_CERTAINTY.search(result):
+                result = _OFFLINE_AUTOMATION_CERTAINTY.sub(
+                    "An automation depending on a currently unavailable device "
+                    "may be affected, but this audit did not establish its "
+                    "trigger/action dependency or actual failed execution.",
+                    result,
+                )
+                reasons.add("offline_effect_unverified")
+        if unverified_job_ownership and _GHOST_JOB_CLAIM.search(result):
+            result = _GHOST_JOB_CLAIM.sub(
+                "Scheduler-key candidates do not establish that the disabled "
+                "apps own or execute jobs; no wasted work was verified.",
+                result,
+            )
+            reasons.add("scheduler_ownership_unverified")
+        if bounded_performance and _PCT_BUSY_CAUSAL.search(result):
+            result = _PCT_BUSY_CAUSAL.sub(
+                "The returned pctBusy values are performance observations; "
+                "this sample does not establish hub-wide CPU contention "
+                "or future LimitExceededException events.",
+                result,
+            )
+            reasons.add("pctbusy_risk_unverified")
         if bounded_performance:
             if _NOT_HIGH_HEAD.search(result):
                 result = _NOT_HIGH_HEAD.sub("Target-app contribution is unverified by this top-ranked sample", result)

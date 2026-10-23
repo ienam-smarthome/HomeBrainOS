@@ -12,7 +12,7 @@ from performance_job_analysis import summarize_job_workload
 from audit_priority_planner import render_audit_priorities, render_audit_scheduled_jobs
 from audit_reasoning_context import build_audit_reasoning_packet
 from audit_ai_advisory_guard import calibrate_audit_ai_advisory
-from request_metrics import active_request_identity
+from request_metrics import RequestMetrics, active_request_identity
 from scheduler_identity_reconciliation import (
     reconcile_scheduler_candidates,
     render_scheduler_candidate_reconciliation,
@@ -1899,6 +1899,14 @@ async def run_comprehensive_chat_audit(
             "not by raw pctBusy. Do not infer CPU load from wall-clock "
             "inventory duration, busy percent from absolute CPU share, "
             "or scheduled collisions from identical next-run timestamps. "
+            "An offline device status proves only the current reported state; " 
+            "automations referencing it are not verified to fail execution "
+            "unless an actual trigger/action dependency and failed run were checked. "
+            "Scheduler-key candidate IDs do not prove that disabled apps own, "
+            "execute or waste work; never call them 'ghost jobs' without callback "
+            "ownership and execution proof. High pctBusy is only the fraction of "
+            "measured busy time in the returned statistic; it does not by itself "
+            "prove LimitExceededException risk or a system-wide CPU bottleneck. "
             "Provide a concise answer, not a full copy of the audit. "
             "CRITICAL: A missing app in the returned top-20 ranking does NOT " 
             "establish that it has low load, no errors, or cannot be a cause. "
@@ -1930,6 +1938,16 @@ async def run_comprehensive_chat_audit(
                 "expected while switched off; do not speculate about unknown "
                 "network faults or failed dependent rules solely from those logs."
             )
+        # Comprehensive audits bypass UnifiedMCPAgent.ask() and therefore
+        # its normal request-observation metrics lifecycle. Install a scoped
+        # metrics context only when none exists so ChatTransport records the
+        # *actual* successful local/cloud model for this optional no-tools call.
+        # The scope is reset in finally, including timeout/failure paths.
+        audit_model_metrics = RequestMetrics()
+        audit_model_token = (
+            audit_model_metrics.begin()
+            if active_request_identity() is None else None
+        )
         try:
             response = await asyncio.wait_for(
                 analysis_chat([
@@ -2000,6 +2018,9 @@ async def run_comprehensive_chat_audit(
                 "mutates": False, "effect": "read",
                 "summary": f"Optional AI analysis unavailable: {type(exc).__name__}",
             })
+        finally:
+            if audit_model_token is not None:
+                audit_model_metrics.reset(audit_model_token)
     if ai_analysis_status in (
         "disabled_by_configuration", "timed_out", "unavailable", "empty_response",
     ):
