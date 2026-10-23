@@ -165,7 +165,7 @@ def load_options() -> dict[str, Any]:
         "one_time_rule_cleanup_grace_minutes": 10,
         "health_check_log_hours": 24,
         "sensecap_d1_intentionally_powered_off": False,
-        "comprehensive_audit_ai_analysis_enabled": False,
+        "comprehensive_audit_ai_analysis_enabled": True,
         "automation_diagnostic_ai_analysis_enabled": True,
         "health_check_low_battery": 20,
         "health_check_stale_hours": 24,
@@ -605,7 +605,7 @@ async def _agent_request(request: ChatRequest) -> Any:
             # diagnostic phrase also matches. The latter should not silently
             # add a 12-second model timeout to a deterministic full-hub report.
             reasoned = (
-                _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False)
+                _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), True)
                 if comprehensive_audit else
                 _bool(OPTIONS.get("automation_diagnostic_ai_analysis_enabled"), True)
             )
@@ -617,6 +617,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                     )
                 return await run_comprehensive_chat_audit(
                     health_audit, mcp, analysis_chat=agent.transport.chat,
+                    analysis_focus=request.message,
                 )
             return await run_comprehensive_chat_audit(health_audit, mcp)
         if is_broad_performance_request(request.message):
