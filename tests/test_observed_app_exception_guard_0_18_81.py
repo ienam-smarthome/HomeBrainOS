@@ -69,6 +69,19 @@ def test_specific_true_negative_for_other_app_remains_untouched():
     assert guard_observed_app_exception_denials(text, observed()) == (text, False)
 
 
+def test_true_negative_scoped_to_unobserved_app_is_preserved():
+    text = "A scoped App 3933 log read returned no LimitExceededException entries."
+    assert guard_observed_app_exception_denials(text, observed()) == (text, False)
+
+
+def test_exclusive_load_attribution_is_corrected_if_two_apps_have_errors():
+    text = "The logs only attribute excessive hub load to App 3977."
+    fixed, changed = guard_observed_app_exception_denials(text, observed())
+    assert changed
+    assert "App 4061" in fixed
+    assert "only attribute" not in fixed
+
+
 def test_explicit_false_negative_with_numeric_app_id_corrected():
     text = "There are no LimitExceededException entries for App 4061."
     fixed, changed = guard_observed_app_exception_denials(text, observed())
