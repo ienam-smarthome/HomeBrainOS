@@ -578,6 +578,15 @@ def build_agent_response(
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
     }
+    if getattr(outcome, "route", "") == "comprehensive-system-audit":
+        ai_status = getattr(outcome, "ai_analysis_status", None)
+        if ai_status in ("disabled_by_configuration", "completed",
+                         "timed_out", "unavailable", "empty_response"):
+            result["ai_analysis"] = {
+                "status": ai_status,
+                "read_only": True,
+                "tool_calls_allowed": False,
+            }
     if state_claims_corrected:
         result["evidence_validation"]["unsupported_status_fields_removed"] = (
             state_claims_corrected
