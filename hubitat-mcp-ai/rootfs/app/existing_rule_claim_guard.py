@@ -230,7 +230,9 @@ def _page_read_observations(receipts: list[dict[str, Any]]) -> list[str]:
                 shapes_found = [
                     f"{key}={shapes[key]}"
                     for key in ("numbered_or_bulleted", "html_markup",
-                                "over_limit", "multiline", "non_string")
+                                "over_limit", "multiline", "non_string",
+                                "physical_lines_inspected",
+                                "multiline_action_rows")
                     if type(shapes.get(key)) is int and 0 < shapes[key] <= 4096
                 ]
                 if shapes_found:
@@ -239,6 +241,14 @@ def _page_read_observations(receipts: list[dict[str, Any]]) -> list[str]:
                         + ", ".join(shapes_found)
                         + "."
                     )
+        if fragments:
+            shapes = details.get("paragraphShapeCounts")
+            count = (shapes or {}).get("multiline_action_rows") if isinstance(shapes, dict) else None
+            if type(count) is int and 0 < count <= 40:
+                out.append(
+                    f"- App {app_id}: multiline_action_rows={count} "
+                    "(displayed action tokens from physical lines; not compiled actions)."
+                )
         if details.get("pageRowsTruncated") is True:
             out.append(f"- App {app_id}: editor page observation was truncated.")
     return out

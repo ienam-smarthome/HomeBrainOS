@@ -19,6 +19,8 @@ _MAX_SECTIONS = 32
 _MAX_PARAGRAPHS = 128
 _MAX_FRAGMENT_LENGTH = 400
 _MAX_ROWS = 40
+_MAX_PHYSICAL_LINES = 32
+_MAX_SOURCE_PARAGRAPH = 8192
 # Editor page paragraphs sometimes prefix the action with an ordinal, bullet
 # or "Action N:"; remove only that constrained presentation prefix. Never
 # search arbitrary text for an action verb (help text is not execution data).
@@ -80,6 +82,35 @@ def _classify_row(value: str) -> dict[str, Any] | None:
     return None
 
 
+def _classify_fragment(value: str) -> tuple[list[dict[str, Any]], int, bool]:
+    """Recognise *separate physical lines* without flattening help prose.
+
+    A multiline paragraph may contain editor rows or explanatory text. Promote
+    action tokens only when >=2 separate, anchored physical lines match the
+    allowlist. Reject a single "Action: On:..." followed by an unrelated line:
+    it may be a description or a multi-line injection, not a row list.
+
+    Return (recognized rows, inspected physical lines, limited/truncated).
+    The output contains no raw source text or device labels.
+    """
+    if not isinstance(value, str) or "\x00" in value:
+        return [], 0, False
+    if len(value) > _MAX_SOURCE_PARAGRAPH:
+        return [], 0, True
+    lines = value.splitlines()
+    if len(lines) < 2:
+        return ([_classify_row(value)] if _classify_row(value) else []), 1, False
+    limited = len(lines) > _MAX_PHYSICAL_LINES
+    found: list[dict[str, Any]] = []
+    for line in lines[:_MAX_PHYSICAL_LINES]:
+        parsed = _classify_row(line)
+        if parsed is not None:
+            found.append(parsed)
+    # Preserve anti-injection behaviour for one recognised line buried in
+    # multiline prose or accidental newlines in a value.
+    return (found if len(found) >= 2 else []), min(len(lines), _MAX_PHYSICAL_LINES), limited
+
+
 def project_existing_rule_page(
     data: Any, expected_app_id: str, expected_page: str,
 ) -> dict[str, Any]:
@@ -97,6 +128,9 @@ def project_existing_rule_page(
             "over_limit": 0,
             "multiline": 0,
             "non_string": 0,
+            "physical_lines_inspected": 0,
+            "multiline_action_candidates": 0,
+            "multiline_action_rows": 0,
         },
         "orderedActionsValidated": False,
         "conditionsValidated": False,
@@ -153,9 +187,21 @@ def project_existing_rule_page(
             for hint_name, pattern in _SYNTAX_HINTS.items():
                 if pattern.search(fragment_plain):
                     result["paragraphSyntaxHints"][hint_name] += 1
-            classified = _classify_row(fragment)
-            if classified is not None:
+            classified_rows, inspected_lines, line_limited = _classify_fragment(fragment)
+            result["paragraphShapeCounts"]["physical_lines_inspected"] += inspected_lines
+            if line_limited:
+                result["pageRowsTruncated"] = True
+            if len(fragment.splitlines()) > 1:
+                result["paragraphShapeCounts"]["multiline_action_candidates"] += (
+                    len(classified_rows)
+                )
+            for classified in classified_rows:
+                if len(rows) >= _MAX_ROWS:
+                    result["pageRowsTruncated"] = True
+                    break
                 rows.append(classified)
+                if len(fragment.splitlines()) > 1:
+                    result["paragraphShapeCounts"]["multiline_action_rows"] += 1
     # The list is "encounter order in the displayed page", explicitly NOT a
     # certified native action order. Even a complete-looking page may be only
     # a preview, an excerpt or dynamic editor screen.
