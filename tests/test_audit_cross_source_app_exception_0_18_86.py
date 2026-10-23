@@ -82,7 +82,7 @@ def test_cross_source_does_not_misattribute_or_invent_evidence():
 
 HOST = """### Requested app checks — bounded, source-specific
 - App 3977: 0 exact source-ID rows of 0 returned. Additional device-originated
-evidence: 24 matched log rows from device 7182 explicitly name app 3977 in
+evidence: 24 matched log rows from device 7182 (Device Status Report Display) explicitly name app 3977 in
 LimitExceededException: App 3977 generates excessive hub load on line 64.
 ### Offline-device evidence (identity-grounded)
 - Bedroom 3 Mesh reported offline; verify upstream telemetry.
