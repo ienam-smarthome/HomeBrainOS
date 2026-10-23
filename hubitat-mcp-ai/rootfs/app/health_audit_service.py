@@ -1212,6 +1212,25 @@ def render_comprehensive_system_audit(
             "Performance data is a top-ranked sample, not an audit of every device "
             "or app. Busy percentages do not establish errors or their causes."
         )
+        # Hubitat's reported app pctTotal may exceed 100. Until its
+        # denominator is verified, do not convert this field into a supposed
+        # fraction of whole-hub CPU utilisation.
+        pct_total_outliers = [
+            row for key in ("deviceStats", "appStats")
+            for row in (performance.get(key) or [])
+            if isinstance(row, dict)
+            and (_core._safe_float(
+                str(row.get("pctTotal") or "").replace("%", "")
+            ) or 0.0) > 100.0
+        ]
+        if pct_total_outliers:
+            lines.append(
+                f"- **Unverified percentage denominator:** {len(pct_total_outliers)} "
+                "sampled performance row(s) report pctTotal above 100%. "
+                "These values are shown as Hubitat-returned measurements, "
+                "not percentage of whole-hub CPU or additive shares. "
+                "Confirm source semantics before diagnosing CPU saturation."
+            )
     else:
         lines.append(
             f"- Performance statistics unavailable: {performance_error or 'source did not return usable data'}."
