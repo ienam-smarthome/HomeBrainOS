@@ -386,6 +386,63 @@ def _requested_app_statistics(app_id: str, performance: dict[str, Any] | None) -
     return "not present in top-ranked app performance sample; actual load unknown"
 
 
+def _reconcile_requested_app_exception_sources(
+    requested_checks: list[dict[str, Any]],
+    scoped_device_logs: list[dict[str, Any]],
+) -> None:
+    """Attach exact app-ID exceptions from *device-sourced* WARN/ERROR groups.
+
+    A Hubitat app excessive-load error may be emitted by a child device (e.g.
+    Display 7182 for app 3977) and thus excluded from hub_get_logs(appId=...).
+    Keep the two query scopes explicit and never invent a missing app log row,
+    a timestamp or a distinct count of independent incidents.
+    """
+    for check in requested_checks:
+        app_id = str(check.get("id") or "")
+        if not app_id.isdecimal():
+            continue
+        phrase = re.compile(
+            r"\bApp\s+" + re.escape(app_id)
+            + r"\s+generates\s+excessive\s+hub\s+load\b", re.I
+        )
+        linked: list[str] = []
+        for target in scoped_device_logs:
+            if not isinstance(target, dict) or target.get("kind") != "device":
+                continue
+            source_id = str(target.get("id") or "")
+            if not source_id.isdecimal() or target.get("error"):
+                continue
+            for group in target.get("groups") or []:
+                if not isinstance(group, dict):
+                    continue
+                summary = str(group.get("summary") or "")
+                if (not phrase.search(summary)
+                        or "limitexceededexception" not in summary.casefold()
+                        or not re.search(
+                            r"^dev\|" + re.escape(source_id) + r"\|", summary
+                        )):
+                    continue
+                try:
+                    count = int(group.get("count") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if count <= 0:
+                    continue
+                linked.append(
+                    f"{count} matched log row(s) from device {source_id} "
+                    f"({str(target.get('name') or 'unnamed device')[:90]}) "
+                    "explicitly name this app in LimitExceededException "
+                    "(cross-source attribution; timestamp coverage unverified)"
+                )
+        if linked:
+            # The original direct app-scoped read remains visible verbatim.
+            check["log_summary"] = (
+                str(check.get("log_summary") or "")
+                + "; Additional device-originated evidence: "
+                + "; ".join(linked[:3])
+            )
+
+
 def is_comprehensive_system_audit_request(prompt: str) -> bool:
     """Narrow read-only chat shortcut for whole-hub diagnostic requests.
 
@@ -1989,6 +2046,11 @@ async def run_comprehensive_chat_audit(
                 "failure": type(exc).__name__,
             }
 
+    # Join app-ID exceptions observed in successfully returned device
+    # scopes without treating them as rows returned by the app-scope query.
+    _reconcile_requested_app_exception_sources(
+        requested_app_checks, targeted_logs
+    )
     message = render_comprehensive_system_audit(
         snapshot, stats, performance_error=performance_error,
         targeted_logs=targeted_logs, historical_logs=historical_logs,
@@ -2010,6 +2072,14 @@ async def run_comprehensive_chat_audit(
         system_prompt = (
             "You are analysing a read-only Hubitat diagnostic report. "
             "Answer the user's actual audit question, not just list faults. "
+            "A direct appId log query returning zero does not contradict "
+            "LimitExceededException rows emitted under a device source when "
+            "the exception text explicitly identifies that exact app ID. "
+            "Attribute such rows to the emitting device and the named app "
+            "without claiming they were returned by the appId query; repeated "
+            "rows are not independent incidents. Do not infer live throttling "
+            "behavior, system-wide instability or a causal relationship from "
+            "exception presence or averageMs alone. "
             "If the user's question names app IDs, report the outcome of "
             "each corresponding Requested app check, including unknown "
             "load and incomplete log coverage; do not silently replace "
