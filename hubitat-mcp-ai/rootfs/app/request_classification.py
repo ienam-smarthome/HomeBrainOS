@@ -56,6 +56,17 @@ def requests_mutation(prompt: str) -> bool:
     tokens = re.findall(r"[a-z0-9]+", value)
     if tokens and tokens[0] in _STRONG_CONTROL_VERBS | {"close", "lock", "open"}:
         return True
+    # A clear imperative "Change my Hubitat light OFF" is a device write.
+    # Do not classify a generic "change in status" as a mutation merely
+    # because its first word is "change". Require a bounded device noun and
+    # an explicit power-state target in the same imperative clause.
+    if re.match(
+        r"^(?:please\s+)?change\s+(?:my|the|a)\s+"
+        r".{0,90}?\b(?:light|lamp|switch|tv|socket|plug|fan|device)\b"
+        r"\s+(?:on|off)\b",
+        value,
+    ):
+        return True
     if (
         re.search(r"\b(?:turn|switch|power)\b.+\b(?:on|off)\b", value)
         or re.search(r"\b(?:turn|switch|power)\s+(?:on|off)\b", value)
