@@ -600,7 +600,25 @@ def build_agent_response(
                 "read_only": True,
                 "tool_calls_allowed": False,
             }
-            if ai_status != "completed":
+            if ai_status == "completed":
+                # The optional audit model bypasses the ordinary agent round
+                # counters. Read actual provider attribution recorded by the
+                # successful transport round, not the configured default.
+                actual_model = str(
+                    getattr(outcome, "ai_analysis_model", None) or ""
+                ).strip()
+                actual_provider = str(
+                    getattr(outcome, "ai_analysis_provider", None) or ""
+                ).strip()
+                result["model"] = actual_model or None
+                result["ai_analysis"]["model_verified"] = bool(actual_model)
+                if actual_provider:
+                    result["ai_analysis"]["provider"] = actual_provider
+                repairs = getattr(outcome, "ai_advisory_repairs", ()) or ()
+                if repairs:
+                    result["ai_analysis"]["evidence_calibration"] = list(repairs)
+                    result["evidence_validation"]["audit_ai_advisory_calibrated"] = True
+            else:
                 # The globally configured model name is not evidence that a
                 # model answered this particular deterministic audit.
                 result["model"] = None
