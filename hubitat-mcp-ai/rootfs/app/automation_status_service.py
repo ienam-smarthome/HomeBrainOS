@@ -56,6 +56,9 @@ class AutomationStatusOutcome:
     conflict_count: int = 0
     route: str = "automation-status"
     ai_analysis_status: str | None = None
+    ai_analysis_model: str | None = None
+    ai_analysis_provider: str | None = None
+    ai_advisory_repairs: tuple[str, ...] = ()
     devices: list[dict[str, Any]] = field(default_factory=list)
 
 
