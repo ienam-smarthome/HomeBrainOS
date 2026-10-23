@@ -13,6 +13,7 @@ _ONLY = re.compile(r"(?i)(?:\bcausation\b|\bexceptions?\b)[^.!?\n]{0,110}?\bonly
 _PROVEN = re.compile(r"(?i)\bproven\s+causation\b")
 _APP = re.compile(r"(?i)\bApp\s+([1-9]\d{0,8})\b")
 _SENTENCE = re.compile(r"(?<=[.!?])([ \t]+)")
+_EXCLUSIVE = re.compile(r"(?i)(?:\bonly\b[^.!?\n]{0,90}\b(?:exceptions?|errors?|excessive\s+hub\s+load)\b|\b(?:exceptions?|errors?|excessive\s+hub\s+load)\b[^.!?\n]{0,90}\bonly\b)")
 
 
 def observed_exception_app_ids(evidence: list[dict[str, Any]]) -> tuple[str, ...]:
@@ -57,6 +58,10 @@ def _table_aliases(message: str, ids: tuple[str, ...]) -> dict[str, set[str]]:
 
 def _target_matches(sentence: str, prior: str, ids: tuple[str, ...], aliases: dict[str, set[str]]) -> bool:
     clean = re.sub(r"[*\x60]", "", sentence)
+    # A scoped single-app negative must not be contradicted by other apps.
+    mentioned = set(_APP.findall(clean))
+    if mentioned and not (mentioned & set(ids)):
+        return False
     match = re.search(r"(?i)\b(?:for|from|involving)\b(.{0,160})$", clean)
     if match is None:
         return True  # blanket statement, directly contradicted by any exception
@@ -98,12 +103,12 @@ def guard_observed_app_exception_denials(message: str, evidence: list[dict[str, 
                 continue
             plain = re.sub(r"[*\x60]", "", sentence)
             denial = bool(_DENIAL.search(plain))
-            exclusivity = len(ids) > 1 and bool(_ONLY.search(plain) or _PROVEN.search(plain))
+            exclusivity = len(ids) > 1 and bool(_ONLY.search(plain) or _PROVEN.search(plain) or (_EXCLUSIVE.search(plain) and _APP.search(plain)))
             if not denial and not exclusivity:
                 continue
             if denial and not _target_matches(plain, "".join(parts[:i]), ids, aliases):
                 continue
-            if exclusivity and not re.search(r"(?i)\b(?:exceptions?|causation)\b", plain):
+            if exclusivity and not re.search(r"(?i)\b(?:exceptions?|errors?|causation|excessive\s+hub\s+load)\b", plain):
                 continue
             leading = re.match(r"^(\s*(?:[-*+]\s+|>\s+)?)", sentence).group(1)
             ending = "\n" if sentence.endswith("\n") else ""
