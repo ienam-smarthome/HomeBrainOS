@@ -587,6 +587,10 @@ def build_agent_response(
                 "read_only": True,
                 "tool_calls_allowed": False,
             }
+            if ai_status != "completed":
+                # The globally configured model name is not evidence that a
+                # model answered this particular deterministic audit.
+                result["model"] = None
     if state_claims_corrected:
         result["evidence_validation"]["unsupported_status_fields_removed"] = (
             state_claims_corrected
