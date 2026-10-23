@@ -172,7 +172,19 @@ def extract_tool_message_device_identities(
             if (not is_non_device_entity and device_id
                     and len(label) >= _MIN_LABEL_LENGTH):
                 identities.setdefault(device_id, {"id": device_id, "label": label})
-            for value in node.values():
+            # Rule Machine/app inventories often provide untyped {id,label}
+            # records. Their identities are app IDs, not device IDs. Treat
+            # the containing key as authoritative scope: do not promote apps
+            # to device candidates just because the wrapper omits type=app.
+            # Retain genuine device identities from other branches of the
+            # same tool response (e.g. devices or resolver target).
+            for key, value in node.items():
+                if key in {
+                    "apps", "app", "childApps", "rules", "rule",
+                    "automations", "installedApps", "appInstances",
+                    "automation_items",
+                }:
+                    continue
                 _walk(value)
         elif isinstance(node, list):
             for item in node[:_MAX_TOOL_IDENTITY_LIST_ITEMS]:
