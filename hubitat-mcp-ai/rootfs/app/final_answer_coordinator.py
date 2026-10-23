@@ -36,6 +36,10 @@ from synthesis_context import build_tool_evidence_packet
 from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
+from analytical_answer_quality import (
+    QUESTION_FIRST_CONTRACT, answer_quality_issues,
+    quality_repair_instruction,
+)
 from causal_fail_closed_summary import render_failed_causal_synthesis
 
 
@@ -431,6 +435,51 @@ class FinalAnswerCoordinator:
         increment_active_metric("broad_performance_log_host_failed")
         return refreshed
 
+    async def _revise_incomplete_answer(
+        self,
+        original_user: str,
+        draft: str,
+        evidence: list[dict[str, Any]],
+        final_messages: list[dict[str, Any]],
+        *,
+        causal: bool,
+    ) -> str:
+        """One evidence-scoped, no-tools repair for unanswered analytical goals.
+
+        The ordinary synthesis validator is authoritative for factual claims;
+        quality assessment does not relax it or invent a verified source.
+        """
+        issues = answer_quality_issues(original_user, draft, evidence)
+        if not issues:
+            return draft
+        increment_active_metric("answer_quality_gaps_found")
+        revision_messages = [
+            *final_messages,
+            {"role": "assistant", "content": draft},
+            {"role": "user", "content": quality_repair_instruction(issues)},
+        ]
+        increment_active_metric("answer_quality_revision_rounds")
+        revised = await self._chat(revision_messages, [])
+        content = str(revised.get("content") or "").strip()
+        if not content:
+            increment_active_metric("answer_quality_revision_rejected")
+            return draft
+        corrected, factual_issues = validate_synthesis(
+            content, evidence, original_user=original_user, causal=causal,
+        )
+        if factual_issues:
+            # A more fluent but factually unsupported answer is a regression.
+            # Return the previously validated answer, not a speculative repair.
+            increment_active_metric("answer_quality_revision_rejected")
+            return draft
+        # A revision may legitimately state "unknown"; do not force extra
+        # rounds. Nonetheless, a still-unanswered question gains no value.
+        if answer_quality_issues(original_user, content, evidence):
+            increment_active_metric("answer_quality_revision_incomplete")
+            return draft
+        increment_active_metric("answer_quality_revision_accepted")
+        return content
+
     async def answer(self, messages: list[dict[str, Any]]) -> str:
         evidence = (
             list(self._evidence_supplier() or [])
@@ -579,6 +628,12 @@ class FinalAnswerCoordinator:
                 "role": "user",
                 "content": render_investigation_assessment(contract, evidence),
             })
+        if evidence_scoped and evidence:
+            # Shared quality contract complements, but never replaces, the
+            # receipt-based factual validator or domain-specific guards.
+            final_messages.append({
+                "role": "user", "content": QUESTION_FIRST_CONTRACT,
+            })
         if source_evidence_request(original_user):
             spans = contiguous_source_coverage(evidence)
             final_messages.append({
@@ -637,7 +692,9 @@ class FinalAnswerCoordinator:
             causal=causal,
         )
         if not issues:
-            return draft
+            return await self._revise_incomplete_answer(
+                original_user, draft, evidence, final_messages, causal=causal,
+            )
 
         # Fixed categories only: telemetry must not include private query
         # words, device names, event IDs or arbitrary validation issue text.
