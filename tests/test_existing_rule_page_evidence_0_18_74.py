@@ -162,8 +162,8 @@ def test_page_lookups_and_different_apps_are_not_confused():
         "details": report,
     }]
     coverage = assess_investigation(plan_investigation(
-        "Audit existing Rule Machine app 4246 triggers and conditions. "
-        "Do not create or modify anything."
+        "Verify existing Rule Machine app 4246 persisted triggers and actions, "
+        "including conditions. Do not create or modify anything."
     ), evidence)
     message = calibrate_existing_rule_verification("verified", evidence, coverage)
     assert "trigger contents not independently parsed or verified" in message
