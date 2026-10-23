@@ -23,6 +23,7 @@ from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from observed_app_exception_guard import guard_observed_app_exception_denials
+from observed_long_method_guard import guard_observed_long_method_denials
 from technical_metrics_presenter import (
     present_request_metrics,
     present_request_outcome,
@@ -555,6 +556,11 @@ def build_agent_response(
     message, exception_denials_corrected = guard_observed_app_exception_denials(
         message, evidence
     )
+    # Correct unqualified denials of source-scoped long-running WARN methods
+    # only when successful structured current-turn log evidence contradicts them.
+    message, long_method_denials_corrected = guard_observed_long_method_denials(
+        message, evidence
+    )
     # This final serializer runs after model synthesis. A causal device answer
     # may have read app logs; that alone does not make it a performance report.
     # Never let performance-only repair instructions leak across that boundary.
@@ -598,6 +604,8 @@ def build_agent_response(
                 # The globally configured model name is not evidence that a
                 # model answered this particular deterministic audit.
                 result["model"] = None
+    if long_method_denials_corrected:
+        result["evidence_validation"]["observed_long_method_denial_corrected"] = True
     if exception_denials_corrected:
         result["evidence_validation"]["observed_app_exception_denial_corrected"] = True
     if state_claims_corrected:
