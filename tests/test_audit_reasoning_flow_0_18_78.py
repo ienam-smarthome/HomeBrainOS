@@ -138,4 +138,4 @@ async def test_opt_out_still_skips_model_path(monkeypatch):
     prompt = ("Perform a comprehensive hub audit checking devices, logs "
               "and performance statistics.")
     await module._agent_request(module.ChatRequest(prompt=prompt))
-    assert calls == [{}]
+    assert calls == [{"ai_disabled_by_configuration": True}]
