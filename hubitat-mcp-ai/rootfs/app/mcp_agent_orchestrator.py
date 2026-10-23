@@ -488,6 +488,26 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"\b(?:why|what caused|what triggered|how did)\b", text, re.I,
     ):
         return False
+    # A deep, explicitly read-only investigation of an installed Rule Machine
+    # app remains a READ even if its question includes "could switch ... OFF".
+    # requests_mutation() sees that descriptive phrase as a command. Fail
+    # closed for independent mutation clauses and numbered/line-start writes.
+    if (is_existing_rule_verification_request(prompt)
+            and not secondary_write
+            and re.match(
+                r"(?i)^\s*(?:please\s+)?(?:perform|conduct|carry\s+out|"
+                r"verify|inspect|check|review|audit|investigate|compare|"
+                r"determine|establish|analyse|analyze)\b",
+                text,
+            )
+            and not re.search(
+                r"(?mi)^\s*(?:\d+\.\s*)?(?:please\s+)?"
+                r"(?:turn|switch|set|change|create|delete|disable|enable|"
+                r"restart|block|unblock|configure|execute|install|remove|"
+                r"pause|resume|update|write|apply)\b",
+                text,
+            )):
+        return False
     return _requests_mutation(text)
 
 _DEVICE_INVENTORY_PATTERNS = (
