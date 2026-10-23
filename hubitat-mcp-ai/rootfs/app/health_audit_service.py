@@ -356,6 +356,36 @@ _log_findings = _core._log_findings
 _log_rows = _core._log_rows
 _previous_stale_ids = _core._previous_stale_ids
 
+def _requested_audit_app_ids(focus: str | None, *, maximum: int = 3) -> tuple[str, ...]:
+    """Return a bounded cohort of explicitly numbered app instances, in order."""
+    selected: list[str] = []
+    for match in re.finditer(r"\bapp\s*#?\s*([1-9]\d{1,8})\b", str(focus or ""), re.I):
+        app_id = match.group(1)
+        if app_id not in selected:
+            selected.append(app_id)
+        if len(selected) >= maximum:
+            break
+    return tuple(selected)
+
+
+def _requested_app_statistics(app_id: str, performance: dict[str, Any] | None) -> str:
+    """Top-N absence is unknown, never proof of low load."""
+    rows = performance.get("appStats") if isinstance(performance, dict) else None
+    if not isinstance(rows, list):
+        return "performance unavailable; no current app load conclusion"
+    for row in rows:
+        if (isinstance(row, dict) and
+                str(row.get("id", row.get("appId", ""))) == app_id):
+            return (
+                "present in top-ranked app performance sample: "
+                f"pctBusy={row.get('pctBusy', 'unreported')}, "
+                f"pctTotal={row.get('pctTotal', 'unreported')}, "
+                f"averageMs={row.get('averageMs', 'unreported')}; "
+                "these values do not establish hub CPU utilisation"
+            )
+    return "not present in top-ranked app performance sample; actual load unknown"
+
+
 def is_comprehensive_system_audit_request(prompt: str) -> bool:
     """Narrow read-only chat shortcut for whole-hub diagnostic requests.
 
@@ -897,6 +927,7 @@ def render_comprehensive_system_audit(
     sensecap_known_unpowered: bool = False,
     ai_advisory: str | None = None,
     ai_analysis_status: str | None = None,
+    requested_app_checks: list[dict[str, Any]] | None = None,
     scheduled_jobs: dict[str, Any] | None = None,
     scheduler_error: str | None = None,
     automation_dependencies: dict[str, Any] | None = None,
@@ -976,6 +1007,22 @@ def render_comprehensive_system_audit(
     ]
     if unavailable:
         lines.append("- Incomplete sources: " + ", ".join(unavailable) + ".")
+    if requested_app_checks:
+        lines.extend((
+            "",
+            "### Requested app checks — bounded, source-specific",
+            "Each app-scoped log read requests at most 80 rows since 6h. "
+            "Neither the time filter nor historical completeness is verified.",
+        ))
+        for row in requested_app_checks:
+            lines.append(
+                f"- App {row['id']}: {row['performance']}; "
+                f"logs: {row['log_summary']}"
+            )
+        lines.append(
+            "- No returned error or absence from the ranked statistics "
+            "does not establish absence of historical faults or low load."
+        )
     timings = snapshot.get("stage_timings_ms") or {}
     if isinstance(timings, dict) and timings:
         labels = (
@@ -1549,6 +1596,7 @@ async def run_comprehensive_chat_audit(
     job_error: str | None = None
     automation_dependencies: dict[str, Any] | None = None
     targeted_logs: list[dict[str, Any]] = []
+    requested_app_checks: list[dict[str, Any]] = []
     historical_logs: dict[str, Any] | None = None
     context_reconciliation: dict[str, Any] | None = None
     try:
@@ -1636,6 +1684,76 @@ async def run_comprehensive_chat_audit(
                     "mutates": False,
                     "effect": "read",
                     "summary": "Scheduler source unavailable: " + job_error,
+                })
+
+            # Explicitly named app instances deserve real scoped reads rather
+            # than silently substituting an unrelated top-three health report.
+            # At most three extra bounded, read-only app log calls.
+            for app_id in _requested_audit_app_ids(analysis_focus):
+                focus_args = _gateway_arguments(
+                    gateway, "hub_get_logs",
+                    {"appId": app_id, "since": "6h", "limit": 80},
+                )
+                focus_started = time.monotonic()
+                performance_note = _requested_app_statistics(app_id, stats)
+                try:
+                    focus_response = await mcp.call_tool(gateway.name, focus_args)
+                    if not tool_succeeded(focus_response):
+                        raise ValueError("app-scoped log read failed")
+                    raw = _log_rows(focus_response)
+                    # Only count rows that identify this exact originating app.
+                    matched = [
+                        item for item in raw
+                        if isinstance(item, dict) and (
+                            str(item.get("appId") or "") == app_id
+                            or re.match(
+                                r"^app\|" + re.escape(app_id) + r"\|",
+                                str(item.get("message") or ""),
+                            ) is not None
+                        )
+                    ]
+                    errors = sum(
+                        str(item.get("level") or "").upper() in ("ERROR", "ERR")
+                        for item in matched
+                    )
+                    warnings = sum(
+                        str(item.get("level") or "").upper() in ("WARN", "WARNING")
+                        for item in matched
+                    )
+                    exceptions = sum(
+                        "limitexceededexception" in
+                        str(item.get("message") or "").casefold()
+                        for item in matched
+                    )
+                    log_summary = (
+                        f"{len(matched)} exact source-ID rows of "
+                        f"{len(raw)} returned; {errors} ERROR, {warnings} WARN; "
+                        f"{exceptions} explicitly contain LimitExceededException. "
+                        "Time/6h coverage unverified; older events not excluded"
+                        + ("; 80-row sample saturated" if len(raw) >= 80 else "")
+                    )
+                    ok = True
+                except Exception as exc:
+                    log_summary = (
+                        f"read unavailable ({type(exc).__name__}); no log "
+                        "absence or error-count claim supported"
+                    )
+                    ok = False
+                requested_app_checks.append({
+                    "id": app_id, "performance": performance_note,
+                    "log_summary": log_summary,
+                })
+                evidence.append({
+                    "tool": gateway.name,
+                    "sub_tool": "hub_get_logs",
+                    "arguments": focus_args,
+                    "timestamp": checked_at,
+                    "success": ok,
+                    "supports_live_claim": ok,
+                    "evidence_kind": "chat_audit_requested_app_logs",
+                    "elapsed_ms": round((time.monotonic() - focus_started) * 1000),
+                    "mutates": False, "effect": "read",
+                    "summary": f"App {app_id} scoped check: {log_summary}",
                 })
 
             for target in _fault_first_log_targets(
@@ -1878,6 +1996,7 @@ async def run_comprehensive_chat_audit(
         sensecap_known_unpowered=sensecap_known_unpowered,
         scheduled_jobs=job_summary, scheduler_error=job_error,
         automation_dependencies=automation_dependencies,
+        requested_app_checks=requested_app_checks,
     )
     ai_analysis_status = (
         "disabled_by_configuration" if ai_disabled_by_configuration else None
@@ -1891,6 +2010,10 @@ async def run_comprehensive_chat_audit(
         system_prompt = (
             "You are analysing a read-only Hubitat diagnostic report. "
             "Answer the user's actual audit question, not just list faults. "
+            "If the user's question names app IDs, report the outcome of "
+            "each corresponding Requested app check, including unknown "
+            "load and incomplete log coverage; do not silently replace "
+            "specific requested checks with only generic system priorities. "
             "Lead with the three strongest evidence-backed findings, "
             "separating performance risk from errors and expected conditions. "
             "For each, give observed evidence, practical impact, likely "
@@ -1907,6 +2030,11 @@ async def run_comprehensive_chat_audit(
             "ownership and execution proof. High pctBusy is only the fraction of "
             "measured busy time in the returned statistic; it does not by itself "
             "prove LimitExceededException risk or a system-wide CPU bottleneck. "
+            "An old last-activity timestamp for a heartbeat does not prove "
+            "monitoring is non-functional without an established expected "
+            "reporting cadence. Offline healthStatus does not prove that "
+            "manual device commands failed. Never describe pctBusy as a "
+            "percentage of the hub's available CPU processing cycles. "
             "Provide a concise answer, not a full copy of the audit. "
             "CRITICAL: A missing app in the returned top-20 ranking does NOT " 
             "establish that it has low load, no errors, or cannot be a cause. "
@@ -1996,6 +2124,7 @@ async def run_comprehensive_chat_audit(
                     automation_dependencies=automation_dependencies,
                     ai_advisory=advisory,
                     ai_analysis_status=ai_analysis_status,
+                    requested_app_checks=requested_app_checks,
                 )
                 evidence.append({
                     "tool": "optional_ai_advisory", "timestamp": checked_at,
@@ -2032,6 +2161,7 @@ async def run_comprehensive_chat_audit(
             scheduled_jobs=job_summary, scheduler_error=job_error,
             automation_dependencies=automation_dependencies,
             ai_analysis_status=ai_analysis_status,
+            requested_app_checks=requested_app_checks,
         )
     return AutomationStatusOutcome(
         message=message,
