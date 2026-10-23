@@ -49,8 +49,7 @@ def test_top20_absence_is_unknown_not_an_inferred_no_load():
 
 
 HOST = """### Prioritised evidence-backed checks
-- Confirm: Lighting Automation Heartbeat has old last-activity; an old
-last-activity timestamp alone cannot prove failover is broken.
+- Confirm: Lighting Automation Heartbeat has old last-activity. An old last-activity timestamp alone cannot prove failover is broken.
 ### Offline-device evidence (identity-grounded)
 - Bedroom 3 Mesh reports offline; verify upstream telemetry.
 ### Performance leaders (not automatic faults)
