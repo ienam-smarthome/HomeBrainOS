@@ -71,7 +71,7 @@ def test_replay_repairs_unjustified_absence_and_absolute_confidence():
     assert "Not shown in bounded log sample" in fixed
     assert "top-ranked sample does not establish" in fixed
     assert "saturated page does not exclude" in fixed
-    assert "power-off state is unverified" in fixed
+    assert "attribution of app load to that state is unverified" in fixed
 
 
 def test_guard_never_invents_errors_when_sample_is_empty():
