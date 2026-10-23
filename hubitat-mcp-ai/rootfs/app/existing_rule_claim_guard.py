@@ -141,6 +141,71 @@ def _typed_setting_fragments(receipts: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _page_read_observations(receipts: list[dict[str, Any]]) -> list[str]:
+    """Present declassified editor page syntax as source text, never compiled logic."""
+    out = []
+    seen = set()
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("tool") != "hub_read_apps_code" or row.get("sub_tool") != "hub_get_app_config":
+            continue
+        details = row.get("details")
+        if not isinstance(details, dict) or details.get("pageReadVerified") is not True:
+            continue
+        args = _gateway_arguments(row)
+        app_id = str(args.get("appId") or "")
+        page = str(args.get("pageName") or "")
+        if (not re.fullmatch(r"[1-9]\d{1,7}", app_id)
+                or app_id != str(details.get("appId") or "")
+                or page != details.get("pageName")
+                or page not in ("selectActions", "selectTriggers")
+                or (app_id, page) in seen):
+            continue
+        seen.add((app_id, page))
+        actions = details.get("recognizedActionRows")
+        if not isinstance(actions, list):
+            continue
+        if page == "selectTriggers":
+            out.append(
+                f"- App {app_id}: selectTriggers editor page was read; "
+                "trigger contents not independently parsed or verified."
+            )
+            continue
+        fragments = []
+        for action in actions[:32]:
+            if not isinstance(action, dict):
+                continue
+            kind = str(action.get("kind") or "")
+            if kind not in {
+                "cancel-delayed-actions", "if", "end-if", "else-if",
+                "else", "off", "on", "delay",
+            }:
+                continue
+            if kind == "delay":
+                seconds = action.get("seconds")
+                if type(seconds) is not int or not 0 <= seconds <= 86399:
+                    continue
+                qualifier = " (cancelable in page text)" if action.get("cancelable") is True else ""
+                fragments.append(f"delay {seconds}s{qualifier}")
+            else:
+                fragments.append(kind)
+        if fragments:
+            out.append(
+                f"- App {app_id}: selectActions editor page displayed "
+                + " → ".join(fragments)
+                + " (recognised rows, encounter order; may be incomplete)."
+            )
+        else:
+            out.append(
+                f"- App {app_id}: selectActions editor page was read, but no "
+                "allowlisted action syntax was recoverable."
+            )
+        if details.get("pageRowsTruncated") is True:
+            out.append(f"- App {app_id}: editor page observation was truncated.")
+    return out
+
+
 def calibrate_existing_rule_verification(
     message: str,
     receipts: list[dict[str, Any]],
@@ -174,6 +239,7 @@ def calibrate_existing_rule_verification(
 
     verified = (_typed_health(receipts) + _typed_variables(receipts)
                 + _typed_setting_fragments(receipts))
+    page_observations = _page_read_observations(receipts)
     lines = [
         banner, "",
         "### Verified from retained typed evidence",
@@ -182,6 +248,8 @@ def calibrate_existing_rule_verification(
         "Individual setting values above establish only the named fields, "
         "not their position in a complete executable action tree.",
         "",
+        *(["### Editor-page observations (not compiled rule facts)",
+           *page_observations, ""] if page_observations else []),
         "### Not independently verified",
         "- Complete triggers, ordered actions, nested IF structure, action "
         "conditions, delay cancellation semantics and active/enabled status; "
