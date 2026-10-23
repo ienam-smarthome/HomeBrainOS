@@ -14,7 +14,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from request_metrics import increment_active_metric
 
 _MAX_QUESTION = 12000
 _MAX_DRAFT = 30000
@@ -42,7 +41,7 @@ _POSSIBILITY_ANSWER = re.compile(
     r"possible|impossible|plausible|unlikely|likely|"
     r"unknown|not established|not enough evidence|"
     r"cannot determine|unverified|not verified|"
-    r"not independently verified)\b"
+    r"not independently verified)\b|^\s*no\s*[,.!:]"
 )
 _INTERPRETATION_ANSWER = re.compile(
     r"(?i)\b(?:because|suggests?|indicates?|consistent with|"
@@ -107,6 +106,11 @@ def answer_quality_issues(
     question = str(request or "").strip()[:_MAX_QUESTION]
     response = str(draft or "").strip()[:_MAX_DRAFT]
     if not question or not _successful_observations(receipts):
+        return ()
+    # Ordinary state lookups and commands need no analytical second pass.
+    if not any(pattern.search(question) for pattern in (
+        _RELATIONAL_REQUEST, _POSSIBILITY_REQUEST, _EXPLANATORY_REQUEST,
+    )):
         return ()
     issues: list[str] = []
     if not response or len(response) < 45 or response == "The MCP request completed without a written answer.":
