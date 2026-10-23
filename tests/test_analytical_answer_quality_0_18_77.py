@@ -152,7 +152,7 @@ async def test_unresolved_repair_does_not_replace_previously_verified_draft():
         return {"content": responses.pop(0)}
     co = FinalAnswerCoordinator(chat, evidence_supplier=lambda: RECEIPTS)
     answer = await co.answer([{"role": "user",
-                              "content": "Compare these two installed controllers."}])
+                              "content": "Compare existing Rule Machine app 4246 and controller app 4019; verify persisted actions and settings."}])
     assert "timing remains unverified" in answer
     assert len(calls) == 2
 
@@ -162,7 +162,7 @@ async def test_quality_repair_uses_existing_factual_validator_and_falls_back(mon
     import final_answer_coordinator as mod
 
     responses = [
-        "Controller A is configured. Controller B is configured. Both "
+        "Controller A is configured. Controller B is configured. Their "
         "settings were returned, but timing remains unverified.",
         "Controller A definitely causes the light to switch off before B; "
         "that causal claim is certain and proven.",
