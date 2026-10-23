@@ -11,6 +11,8 @@ from automation_diagnostic_policy import is_targeted_device_transition_investiga
 from performance_job_analysis import summarize_job_workload
 from audit_priority_planner import render_audit_priorities, render_audit_scheduled_jobs
 from audit_reasoning_context import build_audit_reasoning_packet
+from audit_ai_advisory_guard import calibrate_audit_ai_advisory
+from request_metrics import active_request_identity
 from scheduler_identity_reconciliation import (
     reconcile_scheduler_candidates,
     render_scheduler_candidate_reconciliation,
@@ -1880,6 +1882,9 @@ async def run_comprehensive_chat_audit(
     ai_analysis_status = (
         "disabled_by_configuration" if ai_disabled_by_configuration else None
     )
+    ai_analysis_model: str | None = None
+    ai_analysis_provider: str | None = None
+    ai_advisory_repairs: tuple[str, ...] = ()
     if callable(analysis_chat):
         # Explicit opt-in: one short, tool-free model pass, never executing
         # suggestions. The deterministic report remains authoritative.
@@ -1895,6 +1900,17 @@ async def run_comprehensive_chat_audit(
             "inventory duration, busy percent from absolute CPU share, "
             "or scheduled collisions from identical next-run timestamps. "
             "Provide a concise answer, not a full copy of the audit. "
+            "CRITICAL: A missing app in the returned top-20 ranking does NOT " 
+            "establish that it has low load, no errors, or cannot be a cause. "
+            "A 200-of-200 saturated log result is a newest-N sample and cannot "
+            "prove exception absence over 24 hours; explicitly scope every "
+            "negative finding to the returned rows and avoid 'High' or "
+            "'Absolute' certainty for such negative findings. "
+            "Hubitat LimitExceededException means hub excessive-load protection; "
+            "it is not evidence of upstream API rate limiting. "
+            "A user-reported SenseCap D1 power-off explains possible unreachable "
+            "transport but does not explain its measured pctBusy or app runtime. "
+            "Do not call absence from a ranked excerpt a confirmed finding. "
             "Use only the supplied report. Separate known user configuration from "
             "verified device evidence. Do not invent IP addresses, missing tools, "
             "diagnoses or repairs. Never request or execute a state change. "
@@ -1932,6 +1948,26 @@ async def run_comprehensive_chat_audit(
                 max_chars=3000,
             )
             if advisory:
+                advisory, ai_advisory_repairs = calibrate_audit_ai_advisory(
+                    advisory, message
+                )
+                # The transport records the actual successful model/provider
+                # in the request-local metrics context (including local/cloud
+                # fallback). Never infer provider identity from a configured
+                # model name or the model's prose.
+                request_state = active_request_identity()
+                provider_rows = getattr(
+                    request_state, "model_round_details", None
+                )
+                if isinstance(provider_rows, list) and provider_rows:
+                    latest = provider_rows[-1]
+                    if isinstance(latest, dict):
+                        ai_analysis_model = (
+                            str(latest.get("model") or "").strip() or None
+                        )
+                        ai_analysis_provider = (
+                            str(latest.get("provider") or "").strip() or None
+                        )
                 ai_analysis_status = "completed"
                 message = render_comprehensive_system_audit(
                     snapshot, stats, performance_error=performance_error,
@@ -1981,6 +2017,9 @@ async def run_comprehensive_chat_audit(
         route="comprehensive-system-audit",
         evidence=evidence,
         ai_analysis_status=ai_analysis_status,
+        ai_analysis_model=ai_analysis_model,
+        ai_analysis_provider=ai_analysis_provider,
+        ai_advisory_repairs=ai_advisory_repairs,
     )
 
 
