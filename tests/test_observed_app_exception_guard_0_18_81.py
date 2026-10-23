@@ -106,6 +106,11 @@ def test_positive_evidence_deduplicates_multiple_members():
     assert observed_exception_app_ids(observed()) == ("3977", "4061")
 
 
+def test_explicit_uncertainty_about_proven_causation_is_preserved():
+    text = "A shared root cause is not proven; causation is unverified."
+    assert guard_observed_app_exception_denials(text, observed()) == (text, False)
+
+
 def test_correct_answer_is_not_modified():
     text = (
         "App 4061 generated an explicit LimitExceededException in recent logs. "
