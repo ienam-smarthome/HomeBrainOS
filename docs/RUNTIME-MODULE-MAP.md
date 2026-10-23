@@ -71,6 +71,7 @@ The repository drift test compares this table directly with the live directory. 
 | `night_idle_rule_authoring.py` | Model-free exact-intent native Rule Machine night-idle OFF compiler; verifies named rule inventory, device IDs/capabilities, native action guide and routes guarded proposal to ordinary confirmation. |
 | `scheduler_identity_reconciliation.py` | Compares source-recognized installed app identities/status with encoded scheduler-key candidate IDs, explicitly separating an ID overlap from proof of ownership or execution. |
 | `audit_priority_planner.py` | Prioritises exact offline/log/heartbeat source combinations and labels scheduler ownership, timestamp clustering and disabled-app dependencies without asserting unseen failures. |
+| `audit_reasoning_context.py` | Bounded cross-source current audit evidence packet for the optional, no-tools chat AI interpretation; preserves scheduler/log/performance limits. |
 | `composite_system_audit_policy.py` | Routes whole-hub audits spanning warnings/errors, apps/rules and device or health checks into the evidence-rich System Check rather than partial performance-only synthesis. |
 | `performance_timeout_digest.py` | Produces a bounded, evidence-only performance report if final AI synthesis times out, with no speculative repair claims. |
 | `provenance_app_log_planner.py` | Selects one read-only app-log request for a verified command issuer and incident time, preventing duplicate checks. |
