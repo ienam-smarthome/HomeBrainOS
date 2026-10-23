@@ -19,6 +19,21 @@ _MAX_SECTIONS = 32
 _MAX_PARAGRAPHS = 128
 _MAX_FRAGMENT_LENGTH = 400
 _MAX_ROWS = 40
+# Editor page paragraphs sometimes prefix the action with an ordinal, bullet
+# or "Action N:"; remove only that constrained presentation prefix. Never
+# search arbitrary text for an action verb (help text is not execution data).
+_DISPLAY_PREFIX = re.compile(
+    r"^(?:(?:(?:Action|Step)\s*(?:#?\d+)?\s*:\s*)|"
+    r"(?:(?:[•*–-]|\d{1,3}[.):\-])\s+)){1,2}", re.I,
+)
+_SYNTAX_HINTS = {
+    "cancel_delayed": re.compile(r"\bCancel\s+Delayed\s+Actions\b", re.I),
+    "conditional_if": re.compile(r"\bIF\s*\(", re.I),
+    "end_if": re.compile(r"\bEND[- ]IF\b", re.I),
+    "delay": re.compile(r"\bDelay\s+\d", re.I),
+    "switch_off": re.compile(r"\bOff\s*:", re.I),
+    "switch_on": re.compile(r"\bOn\s*:", re.I),
+}
 _DELAY = re.compile(
     r"^Delay\s+(?:(?P<hours>\d{1,2}):)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2})"
     r"\s*(?P<cancelable>\(\s*cancelable\s*\))?",
@@ -42,9 +57,10 @@ def _classify_row(value: str) -> dict[str, Any] | None:
     line = _WS.sub(" ", html.unescape(_MARKUP.sub(" ", value))).strip()
     if not line or any(ord(ch) < 32 for ch in line):
         return None
-    # Avoid treating page instructions discussing actions as actual action rows.
-    if line.casefold().startswith(("action:", "step:")):
-        line = re.sub(r"^(?:action|step):\s*", "", line, flags=re.I)
+    # Match only a leading action verb *after* a constrained presentation
+    # prefix. Mentions embedded in help descriptions are counted as hints
+    # below but must never be promoted into recognised action rows.
+    line = _DISPLAY_PREFIX.sub("", line, count=1)
     match = _DELAY.match(line)
     if match:
         hours = int(match.group("hours") or 0)
@@ -74,6 +90,14 @@ def project_existing_rule_page(
         "pageReadVerified": False,
         "pageRowsTruncated": False,
         "recognizedActionRows": [],
+        "paragraphSyntaxHints": {key: 0 for key in _SYNTAX_HINTS},
+        "paragraphShapeCounts": {
+            "numbered_or_bulleted": 0,
+            "html_markup": 0,
+            "over_limit": 0,
+            "multiline": 0,
+            "non_string": 0,
+        },
         "orderedActionsValidated": False,
         "conditionsValidated": False,
         "triggerLogicValidated": False,
@@ -113,7 +137,22 @@ def project_existing_rule_page(
                 result["pageRowsTruncated"] = True
                 break
             if not isinstance(fragment, str):
+                result["paragraphShapeCounts"]["non_string"] += 1
                 continue
+            if len(fragment) > _MAX_FRAGMENT_LENGTH:
+                result["paragraphShapeCounts"]["over_limit"] += 1
+            if any(ch in fragment for ch in ("\n", "\r", "\x00")):
+                result["paragraphShapeCounts"]["multiline"] += 1
+            if _MARKUP.search(fragment):
+                result["paragraphShapeCounts"]["html_markup"] += 1
+            fragment_plain = html.unescape(_MARKUP.sub(" ", fragment))
+            if _DISPLAY_PREFIX.match(fragment_plain.strip()):
+                result["paragraphShapeCounts"]["numbered_or_bulleted"] += 1
+            # Diagnostic hints are only counts of reserved syntax tokens:
+            # no source text, labels, secrets, device IDs or URLs are retained.
+            for hint_name, pattern in _SYNTAX_HINTS.items():
+                if pattern.search(fragment_plain):
+                    result["paragraphSyntaxHints"][hint_name] += 1
             classified = _classify_row(fragment)
             if classified is not None:
                 rows.append(classified)
