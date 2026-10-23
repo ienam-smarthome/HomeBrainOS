@@ -37,7 +37,7 @@ _RELATIONAL_ANSWER = re.compile(
     r"between)\b"
 )
 _POSSIBILITY_ANSWER = re.compile(
-    r"(?i)\b(?:yes|no|can|cannot|could|couldn't|may|might|"
+    r"(?i)\b(?:yes|can|cannot|could|couldn't|may|might|"
     r"possible|impossible|plausible|unlikely|likely|"
     r"unknown|not established|not enough evidence|"
     r"cannot determine|unverified|not verified|"
