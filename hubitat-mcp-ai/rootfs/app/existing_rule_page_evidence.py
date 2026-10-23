@@ -36,7 +36,8 @@ _ACTION = (
 
 
 def _classify_row(value: str) -> dict[str, Any] | None:
-    if not isinstance(value, str) or len(value) > _MAX_FRAGMENT_LENGTH:
+    if (not isinstance(value, str) or len(value) > _MAX_FRAGMENT_LENGTH
+            or any(ch in value for ch in ("\\n", "\\r", "\\x00"))):
         return None
     line = _WS.sub(" ", html.unescape(_MARKUP.sub(" ", value))).strip()
     if not line or any(ord(ch) < 32 for ch in line):
