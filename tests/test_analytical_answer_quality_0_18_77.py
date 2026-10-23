@@ -182,7 +182,7 @@ async def test_quality_repair_uses_existing_factual_validator_and_falls_back(mon
     monkeypatch.setattr(mod, "validate_synthesis", validation)
     co = FinalAnswerCoordinator(chat, evidence_supplier=lambda: RECEIPTS)
     answer = await co.answer([{"role": "user",
-                              "content": "Compare the two controllers."}])
+                              "content": "Compare existing Rule Machine app 4246 and controller app 4019; verify persisted actions and settings."}])
     assert "timing remains unverified" in answer
     assert "definitely causes" not in answer
     assert len(calls) == 2
