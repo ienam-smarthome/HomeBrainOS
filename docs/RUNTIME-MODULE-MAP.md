@@ -65,6 +65,7 @@ The repository drift test compares this table directly with the live directory. 
 | `rm_settings_dependency.py` | Safely projects bounded Rule Machine 5.x indexed settings onto provenance-labelled device references and key-family counts without retaining raw settings or inferring actions. |
 | `rule_design_claim_guard.py` | Calibrates unsupported native writer, timeout, overnight and manual-lockout claims for explicit read-only Rule Machine proposals; does not author or queue rules. |
 | `existing_rule_claim_guard.py` | Replaces unverified existing-rule model claims with typed-receipt-only partial findings; retains full synthesis only after validated ordered-action semantics. |
+| `existing_rule_settings_evidence.py` | ID-bound, read-only allowlisted projection of indexed Rule Machine and controller setting values; preserves partial-evidence status and redacts unrelated config. |
 | `native_rule_creation_staging.py` | Strict creation safety check for user-required atomic disabled-at-birth native Rule Machine rules; refuses unverified active-then-disable staging without model or hub writes. |
 | `night_idle_rule_authoring.py` | Model-free exact-intent native Rule Machine night-idle OFF compiler; verifies named rule inventory, device IDs/capabilities, native action guide and routes guarded proposal to ordinary confirmation. |
 | `scheduler_identity_reconciliation.py` | Compares source-recognized installed app identities/status with encoded scheduler-key candidate IDs, explicitly separating an ID overlap from proof of ownership or execution. |
