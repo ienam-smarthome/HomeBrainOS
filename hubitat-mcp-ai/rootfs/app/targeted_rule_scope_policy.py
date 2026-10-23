@@ -21,7 +21,7 @@ _RULE_DETAIL = re.compile(
     r"variables?|counter|reset|cumulative|one.minute|"
     r"delay(?:ed|s)?|paused|enabled|rule\s+health|"
     r"runtime|execution|command\s+history|"
-    r"event\s+history|verify|compare|references?|"
+    r"event\s+history|verif(?:y|ication)|compare|status|references?|"
     r"configur(?:ation|ed)|behaviou?r|threshold)\b",
     re.I,
 )
@@ -61,6 +61,21 @@ def named_rule_app_ids(question: str, *, max_items: int = 3) -> tuple[str, ...]:
     return tuple(found[:max_items])
 
 
+# An exhaustive search for *one named rule's duplicates* is not a request
+# to audit the entire installed automation population.
+_SCOPED_EXACT_NAME = re.compile(
+    r"\b(?:all|every)\s+(?:(?:installed|existing|matching|rule\s+machine)\s+){0,4}"
+    r"(?:apps?|rules?|automations?)\s+(?:with|named|called|matching|sharing)\s+"
+    r"(?:the\s+|an?\s+)?(?:exact\s+|same\s+|identical\s+){0,3}name\b",
+    re.I,
+)
+_UNAMBIGUOUS_WHOLE_HUB = re.compile(
+    r"\b(?:whole|entire|full|comprehensive|system[ -]?wide)\s+"
+    r"(?:(?:my|the|our)\s+)?(?:hub(?:itat)?|system|smart[ -]?home)\b",
+    re.I,
+)
+
+
 def is_targeted_rule_investigation(question: str) -> bool:
     """True when a named app's own logic/status is the investigation scope.
 
@@ -71,7 +86,13 @@ def is_targeted_rule_investigation(question: str) -> bool:
     return bool(
         named_rule_app_ids(text)
         and _RULE_DETAIL.search(text)
-        and not _EXPLICIT_GLOBAL_AUDIT.search(text)
+        and (
+            not _EXPLICIT_GLOBAL_AUDIT.search(text)
+            or (
+                _SCOPED_EXACT_NAME.search(text)
+                and not _UNAMBIGUOUS_WHOLE_HUB.search(text)
+            )
+        )
     )
 
 
@@ -101,6 +122,23 @@ _HISTORICAL_RULE_EVENT = re.compile(
 )
 
 
+_NEGATED_PROPOSAL = re.compile(
+    r"(?:\b(?:do\s+not|don't|never|without)\s+"
+    r"|\bnot\s+(?:a|an|my)\s+request\s+to\s+)"
+    r"(?:(?:please|ever|actually|yet|now)\s+)?$",
+    re.I,
+)
+
+
+def _requests_future_rule_design(question: str) -> bool:
+    """Require an *affirmative* future-rule proposal, not a prohibition."""
+    text = str(question or "")
+    return any(
+        not _NEGATED_PROPOSAL.search(text[max(0, match.start() - 60):match.start()])
+        for match in _FUTURE_RULE_PROPOSAL.finditer(text)
+    )
+
+
 def is_existing_rule_verification_request(question: str) -> bool:
     """A *deep*, named installed-rule audit, not a status fast-path or proposal.
 
@@ -113,7 +151,7 @@ def is_existing_rule_verification_request(question: str) -> bool:
         is_targeted_rule_investigation(text)
         and _DEEP_INSTALLED_RULE_EVIDENCE.search(text)
         and not _HISTORICAL_RULE_EVENT.search(text)
-        and not _FUTURE_RULE_PROPOSAL.search(text)
+        and not _requests_future_rule_design(text)
     )
 
 
@@ -124,10 +162,15 @@ def is_new_rule_design_review_request(question: str) -> bool:
     that classifier can still independently block authoring in either case.
     """
     from rule_authoring_service import RuleAuthoringService
-    return bool(
-        RuleAuthoringService.is_read_only_rule_design_request(question)
-        and not is_existing_rule_verification_request(question)
-    )
+    if not RuleAuthoringService.is_read_only_rule_design_request(question):
+        return False
+    if is_existing_rule_verification_request(question):
+        return False
+    # No installed Rule Machine app is named: retain the historical safe
+    # proposal-only treatment for generic design requests. When an app ID is
+    # named, do NOT treat routine current status/inspection and a "do not
+    # propose a new rule" ban as an affirmative design request.
+    return not named_rule_app_ids(question) or _requests_future_rule_design(question)
 
 __all__ = ["named_rule_app_ids", "is_targeted_rule_investigation",
            "is_existing_rule_verification_request", "is_new_rule_design_review_request"]

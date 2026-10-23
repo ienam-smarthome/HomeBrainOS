@@ -75,7 +75,9 @@ def source_evidence_request(prompt: str) -> bool:
         _ANALYTICAL.search(text)
         and re.search(
             r"(?i)\b(?:groovy|source[- ]code|source\s+implementation|"
-            r"actual\s+source|code\s+implementation|source\s+of)\b",
+            r"actual\s+source(?!\s+(?:evidence|records?|data|receipts?|"
+            r"details|values|proof|behind)\b)|"
+            r"code\s+implementation|source\s+of)\b",
             text,
         )
     )
