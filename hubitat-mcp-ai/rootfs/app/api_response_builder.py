@@ -22,6 +22,7 @@ from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
+from observed_app_exception_guard import guard_observed_app_exception_denials
 from technical_metrics_presenter import (
     present_request_metrics,
     present_request_outcome,
@@ -548,6 +549,12 @@ def build_agent_response(
     message, _ = guard_checked_source_absence_claim(
         message, evidence, performance_request=performance_scope
     )
+    # A successful log read may contain an explicit app overload exception even
+    # when the model wrongly says no such rows were returned. Repair only
+    # categorical denials/exclusivity with matching structured ERROR receipts.
+    message, exception_denials_corrected = guard_observed_app_exception_denials(
+        message, evidence
+    )
     # This final serializer runs after model synthesis. A causal device answer
     # may have read app logs; that alone does not make it a performance report.
     # Never let performance-only repair instructions leak across that boundary.
@@ -591,6 +598,8 @@ def build_agent_response(
                 # The globally configured model name is not evidence that a
                 # model answered this particular deterministic audit.
                 result["model"] = None
+    if exception_denials_corrected:
+        result["evidence_validation"]["observed_app_exception_denial_corrected"] = True
     if state_claims_corrected:
         result["evidence_validation"]["unsupported_status_fields_removed"] = (
             state_claims_corrected
