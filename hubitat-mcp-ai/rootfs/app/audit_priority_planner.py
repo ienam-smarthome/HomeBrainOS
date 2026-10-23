@@ -42,6 +42,62 @@ def _matching_patterns(row: dict[str, Any]) -> tuple[bool, bool]:
     return watched, error
 
 
+def _excessive_load_entries(
+    scoped: list[dict[str, Any]], *, known_unpowered: bool,
+) -> list[tuple[str, str, str]]:
+    """Rank explicit Hubitat overload exceptions by *app*, not device/log row.
+
+    A member device can surface its parent app exception, and one app may
+    repeat many log rows. Do not count these as separate faulty applications
+    or assert that total hub CPU percentage is known.
+    """
+    by_app: dict[str, dict[str, Any]] = {}
+    for source in scoped:
+        if not isinstance(source, dict):
+            continue
+        name = _safe_name(source.get("name") or source.get("id"))
+        if known_unpowered and "sensecap d1" in name.casefold():
+            continue
+        for group in (source.get("groups") or [])[:8]:
+            if not isinstance(group, dict):
+                continue
+            message = " ".join(str(group.get(k) or "") for k in (
+                "summary", "message", "detail",
+            ))
+            if not (
+                re.search(r"\bLimitExceededException\b", message, re.I)
+                or re.search(r"\bgenerates excessive hub load\b", message, re.I)
+            ):
+                continue
+            app_match = re.search(r"\bApp\s+([1-9]\d{0,8})\b", message, re.I)
+            if not app_match:
+                # Do not infer an app identity from a device identifier.
+                continue
+            app_id = app_match.group(1)
+            record = by_app.setdefault(app_id, {
+                "names": set(), "max_rows": 0,
+            })
+            record["names"].add(name)
+            record["max_rows"] = max(
+                record["max_rows"], _positive_int(source.get("matching_rows")) or 0,
+            )
+    ranked = sorted(
+        by_app.items(), key=lambda item: (-item[1]["max_rows"], int(item[0])),
+    )
+    out: list[tuple[str, str, str]] = []
+    for app_id, observed in ranked[:3]:
+        sources = ", ".join(sorted(observed["names"])[:2])
+        out.append((
+            "Investigate",
+            f"**Hubitat app {app_id}: explicit excessive-hub-load exception** "
+            f"observed through {sources}. Repeated rows are observations, "
+            "not independent failures or proof of hub-wide CPU utilisation.",
+            "Inspect app execution frequency, recent scoped exception logs, "
+            "schedule and configuration before changing or disabling anything.",
+        ))
+    return out
+
+
 def _priority_entries(
     snapshot: dict[str, Any],
     targeted_logs: list[dict[str, Any]] | None,
@@ -63,9 +119,13 @@ def _priority_entries(
         (str(item.get("kind") or ""), str(item["id"])): item
         for item in scoped
     }
-    entries: list[tuple[str, str, str]] = []
+    entries: list[tuple[str, str, str]] = _excessive_load_entries(
+        scoped, known_unpowered=sensecap_known_unpowered,
+    )
     flagged_offline: set[str] = set()
     for row in offline:
+        if len(entries) >= 5:
+            break
         device_id = str(row["id"])
         source = by_id.get(("device", device_id))
         if source is None:
@@ -84,7 +144,7 @@ def _priority_entries(
             "watchdog event, not physical device recovery; do not reset or re-pair yet.",
         ))
     remaining = [row for row in offline if str(row["id"]) not in flagged_offline]
-    if remaining:
+    if remaining and len(entries) < 5:
         names = ", ".join(
             f"{_safe_name(row.get('label') or row['id'])} ({row['id']})"
             for row in remaining[:5]
