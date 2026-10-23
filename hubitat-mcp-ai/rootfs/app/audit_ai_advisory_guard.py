@@ -28,6 +28,22 @@ _PCT_BUSY_CAUSAL = re.compile(
     r"\s+values?\s+increas(?:e|es)\s+the\s+risk\b[^\n]*"
 )
 
+_UNVERIFIED_MANUAL_CONTROL = re.compile(
+    r"(?i)\b(?:the\s+)?device\s+is\s+currently\s+unavailable\s+for\s+"
+    r"automation\s+triggers?\s+or\s+manual\s+control\b[^\n.]*"
+)
+_UNVERIFIED_HEARTBEAT = re.compile(
+    r"(?i)\bthe\s+monitoring\s+mechanism\s+is\s+currently\s+non[- ]functional\b"
+)
+_CPU_CYCLES_OVERCLAIM = re.compile(
+    r"(?i)\b(?:these\s+components?\s+are\s+)?utiliz(?:ing|e)\s+"
+    r"a\s+larger\s+fraction\s+of\s+the\s+hub's\s+available\s+"
+    r"processing\s+cycles\b[^\n.]*"
+)
+_UNVERIFIED_CONNECTIVITY_ROOT = re.compile(
+    r"(?i)\bBedroom\s+3\s+Mesh\s+\(ID\s+7103\)\s+Connectivity\s+Failure\b"
+)
+
 _TOPN_NEGATIVE = re.compile(
     r"(?i)\b(?:target apps? (?:are|is) not (?:high[- ]load|major)[^\n]*|"
     r"(?:these|those|the target) apps?\s+are\s+unlikely\s+to\s+be\s+"
@@ -69,6 +85,15 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
                            or "20 top-ranked" in host)
     saturated_logs = "log window saturated" in host
     known_unpowered = "sensecap d1" in host and "intentionally" in host and "unpowered" in host
+    offline_scope_only = (
+        "offline-device evidence" in host
+        and "verify upstream telemetry" in host
+    )
+    heartbeat_cadence_unverified = (
+        "lighting automation heartbeat" in host
+        and ("old last-activity timestamp alone cannot prove failover is broken" in host
+             or "intended heartbeat schedule" in host)
+    )
     unverified_automation_impact = (
         "offline-device evidence" in host
         and "automation configuration and dependency investigation" in host
@@ -96,6 +121,33 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
         if line.startswith("### "):
             in_table = "target app summary" in clean
         result = line
+        if offline_scope_only and _UNVERIFIED_MANUAL_CONTROL.search(result):
+            result = _UNVERIFIED_MANUAL_CONTROL.sub(
+                "The device is reported offline; this does not independently "
+                "verify the outcome of specific commands or automation triggers",
+                result,
+            )
+            reasons.add("offline_manual_control_unverified")
+        if offline_scope_only and _UNVERIFIED_CONNECTIVITY_ROOT.search(result):
+            result = _UNVERIFIED_CONNECTIVITY_ROOT.sub(
+                "Bedroom 3 Mesh (ID 7103) — Reported Offline With Watchdog Warnings",
+                result,
+            )
+            reasons.add("offline_root_cause_unverified")
+        if heartbeat_cadence_unverified and _UNVERIFIED_HEARTBEAT.search(result):
+            result = _UNVERIFIED_HEARTBEAT.sub(
+                "the monitoring mechanism's current function is unverified "
+                "without an expected reporting cadence or execution evidence",
+                result,
+            )
+            reasons.add("heartbeat_cadence_unverified")
+        if bounded_performance and _CPU_CYCLES_OVERCLAIM.search(result):
+            result = _CPU_CYCLES_OVERCLAIM.sub(
+                "have higher pctBusy in the returned statistics; this is "
+                "not a measured fraction of the hub's CPU processing cycles",
+                result,
+            )
+            reasons.add("pctbusy_cpu_share_unverified")
         if unverified_automation_impact:
             if _UNVERIFIED_OFFLINE_TITLE.search(result):
                 result = _UNVERIFIED_OFFLINE_TITLE.sub(
