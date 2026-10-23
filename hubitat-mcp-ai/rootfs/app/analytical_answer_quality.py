@@ -28,7 +28,7 @@ _POSSIBILITY_REQUEST = re.compile(
 )
 _EXPLANATORY_REQUEST = re.compile(
     r"(?i)\b(?:why|how|explain|analyse|analyze|cause|reason|"
-    r"recommend|which is|what should|what does this mean)\b"
+    r"recommend|investigat\w*|summari[sz]e|assess|audit|which is|what should|what does this mean)\b"
 )
 _RELATIONAL_ANSWER = re.compile(
     r"(?i)\b(?:whereas|while|compared|versus|vs\.?|relative|"
