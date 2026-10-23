@@ -10,6 +10,7 @@ from typing import Any
 from automation_diagnostic_policy import is_targeted_device_transition_investigation
 from performance_job_analysis import summarize_job_workload
 from audit_priority_planner import render_audit_priorities, render_audit_scheduled_jobs
+from audit_reasoning_context import build_audit_reasoning_packet
 from scheduler_identity_reconciliation import (
     reconcile_scheduler_candidates,
     render_scheduler_candidate_reconciliation,
@@ -912,6 +913,12 @@ def render_comprehensive_system_audit(
         f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
         "**Read-only:** no devices, rules, apps or settings have been changed.",
         "",
+        *([
+            "### Reasoned answer (AI interpretation; not independent evidence)",
+            "Optional AI diagnostic hypotheses — unverified.",
+            ai_advisory,
+            "",
+        ] if ai_advisory else []),
         render_audit_priorities(
             snapshot, targeted_logs,
             sensecap_known_unpowered=sensecap_known_unpowered,
@@ -1378,14 +1385,6 @@ def render_comprehensive_system_audit(
     ) or [
         "- No specific fix is justified from the currently returned fault evidence."
     ])
-    if ai_advisory:
-        lines.extend((
-            "",
-            "### Optional AI diagnostic hypotheses — unverified",
-            "Model-generated investigation suggestions only. These do not "
-            "replace MCP evidence or authorize device changes.",
-            ai_advisory[:1800],
-        ))
     lines.extend((
         "",
         "### Repair status",
@@ -1836,7 +1835,16 @@ async def run_comprehensive_chat_audit(
         # suggestions. The deterministic report remains authoritative.
         system_prompt = (
             "You are analysing a read-only Hubitat diagnostic report. "
-            "Return at most three brief, evidence-linked investigative hypotheses. "
+            "Answer the user's actual audit question, not just list faults. "
+            "Lead with the three strongest evidence-backed findings, "
+            "separating performance risk from errors and expected conditions. "
+            "For each, give observed evidence, practical impact, likely "
+            "alternative explanations, degree of certainty and ONE targeted "
+            "read-only next test. Rank by evidence and likely user impact, "
+            "not by raw pctBusy. Do not infer CPU load from wall-clock "
+            "inventory duration, busy percent from absolute CPU share, "
+            "or scheduled collisions from identical next-run timestamps. "
+            "Provide a concise answer, not a full copy of the audit. "
             "Use only the supplied report. Separate known user configuration from "
             "verified device evidence. Do not invent IP addresses, missing tools, "
             "diagnoses or repairs. Never request or execute a state change. "
@@ -1864,13 +1872,14 @@ async def run_comprehensive_chat_audit(
                         ("User's investigation question: "
                          + analysis_focus.strip()[:400] + "\n\n")
                         if analysis_focus and analysis_focus.strip() else ""
-                    ) + message[:7000]},
+                    ) + build_audit_reasoning_packet(message)},
                 ], []),
-                timeout=12.0,
+                timeout=18.0,
             )
             advisory = _complete_ai_advisory(
                 response.get("content") or ""
-                if isinstance(response, dict) else ""
+                if isinstance(response, dict) else "",
+                max_chars=3000,
             )
             if advisory:
                 message = render_comprehensive_system_audit(

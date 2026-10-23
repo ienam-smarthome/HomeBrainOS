@@ -232,6 +232,8 @@ def test_chat_request_uses_full_audit_before_general_agent(monkeypatch) -> None:
         raise AssertionError("Generic agent should not handle comprehensive audit")
 
     monkeypatch.setattr(app_module, "run_comprehensive_chat_audit", fake_full_audit)
+    monkeypatch.setitem(app_module.OPTIONS,
+                        "comprehensive_audit_ai_analysis_enabled", False)
     monkeypatch.setattr(app_module.agent, "process_user_request_result", unexpected_agent)
 
     prompt = "check hub logs including device stats, app stats, hub events for issues and fix"
