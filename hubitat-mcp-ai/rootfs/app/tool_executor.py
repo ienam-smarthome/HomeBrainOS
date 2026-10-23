@@ -35,6 +35,7 @@ from reasoning_policy import (
 )
 from request_metrics import add_active_metric_ms, increment_active_metric
 from source_evidence_metadata import source_read_metadata
+from existing_rule_page_evidence import existing_rule_page_metadata
 from tool_registry import ToolEffect, classify_tool_effect
 
 
@@ -544,6 +545,7 @@ class ToolExecutor:
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,
                     details=(source_read_metadata(name, receipt_arguments, result.data)
+                             or existing_rule_page_metadata(name, receipt_arguments, result.data)
                              or self.result_details(result)),
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
