@@ -74,7 +74,7 @@ QUESTION_FIRST_CONTRACT = (
     "event or causal mechanism. Avoid boilerplate, repeated caveats and raw "
     "field dumps. Provide one decisive next verification step only when the "
     "remaining uncertainty matters. Preserve all safety/authorization boundaries "
-    "and do not reveal private reasoning."
+    "and do not reveal hidden reasoning."
 )
 
 
