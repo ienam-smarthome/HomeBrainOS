@@ -92,7 +92,11 @@ def test_cross_domain_audit_preempts_narrow_performance_summary(monkeypatch, tmp
     request = SimpleNamespace(message=WHOLE_HUB, history=[], session_id="test")
     result = asyncio.run(module._agent_request(request))
     assert result.route == "comprehensive-system-audit"
-    assert calls == [("audit", {})]
+    assert len(calls) == 1 and calls[0][0] == "audit"
+    assert calls[0][1]["analysis_focus"] == WHOLE_HUB
+    assert callable(calls[0][1]["analysis_chat"])
+    # Full source collection still takes precedence over narrow performance
+    # summary; AI can only interpret the already collected audit afterward.
 
 
 def test_scheduler_only_optimisation_preserves_performance_route(monkeypatch, tmp_path):
