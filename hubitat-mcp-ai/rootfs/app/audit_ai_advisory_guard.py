@@ -44,6 +44,21 @@ _UNVERIFIED_CONNECTIVITY_ROOT = re.compile(
     r"(?i)\bBedroom\s+3\s+Mesh\s+\(ID\s+7103\)\s+Connectivity\s+Failure\b"
 )
 
+_LOAD_THROTTLE_CLAIM = re.compile(
+    r"(?i)\bHubitat'?s?\s+internal\s+load\s+protection\s+is\s+"
+    r"actively\s+throttling\s+this\s+app\b[^\n.]*"
+)
+_OFFLINE_UNREACHABLE_CLAIM = re.compile(
+    r"(?i)\bthe\s+device\s+is\s+currently\s+unreachable\s+"
+    r"and\s+unable\s+to\s+trigger\s+or\s+receive\s+commands\b[^\n.]*"
+)
+_AVERAGE_MS_CAUSAL = re.compile(
+    r"(?i)\b(?:extremely\s+)?high\s+average\s+execution\s+times?\s+"
+    r"for\s+a\s+single\s+app\s+increas(?:e|es)\s+the\s+risk\s+"
+    r"of\s+triggering\s+(?:the\s+)?(?:\x60)?LimitExceededException(?:\x60)?"
+    r"\s+observed\s+above\b[^\n.]*"
+)
+
 _TOPN_NEGATIVE = re.compile(
     r"(?i)\b(?:target apps? (?:are|is) not (?:high[- ]load|major)[^\n]*|"
     r"(?:these|those|the target) apps?\s+are\s+unlikely\s+to\s+be\s+"
@@ -94,6 +109,11 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
         and ("old last-activity timestamp alone cannot prove failover is broken" in host
              or "intended heartbeat schedule" in host)
     )
+    observed_load_exception = (
+        "device status report display" in host
+        and "limitexceededexception" in host
+        and "app 3977" in host
+    )
     unverified_automation_impact = (
         "offline-device evidence" in host
         and "automation configuration and dependency investigation" in host
@@ -121,6 +141,30 @@ def calibrate_audit_ai_advisory(advisory: str, report: str) -> tuple[str, tuple[
         if line.startswith("### "):
             in_table = "target app summary" in clean
         result = line
+        if observed_load_exception and _LOAD_THROTTLE_CLAIM.search(result):
+            result = _LOAD_THROTTLE_CLAIM.sub(
+                "Hubitat recorded excessive-load exceptions naming this "
+                "app; whether it throttled ongoing calls or affected other "
+                "apps was not established by this audit",
+                result,
+            )
+            reasons.add("throttling_effect_unverified")
+        if offline_scope_only and _OFFLINE_UNREACHABLE_CLAIM.search(result):
+            result = _OFFLINE_UNREACHABLE_CLAIM.sub(
+                "The device is reported offline with watchdog warnings; "
+                "actual command reachability and trigger outcomes were "
+                "not independently tested",
+                result,
+            )
+            reasons.add("offline_command_effect_unverified")
+        if observed_load_exception and bounded_performance and _AVERAGE_MS_CAUSAL.search(result):
+            result = _AVERAGE_MS_CAUSAL.sub(
+                "The long averageMs value warrants investigation alongside "
+                "independently observed excessive-load errors; the sample "
+                "does not prove which operation caused each exception",
+                result,
+            )
+            reasons.add("runtime_exception_causality_unverified")
         if offline_scope_only and _UNVERIFIED_MANUAL_CONTROL.search(result):
             result = _UNVERIFIED_MANUAL_CONTROL.sub(
                 "The device is reported offline; this does not independently "
