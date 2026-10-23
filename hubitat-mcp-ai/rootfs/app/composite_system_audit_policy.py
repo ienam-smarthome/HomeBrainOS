@@ -45,11 +45,11 @@ def is_cross_domain_hub_audit_request(question: str) -> bool:
     # "Device Status Report" is an app name, not a request to audit all
     # devices. The generic _GLOBAL check intentionally accepts "Hubitat",
     # but "Hubitat load" is not, by itself, explicit global scope.
-    app_ids = set(re.findall(r"\\bapp\\s*#?\\s*([1-9]\\d{1,8})\\b", text, re.I))
+    app_ids = set(re.findall(r"\bapp\s*#?\s*([1-9]\d{1,8})\b", text, re.I))
     explicitly_whole = bool(re.search(
-        r"\\b(?:whole|entire|full|comprehensive|system[\\s-]?wide|"
-        r"all\\s+(?:apps?|rules?|devices?|automations?|drivers?)|"
-        r"my\\s+hubitat\\s+system|my\\s+smart[\\s-]?home)\\b",
+        r"\b(?:whole|entire|full|comprehensive|system[\s-]?wide|"
+        r"all\s+(?:apps?|rules?|devices?|automations?|drivers?)|"
+        r"my\s+hubitat\s+system|my\s+smart[\s-]?home)\b",
         text, re.I,
     ))
     if 2 <= len(app_ids) <= 8 and not explicitly_whole:
