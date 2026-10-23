@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "kind": "synthetic_read_only_reasoning_fixture",
+  "cases": [
+    {
+      "id": "hub_overload",
+      "title": "Evidence priority versus offline status",
+      "prompt": "On the supplied evidence alone, name the top three concerns, compare plausible causes and provide one read-only discriminator for each. Do not diagnose CPU utilisation from pctTotal.",
+      "evidence": [
+        "A bounded Hubitat log sample records 'App 3933 generates excessive hub load' on Octopus Live Meter updates, 'App 4061 generates excessive hub load' on two Life360 member device reports, and 'App 3977 generates excessive hub load' on a status report update.",
+        "Bedroom 3 Mesh and a remote device report offline; causes are not independently established.",
+        "A sampled app pctTotal value is 109.418; the value's source denominator has not been established.",
+        "Scheduler inventory contains 276 jobs; count alone cannot establish contention or queue delay."
+      ],
+      "checks": [
+        {
+          "name": "Actual excessive-load errors",
+          "indicators": [
+            "excessive hub load",
+            "limitexceededexception",
+            "load exception"
+          ]
+        },
+        {
+          "name": "Distinguishes distinct apps from duplicate reporters",
+          "indicators": [
+            "same app",
+            "one app",
+            "deduplicat",
+            "two member",
+            "shared app",
+            "app 4061"
+          ]
+        },
+        {
+          "name": "Qualifies pctTotal denominator",
+          "indicators": [
+            "denominator",
+            "not cpu",
+            "not a cpu",
+            "cannot infer cpu",
+            "percentage semantics"
+          ]
+        },
+        {
+          "name": "Treats offline status separately",
+          "indicators": [
+            "offline",
+            "mesh"
+          ]
+        },
+        {
+          "name": "Suggests discriminating observation",
+          "indicators": [
+            "read-only",
+            "execution cadence",
+            "execution frequency",
+            "compare logs",
+            "inspect schedule",
+            "check logs"
+          ]
+        }
+      ],
+      "potential_overclaims": [
+        "109% cpu utilisation",
+        "109% cpu utilization",
+        "confirmed hub cpu saturation",
+        "disable all",
+        "root cause proven"
+      ]
+    },
+    {
+      "id": "tv_pairing",
+      "title": "Chronological recovery without proof of continuing health",
+      "prompt": "Does the sequence prove Android TV Remote connectivity is now healthy? Explain what is observed, what remains uncertain and the best read-only follow-up.",
+      "evidence": [
+        "A certificate-related warning was logged at 18:40:28.",
+        "A successful pairing message from the same remote was logged at 18:43:05.",
+        "No reliable subsequent command/connection status history is present in the supplied sample."
+      ],
+      "checks": [
+        {
+          "name": "Acknowledges certificate warning",
+          "indicators": [
+            "certificate",
+            "warning"
+          ]
+        },
+        {
+          "name": "Acknowledges later successful pairing",
+          "indicators": [
+            "pairing success",
+            "successfully pair",
+            "successful pairing",
+            "paired successfully",
+            "later success"
+          ]
+        },
+        {
+          "name": "Infers possible recovery, not certainty",
+          "indicators": [
+            "possible recovery",
+            "may have recovered",
+            "plausible recovery",
+            "suggests recovery",
+            "potential recovery"
+          ]
+        },
+        {
+          "name": "States continuing connectivity is unverified",
+          "indicators": [
+            "not proven",
+            "not established",
+            "unverified",
+            "cannot confirm",
+            "not guarantee",
+            "not verified"
+          ]
+        },
+        {
+          "name": "Read-only follow-up",
+          "indicators": [
+            "read-only",
+            "recent connection",
+            "subsequent command",
+            "later log",
+            "connectivity check",
+            "status history"
+          ]
+        }
+      ],
+      "potential_overclaims": [
+        "permanently fixed",
+        "guaranteed healthy",
+        "definitely fixed",
+        "certificate error resolved forever"
+      ]
+    },
+    {
+      "id": "rule_lockout",
+      "title": "Configuration versus execution",
+      "prompt": "The user intended a three-minute motion lockout. What can be concluded about the live rule and how should it be checked without changing anything?",
+      "evidence": [
+        "A scoped persisted-setting read for app 4019 returned motionOffLockoutMinutes=300.",
+        "The user reports their intended lockout is three minutes.",
+        "The active state/countdown and historic rule executions were not independently verified in this sample.",
+        "A separate external command had switched the light ON; that alone does not establish how lockout changes."
+      ],
+      "checks": [
+        {
+          "name": "Identifies stored 300-minute duration",
+          "indicators": [
+            "300 minute",
+            "300-minute",
+            "300 minutes",
+            "300 min"
+          ]
+        },
+        {
+          "name": "Identifies intended 3-minute duration",
+          "indicators": [
+            "3 minute",
+            "3-minute",
+            "three minute",
+            "3 min"
+          ]
+        },
+        {
+          "name": "Separates persisted configuration from execution",
+          "indicators": [
+            "persisted",
+            "stored setting",
+            "configuration",
+            "configured"
+          ]
+        },
+        {
+          "name": "Avoids certifying active lockout",
+          "indicators": [
+            "not verified",
+            "unverified",
+            "cannot confirm",
+            "not established",
+            "does not prove"
+          ]
+        },
+        {
+          "name": "Read-only follow-up",
+          "indicators": [
+            "read-only",
+            "inspect log",
+            "execution log",
+            "current status",
+            "read settings",
+            "inspect state"
+          ]
+        }
+      ],
+      "potential_overclaims": [
+        "lockout has been fixed",
+        "confirmed active 300 minutes",
+        "external on cleared lockout",
+        "automatically corrected"
+      ]
+    }
+  ]
+}
