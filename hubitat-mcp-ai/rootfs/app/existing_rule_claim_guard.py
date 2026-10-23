@@ -197,10 +197,48 @@ def _page_read_observations(receipts: list[dict[str, Any]]) -> list[str]:
                 + " (recognised rows, encounter order; may be incomplete)."
             )
         else:
-            out.append(
-                f"- App {app_id}: selectActions editor page was read, but no "
-                "allowlisted action syntax was recoverable."
+            inspected = details.get("paragraphsInspected")
+            count_note = (
+                f" ({inspected} paragraphs inspected)"
+                if type(inspected) is int and 0 <= inspected <= 4096 else ""
             )
+            out.append(
+                f"- App {app_id}: selectActions editor page was read"
+                f"{count_note}, but no allowlisted action syntax was recoverable."
+            )
+        if not fragments:
+            hints = details.get("paragraphSyntaxHints")
+            shapes = details.get("paragraphShapeCounts")
+            if isinstance(hints, dict):
+                allowed = (
+                    "cancel_delayed", "conditional_if", "end_if",
+                    "delay", "switch_off", "switch_on",
+                )
+                found = [
+                    f"{name}={hints[name]}"
+                    for name in allowed
+                    if type(hints.get(name)) is int
+                    and 0 < hints[name] <= 4096
+                ]
+                if found:
+                    out.append(
+                        f"- App {app_id}: unclassified page syntax hints: "
+                        + ", ".join(found)
+                        + " (mentions only, not validated action rows)."
+                    )
+            if isinstance(shapes, dict):
+                shapes_found = [
+                    f"{key}={shapes[key]}"
+                    for key in ("numbered_or_bulleted", "html_markup",
+                                "over_limit", "multiline", "non_string")
+                    if type(shapes.get(key)) is int and 0 < shapes[key] <= 4096
+                ]
+                if shapes_found:
+                    out.append(
+                        f"- App {app_id}: paragraph formatting: "
+                        + ", ".join(shapes_found)
+                        + "."
+                    )
         if details.get("pageRowsTruncated") is True:
             out.append(f"- App {app_id}: editor page observation was truncated.")
     return out
