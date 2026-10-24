@@ -47,8 +47,12 @@ def test_ambiguous_phrase_is_source_first_not_rule_machine():
     assert is_existing_rule_verification_request(REQUEST)
     # Production orchestrator explicitly gives source intent priority.
     text = (ROOT / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
-    assert "not source_investigation\n            and is_existing_rule_verification_request" in text
-    assert "not source_investigation\n            and requires_rule_logic_inspection" in text
+    assert "existing_rule_verification = (" in text
+    assert "deep_rule_review = (" in text
+    assert 'not source_investigation' in text
+    assert 'interpreted_kind == "existing_rule_verification"' in text
+    assert "is_existing_rule_verification_request(user_prompt)" in text
+    assert "requires_rule_logic_inspection(user_prompt)" in text
 
 
 def test_method_focus_rejects_irrelevant_rule_report():
