@@ -19,6 +19,7 @@ if str(APP) not in sys.path:
 from ai_investigation_routing import (
     ReadRouteDecision, _parse_route, active_read_route, decide_read_route,
     explicit_system_check_command, reset_read_route, set_read_route,
+    explicit_whole_hub_report_request, explicit_aggregate_performance_request,
 )
 from investigation_objective import resolve_primary_objective
 from health_audit_service import is_comprehensive_system_audit_request
@@ -136,6 +137,22 @@ async def test_short_explicit_system_check_keeps_zero_model_overhead():
     assert not calls
     assert explicit_system_check_command("Please show my system check report")
     assert not explicit_system_check_command(CLAUDE_COMPARISON)
+
+
+def test_deliberate_entire_hub_and_scheduler_reports_skip_router():
+    assert explicit_whole_hub_report_request(WHOLE_HUB)
+    assert explicit_whole_hub_report_request(
+        "Perform a comprehensive read-only investigation of my Hubitat system."
+    )
+    assert explicit_whole_hub_report_request(
+        "Review all devices and installed automations with scheduler logs."
+    )
+    assert not explicit_whole_hub_report_request(NO_ID_FOCUSED)
+    assert not explicit_whole_hub_report_request(CLAUDE_COMPARISON)
+    assert explicit_aggregate_performance_request(
+        "Analyse all scheduled jobs by handler and suggest efficiency improvements."
+    )
+    assert not explicit_aggregate_performance_request(NO_ID_FOCUSED)
 
 
 def test_model_route_context_is_request_local_and_reset():
