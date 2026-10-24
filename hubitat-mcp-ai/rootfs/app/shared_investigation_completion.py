@@ -35,6 +35,7 @@ from recorded_telemetry_freshness import (
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from history_temporal_analysis import direct_recorded_duration_answer
+from request_outcome_policy import classify_completed_request
 from incident_reasoning_depth import assess_incident_reasoning_depth
 from device_watchdog_evidence import correlate_elapsed_watchdog_with_device_events
 from investigation_objective import resolve_primary_objective
@@ -170,9 +171,18 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     direct_duration = direct_recorded_duration_answer(request, evidence)
     if direct_duration is not None:
         direct_message, duration_coverage = direct_duration
+        duration_metrics = _safe_metrics(outcome, partial=False)
+        # A bounded factual estimate answers the question without needing
+        # historical command-source attribution. Legacy causal checks may
+        # have labelled this request unresolved, but never override an actual
+        # failure, refusal or missing-target counter with false success.
+        if (duration_metrics.get("outcome") in (None, "unresolved")
+                and classify_completed_request(
+                    duration_metrics.get("counters")
+                ) == "success"):
+            duration_metrics["outcome"] = "success"
         return _CoverageOutcome(
-            outcome, duration_coverage,
-            _safe_metrics(outcome, partial=False), direct_message,
+            outcome, duration_coverage, duration_metrics, direct_message,
         )
     # Code-reading obligations are not historical command-provenance
     # obligations. A successful config read or empty source read is NOT
