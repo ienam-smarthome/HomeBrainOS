@@ -111,5 +111,6 @@ def test_full_workbench_with_wrong_answer_remains_unresolved():
 
 def test_source_question_skips_generic_performance_rewrite():
     path = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert "if requested_groovy_app_id(request.message) is not None:" in path
+    assert "primary_objective = resolve_primary_objective(request.message)" in path
+    assert "if primary_objective.is_source:" in path
     assert "return outcome\n        return await finalize_performance_api_outcome(" in path
