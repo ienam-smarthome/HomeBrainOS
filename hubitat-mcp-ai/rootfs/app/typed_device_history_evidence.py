@@ -7,7 +7,11 @@ distinct proof classes. This module never asserts physical command delivery.
 """
 from __future__ import annotations
 
-from device_watchdog_evidence import summarize_device_watchdog, render_device_watchdog
+from device_watchdog_evidence import (
+    summarize_device_watchdog, render_device_watchdog,
+    correlate_elapsed_watchdog_with_device_events,
+    render_elapsed_watchdog_correlation,
+)
 
 from skill_decision_summary import telemetry_skill_conclusion
 
@@ -449,6 +453,14 @@ def render_target_device_evidence_answer(
     watchdog = summarize_device_watchdog(evidence, str(summary["deviceId"]))
     if watchdog is not None:
         lines.append(render_device_watchdog(watchdog))
+        # Derive a counter-reference alignment only from multiple exact
+        # device-scoped warning rows plus target-origin event timestamps.
+        # This is a temporal clue, never a physical last-contact assertion.
+        alignment = correlate_elapsed_watchdog_with_device_events(
+            evidence, str(summary["deviceId"]),
+        )
+        if alignment is not None:
+            lines.append(render_elapsed_watchdog_correlation(alignment))
     if summary.get("truncated"):
         lines.append(
             "**History integrity:** The returned event page is explicitly "
