@@ -58,6 +58,20 @@ def _outcome(answer: str, *, method_shown: bool):
                     ["setReportData"] if method_shown else []
                 ),
             },
+        }, {
+            "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+            "arguments": {"tool": "hub_get_logs", "args": {
+                "appId": "3977", "since": "24h", "limit": 100
+            }},
+            "details": {"logCount": 0},
+            "success": True, "mutates": False, "effect": "read",
+        }, {
+            "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+            "arguments": {"tool": "hub_get_logs", "args": {
+                "deviceId": "7182", "since": "24h", "limit": 100
+            }},
+            "details": {"logCount": 0},
+            "success": True, "mutates": False, "effect": "read",
         }],
     )
 
