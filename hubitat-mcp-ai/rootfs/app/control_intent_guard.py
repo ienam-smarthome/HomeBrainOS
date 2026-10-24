@@ -40,6 +40,49 @@ _PROTECTED = re.compile(
 _UNBOUNDED_TARGET = re.compile(
     r"(?i)\b(?:all|every|everything|whole|entire)\b"
 )
+# This grammar admits only a command-like *beginning* to the semantic
+# control planner. It does not independently authorise an action; the model
+# or exact parser must still generate and ground a valid typed plan.
+_SEMANTIC_CONTROL_LEAD = re.compile(
+    r"(?i)^\s*(?:please\s+|(?:(?:can|could|would|will)\s+you\s+"
+    r"(?:please\s+)?))?"
+    r"(?:turn|switch|power|toggle|set|dim|change|brighten|"
+    r"increase|decrease|raise|lower|reduce|adjust|make|"
+    r"boost|heat|cool)\b"
+)
+_EXPLICIT_READ_ONLY = re.compile(
+    r"(?i)\b(?:read[\s-]*only|do\s+not\s+(?:modify|change|"
+    r"control|turn|switch|execute|send|write|alter)\s+anything|"
+    r"don['’]?t\s+(?:modify|change|execute|send|write)\s+anything|"
+    r"no\s+(?:device\s+)?changes|without\s+(?:making|"
+    r"any)\s+changes)\b"
+)
+
+
+def explicitly_read_only_request(prompt: str) -> bool:
+    """No-write instruction for the current action, not a route to execute.
+
+    The read-only clause protects the investigation. A separately requested
+    later write (e.g. "Read-only verify X. Also disable Y") retains ordinary
+    host write/confirmation checks; it does not execute as a fast shortcut.
+    An explicit global "do not modify anything" still vetoes everything.
+    """
+    text = str(prompt or "")
+    match = _EXPLICIT_READ_ONLY.search(text)
+    if match is None:
+        return False
+    if not re.fullmatch(r"read[\s-]*only", match.group(), flags=re.I):
+        return True
+    # Only a *new* independently imperative clause after a scoped READ-ONLY
+    # instruction can restore write intent. Embedded historical descriptions
+    # like "turn ON" and explanatory questions do not.
+    independent_later_write = re.search(
+        r"(?i)[.!?;]\s+(?:(?:also|then|instead)\s+)?"
+        r"(?:please\s+)?(?:turn|switch|set|change|create|delete|"
+        r"disable|enable|restart|block|unblock|allow|configure)\b",
+        text[match.end():],
+    )
+    return independent_later_write is None
 
 
 def unqualified_immediate_clause(prompt: str) -> bool:
@@ -50,7 +93,8 @@ def unqualified_immediate_clause(prompt: str) -> bool:
     """
     text = " ".join(str(prompt or "").strip().split())
     return bool(
-        text and not _INTERROGATIVE_CONTROL.search(text)
+        text and not explicitly_read_only_request(text)
+        and not _INTERROGATIVE_CONTROL.search(text)
         and not _CANCELLED.search(text)
         and not _EXPLANATORY_TARGET.search(text)
         and not _UNQUALIFIED.search(text)
@@ -63,9 +107,15 @@ def semantic_control_clause_eligible(prompt: str) -> bool:
     post-grounding approval. Compound requests for a second *action* are
     excluded (e.g. "turn on TV and tell me its power").
     """
-    if unqualified_immediate_clause(prompt):
-        return True
     text = " ".join(str(prompt or "").strip().split())
+    # The earlier predicate accepted *any* unqualified sentence, including
+    # questions about automation behaviour, and sent it into a write-only
+    # sensitive-control resolver. Admit only command-shaped language.
+    if (not _SEMANTIC_CONTROL_LEAD.search(text)
+            or explicitly_read_only_request(text)):
+        return False
+    if unqualified_immediate_clause(text):
+        return True
     if not text or _INTERROGATIVE_CONTROL.search(text) or _CANCELLED.search(text):
         return False
     if re.search(
@@ -144,6 +194,6 @@ def needs_sensitive_control_confirmation(
 
 __all__ = [
     "unqualified_immediate_clause", "semantic_control_clause_eligible",
-    "unsafe_control_prompt",
+    "unsafe_control_prompt", "explicitly_read_only_request",
     "needs_sensitive_control_confirmation",
 ]
