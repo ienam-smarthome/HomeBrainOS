@@ -20,7 +20,10 @@ from source_analysis_completion import source_trace_ready_for_synthesis
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
-from device_incident_depth import device_incident_followup, is_connectivity_root_cause_request
+from device_incident_depth import (
+    device_incident_followup, incident_progress_followup,
+    is_connectivity_root_cause_request, CONNECTIVITY_EVIDENCE_PLAN,
+)
 from paid_model_routing import (
     set_original_paid_request,
     reset_original_paid_request,
@@ -4057,7 +4060,8 @@ class UnifiedMCPAgent:
         # Request-local collector; never share source text between questions.
         source_chunks = SourceChunkCollector(user_prompt)
         adaptive_investigation = (
-            model_led_investigation_request(user_prompt)
+            (model_led_investigation_request(user_prompt)
+             or is_connectivity_root_cause_request(user_prompt))
             and not _explicit_mutation_request(user_prompt)
         )
         if adaptive_investigation or deep_rule_review:
@@ -4366,6 +4370,8 @@ class UnifiedMCPAgent:
             system_prompt += "\n\n" + task_plan.instruction()
         if adaptive_investigation:
             system_prompt += "\n\n" + READ_ONLY_AGENT_DIRECTIVE
+            if is_connectivity_root_cause_request(user_prompt):
+                system_prompt += "\n\n" + CONNECTIVITY_EVIDENCE_PLAN
         contract = None if source_investigation else plan_investigation(user_prompt)
         if contract is not None:
             system_prompt += (
@@ -4857,6 +4863,7 @@ class UnifiedMCPAgent:
 
         source_completion_retry_used = False
         device_incident_followup_used = False
+        device_incident_progress_retry_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -4875,7 +4882,7 @@ class UnifiedMCPAgent:
         )
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
-        for _ in range(active_round_budget):
+        for round_index in range(active_round_budget):
             if adaptive_investigation or review_first:
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
                 if source_investigation:
@@ -5243,6 +5250,40 @@ class UnifiedMCPAgent:
                             messages.extend([
                                 assistant,
                                 {"role": "user", "content": followup},
+                            ])
+                            tools = catalog.schemas()
+                            continue
+
+                # A targeted dependency lookup is a useful investigative
+                # lead but not proof of a controlling automation. Give the AI
+                # at most one progress-gated chance to inspect the actual
+                # stored configuration or driver source before stopping. Do
+                # not waste a retry after the last allotted model round.
+                if (connectivity_incident and device_incident_followup_used
+                        and not device_incident_progress_retry_used
+                        and round_index + 1 < active_round_budget
+                        and not self._mutation_requested_by_user.get()):
+                    followthrough = incident_progress_followup(
+                        user_prompt, self.evidence.receipts(),
+                    )
+                    if followthrough:
+                        device_incident_progress_retry_used = True
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit,
+                        )
+                        catalog.expose_read_gateways(
+                            ("hub_read_apps_code", "hub_read_rules",
+                             "hub_read_devices", "hub_read_diagnostics",
+                             SEARCH_TOOL),
+                            max_declared=self.tool_limit,
+                        )
+                        if catalog.schemas():
+                            increment_active_metric(
+                                "device_incident_progress_retry"
+                            )
+                            messages.extend([
+                                assistant,
+                                {"role": "user", "content": followthrough},
                             ])
                             tools = catalog.schemas()
                             continue
