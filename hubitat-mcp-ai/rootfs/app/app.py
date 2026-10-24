@@ -660,6 +660,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                 health_audit, mcp, ai_disabled_by_configuration=True,
             )
         if (not targeted_device and
+                not _explicit_mutation_request(request.message) and
                 (model_route == "performance_report" or
                  (model_route is None and broad_performance))):
             set_request_stage("Collecting Hubitat performance and scheduled jobs")
