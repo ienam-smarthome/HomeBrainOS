@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from investigation_objective import resolve_primary_objective
+
 from adaptive_investigation_policy import source_evidence_request
 from source_evidence_metadata import contiguous_source_coverage
 
@@ -53,37 +55,37 @@ def source_answer_focus(
     """
     question = str(request or "")
     response = str(answer or "")
-    named = re.search(
-        r"(?i)\b(?:method|function|procedure)\s+[\x60*]*"
-        r"([A-Za-z_][A-Za-z_0-9]{2,80})\b",
-        question,
-    )
-    symbol = named.group(1) if named else None
-    if symbol is None:
-        return {
-            "required": False, "satisfied": None, "method": None,
-            "missing": [],
-            "note": "No explicit method symbol selected for answer-focus check.",
-        }
-    method_mentioned = re.search(
-        r"(?<![A-Za-z_0-9])" + re.escape(symbol) + r"(?![A-Za-z_0-9])",
-        response, re.I,
-    ) is not None
+    # Resolve once with the same objective parser used by routing.
+    # "inspect the method body" must not create a fictitious method=body.
+    objective = resolve_primary_objective(question)
+    symbol = objective.method_symbol if objective.is_source else None
     wants_exception = bool(re.search(
         r"(?i)\b(?:LimitExceededException|excessive[- ]load|overload)\b",
         question,
     ))
+    if symbol is None and not wants_exception:
+        return {
+            "required": False, "satisfied": None, "method": None,
+            "missing": [],
+            "note": "No explicit method identifier or load-error objective found.",
+        }
+    method_mentioned = (
+        re.search(
+            r"(?<![A-Za-z_0-9])" + re.escape(symbol) + r"(?![A-Za-z_0-9])",
+            response, re.I,
+        ) is not None if symbol else True
+    )
     exception_context = bool(re.search(
         r"(?i)\b(?:LimitExceededException|excessive[- ]load|overload)\b",
         response,
     ))
     missing = []
-    if not method_mentioned:
+    if symbol and not method_mentioned:
         missing.append("named_method_not_addressed")
     if wants_exception and not exception_context:
         missing.append("requested_load_error_not_addressed")
     return {
-        "required": True,
+        "required": bool(symbol or wants_exception),
         "satisfied": not missing, "method": symbol,
         "missing": missing,
         "note": "Keyword alignment is not certification of method-body analysis or causation.",
