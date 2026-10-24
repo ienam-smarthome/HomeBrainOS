@@ -20,6 +20,7 @@ from source_analysis_completion import source_trace_ready_for_synthesis
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
+from device_incident_depth import device_incident_followup, is_connectivity_root_cause_request
 from paid_model_routing import (
     set_original_paid_request,
     reset_original_paid_request,
@@ -4826,6 +4827,7 @@ class UnifiedMCPAgent:
             return await self._final_answer(messages)
 
         source_completion_retry_used = False
+        device_incident_followup_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -5180,6 +5182,38 @@ class UnifiedMCPAgent:
                                       "read-only source; do not repeat already "
                                       "checked sources or invent tool leaves."
                                 )},
+                            ])
+                            tools = catalog.schemas()
+                            continue
+
+                # A single-device offline/MQTT investigation cannot be
+                # completed merely from status, a bounded event page and
+                # watchdog logs. Give the model ONE additional read-only
+                # opportunity to inspect installed driver code or controlling
+                # automation, or state which upstream capability is unavailable.
+                if (not device_incident_followup_used
+                        and not self._mutation_requested_by_user.get()):
+                    followup = device_incident_followup(
+                        user_prompt, self.evidence.receipts()
+                    )
+                    if followup:
+                        device_incident_followup_used = True
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit
+                        )
+                        catalog.expose_read_gateways(
+                            ("hub_read_apps_code", "hub_read_rules",
+                             "hub_read_devices", "hub_read_diagnostics",
+                             SEARCH_TOOL),
+                            max_declared=self.tool_limit,
+                        )
+                        if catalog.schemas():
+                            increment_active_metric(
+                                "device_incident_depth_retry"
+                            )
+                            messages.extend([
+                                assistant,
+                                {"role": "user", "content": followup},
                             ])
                             tools = catalog.schemas()
                             continue
@@ -5910,7 +5944,8 @@ class UnifiedMCPAgent:
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
 
-            if causal_subject_no_intervals:
+            if (causal_subject_no_intervals
+                    and not is_connectivity_root_cause_request(user_prompt)):
                 increment_active_metric("causal_subject_empty_stop")
                 messages.append({
                     "role": "user",
