@@ -1827,6 +1827,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     user_prompt, conversation_history, session_id=session_id,
                 )
 
+            # "Don't turn off X, just tell me its power" is a qualified
+            # read-only instruction, not a bare named-attribute shortcut.
+            # Preserve its full meaning in the model's evidence tool loop.
+            if re.match(
+                r"(?i)^\s*(?:don['’]?t|do\s+not|never)\s+"
+                r"(?:turn|switch|power|toggle)\b",
+                user_prompt,
+            ):
+                base_process = super(
+                    UnifiedMCPAgent, self,
+                ).process_user_request_result
+                return await base_process(
+                    user_prompt, conversation_history, session_id=session_id,
+                )
+
             # Source requests stay on the model-led investigation route.
             # Deterministic shortcut presenters only handle narrow snapshots,
             # never source evidence collection or causal/code synthesis.
