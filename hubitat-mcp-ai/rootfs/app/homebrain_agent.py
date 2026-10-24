@@ -36,7 +36,7 @@ from contextual_read_fast_path import (
 from confirmation_policy import ConfirmationAction
 from confirmation_store import CONFIRM_WORDS
 from control_intent_guard import (
-    unqualified_immediate_clause,
+    unqualified_immediate_clause, semantic_control_clause_eligible,
     needs_sensitive_control_confirmation,
 )
 from causal_subject_prefetch import (
@@ -1267,7 +1267,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         if (not self.semantic_agent_enabled
                 or AT_TIME.search(user_prompt) is not None
-                or not unqualified_immediate_clause(user_prompt)):
+                or not semantic_control_clause_eligible(user_prompt)):
             return None
 
         selected_device = self._selected_devices.get(session_key, "")
@@ -1453,6 +1453,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         already_confirmed: bool = False,
     ) -> AgentOutcome:
         if (not already_confirmed
+                and str(arguments.get("command") or "").casefold()
+                    in {"on", "off", "toggle"}
                 and needs_sensitive_control_confirmation(arguments)):
             return await self._stage_sensitive_routine_control(
                 arguments, session_key=session_key,
