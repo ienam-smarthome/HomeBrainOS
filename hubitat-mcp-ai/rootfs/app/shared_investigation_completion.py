@@ -248,7 +248,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             and str(focus["method"]).casefold() in observed_method_bodies
         )
         method_obligation_gap = bool(
-            objective.is_source and focus["required"] and not method_body_shown
+            objective.is_source and objective.method_symbol is not None
+            and not method_body_shown
         )
         # A Groovy excessive-load investigation can legitimately say an app
         # "caused" an exception without claiming that it sent any past
