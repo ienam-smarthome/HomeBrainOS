@@ -625,8 +625,12 @@ async def _agent_request(request: ChatRequest) -> Any:
             # the old deep-investigation trigger words. It still needs one
             # AI-interpreted objective before any specialist can reclassify it.
             or is_connectivity_root_cause_request(request.message)
+            # Rule-instance diagnostics should also let the AI decide what
+            # the user is investigating; a lexical "rule" match must not
+            # preempt their broader root-cause objective.
+            or targeted_rule
         )
-        if (candidate_fast_path and not targeted_rule
+        if (candidate_fast_path
                 and not primary_objective.is_source
                 and not _explicit_mutation_request(request.message)):
             if (explicit_system_check_command(request.message)
@@ -643,7 +647,8 @@ async def _agent_request(request: ChatRequest) -> Any:
                     agent._chat, request.message,
                 )
                 model_route = (
-                    "model_led" if targeted_device else decision.route
+                    "model_led" if (targeted_device or targeted_rule)
+                    else decision.route
                 )
                 if (decision.objective is not None
                         and model_route == decision.route):
