@@ -650,6 +650,13 @@ async def _agent_request(request: ChatRequest) -> Any:
                 goal, list(getattr(outcome, "evidence", []) or [])
             )
         set_request_stage("Preparing evidence-based answer")
+        if requested_groovy_app_id(request.message) is not None:
+            # A successful source-led investigation may also sample app
+            # performance. Do not send it through the separate performance
+            # synthesizer, which can overwrite method-level reasoning with
+            # a generic statistical answer (and spend another model round).
+            # Shared source coverage and API evidence validation still run.
+            return outcome
         return await finalize_performance_api_outcome(
             agent,
             mcp,
