@@ -57,6 +57,7 @@ from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationEr
 from groovy_source_investigation import requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import decide_read_route, set_read_route, reset_read_route, explicit_system_check_command
+from request_metrics import increment_active_metric
 from mcp_client import HubitatMCPClient
 from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
@@ -618,10 +619,18 @@ async def _agent_request(request: ChatRequest) -> Any:
             if explicit_system_check_command(request.message):
                 model_route = "system_audit"
             else:
+                increment_active_metric("ai_read_route_arbitrated")
                 decision = await decide_read_route(
                     agent._chat, request.message,
                 )
                 model_route = decision.route
+                if decision.provenance != "model_choice":
+                    increment_active_metric("ai_read_route_fallback")
+                increment_active_metric({
+                    "model_led": "ai_read_route_model_led",
+                    "system_audit": "ai_read_route_system_audit",
+                    "performance_report": "ai_read_route_performance",
+                }[model_route])
         if model_route is not None:
             route_token = set_read_route(model_route)
 
