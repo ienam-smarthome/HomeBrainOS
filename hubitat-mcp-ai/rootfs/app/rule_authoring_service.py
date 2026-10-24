@@ -340,6 +340,11 @@ class RuleAuthoringService:
         commands to modify state in the same prompt; never erase such writes.
         """
         text = " ".join(str(prompt or "").split())
+        from ai_investigation_routing import active_request_interpretation
+        interpreted = active_request_interpretation(prompt)
+        if interpreted is not None and interpreted.objective is not None:
+            # This is an objective interpretation, NOT write permission.
+            return interpreted.objective == "rule_design_review"
         if not re.search(r"\b(?:rule\s*machine|automation|rule)\b", text, re.I):
             return False
         # "automation behaviour" plus "read-only; do not change anything"
