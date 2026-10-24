@@ -34,6 +34,8 @@ from recorded_telemetry_freshness import (
     reconcile_telemetry_answer, render_command_only_evidence_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
+from incident_reasoning_depth import assess_incident_reasoning_depth
+from device_watchdog_evidence import correlate_elapsed_watchdog_with_device_events
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import active_request_interpretation
 from telemetry_clock_consistency import (
@@ -542,6 +544,22 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         if normalized is not None:
             coverage["normalizedDeviceHistory"] = normalized
             coverage["answerProjection"] = "target-scoped-mixed-event-evidence"
+            device_id = str(normalized["deviceId"])
+            correlation = correlate_elapsed_watchdog_with_device_events(
+                evidence, device_id,
+            )
+            if correlation is not None:
+                coverage["watchdogEventTimingCorrelation"] = correlation
+            # Successful source, log or diagnostic tools do not establish
+            # whether the retrieved driver logic was actually traced, which
+            # automation controls this device, or a physical upstream cause.
+            depth = assess_incident_reasoning_depth(evidence, device_id)
+            coverage["incidentReasoningDepth"] = depth
+            if not depth["keyDiscriminatorsCovered"]:
+                coverage["status"] = "partial-evidence"
+                coverage["evidenceComplete"] = False
+                partial = True
+                metrics["outcome"] = "unresolved"
             message = render_target_device_evidence_answer(
                 evidence, normalized,
             )
@@ -669,6 +687,17 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                   "only; a root cause requires analysing relevant method "
                   "branches and corroborating runtime/upstream evidence."
             )
+    if domain == "device_telemetry":
+        depth = coverage.get("incidentReasoningDepth")
+        if isinstance(depth, dict) and depth.get("missingDiscriminators"):
+            message += (
+                "\n\n**Investigation depth still missing:** "
+                + "; ".join(depth["missingDiscriminators"])
+                + ". These are missing proof dimensions, not proof that "
+                  "the corresponding component is faulty. "
+                  "A retrieved driver source is not automatically an "
+                  "analysis of its timer/reset/update branches."
+            )
     # The final reported outcome is separate from source/category completeness.
     # A successful source read must never convert an unresolved diagnosis to a
     # resolved physical/device cause.
@@ -687,6 +716,10 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "upstream initiator not independently established by the "
                 "shared source-class assessment"
             )
+        if domain == "device_telemetry":
+            depth = coverage.get("incidentReasoningDepth")
+            if isinstance(depth, dict) and depth.get("missingDiscriminators"):
+                limitations.append("root-cause discriminators remain unverified")
         if domain_proof_complete is False and not missing and not integrity and not causal:
             limitations.append(
                 "one or more required domain-specific observations remain unverified"
