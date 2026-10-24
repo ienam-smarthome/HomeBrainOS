@@ -12,7 +12,10 @@ import re
 from typing import Any
 
 from contextual_read_fast_path import is_pronoun_reference
-from control_intent_guard import unqualified_immediate_clause, unsafe_control_prompt
+from control_intent_guard import (
+    unqualified_immediate_clause, semantic_control_clause_eligible,
+    unsafe_control_prompt,
+)
 from time_expressions import AT_TIME, parse_clock
 
 _STRONG_CONTROL_VERBS = {
@@ -285,7 +288,8 @@ def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
     # Defer conditional, deferred, cancelled and multi-action text to the
     # model and independent host write authorization. '?' is a question,
     # not a device command.
-    if not unqualified_immediate_clause(value):
+    if (not unqualified_immediate_clause(value)
+            and not semantic_control_clause_eligible(value)):
         return None
 
     # Preserve the established immediate brightness grammar first. In
