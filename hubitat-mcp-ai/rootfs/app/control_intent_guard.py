@@ -60,12 +60,29 @@ _EXPLICIT_READ_ONLY = re.compile(
 
 
 def explicitly_read_only_request(prompt: str) -> bool:
-    """An explicit no-write constraint vetoes any immediate device control.
+    """No-write instruction for the current action, not a route to execute.
 
-    The assistant must not treat an embedded historical verb such as
-    'remained ON' as permission, even if other text resembles an imperative.
+    The read-only clause protects the investigation. A separately requested
+    later write (e.g. "Read-only verify X. Also disable Y") retains ordinary
+    host write/confirmation checks; it does not execute as a fast shortcut.
+    An explicit global "do not modify anything" still vetoes everything.
     """
-    return _EXPLICIT_READ_ONLY.search(str(prompt or "")) is not None
+    text = str(prompt or "")
+    match = _EXPLICIT_READ_ONLY.search(text)
+    if match is None:
+        return False
+    if not re.fullmatch(r"read[\s-]*only", match.group(), flags=re.I):
+        return True
+    # Only a *new* independently imperative clause after a scoped READ-ONLY
+    # instruction can restore write intent. Embedded historical descriptions
+    # like "turn ON" and explanatory questions do not.
+    independent_later_write = re.search(
+        r"(?i)[.!?;]\s+(?:(?:also|then|instead)\s+)?"
+        r"(?:please\s+)?(?:turn|switch|set|change|create|delete|"
+        r"disable|enable|restart|block|unblock|allow|configure)\b",
+        text[match.end():],
+    )
+    return independent_later_write is None
 
 
 def unqualified_immediate_clause(prompt: str) -> bool:
