@@ -24,8 +24,8 @@ _ACT = re.compile(
 # is not a claim that it issued a historical device command. Still guard
 # actual switch/command dispatch assertions inside those source reviews.
 _SOURCE_COMMAND_LANGUAGE = re.compile(
-    r"(?i)\\b(?:command(?:ed|s)?|issued|sent|switched|turned|"
-    r"on\\(\\)|off\\(\\)|setlevel\\(\\))\\b"
+    r"(?i)\b(?:command(?:ed|s)?|issued|sent|switched|turned|"
+    r"on\(\)|off\(\)|setlevel\(\))\b"
 )
 _DATE = re.compile(
     r"(?i)\b(?:on\s+)?(?:Oct(?:ober)?|Nov(?:ember)?|Sep(?:tember)?|"
