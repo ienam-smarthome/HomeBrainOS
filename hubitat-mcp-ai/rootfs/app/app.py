@@ -589,6 +589,8 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
+        primary_objective = resolve_primary_objective(request.message)
+        targeted_device = primary_objective.is_targeted_device
         broad_automation_diagnostic = is_broad_automation_runtime_diagnostic(
             request.message
         )
@@ -598,7 +600,8 @@ async def _agent_request(request: ChatRequest) -> Any:
             cross_domain_audit
             or is_comprehensive_system_audit_request(request.message)
         )
-        if (not targeted_rule and not _explicit_mutation_request(request.message)
+        if (not targeted_device and not targeted_rule
+                and not _explicit_mutation_request(request.message)
                 and (cross_domain_audit or
                      (not is_whole_hub_optimization_request(request.message)
                       and (comprehensive_audit or broad_automation_diagnostic)))):
@@ -624,7 +627,7 @@ async def _agent_request(request: ChatRequest) -> Any:
             return await run_comprehensive_chat_audit(
                 health_audit, mcp, ai_disabled_by_configuration=True,
             )
-        if is_broad_performance_request(request.message):
+        if not targeted_device and is_broad_performance_request(request.message):
             set_request_stage("Collecting Hubitat performance and scheduled jobs")
             outcome = await collect_broad_performance_outcome(agent, request.message)
             remember_verified_outcome(outcome)
@@ -639,7 +642,6 @@ async def _agent_request(request: ChatRequest) -> Any:
         # A direct/specialized completion may have bypassed its own evidence
         # assessment. Preserve the original investigative goal at the API
         # boundary rather than disguising an incomplete read as an answer.
-        primary_objective = resolve_primary_objective(request.message)
         goal = (
             None if primary_objective.is_source
             else plan_investigation(request.message)
