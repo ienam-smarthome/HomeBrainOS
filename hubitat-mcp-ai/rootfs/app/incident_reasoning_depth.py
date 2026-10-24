@@ -27,6 +27,8 @@ def assess_incident_reasoning_depth(
     ident = str(target_device_id or "")
     source = False
     source_attempted = False
+    source_ids: set[str] = set()
+    verified_target_driver_ids: set[str] = set()
     method_verified = False
     dependents_checked = False
     app_config_read = False
@@ -43,10 +45,19 @@ def assess_incident_reasoning_depth(
         detail = receipt.get("details") or {}
         detail = detail if isinstance(detail, dict) else {}
         succeeded = receipt.get("success") is True
+        if op == "hub_get_device" and succeeded and str(args.get("deviceId") or "") == ident:
+            # Only a typed mapping from a target-scoped device record can
+            # establish that a separately retrieved source is installed here.
+            mapped = detail.get("verifiedInstalledDriverCodeId")
+            if str(mapped or "").isdigit():
+                verified_target_driver_ids.add(str(mapped))
         if op == "hub_get_source" and str(args.get("type") or "").lower() == "driver":
             source_attempted = True
             if succeeded and detail.get("sourceRetrieved") is True:
                 source = True
+                code_id = str(detail.get("sourceCodeId") or args.get("id") or "")
+                if code_id.isdigit():
+                    source_ids.add(code_id)
                 method_verified = (method_verified or
                     detail.get("methodBehaviourVerified") is True)
         if op == "hub_list_device_dependents" and succeeded and str(args.get("deviceId") or "") == ident:
@@ -73,9 +84,12 @@ def assess_incident_reasoning_depth(
                     "upstream_telemetry_confirmation",
                 ) and detail.get("independentObservationVerified") is True):
             upstream_observed = True
+    driver_link_verified = bool(source_ids & verified_target_driver_ids)
     gaps = []
     if not source:
-        gaps.append("installed driver implementation not retrieved")
+        gaps.append("driver implementation source not retrieved")
+    if source and not driver_link_verified:
+        gaps.append("retrieved driver code ID not independently mapped to this device")
     if not method_verified:
         gaps.append("watchdog timer and last-data update paths not source-traced")
     if not (controlling_app_link_verified and app_config_read):
@@ -86,6 +100,7 @@ def assess_incident_reasoning_depth(
         "targetDeviceId": ident,
         "driverSourceAttempted": source_attempted,
         "driverSourceRetrieved": source,
+        "driverSourceLinkedToTarget": driver_link_verified,
         "driverMethodBehaviourVerified": method_verified,
         "deviceDependentAppsChecked": dependents_checked,
         "scopedAppConfigRead": app_config_read,
