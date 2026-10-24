@@ -75,7 +75,10 @@ LIVE_RECEIPTS = [
 
 
 def test_exact_user_question_does_not_turn_into_rule_design():
-    assert resolve_primary_objective(QUESTION).is_targeted_device
+    # The question names the device but supplies no numeric ID. HomeBrain's
+    # AI read router handles named-only incidents, while the domain planner
+    # must still keep the original connectivity objective.
+    assert resolve_primary_objective(QUESTION).domain == "general"
     assert is_connectivity_root_cause_request(QUESTION)
     assert not RuleAuthoringService.is_read_only_rule_design_request(QUESTION)
     assert not is_new_rule_design_review_request(QUESTION)
