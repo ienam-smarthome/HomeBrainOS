@@ -597,6 +597,7 @@ class AgentOutcome:
     # safe_partial_outcome marks an investigation as timed out.
     route: str = "unified-mcp-agent"
     investigation_coverage: dict[str, Any] | None = None
+    interpreted_intent: dict[str, str] | None = None
 
 
 class UnifiedMCPAgent:
