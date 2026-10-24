@@ -93,10 +93,38 @@ def unsafe_control_prompt(prompt: str) -> bool:
     these restrictions only apply to lead-in immediate control verbs.
     """
     text = str(prompt or "").strip()
-    return bool(
-        _CONTROL_LEAD.search(text)
-        and not unqualified_immediate_clause(text)
-    )
+    if not _CONTROL_LEAD.search(text):
+        return False
+    if _EXPLANATORY_TARGET.search(text):
+        return True
+    # Explicit additional administrative action (hub restart, rule delete)
+    # is separately confirmable by the pre-existing sensitive-action gate.
+    # Likewise an independent second direct imperative remains a write
+    # request for the *full* model/tool workflow, not the single-action
+    # immediate fast path. No model call can bypass confirmation for the
+    # sensitive action.
+    if re.search(
+        r"(?i)\b(?:and|then)\s+(?:restart|reboot|shutdown|install|"
+        r"delete|disable|enable)\s+(?:the\s+)?(?:hub|app|rule)\b"
+        r"|(?:,\s*)?then\s+(?:turn|switch|power)\s+",
+        text,
+    ):
+        return False
+    # 'Change my light OFF now and then check logs' is an explicit
+    # write+read workflow, not an unqualified immediate shortcut. Allow
+    # the model loop to handle both parts instead of discarding the read.
+    if re.match(r"(?i)^(?:please\s+)?change\b", text) and re.search(
+        r"(?i)\band\s+then\s+(?:check|show|read|report)\b", text,
+    ):
+        return False
+    # Admin app/rule directives are not single-device commands; retain
+    # their existing typed sensitive authorization and confirmation.
+    if re.match(
+        r"(?i)^(?:please\s+)?(?:enable|disable|allow|restrict|"
+        r"block|unblock)\s+(?:app\b|rule\b)", text,
+    ):
+        return False
+    return not unqualified_immediate_clause(text)
 
 
 def needs_sensitive_control_confirmation(
