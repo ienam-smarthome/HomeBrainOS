@@ -28,6 +28,11 @@ _PERFORMANCE_SCOPE = re.compile(
     r"(?i)\b(?:performance|cpu|hub\s+load|resource\s+usage|"
     r"pctBusy|busy\s+time|scheduled[- ]job\s+statistics)\b"
 )
+_SPECIFIC_INCIDENT = re.compile(
+    r"(?i)\b(?:why|root[- ]cause|fault|offline|unreachable|"
+    r"diagnos\w*|troubleshoot|investigat\w*|"
+    r"what\s+caused|not\s+working|failed|exception)\b"
+)
 _EXACT_TARGET = re.compile(
     r"(?i)\b(?:device|app|rule)\s*(?:id\s*)?[:#]?\s*[1-9]\d{2,8}\b"
 )
@@ -76,7 +81,10 @@ def _safe_route(route: str, question: str) -> ReadRoute:
                 )):
             return "model_led"
     if route == "performance_report":
-        if not _PERFORMANCE_SCOPE.search(question) or _EXACT_TARGET.search(question):
+        if (not _PERFORMANCE_SCOPE.search(question)
+                or _EXACT_TARGET.search(question)
+                or _SPECIFIC_INCIDENT.search(question)):
+
             return "model_led"
     return route if route in _ROUTES else "model_led"
 
