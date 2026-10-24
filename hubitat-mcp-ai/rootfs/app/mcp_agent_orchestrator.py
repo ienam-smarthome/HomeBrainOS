@@ -55,6 +55,7 @@ from motion_lockout_investigation import (
 )
 from targeted_lockout_config import read_current_lockout_config
 from groovy_source_investigation import GroovySourceService, requested_groovy_app_id
+from investigation_objective import resolve_primary_objective
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
@@ -3805,7 +3806,7 @@ class UnifiedMCPAgent:
                 request_class = "live-read"
             pending = self.confirmations.pending.get(str(session_id))
             contract = (
-                None if requested_groovy_app_id(user_prompt) is not None
+                None if resolve_primary_objective(user_prompt).is_source
                 else plan_investigation(user_prompt)
             )
             coverage = (
@@ -3942,8 +3943,9 @@ class UnifiedMCPAgent:
         # "Inspect Groovy source for app 3977 and compare logs" is *not*
         # a Rule Machine action-tree audit, even when "compare" and
         # "configuration" appear in the same request.
-        groovy_source_app = requested_groovy_app_id(user_prompt)
-        source_investigation = groovy_source_app is not None
+        primary_objective = resolve_primary_objective(user_prompt)
+        groovy_source_app = primary_objective.installed_app_id
+        source_investigation = primary_objective.is_source
         proposal_only = (
             not source_investigation
             and is_new_rule_design_review_request(user_prompt)
