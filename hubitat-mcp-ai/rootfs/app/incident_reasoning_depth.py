@@ -35,6 +35,8 @@ def assess_incident_reasoning_depth(
     controlling_app_link_verified = False
     upstream_observed = False
     upstream_probe_attempted = False
+    scoped_app_logs_checked: set[str] = set()
+    scoped_app_logs_empty: set[str] = set()
     for receipt in evidence:
         if not isinstance(receipt, dict):
             continue
@@ -70,6 +72,15 @@ def assess_incident_reasoning_depth(
                 str(detail.get("verifiedControlsDeviceId")) == ident
             ):
                 controlling_app_link_verified = True
+        if op == "hub_get_logs" and succeeded:
+            # A bounded zero-row app log is evidence that a query returned no
+            # rows; it is NOT evidence that this app controls the device, nor
+            # that the app did not execute outside this log window.
+            app_id = str(args.get("appId") or args.get("app_id") or "")
+            if app_id.isdigit():
+                scoped_app_logs_checked.add(app_id)
+                if detail.get("logCount") == 0 and detail.get("logs") == []:
+                    scoped_app_logs_empty.add(app_id)
         if op == "hub_get_device_health":
             upstream_probe_attempted = True
             # A successful generic diagnostics call without its actual ping
@@ -105,6 +116,9 @@ def assess_incident_reasoning_depth(
         "deviceDependentAppsChecked": dependents_checked,
         "scopedAppConfigRead": app_config_read,
         "controllingAppLinkVerified": controlling_app_link_verified,
+        "scopedAppLogIdsChecked": sorted(scoped_app_logs_checked),
+        "scopedAppLogIdsEmpty": sorted(scoped_app_logs_empty),
+        "appLogAbsenceProvesNoExecution": False,
         "upstreamProbeAttempted": upstream_probe_attempted,
         "independentUpstreamObservationRetained": upstream_observed,
         "keyDiscriminatorsCovered": not gaps,

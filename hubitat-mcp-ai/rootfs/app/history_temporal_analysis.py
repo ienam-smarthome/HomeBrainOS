@@ -1419,6 +1419,134 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
     return details if meaningful else None
 
 
+
+def direct_recorded_duration_answer(
+    request: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any]] | None:
+    """Compact factual answer from a single typed windowed switch-history read.
+
+    The user's ordinary elapsed-time request is not a historical command-
+    origin investigation. Keep exact observed pairs distinct from an inferred
+    pre-midnight ON that would extend across the start of today's window.
+    Nothing treats pagination to midnight as verified event-stream integrity.
+    """
+    question = str(request or "").casefold()
+    if not re.search(
+        r"\b(?:how long|how many (?:hours|minutes)|total (?:time|hours)|"
+        r"for how long)\b", question,
+    ):
+        return None
+    if re.search(
+        r"\b(?:why|investigat\w*|diagnos\w*|cause|audit|"
+        r"compare|explain|troubleshoot|which (?:rule|app)|who)\b",
+        question,
+    ):
+        return None
+    matches = [
+        row.get("details")
+        for row in evidence
+        if isinstance(row, dict)
+        and row.get("tool") == "homebrain_device_history"
+        and row.get("success") is True
+        and row.get("mutates") is not True
+        and row.get("effect") in ("read", None)
+        and isinstance(row.get("details"), dict)
+        and isinstance(row["details"].get("temporalAnalysis"), dict)
+    ]
+    if len(matches) != 1:
+        return None
+    detail = matches[0]
+    temporal = detail["temporalAnalysis"]
+    if (str(detail.get("attribute") or "").casefold() != "switch"
+            or str(temporal.get("activeState") or "").casefold() != "on"
+            or not temporal.get("windowed")
+            or str(temporal.get("windowLabel") or "").casefold() != "today"):
+        return None
+    if temporal.get("windowOngoing") is not True:
+        return None
+    try:
+        bounded = int(temporal["completedActiveSeconds"])
+        count = int(temporal["completedIntervalCount"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if bounded < 0 or count <= 0:
+        return None
+    if (temporal.get("openActiveInterval")
+            or temporal.get("unboundedActiveInterval")):
+        # "So far" requires careful open-edge handling, not a closed-day total.
+        return None
+    label = str(detail.get("label") or "The device").strip()[:100]
+    if not label:
+        return None
+    subject = "The TV" if label.casefold() == "tv" else label
+    first = temporal.get("firstWindowStateEvent")
+    prev = temporal.get("predecessorStateEvent")
+    latest = temporal.get("lastWindowStateEvent")
+    start = _parse_timestamp(temporal.get("windowStart"))
+    prev_at = _parse_timestamp(prev.get("timestamp")) if isinstance(prev, dict) else None
+    first_at = _parse_timestamp(first.get("timestamp")) if isinstance(first, dict) else None
+    carryover = 0
+    carryover_inferred = False
+    if (start is not None and prev_at is not None and first_at is not None
+            and temporal.get("pageCompleteToWindowStart") is True
+            and temporal.get("sourceCompleteToWindowStart") is True
+            and str(prev.get("state") or "").casefold() == "on"
+            and str(first.get("state") or "").casefold() == "off"
+            and first.get("isStateChange") is True
+            and prev_at < start <= first_at
+            and first_at <= _parse_timestamp(temporal.get("windowEnd"))):
+        carryover = int(round((first_at - start).total_seconds()))
+        carryover_inferred = carryover > 0
+
+    combined = bounded + carryover
+    total_wording = "approximately" if carryover_inferred else "about"
+    message = (
+        f"**{subject} has been on for {total_wording} "
+        f"{_human_rounded_duration_text(combined)} today.**"
+    )
+    if carryover_inferred:
+        message += (
+            f" That includes about {_human_rounded_duration_text(carryover)} "
+            "carried over from last night, plus "
+            f"{_human_rounded_duration_text(bounded)} across "
+            f"{count} recorded daytime "
+            + ("period." if count == 1 else "periods.")
+        )
+    else:
+        message += (
+            f" This covers {count} recorded "
+            + ("period." if count == 1 else "periods.")
+        )
+    if isinstance(latest, dict) and str(latest.get("state") or "").casefold() == "off":
+        clock = _compact_clock(latest.get("timestamp"))
+        message += (
+            f" The latest recorded state is **off**"
+            + (f" (since {clock})." if clock else ".")
+        )
+    else:
+        message += " The current state has not been independently verified."
+    if carryover_inferred:
+        message += (
+            " The overnight portion is inferred from the last ON and first "
+            "OFF events; missing transitions cannot be ruled out."
+        )
+    elif temporal.get("sourceIntegrityVerified") is not True:
+        message += " This is an estimate from recorded switch events."
+    return message, {
+        "domain": "temporal_duration",
+        "status": "bounded-estimate",
+        "observedCompletedSeconds": bounded,
+        "estimatedCarryoverSeconds": carryover,
+        "estimatedCombinedSeconds": combined,
+        "carryoverInferred": carryover_inferred,
+        "eventStreamIntegrityVerified": temporal.get("sourceIntegrityVerified") is True,
+        "causalAttributionAttempted": False,
+        "source": "single-current-turn-typed-device-history",
+    }
+
+
+
 def guard_history_duration_claim(
     message: str,
     evidence: list[dict[str, Any]],
@@ -1656,4 +1784,5 @@ __all__ = [
     "window_event_evidence",
     "guard_history_duration_claim",
     "history_temporal_evidence_details",
+    "direct_recorded_duration_answer",
 ]
