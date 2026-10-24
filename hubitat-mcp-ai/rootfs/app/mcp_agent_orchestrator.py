@@ -57,7 +57,7 @@ from motion_lockout_investigation import (
 from targeted_lockout_config import read_current_lockout_config
 from groovy_source_investigation import GroovySourceService, RequestScopedGroovyMcp, requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
-from ai_investigation_routing import active_request_interpretation
+from ai_investigation_routing import active_request_interpretation, without_request_interpretation
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
@@ -413,7 +413,11 @@ def _explicit_mutation_request(prompt: str) -> bool:
     # withholding present authority to create or queue it. Do not let the
     # opening phrase "I want to create" override an explicit review-only
     # instruction later in the same request.
-    if RuleAuthoringService.is_read_only_rule_design_request(text):
+    # AI's task interpretation has no authority to decide whether an
+    # imperative is a write. Re-run this safety exemption independently.
+    with without_request_interpretation():
+        review_only_by_user = RuleAuthoringService.is_read_only_rule_design_request(text)
+    if review_only_by_user:
         return False
     # Prevent explicit prohibitions from granting write permission.
     text = _without_prohibited_actions(text)
