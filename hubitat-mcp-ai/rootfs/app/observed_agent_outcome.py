@@ -28,6 +28,7 @@ def build_observed_agent_outcome(
         confirmation_count=outcome.confirmation_count,
         route=outcome.route,
         investigation_coverage=outcome.investigation_coverage,
+        interpreted_intent=outcome.interpreted_intent,
         metrics=metrics,
     )
 
