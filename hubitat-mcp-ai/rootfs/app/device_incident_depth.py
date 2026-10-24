@@ -143,7 +143,7 @@ reported MQTT session flag from physical or device-originated telemetry. Start
 with the identified device and bounded events/logs; do not scan whole hub.
 When those show missing data or a watchdog counter, prioritise the installed
 driver's timestamp/parse/connection/watchdog method logic and the actual
-device-dependent automation links/settings. The authoritative driver CODE ID
+device-dependent automation links/settings. The authoritative DRIVER code ID
 is not necessarily an installed APP ID. Use a read-only driver source reader
 with a live verified code-ID mapping, not the installed-app source workbench.
 Checking app names or app logs is not equivalent to checking the installed
