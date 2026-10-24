@@ -14,6 +14,12 @@ The absence of log entries for an app is not evidence that the app controls the 
 - The extra follow-through is progress-gated, uses the existing tool/round budgets, and is omitted if no model round remains. It cannot activate on a plain status request, missing target ID, a multi-device read, or an unrelated/failed/mutating dependency receipt.
 - Distinguish empty app-log reads from confirmed execution evidence. Surface checked-empty scoped app IDs as bounded observations, not proof the owning automation did not execute.
 
+## Direct factual answer presentation
+
+- A short question such as "How long has the TV been on today?" is answered from the single verified target's timed switch history rather than being reclassified as an initiating-command investigation or padded with a "Competing explanations" report.
+- The duration summary distinguishes paired observed daytime ON/OFF intervals from a separately inferred midnight carry-over. In the live October 24 case the prior-day ON (22:27:37) and first OFF (00:12:54) imply ~13 minutes after midnight, which can be reported as an estimate alongside 1h46m across three later sessions (approx. 1h59m total). It never treats uncertain event-stream integrity as an exact physical continuity claim.
+- Model-proposed hypotheses remain in structured metadata, but the final answer automatically renders a competing-explanations list only when the user explicitly requests a comparison of possibilities.
+
 ## Safety and limitations
 
 All changes are to the HomeBrainOS repository. No live Hubitat device, app, rule or automation configuration is changed. The existing total investigation deadline still bounds long model responses; this patch does not establish the physical cause of device 7103 or guarantee a particular registered MCP tool exists. Test with a fresh read-only question after upgrade and inspect whether targeted app configuration or mapped driver source was actually fetched.
