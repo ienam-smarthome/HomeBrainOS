@@ -138,9 +138,20 @@ def device_incident_followup(
 
 
 CONNECTIVITY_EVIDENCE_PLAN = """
-READ-ONLY CONNECTIVITY INCIDENT: The user's objective is to distinguish the
-reported MQTT session flag from physical or device-originated telemetry. Start
-with the identified device and bounded events/logs; do not scan whole hub.
+READ-ONLY CONNECTIVITY INCIDENT: Treat the reported statuses as
+independent, possibly differently produced signals, not as a contradiction
+resolved by repeating their values. Read available live MCP tool schemas and
+choose the most discriminating checks: (1) identify the code path that sets
+each reported status and the driver's telemetry/watchdog timestamps;
+(2) when a suitable same-integration control group is identified, compare
+the failing device with responding peers and the common broker/bridge;
+(3) use genuinely READ-ONLY diagnostics to distinguish device and broker
+reachability, where a matching gateway and current address are verified;
+(4) inspect real device-dependent apps, their stored settings and dated
+execution, and correlate event time with control time. Do not assume any
+particular gateway, address, app ID or tool is available. Prioritise the
+highest-information read next. Start with the identified device and bounded
+events/logs; do not scan the whole hub.
 When those show missing data or a watchdog counter, prioritise the installed
 driver's timestamp/parse/connection/watchdog method logic and the actual
 device-dependent automation links/settings. The authoritative DRIVER code ID
@@ -223,7 +234,108 @@ def incident_progress_followup(
     )
 
 
+
+def evidence_progress_checkpoint(
+    request: str,
+    evidence: list[dict[str, Any]],
+) -> str | None:
+    """One model-facing causal gap check after substantive target evidence.
+
+    This does not pick a route, tool, address, model, cause or followup count.
+    Eligibility comes from the single interpreted objective when available.
+    Work only from read receipts and an exactly one-device event-history
+    anchor; broad unfiltered diagnostics do not establish device coverage.
+    """
+    if not is_connectivity_root_cause_request(request):
+        return None
+    target_ids: set[str] = set()
+    source_ids: set[str] = set()
+    scoped_logs = False
+    dependents = False
+    scoped_configuration = False
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if receipt.get("mutates") is True or receipt.get("effect") == "write":
+            continue
+        operation, args = _leaf(receipt)
+        if operation == "hub_list_device_events":
+            candidate = str(args.get("deviceId") or "")
+            if candidate.isdigit():
+                target_ids.add(candidate)
+        if operation == "hub_get_source" and str(args.get("type") or "").lower() == "driver":
+            candidate = str(args.get("id") or "")
+            if candidate.isdigit():
+                source_ids.add(candidate)
+    if len(target_ids) != 1:
+        return None
+    target = next(iter(target_ids))
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if receipt.get("mutates") is True or receipt.get("effect") == "write":
+            continue
+        operation, args = _leaf(receipt)
+        if operation == "hub_get_logs" and str(args.get("deviceId") or "") == target:
+            scoped_logs = True
+        if (operation == "hub_list_device_dependents"
+                and str(args.get("deviceId") or "") == target):
+            dependents = True
+        if (operation == "hub_get_app_config" and
+                str(args.get("appId") or "").isdigit()):
+            scoped_configuration = True
+    # Require a concrete lead. A generic inventory or broad log search
+    # cannot keep an investigation looping, even if it returned 100 rows.
+    if not source_ids and not dependents and not scoped_logs:
+        return None
+    gaps: list[str] = []
+    if source_ids:
+        gaps.append(
+            "Driver source code was fetched (code ID(s) "
+            + ", ".join(sorted(source_ids))[:80]
+            + "), but fetching code is not reading its status, last-packet, "
+              "LWT and watchdog update paths. Interpret relevant METHOD "
+              "BODIES from the returned content; validate the installed "
+              "driver mapping, not just the code ID."
+        )
+    if not dependents:
+        gaps.append(
+            "No exact-device dependent-app read was recorded. Consider the "
+            "registered read-only dependency/configuration tools to inspect "
+            "scheduled power-saving actions and identify a controller, "
+            "before inferring an initiating automation from timing alone."
+        )
+    elif not scoped_configuration:
+        gaps.append(
+            "A dependent-app list is not its stored configuration. Verify "
+            "the relevant app's actual settings/actions and dated execution."
+        )
+    if not scoped_logs:
+        gaps.append(
+            "Unfiltered hub/app logs are not target-device watchdog logs. "
+            "Seek a device-ID-scoped read if the live catalog supports it; "
+            "never use the absence of this read as proof of no watchdog."
+        )
+    return (
+        "HOST EVIDENCE-DRIVEN DIAGNOSTIC CHECKPOINT (READ ONLY)\\n"
+        "Device " + target + " has observed target-history evidence, but "
+        "important causal discriminators remain. " + " ".join(gaps)
+        + " Choose only the *single most useful available* next read from "
+          "the live advertised catalog. A good read should distinguish an "
+          "upstream outage from a single silent device or establish whether "
+          "the last action aligns with telemetry loss. Compare same-driver "
+          "peer devices or broker reachability only if a documented read-only "
+          "capability exists and the live values are available. Do NOT "
+          "requery generic history or logs. If sufficient causal evidence "
+          "cannot be obtained, answer concisely with observations, likely "
+          "cause only if supported, and explicit unresolved limitations. "
+          "Never send commands, edit rules, invent tools or silently "
+          "assume an old stored IP still applies."
+    )
+
+
 __all__ = [
     "is_connectivity_root_cause_request", "device_incident_followup",
-    "incident_progress_followup", "CONNECTIVITY_EVIDENCE_PLAN",
+    "incident_progress_followup", "evidence_progress_checkpoint",
+    "CONNECTIVITY_EVIDENCE_PLAN",
 ]
