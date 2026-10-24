@@ -47,7 +47,7 @@ def test_claude_comparison_question_is_targeted_despite_diagnostic_vocabulary():
     # The main API checks the objective before every generic fast shortcut.
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "targeted_device = primary_objective.is_targeted_device" in app_py
-    assert "if (not targeted_device and not targeted_rule" in app_py
+    assert 'and not targeted_device and not targeted_rule' in app_py
     assert "if not targeted_device and is_broad_performance_request" in app_py
 
 
