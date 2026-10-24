@@ -23,6 +23,40 @@ _METHOD = re.compile(
     r"(?i)\b(?:method|function|procedure)\s+[`*]*"
     r"([A-Za-z_][A-Za-z_0-9]{2,80})\b"
 )
+# Ordinary language such as "method body" must never become a Groovy
+# identifier. Explicit named methods and code-form identifiers win.
+_NOT_METHOD_SYMBOLS = frozenset({
+    "body", "bodies", "source", "code", "logic", "implementation",
+    "implementations", "signature", "signatures", "name", "names",
+    "definition", "definitions", "behavior", "behaviour", "callers",
+    "calls", "execution", "history", "details", "level", "scope",
+    "analysis", "and", "that", "which", "where", "used", "with",
+})
+_INLINE_METHOD = re.compile(
+    r"(?i)\b(?:method|function|procedure)\s+[\x60*]*"
+    r"([A-Za-z_][A-Za-z_0-9]{2,80})\b"
+)
+_QUOTED_SYMBOL = re.compile(r"[\x60]([A-Za-z_][A-Za-z_0-9]{2,80})[\x60]")
+_CAMEL_METHOD = re.compile(
+    r"\b(?:[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*|"
+    r"[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]{2,})\b"
+)
+
+
+def requested_groovy_method_symbol(request: str) -> str | None:
+    """Choose an actual code-shaped method identifier, not 'method body'."""
+    question = str(request or "")
+    for pattern in (_INLINE_METHOD, _QUOTED_SYMBOL, _CAMEL_METHOD):
+        for match in pattern.finditer(question):
+            symbol = match.group(1) if match.lastindex else match.group(0)
+            if symbol.casefold() in _NOT_METHOD_SYMBOLS:
+                continue
+            if symbol in ("LimitExceededException", "DeviceStatusReport", "Groovy"):
+                continue
+            return symbol
+    return None
+
+
 _ERROR = re.compile(r"(?i)\b(?:LimitExceededException|excessive[- ]load|overload)\b")
 
 
@@ -47,12 +81,11 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
     question = str(request or "")
     installed_app_id = requested_groovy_app_id(question)
     if installed_app_id is not None:
-        symbol = _METHOD.search(question)
         return InvestigationObjective(
             domain="source_code",
             request=question,
             installed_app_id=installed_app_id,
-            method_symbol=symbol.group(1) if symbol else None,
+            method_symbol=requested_groovy_method_symbol(question),
             excessive_load_requested=bool(_ERROR.search(question)),
         )
     if is_existing_rule_verification_request(question):
@@ -62,4 +95,4 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
     return InvestigationObjective(domain="general", request=question)
 
 
-__all__ = ["InvestigationObjective", "resolve_primary_objective"]
+__all__ = ["InvestigationObjective", "resolve_primary_objective", "requested_groovy_method_symbol"]
