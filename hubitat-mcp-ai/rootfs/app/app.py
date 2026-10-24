@@ -55,6 +55,7 @@ from mcp_agent_orchestrator import _explicit_mutation_request
 from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from groovy_source_investigation import requested_groovy_app_id
+from investigation_objective import resolve_primary_objective
 from mcp_client import HubitatMCPClient
 from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
@@ -638,8 +639,11 @@ async def _agent_request(request: ChatRequest) -> Any:
         # A direct/specialized completion may have bypassed its own evidence
         # assessment. Preserve the original investigative goal at the API
         # boundary rather than disguising an incomplete read as an answer.
-        goal = (None if requested_groovy_app_id(request.message)
-                else plan_investigation(request.message))
+        primary_objective = resolve_primary_objective(request.message)
+        goal = (
+            None if primary_objective.is_source
+            else plan_investigation(request.message)
+        )
         if (
             goal is not None
             and getattr(outcome, "request_class", "") == "live-read"
@@ -650,7 +654,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                 goal, list(getattr(outcome, "evidence", []) or [])
             )
         set_request_stage("Preparing evidence-based answer")
-        if requested_groovy_app_id(request.message) is not None:
+        if primary_objective.is_source:
             # A successful source-led investigation may also sample app
             # performance. Do not send it through the separate performance
             # synthesizer, which can overwrite method-level reasoning with
