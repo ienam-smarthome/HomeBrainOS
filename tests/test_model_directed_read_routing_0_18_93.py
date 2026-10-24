@@ -170,7 +170,8 @@ def test_model_route_context_is_request_local_and_reset():
 def test_app_and_agent_act_on_model_arbitration_before_host_shortcuts():
     app_py = (APP / "app.py").read_text(encoding="utf-8")
     agent_py = (APP / "homebrain_agent.py").read_text(encoding="utf-8")
-    assert '"model_led" if targeted_device else decision.route' in app_py
+    assert '"model_led" if (targeted_device or targeted_rule)' in app_py
+    assert "or targeted_rule" in app_py
     assert "model_route == decision.route" in app_py
     assert 'if (model_route == "system_audit"' in app_py
     assert 'model_route == "model_led"' in app_py
