@@ -36,6 +36,7 @@ from synthesis_context import build_tool_evidence_packet
 from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
+from investigation_objective import resolve_primary_objective
 from analytical_answer_quality import (
     QUESTION_FIRST_CONTRACT, answer_quality_issues,
     quality_repair_instruction,
@@ -487,13 +488,20 @@ class FinalAnswerCoordinator:
             else []
         )
         original_user = _original_user_request(messages)
-        contract = plan_investigation(original_user)
-        evidence = await self._ensure_broad_performance_logs(
-            original_user,
-            evidence,
-            messages,
+        objective = resolve_primary_objective(original_user)
+        contract = (
+            None if objective.is_source else plan_investigation(original_user)
         )
-        causal = is_causal_investigation(original_user)
+        if not objective.is_source:
+            evidence = await self._ensure_broad_performance_logs(
+                original_user, evidence, messages,
+            )
+        # A Groovy method causing expensive app execution is not a historic
+        # device ON/OFF causal investigation. Preserve its code-level question
+        # and source evidence across final synthesis.
+        causal = (
+            not objective.is_source and is_causal_investigation(original_user)
+        )
         lockout_request = is_motion_lockout_investigation(original_user)
         investigative = (
             lockout_request
@@ -501,10 +509,17 @@ class FinalAnswerCoordinator:
             or is_automation_runtime_diagnostic(original_user)
             or is_integration_runtime_diagnostic(original_user)
         )
-        performance_semantic_validation = _performance_semantic_validation_needed(evidence)
-        performance_log_validation = performance_validation_needed(evidence)
+        performance_semantic_validation = (
+            not objective.is_source
+            and _performance_semantic_validation_needed(evidence)
+        )
+        performance_log_validation = (
+            not objective.is_source
+            and performance_validation_needed(evidence)
+        )
         evidence_scoped = (
-            investigative or performance_semantic_validation or contract is not None
+            objective.is_source or investigative
+            or performance_semantic_validation or contract is not None
         )
         current_turn = _current_turn_messages(messages)
         if performance_semantic_validation:
@@ -634,7 +649,7 @@ class FinalAnswerCoordinator:
             final_messages.append({
                 "role": "user", "content": QUESTION_FIRST_CONTRACT,
             })
-        if source_evidence_request(original_user):
+        if objective.is_source or source_evidence_request(original_user):
             spans = contiguous_source_coverage(evidence)
             final_messages.append({
                 "role": "user",
@@ -670,6 +685,30 @@ class FinalAnswerCoordinator:
                       "explanation now."
                 ),
             })
+        if objective.is_source:
+            final_messages.append({
+                "role": "user",
+                "content": (
+                    "PRIMARY INVESTIGATION OBJECTIVE — GROOVY SOURCE. "
+                    f"Installed app ID: {objective.installed_app_id}. "
+                    + (
+                        f"Explicit method: {objective.method_symbol}. "
+                        if objective.method_symbol else ""
+                    )
+                    + "Inspect the requested method's real source excerpt and "
+                    "possible callers before attributing any cause. "
+                    "Relate measured app runtimes and device-originated "
+                    "LimitExceededException records to specific supported "
+                    "code-path hypotheses. A load exception is not a historic "
+                    "device ON/OFF command. Do not switch to Rule Machine "
+                    "trigger/action-tree review or generic performance rankings. "
+                    "If relevant method/caller excerpts are unavailable or "
+                    "runtime execution cannot be linked, explain the gap and "
+                    "give the next read-only verification step. "
+                    "The current-turn source excerpts—not the configured "
+                    "model's assumptions—are the only code evidence."
+                ),
+            })
         final_messages.append({
             "role": "user",
             "content": _synthesis_instruction(
@@ -690,6 +729,7 @@ class FinalAnswerCoordinator:
             evidence,
             original_user=original_user,
             causal=causal,
+            primary_objective=objective.domain,
         )
         if not issues:
             # Existing causal/focal analyzers already enforce their own one-pass
@@ -817,6 +857,7 @@ class FinalAnswerCoordinator:
             evidence,
             original_user=original_user,
             causal=causal,
+            primary_objective=objective.domain,
         )
         if remaining:
             increment_active_metric("synthesis_repair_failed")
