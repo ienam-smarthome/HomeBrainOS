@@ -11,6 +11,7 @@ import re
 
 from automation_diagnostic_policy import is_targeted_device_transition_investigation
 from targeted_rule_scope_policy import is_targeted_rule_investigation
+from investigation_objective import scoped_device_investigation_id
 
 _GLOBAL = re.compile(
     r"\b(?:whole|entire|full|comprehensive|system[\s-]?wide|"
@@ -39,6 +40,8 @@ _DOMAINS = {
 
 def is_cross_domain_hub_audit_request(question: str) -> bool:
     """True for full audit plus fault checks spanning independent source classes."""
+    if scoped_device_investigation_id(question) is not None:
+        return False
     text = " ".join(str(question or "").split())
     if len(text) < 18 or not _GLOBAL.search(text) or not _ACTION.search(text):
         return False

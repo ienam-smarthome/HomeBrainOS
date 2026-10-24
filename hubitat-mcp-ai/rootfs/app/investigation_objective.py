@@ -17,7 +17,7 @@ from typing import Literal
 from groovy_source_investigation import requested_groovy_app_id
 from targeted_rule_scope_policy import is_existing_rule_verification_request
 
-PrimaryDomain = Literal["source_code", "existing_rule_verification", "general"]
+PrimaryDomain = Literal["source_code", "existing_rule_verification", "targeted_device", "general"]
 
 _METHOD = re.compile(
     r"(?i)\b(?:method|function|procedure)\s+[`*]*"
@@ -43,6 +43,31 @@ _CAMEL_METHOD = re.compile(
 )
 
 
+_EXPLICIT_DEVICE_ID = re.compile(
+    r"(?i)\b(?:hubitat\s+)?device\s*(?:id\s*)?[:#]?\s*"
+    r"([1-9]\d{2,8})\b"
+)
+_WHOLE_HUB_SCOPE = re.compile(
+    r"(?i)\b(?:whole|entire|all)\s+(?:my\s+|the\s+|our\s+)?"
+    r"(?:hubitat\s+)?(?:hub|system|devices|automations|rules|apps)\b"
+    r"|\b(?:comprehensive|full)\s+(?:system|hub|hubitat)\s+audit\b"
+    r"|\bsystem[- ]wide\b|\bmy\s+hubitat\s+system\b"
+)
+
+
+def scoped_device_investigation_id(request: str) -> str | None:
+    """Detect a single explicitly named device without granting any permissions.
+
+    This is a routing decision only, not verified physical-device identity.
+    A whole-hub audit mentioning one example device stays a whole-hub audit.
+    """
+    question = str(request or "")
+    if _WHOLE_HUB_SCOPE.search(question):
+        return None
+    ids = set(_EXPLICIT_DEVICE_ID.findall(question))
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
 def requested_groovy_method_symbol(request: str) -> str | None:
     """Choose an actual code-shaped method identifier, not 'method body'."""
     question = str(request or "")
@@ -65,6 +90,7 @@ class InvestigationObjective:
     domain: PrimaryDomain
     request: str
     installed_app_id: str | None = None
+    target_device_id: str | None = None
     method_symbol: str | None = None
     excessive_load_requested: bool = False
 
@@ -75,6 +101,10 @@ class InvestigationObjective:
     @property
     def is_rule(self) -> bool:
         return self.domain == "existing_rule_verification"
+
+    @property
+    def is_targeted_device(self) -> bool:
+        return self.domain == "targeted_device"
 
 
 def resolve_primary_objective(request: str) -> InvestigationObjective:
@@ -88,6 +118,12 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
             method_symbol=requested_groovy_method_symbol(question),
             excessive_load_requested=bool(_ERROR.search(question)),
         )
+    device_id = scoped_device_investigation_id(question)
+    if device_id is not None:
+        return InvestigationObjective(
+            domain="targeted_device", request=question,
+            target_device_id=device_id,
+        )
     if is_existing_rule_verification_request(question):
         return InvestigationObjective(
             domain="existing_rule_verification", request=question
@@ -95,4 +131,4 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
     return InvestigationObjective(domain="general", request=question)
 
 
-__all__ = ["InvestigationObjective", "resolve_primary_objective", "requested_groovy_method_symbol"]
+__all__ = ["InvestigationObjective", "resolve_primary_objective", "requested_groovy_method_symbol", "scoped_device_investigation_id"]
