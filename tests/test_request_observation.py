@@ -99,3 +99,64 @@ async def test_request_observation_reraises_failure() -> None:
 
     with pytest.raises(RuntimeError, match="boom"):
         await coordinator.run(operation)
+
+
+@pytest.mark.asyncio
+async def test_blocked_write_attempt_cannot_claim_pending_actuation():
+    coordinator = RequestObservationCoordinator(RequestMetrics())
+
+    async def operation():
+        coordinator.metrics.increment("proposal_write_attempts_blocked")
+        return AgentOutcome(
+            message=(
+                "To turn off everything except the freezer, I will turn "
+                "off the fridge and the kettle."
+            ),
+            request_class="live-read",
+            evidence=[{
+                "tool": "hub_read_devices", "mutates": False, "effect": "read",
+                "success": True,
+            }],
+            choices=[],
+        )
+
+    result = await coordinator.run(operation)
+    assert result.metrics["outcome"] == "unresolved"
+    assert result.message.startswith("**Nothing was changed.**")
+    assert "I will turn" not in result.message
+    assert result.metrics["counters"]["proposal_write_attempts_blocked"] == 1
+
+
+@pytest.mark.asyncio
+async def test_blocked_write_correction_does_not_suppress_ordinary_read_answer():
+    coordinator = RequestObservationCoordinator(RequestMetrics())
+
+    async def operation():
+        coordinator.metrics.increment("proposal_write_attempts_blocked")
+        return AgentOutcome(
+            message="The freezer is currently on, based on Hubitat.",
+            request_class="live-read", choices=[],
+            evidence=[{"tool": "hub_read_devices", "mutates": False}],
+        )
+
+    result = await coordinator.run(operation)
+    assert "freezer is currently on" in result.message
+
+
+@pytest.mark.asyncio
+async def test_blocked_write_correction_never_claims_zero_writes_if_any_occurred():
+    coordinator = RequestObservationCoordinator(RequestMetrics())
+
+    async def operation():
+        coordinator.metrics.increment("proposal_write_attempts_blocked")
+        return AgentOutcome(
+            message="I will switch the next device off.",
+            request_class="live-read", choices=[],
+            evidence=[{
+                "tool": "hub_manage_devices", "effect": "routine_write",
+                "mutates": True,
+            }],
+        )
+
+    result = await coordinator.run(operation)
+    assert result.message == "I will switch the next device off."

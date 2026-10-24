@@ -1369,8 +1369,17 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     @staticmethod
     def _exact_sensitive_targets(
         arguments: dict[str, Any], devices: list[dict[str, Any]],
+        *, preview_only: bool = False,
     ) -> tuple[tuple[str, str], ...] | None:
-        """Fail closed on absent/ambiguous, non-switch, or changing targets."""
+        """Ground exact targets without assuming permission or command support.
+
+        Preview may rely on a fresh structural snapshot's standard Switch
+        capability if it omits the verbose commands field. No actuation is
+        authorised by this provisional check: after user confirmation the
+        normal exact-ID/label/commands validation uses a fresh detailed read.
+        A present commands list that explicitly rejects the command still
+        rejects staging.
+        """
         def key(value: Any) -> str:
             return re.sub(
                 r"^(?:the|my)\s+", "", str(value or "").strip(),
@@ -1408,9 +1417,16 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             device_id = str(dev.get("id") or dev.get("deviceId") or "")
             label = str(dev.get("label") or dev.get("name") or "").strip()
             commands = {str(c).casefold() for c in dev.get("commands") or []}
+            caps = {str(c).casefold() for c in dev.get("capabilities") or []}
+            provisional_switch = (
+                preview_only and command in {"on", "off"}
+                and ("commands" not in dev or dev.get("commands") is None)
+                and "switch" in caps
+            )
             if (not device_id.isdigit() or not label
                     or command not in ("on", "off", "toggle")
-                    or (command != "toggle" and command not in commands)):
+                    or (command not in commands and not provisional_switch
+                        and not (command == "toggle" and not commands))):
                 return None
             result.append((device_id, label))
         if len({x[0] for x in result}) != len(result):
@@ -1429,13 +1445,20 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 request_class="write", evidence=[], choices=[],
             )
         identity_snapshot = await self._control_identity_snapshot()
-        identity = self._exact_sensitive_targets(arguments, identity_snapshot)
+        identity = self._exact_sensitive_targets(
+            arguments, identity_snapshot, preview_only=True,
+        )
+        if identity is not None:
+            self.request_metrics.increment("control_confirmation_preview_cache")
         if identity is None and identity_snapshot:
             # A complete structural cache may carry room/label identities but
             # omit command metadata. Retry once using the ordinary TTL-aware
             # detailed manifest; never infer unsupported commands.
             reader = getattr(self.mcp, "get_cached_devices", None)
             if callable(reader):
+                self.request_metrics.increment(
+                    "control_confirmation_manifest_fallback"
+                )
                 try:
                     detailed = await reader()
                     identity = self._exact_sensitive_targets(
@@ -1777,6 +1800,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                         message="The device confirmation expired. No command was sent.",
                         request_class="write", evidence=[], choices=[],
                     )
+                self.request_metrics.increment(
+                    "control_confirmation_fresh_revalidation"
+                )
                 current_identity = self._exact_sensitive_targets(
                     arguments, await self._control_identity_snapshot(
                         force_refresh=True,
