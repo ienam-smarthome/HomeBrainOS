@@ -39,8 +39,11 @@ async def test_keyword_whole_hub_phrase_does_not_override_named_fault(monkeypatc
         "Hubitat system: only inspect relevant apps, logs and scheduled jobs. "
         "Do not change anything."
     )
-    # Existing lexical classifier is intentionally fooled by the negative.
-    assert explicit_whole_hub_report_request(question)
+    # The lexical pattern matches words in a negative example, but the
+    # direct-report scope guard rejects it and defers to AI interpretation.
+    from ai_investigation_routing import _CLEAR_WHOLE_HUB
+    assert _CLEAR_WHOLE_HUB.search(question)
+    assert not explicit_whole_hub_report_request(question)
     consulted = []
     async def interpret(_chat, prompt):
         consulted.append(prompt)
