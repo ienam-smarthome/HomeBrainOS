@@ -182,6 +182,18 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     text = " ".join(str(request or "").casefold().split())
     if not text:
         return None
+    # Once the model has interpreted the original goal, reuse its immutable
+    # category in every stage. Never reclassify "automation" + "read-only"
+    # into rule creation, or MQTT offline into switch-command provenance.
+    from ai_investigation_routing import active_request_interpretation
+    interpreted = active_request_interpretation(request)
+    if interpreted is not None and interpreted.objective is not None:
+        contract_for_objective = {
+            "device_connectivity": "device_telemetry",
+            "existing_rule_verification": "existing_rule_verification",
+            "rule_design_review": "rule_design_review",
+        }.get(interpreted.objective)
+        return _PLANS.get(contract_for_objective)
     # Prioritise the actual requested scope, not the combination of the words
     # "read-only" and "do not create". Those occur in existing-rule audits too.
     # This changes investigation reporting only, not write authorisation.
