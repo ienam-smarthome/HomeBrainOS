@@ -37,6 +37,7 @@ from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
 from investigation_objective import resolve_primary_objective
+from source_analysis_completion import source_answer_focus
 from analytical_answer_quality import (
     QUESTION_FIRST_CONTRACT, answer_quality_issues,
     quality_repair_instruction,
@@ -718,6 +719,45 @@ class FinalAnswerCoordinator:
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
+        if objective.is_source:
+            focus = source_answer_focus(original_user, draft)
+            if focus["required"] and not focus["satisfied"]:
+                # One bounded, no-tools repair using the same current-turn
+                # code evidence and the *original* objective. A vague
+                # answer should not be declared resolved just because the
+                # raw file was retrieved. Do not fabricate a method body.
+                increment_active_metric("source_focus_repair_attempted")
+                needs = ", ".join(focus["missing"])
+                reminder = (
+                    "SOURCE-OBJECTIVE REPAIR: the previous answer missed "
+                    "required aspects of the user's original question: "
+                    + needs + ". "
+                    + (
+                        "Address the explicit Groovy method "
+                        + objective.method_symbol + " by name. "
+                        if objective.method_symbol else ""
+                    )
+                    + "Use only the verified current-turn source excerpts. "
+                    "Discuss supported code-path possibilities and which "
+                    "runtime evidence is unavailable. If the method body was "
+                    "not shown, say that explicitly; do not invent one. "
+                    "Avoid Rule Machine and physical-device-history digressions. "
+                    "Produce the requested read-only explanation or a clear "
+                    "method-specific evidence gap."
+                )
+                repaired = await self._chat([
+                    *final_messages,
+                    {"role": "assistant", "content": draft},
+                    {"role": "user", "content": reminder},
+                ], [])
+                revised = str(repaired.get("content") or "").strip()
+                if revised and source_answer_focus(
+                    original_user, revised
+                )["satisfied"]:
+                    draft = revised
+                    increment_active_metric("source_focus_repair_satisfied")
+                else:
+                    increment_active_metric("source_focus_repair_unresolved")
         if not investigative and not performance_semantic_validation and contract is None:
             # Ordinary simple answers keep their established one-pass behavior.
             # Any answer containing measured performance statistics enters the
