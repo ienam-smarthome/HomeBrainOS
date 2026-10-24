@@ -50,6 +50,30 @@ _ACTIVE_ROUTE: ContextVar[str | None] = ContextVar(
 class ReadRouteDecision:
     route: ReadRoute
     provenance: str
+    objective: str | None = None
+    target: str | None = None
+    purpose: str | None = None
+
+_VALID_OBJECTIVES = frozenset((
+    "device_connectivity", "source_code", "existing_rule_verification",
+    "rule_design_review", "historical_command", "general_investigation",
+    "system_audit", "performance_report",
+))
+_REQUEST_OBJECTIVE = ContextVar("homebrain_interpreted_objective", default=None)
+
+
+def set_request_interpretation(request: str, decision: ReadRouteDecision) -> Token:
+    return _REQUEST_OBJECTIVE.set((str(request), decision))
+
+
+def reset_request_interpretation(token: Token) -> None:
+    _REQUEST_OBJECTIVE.reset(token)
+
+
+def active_request_interpretation(request: str) -> ReadRouteDecision | None:
+    stored = _REQUEST_OBJECTIVE.get()
+    return stored[1] if stored is not None and stored[0] == str(request) else None
+
 
 
 _CLEAR_WHOLE_HUB = re.compile(
