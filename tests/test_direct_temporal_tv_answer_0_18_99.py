@@ -64,7 +64,7 @@ def test_short_tv_answer_includes_midnight_estimate_without_physical_exactness()
     assert "13 minutes" in message
     assert "1 hour 46 minutes" in message
     assert "3 recorded daytime periods" in message
-    assert "latest recorded state is **off**" in message
+    assert "**Latest recorded state: OFF**" in message
     assert "inferred" in message
     assert "missing transitions cannot be ruled out" in message
     assert coverage["observedCompletedSeconds"] == 6349
