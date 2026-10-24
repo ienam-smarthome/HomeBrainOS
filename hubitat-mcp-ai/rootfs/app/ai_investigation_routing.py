@@ -107,6 +107,16 @@ _AGGREGATE_SCHEDULER = re.compile(
 
 def explicit_whole_hub_report_request(question: str) -> bool:
     text = str(question or "")
+    # Do not treat a *negative example* of a whole-system audit as an
+    # instruction to run one. Leave ambiguous/negative cases to the model.
+    # This check does not determine a diagnostic domain or grant permissions.
+    if re.search(
+        r"(?i)\b(?:not|no|without|instead\s+of|rather\s+than|"
+        r"do\s+not|don['’]t)\s+(?:a|an|the)?\s*"
+        r"(?:comprehensive|full|whole|entire|system[- ]wide)\b",
+        text,
+    ):
+        return False
     if _EXACT_TARGET.search(text) and not re.search(
         r"(?i)\b(?:all|every|entire|whole|system[- ]wide)\b", text,
     ):
