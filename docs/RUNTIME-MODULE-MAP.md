@@ -102,6 +102,7 @@ The repository drift test compares this table directly with the live directory. 
 | `household_ollama_accounts.py` | Validates owner consent, adulthood, provider authorisation and scoped cloud secondary-account routing; denies rate-limit/auth rotation. |
 | `provider_rate_limit_policy.py` | Sanitises Ollama Cloud HTTP 429 limit/usage responses, preserving only bounded Retry-After seconds and actionable guidance without replaying provider content or credentials. |
 | `chatgpt_mcp.py` | Exposes the opt-in ChatGPT-facing Streamable HTTP MCP transport and high-level HomeBrainOS tools. |
+| `control_intent_guard.py` | Fail-closed immediate-control qualifier check and protected/group-device classification; never grants independent write authority. |
 | `confirmation_policy.py` | Decides whether structured actions require confirmation. |
 | `confirmation_store.py` | Stores, expires, consumes, and cancels pending confirmations. |
 | `confirmed_action_coordinator.py` | Revalidates and executes confirmed action groups. |
