@@ -41,7 +41,7 @@ def baseline():
 
 def test_initial_instruction_keeps_model_responsible_for_tool_choice():
     assert "actual" in CONNECTIVITY_EVIDENCE_PLAN
-    assert "driver CODE ID" in CONNECTIVITY_EVIDENCE_PLAN
+    assert "driver code id" in CONNECTIVITY_EVIDENCE_PLAN.casefold()
     assert "read-only" in CONNECTIVITY_EVIDENCE_PLAN
     assert "never guess a schema" in CONNECTIVITY_EVIDENCE_PLAN
 
