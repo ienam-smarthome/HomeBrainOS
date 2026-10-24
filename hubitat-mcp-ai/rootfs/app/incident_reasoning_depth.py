@@ -63,7 +63,9 @@ def assess_incident_reasoning_depth(
             upstream_probe_attempted = True
             # A successful generic diagnostics call without its actual ping
             # observations does not prove reachability of this device.
-            if succeeded and isinstance(detail.get("pingResults"), list) and detail.get("pingResults"):
+            if (succeeded and isinstance(detail.get("pingResults"), list)
+                    and detail.get("pingResults")
+                    and str(detail.get("verifiedForDeviceId") or "") == ident):
                 upstream_observed = True
         if (succeeded and receipt.get("supports_live_claim") is True and
                 receipt.get("evidence_kind") in (
@@ -90,7 +92,8 @@ def assess_incident_reasoning_depth(
         "controllingAppLinkVerified": controlling_app_link_verified,
         "upstreamProbeAttempted": upstream_probe_attempted,
         "independentUpstreamObservationRetained": upstream_observed,
-        "rootCauseEvidenceComplete": not gaps,
+        "keyDiscriminatorsCovered": not gaps,
+        "rootCauseEstablishedByThisAssessment": False,
         "missingDiscriminators": gaps,
         "onlyReadReceiptsConsidered": True,
     }
