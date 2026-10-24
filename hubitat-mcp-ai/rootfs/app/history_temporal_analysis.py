@@ -1624,8 +1624,8 @@ def direct_recorded_duration_answer(
     if carryover_inferred:
         message += (
             "\n\nThe overnight portion is inferred from recorded switch "
-            "events. Durations are estimates of plug-on time, not verified "
-            "TV viewing time."
+            "events; missing transitions cannot be ruled out. "
+            "This measures plug-on time, not verified TV viewing time."
         )
     elif temporal.get("sourceIntegrityVerified") is not True:
         message += (
