@@ -95,7 +95,8 @@ def _parse_route(reply: Any) -> str | None:
         return None
     if not isinstance(obj, dict):
         return None
-    return obj.get("route") if obj.get("route") in _ROUTES else None
+    route = obj.get("route")
+    return route if isinstance(route, str) and route in _ROUTES else None
 
 
 async def decide_read_route(
