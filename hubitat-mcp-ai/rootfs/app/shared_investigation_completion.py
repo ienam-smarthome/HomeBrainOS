@@ -248,7 +248,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             and str(focus["method"]).casefold() in observed_method_bodies
         )
         method_obligation_gap = bool(
-            objective.is_source and focus["required"] and not method_body_shown
+            objective.is_source and objective.method_symbol is not None
+            and not method_body_shown
         )
         # A Groovy excessive-load investigation can legitimately say an app
         # "caused" an exception without claiming that it sent any past
@@ -358,14 +359,25 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "must remain unverified."
             )
         if runtime_gap:
-            message += (
-                "\n\n**Runtime correlation incomplete:** The source implementation "
-                "was read, but this question also requires current-turn scoped "
-                "device state, event history and logs. Unchecked sources: "
-                + ", ".join(runtime["missing"]) + ". "
-                "Driver source alone cannot establish the device's current "
-                "physical connectivity or which offline handler actually ran."
-            )
+            if runtime.get("scope") == "installed_app_source":
+                message += (
+                    "\n\n**Application runtime evidence incomplete:** The "
+                    "source was retrieved but these app-specific, read-only "
+                    "checks were not verified: "
+                    + ", ".join(runtime["missing"]) + ". "
+                    "A missing or empty log page does not exclude earlier "
+                    "overload exceptions or establish their code-level cause."
+                )
+            else:
+                message += (
+                    "\n\n**Runtime correlation incomplete:** The source "
+                    "implementation was read, but this device-focused "
+                    "question also requires scoped device state, event "
+                    "history and logs. Unchecked sources: "
+                    + ", ".join(runtime["missing"]) + ". "
+                    "Driver source alone cannot establish current physical "
+                    "connectivity or which offline handler actually ran."
+                )
         return _CoverageOutcome(
             outcome, coverage,
             _safe_metrics(outcome, partial=(

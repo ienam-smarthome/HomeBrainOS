@@ -114,6 +114,8 @@ class RequestMetrics:
         "answer_quality_gaps_found", "answer_quality_revision_rounds",
         "answer_quality_revision_rejected", "answer_quality_revision_incomplete",
         "answer_quality_revision_accepted",
+        "source_focus_repair_attempted", "source_focus_repair_satisfied",
+        "source_focus_repair_unresolved", "groovy_source_reads_reused",
         "synthesis_validation_issues", "synthesis_localized_corrections",
         "synthesis_repair_rounds", "synthesis_repair_causal_coverage",
         "synthesis_repair_causal_provenance", "synthesis_repair_performance",
