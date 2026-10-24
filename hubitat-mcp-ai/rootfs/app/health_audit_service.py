@@ -451,7 +451,9 @@ def is_comprehensive_system_audit_request(prompt: str) -> bool:
     through the normal agent and its tool-based confirmation checks.
     """
     from targeted_rule_scope_policy import is_targeted_rule_investigation
-    if is_targeted_rule_investigation(prompt):
+    from investigation_objective import scoped_device_investigation_id
+    if (is_targeted_rule_investigation(prompt)
+            or scoped_device_investigation_id(prompt) is not None):
         return False
     words = " ".join(str(prompt or "").casefold().split())
     if any(phrase in words for phrase in (
