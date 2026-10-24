@@ -60,6 +60,7 @@ from location_event_queries import (
 )
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent, _explicit_mutation_request
 from adaptive_investigation_policy import model_led_investigation_request
+from ai_investigation_routing import active_read_route
 from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
 from request_classification import (
@@ -1641,6 +1642,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             # Only the existing host safety policy decides write authorisation.
             historical_rule_goal = historical_rule_execution_request(user_prompt)
             deep_rule_goal = requires_rule_logic_inspection(user_prompt)
+            if (active_read_route() == "model_led"
+                    and not _explicit_mutation_request(user_prompt)):
+                # Host route arbitration selected the investigative MCP loop.
+                # No status presenter, automatic summary, or unrelated shortcut
+                # may answer this question without the model choosing evidence.
+                self.request_metrics.increment(
+                    "investigation_snapshot_shortcut_bypassed"
+                )
+                base_process = super(UnifiedMCPAgent, self).process_user_request_result
+                return await base_process(
+                    user_prompt, conversation_history, session_id=session_id,
+                )
             if ((model_led_investigation_request(user_prompt)
                     or historical_rule_goal or deep_rule_goal)
                     and not _explicit_mutation_request(user_prompt)):
