@@ -29,6 +29,7 @@ from performance_inventory_check import reconcile_scheduler_candidates
 from scheduler_secondary_inventory import probe_secondary_device_inventory
 from device_read_contract import live_context_is_complete
 from request_runtime import set_request_stage
+from groovy_source_investigation import requested_groovy_app_id
 
 
 _PERFORMANCE_TERMS = (
@@ -114,6 +115,12 @@ def is_scheduler_optimization_request(text: str) -> bool:
 
 
 def is_broad_performance_request(text: str) -> bool:
+    # A specific installed-app Groovy/source request is a code investigation,
+    # even if it also asks for performance statistics or recommendations.
+    # Do not let generic performance keywords consume the model's source
+    # retrieval budget or trigger unrelated scheduler/device reads.
+    if requested_groovy_app_id(text) is not None:
+        return False
     folded = " ".join(str(text or "").casefold().split())
     return is_whole_hub_optimization_request(text) or is_scheduler_optimization_request(text) or (
         any(token in folded for token in _PERFORMANCE_TERMS)

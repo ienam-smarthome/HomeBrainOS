@@ -228,7 +228,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         draft_message = str(getattr(outcome, "message", "") or "")
         synthesis_failed = source_analysis_failed(draft_message)
         method_gap = source_method_claim_gap(draft_message)
-        historical = assess_historical_claims(draft_message, evidence)
+        # A Groovy excessive-load investigation can legitimately say an app
+        # "caused" an exception without claiming that it sent any past
+        # device command. Only require historical command-event proof when
+        # the source answer actually asserts a command/dispatched action.
+        historical = assess_historical_claims(
+            draft_message, evidence, command_only=True,
+        )
         historical_gap = bool(historical["unverifiedCommandActors"])
         runtime = source_runtime_evidence_status(request, evidence)
         runtime_gap = runtime["required"] and not runtime["satisfied"]
