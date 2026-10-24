@@ -165,3 +165,20 @@ def test_genuine_direct_commands_remain_semantic_control_candidates(prompt):
 ])
 def test_descriptive_or_investigative_sentences_are_not_semantic_controls(prompt):
     assert not semantic_control_clause_eligible(prompt)
+
+
+def test_scoped_read_only_still_detects_separate_confirmation_required_write():
+    mixed = (
+        "Perform a READ-ONLY verification of Rule Machine app 4246's "
+        "ordered actions. Also disable app 4019."
+    )
+    assert not explicitly_read_only_request(mixed)
+    assert _explicit_mutation_request(mixed)
+    assert not semantic_control_clause_eligible(mixed)
+
+
+def test_global_no_change_instruction_overrides_a_contradictory_write():
+    mixed = "Turn on TV. Do not modify anything."
+    assert explicitly_read_only_request(mixed)
+    assert not _explicit_mutation_request(mixed)
+    assert not semantic_control_clause_eligible(mixed)
