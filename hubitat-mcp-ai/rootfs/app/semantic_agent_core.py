@@ -54,10 +54,25 @@ class SemanticAgentCore:
             "nine": "9",
             "ten": "10",
         }
-        return [
+        words = [
             number_words.get(token, token)
             for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
         ]
+        # Spoken "living room light two" must bind to the canonical
+        # "Livingroom Light 2", not the broader Living Room room. This
+        # is identity normalization applied equally to prompts and world
+        # labels, NOT a phrase-to-command routing rule.
+        tokens: list[str] = []
+        index = 0
+        while index < len(words):
+            if (words[index] == "living" and index + 1 < len(words)
+                    and words[index + 1] == "room"):
+                tokens.append("livingroom")
+                index += 2
+            else:
+                tokens.append(words[index])
+                index += 1
+        return tokens
 
     @classmethod
     def _explicit_entities(
