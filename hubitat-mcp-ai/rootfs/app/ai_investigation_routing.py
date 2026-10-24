@@ -149,7 +149,7 @@ def _safe_route(route: str, question: str) -> ReadRoute:
     return route if route in _ROUTES else "model_led"
 
 
-def _parse_route(reply: Any) -> str | None:
+def _parse_interpretation(reply: Any) -> dict[str, str] | None:
     if not isinstance(reply, dict) or reply.get("tool_calls"):
         return None
     content = str(reply.get("content") or "").strip()
@@ -164,7 +164,22 @@ def _parse_route(reply: Any) -> str | None:
     if not isinstance(obj, dict):
         return None
     route = obj.get("route")
-    return route if isinstance(route, str) and route in _ROUTES else None
+    if not isinstance(route, str) or route not in _ROUTES:
+        return None
+    parsed = {"route": route}
+    objective = obj.get("objective")
+    if isinstance(objective, str) and objective in _VALID_OBJECTIVES:
+        parsed["objective"] = objective
+    for field, maximum in (("target", 120), ("purpose", 240)):
+        value = obj.get(field)
+        if isinstance(value, str) and 0 < len(value.strip()) <= maximum:
+            parsed[field] = value.strip()
+    return parsed
+
+
+def _parse_route(reply: Any) -> str | None:
+    parsed = _parse_interpretation(reply)
+    return parsed["route"] if parsed else None
 
 
 async def decide_read_route(
@@ -210,4 +225,6 @@ __all__ = [
     "ReadRouteDecision", "decide_read_route", "active_read_route",
     "set_read_route", "reset_read_route", "explicit_system_check_command",
     "explicit_whole_hub_report_request", "explicit_aggregate_performance_request",
+    "active_request_interpretation", "set_request_interpretation",
+    "reset_request_interpretation",
 ]
