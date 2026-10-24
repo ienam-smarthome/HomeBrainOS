@@ -2133,7 +2133,7 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
     ai = FakeAI("unused -- explicit multi-device control stays zero-model")
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
 
-    async def read_exact_targets():
+    async def read_exact_targets(*, force_refresh=False):
         return [
             {"id": "7829", "label": "Hallway Light 1",
              "commands": ["on", "off"], "room": "Hallway"},
