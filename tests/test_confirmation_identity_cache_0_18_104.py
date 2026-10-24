@@ -71,7 +71,7 @@ async def test_confirm_still_forces_detailed_manifest_refresh_before_execution()
 
 
 @pytest.mark.asyncio
-async def test_structural_snapshot_missing_commands_retries_detailed_once():
+async def test_structural_snapshot_missing_commands_uses_switch_capability_for_preview():
     class CompactMCP(CountingManifestMCP):
         def peek_device_identities(self):
             self.peek_calls += 1
@@ -84,8 +84,8 @@ async def test_structural_snapshot_missing_commands_retries_detailed_once():
         "turn off the Freezer", session_id="missing-command-metadata",
     )
     assert staged.confirmation_required
-    assert mcp.refresh_args
-    assert not any(mcp.refresh_args)
+    assert mcp.refresh_args == []
+    assert staged.metrics["counters"]["control_confirmation_preview_cache"] == 1
     assert not switch_writes(mcp)
 
 
