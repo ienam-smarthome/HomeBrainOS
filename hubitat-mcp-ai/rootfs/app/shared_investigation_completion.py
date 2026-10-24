@@ -689,15 +689,27 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             )
     if domain == "device_telemetry":
         depth = coverage.get("incidentReasoningDepth")
-        if isinstance(depth, dict) and depth.get("missingDiscriminators"):
-            message += (
-                "\n\n**Investigation depth still missing:** "
-                + "; ".join(depth["missingDiscriminators"])
-                + ". These are missing proof dimensions, not proof that "
-                  "the corresponding component is faulty. "
-                  "A retrieved driver source is not automatically an "
-                  "analysis of its timer/reset/update branches."
-            )
+        if isinstance(depth, dict):
+            empty_app_logs = depth.get("scopedAppLogIdsEmpty") or []
+            if empty_app_logs:
+                message += (
+                    "\n\n**Checked-empty app logs:** Hubitat returned zero "
+                    "rows for app ID(s) " + ", ".join(empty_app_logs[:5])
+                    + " in the requested bounded log window. This does NOT "
+                      "prove those apps control this device or that they "
+                      "did not execute. Verify the returned dependent-app "
+                      "identity, stored configuration and dated execution "
+                      "before using these logs to exclude an explanation."
+                )
+            if depth.get("missingDiscriminators"):
+                message += (
+                    "\n\n**Investigation depth still missing:** "
+                    + "; ".join(depth["missingDiscriminators"])
+                    + ". These are missing proof dimensions, not proof that "
+                      "the corresponding component is faulty. "
+                      "A retrieved driver source is not automatically an "
+                      "analysis of its timer/reset/update branches."
+                )
     # The final reported outcome is separate from source/category completeness.
     # A successful source read must never convert an unresolved diagnosis to a
     # resolved physical/device cause.
