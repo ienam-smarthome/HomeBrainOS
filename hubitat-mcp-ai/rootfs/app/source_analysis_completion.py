@@ -41,6 +41,55 @@ _METHOD_GAP = re.compile(
 )
 
 
+def source_answer_focus(
+    request: str, answer: str,
+) -> dict[str, Any]:
+    """Minimal objective fidelity check; NOT code-method proof.
+
+    Full source retrieval alone cannot certify an unrelated answer. When a
+    user explicitly names a Groovy method, require the final explanation to
+    actually address that name. This is deliberately narrower than semantic
+    grading and cannot prove the explanation's correctness.
+    """
+    question = str(request or "")
+    response = str(answer or "")
+    named = re.search(
+        r"(?i)\b(?:method|function|procedure)\s+[\x60*]*"
+        r"([A-Za-z_][A-Za-z_0-9]{2,80})\b",
+        question,
+    )
+    symbol = named.group(1) if named else None
+    if symbol is None:
+        return {
+            "required": False, "satisfied": None, "method": None,
+            "missing": [],
+            "note": "No explicit method symbol selected for answer-focus check.",
+        }
+    method_mentioned = re.search(
+        r"(?<![A-Za-z_0-9])" + re.escape(symbol) + r"(?![A-Za-z_0-9])",
+        response, re.I,
+    ) is not None
+    wants_exception = bool(re.search(
+        r"(?i)\b(?:LimitExceededException|excessive[- ]load|overload)\b",
+        question,
+    ))
+    exception_context = bool(re.search(
+        r"(?i)\b(?:LimitExceededException|excessive[- ]load|overload)\b",
+        response,
+    ))
+    missing = []
+    if not method_mentioned:
+        missing.append("named_method_not_addressed")
+    if wants_exception and not exception_context:
+        missing.append("requested_load_error_not_addressed")
+    return {
+        "required": True,
+        "satisfied": not missing, "method": symbol,
+        "missing": missing,
+        "note": "Keyword alignment is not certification of method-body analysis or causation.",
+    }
+
+
 def source_method_claim_gap(message: str) -> bool:
     """The answer itself admits material method/code paths were not examined."""
     return bool(_METHOD_GAP.search(str(message or "")))
@@ -197,7 +246,7 @@ def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
     )
 
 
-__all__ = [
+__all__ = ["source_answer_focus", 
     "source_analysis_failed", "source_trace_ready_for_synthesis",
     "source_failure_summary", "source_method_claim_gap",
     "source_runtime_evidence_status",

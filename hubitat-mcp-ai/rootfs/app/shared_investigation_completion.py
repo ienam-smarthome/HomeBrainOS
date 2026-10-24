@@ -24,7 +24,7 @@ from historical_causal_claim_guard import (
 )
 from source_analysis_completion import (
     source_analysis_failed, source_failure_summary, source_method_claim_gap,
-    source_runtime_evidence_status,
+    source_runtime_evidence_status, source_answer_focus,
 )
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
@@ -228,6 +228,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         draft_message = str(getattr(outcome, "message", "") or "")
         synthesis_failed = source_analysis_failed(draft_message)
         method_gap = source_method_claim_gap(draft_message)
+        focus = source_answer_focus(request, draft_message)
+        focus_gap = bool(focus['required'] and not focus['satisfied'])
         # A Groovy excessive-load investigation can legitimately say an app
         # "caused" an exception without claiming that it sent any past
         # device command. Only require historical command-event proof when
@@ -248,10 +250,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "objectiveSatisfied": bool(
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
-                and not runtime_gap and not historical_gap
+                and not runtime_gap and not historical_gap and not focus_gap
             ),
-            "analysisAnswerVerified": not (synthesis_failed or historical_gap),
+            "analysisAnswerVerified": not (
+                synthesis_failed or historical_gap or focus_gap
+            ),
             "analysisStatus": (
+                "source-answer-off-objective" if focus_gap else
                 "historical-app-command-not-verified" if historical_gap else
                 "synthesis-failed-source-observed" if synthesis_failed
                 else "model-admitted-relevant-methods-not-reviewed"
@@ -263,8 +268,9 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "questionResolved": bool(
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
-                and not runtime_gap and not historical_gap
+                and not runtime_gap and not historical_gap and not focus_gap
             ),
+            "answerFocus": focus,
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
             "chunkCoverage": segments,
@@ -291,6 +297,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             ),
         }
         message = (
+            (
+                "**Source retrieved, but the response did not address the "
+                "requested method-level question.** "
+                "Retrieving the implementation does not establish a diagnosis. "
+                "Unaddressed objectives: "
+                + ", ".join(focus["missing"])
+                + ". Source and observed runtime evidence require "
+                  "method-focused interpretation before a root cause can be reported."
+            )
+            if focus_gap else
             render_unverified_claim_warning(historical, evidence)
             if historical_gap else
             source_failure_summary(evidence) if synthesis_failed
@@ -322,7 +338,7 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             outcome, coverage,
             _safe_metrics(outcome, partial=(
                 synthesis_failed or method_gap or runtime_gap or historical_gap
-                or not found or (complete_requested and not full)
+                or focus_gap or not found or (complete_requested and not full)
             )),
             message,
         )

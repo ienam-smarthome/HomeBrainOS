@@ -17,7 +17,7 @@ from mcp_client import tool_succeeded
 
 _APP_ID = re.compile(r"\b(?:app|application)\s*(?:id\s*)?#?\s*(\d{3,7})\b", re.I)
 _SOURCE_INTENT = re.compile(
-    r"\b(?:groovy|source[- ]code|actual\s+source|source\s+of|"
+    r"\b(?:groovy|source[- ]code|actual\s+source(?!\s+fields?\b)|source\s+of|"
     r"implementation\s+code|implementation\s+source|"
     r"code\s+implementation|read\s+the\s+code|"
     r"defaultvalue|state\.motionlockout|"
