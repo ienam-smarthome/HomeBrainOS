@@ -637,7 +637,8 @@ async def _agent_request(request: ChatRequest) -> Any:
                 model_route = (
                     "model_led" if targeted_device else decision.route
                 )
-                if decision.objective is not None:
+                if (decision.objective is not None
+                        and model_route == decision.route):
                     interpretation_token = set_request_interpretation(
                         request.message, decision,
                     )
