@@ -342,6 +342,35 @@ class RuleAuthoringService:
         text = " ".join(str(prompt or "").split())
         if not re.search(r"\b(?:rule\s*machine|automation|rule)\b", text, re.I):
             return False
+        # "automation behaviour" plus "read-only; do not change anything"
+        # describes an incident investigation, not a new-rule proposal.
+        # Only positive future design intent may enable rule-design mode.
+        from targeted_rule_scope_policy import is_existing_rule_verification_request
+        existing_rule_review = is_existing_rule_verification_request(text)
+        future_design = re.search(
+            r"(?i)\b(?:design|draft|propose|plan|outline|build|create|"
+            r"set\s*up|implement)\s+(?:(?:a|an|new|the|my|proposed)\s+){0,3}"
+            r"(?:rule\s*machine\s+)?(?:rule|automation)\b"
+            r"|\b(?:want|would\s+like|need|intend)\b"
+            r".{0,90}\b(?:new\s+)?(?:rule|automation)\b"
+            r"|\b(?:review|evaluate|check|inspect)\s+"
+            r"(?:(?:the|my|a|proposed|new)\s+){0,3}"
+            r"(?:rule|automation)\s+(?:design|proposal|plan)\b"
+            r"|\b(?:review|evaluate|check|inspect)\s+"
+            r"(?:(?:the|my|this|a)\s+)?(?:proposed|new|future)\s+"
+            r"(?:rule|automation)\b"
+            r"|\b(?:rule|automation)\s+(?:design|proposal|plan)\b",
+            text,
+        )
+        # Do not interpret the prohibition itself ("do not create a new
+        # automation") as a positive request to design one.
+        if future_design and re.search(
+            r"(?i)\b(?:do\s+not|don't|never|without)\s*$",
+            text[max(0, future_design.start() - 30):future_design.start()],
+        ):
+            future_design = None
+        if not (future_design or existing_rule_review):
+            return False
         review = re.search(
             r"\b(?:read[ -]?only|proposal[ -]?only|review|inspect|"
             r"implementation\s+plan|show\s+(?:me\s+)?(?:the\s+)?"

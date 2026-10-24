@@ -4536,9 +4536,21 @@ class UnifiedMCPAgent:
             )
             if lockout_intent else False
         )
-        causal_request = not source_investigation and is_causal_investigation(user_prompt)
+        # A missing-telemetry/root-cause question is NOT an observed
+        # ON/OFF transition for the historical command-provenance engine.
+        # That engine otherwise expands unrelated room/location history and
+        # ends after a constrained command-source round, before source logic.
+        connectivity_incident = (
+            is_connectivity_root_cause_request(user_prompt)
+            and not self._mutation_requested_by_user.get()
+        )
+        causal_request = (
+            not connectivity_incident and not source_investigation
+            and is_causal_investigation(user_prompt)
+        )
         investigative_request = (
             source_investigation
+            or connectivity_incident
             or is_history_investigation(user_prompt)
             or lockout_intent
             or is_automation_runtime_diagnostic(user_prompt)

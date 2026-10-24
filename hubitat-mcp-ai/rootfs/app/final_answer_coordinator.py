@@ -37,6 +37,7 @@ from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
 from investigation_objective import resolve_primary_objective
+from device_incident_depth import is_connectivity_root_cause_request
 from source_analysis_completion import source_answer_focus
 from analytical_answer_quality import (
     QUESTION_FIRST_CONTRACT, answer_quality_issues,
@@ -501,7 +502,9 @@ class FinalAnswerCoordinator:
         # device ON/OFF causal investigation. Preserve its code-level question
         # and source evidence across final synthesis.
         causal = (
-            not objective.is_source and is_causal_investigation(original_user)
+            not objective.is_source
+            and not is_connectivity_root_cause_request(original_user)
+            and is_causal_investigation(original_user)
         )
         lockout_request = is_motion_lockout_investigation(original_user)
         investigative = (
@@ -717,6 +720,26 @@ class FinalAnswerCoordinator:
                     "give the next read-only verification step. "
                     "The current-turn source excerpts—not the configured "
                     "model's assumptions—are the only code evidence."
+                ),
+            })
+        if is_connectivity_root_cause_request(original_user):
+            final_messages.append({
+                "role": "user",
+                "content": (
+                    "PRIMARY OBJECTIVE: investigate the target device's "
+                    "offline/connected-MQTT and stale-telemetry contradiction, "
+                    "NOT Rule Machine authoring, lighting, sensor-motion "
+                    "lockouts, or reconstruction of an ON/OFF command unless "
+                    "verified relevant to this device's connectivity. "
+                    "Do not include a Rule design feasibility gate, a "
+                    "new-rule proposal, cross-midnight OFF design or unrelated "
+                    "time-window advice. The checked device attributes, "
+                    "watchdog age and lastSeen refer to different reported "
+                    "clocks; explain these conflicts without equating any "
+                    "cached value to physical telemetry. If no driver source "
+                    "or broker evidence was retrieved, do NOT assert the "
+                    "driver's internal MQTT semantics or a physical root "
+                    "cause as proven. Give specific next safe read checks."
                 ),
             })
         final_messages.append({
