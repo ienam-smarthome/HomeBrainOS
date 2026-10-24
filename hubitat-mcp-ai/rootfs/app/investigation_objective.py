@@ -109,6 +109,34 @@ class InvestigationObjective:
 
 def resolve_primary_objective(request: str) -> InvestigationObjective:
     question = str(request or "")
+    from ai_investigation_routing import active_request_interpretation
+    interpreted = active_request_interpretation(question)
+    if interpreted is not None and interpreted.objective is not None:
+        kind = interpreted.objective
+        if kind == "existing_rule_verification":
+            return InvestigationObjective(
+                domain="existing_rule_verification", request=question
+            )
+        if kind == "source_code":
+            app_id = requested_groovy_app_id(question)
+            if app_id is not None:
+                return InvestigationObjective(
+                    domain="source_code", request=question,
+                    installed_app_id=app_id,
+                    method_symbol=requested_groovy_method_symbol(question),
+                    excessive_load_requested=bool(_ERROR.search(question)),
+                )
+        if kind in (
+            "device_connectivity", "general_investigation",
+            "historical_command", "rule_design_review",
+        ):
+            device_id = scoped_device_investigation_id(question)
+            if device_id:
+                return InvestigationObjective(
+                    domain="targeted_device", request=question,
+                    target_device_id=device_id,
+                )
+            return InvestigationObjective(domain="general", request=question)
     installed_app_id = requested_groovy_app_id(question)
     if installed_app_id is not None:
         return InvestigationObjective(

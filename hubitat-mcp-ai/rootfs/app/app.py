@@ -57,9 +57,11 @@ from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationEr
 from groovy_source_investigation import requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import (
+    ReadRouteDecision, active_request_interpretation,
     decide_read_route, set_read_route, reset_read_route,
     explicit_system_check_command, explicit_whole_hub_report_request,
     explicit_aggregate_performance_request,
+    set_request_interpretation, reset_request_interpretation,
 )
 from request_metrics import increment_active_metric
 from mcp_client import HubitatMCPClient
@@ -595,6 +597,7 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     route_token = None
+    interpretation_token = None
     try:
         primary_objective = resolve_primary_objective(request.message)
         targeted_device = primary_objective.is_targeted_device
@@ -616,9 +619,10 @@ async def _agent_request(request: ChatRequest) -> Any:
         candidate_fast_path = (
             comprehensive_audit or broad_automation_diagnostic
             or broad_performance
+            or model_led_investigation_request(request.message)
         )
-        if (candidate_fast_path and not targeted_device
-                and not targeted_rule and not primary_objective.is_source
+        if (candidate_fast_path and not targeted_rule
+                and not primary_objective.is_source
                 and not _explicit_mutation_request(request.message)):
             if (explicit_system_check_command(request.message)
                     or explicit_whole_hub_report_request(request.message)):
@@ -630,7 +634,14 @@ async def _agent_request(request: ChatRequest) -> Any:
                 decision = await decide_read_route(
                     agent._chat, request.message,
                 )
-                model_route = decision.route
+                model_route = (
+                    "model_led" if targeted_device else decision.route
+                )
+                if (decision.objective is not None
+                        and model_route == decision.route):
+                    interpretation_token = set_request_interpretation(
+                        request.message, decision,
+                    )
                 if decision.provenance != "model_choice":
                     increment_active_metric("ai_read_route_fallback")
                 increment_active_metric({
@@ -681,6 +692,14 @@ async def _agent_request(request: ChatRequest) -> Any:
                 request.history,
                 session_id=request.session_id,
             )
+        if (interpretation_token is not None
+                and hasattr(outcome, "interpreted_intent")):
+            outcome.interpreted_intent = {
+                "route": decision.route,
+                "objective": decision.objective,
+                "target": decision.target,
+                "purpose": decision.purpose,
+            }
         # A direct/specialized completion may have bypassed its own evidence
         # assessment. Preserve the original investigative goal at the API
         # boundary rather than disguising an incomplete read as an answer.
@@ -712,6 +731,8 @@ async def _agent_request(request: ChatRequest) -> Any:
             request.message,
         )
     finally:
+        if interpretation_token is not None:
+            reset_request_interpretation(interpretation_token)
         if route_token is not None:
             reset_read_route(route_token)
         reset_history_window_request(token)
@@ -790,10 +811,29 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         # Single cross-route evidence assessment: even early host completions,
         # semantic fast paths and specialist routes pass this boundary before
         # /api/ask and /api/chat serialize their answer.
-        return calibrate_api_outcome(
-            apply_shared_investigation_completion(outcome, request.message),
-            request.message,
-        )
+        # The agent call has ended, but final evidence calibration must
+        # consume exactly the same AI objective, never re-interpret keywords.
+        saved = getattr(outcome, "interpreted_intent", None)
+        intent_token = None
+        if isinstance(saved, dict) and isinstance(saved.get("objective"), str):
+            intent_token = set_request_interpretation(
+                request.message,
+                ReadRouteDecision(
+                    route=saved.get("route", "model_led"),
+                    provenance="retained_request_interpretation",
+                    objective=saved["objective"],
+                    target=saved.get("target"),
+                    purpose=saved.get("purpose"),
+                ),
+            )
+        try:
+            return calibrate_api_outcome(
+                apply_shared_investigation_completion(outcome, request.message),
+                request.message,
+            )
+        finally:
+            if intent_token is not None:
+                reset_request_interpretation(intent_token)
     except HTTPException:
         raise
     except PaidModelUnavailable as exc:

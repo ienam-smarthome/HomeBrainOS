@@ -37,6 +37,7 @@ from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
 from investigation_objective import resolve_primary_objective
+from ai_investigation_routing import active_request_interpretation
 from device_incident_depth import is_connectivity_root_cause_request
 from source_analysis_completion import source_answer_focus
 from analytical_answer_quality import (
@@ -491,6 +492,8 @@ class FinalAnswerCoordinator:
         )
         original_user = _original_user_request(messages)
         objective = resolve_primary_objective(original_user)
+        interpreted = active_request_interpretation(original_user)
+        interpreted_kind = interpreted.objective if interpreted else None
         contract = (
             None if objective.is_source else plan_investigation(original_user)
         )
@@ -504,9 +507,14 @@ class FinalAnswerCoordinator:
         causal = (
             not objective.is_source
             and not is_connectivity_root_cause_request(original_user)
+            and (interpreted_kind is None
+                 or interpreted_kind == "historical_command")
             and is_causal_investigation(original_user)
         )
-        lockout_request = is_motion_lockout_investigation(original_user)
+        lockout_request = (
+            (interpreted_kind is None or interpreted_kind == "historical_command")
+            and is_motion_lockout_investigation(original_user)
+        )
         investigative = (
             lockout_request
             or is_history_investigation(original_user)
@@ -720,6 +728,20 @@ class FinalAnswerCoordinator:
                     "give the next read-only verification step. "
                     "The current-turn source excerpts—not the configured "
                     "model's assumptions—are the only code evidence."
+                ),
+            })
+        if interpreted_kind is not None:
+            final_messages.append({
+                "role": "user",
+                "content": (
+                    "INTERPRETED ORIGINAL USER OBJECTIVE (request-scoped): "
+                    + interpreted_kind + ". "
+                    "Keep the final answer within the original question's "
+                    "goal. A mention of an automation is not permission to "
+                    "design new rules; a connectivity fault is not proof of "
+                    "a historical ON/OFF command. If the available evidence "
+                    "does not establish causation, say what is missing. "
+                    "Do not replace the task with an unrelated workflow."
                 ),
             })
         if is_connectivity_root_cause_request(original_user):

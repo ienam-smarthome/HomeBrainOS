@@ -35,6 +35,7 @@ from recorded_telemetry_freshness import (
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from investigation_objective import resolve_primary_objective
+from ai_investigation_routing import active_request_interpretation
 from telemetry_clock_consistency import (
     assess_telemetry_clock_consistency,
     render_telemetry_clock_qualification,
@@ -130,6 +131,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
     objective = resolve_primary_objective(request)
+    interpreted = active_request_interpretation(request)
+    interpreted_kind = interpreted.objective if interpreted else None
     goal = None if objective.is_source else plan_investigation(request)
     # The broad legacy classifier also matches prospective rule "triggers".
     # This final historical gate must not turn proposal-only read requests into
@@ -144,7 +147,10 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         r"who\s+(?:issued|sent|called)\s+(?:the\s+)?(?:on|off)\s+command)\b",
         request_text,
     ))
-    causal = (is_causal_investigation(request) or command_issuer_intent) and (
+    causal = (
+        (interpreted_kind is None or interpreted_kind == "historical_command")
+        and (is_causal_investigation(request) or command_issuer_intent)
+    ) and (
         request_text.endswith("?") or request_text.startswith((
             "why ", "investigate ", "explain ", "analyse ", "analyze ",
             "diagnose ", "determine ", "what caused ", "what triggered ",
@@ -156,7 +162,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     # obligations. A successful config read or empty source read is NOT
     # source-code evidence and cannot close the actual objective.
     if objective.is_source or (
-        not objective.is_rule and source_evidence_request(request)
+        interpreted_kind is None
+        and not objective.is_rule and source_evidence_request(request)
     ):
         source = assess_task_source_coverage(("source_code",), evidence)
         found = source.sources_checked

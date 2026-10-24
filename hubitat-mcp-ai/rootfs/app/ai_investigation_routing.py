@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from contextvars import ContextVar, Token
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import re
@@ -50,6 +51,40 @@ _ACTIVE_ROUTE: ContextVar[str | None] = ContextVar(
 class ReadRouteDecision:
     route: ReadRoute
     provenance: str
+    objective: str | None = None
+    target: str | None = None
+    purpose: str | None = None
+
+_VALID_OBJECTIVES = frozenset((
+    "device_connectivity", "source_code", "existing_rule_verification",
+    "rule_design_review", "historical_command", "general_investigation",
+    "system_audit", "performance_report",
+))
+_REQUEST_OBJECTIVE = ContextVar("homebrain_interpreted_objective", default=None)
+
+
+def set_request_interpretation(request: str, decision: ReadRouteDecision) -> Token:
+    return _REQUEST_OBJECTIVE.set((str(request), decision))
+
+
+def reset_request_interpretation(token: Token) -> None:
+    _REQUEST_OBJECTIVE.reset(token)
+
+
+@contextmanager
+def without_request_interpretation():
+    """Host safety parsers MUST not trust model intent labels."""
+    token = _REQUEST_OBJECTIVE.set(None)
+    try:
+        yield
+    finally:
+        _REQUEST_OBJECTIVE.reset(token)
+
+
+def active_request_interpretation(request: str) -> ReadRouteDecision | None:
+    stored = _REQUEST_OBJECTIVE.get()
+    return stored[1] if stored is not None and stored[0] == str(request) else None
+
 
 
 _CLEAR_WHOLE_HUB = re.compile(
@@ -125,7 +160,7 @@ def _safe_route(route: str, question: str) -> ReadRoute:
     return route if route in _ROUTES else "model_led"
 
 
-def _parse_route(reply: Any) -> str | None:
+def _parse_interpretation(reply: Any) -> dict[str, str] | None:
     if not isinstance(reply, dict) or reply.get("tool_calls"):
         return None
     content = str(reply.get("content") or "").strip()
@@ -140,7 +175,22 @@ def _parse_route(reply: Any) -> str | None:
     if not isinstance(obj, dict):
         return None
     route = obj.get("route")
-    return route if isinstance(route, str) and route in _ROUTES else None
+    if not isinstance(route, str) or route not in _ROUTES:
+        return None
+    parsed = {"route": route}
+    objective = obj.get("objective")
+    if isinstance(objective, str) and objective in _VALID_OBJECTIVES:
+        parsed["objective"] = objective
+    for field, maximum in (("target", 120), ("purpose", 240)):
+        value = obj.get(field)
+        if isinstance(value, str) and 0 < len(value.strip()) <= maximum:
+            parsed[field] = value.strip()
+    return parsed
+
+
+def _parse_route(reply: Any) -> str | None:
+    parsed = _parse_interpretation(reply)
+    return parsed["route"] if parsed else None
 
 
 async def decide_read_route(
@@ -160,8 +210,18 @@ async def decide_read_route(
         "performance_report = aggregate hub performance statistics only, "
         "not a specific incident. Choose model_led when uncertain. "
         "A thorough investigation of one device is NOT a whole-hub audit. "
-        'Output exactly one JSON object such as {"route":"model_led"} '
-        "with no other text."
+        "Include a single objective from: device_connectivity, source_code, "
+        "existing_rule_verification, rule_design_review, historical_command, "
+        "general_investigation, system_audit, performance_report. "
+        "A diagnostic question about an existing automation is not a "
+        "request to design a future rule. Offline-device causes are not "
+        "historical ON/OFF command attribution. Add target (the subject as "
+        "written by user) and purpose (short statement of the actual goal). "
+        'Return only JSON like {"route":"model_led",'
+        '"objective":"device_connectivity",'
+        '"target":"Bedroom 3 Mesh",'
+        '"purpose":"explain offline versus MQTT connected"}.'
+        " Never call tools."
     )
     try:
         result = await asyncio.wait_for(
@@ -171,12 +231,18 @@ async def decide_read_route(
             ], []),
             timeout=max(1.0, min(float(timeout_seconds), 15.0)),
         )
-        proposal = _parse_route(result)
-        if proposal is None:
+        parsed = _parse_interpretation(result)
+        if parsed is None:
             return ReadRouteDecision("model_led", "invalid_model_reply")
+        proposal = parsed["route"]
         route = _safe_route(proposal, question)
+        objective = parsed.get("objective")
+        if route == "model_led" and objective in ("system_audit", "performance_report"):
+            objective = None
         return ReadRouteDecision(
             route, "model_choice" if route == proposal else "host_scope_override",
+            objective=objective, target=parsed.get("target"),
+            purpose=parsed.get("purpose"),
         )
     except Exception:
         return ReadRouteDecision("model_led", "model_route_unavailable")
@@ -186,4 +252,7 @@ __all__ = [
     "ReadRouteDecision", "decide_read_route", "active_read_route",
     "set_read_route", "reset_read_route", "explicit_system_check_command",
     "explicit_whole_hub_report_request", "explicit_aggregate_performance_request",
+    "active_request_interpretation", "set_request_interpretation",
+    "reset_request_interpretation",
+    "without_request_interpretation",
 ]
