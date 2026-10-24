@@ -530,9 +530,29 @@ async function submit(text){
   }catch(error){
     if(error.name!=='AbortError'&&sequence===requestSequence&&requestSessionId===sessionId){
       if(error.name==='HomeBrainNetworkError'){
-        showAnswer({
-          success:false,route:'network-outcome-unknown',
-          status_verification:'write-outcome-unknown',
+        // This is a classification of the user's requested action, not a
+        // claim about what the disconnected backend actually completed.
+        // Only strict no-write investigations take this less alarming path.
+        // Ambiguous or potentially mutating prompts retain the existing
+        // write-outcome-unknown warning; never retry them automatically.
+        const strictReadOnly = /\\bread[\\s-]*only\\b/i.test(text)
+          && /\\b(?:do\\s+not|don't|without)\\s+(?:modify|change|edit|write|mutate|update|delete|create|disable|enable|control|turn|set)\\b/i.test(text);
+        if(strictReadOnly){
+          showAnswer({
+            success:false,route:'network-outcome-unknown',
+            status_verification:'read-outcome-unknown',
+            message:'Connection to HomeBrain was lost before the read-only answer arrived. '+
+              'The investigation may have completed on the backend, but its result '+
+              'was not received. No Hubitat write was requested. Check HomeBrain '+
+              'add-on logs using Request ID: '+requestId+
+              '. Once connectivity is restored, a new read-only investigation '+
+              'may be submitted; this does not establish any historical cause. '+
+              'Browser error: '+String(error.message||'connection lost').slice(0,160)
+          });
+        }else{
+          showAnswer({
+            success:false,route:'network-outcome-unknown',
+            status_verification:'write-outcome-unknown',
           message:'Connection to HomeBrain was lost before the answer arrived. '+
             'The result of any requested Hubitat write is UNKNOWN: it may '+
             'have completed, failed or been cancelled. Do NOT submit the '+
@@ -541,6 +561,7 @@ async function submit(text){
             'state; inspect HomeBrain add-on logs if needed. Request ID: '+
             requestId+'. Browser error: '+String(error.message||'connection lost').slice(0,160)
         });
+        }
       }else{
         showAnswer({success:false,route:'error',message:'Request failed: '+error.message});
       }
