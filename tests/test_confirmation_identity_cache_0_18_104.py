@@ -64,7 +64,9 @@ async def test_confirm_still_forces_detailed_manifest_refresh_before_execution()
     )
     assert mcp.refresh_args[-1] is True
     assert len(switch_writes(mcp)) == 1
-    assert outcome.metrics["outcome"] == "success"
+    # FakeMCP acknowledges the command without changing its switch state.
+    # Dispatcher safety is verified; the expected read-back failure is real.
+    assert outcome.metrics["outcome"] == "failed"
     assert outcome.confirmation_required is False
 
 
