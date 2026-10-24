@@ -142,6 +142,7 @@ def test_no_other_device_or_mismatched_counter_can_create_alignment():
 def test_driver_source_retrieval_and_ping_probe_do_not_prove_cause():
     depth = assess_incident_reasoning_depth(live_fixture(), "7103")
     assert depth["driverSourceRetrieved"] is True
+    assert depth["driverSourceLinkedToTarget"] is False
     assert depth["driverMethodBehaviourVerified"] is False
     assert depth["controllingAppLinkVerified"] is False
     assert depth["independentUpstreamObservationRetained"] is False
