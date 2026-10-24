@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from contextual_read_fast_path import is_pronoun_reference
+from control_intent_guard import unqualified_immediate_clause, unsafe_control_prompt
 from time_expressions import AT_TIME, parse_clock
 
 _STRONG_CONTROL_VERBS = {
@@ -53,6 +54,12 @@ def requests_mutation(prompt: str) -> bool:
     """True if the prompt reads as a command to change device/hub state."""
 
     value = " ".join(prompt.lower().split())
+    if unsafe_control_prompt(prompt):
+        return False
+    if re.match(r"(?i)^(?:allow|enable)\s+me\s+to\b", value):
+        return False
+    if re.match(r"(?i)^(?:don['’]?t|do\s+not|never)\b", value):
+        return False
     tokens = re.findall(r"[a-z0-9]+", value)
     if tokens and tokens[0] in _STRONG_CONTROL_VERBS | {"close", "lock", "open"}:
         return True
@@ -274,6 +281,12 @@ def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
     """Parse immediate switch/light controls without model-dependent payload shaping."""
 
     value = " ".join(str(prompt).strip().split())
+    # A broad target regex is not a license to ignore extra objectives.
+    # Defer conditional, deferred, cancelled and multi-action text to the
+    # model and independent host write authorization. '?' is a question,
+    # not a device command.
+    if not unqualified_immediate_clause(value):
+        return None
 
     # Preserve the established immediate brightness grammar first. In
     # particular, "set lamp at 50%" is a level request even though it contains
@@ -439,7 +452,8 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
     if not text:
         return None
     if (
-        AT_TIME.search(text) is not None
+        not unqualified_immediate_clause(text)
+        or AT_TIME.search(text) is not None
         or _INTERNET_ACCESS_WINDOW.search(text) is not None
         or _RULE_AUTHORING_WORDS.search(text) is not None
         or _has_future_routine_timing(text)
