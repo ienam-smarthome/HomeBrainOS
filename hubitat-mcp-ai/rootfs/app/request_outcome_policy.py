@@ -14,6 +14,9 @@ _OUTCOME_COUNTER_PRECEDENCE: tuple[tuple[str, str], ...] = (
     ("request_cancellations", "cancelled"),
     ("device_control_needs_input", "needs_input"),
     ("semantic_needs_input", "needs_input"),
+    # An approval prompt is pending work, not successful device actuation.
+    # Failure/refusal counters above still outrank this status.
+    ("confirmation_queued", "needs_input"),
     ("confirmation_expired", "unresolved"),
     ("device_resolution_ambiguous", "unresolved"),
     ("device_resolution_missing", "unresolved"),
