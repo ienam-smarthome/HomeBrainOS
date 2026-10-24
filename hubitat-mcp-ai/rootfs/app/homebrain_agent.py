@@ -1420,7 +1420,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             caps = {str(c).casefold() for c in dev.get("capabilities") or []}
             provisional_switch = (
                 preview_only and command in {"on", "off"}
-                and not commands and "switch" in caps
+                and ("commands" not in dev or dev.get("commands") is None)
+                and "switch" in caps
             )
             if (not device_id.isdigit() or not label
                     or command not in ("on", "off", "toggle")
