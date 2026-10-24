@@ -87,6 +87,34 @@ class RequestObservationCoordinator:
                 self.metrics.increment("confirmation_queued")
             self._reconcile_evidence_timings(outcome)
             metrics = self.metrics.finish(self.metrics.completed_outcome())
+            # A model can propose a write that the host refuses and then
+            # phrase its read-only fallback as a future device action.
+            # Reconcile final prose with the authoritative write ledger,
+            # not with another prompt keyword router. Do not replace a
+            # legitimate read answer unless it claims a future actuation.
+            counters = metrics.get("counters") or {}
+            receipts = list(outcome.evidence or [])
+            no_writes = not any(
+                isinstance(row, dict)
+                and (row.get("mutates") is True
+                     or row.get("effect") in ("write", "routine_write"))
+                for row in receipts
+            )
+            if (outcome.request_class == "live-read"
+                    and no_writes
+                    and int(counters.get("proposal_write_attempts_blocked", 0) or 0) > 0):
+                import re
+                if re.search(
+                    r"(?i)\b(?:I\s+will|I['’]m\s+going\s+to|"
+                    r"will\s+(?:turn|switch|disable|enable|block))\b",
+                    str(outcome.message or ""),
+                ):
+                    outcome.message = (
+                        "**Nothing was changed.** A proposed device command "
+                        "was blocked by HomeBrain's safety policy. This "
+                        "request needs a clear, explicitly approved device "
+                        "selection before any changes can be made."
+                    )
             return build_observed_agent_outcome(outcome, metrics)
         except asyncio.CancelledError:
             self.metrics.increment("request_cancellations")
