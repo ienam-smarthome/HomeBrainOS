@@ -19,6 +19,7 @@ if str(APP) not in sys.path:
 
 from composite_system_audit_policy import is_cross_domain_hub_audit_request
 from health_audit_service import is_comprehensive_system_audit_request
+from ai_investigation_routing import ReadRouteDecision
 
 
 LIVE_REQUEST = """Perform a comprehensive READ-ONLY investigation of my Hubitat system.
@@ -90,6 +91,11 @@ async def test_live_request_routes_through_bounded_no_tools_audit(monkeypatch):
     async def unexpected_agent(*args, **kwargs):
         raise AssertionError("Do not route whole-hub diagnostic through agent loop")
 
+    async def confirmed_whole_hub(_chat, _question):
+        return ReadRouteDecision(
+            "system_audit", "model_choice", objective="system_audit",
+        )
+    monkeypatch.setattr(module, "decide_read_route", confirmed_whole_hub)
     monkeypatch.setitem(
         module.OPTIONS, "comprehensive_audit_ai_analysis_enabled", True,
     )
@@ -113,6 +119,11 @@ async def test_saved_opt_out_keeps_host_only_bounded_audit(monkeypatch):
         calls.append(kwargs)
         return SimpleNamespace(message="Safe read-only audit", route="comprehensive-system-audit")
 
+    async def confirmed_whole_hub(_chat, _question):
+        return ReadRouteDecision(
+            "system_audit", "model_choice", objective="system_audit",
+        )
+    monkeypatch.setattr(module, "decide_read_route", confirmed_whole_hub)
     monkeypatch.setitem(
         module.OPTIONS, "comprehensive_audit_ai_analysis_enabled", False,
     )
