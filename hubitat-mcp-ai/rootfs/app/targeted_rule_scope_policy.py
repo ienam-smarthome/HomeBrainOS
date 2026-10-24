@@ -147,6 +147,10 @@ def is_existing_rule_verification_request(question: str) -> bool:
     their dedicated provenance route. This predicate grants no authority.
     """
     text = str(question or "")
+    from ai_investigation_routing import active_request_interpretation
+    interpretation = active_request_interpretation(question)
+    if interpretation is not None and interpretation.objective is not None:
+        return interpretation.objective == "existing_rule_verification"
     return bool(
         is_targeted_rule_investigation(text)
         and _DEEP_INSTALLED_RULE_EVIDENCE.search(text)
