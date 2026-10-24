@@ -185,7 +185,26 @@ class ToolExecutor:
                 and isinstance(data, dict)):
             # Audit *whether* raw source was actually returned, not the source.
             # Source text and any cached File Manager paths stay out of receipts.
-            return {"sourceRetrieved": data.get("sourceRetrieved") is True}
+            # Whitelisted provenance only. Never retain Groovy code or
+            # excerpts inside API receipts.
+            shown = data.get("verifiedCandidateMethodBodies")
+            shown = [
+                x for x in shown[:12]
+                if isinstance(x, str) and re.fullmatch(r"[A-Za-z_]\w{0,80}", x)
+            ] if isinstance(shown, list) else []
+            return {
+                "sourceRetrieved": data.get("sourceRetrieved") is True,
+                "fullImplementationVerified":
+                    data.get("fullImplementationVerified") is True,
+                "verifiedCharacters": data.get("verifiedCharacters")
+                    if type(data.get("verifiedCharacters")) is int else None,
+                "declaredTotalCharacters": data.get("declaredTotalCharacters")
+                    if type(data.get("declaredTotalCharacters")) is int else None,
+                "verifiedPages": data.get("verifiedPages")
+                    if type(data.get("verifiedPages")) is int else None,
+                "sourceCodeId": str(data.get("sourceCodeId") or "")[:18],
+                "verifiedCandidateMethodBodies": shown,
+            }
         if isinstance(data, dict) and isinstance(data.get("logs"), list):
             return compact_log_evidence(data)
 
