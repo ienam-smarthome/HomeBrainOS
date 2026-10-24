@@ -140,7 +140,7 @@ async def test_process_result_returns_privacy_safe_metrics(monkeypatch: pytest.M
 
     assert isinstance(outcome, ObservedAgentOutcome)
     assert outcome.message == "Done"
-    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["outcome"] == "needs_input"
     assert outcome.metrics["counters"]["tool_calls"] == 1
     assert outcome.metrics["counters"]["confirmation_queued"] == 1
     assert "private device wording" not in repr(outcome.metrics)
