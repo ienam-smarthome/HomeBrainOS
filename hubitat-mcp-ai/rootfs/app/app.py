@@ -629,13 +629,15 @@ async def _agent_request(request: ChatRequest) -> Any:
         if (candidate_fast_path and not targeted_rule
                 and not primary_objective.is_source
                 and not _explicit_mutation_request(request.message)):
-            if explicit_system_check_command(request.message):
+            if (explicit_system_check_command(request.message)
+                    or explicit_whole_hub_report_request(request.message)):
                 model_route = "system_audit"
+            elif explicit_aggregate_performance_request(request.message):
+                model_route = "performance_report"
             else:
-                # Natural-language requests must not bypass the AI interpreter
-                # because phrases like "comprehensive audit", "all apps" or
-                # "scheduled jobs" happen to occur in a diagnostic question.
-                # Only the literal standalone System Check command is direct.
+                # Ambiguous cases and explicitly negated report examples
+                # reach the AI interpreter. Explicit whole-hub or aggregate
+                # report commands retain their established fast read path.
                 increment_active_metric("ai_read_route_arbitrated")
                 decision = await decide_read_route(
                     agent._chat, request.message,
