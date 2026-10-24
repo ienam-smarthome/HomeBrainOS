@@ -30,6 +30,17 @@ WRONG = (
 )
 
 
+def test_rule_source_fields_phrase_is_not_groovy_code_intent():
+    from targeted_rule_scope_policy import is_existing_rule_verification_request
+    rule_request = (
+        "Perform a comprehensive read-only verification of existing Rule "
+        "Machine app 4246. Compare ordered triggers and actions. "
+        "Show actual source fields. Do not modify anything."
+    )
+    assert requested_groovy_app_id(rule_request) is None
+    assert is_existing_rule_verification_request(rule_request)
+
+
 def test_ambiguous_phrase_is_source_first_not_rule_machine():
     assert requested_groovy_app_id(REQUEST) == "3977"
     # "compare" and "configuration" collide with old Rule Machine classifier.
