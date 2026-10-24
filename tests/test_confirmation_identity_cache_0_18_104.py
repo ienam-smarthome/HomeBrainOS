@@ -104,6 +104,100 @@ async def test_confirmation_fails_closed_if_fresh_snapshot_has_changed_id():
     assert mcp.refresh_args[-1] is True
 
 
+@pytest.mark.asyncio
+async def test_structural_switch_cache_stages_room_approval_without_manifest_read():
+    class CompactSwitchMCP(CountingManifestMCP):
+        def peek_device_identities(self):
+            self.peek_calls += 1
+            return [
+                {k: v for k, v in d.items() if k != "commands"}
+                for d in self.devices
+            ]
+
+    mcp = CompactSwitchMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ScriptedAI())
+    staged = await agent.process_user_request_result(
+        "turn off everything in Appliances", session_id="compact-stage",
+    )
+    assert staged.confirmation_required is True
+    assert "Freezer" in staged.message and "Fridge" in staged.message
+    assert mcp.refresh_args == []  # no detailed calls, not even cached manifest
+    assert staged.metrics["counters"]["control_confirmation_preview_cache"] == 1
+    assert staged.metrics["counters"].get(
+        "control_confirmation_manifest_fallback", 0
+    ) == 0
+    assert staged.metrics["outcome"] == "needs_input"
+    assert switch_writes(mcp) == []
+
+
+@pytest.mark.asyncio
+async def test_compact_stage_still_requires_actual_advertised_command_on_confirm():
+    class CommandDeniedAfterApproval(CountingManifestMCP):
+        def peek_device_identities(self):
+            return [
+                {k: v for k, v in d.items() if k != "commands"}
+                for d in self.devices
+            ]
+
+        async def get_cached_devices(self, refresh=False):
+            self.refresh_args.append(bool(refresh))
+            return [
+                {**d, "commands": ["refresh"]} if d["label"] == "Freezer" else d
+                for d in self.devices
+            ]
+
+    mcp = CommandDeniedAfterApproval()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ScriptedAI())
+    staged = await agent.process_user_request_result(
+        "turn off Freezer", session_id="cap-denied",
+    )
+    assert staged.confirmation_required
+    response = await agent.process_user_request_result(
+        "confirm", session_id="cap-denied",
+    )
+    assert mcp.refresh_args == [True]
+    assert "changed" in response.message.lower()
+    assert switch_writes(mcp) == []
+
+
+@pytest.mark.asyncio
+async def test_explicit_empty_commands_not_treated_as_missing_metadata():
+    mcp = CountingManifestMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ScriptedAI())
+    candidate = [
+        {**d, "commands": []} if d["label"] == "Freezer" else d
+        for d in mcp.devices
+    ]
+    provisional = agent._exact_sensitive_targets(
+        {"device_names": ["Freezer"], "command": "off"},
+        candidate, preview_only=True,
+    )
+    assert provisional is None
+
+
+@pytest.mark.asyncio
+async def test_compact_identity_without_switch_capability_cannot_stage_approval():
+    class NoCapabilities(CountingManifestMCP):
+        def peek_device_identities(self):
+            return [
+                {k: v for k, v in d.items()
+                 if k not in {"commands", "capabilities"}}
+                for d in self.devices
+            ]
+        async def get_cached_devices(self, refresh=False):
+            self.refresh_args.append(bool(refresh))
+            return self.peek_device_identities()
+
+    mcp = NoCapabilities()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ScriptedAI())
+    outcome = await agent.process_user_request_result(
+        "turn off Freezer", session_id="missing-evidence",
+    )
+    assert not outcome.confirmation_required
+    assert "Nothing was sent" in outcome.message
+    assert not switch_writes(mcp)
+
+
 def test_confirmation_outcome_not_reported_as_success():
     assert classify_completed_request({"confirmation_queued": 1}) == "needs_input"
     assert classify_completed_request({
