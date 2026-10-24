@@ -57,6 +57,11 @@ def model_led_investigation_request(prompt: str) -> bool:
     text = " ".join(str(prompt or "").split())
     if not text or len(text) > 12000:
         return False
+    # Direct state-changing commands stay outside semantic read routing even
+    # if an unexpected model reply incorrectly labels them as investigations.
+    # The actual host write classifier/confirmation policy remains separate.
+    if _IMPERATIVE.search(text) and not _EXPLAINED_CHANGE.search(text):
+        return False
     # When the one no-tools AI interpreter has selected a request objective,
     # never run the legacy word-cluster eligibility classifier again.
     # Host permissions are enforced independently at the command gateway;
@@ -82,6 +87,8 @@ def model_led_investigation_request(prompt: str) -> bool:
 def source_evidence_request(prompt: str) -> bool:
     """Code evidence is not interchangeable with device/command history."""
     text = str(prompt or "")
+    if _IMPERATIVE.search(text) and not _EXPLAINED_CHANGE.search(text):
+        return False
     from ai_investigation_routing import active_request_interpretation
     interpreted = active_request_interpretation(prompt)
     if interpreted is not None and interpreted.objective is not None:
