@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from contextvars import ContextVar, Token
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import re
@@ -68,6 +69,16 @@ def set_request_interpretation(request: str, decision: ReadRouteDecision) -> Tok
 
 def reset_request_interpretation(token: Token) -> None:
     _REQUEST_OBJECTIVE.reset(token)
+
+
+@contextmanager
+def without_request_interpretation():
+    """Host safety parsers MUST not trust model intent labels."""
+    token = _REQUEST_OBJECTIVE.set(None)
+    try:
+        yield
+    finally:
+        _REQUEST_OBJECTIVE.reset(token)
 
 
 def active_request_interpretation(request: str) -> ReadRouteDecision | None:
@@ -243,4 +254,5 @@ __all__ = [
     "explicit_whole_hub_report_request", "explicit_aggregate_performance_request",
     "active_request_interpretation", "set_request_interpretation",
     "reset_request_interpretation",
+    "without_request_interpretation",
 ]
