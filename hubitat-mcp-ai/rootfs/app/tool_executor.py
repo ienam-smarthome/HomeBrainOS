@@ -188,24 +188,32 @@ class ToolExecutor:
             # Source text and any cached File Manager paths stay out of receipts.
             # Whitelisted provenance only. Never retain Groovy code or
             # excerpts inside API receipts.
+            receipt = {"sourceRetrieved": data.get("sourceRetrieved") is True}
+            # Older minimal local-source results have only a boolean.
+            # Add optional typed metadata only when present and valid;
+            # never invent source identity/coverage from missing fields.
+            if type(data.get("fullImplementationVerified")) is bool:
+                receipt["fullImplementationVerified"] = (
+                    data["fullImplementationVerified"]
+                )
+            for field in (
+                "verifiedCharacters", "declaredTotalCharacters",
+                "verifiedPages",
+            ):
+                if type(data.get(field)) is int and data[field] >= 0:
+                    receipt[field] = data[field]
+            code_id = data.get("sourceCodeId")
+            if (isinstance(code_id, (int, str)) and
+                    re.fullmatch(r"[0-9]{1,18}", str(code_id))):
+                receipt["sourceCodeId"] = str(code_id)
             shown = data.get("verifiedCandidateMethodBodies")
-            shown = [
-                x for x in shown[:12]
-                if isinstance(x, str) and re.fullmatch(r"[A-Za-z_]\w{0,80}", x)
-            ] if isinstance(shown, list) else []
-            return {
-                "sourceRetrieved": data.get("sourceRetrieved") is True,
-                "fullImplementationVerified":
-                    data.get("fullImplementationVerified") is True,
-                "verifiedCharacters": data.get("verifiedCharacters")
-                    if type(data.get("verifiedCharacters")) is int else None,
-                "declaredTotalCharacters": data.get("declaredTotalCharacters")
-                    if type(data.get("declaredTotalCharacters")) is int else None,
-                "verifiedPages": data.get("verifiedPages")
-                    if type(data.get("verifiedPages")) is int else None,
-                "sourceCodeId": str(data.get("sourceCodeId") or "")[:18],
-                "verifiedCandidateMethodBodies": shown,
-            }
+            if isinstance(shown, list):
+                receipt["verifiedCandidateMethodBodies"] = [
+                    x for x in shown[:12]
+                    if isinstance(x, str)
+                    and re.fullmatch(r"[A-Za-z_]\w{0,80}", x)
+                ]
+            return receipt
         if isinstance(data, dict) and isinstance(data.get("logs"), list):
             return compact_log_evidence(data)
 
