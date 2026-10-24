@@ -1332,22 +1332,36 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             session_key=session_key,
         )
 
-    async def _control_identity_snapshot(self) -> list[dict[str, Any]]:
-        """Get control candidates without dispatching any actuation."""
+    async def _control_identity_snapshot(
+        self, *, force_refresh: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Read safe structural identities, refreshing for approved execution.
+
+        Approval staging may use MCPClient's *TTL-validated complete* identity
+        snapshot. The earlier unconditional full detailed-manifest refresh took
+        28 seconds for a confirmation that had not sent any device command.
+        Approval still forces a fresh detailed read, checks the exact approved
+        ID/label set and verifies command capability before writing.
+        """
+        if not force_refresh:
+            peek = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek):
+                try:
+                    identities = [
+                        dict(d) for d in (peek() or []) if isinstance(d, dict)
+                    ]
+                    if identities:
+                        return identities
+                except Exception:
+                    pass
         reader = getattr(self.mcp, "get_cached_devices", None)
         if callable(reader):
             try:
                 try:
-                    records = await reader(refresh=True)
+                    records = await reader(refresh=force_refresh)
                 except TypeError:
                     records = await reader()
                 return [dict(d) for d in (records or []) if isinstance(d, dict)]
-            except Exception:
-                return []
-        peek = getattr(self.mcp, "peek_device_identities", None)
-        if callable(peek):
-            try:
-                return [dict(d) for d in (peek() or []) if isinstance(d, dict)]
             except Exception:
                 return []
         return []
@@ -1414,9 +1428,24 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 ),
                 request_class="write", evidence=[], choices=[],
             )
-        identity = self._exact_sensitive_targets(
-            arguments, await self._control_identity_snapshot(),
-        )
+        identity_snapshot = await self._control_identity_snapshot()
+        identity = self._exact_sensitive_targets(arguments, identity_snapshot)
+        if identity is None and identity_snapshot:
+            # A complete structural cache may carry room/label identities but
+            # omit command metadata. Retry once using the ordinary TTL-aware
+            # detailed manifest; never infer unsupported commands.
+            reader = getattr(self.mcp, "get_cached_devices", None)
+            if callable(reader):
+                try:
+                    detailed = await reader()
+                    identity = self._exact_sensitive_targets(
+                        arguments, [
+                            dict(d) for d in (detailed or [])
+                            if isinstance(d, dict)
+                        ],
+                    )
+                except Exception:
+                    identity = None
         if identity is None:
             return AgentOutcome(
                 message=(
@@ -1749,7 +1778,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                         request_class="write", evidence=[], choices=[],
                     )
                 current_identity = self._exact_sensitive_targets(
-                    arguments, await self._control_identity_snapshot(),
+                    arguments, await self._control_identity_snapshot(
+                        force_refresh=True,
+                    ),
                 )
                 if current_identity != prior_identity:
                     return AgentOutcome(

@@ -64,8 +64,12 @@ def test_non_outcome_metrics_do_not_change_classification() -> None:
         "tool_discovery_calls": 1,
         "mcp_retries": 2,
         "evidence_retries": 1,
-        "confirmation_queued": 1,
     }) == "success"
+
+    assert classify_completed_request({
+        "model_rounds": 2,
+        "confirmation_queued": 1,
+    }) == "needs_input"
 
 
 def test_zero_and_negative_values_do_not_change_classification() -> None:

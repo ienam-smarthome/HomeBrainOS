@@ -140,7 +140,7 @@ async def test_process_result_returns_privacy_safe_metrics(monkeypatch: pytest.M
 
     assert isinstance(outcome, ObservedAgentOutcome)
     assert outcome.message == "Done"
-    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["outcome"] == "needs_input"
     assert outcome.metrics["counters"]["tool_calls"] == 1
     assert outcome.metrics["counters"]["confirmation_queued"] == 1
     assert "private device wording" not in repr(outcome.metrics)
@@ -2133,7 +2133,7 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
     ai = FakeAI("unused -- explicit multi-device control stays zero-model")
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
 
-    async def read_exact_targets():
+    async def read_exact_targets(*, force_refresh=False):
         return [
             {"id": "7829", "label": "Hallway Light 1",
              "commands": ["on", "off"], "room": "Hallway"},
