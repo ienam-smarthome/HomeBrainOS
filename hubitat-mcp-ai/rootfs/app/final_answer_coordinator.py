@@ -729,7 +729,7 @@ class FinalAnswerCoordinator:
             evidence,
             original_user=original_user,
             causal=causal,
-            primary_objective=objective.domain,
+            **({"primary_objective": "source_code"} if objective.is_source else {}),
         )
         if not issues:
             # Existing causal/focal analyzers already enforce their own one-pass
@@ -857,7 +857,7 @@ class FinalAnswerCoordinator:
             evidence,
             original_user=original_user,
             causal=causal,
-            primary_objective=objective.domain,
+            **({"primary_objective": "source_code"} if objective.is_source else {}),
         )
         if remaining:
             increment_active_metric("synthesis_repair_failed")
