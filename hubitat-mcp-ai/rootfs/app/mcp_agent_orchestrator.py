@@ -22,6 +22,7 @@ from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_m
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from device_incident_depth import (
     device_incident_followup, incident_progress_followup,
+    evidence_progress_checkpoint,
     is_connectivity_root_cause_request, CONNECTIVITY_EVIDENCE_PLAN,
 )
 from paid_model_routing import (
@@ -4888,6 +4889,7 @@ class UnifiedMCPAgent:
         source_completion_retry_used = False
         device_incident_followup_used = False
         device_incident_progress_retry_used = False
+        incident_evidence_checkpoint_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -5191,6 +5193,42 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
+
+                # A model-led root-cause investigation needs a read that
+                # discriminates between the leading explanations, not another
+                # generic history or unrelated log sample. Allow ONE extra
+                # evidence-choice round after a substantive target device read.
+                # This is NOT a keyword tool router: the interpreted objective
+                # controls eligibility; the model chooses among advertised
+                # read-only tools, with existing safety/round gates intact.
+                if (connectivity_incident
+                        and not incident_evidence_checkpoint_used
+                        and round_index + 1 < active_round_budget
+                        and not self._mutation_requested_by_user.get()):
+                    target_checkpoint = evidence_progress_checkpoint(
+                        user_prompt, self.evidence.receipts(),
+                    )
+                    if target_checkpoint:
+                        incident_evidence_checkpoint_used = True
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit
+                        )
+                        catalog.expose_read_gateways(
+                            ("hub_read_apps_code", "hub_read_rules",
+                             "hub_read_devices", "hub_read_diagnostics",
+                             SEARCH_TOOL),
+                            max_declared=self.tool_limit,
+                        )
+                        if catalog.schemas():
+                            increment_active_metric(
+                                "incident_evidence_checkpoint_retry"
+                            )
+                            messages.extend([
+                                assistant,
+                                {"role": "user", "content": target_checkpoint},
+                            ])
+                            tools = catalog.schemas()
+                            continue
 
                 # General evidence-sufficiency checkpoint: across device
                 # telemetry, motion, scheduler or other declared domain plans,
@@ -5925,12 +5963,8 @@ class UnifiedMCPAgent:
                 # this request; only on full reconstruction project complete
                 # relevant candidate method bodies, including late-file code.
                 # No new MCP read, command, or Groovy evaluation occurs.
-                if (
-                    source_investigation or (
-                        adaptive_investigation
-                        and "driver" in user_prompt.casefold()
-                    )
-                ):
+                if (source_investigation
+                        or (connectivity_incident and adaptive_investigation)):
                     if (
                         name == "hub_read_apps_code"
                         and arguments.get("tool") == "hub_get_source"
