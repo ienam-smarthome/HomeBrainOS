@@ -57,6 +57,35 @@ def unqualified_immediate_clause(prompt: str) -> bool:
     )
 
 
+def semantic_control_clause_eligible(prompt: str) -> bool:
+    """Let valid multi-target commands reach the semantic grounder, not a
+    regex executor. Semantic room/selection controls are still subject to
+    post-grounding approval. Compound requests for a second *action* are
+    excluded (e.g. "turn on TV and tell me its power").
+    """
+    if unqualified_immediate_clause(prompt):
+        return True
+    text = " ".join(str(prompt or "").strip().split())
+    if not text or _INTERROGATIVE_CONTROL.search(text) or _CANCELLED.search(text):
+        return False
+    if re.search(
+        r"(?i)\band\s+(?:tell|show|check|read|report|explain|"
+        r"create|restart|reboot|shutdown|change|set|turn|switch|"
+        r"unlock|disable|enable|update|delete|write)\b",
+        text,
+    ):
+        return False
+    # A simple conjunction of entity labels may be grounded as an exact
+    # multi-device selection. No other scheduling or conditional qualifiers.
+    return bool(
+        re.search(r"(?i)\band\b", text)
+        and not _UNQUALIFIED.search(
+            re.sub(r"(?i)\band\b", " ", text)
+        )
+        and not _EXPLANATORY_TARGET.search(text)
+    )
+
+
 def unsafe_control_prompt(prompt: str) -> bool:
     """Block mutation authority for qualified single-control directives.
 
@@ -86,7 +115,7 @@ def needs_sensitive_control_confirmation(
 
 
 __all__ = [
-    "unqualified_immediate_clause",
+    "unqualified_immediate_clause", "semantic_control_clause_eligible",
     "unsafe_control_prompt",
     "needs_sensitive_control_confirmation",
 ]
