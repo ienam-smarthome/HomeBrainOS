@@ -65,6 +65,7 @@ class RequestMetrics:
         "source_method_projection_added",
         "investigation_snapshot_shortcut_bypassed",
         "device_incident_depth_retry", "device_incident_progress_retry",
+        "incident_evidence_checkpoint_retry",
         "investigation_read_reflection", "investigation_general_evidence_retry",
         "investigation_write_blocked", "investigation_reflection_synthesized",
         "investigation_grounded_fallback",
