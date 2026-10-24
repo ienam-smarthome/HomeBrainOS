@@ -259,12 +259,36 @@ def guard_triggered_listener_causal_claim(
 
         app_label = matched["appLabel"]
         producer_label = matched["producerLabel"]
-        pieces[index] = (
+        guarded_claim = (
             f"For this physical state event, {app_label} is recorded only as a "
             f"downstream listener in triggered[]; the event itself was produced "
             f"by {producer_label}. This evidence does not establish that "
             f"{app_label} initiated the transition."
         )
+        # A claim guard must never erase a timeline row, its date columns,
+        # duration, or Markdown pipes. The earlier implementation replaced
+        # an entire 4-column row with prose, leaving a dangling closing pipe
+        # and hiding an observed 18:29–18:37 switch interval. Rewrite only
+        # the causal-attribution cell; preserve all other cells verbatim.
+        if sentence.lstrip().startswith("|") and sentence.rstrip().endswith("|"):
+            cells = sentence.split("|")
+            if len(cells) >= 5:
+                causal_cells = [
+                    pos for pos in range(1, len(cells) - 1)
+                    if _CAUSAL_CLAIM.search(cells[pos])
+                ]
+                if causal_cells:
+                    cell = causal_cells[-1]
+                    cells[cell] = " " + guarded_claim + " "
+                    pieces[index] = "|".join(cells)
+                else:
+                    # Fail closed on an unrecognised table layout: do not
+                    # corrupt source-bearing columns or promote the claim.
+                    continue
+            else:
+                continue
+        else:
+            pieces[index] = guarded_claim
         changed = True
 
     return "".join(pieces), changed
