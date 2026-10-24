@@ -150,3 +150,4 @@ def test_device_incident_bypasses_switch_command_causal_branch():
     synth = (ROOT / "final_answer_coordinator.py").read_text(encoding="utf-8")
     assert "PRIMARY OBJECTIVE: investigate the target device's" in synth
     assert "Do not include a Rule design feasibility gate" in synth
+    assert "and not is_connectivity_root_cause_request(original_user)" in synth
