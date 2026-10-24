@@ -34,6 +34,7 @@ from recorded_telemetry_freshness import (
     reconcile_telemetry_answer, render_command_only_evidence_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
+from investigation_objective import resolve_primary_objective
 from telemetry_clock_consistency import (
     assess_telemetry_clock_consistency,
     render_telemetry_clock_qualification,
@@ -128,7 +129,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         return outcome
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
-    goal = plan_investigation(request)
+    objective = resolve_primary_objective(request)
+    goal = None if objective.is_source else plan_investigation(request)
     # The broad legacy classifier also matches prospective rule "triggers".
     # This final historical gate must not turn proposal-only read requests into
     # historical-cause investigations merely for mentioning rule triggers.
@@ -153,7 +155,9 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     # Code-reading obligations are not historical command-provenance
     # obligations. A successful config read or empty source read is NOT
     # source-code evidence and cannot close the actual objective.
-    if source_evidence_request(request):
+    if objective.is_source or (
+        not objective.is_rule and source_evidence_request(request)
+    ):
         source = assess_task_source_coverage(("source_code",), evidence)
         found = source.sources_checked
         direct_segments = contiguous_source_coverage(evidence)
@@ -230,6 +234,22 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         method_gap = source_method_claim_gap(draft_message)
         focus = source_answer_focus(request, draft_message)
         focus_gap = bool(focus['required'] and not focus['satisfied'])
+        # A complete file is not evidence that the *requested* method body
+        # was in the bounded model excerpts. Require a typed, source-derived
+        # candidate-body receipt before calling method-level review complete.
+        observed_method_bodies = {
+            method.casefold()
+            for detail in workbench_details
+            for method in detail.get("verifiedCandidateMethodBodies", ())
+            if isinstance(method, str)
+        }
+        method_body_shown = (
+            focus.get("method") is not None
+            and str(focus["method"]).casefold() in observed_method_bodies
+        )
+        method_obligation_gap = bool(
+            objective.is_source and focus["required"] and not method_body_shown
+        )
         # A Groovy excessive-load investigation can legitimately say an app
         # "caused" an exception without claiming that it sent any past
         # device command. Only require historical command-event proof when
@@ -251,13 +271,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
                 and not runtime_gap and not historical_gap and not focus_gap
+                and not method_obligation_gap
             ),
             "analysisAnswerVerified": not (
                 synthesis_failed or historical_gap or focus_gap
+                or method_obligation_gap
             ),
             "analysisStatus": (
                 "source-answer-off-objective" if focus_gap else
                 "historical-app-command-not-verified" if historical_gap else
+                "requested-method-excerpt-unverified" if method_obligation_gap else
                 "synthesis-failed-source-observed" if synthesis_failed
                 else "model-admitted-relevant-methods-not-reviewed"
                 if method_gap else "model-answer-present-not-method-certified"
@@ -269,7 +292,13 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 found and (full or not complete_requested)
                 and not synthesis_failed and not method_gap
                 and not runtime_gap and not historical_gap and not focus_gap
+                and not method_obligation_gap
             ),
+            "primaryObjective": {
+                "kind": objective.domain,
+                "installedAppId": objective.installed_app_id,
+                "method": objective.method_symbol,
+            },
             "answerFocus": focus,
             "sourceCoverage": source.to_dict(),
             "fullImplementationVerified": bool(full),
@@ -278,8 +307,11 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             "methodBodyCoverage": {
                 "status": (
                     "model-admitted-unreviewed-methods" if method_gap
+                    else "balanced-candidate-method-body-shown"
+                    if method_body_shown
                     else "not-certified-by-source-span-receipts"
                 ),
+                "candidateMethodBodiesShown": sorted(observed_method_bodies),
                 "note": "Whole-file retrieval does not independently certify "
                         "that every relevant method body, caller, or runtime "
                         "branch was reviewed by the model.",
@@ -338,7 +370,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             outcome, coverage,
             _safe_metrics(outcome, partial=(
                 synthesis_failed or method_gap or runtime_gap or historical_gap
-                or focus_gap or not found or (complete_requested and not full)
+                or focus_gap or method_obligation_gap
+                or not found or (complete_requested and not full)
             )),
             message,
         )

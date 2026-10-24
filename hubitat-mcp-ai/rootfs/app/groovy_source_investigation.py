@@ -199,6 +199,7 @@ class GroovySourceReport:
     declared_total: int | None = None
     verified_pages: int = 0
     source_code_id: str | None = None
+    verified_candidate_method_bodies: tuple[str, ...] = ()
 
 
 class GroovySourceService:
@@ -457,6 +458,17 @@ class GroovySourceService:
             body, requested_symbols,
             budget=min(10500, MAX_EXCERPT_CHARS),
         )
+        # Only index structurally balanced candidate bodies shown in full.
+        # This is *not* runtime proof or certification of a complete call
+        # graph, but provides auditable method-span coverage metadata.
+        shown_methods = tuple(dict.fromkeys(
+            match.group(1) for note in method_notes
+            if (match := re.search(
+                r"^\s+-\s+([A-Za-z_]\w*)\s+lines\s+\d+-\d+:"
+                r"\s+balanced candidate body; full candidate method body shown",
+                note,
+            ))
+        ))
         reference_excerpts, found_symbols = _excerpts(body, symbols)
         remaining = MAX_EXCERPT_CHARS - sum(len(x) for x in method_excerpts)
         excerpts = list(method_excerpts)
@@ -487,6 +499,7 @@ class GroovySourceService:
             declared_total=total,
             verified_pages=verified_pages,
             source_code_id=code_id,
+            verified_candidate_method_bodies=shown_methods,
         )
 
 

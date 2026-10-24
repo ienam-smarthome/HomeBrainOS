@@ -23,10 +23,35 @@ _ACT = re.compile(
 # For source-code reviews, a claim such as "App 3977 caused high load"
 # is not a claim that it issued a historical device command. Still guard
 # actual switch/command dispatch assertions inside those source reviews.
-_SOURCE_COMMAND_LANGUAGE = re.compile(
-    r"(?i)\b(?:command(?:ed|s)?|issued|sent|switched|turned|"
-    r"on\(\)|off\(\)|setlevel\(\))\b"
+# Only claims about an actual device-command *dispatch* need command-event
+# provenance in source-code reviews. Words such as "sent updates", "caused
+# high load" or "executed setReportData" describe different operations.
+# Command-provenance validation must never suppress an entire source
+# investigation for these incidental nearby words.
+_SOURCE_DISPATCH_ASSERTION = re.compile(
+    r"(?i)\b(?:issued|sent|dispatched|commanded|called|executed|"
+    r"fired|triggered)\b[^\n.!?;]{0,95}\b"
+    r"(?:[a-z-]+\s+){0,4}command\b"
+    r"|\b(?:switched|turned)\b[^\n.!?;]{0,95}\b(?:on|off)\b"
+    r"|\b(?:issued|called|executed)\b[^\n.!?;]{0,90}"
+    r"\b(?:on|off)\s*\(\s*\)"
 )
+
+
+def _source_actor_clause(message: str, match: re.Match[str]) -> str:
+    """Isolate the sentence containing this app ID, not adjacent analysis."""
+    start, end = match.span()
+    left = max(message.rfind("\n", 0, start), message.rfind(". ", 0, start),
+               message.rfind("; ", 0, start))
+    right_positions = [
+        p for p in (
+            message.find("\n", end), message.find(". ", end),
+            message.find("; ", end),
+        ) if p >= 0
+    ]
+    right = min(right_positions) if right_positions else len(message)
+    return message[max(left + 1, start - 80):min(right, end + 220)]
+
 _DATE = re.compile(
     r"(?i)\b(?:on\s+)?(?:Oct(?:ober)?|Nov(?:ember)?|Sep(?:tember)?|"
     r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
@@ -142,12 +167,18 @@ def assess_historical_claims(
     events = _observed_events(evidence)
     unverified: set[str] = set()
     for match in _APP_ACTOR.finditer(message):
-        context = _claim_context(message, match)
-        if not _ACT.search(context) or _CLEARLY_UNVERIFIED.search(context):
+        context = (
+            _source_actor_clause(message, match)
+            if command_only else _claim_context(message, match)
+        )
+        if _CLEARLY_UNVERIFIED.search(context):
             continue
-        if command_only and not _SOURCE_COMMAND_LANGUAGE.search(context):
-            # The source investigation's exception causality is not itself
-            # a dated Hubitat command-dispatch assertion.
+        if command_only:
+            if not _SOURCE_DISPATCH_ASSERTION.search(context):
+                # App method execution, scheduling, messaging and load
+                # exceptions are NOT historical device command dispatch.
+                continue
+        elif not _ACT.search(context):
             continue
         app_id = match.group(1)
         if not _matching_record(app_id, context, events):

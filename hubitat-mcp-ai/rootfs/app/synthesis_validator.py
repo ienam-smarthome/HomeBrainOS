@@ -156,6 +156,7 @@ def validate_synthesis(
     *,
     original_user: str = "",
     causal: bool = False,
+    primary_objective: str = "general",
 ) -> tuple[str, list[str]]:
     """Return a localized deterministic baseline plus issue labels.
 
@@ -212,9 +213,17 @@ def validate_synthesis(
     if correlation_changed:
         issues.append("location_correlation_consistency")
 
+    # Global performance ranking/cadence optimizers have different proof
+    # obligations from interpreting one installed Groovy method. An app
+    # source investigation may *consult* pctBusy yet should not be rewritten
+    # into a whole-hub performance audit. Universal bounded-history and
+    # observed-source validation above still apply.
     performance_scope = (
-        bool(_PERFORMANCE_TASK_RE.search(str(original_user or "")))
-        or has_performance_evidence(evidence)
+        primary_objective != "source_code"
+        and (
+            bool(_PERFORMANCE_TASK_RE.search(str(original_user or "")))
+            or has_performance_evidence(evidence)
+        )
     )
     corrected, source_changed = guard_checked_source_absence_claim(
         corrected, evidence, performance_request=performance_scope

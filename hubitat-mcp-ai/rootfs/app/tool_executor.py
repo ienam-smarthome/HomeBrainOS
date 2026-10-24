@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
@@ -185,7 +186,34 @@ class ToolExecutor:
                 and isinstance(data, dict)):
             # Audit *whether* raw source was actually returned, not the source.
             # Source text and any cached File Manager paths stay out of receipts.
-            return {"sourceRetrieved": data.get("sourceRetrieved") is True}
+            # Whitelisted provenance only. Never retain Groovy code or
+            # excerpts inside API receipts.
+            receipt = {"sourceRetrieved": data.get("sourceRetrieved") is True}
+            # Older minimal local-source results have only a boolean.
+            # Add optional typed metadata only when present and valid;
+            # never invent source identity/coverage from missing fields.
+            if type(data.get("fullImplementationVerified")) is bool:
+                receipt["fullImplementationVerified"] = (
+                    data["fullImplementationVerified"]
+                )
+            for field in (
+                "verifiedCharacters", "declaredTotalCharacters",
+                "verifiedPages",
+            ):
+                if type(data.get(field)) is int and data[field] >= 0:
+                    receipt[field] = data[field]
+            code_id = data.get("sourceCodeId")
+            if (isinstance(code_id, (int, str)) and
+                    re.fullmatch(r"[0-9]{1,18}", str(code_id))):
+                receipt["sourceCodeId"] = str(code_id)
+            shown = data.get("verifiedCandidateMethodBodies")
+            if isinstance(shown, list):
+                receipt["verifiedCandidateMethodBodies"] = [
+                    x for x in shown[:12]
+                    if isinstance(x, str)
+                    and re.fullmatch(r"[A-Za-z_]\w{0,80}", x)
+                ]
+            return receipt
         if isinstance(data, dict) and isinstance(data.get("logs"), list):
             return compact_log_evidence(data)
 
