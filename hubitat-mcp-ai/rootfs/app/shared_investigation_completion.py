@@ -34,6 +34,7 @@ from recorded_telemetry_freshness import (
     reconcile_telemetry_answer, render_command_only_evidence_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
+from history_temporal_analysis import direct_recorded_duration_answer
 from incident_reasoning_depth import assess_incident_reasoning_depth
 from device_watchdog_evidence import correlate_elapsed_watchdog_with_device_events
 from investigation_objective import resolve_primary_objective
@@ -160,6 +161,19 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     )
     prior = getattr(outcome, "investigation_coverage", None)
     evidence = list(getattr(outcome, "evidence", []) or [])
+    # A plain 'how long was it on today?' question is not a causal
+    # provenance investigation. The recorded intervals provide a concise
+    # answer, and a separately labelled overnight estimate is useful if an
+    # ON before midnight was followed by the first OFF just after midnight.
+    # This factual projection must precede the legacy causal obligations
+    # and synthetic hypothesis narration, which otherwise bury the answer.
+    direct_duration = direct_recorded_duration_answer(request, evidence)
+    if direct_duration is not None:
+        direct_message, duration_coverage = direct_duration
+        return _CoverageOutcome(
+            outcome, duration_coverage,
+            _safe_metrics(outcome, partial=False), direct_message,
+        )
     # Code-reading obligations are not historical command-provenance
     # obligations. A successful config read or empty source read is NOT
     # source-code evidence and cannot close the actual objective.
@@ -610,7 +624,16 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     # A successful source-class read is NOT support, contradiction or proof
     # of an individual proposed explanation.
     proposed = coverage.get("hypothesisComparisons")
-    if isinstance(proposed, list) and proposed:
+    # Proposing alternatives is internal reasoning evidence, not a request
+    # to display a long hypothesis checklist. Only render those details when
+    # the user expressly asks to compare explanations.
+    requested_hypotheses = bool(re.search(
+        r"(?i)\b(?:competing explanations|alternative explanations|"
+        r"compare (?:the )?(?:possible )?(?:causes|hypotheses)|"
+        r"possible causes|different explanations|hypotheses)\b",
+        str(request or ""),
+    ))
+    if isinstance(proposed, list) and proposed and requested_hypotheses:
         comparisons: list[str] = []
         for candidate in proposed[:3]:
             if not isinstance(candidate, dict):
