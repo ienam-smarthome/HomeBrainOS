@@ -3980,18 +3980,33 @@ class UnifiedMCPAgent:
         interpreted_kind = interpreted.objective if interpreted else None
         groovy_source_app = primary_objective.installed_app_id
         source_investigation = primary_objective.is_source
+        # Interpreted read intent takes precedence over overlapping
+        # diagnostic/app/rule words. On requests not arbitrated by the model,
+        # retain the established specialist/factual fallback behavior.
         proposal_only = (
             not source_investigation
-            and is_new_rule_design_review_request(user_prompt)
+            and (
+                interpreted_kind == "rule_design_review"
+                if interpreted_kind is not None
+                else is_new_rule_design_review_request(user_prompt)
+            )
         )
         existing_rule_verification = (
             not source_investigation
-            and is_existing_rule_verification_request(user_prompt)
+            and (
+                interpreted_kind == "existing_rule_verification"
+                if interpreted_kind is not None
+                else is_existing_rule_verification_request(user_prompt)
+            )
         )
         deep_rule_review = (
             not source_investigation
-            and requires_rule_logic_inspection(user_prompt)
             and not _explicit_mutation_request(user_prompt)
+            and (
+                interpreted_kind == "existing_rule_verification"
+                if interpreted_kind is not None
+                else requires_rule_logic_inspection(user_prompt)
+            )
         )
         stateful_authoring = (
             not review_first
@@ -4492,7 +4507,9 @@ class UnifiedMCPAgent:
             len(system_prompt),
             self._include_identity_manifest(user_prompt),
         )
-        if is_automation_runtime_diagnostic(user_prompt):
+        if ((interpreted_kind is None or
+             interpreted_kind == "existing_rule_verification")
+                and is_automation_runtime_diagnostic(user_prompt)):
             system_prompt += AUTOMATION_DIAGNOSTIC_INSTRUCTION
         if is_motion_lockout_investigation(user_prompt):
             system_prompt += (
@@ -4506,7 +4523,9 @@ class UnifiedMCPAgent:
                 "ON event cannot prove successful inhibition. Never claim a "
                 "manual OFF without independent controller evidence."
             )
-        if is_integration_runtime_diagnostic(user_prompt):
+        if ((interpreted_kind is None or
+             interpreted_kind == "general_investigation")
+                and is_integration_runtime_diagnostic(user_prompt)):
             system_prompt += INTEGRATION_DIAGNOSTIC_INSTRUCTION
         messages = [
             {"role": "system", "content": system_prompt},
@@ -4574,10 +4593,15 @@ class UnifiedMCPAgent:
                 "system_audit", "performance_report",
             ))
             or connectivity_incident
-            or is_history_investigation(user_prompt)
+            or (
+                interpreted_kind is None
+                and (
+                    is_history_investigation(user_prompt)
+                    or is_automation_runtime_diagnostic(user_prompt)
+                    or is_integration_runtime_diagnostic(user_prompt)
+                )
+            )
             or lockout_intent
-            or is_automation_runtime_diagnostic(user_prompt)
-            or is_integration_runtime_diagnostic(user_prompt)
             or contract is not None
         )
         set_reasoning_profile(
