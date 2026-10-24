@@ -31,6 +31,7 @@ def read(tool, arguments, details=None, *, successful=True):
         "sub_tool": tool,
         "arguments": {"tool": tool, "args": arguments},
         "success": successful,
+        "timestamp": "2026-10-24T14:49:13.522292+00:00",
         "supports_live_claim": successful,
         "mutates": False, "effect": "read",
         "evidence_kind": "tool_result",
@@ -45,6 +46,7 @@ def live_fixture():
                 "reportedDeviceState": {
                     "deviceId": "7103", "label": "Bedroom 3 Mesh",
                     "observedAt": "2026-10-24T14:49:09.277432+00:00",
+                    "source": "targeted-hubitat-device-state",
                     "reportedAttributes": {
                         "healthStatus": "offline", "mqttStatus": "connected",
                         "lastSeen": "Mon Oct 12 01:30:01 BST 2026",
@@ -54,10 +56,13 @@ def live_fixture():
             }),
             "evidence_kind": "targeted_device_lookup",
         },
-        read("hub_list_device_events", {"deviceId": "7103", "hoursBack": 24}, {
-            "observedEventsTruncated": False,
-            "historySourceIntegrityVerified": False,
-        }),
+        {
+            **read("hub_list_device_events", {"deviceId": "7103", "hoursBack": 24}, {
+                "observedEventsTruncated": False,
+                "historySourceIntegrityVerified": False,
+            }),
+            "summary": "2 device events for 'Bedroom 3 Mesh'",
+        },
         {
             **read("homebrain_device_history", {"name": "Bedroom 3 Mesh"}, {
                 "label": "Bedroom 3 Mesh",
@@ -78,6 +83,8 @@ def live_fixture():
                 "historySourceIntegrityVerified": False,
             }),
             "evidence_kind": "deterministic_device_event_history",
+            "tool": "homebrain_device_history",
+            "timestamp": "2026-10-24T14:49:13.523020+00:00",
         },
         read("hub_get_logs", {"deviceId": "7103", "since": "24h"}, {
             "logCount": 44,
