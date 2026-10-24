@@ -161,6 +161,80 @@ _DEVICE_ID_IN_QUESTION = re.compile(
 )
 
 
+def _app_source_runtime_evidence_status(
+    request: str,
+    receipts: list[dict[str, Any]],
+    app_id: str,
+) -> dict[str, Any]:
+    """Check app-relevant scopes, not physical driver telemetry.
+
+    A successful zero-row app/device log read establishes only that the
+    bounded query completed. It does not establish historical non-execution.
+    """
+    question = str(request or "")
+    relevant = bool(re.search(
+        r"(?i)\b(?:logs?|runtime|correlat\w*|"
+        r"LimitExceededException|excessive[- ]load|execution|scheduler)\b",
+        question,
+    ))
+    device_match = _DEVICE_ID_IN_QUESTION.search(question)
+    device_id = device_match.group(1) if device_match else None
+    config_required = bool(re.search(
+        r"(?i)\b(?:configuration|settings|configured)\b", question,
+    ))
+    log_required = bool(re.search(
+        r"(?i)\b(?:logs?|correlat\w*|LimitExceededException)\b", question,
+    ))
+    targets = ["app_logs"] if log_required else []
+    if log_required and device_id:
+        targets.append("device_logs")
+    if config_required:
+        targets.append("app_configuration")
+    checked: set[str] = set()
+    log_counts: dict[str, int | None] = {}
+    for receipt in receipts:
+        if (not isinstance(receipt, dict)
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("effect") != "read"):
+            continue
+        op, args = _leaf(receipt), _args(receipt)
+        source_app = str(args.get("appId") or "")
+        source_device = str(args.get("deviceId") or "")
+        if op == "hub_get_app_config" and source_app == app_id:
+            checked.add("app_configuration")
+        if op == "hub_get_logs":
+            scope = None
+            if source_app == app_id:
+                scope = "app_logs"
+            elif device_id and source_device == device_id:
+                scope = "device_logs"
+            if scope:
+                checked.add(scope)
+                details = receipt.get("details") or {}
+                if isinstance(details, dict):
+                    count = details.get("logCount")
+                    if type(count) is int:
+                        log_counts[scope] = count
+    return {
+        "required": relevant,
+        "satisfied": not relevant or all(name in checked for name in targets),
+        "checked": sorted(checked),
+        "missing": [name for name in targets if name not in checked],
+        "scope": "installed_app_source",
+        "historicalEventConfirmed": any(
+            count > 0 for count in log_counts.values()
+            if type(count) is int
+        ),
+        "boundedLogCounts": log_counts,
+        "note": (
+            "Successful bounded app/device log queries verify reads, not "
+            "24-hour/72-hour coverage, app method execution, a physical "
+            "device state, or historical exception absence."
+        ),
+    }
+
+
 def source_runtime_evidence_status(
     request: str, receipts: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -170,6 +244,11 @@ def source_runtime_evidence_status(
     physical device. Only current-request successful, non-mutating receipts
     count; never assume past conversation data or unscoped logs.
     """
+    objective = resolve_primary_objective(request)
+    if objective.is_source and objective.installed_app_id:
+        return _app_source_runtime_evidence_status(
+            request, receipts, objective.installed_app_id
+        )
     required = bool(_RUNTIME_REQUEST.search(str(request or "")))
     status: dict[str, Any] = {
         "required": required, "satisfied": not required,
