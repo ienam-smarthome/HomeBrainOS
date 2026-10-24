@@ -2133,21 +2133,36 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
     ai = FakeAI("unused -- explicit multi-device control stays zero-model")
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
 
+    async def read_exact_targets():
+        return [
+            {"id": "7829", "label": "Hallway Light 1",
+             "commands": ["on", "off"], "room": "Hallway"},
+            {"id": "8001", "label": "Kitchen Light",
+             "commands": ["on", "off"], "room": "Kitchen"},
+        ]
+    monkeypatch.setattr(agent, "_control_identity_snapshot", read_exact_targets)
+
     outcome = await agent.process_user_request_result(
         "turn off Hallway Light 1 and Kitchen Light",
         session_id="semantic-selection",
     )
+    assert outcome.confirmation_required is True
+    assert control_calls == []
+    assert "Hallway Light 1" in outcome.message
+    assert "Kitchen Light" in outcome.message
+    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert ai.requests == []
 
+    await agent.process_user_request_result(
+        "confirm", session_id="semantic-selection",
+    )
     assert control_calls == [{
         "device_names": ["Hallway Light 1", "Kitchen Light"],
         "command": "off",
         "device_kind": "auto",
     }]
-    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
-    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
-    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
-    assert outcome.metrics["outcome"] == "success"
-    assert ai.requests == []
 
 
 @pytest.mark.asyncio
