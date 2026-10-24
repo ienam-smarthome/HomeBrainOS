@@ -535,8 +535,8 @@ async function submit(text){
         // Only strict no-write investigations take this less alarming path.
         // Ambiguous or potentially mutating prompts retain the existing
         // write-outcome-unknown warning; never retry them automatically.
-        const strictReadOnly = /\\bread[\\s-]*only\\b/i.test(text)
-          && /\\b(?:do\\s+not|don't|without)\\s+(?:modify|change|edit|write|mutate|update|delete|create|disable|enable|control|turn|set)\\b/i.test(text);
+        const strictReadOnly = /\bread[\s-]*only\b/i.test(text)
+          && /\b(?:do\s+not|don't|without)\s+(?:modify|change|edit|write|mutate|update|delete|create|disable|enable|control|turn|set)\b/i.test(text);
         if(strictReadOnly){
           showAnswer({
             success:false,route:'network-outcome-unknown',
