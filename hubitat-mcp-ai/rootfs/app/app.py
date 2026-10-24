@@ -49,6 +49,7 @@ from history_time_windows import (
 )
 from homebrain_agent import UnifiedMCPAgent
 from adaptive_investigation_policy import model_led_investigation_request
+from device_incident_depth import is_connectivity_root_cause_request
 from rule_machine_analysis import historical_rule_execution_request, requires_rule_logic_inspection
 from investigation_policy import is_causal_investigation, is_history_investigation
 from mcp_agent_orchestrator import _explicit_mutation_request
@@ -620,16 +621,21 @@ async def _agent_request(request: ChatRequest) -> Any:
             comprehensive_audit or broad_automation_diagnostic
             or broad_performance
             or model_led_investigation_request(request.message)
+            # A natural 'why is my device offline?' question may not contain
+            # the old deep-investigation trigger words. It still needs one
+            # AI-interpreted objective before any specialist can reclassify it.
+            or is_connectivity_root_cause_request(request.message)
         )
         if (candidate_fast_path and not targeted_rule
                 and not primary_objective.is_source
                 and not _explicit_mutation_request(request.message)):
-            if (explicit_system_check_command(request.message)
-                    or explicit_whole_hub_report_request(request.message)):
+            if explicit_system_check_command(request.message):
                 model_route = "system_audit"
-            elif explicit_aggregate_performance_request(request.message):
-                model_route = "performance_report"
             else:
+                # Natural-language requests must not bypass the AI interpreter
+                # because phrases like "comprehensive audit", "all apps" or
+                # "scheduled jobs" happen to occur in a diagnostic question.
+                # Only the literal standalone System Check command is direct.
                 increment_active_metric("ai_read_route_arbitrated")
                 decision = await decide_read_route(
                     agent._chat, request.message,
