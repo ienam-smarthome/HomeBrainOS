@@ -354,7 +354,9 @@ class RuleAuthoringService:
             r"|\b(?:review|evaluate|check|inspect)\s+"
             r"(?:(?:the|my|a|proposed|new)\s+){0,3}"
             r"(?:rule|automation)\s+(?:design|proposal|plan)\b"
-            r"|\b(?:new|proposed|future)\s+(?:rule|automation)\b"
+            r"|\b(?:review|evaluate|check|inspect)\s+"
+            r"(?:(?:the|my|this|a)\s+)?(?:proposed|new|future)\s+"
+            r"(?:rule|automation)\b"
             r"|\b(?:rule|automation)\s+(?:design|proposal|plan)\b",
             text,
         )
