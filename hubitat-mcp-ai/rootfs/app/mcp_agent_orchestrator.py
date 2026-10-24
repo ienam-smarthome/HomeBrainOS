@@ -191,7 +191,7 @@ from model_context_policy import ModelContextPolicy
 from historical_command_source_contract import history_window_instruction
 from provenance_app_log_planner import pending_provenance_app_log_read
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
-from control_intent_guard import unsafe_control_prompt
+from control_intent_guard import unsafe_control_prompt, explicitly_read_only_request
 from request_classification import (
     matches as _matches,
     requests_mutation as _requests_mutation,
@@ -413,6 +413,11 @@ def _explicit_mutation_request(prompt: str) -> bool:
         r"\s*[.!:,;\-]*\s*", "", text,
     )
     if not text:
+        return False
+    # An explicit user no-write constraint is authoritative even if the
+    # narrative mentions ON/OFF, command histories or rule configurations.
+    # Model-proposed write tools must not override this host-level veto.
+    if explicitly_read_only_request(text):
         return False
     # Conditional, cancelled and compound device-control lead-ins cannot
     # authorise a write via a model tool call any more than they can through
