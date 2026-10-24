@@ -236,7 +236,7 @@ def test_chat_request_uses_full_audit_before_general_agent(monkeypatch) -> None:
                         "comprehensive_audit_ai_analysis_enabled", False)
     monkeypatch.setattr(app_module.agent, "process_user_request_result", unexpected_agent)
 
-    prompt = "check hub logs including device stats, app stats, hub events for issues and fix"
+    prompt = "Run a comprehensive hub audit: check hub logs, device stats, app stats and events for issues."
     result = asyncio.run(app_module._agent_request(app_module.ChatRequest(prompt=prompt)))
 
     assert result.message == "Full audit completed"
