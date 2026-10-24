@@ -155,7 +155,7 @@ def test_final_model_and_api_share_same_objective_without_extra_rewrite():
     main = (APP / "app.py").read_text(encoding="utf-8")
     final = (APP / "final_answer_coordinator.py").read_text(encoding="utf-8")
     assert "primary_objective = resolve_primary_objective(request.message)" in main
-    assert "if primary_objective.is_source:" in main
+    assert 'if primary_objective.is_source or model_route == "model_led":' in main
     assert "objective = resolve_primary_objective(original_user)" in final
     assert "not objective.is_source\n            and _performance_semantic_validation_needed" in final
     assert "PRIMARY INVESTIGATION OBJECTIVE — GROOVY SOURCE" in final
