@@ -56,7 +56,11 @@ from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from groovy_source_investigation import requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
-from ai_investigation_routing import decide_read_route, set_read_route, reset_read_route, explicit_system_check_command
+from ai_investigation_routing import (
+    decide_read_route, set_read_route, reset_read_route,
+    explicit_system_check_command, explicit_whole_hub_report_request,
+    explicit_aggregate_performance_request,
+)
 from request_metrics import increment_active_metric
 from mcp_client import HubitatMCPClient
 from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
@@ -616,8 +620,11 @@ async def _agent_request(request: ChatRequest) -> Any:
         if (candidate_fast_path and not targeted_device
                 and not targeted_rule and not primary_objective.is_source
                 and not _explicit_mutation_request(request.message)):
-            if explicit_system_check_command(request.message):
+            if (explicit_system_check_command(request.message)
+                    or explicit_whole_hub_report_request(request.message)):
                 model_route = "system_audit"
+            elif explicit_aggregate_performance_request(request.message):
+                model_route = "performance_report"
             else:
                 increment_active_metric("ai_read_route_arbitrated")
                 decision = await decide_read_route(
