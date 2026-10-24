@@ -340,29 +340,25 @@ class RuleAuthoringService:
         commands to modify state in the same prompt; never erase such writes.
         """
         text = " ".join(str(prompt or "").split())
-        if not re.search(r"\\b(?:rule\\s*machine|automation|rule)\\b", text, re.I):
+        if not re.search(r"\b(?:rule\s*machine|automation|rule)\b", text, re.I):
             return False
-        # Incident questions routinely ask to inspect "automation behaviour"
-        # and end with "read-only; do not change anything". Neither phrase is
-        # an affirmative request to DESIGN a future rule. Require the goal to
-        # actually propose, plan or create an automation, not just to mention
-        # one as diagnostic evidence. This classifier must never promote a
-        # device-offline investigation into a Rule Machine feasibility review.
+        # "automation behaviour" plus "read-only; do not change anything"
+        # describes an incident investigation, not a new-rule proposal.
+        # Only positive future design intent may enable rule-design mode.
         future_design = re.search(
-            r"(?i)\\b(?:design|draft|propose|plan|outline|build|create|"
-            r"set\\s*up|implement)\\s+(?:(?:a|an|new|the|my|proposed)\\s+){0,3}"
-            r"(?:rule\\s*machine\\s+)?(?:rule|automation)\\b"
-            r"|\\b(?:want|would\\s+like|like|need|intend)\\b"
-            r".{0,90}\\b(?:new\\s+)?(?:rule|automation)\\b"
-            r"|\\b(?:review|evaluate|check|inspect)\\s+"
-            r"(?:(?:the|my|a|proposed|new)\\s+){0,3}"
-            r"(?:rule|automation)\\s+(?:design|proposal|plan)\\b"
-            r"|\\b(?:new|proposed|future)\\s+(?:rule|automation)\\b"
-            r"|\\b(?:rule|automation)\\s+(?:design|proposal|plan)\\b",
+            r"(?i)\b(?:design|draft|propose|plan|outline|build|create|"
+            r"set\s*up|implement)\s+(?:(?:a|an|new|the|my|proposed)\s+){0,3}"
+            r"(?:rule\s*machine\s+)?(?:rule|automation)\b"
+            r"|\b(?:want|would\s+like|need|intend)\b"
+            r".{0,90}\b(?:new\s+)?(?:rule|automation)\b"
+            r"|\b(?:review|evaluate|check|inspect)\s+"
+            r"(?:(?:the|my|a|proposed|new)\s+){0,3}"
+            r"(?:rule|automation)\s+(?:design|proposal|plan)\b"
+            r"|\b(?:new|proposed|future)\s+(?:rule|automation)\b"
+            r"|\b(?:rule|automation)\s+(?:design|proposal|plan)\b",
             text,
         )
         if not future_design:
-            return False
             return False
         review = re.search(
             r"\b(?:read[ -]?only|proposal[ -]?only|review|inspect|"
