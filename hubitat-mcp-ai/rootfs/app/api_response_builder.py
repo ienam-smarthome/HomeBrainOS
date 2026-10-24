@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
     guard_unproven_upstream_manual_exclusion,
@@ -567,6 +568,20 @@ def build_agent_response(
     if performance_scope:
         message, _ = guard_performance_log_causality(message, evidence)
 
+    # Source-specific causality must survive all model and general answer
+    # repairs. This final checkpoint is scoped by the actual investigation
+    # domain and does not touch unrelated device/rule/performance answers.
+    outcome_coverage = getattr(outcome, "investigation_coverage", None)
+    is_source_investigation = (
+        isinstance(outcome_coverage, dict)
+        and outcome_coverage.get("domain") == "source_code"
+    )
+    source_mechanism_repairs: tuple[str, ...] = ()
+    if is_source_investigation:
+        message, source_mechanism_repairs = (
+            guard_unverified_source_exception_mechanism(message, evidence)
+        )
+
     result = {
         "success": True,
         "route": getattr(outcome, "route", "unified-mcp-agent"),
@@ -624,6 +639,10 @@ def build_agent_response(
                 result["model"] = None
     if long_method_denials_corrected:
         result["evidence_validation"]["observed_long_method_denial_corrected"] = True
+    if source_mechanism_repairs:
+        result["evidence_validation"]["source_exception_mechanism_calibrated"] = list(
+            source_mechanism_repairs
+        )
     if exception_denials_corrected:
         result["evidence_validation"]["observed_app_exception_denial_corrected"] = True
     if state_claims_corrected:
