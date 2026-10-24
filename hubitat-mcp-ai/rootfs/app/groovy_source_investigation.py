@@ -8,6 +8,7 @@ from __future__ import annotations
 from groovy_method_scope import build_method_scope_evidence
 
 import hashlib
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -200,6 +201,44 @@ class GroovySourceReport:
     verified_pages: int = 0
     source_code_id: str | None = None
     verified_candidate_method_bodies: tuple[str, ...] = ()
+
+
+class RequestScopedGroovyMcp:
+    """Per-user-turn successful read cache; never shared between requests.
+
+    The second source-tool call may ask for a different method symbol in
+    the same installed app. Re-use the *identical verified source page*
+    within that turn while still constructing fresh method evidence from it.
+    No write operation is cached or routed through this adapter.
+    """
+
+    def __init__(self, mcp: Any) -> None:
+        self._mcp = mcp
+        self._cache: dict[str, Any] = {}
+        self.reused_count = 0
+
+    async def list_tools(self) -> Any:
+        return await self._mcp.list_tools()
+
+    async def call_tool(self, name: str, args: dict[str, Any]) -> Any:
+        op = str(args.get("tool") or "") if isinstance(args, dict) else ""
+        leaf = args.get("args") if isinstance(args.get("args"), dict) else {}
+        allowed = (
+            name == "hub_read_apps_code"
+            and op in ("hub_get_source", "hub_get_app_config", "hub_list_apps")
+            and (op != "hub_get_app_config" or leaf.get("includeSettings") is False)
+        ) or name == "hub_search_tools"
+        key = (
+            json.dumps((name, args), sort_keys=True, default=str)
+            if allowed else None
+        )
+        if key is not None and key in self._cache:
+            self.reused_count += 1
+            return self._cache[key]
+        result = await self._mcp.call_tool(name, args)
+        if key is not None and tool_succeeded(result):
+            self._cache[key] = result
+        return result
 
 
 class GroovySourceService:
@@ -504,4 +543,4 @@ class GroovySourceService:
 
 
 __all__ = ["requested_groovy_app_id", "source_code_id",
-           "GroovySourceReport", "GroovySourceService"]
+           "GroovySourceReport", "GroovySourceService", "RequestScopedGroovyMcp"]
