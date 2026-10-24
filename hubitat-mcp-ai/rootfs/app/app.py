@@ -729,7 +729,9 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     try:
         operation: Awaitable[Any]
         scoped_id = scoped_status_app_id(request.message)
-        if scoped_id is not None and not requires_rule_logic_inspection(request.message):
+        if (scoped_id is not None
+                and not requires_rule_logic_inspection(request.message)
+                and not model_led_investigation_request(request.message)):
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
@@ -740,6 +742,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             and not is_cross_domain_hub_audit_request(request.message)
             and not is_broad_automation_runtime_diagnostic(request.message)
             and not is_whole_hub_optimization_request(request.message)
+            and not model_led_investigation_request(request.message)
         ):
             if automation_status.is_advisory_request(
                 request.message
