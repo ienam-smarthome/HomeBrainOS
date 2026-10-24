@@ -29,6 +29,12 @@ class CountingManifestMCP(FakeMCP):
         self.peek_calls += 1
         return self.devices
 
+    async def get_device_identities(self):
+        # Production MCPClient exposes this cheap TTL-checked structural
+        # world reader. The old mock omitted it, so semantic grounding
+        # unexpectedly fell back to the detailed manifest before staging.
+        return self.peek_device_identities()
+
     async def get_cached_devices(self, refresh=False):
         self.refresh_args.append(bool(refresh))
         return self.devices
