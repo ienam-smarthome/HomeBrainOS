@@ -82,7 +82,12 @@ def device_incident_followup(
             logs = True
         if operation == "hub_get_source" and str(args.get("type") or "").casefold() == "driver":
             driver_read = True
-        if operation in {"hub_get_app_config", "hub_get_rule_health", "hub_list_rules", "hub_list_apps"}:
+        # A whole-hub app/rule identity list is NOT verification that an
+        # automation controls this particular device, its configured
+        # actions, or actual execution. Only scoped app/rule receipts count.
+        if operation in {"hub_get_app_config", "hub_get_rule_health"} and (
+            args.get("appId") is not None
+        ):
             automation_read = True
         if kind in {"physical_network_reachability", "mqtt_broker_packet_evidence",
                     "upstream_telemetry_confirmation"}:
