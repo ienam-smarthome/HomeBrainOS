@@ -54,7 +54,7 @@ from motion_lockout_investigation import (
     collected_explicit_focal_ready_for_synthesis,
 )
 from targeted_lockout_config import read_current_lockout_config
-from groovy_source_investigation import GroovySourceService, requested_groovy_app_id
+from groovy_source_investigation import GroovySourceService, RequestScopedGroovyMcp, requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
@@ -737,6 +737,9 @@ class UnifiedMCPAgent:
             "hubitat_request_class", default="live-read"
         )
         self._current_user_objective: ContextVar[str] = ContextVar("homebrain_current_user_objective", default="")
+        self._groovy_mcp_cache: ContextVar[RequestScopedGroovyMcp | None] = ContextVar(
+            "homebrain_request_local_groovy_mcp_cache", default=None
+        )
         self._investigation_reflection_used: ContextVar[bool] = ContextVar(
             "homebrain_investigation_reflection_used", default=False
         )
@@ -3758,6 +3761,9 @@ class UnifiedMCPAgent:
         if explicit_paid_request():
             increment_active_metric("paid_model_requested")
         evidence_token = self.evidence.begin()
+        source_cache_token = self._groovy_mcp_cache.set(
+            RequestScopedGroovyMcp(self.mcp)
+        )
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(False)
         review_token = self._review_first_mode.set(
@@ -3852,6 +3858,7 @@ class UnifiedMCPAgent:
             self._mutation_call_seen.reset(mutation_token)
             self._review_first_mode.reset(review_token)
             self.evidence.reset(evidence_token)
+            self._groovy_mcp_cache.reset(source_cache_token)
             self._choices.reset(choices_token)
             reset_original_paid_request(paid_request_token)
 
@@ -3907,9 +3914,21 @@ class UnifiedMCPAgent:
         else:
             raw_symbols = arguments.get("symbols")
             symbols = raw_symbols if isinstance(raw_symbols, list) else None
-            report = await GroovySourceService(self.mcp, self.evidence).inspect(
-                app_id, symbols=symbols,
+            source_proxy = getattr(self, "_groovy_mcp_cache", None)
+            request_cached_mcp = (
+                source_proxy.get() if source_proxy is not None else None
             )
+            if request_cached_mcp is None:
+                request_cached_mcp = RequestScopedGroovyMcp(self.mcp)
+            before_reuse = request_cached_mcp.reused_count
+            report = await GroovySourceService(
+                request_cached_mcp, self.evidence
+            ).inspect(app_id, symbols=symbols)
+            if request_cached_mcp.reused_count > before_reuse:
+                increment_active_metric(
+                    "groovy_source_reads_reused",
+                    request_cached_mcp.reused_count - before_reuse,
+                )
             data = {"success": True, "sourceRetrieved": report.retrieved,
                     "fullImplementationVerified": report.complete,
                     "verifiedCharacters": report.verified_characters,
