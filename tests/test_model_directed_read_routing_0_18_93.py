@@ -62,7 +62,9 @@ async def test_replays_named_device_and_named_only_incident_without_keyword_hija
     decision = await decide_read_route(
         fake_chat('{"route":"model_led"}', calls), NO_ID_FOCUSED
     )
-    assert decision == ReadRouteDecision("model_led", "model_choice")
+    assert decision == ReadRouteDecision(
+        "model_led", "model_choice", objective="general_investigation",
+    )
     assert len(calls) == 1
     assert calls[0][1] == []  # arbitration has no MCP tools
     assert "system" in calls[0][0][0]["role"]
@@ -77,7 +79,7 @@ async def test_model_can_select_true_whole_hub_report_or_performance_stats():
         (PERFORMANCE, "performance_report"),
     ):
         selected = await decide_read_route(
-            fake_chat('{"route":"' + result + '"}', []), question
+            fake_chat('{"route":"' + result + '","objective":"' + result + '"}', []), question
         )
         assert selected.route == result
         assert selected.provenance == "model_choice"

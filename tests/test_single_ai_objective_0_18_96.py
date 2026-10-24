@@ -138,11 +138,11 @@ async def test_unknown_or_invalid_interpretation_does_not_grant_authority():
         return {"content": '{"route":"system_audit","objective":"mutate_all_devices"}'}
     result = await decide_read_route(invalid, DEVICE_QUESTION)
     assert result.route == "model_led"
-    assert result.objective is None
+    assert result.objective == "general_investigation"
     async def old(messages, tools):
         return {"content": '{"route":"model_led"}'}
     legacy = await decide_read_route(old, DEVICE_QUESTION)
-    assert legacy.objective is None
+    assert legacy.objective == "general_investigation"
 
 
 def test_code_wires_single_interpretation_into_all_stages():

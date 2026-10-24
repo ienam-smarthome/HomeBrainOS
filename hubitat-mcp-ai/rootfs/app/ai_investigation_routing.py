@@ -107,6 +107,16 @@ _AGGREGATE_SCHEDULER = re.compile(
 
 def explicit_whole_hub_report_request(question: str) -> bool:
     text = str(question or "")
+    # Do not treat a *negative example* of a whole-system audit as an
+    # instruction to run one. Leave ambiguous/negative cases to the model.
+    # This check does not determine a diagnostic domain or grant permissions.
+    if re.search(
+        r"(?i)\b(?:not|no|without|instead\s+of|rather\s+than|"
+        r"do\s+not|don['’]t)\s+(?:a|an|the)?\s*"
+        r"(?:comprehensive|full|whole|entire|system[- ]wide)\b",
+        text,
+    ):
+        return False
     if _EXACT_TARGET.search(text) and not re.search(
         r"(?i)\b(?:all|every|entire|whole|system[- ]wide)\b", text,
     ):
@@ -210,6 +220,8 @@ async def decide_read_route(
         "performance_report = aggregate hub performance statistics only, "
         "not a specific incident. Choose model_led when uncertain. "
         "A thorough investigation of one device is NOT a whole-hub audit. "
+        "Choose a specialist fast report ONLY if the objective matches that "
+        "specialist route; do not omit the objective field. "
         "Include a single objective from: device_connectivity, source_code, "
         "existing_rule_verification, rule_design_review, historical_command, "
         "general_investigation, system_audit, performance_report. "
@@ -233,19 +245,43 @@ async def decide_read_route(
         )
         parsed = _parse_interpretation(result)
         if parsed is None:
-            return ReadRouteDecision("model_led", "invalid_model_reply")
+            return ReadRouteDecision(
+                "model_led", "invalid_model_reply",
+                objective="general_investigation",
+            )
         proposal = parsed["route"]
-        route = _safe_route(proposal, question)
         objective = parsed.get("objective")
-        if route == "model_led" and objective in ("system_audit", "performance_report"):
+        # Never enter a specialist fast report from a route label alone.
+        # The model must consistently identify both the task objective and
+        # the matching workflow; otherwise preserve the interactive MCP path.
+        fast_objective = {
+            "system_audit": "system_audit",
+            "performance_report": "performance_report",
+        }
+        if (proposal in fast_objective
+                and objective != fast_objective[proposal]):
+            route = "model_led"
+        else:
+            route = _safe_route(proposal, question)
+        # A missing/invalid model objective must not re-enable downstream
+        # keyword classifiers (notably rule authoring and ON/OFF causality).
+        # Generic investigation is safe: it never grants write permissions.
+        if route == "model_led" and objective in (
+            "system_audit", "performance_report",
+        ):
             objective = None
+        if objective is None:
+            objective = "general_investigation"
         return ReadRouteDecision(
             route, "model_choice" if route == proposal else "host_scope_override",
             objective=objective, target=parsed.get("target"),
             purpose=parsed.get("purpose"),
         )
     except Exception:
-        return ReadRouteDecision("model_led", "model_route_unavailable")
+        return ReadRouteDecision(
+            "model_led", "model_route_unavailable",
+            objective="general_investigation",
+        )
 
 
 __all__ = [
