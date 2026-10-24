@@ -136,4 +136,94 @@ def device_incident_followup(
     )
 
 
-__all__ = ["is_connectivity_root_cause_request", "device_incident_followup"]
+
+CONNECTIVITY_EVIDENCE_PLAN = """
+READ-ONLY CONNECTIVITY INCIDENT: The user's objective is to distinguish the
+reported MQTT session flag from physical or device-originated telemetry. Start
+with the identified device and bounded events/logs; do not scan whole hub.
+When those show missing data or a watchdog counter, prioritise the installed
+driver's timestamp/parse/connection/watchdog method logic and the actual
+device-dependent automation links/settings. The authoritative driver CODE ID
+is not necessarily an installed APP ID. Use a read-only driver source reader
+with a live verified code-ID mapping, not the installed-app source workbench.
+Checking app names or app logs is not equivalent to checking the installed
+controller's stored configuration or dated execution; a zero-row log window
+does not exclude execution. Cross-check temporal anchors and distinguish
+driver-generated health changes from genuine physical packets. Decide which
+registered tool has the highest information value; never guess a schema,
+read unrelated devices, use write commands, or assert source/method/physical
+behaviour without evidence. Explain any specific unavailable source.
+"""
+
+
+def incident_progress_followup(
+    request: str,
+    evidence: list[dict[str, Any]],
+) -> str | None:
+    """One bounded evidence-progress checkpoint after the initial AI follow-up.
+
+    Only an actual same-device dependent-app read can trigger another
+    source-selection opportunity. This is not a keyword-driven route or
+    deterministic MCP plan, and it does not claim a missing source exists.
+    An app log alone is not a verified link or current configuration.
+    """
+    if not is_connectivity_root_cause_request(request):
+        return None
+    from incident_reasoning_depth import assess_incident_reasoning_depth
+
+    target_ids = set()
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if receipt.get("mutates") is True or receipt.get("effect") == "write":
+            continue
+        op, args = _leaf(receipt)
+        if op == "hub_list_device_events":
+            target = str(args.get("deviceId") or "")
+            if target.isdigit():
+                target_ids.add(target)
+    if len(target_ids) != 1:
+        return None
+    target = next(iter(target_ids))
+    depth = assess_incident_reasoning_depth(evidence, target)
+    # Only recover from a meaningful new lead, not a generic search, log
+    # retry or name-matched inventory. Avoid consuming more model rounds
+    # when no specific target-dependent candidate has been investigated.
+    if not depth["deviceDependentAppsChecked"]:
+        return None
+    missing = []
+    if not depth["scopedAppConfigRead"]:
+        missing.append(
+            "the actual installed dependent/controlling app settings and "
+            "device targeting (dependency list or empty logs alone do not "
+            "verify the rule behaviour)"
+        )
+    if not depth["driverSourceRetrieved"] and not depth["driverSourceAttempted"]:
+        missing.append(
+            "the matched device's installed DRIVER code identity and "
+            "read-only source (not an app-instance source reader)"
+        )
+    if not missing:
+        return None
+    return (
+        "HOST INVESTIGATION FOLLOW-THROUGH (READ ONLY, ONE CHANCE)\\n"
+        "Device " + target + " has a successful targeted dependency lookup, "
+        "but the original root-cause question remains unanswered. "
+        "Incomplete discriminators: " + "; ".join(missing) + ". "
+        "Choose the most decisive available LIVE MCP read operation, using "
+        "the identity and actual returned dependency metadata, rather than "
+        "listing all apps or repeating device history. If a dependent app ID "
+        "has been established by the returned results, inspect its actual "
+        "configuration and dated relevant execution; if the mapped driver "
+        "source is available, inspect watchdog/connection timestamp branches. "
+        "Treat any earlier app log with zero entries only as checked-empty, "
+        "never as evidence that a control rule did not run. If no specific "
+        "read tool can establish the missing observation, finalise with that "
+        "precise gap. Never issue a write or assume evidence exists."
+    )
+
+
+__all__ = [
+    "is_connectivity_root_cause_request", "device_incident_followup",
+    "incident_progress_followup", "CONNECTIVITY_EVIDENCE_PLAN",
+]
