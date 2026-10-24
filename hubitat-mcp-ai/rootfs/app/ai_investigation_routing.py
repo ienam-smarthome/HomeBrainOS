@@ -52,6 +52,42 @@ class ReadRouteDecision:
     provenance: str
 
 
+_CLEAR_WHOLE_HUB = re.compile(
+    r"(?i)\b(?:comprehensive|full)\s+(?:read[- ]only\s+)?"
+    r"(?:hubitat\s+)?(?:system|hub)\s+audit\b"
+    r"|\b(?:comprehensive|full)\s+(?:read[- ]only\s+)?"
+    r"(?:audit|investigation|review)\s+of\s+"
+    r"(?:(?:my|the|our)\s+)?(?:entire\s+|whole\s+)?"
+    r"(?:hubitat\s+)?(?:hub|system)\b"
+    r"|\b(?:audit|review|inspect|analyse|analyze|investigate)\s+"
+    r"(?:(?:my|the|our)\s+)?(?:entire|whole)\s+(?:hubitat\s+)?(?:hub|system)\b"
+    r"|\b(?:all|every)\s+(?:my\s+|the\s+)?(?:devices|apps|automations)\b"
+)
+_AGGREGATE_SCHEDULER = re.compile(
+    r"(?i)\b(?:all|every)\s+scheduled\s+jobs?\b"
+    r".{0,160}\b(?:by\s+handler|efficien\w*|performance\s+stats?|"
+    r"overall\s+load|statistic\w*|optimis\w*|optimiz\w*)\b"
+)
+
+
+def explicit_whole_hub_report_request(question: str) -> bool:
+    text = str(question or "")
+    if _EXACT_TARGET.search(text) and not re.search(
+        r"(?i)\b(?:all|every|entire|whole|system[- ]wide)\b", text,
+    ):
+        return False
+    return bool(_CLEAR_WHOLE_HUB.search(text))
+
+
+def explicit_aggregate_performance_request(question: str) -> bool:
+    text = str(question or "")
+    return bool(
+        _AGGREGATE_SCHEDULER.search(text)
+        and not _EXACT_TARGET.search(text)
+        and not _SPECIFIC_INCIDENT.search(text)
+    )
+
+
 def explicit_system_check_command(question: str) -> bool:
     return bool(_DIRECT_CHECK.fullmatch(str(question or "")))
 
@@ -149,4 +185,5 @@ async def decide_read_route(
 __all__ = [
     "ReadRouteDecision", "decide_read_route", "active_read_route",
     "set_read_route", "reset_read_route", "explicit_system_check_command",
+    "explicit_whole_hub_report_request", "explicit_aggregate_performance_request",
 ]
