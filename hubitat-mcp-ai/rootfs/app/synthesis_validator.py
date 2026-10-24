@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
@@ -348,6 +349,14 @@ def validate_synthesis(
             for row in missing_rows[:8]
         )
         issues.append(f"causal_timeline_coverage:{missing_ids}:{missing_starts}")
+
+    if primary_objective == "source_code":
+        corrected, load_claim_repairs = (
+            guard_unverified_source_exception_mechanism(
+                corrected, evidence,
+            )
+        )
+        issues.extend(load_claim_repairs)
 
     _record_performance_repair_issues(issues)
     return corrected, issues

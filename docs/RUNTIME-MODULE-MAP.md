@@ -87,6 +87,7 @@ The repository drift test compares this table directly with the live directory. 
 | `source_evidence_metadata.py` | Privacy-safe source receipts, verified pages, adaptive recovery diagnostics and contiguous coverage checks. |
 | `historical_causal_claim_guard.py` | Flags unverified named-app command execution claims against returned current-turn history; produces a cautious evidence-only answer rather than fabricated root cause. |
 | `source_method_projection.py` | Projects bounded, line-numbered whole candidate method bodies from verified driver source into model synthesis without additional device reads; does not certify runtime semantics. |
+| `source_exception_causality_guard.py` | Source-only, evidence-scoped calibration of unsupported LimitExceededException payload/transport-size and average-latency timeout causality; maintains verified call-site descriptions while deferring unverified root-cause claims. |
 | `source_analysis_completion.py` | Stops repeat source reads after complete scoped device/source evidence and provides an evidence-limited failure report if model source analysis does not complete. |
 | `groovy_source_investigation.py` | Discover MCP source reads for installed Hubitat apps, separate instance/code IDs and extract bounded Groovy excerpts without guessing code or affecting hub state. |
 | `groovy_method_scope.py` | Conservative Groovy method-boundary and code-symbol index; prioritizes whole method excerpts while marking uncertain syntax and evidence-budget omissions, independent of full-file coverage. |
