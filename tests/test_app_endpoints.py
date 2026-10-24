@@ -350,28 +350,39 @@ def test_review_existing_automations_request_still_uses_plain_status_route(
     assert calls["chat_called"] is False
 
 
-def test_broad_automation_failure_uses_read_only_audit_with_model(monkeypatch, tmp_path):
+def test_broad_automation_failure_prefers_ai_chosen_investigation(monkeypatch, tmp_path):
     module = load_app(monkeypatch, tmp_path)
-    calls = []
+    from ai_investigation_routing import ReadRouteDecision
+    chosen, agent_reads = [], []
 
-    async def fake_audit(audit, mcp, *, analysis_chat=None, analysis_focus=None):
-        calls.append((analysis_chat, analysis_focus))
-        from automation_status_service import AutomationStatusOutcome
-        return AutomationStatusOutcome(
-            message="Audit: verified integration errors, follow-up steps.",
-            route="comprehensive-system-audit",
+    async def choose_route(chat, question):
+        chosen.append(question)
+        return ReadRouteDecision("model_led", "model_choice")
+
+    async def fake_agent(prompt, history, *, session_id):
+        agent_reads.append(prompt)
+        return SimpleNamespace(
+            message="Investigated app logs and identified missing evidence.",
+            route="unified-mcp-agent", request_class="live-read",
+            evidence=[], metrics={},
         )
 
-    monkeypatch.setattr(module, "run_comprehensive_chat_audit", fake_audit)
+    async def forbidden_audit(*args, **kwargs):
+        raise AssertionError("Model chose an investigation, not System Check")
+
+    monkeypatch.setattr(module, "decide_read_route", choose_route)
+    monkeypatch.setattr(module.agent, "process_user_request_result", fake_agent)
+    monkeypatch.setattr(module, "run_comprehensive_chat_audit", forbidden_audit)
+
+    question = "which automations are failing and why?"
     with TestClient(module.app) as client:
         response = client.post(
-            "/api/ask",
-            json={"query": "which automations are failing and why?", "session_id": "web"},
+            "/api/ask", json={"query": question, "session_id": "web"},
         )
     assert response.status_code == 200, response.text
-    assert response.json()["route"] == "comprehensive-system-audit"
-    assert len(calls) == 1
-    assert calls[0] == (module.agent.transport.chat, "which automations are failing and why?")
+    assert response.json()["route"] == "unified-mcp-agent"
+    assert chosen == [question]
+    assert agent_reads == [question]
 
 
 def test_targeted_rule_failure_uses_investigative_model_not_inventory(monkeypatch, tmp_path):

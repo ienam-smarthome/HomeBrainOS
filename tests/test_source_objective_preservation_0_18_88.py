@@ -112,5 +112,5 @@ def test_full_workbench_with_wrong_answer_remains_unresolved():
 def test_source_question_skips_generic_performance_rewrite():
     path = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "primary_objective = resolve_primary_objective(request.message)" in path
-    assert "if primary_objective.is_source:" in path
+    assert 'if primary_objective.is_source or model_route == "model_led":' in path
     assert "return outcome\n        return await finalize_performance_api_outcome(" in path

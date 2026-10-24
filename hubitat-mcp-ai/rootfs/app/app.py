@@ -56,6 +56,12 @@ from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from groovy_source_investigation import requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
+from ai_investigation_routing import (
+    decide_read_route, set_read_route, reset_read_route,
+    explicit_system_check_command, explicit_whole_hub_report_request,
+    explicit_aggregate_performance_request,
+)
+from request_metrics import increment_active_metric
 from mcp_client import HubitatMCPClient
 from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
@@ -588,6 +594,7 @@ async def _agent_request(request: ChatRequest) -> Any:
     """Bind deterministic calendar semantics to this request's async context."""
 
     token = set_history_window_request(parse_history_window_request(request.message))
+    route_token = None
     try:
         primary_objective = resolve_primary_objective(request.message)
         targeted_device = primary_objective.is_targeted_device
@@ -600,11 +607,43 @@ async def _agent_request(request: ChatRequest) -> Any:
             cross_domain_audit
             or is_comprehensive_system_audit_request(request.message)
         )
-        if (not targeted_device and not targeted_rule
-                and not _explicit_mutation_request(request.message)
-                and (cross_domain_audit or
-                     (not is_whole_hub_optimization_request(request.message)
-                      and (comprehensive_audit or broad_automation_diagnostic)))):
+        broad_performance = is_broad_performance_request(request.message)
+        # The legacy token classifiers are eligibility signals only. They
+        # must NOT select the workflow when multiple read-only paths compete.
+        # The free/selected model chooses scope in a single no-tools round;
+        # malformed or timed-out choices fail open to the MCP reasoning loop.
+        model_route = None
+        candidate_fast_path = (
+            comprehensive_audit or broad_automation_diagnostic
+            or broad_performance
+        )
+        if (candidate_fast_path and not targeted_device
+                and not targeted_rule and not primary_objective.is_source
+                and not _explicit_mutation_request(request.message)):
+            if (explicit_system_check_command(request.message)
+                    or explicit_whole_hub_report_request(request.message)):
+                model_route = "system_audit"
+            elif explicit_aggregate_performance_request(request.message):
+                model_route = "performance_report"
+            else:
+                increment_active_metric("ai_read_route_arbitrated")
+                decision = await decide_read_route(
+                    agent._chat, request.message,
+                )
+                model_route = decision.route
+                if decision.provenance != "model_choice":
+                    increment_active_metric("ai_read_route_fallback")
+                increment_active_metric({
+                    "model_led": "ai_read_route_model_led",
+                    "system_audit": "ai_read_route_system_audit",
+                    "performance_report": "ai_read_route_performance",
+                }[model_route])
+        if model_route is not None:
+            route_token = set_read_route(model_route)
+
+        if (model_route == "system_audit"
+                and not targeted_device and not targeted_rule
+                and not _explicit_mutation_request(request.message)):
             # Cross-domain and explicitly comprehensive audits use their own
             # tool-free AI opt-in, regardless of whether a broader automation
             # diagnostic phrase also matches. The latter should not silently
@@ -627,7 +666,10 @@ async def _agent_request(request: ChatRequest) -> Any:
             return await run_comprehensive_chat_audit(
                 health_audit, mcp, ai_disabled_by_configuration=True,
             )
-        if not targeted_device and is_broad_performance_request(request.message):
+        if (not targeted_device and
+                not _explicit_mutation_request(request.message) and
+                (model_route == "performance_report" or
+                 (model_route is None and broad_performance))):
             set_request_stage("Collecting Hubitat performance and scheduled jobs")
             outcome = await collect_broad_performance_outcome(agent, request.message)
             remember_verified_outcome(outcome)
@@ -656,7 +698,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                 goal, list(getattr(outcome, "evidence", []) or [])
             )
         set_request_stage("Preparing evidence-based answer")
-        if primary_objective.is_source:
+        if primary_objective.is_source or model_route == "model_led":
             # A successful source-led investigation may also sample app
             # performance. Do not send it through the separate performance
             # synthesizer, which can overwrite method-level reasoning with
@@ -670,6 +712,8 @@ async def _agent_request(request: ChatRequest) -> Any:
             request.message,
         )
     finally:
+        if route_token is not None:
+            reset_read_route(route_token)
         reset_history_window_request(token)
 
 
@@ -702,7 +746,9 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
     try:
         operation: Awaitable[Any]
         scoped_id = scoped_status_app_id(request.message)
-        if scoped_id is not None and not requires_rule_logic_inspection(request.message):
+        if (scoped_id is not None
+                and not requires_rule_logic_inspection(request.message)
+                and not model_led_investigation_request(request.message)):
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
@@ -713,6 +759,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             and not is_cross_domain_hub_audit_request(request.message)
             and not is_broad_automation_runtime_diagnostic(request.message)
             and not is_whole_hub_optimization_request(request.message)
+            and not model_led_investigation_request(request.message)
         ):
             if automation_status.is_advisory_request(
                 request.message
