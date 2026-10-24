@@ -185,3 +185,26 @@ def test_final_coverage_separates_standard_source_checks_from_causal_depth():
     assert coverage["status"] == "partial-evidence"
     assert "not source-traced" in result.message
     assert "19:48:37" in result.message
+
+
+def test_empty_app_log_is_not_evidence_of_no_execution():
+    outcome = SimpleNamespace(
+        message="Investigating control events",
+        route="unified-mcp-agent", request_class="live-read",
+        evidence=[
+            *live_fixture(),
+            read("hub_list_device_dependents", {"deviceId": "7103"}),
+            read("hub_get_logs", {"appId": "3999", "since": "24h"},
+                 {"logCount": 0, "logs": []}),
+        ],
+        metrics={"outcome": "unresolved", "counters": {}},
+        investigation_coverage=None,
+    )
+    result = apply_shared_investigation_completion(outcome, QUESTION)
+    depth = result.investigation_coverage["incidentReasoningDepth"]
+    assert depth["deviceDependentAppsChecked"] is True
+    assert depth["scopedAppLogIdsEmpty"] == ["3999"]
+    assert depth["appLogAbsenceProvesNoExecution"] is False
+    assert "Checked-empty app logs" in result.message
+    assert "did not execute" in result.message
+
