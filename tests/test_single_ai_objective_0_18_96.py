@@ -152,6 +152,8 @@ def test_code_wires_single_interpretation_into_all_stages():
     report = (ROOT / "shared_investigation_completion.py").read_text(encoding="utf-8")
     observed = (ROOT / "observed_agent_outcome.py").read_text(encoding="utf-8")
     assert "interpretation_token = set_request_interpretation(" in app
+    assert "if (candidate_fast_path and not targeted_rule" in app
+    assert '"model_led" if targeted_device else decision.route' in app
     assert "reset_request_interpretation(interpretation_token)" in app
     assert "interpreted_intent=outcome.interpreted_intent" in observed
     assert "interpreted_kind = interpreted.objective" in agent
