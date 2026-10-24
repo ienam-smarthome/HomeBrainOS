@@ -132,6 +132,17 @@ def correlate_elapsed_watchdog_with_device_events(
     for receipt in evidence:
         if not isinstance(receipt, dict) or receipt.get("success") is not True:
             continue
+        # Only provenance-labelled target event-history receipts qualify.
+        # Generic tool summaries or app logs may contain event-shaped objects
+        # but are not authoritative same-device event observations.
+        if (receipt.get("tool") != "homebrain_device_history"
+                and receipt.get("sub_tool") != "hub_list_device_events"):
+            continue
+        if receipt.get("sub_tool") == "hub_list_device_events":
+            args = receipt.get("arguments") or {}
+            args = args.get("args", args) if isinstance(args, dict) else {}
+            if not isinstance(args, dict) or str(args.get("deviceId") or "") != ident:
+                continue
         details = receipt.get("details") or {}
         if not isinstance(details, dict):
             continue
