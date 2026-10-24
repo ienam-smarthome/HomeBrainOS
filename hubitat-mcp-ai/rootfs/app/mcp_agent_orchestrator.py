@@ -3804,7 +3804,10 @@ class UnifiedMCPAgent:
             else:
                 request_class = "live-read"
             pending = self.confirmations.pending.get(str(session_id))
-            contract = plan_investigation(user_prompt)
+            contract = (
+                None if requested_groovy_app_id(user_prompt) is not None
+                else plan_investigation(user_prompt)
+            )
             coverage = (
                 assess_investigation(contract, evidence)
                 if contract is not None and request_class == "live-read"
@@ -3935,10 +3938,23 @@ class UnifiedMCPAgent:
         # and deliberately bypass normal service/ContextVar initialization.
         review_context = getattr(self, "_review_first_mode", None)
         review_first = bool(review_context.get()) if review_context is not None else False
-        proposal_only = is_new_rule_design_review_request(user_prompt)
-        existing_rule_verification = is_existing_rule_verification_request(user_prompt)
+        # Primary objective wins over overlapping app/rule keywords.
+        # "Inspect Groovy source for app 3977 and compare logs" is *not*
+        # a Rule Machine action-tree audit, even when "compare" and
+        # "configuration" appear in the same request.
+        groovy_source_app = requested_groovy_app_id(user_prompt)
+        source_investigation = groovy_source_app is not None
+        proposal_only = (
+            not source_investigation
+            and is_new_rule_design_review_request(user_prompt)
+        )
+        existing_rule_verification = (
+            not source_investigation
+            and is_existing_rule_verification_request(user_prompt)
+        )
         deep_rule_review = (
-            requires_rule_logic_inspection(user_prompt)
+            not source_investigation
+            and requires_rule_logic_inspection(user_prompt)
             and not _explicit_mutation_request(user_prompt)
         )
         stateful_authoring = (
@@ -4005,8 +4021,6 @@ class UnifiedMCPAgent:
                 "hub_read_rules",
                 RULE_MACHINE_GATEWAY,
             ])
-        groovy_source_app = requested_groovy_app_id(user_prompt)
-        source_investigation = groovy_source_app is not None
         # Request-local collector; never share source text between questions.
         source_chunks = SourceChunkCollector(user_prompt)
         adaptive_investigation = (
