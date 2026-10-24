@@ -26,7 +26,7 @@ async def test_request_observation_builds_observed_outcome() -> None:
     outcome = await coordinator.run(operation)
 
     assert outcome.message == "done"
-    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["outcome"] == "needs_input"
     assert outcome.metrics["counters"]["tool_calls"] == 1
     assert outcome.metrics["counters"]["confirmation_queued"] == 1
 
