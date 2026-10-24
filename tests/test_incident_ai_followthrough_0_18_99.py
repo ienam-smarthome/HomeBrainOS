@@ -92,9 +92,9 @@ def test_original_ai_objective_governs_followthrough_not_incidental_words():
     question = ("Why is the bedroom plug offline? Inspect its automation "
                 "dependencies; do not create new rules.")
     token = set_request_interpretation(
-        ReadRouteDecision(
+        question, ReadRouteDecision(
             "model_led", "model_choice", objective="device_connectivity",
-        ), question,
+        ),
     )
     try:
         assert incident_progress_followup(
