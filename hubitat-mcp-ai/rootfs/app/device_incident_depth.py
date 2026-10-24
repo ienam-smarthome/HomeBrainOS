@@ -29,6 +29,10 @@ _SINGLE_DEVICE = re.compile(
 def is_connectivity_root_cause_request(request: str) -> bool:
     """Recognise an incident goal, not an explicit ON/OFF event reconstruction."""
     request = str(request or "")
+    from ai_investigation_routing import active_request_interpretation
+    interpreted = active_request_interpretation(request)
+    if interpreted is not None and interpreted.objective is not None:
+        return interpreted.objective == "device_connectivity"
     return bool(
         _INVESTIGATE.search(request)
         and _CONNECTIVITY.search(request)
