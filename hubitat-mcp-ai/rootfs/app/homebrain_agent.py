@@ -35,6 +35,10 @@ from contextual_read_fast_path import (
 )
 from confirmation_policy import ConfirmationAction
 from confirmation_store import CONFIRM_WORDS
+from control_intent_guard import (
+    unqualified_immediate_clause, semantic_control_clause_eligible,
+    needs_sensitive_control_confirmation,
+)
 from causal_subject_prefetch import (
     causal_switch_subject_phrase,
     switch_transition_from_prompt,
@@ -192,6 +196,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self._clarification_choices: dict[str, list[str]] = {}
         self._clarification_objectives: dict[str, str] = {}
         self._selected_devices: dict[str, str] = {}
+        # Approval of risky or bulk switch controls is session-scoped and
+        # never passed to an LLM. Queue immutable exact device IDs and
+        # revalidate their labels/capabilities before acting after confirm.
+        self._pending_routine_controls: dict[
+            str, tuple[float, dict[str, Any], tuple[tuple[str, str], ...]]
+        ] = {}
         self._history_references: dict[str, HistoryReference] = {}
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1255,7 +1265,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     ) -> AgentOutcome | None:
         """Plan routine device control semantically, then execute deterministically."""
 
-        if not self.semantic_agent_enabled or AT_TIME.search(user_prompt) is not None:
+        if (not self.semantic_agent_enabled
+                or AT_TIME.search(user_prompt) is not None
+                or not semantic_control_clause_eligible(user_prompt)):
             return None
 
         selected_device = self._selected_devices.get(session_key, "")
@@ -1320,9 +1332,133 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             session_key=session_key,
         )
 
-    async def _routine_control_outcome(
-        self, arguments: dict[str, Any], *, session_key: str
+    async def _control_identity_snapshot(self) -> list[dict[str, Any]]:
+        """Get control candidates without dispatching any actuation."""
+        reader = getattr(self.mcp, "get_cached_devices", None)
+        if callable(reader):
+            try:
+                try:
+                    records = await reader(refresh=True)
+                except TypeError:
+                    records = await reader()
+                return [dict(d) for d in (records or []) if isinstance(d, dict)]
+            except Exception:
+                return []
+        peek = getattr(self.mcp, "peek_device_identities", None)
+        if callable(peek):
+            try:
+                return [dict(d) for d in (peek() or []) if isinstance(d, dict)]
+            except Exception:
+                return []
+        return []
+
+    @staticmethod
+    def _exact_sensitive_targets(
+        arguments: dict[str, Any], devices: list[dict[str, Any]],
+    ) -> tuple[tuple[str, str], ...] | None:
+        """Fail closed on absent/ambiguous, non-switch, or changing targets."""
+        def key(value: Any) -> str:
+            return re.sub(
+                r"^(?:the|my)\s+", "", str(value or "").strip(),
+                flags=re.I,
+            ).casefold()
+
+        command = str(arguments.get("command") or "").casefold()
+        names = [str(x) for x in arguments.get("device_names") or []]
+        room = key(arguments.get("room"))
+        all_lights = bool(arguments.get("all_lights"))
+        matches: list[dict[str, Any]] = []
+        if room or all_lights:
+            for dev in devices:
+                caps = {str(c).casefold() for c in dev.get("capabilities") or []}
+                if room and key(room_name(dev)) != room:
+                    continue
+                if all_lights and not ({"light", "dimmer", "colortemperature"} & caps):
+                    continue
+                matches.append(dev)
+        elif names:
+            for name in names:
+                found = [
+                    d for d in devices
+                    if key(d.get("label") or d.get("name")) == key(name)
+                ]
+                if len(found) != 1:
+                    return None
+                matches.append(found[0])
+        else:
+            return None
+        if not matches or len(matches) > 20:
+            return None
+        result: list[tuple[str, str]] = []
+        for dev in matches:
+            device_id = str(dev.get("id") or dev.get("deviceId") or "")
+            label = str(dev.get("label") or dev.get("name") or "").strip()
+            commands = {str(c).casefold() for c in dev.get("commands") or []}
+            if (not device_id.isdigit() or not label
+                    or command not in ("on", "off", "toggle")
+                    or (command != "toggle" and command not in commands)):
+                return None
+            result.append((device_id, label))
+        if len({x[0] for x in result}) != len(result):
+            return None
+        return tuple(sorted(result))
+
+    async def _stage_sensitive_routine_control(
+        self, arguments: dict[str, Any], *, session_key: str,
     ) -> AgentOutcome:
+        if not self.confirmation_policy.valid_session_id(session_key):
+            return AgentOutcome(
+                message=(
+                    "A unique browser session is required to confirm a "
+                    "protected or multi-device command. Nothing was sent."
+                ),
+                request_class="write", evidence=[], choices=[],
+            )
+        identity = self._exact_sensitive_targets(
+            arguments, await self._control_identity_snapshot(),
+        )
+        if identity is None:
+            return AgentOutcome(
+                message=(
+                    "I could not verify the exact device list and supported "
+                    "commands for this sensitive control. Nothing was sent. "
+                    "Please name the specific device(s)."
+                ),
+                request_class="write", evidence=[], choices=[],
+            )
+        prepared = dict(arguments)
+        prepared["device_names"] = [label for _, label in identity]
+        prepared.pop("room", None)
+        prepared.pop("all_lights", None)
+        prepared.pop("all_lights_requested", None)
+        # Do not retain a stale approval indefinitely; any intervening
+        # message cancels it and the same identity must still be present.
+        self._pending_routine_controls[session_key] = (
+            time.monotonic() + 120.0, prepared, identity,
+        )
+        names = ", ".join(label for _, label in identity)
+        return AgentOutcome(
+            message=(
+                f"Confirm {arguments.get('command')} for "
+                f"{len(identity)} device(s): {names}. "
+                "Reply **confirm** in this browser session to proceed. "
+                "No command has been sent."
+            ),
+            request_class="write", evidence=[], choices=[],
+            confirmation_required=True, confirmation_count=1,
+        )
+
+    async def _routine_control_outcome(
+        self, arguments: dict[str, Any], *, session_key: str,
+        already_confirmed: bool = False,
+    ) -> AgentOutcome:
+        if (not already_confirmed
+                and str(arguments.get("command") or "").casefold()
+                    in {"on", "off", "toggle"}
+                and needs_sensitive_control_confirmation(arguments)):
+            return await self._stage_sensitive_routine_control(
+                arguments, session_key=session_key,
+            )
         async def operation() -> str:
             started = time.monotonic()
             result = await self._control_devices(arguments)
@@ -1602,6 +1738,32 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 message=message, request_class="write", evidence=evidence, choices=[]
             )
 
+        queued_routine = self._pending_routine_controls.pop(session_key, None)
+        if queued_routine is not None:
+            expires, arguments, prior_identity = queued_routine
+            normalized = " ".join(str(user_prompt).strip().casefold().split())
+            if normalized in CONFIRM_WORDS:
+                if time.monotonic() >= expires:
+                    return AgentOutcome(
+                        message="The device confirmation expired. No command was sent.",
+                        request_class="write", evidence=[], choices=[],
+                    )
+                current_identity = self._exact_sensitive_targets(
+                    arguments, await self._control_identity_snapshot(),
+                )
+                if current_identity != prior_identity:
+                    return AgentOutcome(
+                        message=(
+                            "The device identity or command capability changed "
+                            "since approval was requested. Nothing was sent."
+                        ),
+                        request_class="write", evidence=[], choices=[],
+                    )
+                return await self._routine_control_outcome(
+                    arguments, session_key=session_key, already_confirmed=True,
+                )
+            # Any non-confirmation request discards the staged action.
+
         normalized_prompt = " ".join(str(user_prompt).strip().casefold().split())
         if (
             normalized_prompt in CONFIRM_WORDS
@@ -1661,6 +1823,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 if historical_rule_goal:
                     self.request_metrics.increment("historical_rule_execution_routed")
                 base_process = super(UnifiedMCPAgent, self).process_user_request_result
+                return await base_process(
+                    user_prompt, conversation_history, session_id=session_id,
+                )
+
+            # "Don't turn off X, just tell me its power" is a qualified
+            # read-only instruction, not a bare named-attribute shortcut.
+            # Preserve its full meaning in the model's evidence tool loop.
+            if re.match(
+                r"(?i)^\s*(?:don['’]?t|do\s+not|never)\s+"
+                r"(?:turn|switch|power|toggle)\b",
+                user_prompt,
+            ):
+                base_process = super(
+                    UnifiedMCPAgent, self,
+                ).process_user_request_result
                 return await base_process(
                     user_prompt, conversation_history, session_id=session_id,
                 )
