@@ -1433,13 +1433,13 @@ def direct_recorded_duration_answer(
     """
     question = str(request or "").casefold()
     if not re.search(
-        r"\\b(?:how long|how many (?:hours|minutes)|total (?:time|hours)|"
-        r"for how long)\\b", question,
+        r"\b(?:how long|how many (?:hours|minutes)|total (?:time|hours)|"
+        r"for how long)\b", question,
     ):
         return None
     if re.search(
-        r"\\b(?:why|investigat\\w*|diagnos\\w*|cause|audit|"
-        r"compare|explain|troubleshoot|which (?:rule|app)|who)\\b",
+        r"\b(?:why|investigat\w*|diagnos\w*|cause|audit|"
+        r"compare|explain|troubleshoot|which (?:rule|app)|who)\b",
         question,
     ):
         return None
