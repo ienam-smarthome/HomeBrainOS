@@ -20,6 +20,13 @@ _ACT = re.compile(
     r"(?i)\b(?:issued|sent|triggered|caused|switched|turned|executed|"
     r"commanded|activated|initiated|fired)\b|(?:\bon\(\)|\boff\(\))"
 )
+# For source-code reviews, a claim such as "App 3977 caused high load"
+# is not a claim that it issued a historical device command. Still guard
+# actual switch/command dispatch assertions inside those source reviews.
+_SOURCE_COMMAND_LANGUAGE = re.compile(
+    r"(?i)\\b(?:command(?:ed|s)?|issued|sent|switched|turned|"
+    r"on\\(\\)|off\\(\\)|setlevel\\(\\))\\b"
+)
 _DATE = re.compile(
     r"(?i)\b(?:on\s+)?(?:Oct(?:ober)?|Nov(?:ember)?|Sep(?:tember)?|"
     r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
@@ -123,7 +130,7 @@ def _matching_record(
 
 
 def assess_historical_claims(
-    message: str, evidence: list[dict[str, Any]],
+    message: str, evidence: list[dict[str, Any]], *, command_only: bool = False,
 ) -> dict[str, Any]:
     """Identify unsupported named-app command provenance with high precision.
 
@@ -137,6 +144,10 @@ def assess_historical_claims(
     for match in _APP_ACTOR.finditer(message):
         context = _claim_context(message, match)
         if not _ACT.search(context) or _CLEARLY_UNVERIFIED.search(context):
+            continue
+        if command_only and not _SOURCE_COMMAND_LANGUAGE.search(context):
+            # The source investigation's exception causality is not itself
+            # a dated Hubitat command-dispatch assertion.
             continue
         app_id = match.group(1)
         if not _matching_record(app_id, context, events):
