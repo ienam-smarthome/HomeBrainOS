@@ -1470,6 +1470,10 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 except Exception:
                     identity = None
         if identity is None:
+            # A failed target/capability lookup must not render as green
+            # Success merely because no tool raised. This was observed on
+            # "turn on living room light two" in the live 0.18.106 replay.
+            self.request_metrics.increment("device_resolution_missing")
             return AgentOutcome(
                 message=(
                     "I could not verify the exact device list and supported "
