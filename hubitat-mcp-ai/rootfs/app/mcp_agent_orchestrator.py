@@ -3916,6 +3916,9 @@ class UnifiedMCPAgent:
                     "declaredTotalCharacters": report.declared_total,
                     "verifiedPages": report.verified_pages,
                     "sourceCodeId": report.source_code_id,
+                    "verifiedCandidateMethodBodies": list(
+                        report.verified_candidate_method_bodies
+                    ),
                     "report": report.message,
                     "coverage": "partial-or-unverified" if not report.retrieved
                                 else "excerpts-returned; verify full-source claim"}
