@@ -60,6 +60,7 @@ from ai_investigation_routing import (
     decide_read_route, set_read_route, reset_read_route,
     explicit_system_check_command, explicit_whole_hub_report_request,
     explicit_aggregate_performance_request,
+    set_request_interpretation, reset_request_interpretation,
 )
 from request_metrics import increment_active_metric
 from mcp_client import HubitatMCPClient
@@ -595,6 +596,7 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     route_token = None
+    interpretation_token = None
     try:
         primary_objective = resolve_primary_objective(request.message)
         targeted_device = primary_objective.is_targeted_device
@@ -616,6 +618,7 @@ async def _agent_request(request: ChatRequest) -> Any:
         candidate_fast_path = (
             comprehensive_audit or broad_automation_diagnostic
             or broad_performance
+            or model_led_investigation_request(request.message)
         )
         if (candidate_fast_path and not targeted_device
                 and not targeted_rule and not primary_objective.is_source
@@ -631,6 +634,10 @@ async def _agent_request(request: ChatRequest) -> Any:
                     agent._chat, request.message,
                 )
                 model_route = decision.route
+                if decision.objective is not None:
+                    interpretation_token = set_request_interpretation(
+                        request.message, decision,
+                    )
                 if decision.provenance != "model_choice":
                     increment_active_metric("ai_read_route_fallback")
                 increment_active_metric({
@@ -712,6 +719,8 @@ async def _agent_request(request: ChatRequest) -> Any:
             request.message,
         )
     finally:
+        if interpretation_token is not None:
+            reset_request_interpretation(interpretation_token)
         if route_token is not None:
             reset_read_route(route_token)
         reset_history_window_request(token)
