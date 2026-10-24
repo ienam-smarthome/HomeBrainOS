@@ -502,7 +502,9 @@ class FinalAnswerCoordinator:
         # device ON/OFF causal investigation. Preserve its code-level question
         # and source evidence across final synthesis.
         causal = (
-            not objective.is_source and is_causal_investigation(original_user)
+            not objective.is_source
+            and not is_connectivity_root_cause_request(original_user)
+            and is_causal_investigation(original_user)
         )
         lockout_request = is_motion_lockout_investigation(original_user)
         investigative = (
