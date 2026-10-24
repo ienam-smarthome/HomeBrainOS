@@ -55,6 +55,7 @@ def live_fixture():
                 },
             }),
             "evidence_kind": "targeted_device_lookup",
+            "summary": "1 targeted device candidates",
         },
         {
             **read("hub_list_device_events", {"deviceId": "7103", "hoursBack": 24}, {
