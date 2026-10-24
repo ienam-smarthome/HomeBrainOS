@@ -199,8 +199,18 @@ async def decide_read_route(
         "performance_report = aggregate hub performance statistics only, "
         "not a specific incident. Choose model_led when uncertain. "
         "A thorough investigation of one device is NOT a whole-hub audit. "
-        'Output exactly one JSON object such as {"route":"model_led"} '
-        "with no other text."
+        "Include a single objective from: device_connectivity, source_code, "
+        "existing_rule_verification, rule_design_review, historical_command, "
+        "general_investigation, system_audit, performance_report. "
+        "A diagnostic question about an existing automation is not a "
+        "request to design a future rule. Offline-device causes are not "
+        "historical ON/OFF command attribution. Add target (the subject as "
+        "written by user) and purpose (short statement of the actual goal). "
+        'Return only JSON like {"route":"model_led",'
+        '"objective":"device_connectivity",'
+        '"target":"Bedroom 3 Mesh",'
+        '"purpose":"explain offline versus MQTT connected"}.'
+        " Never call tools."
     )
     try:
         result = await asyncio.wait_for(
@@ -210,12 +220,18 @@ async def decide_read_route(
             ], []),
             timeout=max(1.0, min(float(timeout_seconds), 15.0)),
         )
-        proposal = _parse_route(result)
-        if proposal is None:
+        parsed = _parse_interpretation(result)
+        if parsed is None:
             return ReadRouteDecision("model_led", "invalid_model_reply")
+        proposal = parsed["route"]
         route = _safe_route(proposal, question)
+        objective = parsed.get("objective")
+        if route == "model_led" and objective in ("system_audit", "performance_report"):
+            objective = None
         return ReadRouteDecision(
             route, "model_choice" if route == proposal else "host_scope_override",
+            objective=objective, target=parsed.get("target"),
+            purpose=parsed.get("purpose"),
         )
     except Exception:
         return ReadRouteDecision("model_led", "model_route_unavailable")
