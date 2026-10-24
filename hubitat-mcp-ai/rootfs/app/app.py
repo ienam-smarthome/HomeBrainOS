@@ -621,8 +621,8 @@ async def _agent_request(request: ChatRequest) -> Any:
             or broad_performance
             or model_led_investigation_request(request.message)
         )
-        if (candidate_fast_path and not targeted_device
-                and not targeted_rule and not primary_objective.is_source
+        if (candidate_fast_path and not targeted_rule
+                and not primary_objective.is_source
                 and not _explicit_mutation_request(request.message)):
             if (explicit_system_check_command(request.message)
                     or explicit_whole_hub_report_request(request.message)):
@@ -634,7 +634,9 @@ async def _agent_request(request: ChatRequest) -> Any:
                 decision = await decide_read_route(
                     agent._chat, request.message,
                 )
-                model_route = decision.route
+                model_route = (
+                    "model_led" if targeted_device else decision.route
+                )
                 if decision.objective is not None:
                     interpretation_token = set_request_interpretation(
                         request.message, decision,
