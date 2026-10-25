@@ -19,6 +19,22 @@ Use for "why?", "what caused?", intermittent, offline, unexplained actions and h
 ## Causal confidence
 'Recorded X issued on()' needs a direct device event with producedBy. 'X caused the state transition' needs matching delivery/ack, repeated aligned mechanism or equivalent positive provenance and no stronger contradictory evidence. 'Nobody/none of the Hubitat automations did it' requires genuinely exhaustive, time-relevant evidence; rarely supportable from bounded event/log samples. An app's settings cannot prove historical execution.
 
+## Configuration-to-code diagnostics
+A stored app setting is not necessarily its effective behaviour. When the
+user asks *why* an automation acted or stayed active, inspect the actual
+installed application's handlers and default/fallback branches **before**
+asserting that a raw value disables or enables a control path. Reconcile
+raw settings, any UI-generated effective summary, configured device IDs,
+and the source: a source label or an unrelated active sensor cannot stand in
+for the app's actual subscribed triggers and keep-on sensors. Distinguish
+activation triggers, hold/keep-on sources, inactivity timers and watchdog or
+backup checks. Review conditions that cancel or re-arm each timer. For
+historical incidents, use time-aligned state transitions and execution
+receipts; today's configuration/state cannot prove a past cause. If Groovy
+source or relevant sensor history is unavailable, give a calibrated
+hypothesis and the precise missing read. Do not recommend changing a setting
+whose implementation meaning has not been verified.
+
 ## Completion discipline
 Required source classes should be recorded as checked, checked-empty, unavailable or not checked. For telemetry investigate last *device-originated* packet versus cached health, connection and command acknowledgements; query device-scoped logs where available. For rule bugs inspect configured actions/conditions and their runtime history. If an essential source is not available, describe the consequence for confidence rather than substituting certainty.
 
