@@ -4,7 +4,7 @@ The merged RFC remains authoritative: [RFC-INVESTIGATION-V2.md](RFC-INVESTIGATIO
 This implementation is currently a **passive library**. It is not connected
 to production HomeBrain request routing, MCP execution or final synthesis.
 
-## Implemented through 0.18.124
+## Implemented through 0.18.125
 
 - A single canonical case file from timestamped device events and app-log rows.
   Source clocks and offsets are preserved, observations deduplicated by typed
@@ -84,15 +84,39 @@ and carefully measured V1/V2 read-only shadow comparison are subsequent PRs.
 No live HomeBrain routes, automation writes, confirmation or production
 final-answer validators are altered.
 
+## Phase C/D: opt-in model-led evaluation (0.18.125)
+
+`V2ModelProposer` reuses the currently configured
+`ChatTransport.chat(messages, [])` provider, asks the model for structured
+hypotheses and discriminating read proposals, and supplies only host-projected
+read tool names/schema (not unmanaged tool descriptions). All JSON plans remain
+untrusted and are validated by the existing V2 planner; no native model tool
+call grants permissions.
+
+`evaluate_v2_with_model(explicitly_authorised=True, ...)` is an explicit
+integration entrypoint combining model planning, a bounded authorised MCP read
+loop and a model-backed evidence selection / ranking round. **It is not wired
+into the production agent, feature toggles or normal user conversations.**
+
+`assemble_grounded_answer` renders observed event types and source times from
+the case file rather than treating the LLM's narrative as verified facts.
+All material command events survive even if the model omits their IDs. Possible
+explanations remain clearly marked as hypotheses and incomplete historical
+coverage stays explicit. The checker exposes model omissions/invalid IDs
+without discarding independently supported observations.
+
+The acceptance tests use mocked Ollama HTTP through the **real** ChatTransport
+and fake Hubitat MCP reads; no physical devices or hosted providers are called.
+
 ## Not yet implemented
 
-1. A structured live model-client adapter, more reviewed MCP source adapters,
-   and verification of naive native log timestamps against source timezone.
-2. Measured hypothesis usefulness, discriminating information gain and
-   objective stopping policy beyond the initial bounded loop.
-3. Grounded, **non-destructive** atomic-claim and evidence-omission evaluator.
-4. Read-only shadow comparison V1 versus V2, latency/quality scorecards,
-   source-equivalence checks, feature flag, rollout and removal of V1 guards.
+1. More verified MCP source adapters; never infer naive native-log timezones.
+2. Measured hypothesis usefulness and objective stopping policies beyond
+   initial round/read limits.
+3. Bounded model-authored prose with atomic claim-to-evidence verification
+   and targeted revision rather than final-answer wholesale rewriting.
+4. Read-only shadow comparison V1 versus V2, quality/latency scorecards,
+   safe feature flag, production cutover and retirement of V1 guards.
 
 Do not claim Investigation V2 already outperforms Claude or changes the live
 answer until measured shadow replays and cutover gates are passed.
