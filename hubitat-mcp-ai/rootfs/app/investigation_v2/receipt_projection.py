@@ -95,6 +95,9 @@ def project_read_receipt(
     data = result.data
     if not isinstance(data, dict):
         return receipt
+    if data.get("status") in ("pending", "in_progress"):
+        receipt["success"] = False
+        return receipt
     if op == "hub_list_device_events":
         target = _id(args.get("deviceId"))
         if not target or ("deviceId" in data and _id(data.get("deviceId")) != target):
