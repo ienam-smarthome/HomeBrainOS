@@ -233,7 +233,11 @@ async def synthesize_atomic_with_chat(
     max_repair_rounds = min(1, max(0, int(max_repair_rounds)))
     if len(evidence) > max_case_chars:
         review = review_atomic_claims(case, hypotheses, [])
-        return AtomicSynthesis(_render(case, hypotheses, review), review)
+        grounded = _render(case, hypotheses, review)
+        if enable_evidence_narrative:
+            grounded, audit = render_evidence_narrative(case, grounded, [])
+            return AtomicSynthesis(grounded, review, audit)
+        return AtomicSynthesis(grounded, review)
     source = json.dumps({
         "question": case.original_user_request,
         "case_file": evidence,
@@ -269,7 +273,11 @@ async def synthesize_atomic_with_chat(
         review = review_atomic_claims(case, hypotheses, decoded["claims"])
     except Exception:
         review = review_atomic_claims(case, hypotheses, [])
-        return AtomicSynthesis(_render(case, hypotheses, review), review)
+        grounded = _render(case, hypotheses, review)
+        if enable_evidence_narrative:
+            grounded, audit = render_evidence_narrative(case, grounded, [])
+            return AtomicSynthesis(grounded, review, audit)
+        return AtomicSynthesis(grounded, review)
 
     if max_repair_rounds and any(d.claim_id for d in review.rejected):
         rejected = [{"id": d.claim_id, "reason": d.reason}
