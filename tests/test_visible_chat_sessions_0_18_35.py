@@ -46,7 +46,7 @@ def test_new_topic_resets_context_and_keeps_live_confirmation():
 @pytest.mark.skipif(shutil.which("node") is None,reason="Node unavailable")
 def test_script_is_valid_javascript(tmp_path):
     page=render_page("HomeBrain","0.18.110")
-    script=re.search(r"<script>([\\s\\S]*?)</script>",page)
+    script=re.search(r"<script>([\s\S]*?)</script>",page)
     assert script
     path=tmp_path/"webui.js"
     path.write_text(script.group(1),encoding="utf-8")
