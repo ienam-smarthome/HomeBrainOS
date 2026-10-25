@@ -177,3 +177,49 @@ def test_host_scope_override_retains_effective_ai_interpretation():
     assert 'active_decision = ReadRouteDecision(' in source
     assert 'provenance="host_scope_override"' in source
     assert '"objective": active_decision.objective' in source
+
+
+
+@pytest.mark.asyncio
+async def test_real_model_loop_retries_inventory_only_reply_once_then_fails_honestly(monkeypatch):
+    """Exercise the genuine no-tool finalization branch, not only source text."""
+    agent = UnifiedMCPAgent(
+        _FakeMCP(), "key", "fake", ai_client=_NoProvider(),
+        require_sensitive_confirmation=False,
+    )
+    rounds: list[list[dict]] = []
+
+    async def fake_chat(messages, tools):
+        rounds.append(list(messages))
+        assert not any(
+            item.get("function", {}).get("name") == "homebrain_device_inventory"
+            for item in tools
+        )
+        return {"content": "17 devices in **Living Room**: motion sensors and lights.",
+                "tool_calls": []}
+
+    async def no_task_plan(*_args, **_kwargs):
+        return None
+
+    async def no_causal_prefetch(*_args, **_kwargs):
+        return ("not_applicable", None, None)
+
+    async def fake_system_prompt(*_args, **_kwargs):
+        return "Read-only investigative assistant."
+
+    monkeypatch.setattr(agent, "_chat", fake_chat)
+    monkeypatch.setattr(agent.general_task_planner, "plan", no_task_plan)
+    monkeypatch.setattr(agent, "_prefetch_explicit_causal_subject", no_causal_prefetch)
+    monkeypatch.setattr(agent, "_system_prompt", fake_system_prompt)
+
+    outcome = await agent.process_user_request_result(REQUEST)
+    assert len(rounds) == 2, "Only one additional bounded evidence choice"
+    assert any(
+        "HOST INVESTIGATION COMPLETION GATE" in item.get("content", "")
+        for item in rounds[1] if isinstance(item, dict)
+    )
+    assert "17 devices" not in outcome.message
+    assert "could not verify" in outcome.message
+    assert outcome.request_class == "live-read"
+    assert not outcome.confirmation_required
+    assert not any(row.get("mutates") for row in outcome.evidence)
