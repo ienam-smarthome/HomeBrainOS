@@ -165,7 +165,7 @@ def test_verified_off_provenance_is_not_renamed_to_missing_runtime_evidence():
     assert "30.269s later" in output
     assert "Livingroom Soft Sensor" not in output
     assert "- Runtime triggering, delay cancellation and actual OFF commands." not in output
-    assert "other runtime trigger branches" in output
+    assert "Other runtime trigger branches" in output
     assert "ordered actions" in output
 
 
