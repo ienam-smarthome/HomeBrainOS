@@ -128,7 +128,7 @@ def _decision(proposal: Any, case: CaseFile,
         if not hypothesis.supporting_record_ids and not hypothesis.conflicting_record_ids:
             return ClaimDecision(ident, kind, None, None, "no_hypothesis_evidence")
         return ClaimDecision(ident, kind, None, hyp_id)
-    return ClaimDecision(ident, str(kind)[:32], None, None, "unsupported_claim_kind")
+    return ClaimDecision(ident, "invalid", None, None, "unsupported_claim_kind")
 
 
 def review_atomic_claims(case: CaseFile, hypotheses: Iterable[Hypothesis],
@@ -198,7 +198,11 @@ def _render(case: CaseFile, hypotheses: Iterable[Hypothesis], review: ClaimRevie
     chosen_hyp = [d.hypothesis_id for d in review.accepted if d.hypothesis_id]
     # The existing host renderer appends ALL mandatory commands regardless
     # of model omission and prints hypotheses as UNVERIFIED possibilities.
-    answer = assemble_grounded_answer(case, list(hypotheses), {
+    # Only explicitly accepted hypothesis claims can enter model synthesis.
+    # The legacy renderer otherwise appends EVERY hypothesis, including
+    # ones this audit rejected or the model declined to justify.
+    accepted_hypotheses = [h for h in hypotheses if h.hypothesis_id in chosen_hyp]
+    answer = assemble_grounded_answer(case, accepted_hypotheses, {
         "selected_record_ids": selected,
         "hypothesis_order": chosen_hyp,
     })
