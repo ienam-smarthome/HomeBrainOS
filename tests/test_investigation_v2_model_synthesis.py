@@ -176,7 +176,7 @@ async def test_existing_real_chat_transport_powers_safe_v2_plan_and_synthesis():
     assert "material_command_omitted_by_model" in output.answer.validation_issues
     for url, payload in http.calls:
         assert url == "https://ollama.example/api/chat"
-        assert payload["json"]["tools"] == []  # no native provider tool calls
+        assert payload["json"]["tools"] is None  # ChatTransport serializes no tools as null
     await transport.close()
 
 
