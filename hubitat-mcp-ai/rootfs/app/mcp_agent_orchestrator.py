@@ -207,6 +207,7 @@ from automation_diagnostic_policy import (
     is_integration_runtime_diagnostic,
 )
 from request_metrics import increment_active_metric
+from request_runtime import set_request_stage
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from night_idle_rule_authoring import propose_night_idle, recognise_night_idle_creation
 from native_rule_creation_staging import demands_atomic_disabled_rule_creation, render_atomic_staging_stop
@@ -4937,6 +4938,9 @@ class UnifiedMCPAgent:
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
+            set_request_stage(
+                f"AI reasoning (round {round_index + 1}/{active_round_budget})"
+            )
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
@@ -5703,6 +5707,9 @@ class UnifiedMCPAgent:
             messages.append(assistant)
             duplicate_signature_seen = False
             round_history_evidence_sufficient = False
+            set_request_stage(
+                f"Executing tool calls (round {round_index + 1}/{active_round_budget})"
+            )
             round_tool_failure = False
             causal_subject_to_expand: dict[str, Any] | None = None
             for call in calls:
