@@ -241,7 +241,7 @@ def build_case_file(original_user_request: str,
         # Explicit claims of source completeness require independent source
         # integrity, never inferred from hoursBack, page reach, or row count.
         complete_flag = _boolean(details.get("sourceComplete"))
-        source_complete = (complete_flag is True and integrity is True and truncated is False)
+        source_complete = (succeeded and not errors and complete_flag is True and integrity is True and truncated is False)
         if complete_flag is None and truncated is not True:
             source_complete = None
         filters = {key: args[key] for key in ("attribute", "hoursBack", "limit", "since", "until", "appId")
