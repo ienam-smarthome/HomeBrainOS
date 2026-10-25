@@ -211,7 +211,7 @@ async def test_model_receives_verified_schema_without_write_gateway():
 
 
 @pytest.mark.parametrize("payload", [
-    "", "[]", "null", "{", '{"reads":[]}', " " * 16001,
+    "", "[]", "null", "{", " " * 16001,
 ])
 def test_malformed_planner_json_is_rejected(payload):
     with pytest.raises((ValueError, json.JSONDecodeError)):
@@ -276,3 +276,10 @@ async def test_long_case_does_not_silently_truncate_model_input():
     # A larger case must fail before contacting any provider.
     with pytest.raises(ValueError, match="bounded model context"):
         await model(real_case(), 0)
+
+@pytest.mark.asyncio
+async def test_incomplete_but_valid_json_is_rejected_by_planner_contract():
+    async def missing_fields(_messages, _tools):
+        return {"content": '{"reads":[]}'}
+    with pytest.raises(ValueError, match="hypothesis list"):
+        await V2ModelProposer(missing_fields, tools())(real_case(), 0)
