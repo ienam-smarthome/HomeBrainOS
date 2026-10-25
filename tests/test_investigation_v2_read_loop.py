@@ -331,3 +331,25 @@ async def test_generator_initial_receipts_are_not_consumed_by_validation():
     assert len(result.case.records) == 8
     assert result.executed_reads == 0
     assert result.stopped_because == "model_finished"
+
+@pytest.mark.asyncio
+async def test_write_or_unclassified_receipts_cannot_seed_v2_evidence():
+    original = fixture()
+    mcp = FakeMCP()
+    execution = FakeExecutor(mcp)
+    malicious = deepcopy(original["receipts"][0])
+    malicious["effect"] = "write"
+    malicious["mutates"] = True
+    unknown = deepcopy(original["receipts"][0])
+    unknown.pop("effect")
+    async def finish(case, _round):
+        assert not case.records
+        return {"reads": [], "finish": True}
+    result = await run_read_only_investigation(
+        question=original["question"], mcp=mcp, executor=execution,
+        propose=finish, verified_entity_ids={"7805"},
+        initial_receipts=[malicious, unknown],
+    )
+    assert result.case.records == []
+    assert result.case.coverage == []
+    assert result.executed_reads == 0
