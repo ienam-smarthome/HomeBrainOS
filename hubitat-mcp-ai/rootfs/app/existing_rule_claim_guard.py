@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from existing_rule_observed_evidence import (
+    observed_rule_runtime, observed_rule_warnings, observed_complete_source,
+)
 
 
 def _gateway_arguments(row: dict[str, Any]) -> dict[str, Any]:
@@ -287,6 +290,27 @@ def calibrate_existing_rule_verification(
 
     verified = (_typed_health(receipts) + _typed_variables(receipts)
                 + _typed_setting_fragments(receipts))
+    # A partial *configuration* contract is not a licence to discard stronger
+    # independent *runtime/source* observations already read in this turn.
+    scoped_ids = {
+        _target_id(row) for row in receipts
+        if isinstance(row, dict) and row.get("success") is True
+        and row.get("sub_tool") in {
+            "hub_get_rule_health", "hub_list_rule_local_variables",
+        }
+        and row.get("evidence_kind") == "native_rule_evidence"
+        and _target_id(row).isdigit()
+    }
+    scoped_ids.update(
+        _target_id(row) for row in receipts
+        if isinstance(row, dict) and row.get("success") is True
+        and row.get("evidence_kind") == "typed_existing_rule_partial_settings"
+        and row.get("sub_tool") == "hub_get_app_config"
+        and _target_id(row).isdigit()
+    )
+    runtime, confirmed_off = observed_rule_runtime(receipts, scoped_ids)
+    warnings = observed_rule_warnings(receipts, scoped_ids)
+    source = observed_complete_source(receipts, scoped_ids)
     page_observations = _page_read_observations(receipts)
     lines = [
         banner, "",
@@ -298,6 +322,8 @@ def calibrate_existing_rule_verification(
         "",
         *(["### Editor-page observations (not compiled rule facts)",
            *page_observations, ""] if page_observations else []),
+        *(["### Verified observed execution and source coverage",
+           *runtime, *warnings, *source, ""] if (runtime or warnings or source) else []),
         "### Not independently verified",
         "- Complete triggers, ordered actions, nested IF structure, action "
         "conditions, delay cancellation semantics and active/enabled status; "
@@ -306,11 +332,15 @@ def calibrate_existing_rule_verification(
         "receipt exposes only field names cannot establish matching app IDs.",
         "- The comparison controller's effective inactivity-OFF duration, "
         "backup delay, active lockout countdown or interference with the target rule.",
-        "- Runtime triggering, delay cancellation and actual OFF commands.",
+        ("- Other runtime trigger branches, cancellation and timer-state "
+         "semantics are unverified; the recorded OFF command/state pairs "
+         "above are verified observations, not proof of complete execution."
+         if confirmed_off else
+         "- Runtime triggering, delay cancellation and actual OFF commands."),
         "",
         "**Investigation remains partial.** Retrieve a target-matched, typed "
         "configuration/action-tree projection and complete exact-name rule "
-        "inventory before certifying these points. No device or automation "
+        "inventory before certifying those remaining points. No device or automation "
         "changes are authorised by this report.",
     ]
     return "\n".join(lines)
