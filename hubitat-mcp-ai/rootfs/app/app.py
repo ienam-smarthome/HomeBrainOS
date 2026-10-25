@@ -671,10 +671,22 @@ async def _agent_request(request: ChatRequest) -> Any:
                     "model_led" if (targeted_device or targeted_rule)
                     else decision.route
                 )
-                if (decision.objective is not None
-                        and model_route == decision.route):
+                # Host scope overrides must not discard the already
+                # interpreted goal. An old 'targeted device' classifier can
+                # force model_led even when the first model suggested a broad
+                # report; its broad objective is NOT allowed to leak into
+                # subsequent app/tool/answer selection.
+                active_decision = decision
+                if model_route == "model_led" and decision.route != "model_led":
+                    active_decision = ReadRouteDecision(
+                        route="model_led", provenance="host_scope_override",
+                        objective="general_investigation",
+                        target=decision.target,
+                        purpose=decision.purpose or request.message[:320],
+                    )
+                if active_decision.objective is not None:
                     interpretation_token = set_request_interpretation(
-                        request.message, decision,
+                        request.message, active_decision,
                     )
                 if decision.provenance != "model_choice":
                     increment_active_metric("ai_read_route_fallback")
@@ -729,10 +741,10 @@ async def _agent_request(request: ChatRequest) -> Any:
         if (interpretation_token is not None
                 and hasattr(outcome, "interpreted_intent")):
             outcome.interpreted_intent = {
-                "route": decision.route,
-                "objective": decision.objective,
-                "target": decision.target,
-                "purpose": decision.purpose,
+                "route": active_decision.route,
+                "objective": active_decision.objective,
+                "target": active_decision.target,
+                "purpose": active_decision.purpose,
             }
         # A direct/specialized completion may have bypassed its own evidence
         # assessment. Preserve the original investigative goal at the API

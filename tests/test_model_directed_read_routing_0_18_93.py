@@ -172,7 +172,8 @@ def test_app_and_agent_act_on_model_arbitration_before_host_shortcuts():
     agent_py = (APP / "homebrain_agent.py").read_text(encoding="utf-8")
     assert '"model_led" if (targeted_device or targeted_rule)' in app_py
     assert "or targeted_rule" in app_py
-    assert "model_route == decision.route" in app_py
+    assert 'active_decision = ReadRouteDecision(' in app_py
+    assert 'provenance="host_scope_override"' in app_py
     assert 'if (model_route == "system_audit"' in app_py
     assert 'model_route == "model_led"' in app_py
     assert 'active_read_route() == "model_led"' in agent_py
