@@ -20,6 +20,7 @@ from .evidence import CaseFile
 from .model_adapter import Chat, _json_object
 from .read_loop import Hypothesis
 from .synthesis import GroundedAnswer, assemble_grounded_answer
+from .narrative import NarrativeAudit, render_evidence_narrative
 
 _CLAIM_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 _FIELDS = ("stage", "action", "value", "target_id",
@@ -82,6 +83,7 @@ class ClaimReview:
 class AtomicSynthesis:
     answer: GroundedAnswer
     review: ClaimReview
+    narrative_audit: NarrativeAudit | None = None
 
 
 def _safe_claim_id(value: Any) -> str | None:
@@ -219,6 +221,7 @@ async def synthesize_atomic_with_chat(
     *, case: CaseFile, hypotheses: list[Hypothesis], chat: Chat,
     max_case_chars: int = 50000,
     max_repair_rounds: int = 1,
+    enable_evidence_narrative: bool = False,
 ) -> AtomicSynthesis:
     """Structured claims, exact verification, optional ONE targeted model repair.
 
@@ -226,6 +229,7 @@ async def synthesize_atomic_with_chat(
     rejected-claim prose to the provider or to user-visible verified facts.
     """
     evidence = case.evidence_brief()
+    narrative_links: Any = []
     max_repair_rounds = min(1, max(0, int(max_repair_rounds)))
     if len(evidence) > max_case_chars:
         review = review_atomic_claims(case, hypotheses, [])
@@ -240,16 +244,28 @@ async def synthesize_atomic_with_chat(
         } for h in hypotheses[:8]],
         "claim_schema_fields": list(_FIELDS),
     }, ensure_ascii=True)
+    narrative_contract = (
+        " Also include narrative_links, a list (max 4) of "
+        "{earlier_id,later_id,relation}. Relations are later_command "
+        "(two issued commands for the same target, in UTC order) and "
+        "later_report (a later reported state for the same target). "
+        "Do not assert that a command was executed or caused the report. "
+        "Only use exact source record IDs from the case."
+        if enable_evidence_narrative else ""
+    )
     try:
         response = await chat([
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": _SYSTEM + narrative_contract},
             {"role": "user", "content": source},
         ], [])
         if not isinstance(response, dict) or response.get("tool_calls"):
             raise ValueError("atomic synthesis may not call MCP tools")
         decoded = _json_object(response.get("content"), max_chars=_MAX_MODEL_CHARS)
-        if set(decoded) != {"claims"}:
+        expected_keys = {"claims", "narrative_links"} if enable_evidence_narrative else {"claims"}
+        if set(decoded) != expected_keys:
             raise ValueError("unexpected atomic model keys")
+        if enable_evidence_narrative:
+            narrative_links = decoded["narrative_links"]
         review = review_atomic_claims(case, hypotheses, decoded["claims"])
     except Exception:
         review = review_atomic_claims(case, hypotheses, [])
@@ -280,7 +296,11 @@ async def synthesize_atomic_with_chat(
             from dataclasses import replace
             review = replace(review, repair_attempted=True)
 
-    return AtomicSynthesis(_render(case, hypotheses, review), review)
+    rendered = _render(case, hypotheses, review)
+    if enable_evidence_narrative:
+        rendered, audit = render_evidence_narrative(case, rendered, narrative_links)
+        return AtomicSynthesis(rendered, review, audit)
+    return AtomicSynthesis(rendered, review)
 
 
 __all__ = [
