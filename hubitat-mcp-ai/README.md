@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.120**.
+Current add-on version: **0.18.121**.
 
 ## Architecture
+
+v0.18.121 adds source-typed historical window integrity. For overnight incident questions with two explicit dated clocks, HomeBrain now supplies precise UTC boundaries across local time changes and prevents later-only retained history from becoming a confident missing-event/failed-controller verdict. A verified separate focal archive can still support its own reconstruction. See [release notes](CHANGELOG-0.18.121.md).
 
 v0.18.120 preserves the AI-interpreted answer deliverable separately from the inspected entity. A question about why an existing automation failed now remains a diagnosis rather than becoming a formal existing-rule audit with a generic partial report. During multi-round investigations, optional Groovy workbench reads cannot silently substitute an unverified app instance after exact app-target evidence was established. The model is directed to contrast successful and failed episodes and distinguish findings from missing evidence across all device/automation domains. See [release notes](CHANGELOG-0.18.120.md).
 
