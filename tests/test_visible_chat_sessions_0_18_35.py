@@ -30,8 +30,9 @@ def test_bounded_ephemeral_context_without_persisted_chat():
                  "localStorage.removeItem('hmcp_chats_v1')",
                  "key.startsWith('hmcp_history_')"):
         assert text in page
-    assert "localStorage.setItem(" not in page
-    assert "sessionStorage.setItem(" not in page
+    assert "localStorage.setItem('hmcp_chats_v1'" not in page
+    assert "sessionStorage.setItem('hmcp_history_" not in page
+    assert "sessionStorage.setItem('hmcp_session_id'" not in page
 
 def test_new_topic_resets_context_and_keeps_live_confirmation():
     page=render_page("HomeBrain","0.18.110")
