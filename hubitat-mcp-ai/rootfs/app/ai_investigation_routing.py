@@ -54,11 +54,17 @@ class ReadRouteDecision:
     objective: str | None = None
     target: str | None = None
     purpose: str | None = None
+    answer_goal: str | None = None
 
 _VALID_OBJECTIVES = frozenset((
     "device_connectivity", "source_code", "existing_rule_verification",
     "rule_design_review", "historical_command", "general_investigation",
     "system_audit", "performance_report",
+))
+_ANSWER_GOALS = frozenset((
+    "diagnose_cause", "verify_configuration", "trace_event",
+    "inspect_implementation", "describe_status", "inventory_or_report",
+    "design_change",
 ))
 _REQUEST_OBJECTIVE = ContextVar("homebrain_interpreted_objective", default=None)
 
@@ -191,6 +197,8 @@ def _parse_interpretation(reply: Any) -> dict[str, str] | None:
     objective = obj.get("objective")
     if isinstance(objective, str) and objective in _VALID_OBJECTIVES:
         parsed["objective"] = objective
+    if obj.get("answer_goal") in _ANSWER_GOALS:
+        parsed["answer_goal"] = obj["answer_goal"]
     for field, maximum in (("target", 120), ("purpose", 240)):
         value = obj.get(field)
         if isinstance(value, str) and 0 < len(value.strip()) <= maximum:
@@ -225,12 +233,22 @@ async def decide_read_route(
         "Include a single objective from: device_connectivity, source_code, "
         "existing_rule_verification, rule_design_review, historical_command, "
         "general_investigation, system_audit, performance_report. "
-        "A diagnostic question about an existing automation is not a "
-        "request to design a future rule. Offline-device causes are not "
-        "historical ON/OFF command attribution. Add target (the subject as "
+        "Classify the ANSWER the user wants independently from the type of "
+        "entity being inspected. A question explaining why an existing "
+        "automation behaved unexpectedly is a diagnosis, even if verifying "
+        "its settings is part of the investigation. Formal existing-rule "
+        "verification is only the primary objective when the user wants "
+        "to certify its configuration or exact action logic. "
+        "Offline-device causes are not historical ON/OFF command attribution. "
+        "Set answer_goal to one of: diagnose_cause, verify_configuration, "
+        "trace_event, inspect_implementation, describe_status, "
+        "inventory_or_report, design_change. This field describes the "
+        "requested deliverable, not a guessed finding or permission. "
+        "Add target (the subject as "
         "written by user) and purpose (short statement of the actual goal). "
         'Return only JSON like {"route":"model_led",'
         '"objective":"device_connectivity",'
+        '"answer_goal":"diagnose_cause",'
         '"target":"Bedroom 3 Mesh",'
         '"purpose":"explain offline versus MQTT connected"}.'
         " Never call tools."
@@ -251,6 +269,16 @@ async def decide_read_route(
             )
         proposal = parsed["route"]
         objective = parsed.get("objective")
+        answer_goal = parsed.get("answer_goal")
+        # A semantic deliverable is orthogonal to entity type: inspecting
+        # a rule as evidence for WHY must not convert the user\'s requested
+        # explanation into a strict configuration-certification report.
+        # This arbitration is advisory and cannot expand read permissions.
+        if proposal == "model_led":
+            if answer_goal == "diagnose_cause" and objective == "existing_rule_verification":
+                objective = "general_investigation"
+            elif answer_goal == "verify_configuration" and objective == "general_investigation":
+                objective = "existing_rule_verification"
         # Never enter a specialist fast report from a route label alone.
         # The model must consistently identify both the task objective and
         # the matching workflow; otherwise preserve the interactive MCP path.
@@ -275,7 +303,7 @@ async def decide_read_route(
         return ReadRouteDecision(
             route, "model_choice" if route == proposal else "host_scope_override",
             objective=objective, target=parsed.get("target"),
-            purpose=parsed.get("purpose"),
+            purpose=parsed.get("purpose"), answer_goal=answer_goal,
         )
     except Exception:
         return ReadRouteDecision(
