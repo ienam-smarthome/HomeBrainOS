@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.116**.
+Current add-on version: **0.18.117**.
 
 ## Architecture
+
+v0.18.117 preserves **positive causal evidence** rather than discarding it when unproven ghost-motion claims are calibrated. A generic, ID-agnostic event correlator pairs app-issued OFF commands with the light's reported OFF transition and its subscribed motion inputs' last recorded inactive edges. It reports the measured delay per OFF and any observed active interval while retaining uncertainty about real-world occupancy and incomplete event-history coverage. Clone sensors without controlling-app listener evidence are not mistaken for independent inputs. See [release notes](CHANGELOG-0.18.117.md).
+
 
 v0.18.116 adds source-grounded false-motion claim verification. A model cannot use a coincident event from a cloned/virtual sensor to prove it triggered another app's OFF timer, nor may it infer empty-room ghosting without independent vacancy evidence. For unproven causal assertions the final answer preserves verified switch intervals and timestamp-aligned OFF command/state pairs and explains what remains uncertain. Investigator guidance prioritises exact configured activation/keep-on sensor IDs over arbitrary nearby event histories. See [release notes](CHANGELOG-0.18.116.md).
 
