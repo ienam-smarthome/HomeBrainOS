@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.125**.
+Current add-on version: **0.18.126**.
 
 ## Architecture
+
+v0.18.126 adds strict, source-backed atomic claim verification and at most one targeted revision of rejected claims. It preserves material incident commands and never rewrites approved findings. **Opt-in V2 harness only; no default chat cutover.** See [release notes](CHANGELOG-0.18.126.md).
 
 v0.18.125 adds an opt-in V2 AI planner using the existing ChatTransport and source-backed synthesis that preserves incident commands without declaring unverified causes. **No default chat routing changes.** See [release notes](CHANGELOG-0.18.125.md).
 
