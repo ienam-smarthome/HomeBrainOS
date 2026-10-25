@@ -123,6 +123,11 @@ async def run_read_only_investigation(
     initial = list(initial_receipts)
     if any(not isinstance(row, dict) for row in initial):
         raise ValueError("Initial receipts must be trusted host receipt dictionaries")
+    # Existing host receipts are useful only as READ observations. A previous
+    # write confirmation or schema-less external snippet is not permission to
+    # ground a V2 causal conclusion. Caller must pass trusted host receipts.
+    initial = [row for row in initial
+               if row.get("mutates") is False and row.get("effect") == "read"]
 
     max_rounds = max(1, min(4, int(max_rounds)))
     max_total_reads = max(0, min(12, int(max_total_reads)))
