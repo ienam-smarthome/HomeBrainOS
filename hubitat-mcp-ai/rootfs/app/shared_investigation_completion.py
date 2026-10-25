@@ -46,6 +46,7 @@ from telemetry_clock_consistency import (
 )
 from investigation_policy import is_causal_investigation
 from system_audit_coverage import assess_system_audit_sources
+from historical_window_integrity import calibrate_historical_incident_answer
 
 TELEMETRY_KINDS = ("device_state", "device_history", "device_logs")
 CAUSAL_KINDS = ("device_history", "command_history")
@@ -534,6 +535,17 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         )
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
+    message, historical_window = calibrate_historical_incident_answer(
+        request, evidence, message, causal=causal,
+    )
+    if historical_window is not None:
+        coverage["historicalWindowIntegrity"] = historical_window
+        if historical_window.get("latestPageDoesNotReachWindow"):
+            coverage["rootCauseVerified"] = False
+            coverage["status"] = "partial-evidence"
+            coverage["evidenceComplete"] = False
+            metrics["outcome"] = "unresolved"
+            metrics.setdefault("counters", {})["historical_window_not_reached"] = 1
     if command_observation is not None or incident_log_window is not None:
         message, calibrated = calibrate_command_causality(
             message, command_observation, incident_log_window,
