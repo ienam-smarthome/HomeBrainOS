@@ -266,6 +266,9 @@ function renderAutomationItems(data){const root=document.createElement('div');ro
 function speechText(value){return normalizeAnswerMarkup(value).replace(/```[\s\S]*?```/g,' ').replace(/\[(ACTIVE|DISABLED|PAUSED|BROKEN|UNKNOWN)\]/gi,'$1').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\s*\((?:IDs?|device IDs?)\s*:\s*[^)]+\)/gi,'').replace(/\b(?:IDs?|device IDs?)\s*[:#]\s*[\d,\s]+/gi,'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/\bRTT\b/gi,'response time').replace(/\bCPU\b/g,'C P U').replace(/&/g,' and ').replace(/\s+\/\s+/g,' or ').replace(/→/g,' to ').replace(/←/g,' from ').replace(/(\d+(?:\.\d+)?)\s*%/g,'$1 percent').replace(/:\s*\n/g,'.\n').replace(/^\s*#{1,6}\s*/gm,'').replace(/^\s*[-*+]\s+/gm,'').replace(/>/g,' over ').replace(/=/g,' ').replace(/(\d+(?:\.\d+)?)h\b/gi,'$1 hours').replace(/[*_`]/g,'').replace(/\n+/g,'. ').replace(/\s+/g,' ').replace(/\s+\./g,'.').replace(/\.{2,}/g,'.').trim()}
 // No chat tabs, saved transcripts or browser-persistent conversation history.
 // Keep only recent in-page context for natural follow-up questions.
+// Request ownership must exist independently of the retired saved-chat UI.
+// Both Ask and New topic use these variables to cancel superseded calls safely.
+let activeRequest=null,requestSequence=0;
 let suggestedAction=null,conversationHistory=[];
 function resetConversation(){
   if(activeRequest){activeRequest.abort();activeRequest=null;requestSequence++}
