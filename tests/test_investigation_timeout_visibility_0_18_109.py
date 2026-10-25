@@ -23,7 +23,7 @@ from evidence_recorder import EvidenceRecorder
 QUESTION = (
     "Why does Livingroom Light 1 sometimes stay ON when nobody is in the "
     "room? Investigate its controlling automation, sensors, inactivity timers "
-    "and recorded activity. Read-only; do not change anything."
+    "and recorded activity using verified evidence. Read-only; do not change anything."
 )
 
 
