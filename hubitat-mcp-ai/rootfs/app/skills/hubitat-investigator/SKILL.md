@@ -8,13 +8,13 @@ version: 1
 Use for "why?", "what caused?", intermittent, offline, unexplained actions and historical verification questions. This skill guides *investigation*, not a canned conclusion. Prefer an evidence-supported working explanation to a generic unresolved statement, but never turn a likely candidate into a confirmed cause.
 
 ## Seven stages
-1. Define the exact subject, focal time/window, timezone and requested cause. Never change targets silently.
-2. Trace real topology: target device -> command-producing app -> configured triggers/subscriptions -> physical sensors/buttons -> bridge reporter. Current settings are not historical execution proof.
-3. Build a timed event table: command invocation, physical state edges, intervening OFF, manual button, motion, app execution and delays.
-4. Investigate discriminating anomalies: missed telemetry, repeated commands, source timestamps, state resync and listener-after-action ordering.
-5. Compare hypotheses (app command, alternate controller, external bridge, stale reporting). Mark SUPPORTED, PLAUSIBLE, CONTRADICTED or NOT TESTED; a checked-empty window is not proof of no execution.
-6. Read the strongest missing source: command producer app config, relevant source methods, and bounded producer logs. Avoid obsolete log windows and unrelated inventories.
-7. State the strongest recorded candidate, serious contradictory evidence, what remains unknown and one decisive next test. Separate initiator, command producer, bridge reporter and downstream listener.
+1. Identify the subject, time/window, timezone and causal question; never change targets.
+2. Trace device → command app → configured subscriptions and physical sensor/bridge.
+3. Time-order commands, physical events, intervening OFF, input edges and delays.
+4. Test missed telemetry, resync, conflicting commands and event/listener order.
+5. Compare supported, plausible, contradicted and untested hypotheses.
+6. Read the strongest missing app config, source method, sensor history or app log.
+7. State the leading supported cause, alternatives and decisive next check.
 
 ## Causal confidence
 'Recorded X issued on()' needs a direct device event with producedBy. 'X caused the state transition' needs matching delivery/ack, repeated aligned mechanism or equivalent positive provenance and no stronger contradictory evidence. 'Nobody/none of the Hubitat automations did it' requires genuinely exhaustive, time-relevant evidence; rarely supportable from bounded event/log samples. An app's settings cannot prove historical execution.
