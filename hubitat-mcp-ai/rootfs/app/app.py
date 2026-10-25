@@ -129,7 +129,7 @@ def load_options() -> dict[str, Any]:
         "ollama_local_connect_timeout_seconds": 3,
         "ollama_local_keep_alive_seconds": 120,
         "ollama_agent_timeout_seconds": 60,
-        "investigation_deadline_seconds": 90,
+        "investigation_deadline_seconds": 180,
         "performance_synthesis_timeout_seconds": 30,
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
@@ -442,7 +442,14 @@ class RequestCoordinator:
                     return task.result()
                 if (deadline_seconds is not None and
                         time.monotonic() - progress.started >= deadline_seconds):
+                    last_stage = progress.stage
                     progress.stage = "Investigation reached its time limit"
+                    logger.warning(
+                        "Investigation deadline: request_id=%s limit=%.1fs phase=%s "
+                        "verified_reads=%d checkpoint=%s",
+                        progress.request_id, deadline_seconds, last_stage,
+                        len(progress.verified_reads), progress.checkpoint is not None,
+                    )
                     task.cancel("investigation deadline exceeded")
                     with suppress(asyncio.CancelledError, asyncio.TimeoutError):
                         await asyncio.wait_for(task, timeout=2.0)
@@ -460,7 +467,13 @@ class RequestCoordinator:
                         )
                     raise HTTPException(
                         status_code=504,
-                        detail="Investigation exceeded its time limit before verified results were collected. Please retry a smaller question.",
+                        detail=(
+                            f"Investigation reached its {deadline_seconds:g}s deadline "
+                            f"during {last_stage}. No verified read-only results "
+                            "were available. Check the HomeBrain add-on Logs "
+                            "using the request ID and review "
+                            "investigation_deadline_seconds in the add-on settings."
+                        ),
                     )
                 if connection is not None and await connection.is_disconnected():
                     # A browser connection failure is NOT a native MCP write
@@ -643,6 +656,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                 # reach the AI interpreter. Explicit whole-hub or aggregate
                 # report commands retain their established fast read path.
                 increment_active_metric("ai_read_route_arbitrated")
+                set_request_stage("AI interpreting investigation scope")
                 decision = await decide_read_route(
                     agent._chat, request.message,
                 )
@@ -818,7 +832,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             connection=connection,
             request_id=request.request_id or "",
             deadline_seconds=max(10.0, float(
-                OPTIONS.get("investigation_deadline_seconds") or 90
+                OPTIONS.get("investigation_deadline_seconds") or 180
             )) if _needs_investigation_deadline(request.message) else None,
         )
         # Single cross-route evidence assessment: even early host completions,

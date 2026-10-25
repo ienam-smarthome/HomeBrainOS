@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.18.108"
+version: "0.18.109"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -47,7 +47,7 @@ options:
   ollama_local_connect_timeout_seconds: 3
   ollama_local_keep_alive_seconds: 120
   ollama_agent_timeout_seconds: 60
-  investigation_deadline_seconds: 90
+  investigation_deadline_seconds: 180
   performance_synthesis_timeout_seconds: 30
   stream_idle_timeout_seconds: 20
   mcp_timeout_seconds: 25
