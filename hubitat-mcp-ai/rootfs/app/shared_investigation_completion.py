@@ -770,12 +770,11 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 "one or more required domain-specific observations remain unverified"
             )
         if limitations:
-            message += (
-                "\n\n**Investigation completeness: partial.** "
-                + "; ".join(limitations)
-                + ". The reported observations remain available, but the "
-                  "unresolved points must not be treated as confirmed."
-            )
+            # The user-facing answer should address the question, not append
+            # internal coverage bookkeeping. Preserve the exact limitations
+            # under Technical details -> investigation_coverage.
+            coverage["limitations"] = limitations
+            coverage["presentation"] = "technical-only"
     return _CoverageOutcome(outcome, coverage, metrics, message)
 
 
