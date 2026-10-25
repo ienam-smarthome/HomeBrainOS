@@ -8,6 +8,7 @@ Never authorize writes or assume unseen evidence exists.
 from __future__ import annotations
 
 from typing import Any
+import re
 
 from ai_investigation_routing import active_request_interpretation
 from investigation_checkpoint import is_investigative_question
@@ -63,6 +64,19 @@ def inventory_without_investigation(
 ) -> bool:
     """True only for an investigative objective with no substantive reads."""
     return investigating(prompt) and not observation_sources(receipts)
+
+
+_INVENTORY_PRESENTATION = re.compile(
+    r"(?i)^\\s*(?:\\d+\\s+(?:Hubitat\\s+)?devices?\\s+"
+    r"(?:in\\s+\\*\\*|across\\s+\\d+\\s+groups?)|"
+    r"\\*\\*?Living Room\\*\\*?:?\\s*\\d+\\s+devices?)"
+)
+
+
+def inventory_answer(message: str) -> bool:
+    """Answer-format validation, not another intent/router keyword rule."""
+    text = str(message or "").strip()
+    return bool(_INVENTORY_PRESENTATION.match(text))
 
 
 def retry_instruction(prompt: str, receipts: list[dict[str, Any]]) -> str:
