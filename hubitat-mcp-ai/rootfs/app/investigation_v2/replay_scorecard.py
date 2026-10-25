@@ -22,7 +22,9 @@ class ReplayScore:
     evidence_records: int
     command_records: int
     commands_retained: int
-    command_retention_fraction: float
+    command_source_clock_mentions: int
+    command_id_mentions: int
+    command_retention_fraction: float | None
     states_retained: int
     invalid_citations: int
     validator_flags: tuple[str, ...]
@@ -62,11 +64,18 @@ def score_grounded_replay(
         evidence_records=len(case.records),
         command_records=n,
         commands_retained=len(commands & displayed),
-        command_retention_fraction=(len(commands & displayed) / n if n else 1.0),
+        command_source_clock_mentions=sum(
+            r.timestamp_original in answer.text for r in case.records
+            if r.stage == "command_issued"),
+        command_id_mentions=sum(
+            r.record_id in answer.text for r in case.records
+            if r.stage == "command_issued"),
+        command_retention_fraction=(len(commands & displayed) / n if n else None),
         states_retained=len(states & displayed),
         invalid_citations=len(displayed - valid),
         validator_flags=tuple(answer.validation_issues),
-        source_complete_proven=any(c.source_complete is True for c in case.coverage),
+        source_complete_proven=(bool(case.coverage) and
+                                all(c.source_complete is True for c in case.coverage)),
         reads_executed=reads_executed,
         elapsed_ms=elapsed_ms,
     )
