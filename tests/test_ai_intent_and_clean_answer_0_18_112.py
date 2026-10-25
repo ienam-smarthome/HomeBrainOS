@@ -80,3 +80,39 @@ def test_regular_live_state_reply_is_not_turned_into_diagnostic():
     text = "Is Livingroom Light 1 currently ON or OFF?"
     assert not has_explicit_focal_clock(text)
     assert not is_investigative_question(text)
+
+def test_open_ended_route_integration_uses_ai_before_agent(monkeypatch):
+    import asyncio
+    import app as api
+
+    calls = []
+    class FakeAgent:
+        async def _chat(self, messages, tools):
+            raise AssertionError("Route should use patched single AI interpreter")
+
+        async def process_user_request_result(self, prompt, history, *, session_id):
+            calls.append(("agent", prompt))
+            from ai_investigation_routing import active_request_interpretation
+            interpretation = active_request_interpretation(prompt)
+            assert interpretation is not None
+            assert interpretation.objective == "general_investigation"
+            return SimpleNamespace(
+                request_class="live-read", route="unified-mcp-agent",
+                evidence=[], investigation_coverage=None,
+                interpreted_intent=None, message="Insufficient evidence to establish cause."
+            )
+
+    async def choose(_chat, question):
+        calls.append(("ai_interpreter", question))
+        return ReadRouteDecision(
+            "model_led", "model_choice",
+            objective="general_investigation", target="Livingroom Light 1",
+            purpose="investigate controlling automation and OFF logic",
+        )
+
+    monkeypatch.setattr(api, "agent", FakeAgent())
+    monkeypatch.setattr(api, "decide_read_route", choose)
+    result = asyncio.run(api._agent_request(api.ChatRequest(query=QUESTION)))
+    assert [name for name, _ in calls] == ["ai_interpreter", "agent"]
+    assert result.interpreted_intent["objective"] == "general_investigation"
+    assert result.interpreted_intent["target"] == "Livingroom Light 1"
