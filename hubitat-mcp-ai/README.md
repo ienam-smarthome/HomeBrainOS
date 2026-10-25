@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.117**.
+Current add-on version: **0.18.118**.
 
 ## Architecture
+
+v0.18.118 corrects an evidence-erasure regression in deep existing-rule verification: a partial native Rule Machine action-tree read no longer discards *independently verified* controller OFF commands, subscribed sensor-to-OFF timing, installed Groovy source coverage, or scoped long-handler WARN logs. Typed, app-ID-matched observations remain separate from unverified compiled logic; this applies to custom controller apps as well as rule audits. See [release notes](CHANGELOG-0.18.118.md).
+
 
 v0.18.117 preserves **positive causal evidence** rather than discarding it when unproven ghost-motion claims are calibrated. A generic, ID-agnostic event correlator pairs app-issued OFF commands with the light's reported OFF transition and its subscribed motion inputs' last recorded inactive edges. It reports the measured delay per OFF and any observed active interval while retaining uncertainty about real-world occupancy and incomplete event-history coverage. Clone sensors without controlling-app listener evidence are not mistaken for independent inputs. See [release notes](CHANGELOG-0.18.117.md).
 
