@@ -15,6 +15,7 @@ from device_read_contract import (
     live_context_devices,
     live_context_is_complete,
 )
+from room_scoped_live_aggregates import scoped_active_devices
 from device_state_summary import (
     active_lights,
     active_non_light_switches,
@@ -1792,22 +1793,33 @@ class DeviceQueryService:
                 )
         return MCPToolResult(DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data)
 
-    async def active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
+    async def active_lights(
+        self, arguments: dict[str, Any], *, user_question: str = ""
+    ) -> MCPToolResult:
         source, devices = await self._bulk_live_devices(
             {"switch"}, enrich_fallback_identity=True
         )
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_LIGHTS_TOOL, arguments, source)
-        lights = active_lights(devices)
+        lights, scope = scoped_active_devices(
+            active_lights(devices), devices,
+            question=user_question, tool_room=str(arguments.get("room") or ""),
+        )
         data = {
             "lights": lights,
             "count": len(lights),
             "definition": "light/bulb capability with switch=on",
             "total_scanned": len(devices),
-            "complete": True,
+            "complete": scope.get("scopeVerified") is True,
             "read_scope": "bulk live context",
+            **scope,
         }
-        return MCPToolResult(ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data)
+        if not data["complete"]:
+            data["error"] = "Requested room could not be uniquely verified; whole-home results withheld"
+        return MCPToolResult(
+            ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data,
+            is_error=not data["complete"],
+        )
 
     async def weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._live_devices(enrich_identity=True)
@@ -1986,22 +1998,33 @@ class DeviceQueryService:
         }
         return MCPToolResult(ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data)
 
-    async def active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
+    async def active_switches(
+        self, arguments: dict[str, Any], *, user_question: str = ""
+    ) -> MCPToolResult:
         source, devices = await self._bulk_live_devices(
             {"switch"}, enrich_fallback_identity=True
         )
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_SWITCHES_TOOL, arguments, source)
-        switches = active_non_light_switches(devices)
+        switches, scope = scoped_active_devices(
+            active_non_light_switches(devices), devices,
+            question=user_question, tool_room=str(arguments.get("room") or ""),
+        )
         data = {
             "switches": switches,
             "count": len(switches),
             "definition": "switch=on excluding light/bulb capabilities",
             "total_scanned": len(devices),
-            "complete": True,
+            "complete": scope.get("scopeVerified") is True,
             "read_scope": "bulk live context",
+            **scope,
         }
-        return MCPToolResult(ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data)
+        if not data["complete"]:
+            data["error"] = "Requested room could not be uniquely verified; whole-home results withheld"
+        return MCPToolResult(
+            ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data,
+            is_error=not data["complete"],
+        )
 
     async def home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._bulk_live_devices(
