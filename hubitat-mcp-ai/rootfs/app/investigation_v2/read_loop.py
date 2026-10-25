@@ -120,6 +120,8 @@ async def run_read_only_investigation(
         raise ValueError("Executor and MCP client must use the same session")
     if not callable(propose):
         raise ValueError("An explicit structured proposal provider is required")
+    if any(not isinstance(row, dict) for row in initial_receipts):
+        raise ValueError("Initial receipts must be trusted host receipt dictionaries")
 
     max_rounds = max(1, min(4, int(max_rounds)))
     max_total_reads = max(0, min(12, int(max_total_reads)))
