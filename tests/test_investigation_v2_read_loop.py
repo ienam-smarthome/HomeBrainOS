@@ -172,7 +172,7 @@ async def test_repeated_query_refused_without_duplicate_remote_io():
         max_rounds=3, max_total_reads=8)
     assert result.executed_reads == 1
     assert len(execution.calls) == 1
-    assert "duplicate read" in result.rejected_proposals
+    assert any("duplicate read" in message for message in result.rejected_proposals)
     assert result.stopped_because == "no_approved_discriminating_reads"
 
 
