@@ -37,7 +37,7 @@ def test_open_ended_root_cause_qualifies_for_ai_interpretation():
 def test_interpreted_purpose_reaches_read_only_model_tool_plan():
     source = (APP / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
     assert "investigative_ai_objective = bool(" in source
-    assert "None if investigative_ai_objective" in source
+    assert "None if (investigative_ai_objective or diagnostic_objective)" in source
     assert "else _device_inventory_arguments(user_prompt)" in source
     assert "AI-INTERPRETED READ-ONLY TASK (ADVISORY)" in source
     assert 'str(interpreted.purpose or "answer the user' in source
