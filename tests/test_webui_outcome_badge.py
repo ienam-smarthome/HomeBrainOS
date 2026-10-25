@@ -36,7 +36,7 @@ def test_legacy_response_without_outcome_presentation_still_renders() -> None:
     page = render_page("HomeBrain", "0.10.318")
 
     assert "if(outcome&&" in page
-    assert "data.route==='saved-chat'?null:data.route" in page
+    assert "[data.route,data.model_tier_requested" in page
 
 
 def test_confirmation_button_remains_structurally_gated() -> None:
