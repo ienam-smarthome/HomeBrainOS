@@ -115,6 +115,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_control_service.py` | Executes bounded device-control operations. |
 | `device_history_service.py` | Resolves one device and reads bounded event history. |
 | `device_query_service.py` | Performs read-side inventory queries and aggregation. |
+| `room_scoped_live_aggregates.py` | Applies original-question room constraints to live ON-light and non-light-switch aggregates using authoritative Hubitat room identities, independently of optional model tool parameters. Rejects unresolved scope instead of leaking whole-home results. |
 | `device_read_contract.py` | Centralizes Hubitat device-list projection modes, state-field normalization, and projected-state shape validation. |
 | `device_state_summary.py` | Provides shared pure device-state summary helpers. |
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
