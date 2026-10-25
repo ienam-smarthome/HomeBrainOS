@@ -9,7 +9,7 @@ Never infer a timer configuration or physical vacancy from a state transition.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from occupancy_timing_correlation import correlate_occupancy_off_timing
@@ -86,7 +86,7 @@ def guard_observed_off_latency_causality(
             and row.get("verifiedAssociation") == "controller-is-event-listener"
         ]
         rows.sort(key=lambda row: _clock(row.get("commandAt")) or
-                  datetime.min.replace(tzinfo=__import__("datetime").timezone.utc))
+                  datetime.min.replace(tzinfo=timezone.utc))
         if len(rows) < 2:
             continue
         last = rows[-2:]
