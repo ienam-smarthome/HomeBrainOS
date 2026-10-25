@@ -164,6 +164,7 @@ from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
+from evidence_source_scope import source_app_scope_error
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
@@ -4440,6 +4441,22 @@ class UnifiedMCPAgent:
             system_prompt += "\n\n" + task_plan.instruction()
         if adaptive_investigation:
             system_prompt += "\n\n" + READ_ONLY_AGENT_DIRECTIVE
+            system_prompt += (
+                "\n\nEVIDENCE CHAIN FOR THIS QUESTION (ADVISORY, READ-ONLY)\n"
+                "Preserve the original requested ANSWER, not merely the type "
+                "of entity you looked up. Verify relevant existing settings "
+                "only as a supporting step when the goal is an explanation. "
+                "For recurring behaviour, distinguish successful examples "
+                "from episodes of failure; a normal cycle does not by itself "
+                "explain an earlier abnormal cycle. Check source implementation "
+                "for input roles, cancellation and timing when reachable; "
+                "then compare target-linked device events, commands and app "
+                "logs across the relevant windows. Never substitute source "
+                "from a different app instance without a verified link. "
+                "Stop when accessible evidence no longer discriminates the "
+                "remaining explanations. Deliver the most supported answer "
+                "with explicit confidence/limits, not a generic audit template."
+            )
             if interpreted is not None and investigative_ai_objective:
                 # The model has already interpreted the goal. Carry that
                 # one decision forward through tool choice and final answer.
@@ -5884,6 +5901,9 @@ class UnifiedMCPAgent:
                     if tool is not None
                     else None
                 )
+                source_scope_error = source_app_scope_error(
+                    name, arguments, self.evidence.receipts(), user_prompt,
+                ) if investigative_request else None
                 if not tool:
                     round_tool_failure = True
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
@@ -5934,6 +5954,15 @@ class UnifiedMCPAgent:
                             "Do not infer absence of an attribute from generic history."
                         )
                     })
+                elif source_scope_error is not None:
+                    # No model-selected source can silently drift to an
+                    # unverified app identity during this investigation.
+                    # Discard the rejected signature so a later corroborated
+                    # relation can authorize a fresh READ, not a mutation.
+                    completed_calls.discard(signature)
+                    round_tool_failure = True
+                    increment_active_metric("investigation_source_target_mismatch")
+                    content = json.dumps({"error": source_scope_error})
                 elif gateway_error is not None:
                     # An invalid gateway operation was never executed. Do not
                     # poison duplicate-call deduplication: after exact tool
