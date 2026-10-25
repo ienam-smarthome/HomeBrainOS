@@ -67,6 +67,7 @@ class RequestMetrics:
         "evidence_sufficiency_stop", "source_trace_sufficiency_stop",
         "source_method_projection_added",
         "investigation_snapshot_shortcut_bypassed",
+        "investigation_source_target_mismatch",
         "investigation_inventory_only_retry",
         "investigation_inventory_only_stopped",
         "investigation_unfulfilled_at_boundary",
