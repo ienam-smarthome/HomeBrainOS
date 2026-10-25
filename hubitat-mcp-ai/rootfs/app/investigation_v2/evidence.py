@@ -11,6 +11,8 @@ from hashlib import sha256
 import json
 from typing import Any, Iterable, Mapping
 
+from .adapters import supplemental_events
+
 STAGES = frozenset({
     "command_issued", "state_reported", "app_log_statement",
     "config_stored", "app_execution_observed", "transport_ack",
@@ -71,6 +73,7 @@ class EvidenceItem:
     action: str
     value: str | None
     raw_references: tuple[str, ...]
+    time_basis: str = "event_time"
 
 
 @dataclass(frozen=True)
@@ -116,9 +119,9 @@ class CaseFile:
                 f"[{item.record_id}] {item.timestamp_utc} "
                 f"(source {item.timestamp_original}) {item.stage}: "
                 f"target={item.target_id or 'unknown'} "
-                f"action={item.action} value={item.value or 'unknown'} "
+                f"action={item.action} value={item.value if item.value is not None else 'unknown'} "
                 f"issuer={item.producer_id or 'unverified'} "
-                f"from {item.tool}/{item.operation}"
+                f"basis={item.time_basis} from {item.tool}/{item.operation}"
             )
         lines.append("Coverage (page reach is not source completeness):")
         for c in self.coverage:
@@ -128,6 +131,8 @@ class CaseFile:
                 f"source_complete={c.source_complete} "
                 f"integrity={c.source_integrity_verified} truncated={c.truncated}"
             )
+        lines.append("Stored configuration is a read-time snapshot, not verified historical "
+                     "effective code or event-time automation behaviour.")
         lines.append("Unverified: physical execution of command records and causal attribution "
                      "without independently linked evidence.")
         return "\n".join(lines)
@@ -144,7 +149,8 @@ def _event_stage(event: Mapping[str, Any]) -> str | None:
 
 def _record(source_id: str, tool: str, operation: str, category: str,
             target: str | None, event: Mapping[str, Any], pointer: str,
-            *, stage: str | None = None) -> EvidenceItem | None:
+            *, stage: str | None = None,
+            time_basis: str = "event_time") -> EvidenceItem | None:
     stage = stage or _event_stage(event)
     if stage not in STAGES:
         return None
@@ -161,11 +167,11 @@ def _record(source_id: str, tool: str, operation: str, category: str,
     action = str(event.get("name") or event.get("eventName") or ("log" if stage == "app_log_statement" else "unknown"))[:80]
     value_raw = event.get("value")
     value = str(value_raw)[:120] if isinstance(value_raw, (str, int, float, bool)) else None
-    signature = (tool, operation, target, stamp[0], stage, action, value, producer)
+    signature = (tool, operation, target, stamp[0], stage, action, value, producer, time_basis)
     digest = sha256(json.dumps(signature, separators=(",", ":")).encode()).hexdigest()[:20]
     return EvidenceItem(
         digest, source_id, tool, operation, category, target, producer,
-        producer_label, stamp[0], stamp[1], stage, action, value, (pointer,),
+        producer_label, stamp[0], stamp[1], stage, action, value, (pointer,), time_basis,
     )
 
 
@@ -210,6 +216,9 @@ def build_case_file(original_user_request: str,
             for key in keys:
                 source_rows.extend((key, i, event) for i, event in
                                    enumerate(_rows(details.get(key))))
+        supplemental, adapter_errors = supplemental_events(
+            raw, source_id, tool, op, args, details)
+        errors.extend(adapter_errors)
         times: list[str] = []
         for rows_key, row_index, event in source_rows:
             if (event_id := _id(event.get("deviceId"))) and target and event_id != target:
@@ -221,6 +230,22 @@ def build_case_file(original_user_request: str,
                            f"{source_id}.details.{rows_key}[{row_index}]", stage=stage)
             if item is None:
                 errors.append(f"{rows_key}[{row_index}]: missing offset/time/type")
+                continue
+            times.append(item.timestamp_utc)
+            previous = dedup.get(item.record_id)
+            if previous is None:
+                dedup[item.record_id] = item
+            elif item.raw_references[0] not in previous.raw_references:
+                dedup[item.record_id] = replace(previous, raw_references=(
+                    *previous.raw_references, *item.raw_references))
+        for extra in supplemental:
+            item = _record(
+                source_id, tool, op, extra["category"], extra["target_id"],
+                extra["event"], extra["pointer"], stage=extra["stage"],
+                time_basis=extra["time_basis"],
+            )
+            if item is None:
+                errors.append(f'{extra["pointer"]}: missing offset/time/type')
                 continue
             times.append(item.timestamp_utc)
             previous = dedup.get(item.record_id)
@@ -247,7 +272,7 @@ def build_case_file(original_user_request: str,
         filters = {key: args[key] for key in ("attribute", "hoursBack", "limit", "since", "until", "appId")
                    if key in args and isinstance(args[key], (str, int, float, bool))}
         case.coverage.append(Coverage(
-            source_id, tool, op, target, filters, len(source_rows),
+            source_id, tool, op, target or _id(args.get("appId")), filters, len(source_rows) + len(supplemental),
             min(times) if times else None, max(times) if times else None,
             page_reach, source_complete, truncated, integrity,
             str(details["nextCursor"]) if isinstance(details.get("nextCursor"), str) else None,
