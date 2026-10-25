@@ -3203,7 +3203,9 @@ class UnifiedMCPAgent:
 
     async def _active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
-        return await service.active_lights(arguments)
+        return await service.active_lights(
+            arguments, user_question=self._current_user_objective.get(),
+        )
 
     async def _active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
@@ -3211,7 +3213,9 @@ class UnifiedMCPAgent:
 
     async def _active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
-        return await service.active_switches(arguments)
+        return await service.active_switches(
+            arguments, user_question=self._current_user_objective.get(),
+        )
 
     async def _home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)

@@ -1166,13 +1166,20 @@ def active_lights_tool() -> MCPTool:
     return MCPTool(
         LOCAL_ACTIVE_LIGHTS_TOOL,
         (
-            "Fetch all live Hubitat devices and deterministically return every "
-            "light or bulb whose switch state is on. Use this whenever the user "
-            "asks which lights are on."
+            "Read live light states. For a room-specific question return only "
+            "lights assigned to that verified Hubitat room; otherwise return "
+            "all currently ON lights. Supply room when known. The host also "
+            "enforces any room constraint in the original question even if "
+            "the model omits it."
         ),
         {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "room": {
+                    "type": "string",
+                    "description": "Optional authoritative Hubitat room name; e.g. Living Room. Never guess a room.",
+                },
+            },
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
@@ -1183,13 +1190,19 @@ def active_switches_tool() -> MCPTool:
     return MCPTool(
         LOCAL_ACTIVE_SWITCHES_TOOL,
         (
-            "Fetch all live Hubitat devices and deterministically return devices "
-            "with switch=on while excluding lights and bulbs. Use this whenever "
-            "the user asks which switches are on."
+            "Read live non-light switches. Return only a verified requested "
+            "Hubitat room when one is named; otherwise return switched-on "
+            "non-light devices across the home. The host enforces the "
+            "original user's room scope independently of the model."
         ),
         {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "room": {
+                    "type": "string",
+                    "description": "Optional Hubitat room assignment; use exact room names when verified.",
+                },
+            },
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},

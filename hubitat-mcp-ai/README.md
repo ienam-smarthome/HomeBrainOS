@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.114**.
+Current add-on version: **0.18.115**.
 
 ## Architecture
+
+v0.18.115 restores **room scope** for model-selected live light and non-light switch aggregates. The tool schema now accepts an optional room, but execution additionally enforces the original question's room constraint against Hubitat's authoritative room metadata, so an AI-proposed no-argument whole-home read cannot answer a Living Room-only question as a household summary. Results retain scoped counts, exact matching room names and non-leaking unresolved scope; unrelated rooms are excluded from visible answers. See [release notes](CHANGELOG-0.18.115.md).
+
 
 v0.18.114 closes a repeated root-cause failure where a diagnostic question finished as a room-device inventory despite AI-first routing. Investigations now hide the inventory-only presenter from the model's tool registry (including after discovery), allow one bounded evidence-seeking retry before an inventory-only model conclusion, and refuse to return an inventory as a completed diagnosis at the agent boundary. Host route overrides retain the effective interpreted objective. Virtual/soft sensor copies are not treated as independent proof of occupancy without verified parent/input identity. Original read-only safety and normal inventory queries remain intact. See [release notes](CHANGELOG-0.18.114.md).
 
