@@ -39,6 +39,8 @@ from health_audit_service import (
     run_comprehensive_chat_audit,
 )
 from investigation_intelligence import plan_investigation, assess_investigation
+from investigation_checkpoint import is_investigative_question
+from causal_timeline import has_explicit_focal_clock
 from composite_system_audit_policy import is_cross_domain_hub_audit_request
 from targeted_rule_scope_policy import is_targeted_rule_investigation
 from shared_investigation_completion import apply_shared_investigation_completion
