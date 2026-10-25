@@ -133,7 +133,7 @@ def test_api_serialization_repairs_bad_root_cause_without_erasing_receipts():
     assert response["evidence_validation"]["unverified_occupancy_cause_corrected"]
     assert response["outcome_presentation"]["value"] == "unresolved"
     assert response["evidence"] == rows
-    assert response["model"]
+    assert response["version"] == "0.18.116"
 
 
 def test_tentative_hypothesis_is_preserved_without_fabricated_certainty():
