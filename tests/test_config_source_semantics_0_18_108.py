@@ -50,7 +50,7 @@ def installed_code(app_id: str):
 
 LIGHT_ANSWER = (
     'The app summary mentions the 30-second timeout, but '
-    'the live configuration for \`inactiveAction\` is **\`"none"\`**. '
+    'the live configuration for `inactiveAction` is **`"none"`**. '
     'This means the automation is explicitly configured to not issue '
     'an off command when motion stops.\n\n'
     'Sensor Linptech Kitchen is currently active, but this does not '
@@ -102,7 +102,7 @@ def test_unrelated_app_source_does_not_prove_target_app_semantics():
 def test_generic_non_lighting_app_claim_and_read_only_scope():
     receipts = [app_config("3977")]
     draft = (
-        "The raw \`retryPolicy\` = \`none\` means this installed app "
+        "The raw `retryPolicy` = `none` means this installed app "
         "never retries MQTT messages.\n\n"
         "The app's current enabled status is on."
     )
@@ -148,7 +148,7 @@ def test_hub_source_code_id_must_be_explicitly_mapped_to_app():
 
 def test_unverified_paragraph_does_not_corrupt_timeline_or_already_uncertain_claim():
     narrative = (
-        "The raw \`inactiveAction\` = \`none\` means automatic-off is disabled."
+        "The raw `inactiveAction` = `none` means automatic-off is disabled."
         "\n\n| Start | End | Duration |\n| --- | --- | --- |\n"
         "| 20:23 | 00:41 | 4h 19m |\n\n"
         "It is unknown whether all three motion sources were inactive."
