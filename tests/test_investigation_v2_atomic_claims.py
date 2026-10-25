@@ -308,3 +308,32 @@ def test_unknown_source_completeness_cannot_be_fabricated_by_extra_field():
     c["source_complete"] = True
     assert review_atomic_claims(case, [], [c]).rejected[0].reason == "invalid_observation_shape"
     assert case.coverage[0].source_complete is False
+
+@pytest.mark.asyncio
+async def test_rejected_hypothesis_is_not_printed_as_even_a_tentative_cause():
+    case = overnight()
+    bad = Hypothesis("bad", "SECRET_LEAK a reboot definitely caused it",
+                     (), (), "Check reboot evidence", "unsubstantiated_candidate")
+    async def proposer(_messages, tools):
+        assert tools == []
+        return {"content": json.dumps({"claims": [
+            {"id": "h_bad", "kind": "hypothesis", "hypothesis_id": "bad"}]})}
+    out = await synthesize_atomic_with_chat(
+        case=case, hypotheses=[bad], chat=proposer, max_repair_rounds=0)
+    assert out.review.rejected[0].reason == "no_hypothesis_evidence"
+    assert "SECRET_LEAK" not in out.answer.text
+    assert "00:41:40.085+01:00" in out.answer.text
+
+
+@pytest.mark.asyncio
+async def test_unselected_plausible_hypothesis_does_not_force_itself_into_answer():
+    case = overnight()
+    plausible = hypothesis(case)
+    async def proposer(_messages, tools):
+        assert tools == []
+        return {"content": json.dumps({"claims": [claim(primary(case))]})}
+    out = await synthesize_atomic_with_chat(
+        case=case, hypotheses=[plausible], chat=proposer)
+    assert "The OFF command may not have taken effect" not in out.answer.text
+    assert out.review.rejected == ()
+    assert out.answer.root_cause_verified is False
