@@ -12,7 +12,7 @@ from typing import Any
 
 _APP_SOURCE = re.compile(r"^app\|(?P<id>[1-9]\d{1,8})\|(?P<name>[^|]+)\|")
 _LONG_METHOD = re.compile(
-    r"(?i)\bmethod\s+(?P<method>[A-Za-z_]\w*)\s+of\s+app\b"
+    r"(?i)\bmethod\s+(?P<method>[A-Za-z_]\w*)\s+of\s+(?:child\s+)?app\b"
     r"[^|\r\n]{0,150}?\bran\s+for\s+"
     r"(?P<ms>(?:\d{1,3}(?:,\d{3})+|\d+))\s*ms\b"
 )

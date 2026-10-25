@@ -28,6 +28,7 @@ from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from observed_app_exception_guard import guard_observed_app_exception_denials
 from observed_long_method_guard import guard_observed_long_method_denials
+from observed_off_latency_causality import guard_observed_off_latency_causality
 from technical_metrics_presenter import (
     present_request_metrics,
     present_request_outcome,
@@ -581,6 +582,14 @@ def build_agent_response(
     if performance_scope:
         message, _ = guard_performance_log_causality(message, evidence)
 
+    # A scoped, significant app WARN does not by itself explain later ON
+    # durations. When typed subscribed-input -> app OFF -> switch OFF gaps
+    # contradict the model's confident latency verdict, provide the measured
+    # causal boundaries rather than preserving a self-contradictory conclusion.
+    message, observed_off_latency_calibrated = (
+        guard_observed_off_latency_causality(message, evidence)
+    )
+
     # Source-specific causality must survive all model and general answer
     # repairs. This final checkpoint is scoped by the actual investigation
     # domain and does not touch unrelated device/rule/performance answers.
@@ -658,6 +667,8 @@ def build_agent_response(
         result["evidence_validation"]["unverified_sensor_blocker_corrected"] = True
     if long_method_denials_corrected:
         result["evidence_validation"]["observed_long_method_denial_corrected"] = True
+    if observed_off_latency_calibrated:
+        result["evidence_validation"]["unsupported_performance_cause_corrected"] = True
     if source_mechanism_repairs:
         result["evidence_validation"]["source_exception_mechanism_calibrated"] = list(
             source_mechanism_repairs
