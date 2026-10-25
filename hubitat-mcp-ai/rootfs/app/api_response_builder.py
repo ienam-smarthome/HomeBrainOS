@@ -23,6 +23,7 @@ from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from interval_duration_guard import guard_interval_table_durations
 from sensor_causal_claim_guard import guard_unverified_sensor_blocker
+from occupancy_causal_proof import guard_unverified_occupancy_cause
 from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from observed_app_exception_guard import guard_observed_app_exception_denials
@@ -556,6 +557,9 @@ def build_agent_response(
     message, sensor_blocker_calibrated = guard_unverified_sensor_blocker(
         message, evidence
     )
+    message, occupancy_causal_claim_calibrated = guard_unverified_occupancy_cause(
+        message, evidence
+    )
     performance_scope = has_performance_evidence(evidence)
     message, _ = guard_checked_source_absence_claim(
         message, evidence, performance_request=performance_scope
@@ -648,6 +652,8 @@ def build_agent_response(
                 result["model"] = None
     if interval_table_corrected:
         result["evidence_validation"]["interval_table_duration_corrected"] = True
+    if occupancy_causal_claim_calibrated:
+        result["evidence_validation"]["unverified_occupancy_cause_corrected"] = True
     if sensor_blocker_calibrated:
         result["evidence_validation"]["unverified_sensor_blocker_corrected"] = True
     if long_method_denials_corrected:
