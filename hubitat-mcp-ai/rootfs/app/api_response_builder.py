@@ -21,6 +21,8 @@ from evidence_source_guard import (
 from evidence_ledger import checked_source_categories
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
+from interval_duration_guard import guard_interval_table_durations
+from sensor_causal_claim_guard import guard_unverified_sensor_blocker
 from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from observed_app_exception_guard import guard_observed_app_exception_denials
@@ -547,6 +549,13 @@ def build_agent_response(
     )
     message, _ = guard_unproven_upstream_manual_exclusion(message, evidence)
     message, _ = guard_causal_sensor_source_attribution(message, evidence)
+    # The generated final answer is checked against typed evidence, not model
+    # confidence or route labels: event-table clock arithmetic and named
+    # sensor/timer causality must withstand independent scrutiny.
+    message, interval_table_corrected = guard_interval_table_durations(message, evidence)
+    message, sensor_blocker_calibrated = guard_unverified_sensor_blocker(
+        message, evidence
+    )
     performance_scope = has_performance_evidence(evidence)
     message, _ = guard_checked_source_absence_claim(
         message, evidence, performance_request=performance_scope
@@ -637,6 +646,10 @@ def build_agent_response(
                 # The globally configured model name is not evidence that a
                 # model answered this particular deterministic audit.
                 result["model"] = None
+    if interval_table_corrected:
+        result["evidence_validation"]["interval_table_duration_corrected"] = True
+    if sensor_blocker_calibrated:
+        result["evidence_validation"]["unverified_sensor_blocker_corrected"] = True
     if long_method_denials_corrected:
         result["evidence_validation"]["observed_long_method_denial_corrected"] = True
     if source_mechanism_repairs:
