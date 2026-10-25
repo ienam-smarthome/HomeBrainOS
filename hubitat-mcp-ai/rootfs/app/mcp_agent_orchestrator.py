@@ -3831,8 +3831,7 @@ class UnifiedMCPAgent:
             # inventory/identity lookup still cannot answer a cause question.
             if (not self._mutation_requested_by_user.get()
                     and investigating(user_prompt)
-                    and (inventory_without_investigation(user_prompt, evidence)
-                         or inventory_answer(message))):
+                    and inventory_answer(message)):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
                 message = honest_partial_answer(user_prompt, evidence)
             if is_new_rule_design_review_request(user_prompt):
