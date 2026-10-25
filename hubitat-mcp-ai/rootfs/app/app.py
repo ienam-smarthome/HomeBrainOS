@@ -683,6 +683,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                         objective="general_investigation",
                         target=decision.target,
                         purpose=decision.purpose or request.message[:320],
+                        answer_goal=decision.answer_goal,
                     )
                 if active_decision.objective is not None:
                     interpretation_token = set_request_interpretation(
@@ -745,6 +746,7 @@ async def _agent_request(request: ChatRequest) -> Any:
                 "objective": active_decision.objective,
                 "target": active_decision.target,
                 "purpose": active_decision.purpose,
+                "answer_goal": active_decision.answer_goal,
             }
         # A direct/specialized completion may have bypassed its own evidence
         # assessment. Preserve the original investigative goal at the API

@@ -126,6 +126,7 @@ The repository drift test compares this table directly with the live directory. 
 | `direct_outcome_context.py` | Owns request-local evidence, choice, request-class, and mutation context. |
 | `evidence_ledger.py` | Builds a compact current-turn checked-source ledger for final synthesis. |
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
+| `evidence_source_scope.py` | Prevents unverified cross-app Groovy source substitutions after target-matched current-turn evidence; permits explicitly named comparisons. |
 | `evidence_source_guard.py` | Corrects final claims that contradict successful current-turn source availability. |
 | `observed_app_exception_guard.py` | Corrects categorical denials of explicitly recorded per-app Hubitat excessive-load ERROR rows at the final API response boundary without inferring shared cause or overall CPU impact. |
 | `observed_long_method_guard.py` | Corrects false model denials of long-running app method WARN entries using successful source-scoped Hubitat logs without inferring hub-wide CPU or shared causation. |
