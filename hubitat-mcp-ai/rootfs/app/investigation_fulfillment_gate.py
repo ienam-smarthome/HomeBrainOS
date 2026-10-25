@@ -11,7 +11,8 @@ from typing import Any
 import re
 
 from ai_investigation_routing import active_request_interpretation
-from investigation_checkpoint import is_investigative_question
+from adaptive_investigation_policy import model_led_investigation_request
+from investigation_policy import is_causal_investigation
 
 
 _SUBSTANTIVE_READS = frozenset((
@@ -27,13 +28,31 @@ _LOCAL_INVENTORY = frozenset(("homebrain_device_inventory",))
 
 
 def investigating(prompt: str) -> bool:
+    """A causal objective, not an ordinary read or future rule design.
+
+    Treat complex "why" questions as eligible only when the established
+    AI interpretation or investigation policy concurs. In particular,
+    ordinary "check diagnostics", config review and a standalone historic
+    ON command must retain their previously tested fast/read paths.
+    """
     decision = active_request_interpretation(prompt)
     if decision is not None:
         return (
             decision.route == "model_led"
-            and decision.objective not in ("system_audit", "performance_report")
+            and (
+                decision.objective == "device_connectivity"
+                or (
+                    decision.objective in (
+                        "general_investigation", "historical_command",
+                    )
+                    and is_causal_investigation(prompt)
+                )
+            )
         )
-    return is_investigative_question(prompt)
+    return bool(
+        model_led_investigation_request(prompt)
+        and is_causal_investigation(prompt)
+    )
 
 
 def _leaf(row: dict[str, Any]) -> str:
@@ -67,9 +86,9 @@ def inventory_without_investigation(
 
 
 _INVENTORY_PRESENTATION = re.compile(
-    r"(?i)^\\s*(?:\\d+\\s+(?:Hubitat\\s+)?devices?\\s+"
-    r"(?:in\\s+\\*\\*|across\\s+\\d+\\s+groups?)|"
-    r"\\*\\*?Living Room\\*\\*?:?\\s*\\d+\\s+devices?)"
+    r"(?i)^\s*(?:\d+\s+(?:Hubitat\s+)?devices?\s+"
+    r"(?:in\s+\*\*|across\s+\d+\s+groups?)|"
+    r"\*\*?Living Room\*\*?:?\s*\d+\s+devices?)"
 )
 
 
