@@ -176,5 +176,5 @@ def test_without_sensor_listeners_avoid_claiming_missing_subscription():
 def test_light_guide_checks_configured_actual_sensors_not_room_clones():
     guidance = (APP / "skills/hubitat-investigator/SKILL.md").read_text()
     assert "configured" in guidance
-    assert "cloned or mirrored" in guidance
-    assert "triggered-app listeners" in guidance
+    assert "Cloned/virtual sensor" in guidance
+    assert "Compare event listeners" in guidance
