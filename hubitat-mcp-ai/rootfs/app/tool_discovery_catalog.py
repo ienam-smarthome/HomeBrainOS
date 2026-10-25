@@ -100,6 +100,7 @@ class ToolDiscoveryCatalog:
             if tool.name:
                 self._available[tool.name] = tool
         self._declared: dict[str, MCPTool] = {}
+        self._hide_inventory_during_diagnostics = False
         self._operation_gateways: dict[str, set[str]] = {}
         self.replace_declared(initial_order)
 
@@ -352,10 +353,26 @@ class ToolDiscoveryCatalog:
 
         return self._available.get(name)
 
+    def hide_inventory_during_investigation(self) -> None:
+        """Hide a local room-inventory presenter only in diagnostic tool loops.
+
+        Exact inventory requests retain their normal zero-model fast path.
+        This is a presentation capability boundary, not a model intent route,
+        and never hides actual read-only Hubitat diagnostic gateways.
+        """
+        self._hide_inventory_during_diagnostics = True
+        self._declared.pop("homebrain_device_inventory", None)
+
     def replace_declared(self, names: Iterable[str]) -> list[str]:
         """Replace visible tools and return unavailable requested names."""
 
-        requested = list(dict.fromkeys(str(name) for name in names if str(name)))
+        requested = list(dict.fromkeys(
+            str(name) for name in names if str(name)
+            and not (
+                self._hide_inventory_during_diagnostics
+                and str(name) == "homebrain_device_inventory"
+            )
+        ))
         self._declared = {
             name: self._available[name]
             for name in requested
@@ -376,6 +393,10 @@ class ToolDiscoveryCatalog:
             tool
             for tool in self.discovered_tools(result, self._available, query=query)
             if tool.name not in self._declared
+            and not (
+                self._hide_inventory_during_diagnostics
+                and tool.name == "homebrain_device_inventory"
+            )
         ]
         self._declared.update({tool.name: tool for tool in additions})
         return additions
