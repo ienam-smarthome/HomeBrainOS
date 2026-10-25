@@ -16,6 +16,7 @@ The repository drift test compares this table directly with the live directory. 
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
 | `causal_answer_plan.py` | Builds a source-scoped pre-synthesis OFF claim and hypothesis plan, and validates command-history claims against its evidence coverage. |
 | `causal_attribution_guard.py` | Prevents app/rule configuration-only evidence from being promoted into a specific causal trigger, and ensures stronger aligned controller provenance wins when present. |
+| `sensor_causal_claim_guard.py` | Reconciles confident named-sensor OFF-blocker diagnoses against typed sensor-specific active-state and timer decision receipts; incomplete proof produces a concise tentative answer without implying that source coverage proves runtime causation. |
 | `causal_command_semantics.py` | Declares driver/capability-gated state-changing command methods, checks level parameters, and separates reliable dimmer effects from driver-dependent possibilities. |
 | `causal_lighting_context.py` | Explains bounded level-command chronology and correlates specifically selected occupancy history with proven lighting activations without inventing a sensor trigger. |
 | `causal_command_provenance.py` | Correlates compatible ON/OFF/setLevel command rows to focal switch boundaries, keeps command producers distinct from bridge reporters and flags competing apps without inventing a unique initiator. |
@@ -144,6 +145,7 @@ The repository drift test compares this table directly with the live directory. 
 | `gateway_argument_view.py` | Canonical read-only view of direct or one-level-wrapped MCP gateway operation envelopes so evidence, grounding, and gateway compatibility checks agree on the same sub-tool without rewriting provider payloads. |
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. |
+| `interval_duration_guard.py` | Repairs model-written ON/OFF duration table rows using matching typed recorded intervals, preserving ordinary minute rounding and unrelated rows. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
 | `historical_evidence_journal.py` | Opt-in read-only Hubitat WebSocket collector with persistent bounded SQLite history, connection-gap tracking, privacy-filtered app logs and source-versus-reception timestamps; archived rows remain weaker evidence than direct command provenance. |
 | `home_assistant_tts.py` | Sends bounded answer speech through Home Assistant mobile-app native TTS, including safe target discovery and stop control. |

@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.112**.
+Current add-on version: **0.18.113**.
 
 ## Architecture
+
+v0.18.113 checks model-authored specific-sensor OFF-blocker diagnoses against sensor-specific live state and app-log timer decisions. Where both are absent, it replaces the confident diagnosis with a concise evidence-grounded, clearly tentative explanation without implying that complete Groovy retrieval proves a past runtime branch. It also corrects ON/OFF interval tables where the model's duration conflicts with deterministic recorded interval seconds, preserving the original evidence and technical JSON. No additional keyword routing and no Hubitat changes. See [release notes](CHANGELOG-0.18.113.md).
+
 
 v0.18.112 gives AI interpretation precedence for open-ended read-only investigations, preserves its selected target/purpose in the actual model-led evidence workflow, and prevents the legacy room-inventory shortcut from answering a causal investigation as a device list. Read-only command permissions remain host-enforced. Incomplete source/coverage notes are placed in Technical details as structured `investigation_coverage.limitations`, not appended to the visible answer. See [release notes](CHANGELOG-0.18.112.md).
 
