@@ -356,7 +356,7 @@ def configuration_semantics_evidence_gap(
                 or receipt.get("mutates") is True
                 or receipt.get("effect") not in (None, "read")):
             continue
-        op, args = _leaf(receipt), _args(receipt)
+        op, args = _leaf(receipt) or str(receipt.get("tool") or ""), _args(receipt)
         installed_id = str(args.get("appId") or "")
         if op == "hub_get_app_config" and installed_id.isdigit():
             config_apps.add(installed_id)
@@ -404,10 +404,81 @@ def configuration_semantics_followup(
         "change as a verified fix. The model chooses the next allowed read."
     )
 
+
+_UNCERTAINTY = re.compile(
+    r"(?i)(?:not\s+(?:verified|proven|established)|"
+    r"cannot\s+(?:infer|determine|prove)|"
+    r"does\s+not\s+(?:prove|establish)|"
+    r"unknown|unverified|requires?\s+(?:source|code)|"
+    r"without\s+(?:source|code))"
+)
+_SETTING_CHANGE_ADVICE = re.compile(
+    r"(?i)(?:\bto\s+(?:fix|enable|resolve|correct|restore)\b|"
+    r"\b(?:should|must|need(?:s)?\s+to)\s+(?:change|set|disable|enable)\b|"
+    r"\b(?:changing|setting)\s+\w+.*\b(?:fix|resolve|enable)\b)"
+)
+
+
+def guard_unverified_config_behavior(
+    answer: str,
+    receipts: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Do not present inferred setting semantics or fixes as verified code.
+
+    Preserve unrelated observations, timelines and headings; remove only the
+    unsupported interpretive paragraph and setting-change recommendations
+    tied to the same inferred setting. Generic source evidence check; no
+    special knowledge of one property, controller or user setup.
+    """
+    if not configuration_semantics_evidence_gap(receipts):
+        return str(answer or ""), False
+    parts = str(answer or "").split("\n\n")
+    setting_names: set[str] = set()
+    suspect: set[int] = set()
+    for index, paragraph in enumerate(parts):
+        if paragraph.lstrip().startswith("|"):
+            continue
+        normalized = paragraph.replace("**", "").replace('"', "").replace("'", "")
+        if _UNCERTAINTY.search(normalized):
+            continue
+        if not (_RAW_SETTING.search(normalized)
+                and _BEHAVIOUR_CLAIM.search(normalized)):
+            continue
+        name = _RAW_SETTING.search(normalized)
+        if name:
+            raw_key = re.match(r"(?:\x60?)([A-Za-z_]\w{2,})", name.group())
+            if raw_key:
+                setting_names.add(raw_key.group(1).casefold())
+        suspect.add(index)
+    if not suspect:
+        return str(answer or ""), False
+    for index, paragraph in enumerate(parts):
+        if index in suspect:
+            parts[index] = (
+                "The current app configuration was retrieved, but the "
+                "implementation of the cited setting was not verified in "
+                "the installed Groovy source. The stored value alone "
+                "cannot establish effective automatic behaviour or its "
+                "historical cause."
+            )
+        elif (setting_names
+              and _SETTING_CHANGE_ADVICE.search(paragraph)
+              and not _UNCERTAINTY.search(paragraph)
+              and any(re.search(r"(?i)(?<!\w)" + re.escape(name) + r"(?!\w)",
+                                paragraph)
+                      for name in setting_names)):
+            parts[index] = (
+                "A change to that setting is not justified by the returned "
+                "configuration evidence alone. Verify the installed "
+                "implementation and effective UI settings first."
+            )
+    return "\n\n".join(parts), True
+
 __all__ = ["source_answer_focus", 
     "source_analysis_failed", "source_trace_ready_for_synthesis",
     "source_failure_summary", "source_method_claim_gap",
     "source_runtime_evidence_status",
     "configuration_semantics_evidence_gap",
     "configuration_semantics_followup",
+    "guard_unverified_config_behavior",
 ]
