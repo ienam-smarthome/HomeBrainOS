@@ -46,6 +46,8 @@ def _json_key(tool: str, args: Mapping[str, Any]) -> str:
 def _type_ok(value: Any, expected: Any) -> bool:
     if isinstance(expected, list):
         return any(_type_ok(value, member) for member in expected)
+    if not isinstance(expected, str):
+        return False
     return {
         "object": lambda: isinstance(value, dict),
         "array": lambda: isinstance(value, list),
@@ -223,7 +225,7 @@ def review_model_read_proposals(
                 or not isinstance(discriminator, str) or not discriminator.strip()
                 or not isinstance(gain, str) or not gain.strip()
                 or not isinstance(ids, list)
-                or len(ids) > 8 or any(not isinstance(x, str) for x in ids)):
+                or len(ids) > 8 or any(not isinstance(x, str) or len(x) > 100 for x in ids)):
             rejected.append(RejectedRead(index, "missing structured discriminator, tool, arguments or gain"))
             continue
         if len(discriminator) > 350 or len(gain) > 500:
@@ -240,14 +242,14 @@ def review_model_read_proposals(
             rejected.append(RejectedRead(index, error))
             continue
         inner = args.get("args") if isinstance(args.get("args"), dict) else args
-        if (scope_id := inner.get("deviceId") or inner.get("appId")) is not None:
-            if (isinstance(scope_id, bool) or not isinstance(scope_id, (int, str))
-                    or str(scope_id) not in known_ids):
-                rejected.append(RejectedRead(index, "target ID has no independent verified scope"))
-                continue
+        scopes = [(k, inner[k]) for k in ("deviceId", "appId") if k in inner]
+        if any((isinstance(v, bool) or not isinstance(v, (int, str))
+                or str(v) not in known_ids) for _, v in scopes):
+            rejected.append(RejectedRead(index, "target ID has no independent verified scope"))
+            continue
         # No hidden control arguments, even if an upstream permissive schema
         # happens to allow additional properties.
-        if any(key in inner for key in ("confirm", "command", "commands", "mutate", "delete", "newValue")):
+        if any(key in inner for key in ("confirm", "command", "commands", "action", "mutate", "delete", "newValue")):
             rejected.append(RejectedRead(index, "control/write argument in read proposal"))
             continue
         try:
