@@ -312,3 +312,22 @@ def test_read_budget_not_charged_twice_when_coverage_and_prior_calls_coexist():
         case, [nxt], registry, verified_entity_ids={"7805"},
         previous_calls=[(p["tool"], p["arguments"])], max_total_reads=3)
     assert len(second.approved) == 1
+
+@pytest.mark.asyncio
+async def test_generator_initial_receipts_are_not_consumed_by_validation():
+    data = fixture()
+    mcp = FakeMCP()
+    execution = FakeExecutor(mcp)
+    async def finish(case, _round):
+        assert case.original_user_request == data["question"]
+        assert len(case.records) == 8
+        return {"reads": [], "finish": True}
+    original_receipts = (row for row in data["receipts"])
+    result = await run_read_only_investigation(
+        question=data["question"], mcp=mcp, executor=execution,
+        propose=finish, verified_entity_ids={"7805"},
+        initial_receipts=original_receipts,
+    )
+    assert len(result.case.records) == 8
+    assert result.executed_reads == 0
+    assert result.stopped_because == "model_finished"
