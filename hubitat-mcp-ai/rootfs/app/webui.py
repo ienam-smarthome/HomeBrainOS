@@ -98,8 +98,8 @@ def render_page(title: str, version: str) -> str:
 <option value="paid">Paid · DeepSeek Pro (Ollama)</option>
 <option value="claude">Paid · Claude (Anthropic API)</option>
 </select>
-</div>
 <button class="secondary clear-context" id="resetContext" type="button" title="Start without prior context">New topic</button>
+</div>
 <div class="model-tier-note" id="modelTierNote" role="status">Free is the default. Paid uses Ollama account credits, with no additional HomeBrain budget. Claude bills your Anthropic API account separately.</div>
 <div class="query-actions"><button id="ask">Ask</button><button class="secondary" id="speak">🎤 Speak</button></div>
 <div class="answer-options"><label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud</label><button class="secondary browser-shortcut" id="openBrowser" type="button">🌐 Open in browser</button></div>
