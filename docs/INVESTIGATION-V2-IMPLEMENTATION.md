@@ -1,10 +1,11 @@
 # Investigation V2 — staged evidence-first implementation
 
 The merged RFC remains authoritative: [RFC-INVESTIGATION-V2.md](RFC-INVESTIGATION-V2.md).
-This implementation is currently a **passive library**. It is not connected
-to production HomeBrain request routing, MCP execution or final synthesis.
+This implementation is an **explicit opt-in evaluation library** that can use
+existing MCP execution and model transport when directly invoked. It is not
+connected to production HomeBrain request routing or final synthesis.
 
-## Implemented through 0.18.126
+## Implemented through 0.18.127
 
 - A single canonical case file from timestamped device events and app-log rows.
   Source clocks and offsets are preserved, observations deduplicated by typed
@@ -131,15 +132,37 @@ does not accept arbitrary model-authored narrative as a verified factual
 claim; a broader causal prose capability requires separate clause-level
 evidence checking and objective quality validation.
 
+## Phase D / early E: source-linked explanation + replay metrics (0.18.127)
+
+`narrative.review_links` validates model-chosen links using immutable source
+record IDs, UTC instant ordering, matching device targets and the specific
+command/state stages. `render_evidence_narrative` adds a concise narrative
+about what these verified pairs show **without asserting physical execution
+or causality**. If no link passes, bounded host-selected adjacent command
+evidence remains available. No named app or device route is embedded.
+
+`enable_evidence_narrative=True` is accepted by the explicit V2 evaluation
+seam only when `enable_atomic_claim_validation=True`. Model links are
+collected with the existing atomic claim model turn, without adding a new
+provider round. Neither feature is enabled in normal production chat.
+
+`replay_scorecard` reports type-grounded V2 command/state retention, valid
+source IDs, validation flags and optional measured reads/latency. For supplied
+V1 or external reference text it can only count **literal source timestamps**,
+not semantic correctness; missing baseline answers remain unsupplied instead
+of guessed. This is measurement infrastructure, NOT a completed Claude/V1/V2
+quality evaluation. Independent human/semantic scoring and performance runs
+are still required.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
 2. Measured hypothesis usefulness and objective stopping policies beyond
    initial round/read limits.
-3. Grounded, fluent model-authored explanatory prose with trustworthy
-   cross-source causal claim checking beyond exact observation claims.
-4. Read-only V1/V2/Claude comparison with benchmarked quality/latency,
-   safe feature flag, production cutover and retirement of V1 guards.
+3. Trustworthy checks for model-authored cross-source causal explanations
+   beyond verified timestamp relationships and atomic observations.
+4. Capture actual V1/V2/Claude outputs and latency, blind-grade usefulness
+   and correctness, then controlled cutover and retirement of V1 guards.
 
 Do not claim Investigation V2 already outperforms Claude or changes the live
 answer until measured shadow replays and cutover gates are passed.
