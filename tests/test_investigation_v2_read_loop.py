@@ -353,3 +353,18 @@ async def test_write_or_unclassified_receipts_cannot_seed_v2_evidence():
     assert result.case.records == []
     assert result.case.coverage == []
     assert result.executed_reads == 0
+
+def test_pending_upstream_response_is_not_a_successful_event_source():
+    args = {"tool": "hub_list_device_events", "args": {"deviceId": "7805"}}
+    raw = MCPToolResult(
+        name="hub_read_devices", arguments=args, raw={}, text="", is_error=False,
+        data={"status": "pending", "deviceId": "7805", "events": [{
+            "name": "switch", "value": "off",
+            "date": "2026-10-25T00:42:00+01:00",
+        }]},
+    )
+    receipt = project_read_receipt(
+        "hub_read_devices", args, raw, source_request_id="pending")
+    case = build_case_file("Check light", [receipt])
+    assert not case.records
+    assert len(case.coverage) == 1 and case.coverage[0].succeeded is False
