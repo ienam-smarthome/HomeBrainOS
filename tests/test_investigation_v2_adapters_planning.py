@@ -6,6 +6,7 @@ live MCP calls, no Hubitat mutations, no model-specific keyword routing.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -271,12 +272,25 @@ def test_reject_prior_exact_read_and_enforce_total_round_budget():
     assert exhausted.rejected[0].reason == "read budget exhausted"
 
 
-def test_native_truncated_history_growth_stops_if_limit_does_not_change():
+def test_native_truncated_history_growth_stops_only_for_same_filters_and_limit():
     case = fixture_case()
+    # The source query in this actual replay was unfiltered. A NEW attribute
+    # filter may reveal events the old latest-N page hid: keep it permitted.
+    output = review_model_read_proposals(
+        case, [proposal(hours=168)], tools(), verified_entity_ids={"7805"})
+    assert len(output.approved) == 1
+
+    # A genuinely identical capped query at 24h must NOT be reissued at 168h
+    # with unchanged page limit when no further pagination exists.
+    previous = case.coverage[0]
+    case.coverage[0] = replace(previous, requested_filters={
+        **previous.requested_filters, "attribute": "switch"})
     output = review_model_read_proposals(
         case, [proposal(hours=168)], tools(), verified_entity_ids={"7805"})
     assert not output.approved
     assert "same capped history" in output.rejected[0].reason
+
+    # Increasing the page size can recover additional rows.
     candidate = proposal(hours=168)
     candidate["arguments"]["args"]["limit"] = 200
     output = review_model_read_proposals(
