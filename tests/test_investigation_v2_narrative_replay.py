@@ -155,6 +155,8 @@ def test_replay_metrics_are_measurements_not_fake_comparisons():
     score = replay_scorecard(data, answer)
     assert score["v2_measured"]["command_records"] == 6
     assert score["v2_measured"]["commands_retained"] == 6
+    assert score["v2_measured"]["command_source_clock_mentions"] == 6
+    assert score["v2_measured"]["command_id_mentions"] == 6
     assert score["v2_measured"]["command_retention_fraction"] == 1.0
     assert score["v2_measured"]["states_retained"] == 2
     assert score["v2_measured"]["source_complete_proven"] is False
@@ -205,3 +207,27 @@ async def test_evaluation_rejects_narrative_without_atomic_gate_before_mcp_disco
             chat=chat, mcp=mcp, executor=Executor(mcp),
             verified_entity_ids={"7805"},
             enable_evidence_narrative=True)
+
+def test_replay_does_not_equate_metadata_citations_with_visible_evidence():
+    from dataclasses import replace
+    data = case()
+    answer = assemble_grounded_answer(data, [], {})
+    metadata_only = replace(answer, text="No evidence was checked.")
+    score = score_grounded_replay(data, metadata_only)
+    assert score.commands_retained == 6
+    assert score.command_source_clock_mentions == 0
+    assert score.command_id_mentions == 0
+
+
+def test_no_commands_does_not_report_100_percent_recall():
+    receipt = {
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True, "effect": "read", "mutates": False,
+        "arguments": {"tool": "hub_list_device_events", "args": {"deviceId": "7103"}},
+        "details": {"events": [{"name": "mqttStatus", "value": "connected",
+                                "date": "2026-10-25T21:00:00Z"}]},
+    }
+    data = build_case_file("Read MQTT state", [receipt])
+    result = score_grounded_replay(data, assemble_grounded_answer(data, [], {}))
+    assert result.command_records == 0
+    assert result.command_retention_fraction is None
