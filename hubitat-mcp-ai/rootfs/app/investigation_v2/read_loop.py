@@ -105,6 +105,8 @@ async def run_read_only_investigation(
     max_total_reads: int = 8,
     max_reads_per_round: int = 2,
     per_read_timeout_seconds: float = 20.0,
+    planning_timeout_seconds: float = 15.0,
+    deadline_seconds: float = 90.0,
 ) -> InvestigationResult:
     """Run a limited investigative read-only session under existing host gates.
 
@@ -123,9 +125,12 @@ async def run_read_only_investigation(
     max_total_reads = max(0, min(12, int(max_total_reads)))
     max_reads_per_round = max(1, min(3, int(max_reads_per_round)))
     per_read_timeout_seconds = max(1.0, min(30.0, float(per_read_timeout_seconds)))
+    planning_timeout_seconds = max(1.0, min(30.0, float(planning_timeout_seconds)))
+    deadline = time.monotonic() + max(3.0, min(180.0, float(deadline_seconds)))
     # list_tools() is the authoritative live tool list, not a model-generated
     # tool manifest. Missing/failed discovery aborts without any call.
-    tools = await mcp.list_tools()
+    tools = await asyncio.wait_for(
+        mcp.list_tools(), timeout=min(20.0, max(0.1, deadline - time.monotonic())))
     registry = {t.name: t for t in tools if isinstance(t, MCPTool)}
     receipts = list(initial_receipts)
     case = build_case_file(question, receipts)
@@ -140,11 +145,20 @@ async def run_read_only_investigation(
     for round_index in range(max_rounds):
         rounds += 1
         # Models can propose, not install credentials, tools or permissions.
+        if time.monotonic() >= deadline:
+            reason = "deadline_reached"
+            break
         try:
-            output = await propose(case, round_index)
-        except (Exception, asyncio.CancelledError):
-            # Preserve evidence already gathered. Cancellation of the hosting
-            # request is not swallowed by read tasks below.
+            output = await asyncio.wait_for(
+                propose(case, round_index),
+                timeout=min(planning_timeout_seconds, max(0.1, deadline - time.monotonic())),
+            )
+        except asyncio.CancelledError:
+            raise
+        except asyncio.TimeoutError:
+            reason = "planning_timeout"
+            break
+        except Exception:
             reason = "planning_unavailable"
             break
         if not isinstance(output, dict):
@@ -168,6 +182,9 @@ async def run_read_only_investigation(
             break
 
         for item in review.approved:
+            if time.monotonic() >= deadline:
+                reason = "deadline_reached"
+                break
             declared = registry.get(item.tool)
             if declared is None or classify_tool_effect(declared, item.arguments) is not ToolEffect.READ:
                 rejections.append("read permission changed before execution")
@@ -182,11 +199,13 @@ async def run_read_only_investigation(
                         item.tool, dict(item.arguments), tool=declared,
                         record_evidence=False,
                     ),
-                    timeout=per_read_timeout_seconds,
+                    timeout=min(per_read_timeout_seconds, max(0.1, deadline - time.monotonic())),
                 )
                 accepted = (
                     execution.effect is ToolEffect.READ and
-                    execution.success is True and execution.result is not None
+                    execution.name == item.tool and
+                    execution.success is True and execution.result is not None and
+                    execution.result.name == item.tool
                 )
                 result = execution.result if accepted else None
                 if not accepted:
@@ -206,6 +225,8 @@ async def run_read_only_investigation(
             )
             receipts.append(receipt)
             case = build_case_file(question, receipts)
+        if reason == "deadline_reached":
+            break
         if executed >= max_total_reads:
             reason = "read_budget_reached"
             break
