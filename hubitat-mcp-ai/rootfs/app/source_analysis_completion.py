@@ -327,8 +327,87 @@ def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
     )
 
 
+
+# A raw installed-app property is stored configuration, not a verified
+# runtime branch. These checks use successful read receipts, not prompt words.
+_RAW_SETTING = re.compile(
+    r"(?i)(?:\x60[A-Za-z_]\w{2,}\x60|[A-Za-z_]\w{2,})\s*"
+    r"(?:=|:|\s+is\s+(?:set\s+)?to)\s*"
+    r"(?:\x60?none\x60?|true|false|enabled|disabled|\x60[^ \n]+\x60)"
+)
+_BEHAVIOUR_CLAIM = re.compile(
+    r"(?i)\b(?:means?|therefore|explains?|because|prevents?|"
+    r"disables?|ensures?|never|always|automatically|configured\s+to|"
+    r"will\s+not|cannot)\b"
+)
+
+
+def configuration_semantics_evidence_gap(
+    receipts: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    """Installed app configs read without app-matched implementation reads."""
+    config_apps: set[str] = set()
+    source_apps: set[str] = set()
+    code_ids: set[str] = set()
+    configured_code_ids: dict[str, str] = {}
+    for receipt in receipts:
+        if (not isinstance(receipt, dict)
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("effect") not in (None, "read")):
+            continue
+        op, args = _leaf(receipt), _args(receipt)
+        installed_id = str(args.get("appId") or "")
+        if op == "hub_get_app_config" and installed_id.isdigit():
+            config_apps.add(installed_id)
+            details = receipt.get("details") or {}
+            if isinstance(details, dict):
+                verified_code = details.get("appTypeId") or details.get("sourceCodeId")
+                if str(verified_code or "").isdigit():
+                    configured_code_ids[installed_id] = str(verified_code)
+        elif op == "homebrain_read_groovy_source" and installed_id.isdigit():
+            source_apps.add(installed_id)
+        elif op == "hub_get_source":
+            code_id = str(args.get("id") or args.get("sourceId") or "")
+            if code_id.isdigit():
+                code_ids.add(code_id)
+    return tuple(sorted(
+        app_id for app_id in config_apps
+        if app_id not in source_apps
+        and configured_code_ids.get(app_id) not in code_ids
+    ))
+
+
+def configuration_semantics_followup(
+    answer: str,
+    receipts: list[dict[str, Any]],
+) -> str | None:
+    """One bounded, read-only AI evidence invitation, never a tool route."""
+    unchecked_apps = configuration_semantics_evidence_gap(receipts)
+    if not unchecked_apps:
+        return None
+    draft = str(answer or "")
+    if not (_RAW_SETTING.search(draft) and _BEHAVIOUR_CLAIM.search(draft)):
+        return None
+    return (
+        "HOST CONFIGURATION-SEMANTICS CHECK (READ ONLY): This answer "
+        "interprets stored application values as definitive runtime behaviour "
+        "without inspecting the app's source. For installed app ID(s) "
+        + ", ".join(unchecked_apps[:2])
+        + ", determine from the advertised read-only source tool whether "
+        "the relevant handler, conditions and defaults actually implement "
+        "the proposed meaning. The source workbench accepts the *installed* "
+        "app ID, not a guessed source code ID. Prefer a source read capable "
+        "of disproving your explanation; do not expand unrelated apps. "
+        "If source is unavailable, distinguish observed raw configuration "
+        "from UNKNOWN effective semantics and do NOT recommend a setting "
+        "change as a verified fix. The model chooses the next allowed read."
+    )
+
 __all__ = ["source_answer_focus", 
     "source_analysis_failed", "source_trace_ready_for_synthesis",
     "source_failure_summary", "source_method_claim_gap",
     "source_runtime_evidence_status",
+    "configuration_semantics_evidence_gap",
+    "configuration_semantics_followup",
 ]
