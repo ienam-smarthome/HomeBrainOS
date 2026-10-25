@@ -64,6 +64,11 @@ from targeted_lockout_config import read_current_lockout_config
 from groovy_source_investigation import GroovySourceService, RequestScopedGroovyMcp, requested_groovy_app_id
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import active_request_interpretation, without_request_interpretation
+from investigation_fulfillment_gate import (
+    investigating, inventory_without_investigation,
+    retry_instruction as incomplete_investigation_retry,
+    honest_partial_answer,
+)
 from focal_evidence_reconciliation import (
     reconcile_window_coverage, summarize_journal_app_logs,
 )
@@ -3822,6 +3827,12 @@ class UnifiedMCPAgent:
             )):
                 message = redact_secrets(message)
             evidence = self.evidence.receipts()
+            # Defence in depth against every early return: a verified
+            # inventory/identity lookup still cannot answer a cause question.
+            if (not self._mutation_requested_by_user.get()
+                    and inventory_without_investigation(user_prompt, evidence)):
+                increment_active_metric("investigation_unfulfilled_at_boundary")
+                message = honest_partial_answer(user_prompt, evidence)
             if is_new_rule_design_review_request(user_prompt):
                 message = calibrate_rule_design_review(
                     message, evidence, request=user_prompt,
@@ -4062,6 +4073,15 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+        # Inventory-only tools are useful for listing, but not as a model's
+        # terminal answer to WHY/diagnostic objectives. This is enforced at
+        # the tool catalog boundary, even after later discovery/expansion.
+        diagnostic_objective = (
+            investigating(user_prompt)
+            and not self._mutation_requested_by_user.get()
+        )
+        if diagnostic_objective:
+            catalog.hide_inventory_during_investigation()
         if deep_rule_review:
             # Expose available native rule/config/variables/health readers,
             # not device controls or management gateways. Read-only tool
@@ -4142,7 +4162,7 @@ class UnifiedMCPAgent:
             }
         )
         inventory_arguments = (
-            None if investigative_ai_objective
+            None if (investigative_ai_objective or diagnostic_objective)
             else _device_inventory_arguments(user_prompt)
         )
         if inventory_arguments is not None:
@@ -4938,6 +4958,7 @@ class UnifiedMCPAgent:
         device_incident_progress_retry_used = False
         incident_evidence_checkpoint_used = False
         configuration_semantics_retry_used = False
+        inventory_only_retry_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -4976,6 +4997,39 @@ class UnifiedMCPAgent:
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                # Primary diagnostic objective has not been met if all the
+                # reads so far are room/identity listings. Give the model ONE
+                # further evidence-source choice instead of shipping the
+                # successful inventory result as a false diagnosis.
+                if (diagnostic_objective
+                        and inventory_without_investigation(
+                            user_prompt, self.evidence.receipts()
+                        )):
+                    if (not inventory_only_retry_used
+                            and round_index + 1 < active_round_budget):
+                        inventory_only_retry_used = True
+                        increment_active_metric("investigation_inventory_only_retry")
+                        catalog.hide_inventory_during_investigation()
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit
+                        )
+                        catalog.expose_read_gateways(
+                            ("hub_read_apps_code", "hub_read_devices",
+                             "hub_read_diagnostics", "hub_read_rules"),
+                            max_declared=self.tool_limit,
+                        )
+                        messages.extend([
+                            assistant,
+                            {"role": "user", "content": incomplete_investigation_retry(
+                                user_prompt, self.evidence.receipts()
+                            )},
+                        ])
+                        tools = catalog.schemas()
+                        continue
+                    increment_active_metric("investigation_inventory_only_stopped")
+                    return honest_partial_answer(
+                        user_prompt, self.evidence.receipts()
+                    )
                 if last_proposal_error is not None:
                     _name, _rejected_arguments, reason = last_proposal_error
                     increment_active_metric("proposal_validation_failures")
@@ -6286,6 +6340,13 @@ class UnifiedMCPAgent:
                     return await self._final_answer(messages)
 
             if duplicate_signature_seen:
+                if (diagnostic_objective and inventory_without_investigation(
+                    user_prompt, self.evidence.receipts()
+                )):
+                    increment_active_metric("investigation_inventory_only_stopped")
+                    return honest_partial_answer(
+                        user_prompt, self.evidence.receipts()
+                    )
                 return await self._final_answer(messages)
             if (
                 round_history_evidence_sufficient
