@@ -387,7 +387,11 @@ def configuration_semantics_followup(
     if not unchecked_apps:
         return None
     draft = str(answer or "")
-    if not (_RAW_SETTING.search(draft) and _BEHAVIOUR_CLAIM.search(draft)):
+    # Model prose often quotes raw JSON values as **`"none"`**. Ignore
+    # Markdown/quote decoration during *detection* (never rewrite evidence).
+    normalized_draft = draft.replace("**", "").replace('"', "").replace("'", "")
+    if not (_RAW_SETTING.search(normalized_draft)
+            and _BEHAVIOUR_CLAIM.search(normalized_draft)):
         return None
     return (
         "HOST CONFIGURATION-SEMANTICS CHECK (READ ONLY): This answer "
