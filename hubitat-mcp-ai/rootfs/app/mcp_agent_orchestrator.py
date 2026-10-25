@@ -65,7 +65,7 @@ from groovy_source_investigation import GroovySourceService, RequestScopedGroovy
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import active_request_interpretation, without_request_interpretation
 from investigation_fulfillment_gate import (
-    investigating, inventory_without_investigation,
+    investigating, inventory_without_investigation, inventory_answer,
     retry_instruction as incomplete_investigation_retry,
     honest_partial_answer,
 )
@@ -3830,7 +3830,9 @@ class UnifiedMCPAgent:
             # Defence in depth against every early return: a verified
             # inventory/identity lookup still cannot answer a cause question.
             if (not self._mutation_requested_by_user.get()
-                    and inventory_without_investigation(user_prompt, evidence)):
+                    and investigating(user_prompt)
+                    and (inventory_without_investigation(user_prompt, evidence)
+                         or inventory_answer(message))):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
                 message = honest_partial_answer(user_prompt, evidence)
             if is_new_rule_design_review_request(user_prompt):
@@ -5002,9 +5004,9 @@ class UnifiedMCPAgent:
                 # further evidence-source choice instead of shipping the
                 # successful inventory result as a false diagnosis.
                 if (diagnostic_objective
-                        and inventory_without_investigation(
+                        and (inventory_without_investigation(
                             user_prompt, self.evidence.receipts()
-                        )):
+                        ) or inventory_answer(assistant.get("content") or ""))):
                     if (not inventory_only_retry_used
                             and round_index + 1 < active_round_budget):
                         inventory_only_retry_used = True
