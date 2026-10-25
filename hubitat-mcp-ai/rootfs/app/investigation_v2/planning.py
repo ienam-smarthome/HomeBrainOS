@@ -202,7 +202,9 @@ def review_model_read_proposals(
                 prior.add(_json_key(name, args))
             except (TypeError, ValueError):
                 continue
-    remaining = max(0, min(30, int(max_total_reads)) - len(case.coverage) - len(prior))
+    # Executed attempts already appear in case.coverage. Do not charge
+    # each read twice merely because its signature is also in prior_calls.
+    remaining = max(0, min(30, int(max_total_reads)) - max(len(case.coverage), len(prior)))
     batch = min(remaining, max(0, min(6, int(max_reads_this_round))))
     approved: list[ApprovedRead] = []
     rejected: list[RejectedRead] = []
