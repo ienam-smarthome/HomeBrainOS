@@ -1,0 +1,25 @@
+{
+  "fixture_origin": "RFC-INVESTIGATION-V2.md: sanitized representative event extract; not a complete Hubitat event stream",
+  "question": "Investigate why the living-room light remained on overnight on 24–25 October 2026. Read-only.",
+  "receipts": [
+    {
+      "tool": "hub_read_devices", "sub_tool": "hub_list_device_events", "success": true,
+      "source_request_id": "fixture-events-1",
+      "arguments": {"tool": "hub_list_device_events", "args": {"deviceId": "7805", "hoursBack": 24, "limit": 50}},
+      "details": {
+        "deviceId": "7805", "sourceCompleteToWindowStart": true,
+        "historySourceIntegrityVerified": false, "observedEventsTruncated": true,
+        "windowEvents": [
+          {"name": "command-on", "type": "command", "date": "2026-10-24T18:37:59.578+01:00", "producedBy": {"type":"app", "id":"1251", "label":"Button Controller"}},
+          {"name": "command-setLevel", "type": "command", "value": 60, "date": "2026-10-24T23:00:07.493+01:00", "producedBy": {"type":"app", "id":"4019", "label":"Light Mode Controller"}},
+          {"name": "level", "value": 60, "date": "2026-10-24T23:00:08.586+01:00"},
+          {"name": "command-setLevel", "type": "command", "value": 30, "date": "2026-10-25T00:30:06.185+01:00", "producedBy": {"type":"app", "id":"4019"}},
+          {"name": "level", "value": 30, "date": "2026-10-25T00:31:52.484+01:00"},
+          {"name": "command-off", "type": "command", "date": "2026-10-25T00:41:40.085+01:00", "producedBy": {"type":"app", "id":"4246"}},
+          {"name": "command-setLevel", "type": "command", "value": 30, "date": "2026-10-25T00:49:52.008+01:00", "producedBy": {"type":"app", "id":"4019"}},
+          {"name": "command-off", "type": "command", "date": "2026-10-25T01:09:41.597+01:00", "producedBy": {"type":"app", "id":"1251"}}
+        ]
+      }
+    }
+  ]
+}
