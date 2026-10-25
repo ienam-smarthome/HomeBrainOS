@@ -105,7 +105,8 @@ def _schema_problem(value: Any, schema: Any, path: str = "arguments", depth: int
             if not isinstance(branches, list) or not branches:
                 return f"{path}: invalid {choice}"
             matches = sum(_schema_problem(value, branch, path, depth + 1) is None for branch in branches)
-            if not matches if choice == "anyOf" else matches != 1:
+            valid = matches > 0 if choice == "anyOf" else matches == 1
+            if not valid:
                 return f"{path}: {choice} mismatch"
     return None
 
@@ -149,15 +150,16 @@ def _same_native_page(cov: Any, tool: str, args: Mapping[str, Any]) -> bool:
     query was explicitly truncated at the SAME limit and attribute, with no
     next cursor. Increasing the page limit or changing the attribute is allowed.
     """
+    inner = args.get("args")
+    if not isinstance(inner, dict):
+        return False
     if (cov.tool != tool or cov.operation != args.get("tool")
             or not cov.succeeded or cov.truncated is not True
             or cov.pagination_cursor is not None or cov.returned_rows == 0
-            or cov.query_target_id != str(args.get("args", {}).get("deviceId", ""))):
+            or cov.query_target_id != str(inner.get("deviceId", ""))):
         return False
     previous = cov.requested_filters
-    current = args.get("args", {})
-    if not isinstance(current, dict):
-        return False
+    current = inner
     if previous.get("attribute") != current.get("attribute") or previous.get("limit") != current.get("limit"):
         return False
     old_h = previous.get("hoursBack")
@@ -186,10 +188,18 @@ def review_model_read_proposals(
     manifest = {t.name: t for t in available_tools if isinstance(t, MCPTool)}
     known_ids = {str(value) for value in verified_entity_ids
                  if isinstance(value, (str, int)) and str(value).isdecimal()}
-    known_ids.update(e.target_id for e in case.records if e.target_id)
+    # Previous query arguments are NOT identity verification. A successful
+    # read of an arbitrary model-supplied ID must not whitelist that ID.
     known_ids.update(e.producer_id for e in case.records if e.producer_id)
-    known_ids.update(c.query_target_id for c in case.coverage if c.query_target_id and c.succeeded)
-    prior = {_json_key(name, args) for name, args in previous_calls if isinstance(args, dict)}
+    known_ids.update(e.target_id for e in case.records
+                     if e.target_id and e.stage == "config_stored")
+    prior = set()
+    for name, args in previous_calls:
+        if isinstance(name, str) and isinstance(args, dict):
+            try:
+                prior.add(_json_key(name, args))
+            except (TypeError, ValueError):
+                continue
     remaining = max(0, min(30, int(max_total_reads)) - len(case.coverage) - len(prior))
     batch = min(remaining, max(0, min(6, int(max_reads_this_round))))
     approved: list[ApprovedRead] = []
@@ -237,10 +247,14 @@ def review_model_read_proposals(
                 continue
         # No hidden control arguments, even if an upstream permissive schema
         # happens to allow additional properties.
-        if any(key in inner for key in ("confirm", "commands", "mutate", "delete", "newValue")):
+        if any(key in inner for key in ("confirm", "command", "commands", "mutate", "delete", "newValue")):
             rejected.append(RejectedRead(index, "control/write argument in read proposal"))
             continue
-        key = _json_key(name, args)
+        try:
+            key = _json_key(name, args)
+        except (TypeError, ValueError):
+            rejected.append(RejectedRead(index, "arguments are not JSON serializable"))
+            continue
         if key in seen or discriminator.strip().casefold() in seen_discriminators:
             rejected.append(RejectedRead(index, "duplicate read or discriminator"))
             continue
