@@ -70,6 +70,8 @@ async def evaluate_v2_with_model(
     """
     if explicitly_authorised is not True:
         raise PermissionError("Investigation V2 requires explicit experiment opt-in")
+    if enable_evidence_narrative is True and enable_atomic_claim_validation is not True:
+        raise ValueError("Evidence narrative requires atomic claim verification")
     if executor.mcp is not mcp:
         raise ValueError("MCP client/executor mismatch")
     tools = await mcp.list_tools()
@@ -80,8 +82,6 @@ async def evaluate_v2_with_model(
         initial_receipts=initial_receipts,
         max_rounds=max_rounds, max_total_reads=max_total_reads,
     )
-    if enable_evidence_narrative is True and enable_atomic_claim_validation is not True:
-        raise ValueError("Evidence narrative requires atomic claim verification")
     if enable_atomic_claim_validation is True:
         atomic = await synthesize_atomic_with_chat(
             case=result.case, hypotheses=result.hypotheses, chat=chat,
