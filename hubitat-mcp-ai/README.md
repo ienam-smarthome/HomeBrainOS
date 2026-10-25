@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.109**.
+Current add-on version: **0.18.110**.
 
 ## Architecture
+
+v0.18.110 removes the browser-saved multi-chat history, tabs and earlier-message transcript from the HomeBrain web UI, freeing room for the Ask/Speak controls and current response. A lightweight New topic control resets the ephemeral in-page context. Follow-up questions still receive up to eight recent user/assistant messages until the page is reloaded or reset. Legacy browser-saved chat records are cleared on first load of the new UI; no saved conversations are retained. Read-only evidence, technical JSON, model selection and confirmation safeguards remain available. See [release notes](CHANGELOG-0.18.110.md).
+
 
 v0.18.109 increases the configurable default read-only investigation deadline to 180 seconds and exposes the active AI-reasoning/tool-execution phase when diagnosing a timeout. Earlier successful read receipts still produce a safe evidence-only incomplete result; no receipt still results in HTTP 504 with stage detail. Existing add-on installations may retain the previous 90-second value: update `investigation_deadline_seconds` manually in the add-on Configuration to use 180. This does not prove or change any Hubitat cause, automation or device. See [release notes](CHANGELOG-0.18.109.md).
 
