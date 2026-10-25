@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.115**.
+Current add-on version: **0.18.116**.
 
 ## Architecture
+
+v0.18.116 adds source-grounded false-motion claim verification. A model cannot use a coincident event from a cloned/virtual sensor to prove it triggered another app's OFF timer, nor may it infer empty-room ghosting without independent vacancy evidence. For unproven causal assertions the final answer preserves verified switch intervals and timestamp-aligned OFF command/state pairs and explains what remains uncertain. Investigator guidance prioritises exact configured activation/keep-on sensor IDs over arbitrary nearby event histories. See [release notes](CHANGELOG-0.18.116.md).
+
 
 v0.18.115 restores **room scope** for model-selected live light and non-light switch aggregates. The tool schema now accepts an optional room, but execution additionally enforces the original question's room constraint against Hubitat's authoritative room metadata, so an AI-proposed no-argument whole-home read cannot answer a Living Room-only question as a household summary. Results retain scoped counts, exact matching room names and non-leaking unresolved scope; unrelated rooms are excluded from visible answers. See [release notes](CHANGELOG-0.18.115.md).
 
