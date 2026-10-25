@@ -112,7 +112,9 @@ def test_clone_listener_edge_is_not_off_rule_cause():
     assert "App 4019 issued OFF at 17:01:16.922" in message
     assert "0.173s later" in message
     assert "Livingroom Soft Sensor" in message
-    assert "Linptech Kitchen sensor" not in message
+    # A subscribed Linptech inactive edge may now be reported as a positive
+    # timing correlation; it must NOT be mislabeled an unlinked clone.
+    assert "Sensor-source limitation:** The retained motion events for Livingroom Soft Sensor" in message
     assert "cloned sensor" in message
 
 
