@@ -4,7 +4,7 @@ The merged RFC remains authoritative: [RFC-INVESTIGATION-V2.md](RFC-INVESTIGATIO
 This implementation is currently a **passive library**. It is not connected
 to production HomeBrain request routing, MCP execution or final synthesis.
 
-## Implemented through 0.18.123
+## Implemented through 0.18.124
 
 - A single canonical case file from timestamped device events and app-log rows.
   Source clocks and offsets are preserved, observations deduplicated by typed
@@ -59,13 +59,37 @@ config values, log-versus-execution, ack-versus-physical state, malicious or
 unknown tool calls, hallucinated targets, duplicated/capped reads and other
 device classes without text-route heuristics.
 
+## Phase C: explicit bounded MCP read harness (0.18.124)
+
+`investigation_v2.read_loop.run_read_only_investigation` now accepts an
+explicit model-proposal callback, an existing `ToolExecutor` and its matching
+live MCP client, plus independently verified entity IDs. It bounds model
+rounds, approved reads, the wall-clock deadline and per-read timeout. It does
+not add any background work or automatically intercept user requests.
+
+Each approved read is executed by the existing host executor. The raw MCP
+payload is not passed into V2's case file: the `receipt_projection` module
+only admits ID-matched dated device events, the existing validated partial
+app-settings projection and strictly timezone-aware log timestamps. Unknown
+source shapes remain unverified. No user-supplied or source-supplied free-form
+description or credential is forwarded to the model.
+
+Model hypotheses are *candidates*, accepted with supporting or conflicting
+case-file record IDs and a discriminator. The host validates those references
+and never upgrades the model's proposed root cause into an independently
+verified fact. The original user question is preserved at every round.
+
+This stage is a **manual/test integration seam**. A real proposal-model adapter
+and carefully measured V1/V2 read-only shadow comparison are subsequent PRs.
+No live HomeBrain routes, automation writes, confirmation or production
+final-answer validators are altered.
+
 ## Not yet implemented
 
-1. Real live MCP read orchestrator and source adapters for all required tools.
-   Verify native logging clock timezone at the source before promoting naive
-   Hubitat log timestamps; never guess a DST fold.
-2. Model-generated hypotheses and iterative tool selection with verified
-   information gain and stopping criteria.
+1. A structured live model-client adapter, more reviewed MCP source adapters,
+   and verification of naive native log timestamps against source timezone.
+2. Measured hypothesis usefulness, discriminating information gain and
+   objective stopping policy beyond the initial bounded loop.
 3. Grounded, **non-destructive** atomic-claim and evidence-omission evaluator.
 4. Read-only shadow comparison V1 versus V2, latency/quality scorecards,
    source-equivalence checks, feature flag, rollout and removal of V1 guards.
