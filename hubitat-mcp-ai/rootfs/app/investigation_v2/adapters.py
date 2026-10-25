@@ -8,6 +8,7 @@ acknowledgement is NOT proof that a physical device changed state.
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Mapping
 
@@ -35,13 +36,15 @@ def _field_value(field: Mapping[str, Any]) -> str | None:
     if "numericValue" in field:
         value = field["numericValue"]
         unit = field.get("unitFromKey", "unspecified")
-        if (type(value) not in (int, float) or value < 0 or value > 10080
+        if (type(value) not in (int, float) or not math.isfinite(value)
+                or value < 0 or value > 10080
                 or unit not in ("seconds", "minutes", "unspecified")):
             return None
         return f"{value} {unit}"
     if "minutes" in field:
         value = field["minutes"]
-        if type(value) not in (int, float) or not 0 <= value <= 1440:
+        if (type(value) not in (int, float) or not math.isfinite(value)
+                or not 0 <= value <= 1440):
             return None
         return f"{value} minutes"
     if type(field.get("value")) is bool:
