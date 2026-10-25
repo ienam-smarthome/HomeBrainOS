@@ -332,7 +332,7 @@ def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
 # runtime branch. These checks use successful read receipts, not prompt words.
 _RAW_SETTING = re.compile(
     r"(?i)(?:\x60[A-Za-z_]\w{2,}\x60|[A-Za-z_]\w{2,})\s*"
-    r"(?:=|:|\s+is\s+(?:set\s+)?to)\s*"
+    r"(?:=|:|\s+is(?:\s+(?:set\s+)?to)?)\s*"
     r"(?:\x60?none\x60?|true|false|enabled|disabled|\x60[^ \n]+\x60)"
 )
 _BEHAVIOUR_CLAIM = re.compile(
