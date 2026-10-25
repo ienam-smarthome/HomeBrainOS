@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.122**.
+Current add-on version: **0.18.123**.
 
 ## Architecture
+
+v0.18.123 adds typed read-only evidence adapters and a bounded, verified MCP read-plan contract for Investigation V2. This is a **passive foundation**, not a live reasoning cutover. See [release notes](CHANGELOG-0.18.123.md).
 
 v0.18.122 starts the bottom-up Investigation V2 implementation with a passive, typed evidence case file and 15 history/provenance regression tests. **No live investigation routing or Hubitat controls change yet.** See [release notes](CHANGELOG-0.18.122.md).
 
