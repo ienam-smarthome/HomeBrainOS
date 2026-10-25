@@ -255,6 +255,13 @@ def _present_active_rooms(data: dict[str, Any]) -> str:
 
 def _present_active_switches(data: dict[str, Any]) -> str:
     switches = [x for x in data.get("switches", []) if isinstance(x, dict)]
+    if data.get("scope") == "room" and data.get("scopeVerified") is True:
+        rooms = data.get("matchedRooms") or []
+        room = " and ".join(str(name) for name in rooms)
+        labels = [str(x.get("label") or x.get("id") or "Unknown switch") for x in switches]
+        if not labels:
+            return f"No non-light switches are currently on in **{room}**."
+        return f"{len(labels)} non-light {'switch is' if len(labels) == 1 else 'switches are'} on in **{room}**: {_joined(labels)}."
     if not switches:
         return "No non-light switches are currently on."
     entries = [str(x.get("label") or x.get("id") or "Unknown switch") for x in switches]
@@ -270,6 +277,12 @@ def _present_active_switches(data: dict[str, Any]) -> str:
 
 def _present_active_lights(data: dict[str, Any]) -> str:
     lights = [x for x in data.get("lights", []) if isinstance(x, dict)]
+    if data.get("scope") == "room" and data.get("scopeVerified") is True:
+        room = " and ".join(str(name) for name in data.get("matchedRooms") or [])
+        labels = [str(x.get("label") or x.get("id") or "Unknown light") for x in lights]
+        if not labels:
+            return f"No lights are currently on in **{room}**."
+        return f"{len(labels)} {'light is' if len(labels) == 1 else 'lights are'} on in **{room}**: {_joined(labels)}."
     if not lights:
         return "No lights are currently on."
     entries = [str(x.get("label") or x.get("id") or "Unknown light") for x in lights]
