@@ -3,7 +3,7 @@
   "question": "Investigate why the living-room light remained on overnight on 24–25 October 2026. Read-only.",
   "receipts": [
     {
-      "tool": "hub_read_devices", "sub_tool": "hub_list_device_events", "success": true,
+      "tool": "hub_read_devices", "sub_tool": "hub_list_device_events", "success": true, "mutates": false, "effect": "read",
       "source_request_id": "fixture-events-1",
       "arguments": {"tool": "hub_list_device_events", "args": {"deviceId": "7805", "hoursBack": 24, "limit": 50}},
       "details": {
