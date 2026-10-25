@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from source_analysis_completion import guard_unverified_config_behavior
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
@@ -168,6 +169,15 @@ def validate_synthesis(
 
     corrected = str(message or "")
     issues: list[str] = []
+
+    # A successful app-settings read describes stored values but cannot
+    # establish effective handler logic without installed implementation.
+    # Apply this general evidence check regardless of causal word routing.
+    corrected, config_semantics_changed = guard_unverified_config_behavior(
+        corrected, evidence,
+    )
+    if config_semantics_changed:
+        issues.append("unverified_configuration_semantics")
 
     corrected, log_coverage_changed = guard_bounded_log_absence_claim(
         corrected, evidence

@@ -327,8 +327,162 @@ def source_failure_summary(receipts: list[dict[str, Any]]) -> str:
     )
 
 
+
+# A raw installed-app property is stored configuration, not a verified
+# runtime branch. These checks use successful read receipts, not prompt words.
+_RAW_SETTING = re.compile(
+    r"(?i)(?:\x60[A-Za-z_]\w{2,}\x60|[A-Za-z_]\w{2,})\s*"
+    r"(?:=|:|\s+is(?:\s+(?:set\s+)?to)?)\s*"
+    r"(?:\x60?none\x60?|true|false|enabled|disabled|\x60[^ \n]+\x60)"
+)
+_BEHAVIOUR_CLAIM = re.compile(
+    r"(?i)\b(?:means?|therefore|explains?|because|prevents?|"
+    r"disables?|ensures?|never|always|automatically|configured\s+to|"
+    r"will\s+not|cannot)\b"
+)
+
+
+def configuration_semantics_evidence_gap(
+    receipts: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    """Installed app configs read without app-matched implementation reads."""
+    config_apps: set[str] = set()
+    source_apps: set[str] = set()
+    code_ids: set[str] = set()
+    configured_code_ids: dict[str, str] = {}
+    for receipt in receipts:
+        if (not isinstance(receipt, dict)
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("effect") not in (None, "read")):
+            continue
+        op, args = _leaf(receipt) or str(receipt.get("tool") or ""), _args(receipt)
+        installed_id = str(args.get("appId") or "")
+        if op == "hub_get_app_config" and installed_id.isdigit():
+            config_apps.add(installed_id)
+            details = receipt.get("details") or {}
+            if isinstance(details, dict):
+                verified_code = details.get("appTypeId") or details.get("sourceCodeId")
+                if str(verified_code or "").isdigit():
+                    configured_code_ids[installed_id] = str(verified_code)
+        elif op == "homebrain_read_groovy_source" and installed_id.isdigit():
+            source_apps.add(installed_id)
+        elif op == "hub_get_source":
+            code_id = str(args.get("id") or args.get("sourceId") or "")
+            if code_id.isdigit():
+                code_ids.add(code_id)
+    return tuple(sorted(
+        app_id for app_id in config_apps
+        if app_id not in source_apps
+        and configured_code_ids.get(app_id) not in code_ids
+    ))
+
+
+def configuration_semantics_followup(
+    answer: str,
+    receipts: list[dict[str, Any]],
+) -> str | None:
+    """One bounded, read-only AI evidence invitation, never a tool route."""
+    unchecked_apps = configuration_semantics_evidence_gap(receipts)
+    if not unchecked_apps:
+        return None
+    draft = str(answer or "")
+    # Model prose often quotes raw JSON values as **`"none"`**. Ignore
+    # Markdown/quote decoration during *detection* (never rewrite evidence).
+    normalized_draft = draft.replace("**", "").replace('"', "").replace("'", "")
+    if not (_RAW_SETTING.search(normalized_draft)
+            and _BEHAVIOUR_CLAIM.search(normalized_draft)):
+        return None
+    return (
+        "HOST CONFIGURATION-SEMANTICS CHECK (READ ONLY): This answer "
+        "interprets stored application values as definitive runtime behaviour "
+        "without inspecting the app's source. For installed app ID(s) "
+        + ", ".join(unchecked_apps[:2])
+        + ", determine from the advertised read-only source tool whether "
+        "the relevant handler, conditions and defaults actually implement "
+        "the proposed meaning. The source workbench accepts the *installed* "
+        "app ID, not a guessed source code ID. Prefer a source read capable "
+        "of disproving your explanation; do not expand unrelated apps. "
+        "If source is unavailable, distinguish observed raw configuration "
+        "from UNKNOWN effective semantics and do NOT recommend a setting "
+        "change as a verified fix. The model chooses the next allowed read."
+    )
+
+
+_UNCERTAINTY = re.compile(
+    r"(?i)(?:not\s+(?:verified|proven|established)|"
+    r"cannot\s+(?:infer|determine|prove)|"
+    r"does\s+not\s+(?:prove|establish)|"
+    r"unknown|unverified|requires?\s+(?:source|code)|"
+    r"without\s+(?:source|code))"
+)
+_SETTING_CHANGE_ADVICE = re.compile(
+    r"(?i)(?:\bto\s+(?:fix|enable|resolve|correct|restore)\b|"
+    r"\b(?:should|must|need(?:s)?\s+to)\s+(?:change|set|disable|enable)\b|"
+    r"\b(?:changing|setting)\s+\w+.*\b(?:fix|resolve|enable)\b)"
+)
+
+
+def guard_unverified_config_behavior(
+    answer: str,
+    receipts: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Do not present inferred setting semantics or fixes as verified code.
+
+    Preserve unrelated observations, timelines and headings; remove only the
+    unsupported interpretive paragraph and setting-change recommendations
+    tied to the same inferred setting. Generic source evidence check; no
+    special knowledge of one property, controller or user setup.
+    """
+    if not configuration_semantics_evidence_gap(receipts):
+        return str(answer or ""), False
+    parts = str(answer or "").split("\n\n")
+    setting_names: set[str] = set()
+    suspect: set[int] = set()
+    for index, paragraph in enumerate(parts):
+        if paragraph.lstrip().startswith("|"):
+            continue
+        normalized = paragraph.replace("**", "").replace('"', "").replace("'", "")
+        if _UNCERTAINTY.search(normalized):
+            continue
+        if not (_RAW_SETTING.search(normalized)
+                and _BEHAVIOUR_CLAIM.search(normalized)):
+            continue
+        name = _RAW_SETTING.search(normalized)
+        if name:
+            raw_key = re.match(r"(?:\x60?)([A-Za-z_]\w{2,})", name.group())
+            if raw_key:
+                setting_names.add(raw_key.group(1).casefold())
+        suspect.add(index)
+    if not suspect:
+        return str(answer or ""), False
+    for index, paragraph in enumerate(parts):
+        if index in suspect:
+            parts[index] = (
+                "The current app configuration was retrieved, but the "
+                "implementation of the cited setting was not verified in "
+                "the installed Groovy source. The stored value alone "
+                "cannot establish effective automatic behaviour or its "
+                "historical cause."
+            )
+        elif (setting_names
+              and _SETTING_CHANGE_ADVICE.search(paragraph)
+              and not _UNCERTAINTY.search(paragraph)
+              and any(re.search(r"(?i)(?<!\w)" + re.escape(name) + r"(?!\w)",
+                                paragraph)
+                      for name in setting_names)):
+            parts[index] = (
+                "A change to that setting is not justified by the returned "
+                "configuration evidence alone. Verify the installed "
+                "implementation and effective UI settings first."
+            )
+    return "\n\n".join(parts), True
+
 __all__ = ["source_answer_focus", 
     "source_analysis_failed", "source_trace_ready_for_synthesis",
     "source_failure_summary", "source_method_claim_gap",
     "source_runtime_evidence_status",
+    "configuration_semantics_evidence_gap",
+    "configuration_semantics_followup",
+    "guard_unverified_config_behavior",
 ]

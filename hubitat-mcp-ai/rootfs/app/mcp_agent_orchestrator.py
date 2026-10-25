@@ -16,7 +16,9 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
-from source_analysis_completion import source_trace_ready_for_synthesis
+from source_analysis_completion import (
+    source_trace_ready_for_synthesis, configuration_semantics_followup,
+)
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
@@ -4902,6 +4904,7 @@ class UnifiedMCPAgent:
         device_incident_followup_used = False
         device_incident_progress_retry_used = False
         incident_evidence_checkpoint_used = False
+        configuration_semantics_retry_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -4964,6 +4967,42 @@ class UnifiedMCPAgent:
                         "Retrieve the live addTrigger/addAction discovery schemas "
                         "and retry before requesting any confirmation."
                     )
+                # AI-led configuration semantics: if a source-backed
+                # investigation is about to conclude that one stored setting
+                # establishes runtime behaviour, but no corresponding Groovy
+                # implementation was read, offer ONE high-information source
+                # opportunity. This runs on actual typed app-config receipts
+                # and the model's proposed interpretation, never a keyword
+                # to device/tool route. No writes become available.
+                if (investigative_request and not configuration_semantics_retry_used
+                        and round_index + 1 < active_round_budget
+                        and not self._mutation_requested_by_user.get()):
+                    semantics_prompt = configuration_semantics_followup(
+                        str(assistant.get("content") or ""),
+                        self.evidence.receipts(),
+                    )
+                    if semantics_prompt:
+                        configuration_semantics_retry_used = True
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit
+                        )
+                        catalog.replace_declared([
+                            *catalog.declared_names,
+                            _LOCAL_GROOVY_SOURCE_TOOL,
+                            "hub_read_apps_code",
+                            SEARCH_TOOL,
+                        ])
+                        if catalog.schemas():
+                            increment_active_metric(
+                                "configuration_semantics_source_retry"
+                            )
+                            messages.extend([
+                                assistant,
+                                {"role": "user", "content": semantics_prompt},
+                            ])
+                            tools = catalog.schemas()
+                            continue
+
                 # A model that selects no new source must not replace a
                 # receipt-grounded partial investigation with an unrelated
                 # generic refusal (for example, a fresh-log retry when the
