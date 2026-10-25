@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 import re
 from typing import Any
+from occupancy_timing_correlation import summarize_supported_off_timing
 
 _GHOST = re.compile(r"(?:false\s+(?:motion|presence|occupancy)|ghost(?:ing|\s+(?:motion|occupancy))|sensors?\s+(?:are|were)\s+(?:triggering\s+falsely|reporting\s+false))", re.I)
 _CERTAIN = re.compile(r"(?:most\s+likely\s+cause|the\s+issue\s+is|because\s+(?:the\s+)?sensors?|working\s+exactly\s+as\s+configured|(?:automation|rule|timer)\s+(?:logic\s+)?(?:is|was)\s+(?:functioning|working)\s+correctly|every\s+observed\s+instance)", re.I)
@@ -104,7 +105,13 @@ def guard_unverified_occupancy_cause(
 ) -> tuple[str, bool]:
     text = str(message or "")
     clean = text.replace("**", "").replace(chr(96), "")
+    positive_timing = summarize_supported_off_timing(evidence)
     if not (_GHOST.search(clean) and _CERTAIN.search(clean)):
+        # Preserve a cautious answer while surfacing direct positive timing.
+        if (positive_timing
+                and "supported inactivity mechanism" not in clean.casefold()
+                and re.search(r"(?:cause not (?:verified|established)|cannot establish(?: the)? cause)", clean, re.I)):
+            return positive_timing + "\n\n" + text, True
         return text, False
     if _UNCERTAIN.search(clean[:900]) and not re.search(
         r"(?:working exactly as configured|the issue is not)", clean, re.I
@@ -134,6 +141,8 @@ def guard_unverified_occupancy_cause(
             + " do not identify the OFF-command app as a triggered listener. "
             "They cannot establish that these sensors controlled its timer."
         )
+    if positive_timing:
+        lines.append(positive_timing)
     lines.append(
         "**Cause not verified:** False or ghost motion remains a possibility, "
         "not a finding. The evidence does not establish that the room was "
