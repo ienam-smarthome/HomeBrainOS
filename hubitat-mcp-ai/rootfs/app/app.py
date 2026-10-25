@@ -39,6 +39,8 @@ from health_audit_service import (
     run_comprehensive_chat_audit,
 )
 from investigation_intelligence import plan_investigation, assess_investigation
+from investigation_checkpoint import is_investigative_question
+from causal_timeline import has_explicit_focal_clock
 from composite_system_audit_policy import is_cross_domain_hub_audit_request
 from targeted_rule_scope_policy import is_targeted_rule_investigation
 from shared_investigation_completion import apply_shared_investigation_completion
@@ -634,6 +636,11 @@ async def _agent_request(request: ChatRequest) -> Any:
             comprehensive_audit or broad_automation_diagnostic
             or broad_performance
             or model_led_investigation_request(request.message)
+            # Open-ended cause investigations should get ONE AI intent choice
+            # even when legacy causal fast paths recognise similar words.
+            # Exact-clock historical events preserve existing bounded reads.
+            or (is_investigative_question(request.message)
+                and not has_explicit_focal_clock(request.message))
             # A natural 'why is my device offline?' question may not contain
             # the old deep-investigation trigger words. It still needs one
             # AI-interpreted objective before any specialist can reclassify it.

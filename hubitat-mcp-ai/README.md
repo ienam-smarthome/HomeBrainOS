@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.111**.
+Current add-on version: **0.18.112**.
 
 ## Architecture
+
+v0.18.112 gives AI interpretation precedence for open-ended read-only investigations, preserves its selected target/purpose in the actual model-led evidence workflow, and prevents the legacy room-inventory shortcut from answering a causal investigation as a device list. Read-only command permissions remain host-enforced. Incomplete source/coverage notes are placed in Technical details as structured `investigation_coverage.limitations`, not appended to the visible answer. See [release notes](CHANGELOG-0.18.112.md).
+
 
 v0.18.111 restores browser request lifecycle state (`activeRequest`, `requestSequence`) accidentally removed during 0.18.110 chat-history cleanup. Without these declarations, the Ask handler throws a JavaScript ReferenceError before POSTing `/api/ask`, and New topic is also broken. The fix keeps the compact, history-free UI and adds a Node-executed click regression covering a live Ask call, follow-up context, and New topic reset. No Hubitat writes. See [release notes](CHANGELOG-0.18.111.md).
 

@@ -82,7 +82,9 @@ def test_fastpath_causal_history_only_is_partial_in_api():
     assert any("Event-history completeness" in warning for warning in response[
         "investigation_coverage"]["sourceIntegrityWarnings"])
     assert response["message"].startswith("Observed device state changes")
-    assert "Investigation completeness: partial" in response["message"]
+    assert "Investigation completeness: partial" not in response["message"]
+    assert response["investigation_coverage"]["presentation"] == "technical-only"
+    assert any("unchecked source classes" in note for note in response["investigation_coverage"]["limitations"])
 
 
 def test_domain_contract_remains_partial_after_required_sources_checked():

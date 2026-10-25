@@ -4130,7 +4130,21 @@ class UnifiedMCPAgent:
         if current_lockout is not None:
             return current_lockout
 
-        inventory_arguments = _device_inventory_arguments(user_prompt)
+        # The legacy deterministic inventory shortcut may serve factual
+        # list requests, never consume an AI-interpreted investigation.
+        # A source/causal objective needs the model to select evidence that
+        # answers WHY, not a list of devices in the same room.
+        investigative_ai_objective = bool(
+            interpreted_kind in {
+                "general_investigation", "device_connectivity",
+                "historical_command", "existing_rule_verification",
+                "source_code",
+            }
+        )
+        inventory_arguments = (
+            None if investigative_ai_objective
+            else _device_inventory_arguments(user_prompt)
+        )
         if inventory_arguments is not None:
             inventory_tool = catalog.available_tool(_LOCAL_DEVICE_INVENTORY_TOOL)
             if inventory_tool is not None:
@@ -4401,6 +4415,24 @@ class UnifiedMCPAgent:
             system_prompt += "\n\n" + task_plan.instruction()
         if adaptive_investigation:
             system_prompt += "\n\n" + READ_ONLY_AGENT_DIRECTIVE
+            if interpreted is not None and investigative_ai_objective:
+                # The model has already interpreted the goal. Carry that
+                # one decision forward through tool choice and final answer.
+                # Its purpose is guidance, NEVER evidence or permission.
+                system_prompt += (
+                    "\n\nAI-INTERPRETED READ-ONLY TASK (ADVISORY)\n"
+                    + "User's exact original question: " + user_prompt[:3000]
+                    + "\nInterpretation: " + str(interpreted.objective)
+                    + "\nTarget: " + str(interpreted.target or "from user question")
+                    + "\nPurpose: " + str(interpreted.purpose or "answer the user's question")
+                    + "\nA room/device inventory is background evidence, NOT "
+                      "a final answer to a causal investigation. Investigate "
+                      "the controlling automation, configured inputs, "
+                      "observed events, and relevant implementation when "
+                      "required. If not verified, say what remains unknown. "
+                      "Do not claim a root cause from inventory alone. "
+                      "Do not change any Hubitat devices or rules."
+                )
             if is_connectivity_root_cause_request(user_prompt):
                 system_prompt += "\n\n" + CONNECTIVITY_EVIDENCE_PLAN
         contract = None if source_investigation else plan_investigation(user_prompt)
