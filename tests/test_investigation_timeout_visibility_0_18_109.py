@@ -37,7 +37,9 @@ def test_deep_light_investigation_is_bounded_not_mutation():
 def test_release_defaults_give_source_investigation_more_room():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     app_source = (APP / "app.py").read_text(encoding="utf-8")
-    assert 'version: "0.18.120"' in config
+    # Current release is independently checked by test_changelog_index;
+    # a deadline regression must not pin a previous release number.
+    assert any(line.startswith('version: "') for line in config.splitlines())
     assert "  investigation_deadline_seconds: 180" in config
     assert '"investigation_deadline_seconds": 180' in app_source
     assert 'OPTIONS.get("investigation_deadline_seconds") or 180' in app_source

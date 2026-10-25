@@ -52,6 +52,10 @@ def requested_event_boundary(prompt: str) -> datetime | None:
 
 def history_window_instruction(prompt: str) -> str:
     """One deterministic clock conversion before the model chooses tools."""
+    from historical_window_integrity import incident_window_instruction
+    interval_instruction = incident_window_instruction(prompt)
+    if interval_instruction:
+        return interval_instruction
     local = requested_event_boundary(prompt)
     if local is None:
         return ""
