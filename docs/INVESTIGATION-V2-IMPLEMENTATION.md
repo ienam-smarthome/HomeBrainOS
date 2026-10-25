@@ -1,51 +1,74 @@
-# Investigation V2 — evidence foundation (first implementation)
+# Investigation V2 — staged evidence-first implementation
 
-This package implements the first **passive** portion of RFC-INVESTIGATION-V2.md.
-It has no runtime invocation from the current orchestration and does not issue
-MCP calls or change devices, apps, rules, permissions or confirmation workflows.
+The merged RFC remains authoritative: [RFC-INVESTIGATION-V2.md](RFC-INVESTIGATION-V2.md).
+This implementation is currently a **passive library**. It is not connected
+to production HomeBrain request routing, MCP execution or final synthesis.
 
-## Current contract
+## Implemented through 0.18.123
 
-`build_case_file(original_question, receipts)` converts recognized successful
-Hubitat device-event and app-log receipts into a request-scoped, UTC-ordered
-`CaseFile`. The typed records preserve the original timestamp/offset, action,
-producer ID *only when explicitly supplied by the event's producedBy field*,
-device target, provenance pointers and epistemic stage.
+- A single canonical case file from timestamped device events and app-log rows.
+  Source clocks and offsets are preserved, observations deduplicated by typed
+  identity, and separate command versus state stages are maintained.
+- An allowlisted adapter for the existing host-produced
+  `typed_existing_rule_partial_settings` projection. Its `config_stored`
+  records have `time_basis=read_observed_at`: they are values read **now**,
+  not proof of installed code's effective semantics on an incident date.
+  Credentials, unapproved fields and UI text are never copied to the case.
+- Prepared, opt-in schemas for `typed_app_execution` and
+  `typed_transport_ack`. These produce distinct epistemic stages **only**
+  from successful, explicit, read-only host receipts with verified IDs and
+  offset-bearing timestamps. Current production may not yet emit these
+  exact types, so the adapters cannot claim unavailable execution evidence.
+  Untyped or textual app logs remain mere log statements.
+- A bounded *model-proposed* read-plan validator. The model is responsible for
+  naming a missing discriminator, information gain and candidate tool. The
+  host verifies the tool exists in the current MCP manifest, that its
+  operation is explicitly advertised or learned from trusted discovery,
+  the arguments match advertised schemas, the target ID was independently
+  resolved, and the call is classified as read-only.
+- Per-request read caps, exact duplicate prevention, and limited suppression
+  of unproductive `hoursBack` growth for already capped history pages. The
+  engine **does not execute** these proposals or decide which hypothesis is
+  correct. No word-based investigative path or named-device exception is used.
 
-A command-issued event is **not** a reported switch transition or independently
-observed physical state. An app log statement is not itself proof of command
-dispatch. The `triggered` listener list does not establish command producers.
+### Contract boundaries
 
-Coverage independently records the query filters, oldest/newest retrieved
-instants, source integrity, truncation, page reach and source completeness.
-Neither successful pagination nor a large `hoursBack` proves completeness.
-Unknown or malformed receipts cannot create typed incident facts.
+`review_model_read_proposals(...)` accepts `MCPTool` objects returned by
+trusted live discovery, `verified_entity_ids` from host resolution and
+`learned_operations` only from actual trusted discovery results. **Never**
+feed values from an LLM assertion into these host-authority parameters.
+Execution must still use the existing MCP executor's permissions, actual
+schemas and write confirmation boundary. This library is preflight only.
 
-Unknown source shapes remain coverage-only until reviewed adapters are added.
-No output validator, model planner or new causal inference is implemented yet.
+`source_complete` requires independent, explicit integrity and completion
+proof. Pagination reaching a requested date or requesting more hours does
+not establish an uninterrupted physical-state timeline. The case remains
+useful even when the actual cause stays unverified.
 
-## Tests
+## Acceptance / smoke tests
 
-`python -m pytest -q tests/test_investigation_v2_evidence.py`
+```bash
+python -m pytest -q tests/test_investigation_v2_evidence.py
+python -m pytest -q tests/test_investigation_v2_adapters_planning.py
+python scripts/run_release_gate.py
+```
 
-The golden fixture is a **sanitized representative extract from the RFC**, not
-a recording of the entire event stream or a complete physical-state history.
-It preserves all six command events and two level reports; it checks the
-off command at 00:41 remains visible without falsely proving physical OFF.
-Other tests cover conflicting device IDs, empty reads, log-versus-command
-semantics, double-source deduplication, generic MQTT/temperature events and
-offset-aware ordering across the UK DST fallback.
+The October overnight fixture is a sanitized representative subset, **not**
+the entire device history. Additional tests cover current-versus-historical
+config values, log-versus-execution, ack-versus-physical state, malicious or
+unknown tool calls, hallucinated targets, duplicated/capped reads and other
+device classes without text-route heuristics.
 
-## Next development boundary
+## Not yet implemented
 
-1. Add explicit reviewed adapters for configuration snapshots, app execution
-   receipts and transport acknowledgement with event-time versus current-time
-   distinction and safe source references.
-2. Build hypothesis/discriminator and planner contracts against this case file,
-   leaving host MCP tool authorization and write confirmation untouched.
-3. Add non-destructive atomic-claim/omission evaluation and V1/V2 replay
-   comparison. Wire **read-only shadow mode first**, then cut over only after
-   tests establish source fidelity and usefulness across unrelated incidents.
+1. Real live MCP read orchestrator and source adapters for all required tools.
+   Verify native logging clock timezone at the source before promoting naive
+   Hubitat log timestamps; never guess a DST fold.
+2. Model-generated hypotheses and iterative tool selection with verified
+   information gain and stopping criteria.
+3. Grounded, **non-destructive** atomic-claim and evidence-omission evaluator.
+4. Read-only shadow comparison V1 versus V2, latency/quality scorecards,
+   source-equivalence checks, feature flag, rollout and removal of V1 guards.
 
-Do not wire the package into the production answer pipeline or claim a runtime
-reasoning improvement from these unit tests alone.
+Do not claim Investigation V2 already outperforms Claude or changes the live
+answer until measured shadow replays and cutover gates are passed.
