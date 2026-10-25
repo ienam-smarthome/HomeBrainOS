@@ -152,7 +152,7 @@ def guard_observed_off_latency_causality(
         "**Assessment:** The two measured OFF responses fit an "
         f"approximately {sum(r['inactiveToCommandSeconds'] for r in selected_rows)/2:.1f}s "
         "observed inactivity-to-command pattern. Whether that reflects "
-        "the installed configured timer requires a verified source/config "
+        "the installed configured timer requires a verified source/configuration "
         "interpretation. The WARN is worth investigating separately; the "
         "current receipts do **not** demonstrate that its slow execution "
         "caused the later ON durations or OFF timing. A state listener is "
