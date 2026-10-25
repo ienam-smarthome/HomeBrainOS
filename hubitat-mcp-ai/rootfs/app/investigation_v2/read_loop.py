@@ -120,7 +120,8 @@ async def run_read_only_investigation(
         raise ValueError("Executor and MCP client must use the same session")
     if not callable(propose):
         raise ValueError("An explicit structured proposal provider is required")
-    if any(not isinstance(row, dict) for row in initial_receipts):
+    initial = list(initial_receipts)
+    if any(not isinstance(row, dict) for row in initial):
         raise ValueError("Initial receipts must be trusted host receipt dictionaries")
 
     max_rounds = max(1, min(4, int(max_rounds)))
@@ -134,7 +135,7 @@ async def run_read_only_investigation(
     tools = await asyncio.wait_for(
         mcp.list_tools(), timeout=min(20.0, max(0.1, deadline - time.monotonic())))
     registry = {t.name: t for t in tools if isinstance(t, MCPTool)}
-    receipts = list(initial_receipts)
+    receipts = initial
     case = build_case_file(question, receipts)
     known_ids = tuple(verified_entity_ids)
     prior_calls: list[tuple[str, Mapping[str, Any]]] = []
