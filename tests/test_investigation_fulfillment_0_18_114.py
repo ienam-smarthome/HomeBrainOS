@@ -106,7 +106,7 @@ def test_catalog_hides_inventory_even_after_read_view_and_expansion():
 
 
 def test_interpreted_intent_controls_fulfillment_independent_of_keywords():
-    request = "Please investigate the machine."
+    request = "Investigate why the machine fails."
     token = set_request_interpretation(
         request, ReadRouteDecision(
             "model_led", "model_choice",
@@ -149,6 +149,7 @@ async def test_actual_agent_boundary_does_not_return_familiar_wrong_inventory(mo
             "homebrain_device_inventory", {"group": "Living Room"},
             success=True, effect="read", mutates=False,
             summary="room identity list", supports_live_claim=True,
+            elapsed_ms=1,
         )
         return ("17 devices in **Living Room**: FP400 motion sensor, "
                 "Livingroom Light 1, Livingroom Soft Sensor.")
