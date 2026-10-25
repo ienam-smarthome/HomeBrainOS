@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.110**.
+Current add-on version: **0.18.111**.
 
 ## Architecture
+
+v0.18.111 restores browser request lifecycle state (`activeRequest`, `requestSequence`) accidentally removed during 0.18.110 chat-history cleanup. Without these declarations, the Ask handler throws a JavaScript ReferenceError before POSTing `/api/ask`, and New topic is also broken. The fix keeps the compact, history-free UI and adds a Node-executed click regression covering a live Ask call, follow-up context, and New topic reset. No Hubitat writes. See [release notes](CHANGELOG-0.18.111.md).
+
 
 v0.18.110 removes the browser-saved multi-chat history, tabs and earlier-message transcript from the HomeBrain web UI, freeing room for the Ask/Speak controls and current response. A lightweight New topic control resets the ephemeral in-page context. Follow-up questions still receive up to eight recent user/assistant messages until the page is reloaded or reset. Legacy browser-saved chat records are cleared on first load of the new UI; no saved conversations are retained. Read-only evidence, technical JSON, model selection and confirmation safeguards remain available. See [release notes](CHANGELOG-0.18.110.md).
 
