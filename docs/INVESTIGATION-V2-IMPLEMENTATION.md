@@ -4,7 +4,7 @@ The merged RFC remains authoritative: [RFC-INVESTIGATION-V2.md](RFC-INVESTIGATIO
 This implementation is currently a **passive library**. It is not connected
 to production HomeBrain request routing, MCP execution or final synthesis.
 
-## Implemented through 0.18.125
+## Implemented through 0.18.126
 
 - A single canonical case file from timestamped device events and app-log rows.
   Source clocks and offsets are preserved, observations deduplicated by typed
@@ -108,14 +108,37 @@ without discarding independently supported observations.
 The acceptance tests use mocked Ollama HTTP through the **real** ChatTransport
 and fake Hubitat MCP reads; no physical devices or hosted providers are called.
 
+## Phase D: atomic claim verifier and targeted revision (0.18.126)
+
+`atomic_claims.review_atomic_claims` treats each model-proposed factual
+observation as **one typed claim**. Its asserted stage, action, value, device
+target, actual producer, UTC time and observation time basis must all match
+the canonical record exactly. Source IDs alone do not certify what an event
+means. Unknown records, swapped actors, command-to-physical-state promotion,
+fabricated completion or additional unverifiable free-form prose are refused.
+
+`apply_targeted_repair` may accept replacements **only for claim IDs
+that failed the first audit**. It cannot change an already approved claim or
+introduce unrelated IDs. `synthesize_atomic_with_chat` allows at most one
+no-tools model repair response, then uses the existing host evidence renderer
+to retain every material command and explicitly qualify hypotheses.
+
+`evaluate_v2_with_model(enable_atomic_claim_validation=True)` activates
+this path **only when the caller already supplied explicit V2 experiment
+authorisation**. The option defaults to False, so no legacy evaluation or
+production response behavior changes. The current renderer intentionally
+does not accept arbitrary model-authored narrative as a verified factual
+claim; a broader causal prose capability requires separate clause-level
+evidence checking and objective quality validation.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
 2. Measured hypothesis usefulness and objective stopping policies beyond
    initial round/read limits.
-3. Bounded model-authored prose with atomic claim-to-evidence verification
-   and targeted revision rather than final-answer wholesale rewriting.
-4. Read-only shadow comparison V1 versus V2, quality/latency scorecards,
+3. Grounded, fluent model-authored explanatory prose with trustworthy
+   cross-source causal claim checking beyond exact observation claims.
+4. Read-only V1/V2/Claude comparison with benchmarked quality/latency,
    safe feature flag, production cutover and retirement of V1 guards.
 
 Do not claim Investigation V2 already outperforms Claude or changes the live
