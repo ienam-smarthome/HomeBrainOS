@@ -634,6 +634,11 @@ async def _agent_request(request: ChatRequest) -> Any:
             comprehensive_audit or broad_automation_diagnostic
             or broad_performance
             or model_led_investigation_request(request.message)
+            # Open-ended cause investigations should get ONE AI intent choice
+            # even when legacy causal fast paths recognise similar words.
+            # Exact-clock historical events preserve existing bounded reads.
+            or (is_investigative_question(request.message)
+                and not has_explicit_focal_clock(request.message))
             # A natural 'why is my device offline?' question may not contain
             # the old deep-investigation trigger words. It still needs one
             # AI-interpreted objective before any specialist can reclassify it.
