@@ -36,10 +36,22 @@ def incident_first_proposals(
     ids = tuple(str(x) for x in verified_ids if str(x).isdecimal())[:1]
     if not ids:
         return []
+    args = {"deviceId": ids[0], "hoursBack": hours, "limit": limit}
+    # Some verified read manifests require a named attribute, while others
+    # support an unfiltered event page (needed to retain issued commands).
+    nested = properties.get("args", {}) if isinstance(properties, dict) else {}
+    required = nested.get("required", []) if isinstance(nested, dict) else []
+    if isinstance(required, list) and "attribute" in required:
+        fields = nested.get("properties", {})
+        field = fields.get("attribute", {}) if isinstance(fields, dict) else {}
+        choices = field.get("enum", []) if isinstance(field, dict) else []
+        if isinstance(choices, list) and choices and "switch" not in choices:
+            return []
+        args["attribute"] = "switch"
     return [{
         "tool": gateway.name,
         "arguments": {"tool": "hub_list_device_events",
-                      "args": {"deviceId": ids[0], "hoursBack": hours, "limit": limit}},
+                      "args": args},
         "discriminator": f"Incident source coverage for verified target {ids[0]} at page size {limit}",
         "information_gain": "Retain target-period commands and reported states before drawing hypotheses",
         "hypothesis_ids": [],
