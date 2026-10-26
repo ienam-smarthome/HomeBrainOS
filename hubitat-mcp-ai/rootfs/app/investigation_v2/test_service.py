@@ -51,7 +51,7 @@ def match_verified_device_ids(requested: Iterable[str],
 def _words(value: str) -> tuple[str, ...]:
     if not isinstance(value, str):
         return ()
-    return tuple(re.findall(r"[^\\W_]+", unicodedata.normalize("NFKC", value).casefold(),
+    return tuple(re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", value).casefold(),
                             flags=re.UNICODE))
 
 
@@ -94,15 +94,18 @@ def resolve_verified_device_subjects(
     Otherwise identify longest whole-name mentions in the question. Ambiguous
     identity is never silently converted into a device read.
     """
-    inventory = _inventory(live_devices)
     requested_ids = list(device_ids)
     if requested_ids:
         ids = match_verified_device_ids(requested_ids, live_devices)
+        labels = {str(row["id"]): str(row.get("label") or row.get("name") or "Device")
+                  for row in live_devices if isinstance(row, dict)
+                  and type(row.get("id")) in (str, int)}
         return ids, [
-            {"id": ident, "label": inventory.get(ident, {}).get("label", "Device " + ident)}
+            {"id": ident, "label": labels.get(ident, "Device " + ident)}
             for ident in ids
         ], "manual_id"
 
+    inventory = _inventory(live_devices)
     hint = (device_name or "").strip()
     if hint:
         key = _words(hint)
@@ -127,7 +130,7 @@ def resolve_verified_device_subjects(
             # normal prose. They remain accessible via exact friendly-name hint.
             if not words or (len(words) == 1 and len(words[0]) < 6):
                 continue
-            expression = r"(?<!\\w)" + r"[\\W_]+".join(map(re.escape, words)) + r"(?!\\w)"
+            expression = r"(?<!\w)" + r"[\W_]+".join(map(re.escape, words)) + r"(?!\w)"
             for match in re.finditer(expression, normalized):
                 mentions.append((match.start(), match.end(), item["id"], item["label"],
                                  len("".join(words))))
