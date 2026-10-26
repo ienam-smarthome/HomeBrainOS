@@ -67,7 +67,7 @@ def plan(**extra):
 def test_general_power_ranking_never_mixes_a_site_total_with_downstream_loads():
     output=execute_inventory_plan(plan(measurement_roles=HINTS),DEVICES,PROVENANCE)
     report=output["answer"]["text"]
-    lines=[line for line in report.splitlines() if " — " in line]
+    lines=[line for line in report.splitlines() if line.startswith("• ")]
     assert len(lines)>=5
     assert "Fridge" in lines[0]
     assert "Fan Switch" in lines[1]
@@ -113,7 +113,7 @@ def test_unclassified_site_meter_is_disclosed_as_a_provisional_measurement():
     out=execute_inventory_plan(plan(),DEVICES,PROVENANCE)
     assert out["inventory_query"]["unclassified_measurement_scopes"]>=6
     assert "unknown or unconfirmed" in out["answer"]["text"]
-    assert "classification not independently verified" not in out["answer"]["text"]
+    assert "Provider Live Meter" in out["answer"]["text"]\n    assert out["inventory_query"]["suppressed_overlapping_meters"][0]["label"]=="Electrical Submeter"
     # Without confirmed or inferred metadata we must not silently claim that
     # all displayed meters are individual loads.
     assert out["answer"]["validation_issues"]
