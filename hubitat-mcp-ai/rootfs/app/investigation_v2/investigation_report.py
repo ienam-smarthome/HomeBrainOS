@@ -75,11 +75,29 @@ def format_investigation_report(
     lines.append("")
     lines.append("**Recorded timeline** (commands and reported states are different evidence)")
     if records:
-        lines.extend(["| Local time | Observation | Source |", "|---|---|---|"])
-        chosen=records if len(records)<=14 else records[:6]+records[-8:]
+        if window is not None:
+            names = {datetime.fromisoformat(row.timestamp_utc)
+                     .astimezone(ZoneInfo(window.zone_name)).tzname()
+                     for row in records}
+            if len(names) > 1 and "BST" in names and "GMT" in names:
+                lines.append("Times are local. UK clocks went back from BST to GMT on 25 October; the repeated hour is shown with its timezone.")
+        known = sum(bool(row.producer_id) for row in records)
+        show_source = known * 4 >= len(records)
+        if not show_source:
+            lines.append("**Source note:** Issuing apps are not identified for most returned records. Missing source metadata is not evidence of manual control.")
+        lines.extend(
+            ["| Local time | Observation | Source |", "|---|---|---|"]
+            if show_source else
+            ["| Local time | Observation |", "|---|---|"]
+        )
+        priority = [row for row in records
+                    if row.stage == "command_issued"
+                    or row.action in ("switch", "level", "networkStatus")]
+        chosen = priority if len(priority)<=14 else priority[:6]+priority[-8:]
         for row in chosen:
-            lines.append(f"| {_time(row,window)} | {_event(row)} | {_actor(row)} |")
-        if len(chosen)!=len(records):
+            cols = f"| {_time(row,window)} | {_event(row)}"
+            lines.append(cols + (f" | {_actor(row)} |" if show_source else " |"))
+        if len(chosen) < len(records):
             lines.append(f"{len(records)-len(chosen)} additional observations appear in the technical report.")
     else:
         lines.append("No incident records were recovered from the queried sources.")
@@ -102,6 +120,34 @@ def format_investigation_report(
         lines.append("The command sequence is available, but no directly linked competing-controller sequence is yet established.")
     else:
         lines.append("No issued command supports identifying the initiating controller.")
+    set_levels = [row for row in commands if row.action == "command-setLevel"]
+    if set_levels:
+        lines.append(
+            "A `setLevel()` command on a dimmable light commonly turns it ON while "
+            "setting brightness, including when it was previously OFF. Here it "
+            "shows the controller's intent, not independent confirmation that "
+            "the bulb actually lit."
+        )
+    offs = [row for row in commands if row.action == "command-off"]
+    if offs:
+        last_off = offs[-1]
+        lines.append(
+            f"Another OFF was issued at {_time(last_off,window)}. "
+            "Without a subsequent independently reported switch state, "
+            "we cannot establish that the bulb obeyed it."
+        )
+    offline = [row for row in records if row.action == "networkStatus" and row.value == "offline"]
+    online = [row for row in records if row.action == "networkStatus" and row.value == "online"]
+    if offline:
+        nearest = next((on for on in online if
+                        on.timestamp_utc > offline[0].timestamp_utc), None)
+        lines.append(
+            f"A network-offline state was reported at {_time(offline[0],window)}"
+            + (f", followed by an online report at {_time(nearest,window)}"
+               if nearest else "")
+            + ". This warrants checking connectivity but does not prove "
+              "that a later command failed."
+        )
 
     backed=[h for h in hypotheses if h.supporting_record_ids or h.conflicting_record_ids]
     if backed:

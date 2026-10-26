@@ -29,6 +29,32 @@ def _id(value: Any) -> str | None:
     return candidate if _ID.fullmatch(candidate) else None
 
 
+def _source_producer_id(raw: Any) -> str | None:
+    """Hubitat command producer: typed ID or trusted relative app-link shape.
+
+    The live event endpoint sometimes returns producedBy as a relative HTML
+    anchor, not a dictionary. Extract *only* an anchored installed-app ID;
+    never retain the HTML, arbitrary label, href, or triggered listeners.
+    """
+    if isinstance(raw, dict):
+        candidates = [_id(raw.get(k)) for k in ("id", "appId", "deviceId")]
+        values = {x for x in candidates if x}
+        if len(values) != 1:
+            return None
+        kind = raw.get("type")
+        if kind is not None and (not isinstance(kind, str)
+                                or kind.casefold() not in ("app", "device", "hub", "automation")):
+            return None
+        return next(iter(values))
+    if isinstance(raw, str) and len(raw) <= 650:
+        match = re.search(
+            r"""<a\\b[^>]{0,300}\\bhref\\s*=\\s*['"]/installedapp/configure/([0-9]{1,20})['"][^>]{0,300}>""",
+            raw, re.IGNORECASE,
+        )
+        return _id(match.group(1)) if match else None
+    return None
+
+
 def _timestamp(value: Any) -> str | None:
     if not isinstance(value, str) or len(value) > 64:
         return None
@@ -72,8 +98,8 @@ def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindo
             event["value"] = value
         elif isinstance(value, str) and _SHORT_VALUE.fullmatch(value):
             event["value"] = value
-        producer = row.get("producedBy")
-        if isinstance(producer, dict) and (producer_id := _id(producer.get("id"))):
+        producer_id = _source_producer_id(row.get("producedBy"))
+        if producer_id:
             # No producer labels, free-form summaries or triggered listeners.
             event["producedBy"] = {"id": producer_id}
         result.append(event)

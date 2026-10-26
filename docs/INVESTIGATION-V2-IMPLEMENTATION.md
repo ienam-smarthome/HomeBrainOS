@@ -204,6 +204,16 @@ name or exact ID override uses the same host-verification boundary. The model
 never invents or grants device IDs; all downstream MCP read-only checks remain.
 Normal V1 is unaffected.
 
+## Source provenance and qualified explanation (0.18.131)
+
+The V2 receipt adapter also recognizes the existing structural Hubitat
+`producedBy` representation as a relative `/installedapp/configure/<id>`
+link; only the app ID survives projection (neither HTML nor unverified label).
+Reports avoid an all-empty source column, explain UK autumn DST transitions
+and interpret dimmer `setLevel` as probable ON intent, not physical proof.
+Planner timeouts remain explicitly flagged and are not silently treated as
+successful multi-source reasoning.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

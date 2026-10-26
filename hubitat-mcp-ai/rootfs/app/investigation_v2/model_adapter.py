@@ -37,7 +37,10 @@ _PLAN_SYSTEM = (
     "covering that period using a valid since/limit or sufficiently large "
     "hoursBack/limit, not just the most recent event page. Treat off-window "
     "events as context, not incident evidence. Do not silently replace a "
-    "historical investigation with newer observations."
+    "historical investigation with newer observations. "
+    "Explain setLevel as possible turn-on intent for a dimmer without claiming "
+    "physical execution; a later off command is still not switch-off proof. "
+    "Separate source observations, tentative alternatives and decisive reads."
 )
 
 

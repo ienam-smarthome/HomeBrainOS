@@ -240,6 +240,9 @@ async def run_read_only_investigation(
             raise
         except asyncio.TimeoutError:
             reason = "planning_timeout"
+            # No additional MCP reads or model-authored conclusions are
+            # permitted here. Preserve the incident observations for the
+            # standalone source-linked report and explain this coverage gap.
             break
         except Exception:
             reason = "planning_unavailable"
