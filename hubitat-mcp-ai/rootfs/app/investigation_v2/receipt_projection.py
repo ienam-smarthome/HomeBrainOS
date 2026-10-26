@@ -20,7 +20,7 @@ _EVENT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]{0,79}$")
 _SHORT_VALUE = re.compile(r"^[A-Za-z0-9 _.,:;@+/-]{0,80}$")
 _MAX_ROWS = 120
 _MAX_SCAN = 2000  # bound untrusted source pages before incident filtering
-_CATALOG_LABEL = re.compile(r"^[\\w][\\w .,:+()'’/\\-–&]{0,100}$", re.UNICODE)
+_CATALOG_LABEL = re.compile(r"^[\w][ \w.,:+()'’/\-–&]{0,100}$", re.UNICODE)
 _PRIVATE_TERMS = ("password", "api_key", "apikey", "bearer", "token", "credential", "secret")
 
 
