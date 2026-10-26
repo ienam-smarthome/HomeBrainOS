@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.137**.
+Current add-on version: **0.18.138**.
 
 ## Architecture
+
+v0.18.138 adds host-local calendar resolution for 'today'/'yesterday', safe short-name identity matching for noun phrases, independently verified device ID completion for read requests, and deterministic switch ON/OFF duration calculation with explicit coverage caveats. See [release notes](CHANGELOG-0.18.138.md).
+
 
 v0.18.137 attaches bounded, privacy-safe failure classifications to failed V2 MCP reads, displaying them in the summary and technical report without exposing raw server exceptions. See [release notes](CHANGELOG-0.18.137.md).
 

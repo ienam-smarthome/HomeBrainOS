@@ -303,6 +303,26 @@ doesn't exist, and an operation that only returns coverage does not become
 a verified historical state. Live tests should compare cause codes from
 previously opaque app/source calls while retaining unchanged write gates.
 
+## Relative time and interval-answer mode (0.18.138)
+
+V2 resolves explicit 'today' and 'yesterday' periods from the hub's IANA
+calendar zone and a server-side, timezone-aware request clock. This mode
+retains timezone ambiguity guards and never infers historical coverage solely
+from page reach. Single-word device labels shorter than six characters are
+admitted from an unambiguous, complete noun phrase ('the TV', 'my fan'), not
+from incidental short words. Tool proposals missing deviceId can be completed
+only from exactly one independently verified Hubitat device ID, without
+changing a supplied/contradictory target and without bypassing normal
+manifest/schema/effect gates.
+
+For explicit state-duration questions, the host reads bounded history then
+calculates ON/OFF sessions from actual state-reported 'switch' transitions,
+not command intentions or model-generated timestamps. No event means no
+numeric duration, and an open final session is projected only to the request
+time with explicit unverified-current-state and incomplete-source caveats.
+This generic pathway is not tied to TV IDs or product-specific terminology,
+leaves production V1 intact and never executes a device command.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

@@ -54,7 +54,8 @@ class IncidentWindow:
         return max(1, int(math.ceil((now.astimezone(timezone.utc)-start).total_seconds()/3600)) + 1)
 
 
-def explicit_incident_window(question: str, *, zone_name: str) -> IncidentWindow | None:
+def explicit_incident_window(question: str, *, zone_name: str,
+                             now: datetime | None = None) -> IncidentWindow | None:
     if not isinstance(question, str):
         return None
     try:
@@ -64,6 +65,30 @@ def explicit_incident_window(question: str, *, zone_name: str) -> IncidentWindow
     match = _RANGE.search(question)
     single = _SINGLE.search(question) if not match else None
     iso = _ISO_RANGE.search(question) if not match and not single else None
+    # Relative periods must be resolved against the trusted hub timezone,
+    # not by prompting the LLM to guess an hour or assume UTC midnight.
+    if not (match or single or iso):
+        period = re.search(r"\b(today|yesterday)\b", question, re.I)
+        if period is not None:
+            reference = now or datetime.now(timezone.utc)
+            if reference.tzinfo is None or reference.utcoffset() is None:
+                return None
+            local = reference.astimezone(zone)
+            day = local.date()
+            if period.group(1).casefold() == "yesterday":
+                start_day = day - timedelta(days=1)
+                start = datetime.combine(start_day, time.min, tzinfo=zone)
+                end = datetime.combine(day, time.min, tzinfo=zone)
+                wording = "yesterday: local midnight to next local midnight"
+            else:
+                start = datetime.combine(day, time.min, tzinfo=zone)
+                end = local
+                wording = "today: local midnight to request time"
+            return IncidentWindow(
+                start_utc=start.astimezone(timezone.utc).isoformat(),
+                end_utc=end.astimezone(timezone.utc).isoformat(),
+                zone_name=zone_name, interpretation=wording,
+            )
     try:
         if match:
             first, last = date(int(match[4]), _MONTHS[match[3].lower()], int(match[1])), date(

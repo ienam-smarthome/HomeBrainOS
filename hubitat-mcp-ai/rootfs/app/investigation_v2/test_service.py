@@ -126,12 +126,19 @@ def resolve_verified_device_subjects(
     for item in inventory.values():
         for alias in item["aliases"]:
             words = _words(alias)
-            # Single generic labels (e.g. TV, ON, Fan) can accidentally match
-            # normal prose. They remain accessible via exact friendly-name hint.
-            if not words or (len(words) == 1 and len(words[0]) < 6):
+            if not words:
                 continue
+            short_alias = len(words) == 1 and len(words[0]) < 6
             expression = r"(?<!\w)" + r"[\W_]+".join(map(re.escape, words)) + r"(?!\w)"
             for match in re.finditer(expression, normalized):
+                if short_alias:
+                    # A short label is admissible only when used as a device
+                    # noun phrase ("the TV", "my fan"), not merely as an
+                    # incidental word such as "on" or a suffix of Google TV.
+                    # Overlapping longer aliases still win below.
+                    before = normalized[max(0, match.start()-18):match.start()]
+                    if not re.search(r"\b(?:the|my|our|this|that)\s+$",before):
+                        continue
                 mentions.append((match.start(), match.end(), item["id"], item["label"],
                                  len("".join(words))))
     if not mentions:

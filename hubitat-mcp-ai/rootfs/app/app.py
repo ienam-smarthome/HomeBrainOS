@@ -1403,7 +1403,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         # unavailable, do not silently invent a calendar: use UTC and show
         # the fallback basis in the explicit window metadata.
         zone_name = "UTC"
-        if re.search(r"\d{1,2}\s*(?:-|–|—|to)\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}",
+        if re.search(r"\d{1,2}\s*(?:-|–|—|to)\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}|\b(?:today|yesterday)\b",
                      payload.question, re.I):
             try:
                 _now_local, resolved_zone, _zone_basis = await _health_timezone.now_in_hub_timezone(
@@ -1412,7 +1412,10 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     zone_name = resolved_zone
             except Exception:
                 pass
-        incident_window = explicit_incident_window(payload.question, zone_name=zone_name)
+        incident_window = explicit_incident_window(
+            payload.question, zone_name=zone_name,
+            now=datetime.now(timezone.utc),
+        )
         started = time.perf_counter()
         try:
             evaluated = await evaluate_v2_with_model(
@@ -1425,6 +1428,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 enable_evidence_narrative=True,
                 max_rounds=3, max_total_reads=8,
                 incident_window=incident_window,
+                verified_device_label=resolved[0]["label"] if len(resolved)==1 else None,
             )
         except asyncio.CancelledError:
             raise
