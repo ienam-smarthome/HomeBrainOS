@@ -5,7 +5,8 @@ renders source events and *possibilities* in conversational format, retaining
 canonical record identifiers and complete command history in the audit output.
 """
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
+import re
 from zoneinfo import ZoneInfo
 from .evidence import CaseFile, EvidenceItem
 from .read_loop import Hypothesis
@@ -76,6 +77,39 @@ def format_investigation_report(
     if not any(c.source_complete is True for c in case.coverage):
         lines.append("The historical source is not independently proven complete.")
 
+    # Compare the source-reported lastSeen to the actual oldest returned
+    # event. This is a coverage gap, not evidence that a particular event did
+    # not occur. A malformed or ambiguous date cannot create a claim.
+    if case.device_snapshots and records:
+        attrs = case.device_snapshots[-1].get("attributes", {})
+        last_seen = attrs.get("lastSeen") if isinstance(attrs, dict) else None
+        if isinstance(last_seen, str):
+            match = re.fullmatch(
+                r"((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) "
+                r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
+                r"\d{1,2} \d{2}:\d{2}:\d{2}) (BST|GMT) (\d{4})",
+                last_seen,
+            )
+            if match:
+                try:
+                    local = datetime.strptime(
+                        match.group(1) + " " + match.group(3),
+                        "%a %b %d %H:%M:%S %Y",
+                    ).replace(tzinfo=ZoneInfo("Europe/London"))
+                    oldest = min(records, key=lambda row: row.timestamp_utc)
+                    earliest = datetime.fromisoformat(oldest.timestamp_utc)
+                    if (local.tzname() == match.group(2)
+                            and local.astimezone(timezone.utc) < earliest):
+                        lines.append(
+                            "**History gap:** reported lastSeen is "
+                            f"{last_seen}, but the earliest retrieved "
+                            f"event is {_time(oldest, window)}. "
+                            "This source page does not establish the "
+                            "intervening history or the physical failure cause."
+                        )
+                except (ValueError, TypeError, OverflowError):
+                    pass
+
     lines.append("")
     if case.device_snapshots:
         latest = case.device_snapshots[-1]
@@ -94,19 +128,35 @@ def format_investigation_report(
             if len(names) > 1 and "BST" in names and "GMT" in names:
                 lines.append("Times are local. UK clocks went back from BST to GMT on 25 October; the repeated hour is shown with its timezone.")
         known = sum(bool(row.producer_id) for row in records)
-        show_source = known * 4 >= len(records)
+        # Even when most state reports have no known issuer, preserve
+        # attribution for a concrete issued command.
+        show_source = (known * 4 >= len(records)
+                       or any(row.producer_id for row in commands))
+        clock_heading = "Local time" if window is not None else "UTC time"
         if not show_source:
             lines.append("**Source note:** Issuing apps are not identified for most returned records. Missing source metadata is not evidence of manual control.")
         lines.extend(
-            ["| Local time | Observation | Source |", "|---|---|---|"]
+            [f"| {clock_heading} | Observation | Source |", "|---|---|---|"]
             if show_source else
-            ["| Local time | Observation |", "|---|---|"]
+            [f"| {clock_heading} | Observation |", "|---|---|"]
         )
         priority = [row for row in records
                     if row.stage == "command_issued"
-                    or row.action in ("switch", "level", "networkStatus")]
+                    or row.action in ("switch", "level", "networkStatus",
+                                      "mqttStatus", "healthStatus", "deviceHealth")]
         if priority:
-            chosen = priority if len(priority)<=14 else priority[:6]+priority[-8:]
+            # Do not let repeated health statuses hide earlier MQTT changes
+            # or an issued command. Source rows remain fully available in
+            # the technical answer.
+            critical = [r for r in priority if r.stage == "command_issued"
+                        or r.action in ("switch", "level", "networkStatus")]
+            mqtt = [r for r in priority if r.action == "mqttStatus"]
+            health = [r for r in priority if r.action in ("deviceHealth", "healthStatus")]
+            focused = critical[:8] + mqtt[:6] + (
+                health[:1] + health[-1:] if len(health)>2 else health
+            )
+            selected = {r.record_id for r in focused}
+            chosen = [r for r in records if r.record_id in selected][:14]
         else:
             # Preserve a useful timeline when events only contain health
             # or connectivity reports; do not create a blank table.
@@ -114,10 +164,24 @@ def format_investigation_report(
         for row in chosen:
             cols = f"| {_time(row,window)} | {_event(row)}"
             lines.append(cols + (f" | {_actor(row,case)} |" if show_source else " |"))
+        health_flips = [r for r in records if r.action == "deviceHealth"]
+        if len(health_flips) >= 4:
+            values = {r.value for r in health_flips}
+            alternating = all(a.value != b.value for a,b in
+                              zip(health_flips, health_flips[1:]))
+            if values == {"stale", "unknown"} and alternating:
+                lines.append(
+                    f"**Repeated status changes:** {len(health_flips)} "
+                    "deviceHealth observations alternated between stale "
+                    "and unknown. This does not establish fresh contact "
+                    "from the physical device."
+                )
         if len(chosen) < len(records):
             lines.append(f"{len(records)-len(chosen)} additional observations appear in the technical report.")
     else:
         lines.append("No incident records were recovered from the queried sources.")
+    if window is None and records:
+        lines.append("Times above are UTC; original source-clock timestamps remain in Investigation details.")
 
     lines.extend(["", "**Most useful lead**"])
     pairs=[(a,b) for i,a in enumerate(commands) for b in commands[i+1:]
