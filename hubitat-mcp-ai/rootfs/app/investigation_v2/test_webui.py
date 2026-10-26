@@ -290,6 +290,7 @@ el('run').onclick=async()=>{
       reads_executed:data.investigation?.executed_reads,
       read_rejection_reasons:data.investigation?.rejected_proposals,
       planning_diagnostics:data.investigation?.planning_diagnostics,
+      bootstrap_diagnostics:data.investigation?.bootstrap_diagnostics,
       history_comparison:data.investigation?.history_comparison,
       read_failures:data.investigation?.read_failures,
 

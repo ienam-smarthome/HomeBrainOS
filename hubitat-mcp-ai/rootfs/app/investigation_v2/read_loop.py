@@ -27,6 +27,7 @@ from .hypothesis_temporal_integrity import hypothesis_clock_issues
 from .source_identity import source_identity_proposals, source_configuration_proposals
 from .read_diagnostics import classify_exception, classify_execution
 from .device_context import device_context_proposals
+from .operation_discovery import discover_device_operations
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class InvestigationResult:
     planning_diagnostics: list[dict[str, Any]] = field(default_factory=list)
     history_comparison: dict[str, Any] = field(default_factory=dict)
     read_failures: list[dict[str, Any]] = field(default_factory=list)
+    bootstrap_diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         # No raw tool text, credentials, IPs or model transport responses.
@@ -64,6 +66,7 @@ class InvestigationResult:
             "planning_diagnostics": list(self.planning_diagnostics),
             "history_comparison": dict(self.history_comparison),
             "read_failures": list(self.read_failures),
+            "bootstrap_diagnostics": list(self.bootstrap_diagnostics),
             "root_cause_verified": False,
             "production_answer_used": False,
             "requested_incident_window": (self.incident_window.to_dict()
@@ -249,6 +252,11 @@ async def run_read_only_investigation(
     rejections: list[str] = []
     planning_diagnostics: list[dict[str, Any]] = []
     read_failures: list[dict[str, Any]] = []
+    bootstrap_diagnostics: list[dict[str, Any]] = []
+    verified_operations: dict[str, set[str]] = {}
+    for name, operations in (learned_operations or {}).items():
+        if isinstance(name, str) and isinstance(operations, (set, frozenset)):
+            verified_operations[name] = set(operations)
     executed = 0
     rounds = 0
     reason = "round_budget_reached"
@@ -331,7 +339,7 @@ async def run_read_only_investigation(
                 break
             approved = review_model_read_proposals(
                 case, proposals, registry.values(), verified_entity_ids=known_ids,
-                learned_operations=learned_operations, previous_calls=prior_calls,
+                learned_operations=verified_operations, previous_calls=prior_calls,
                 max_total_reads=max_total_reads, max_reads_this_round=1,
                 budget_used_reads=executed, incident_window=incident_window)
             rejections.extend(x.reason for x in approved.rejected)
@@ -359,28 +367,50 @@ async def run_read_only_investigation(
             read_failures=read_failures,
         )
 
-    # Current-state and transition-history preflight for explicitly opted-in,
-    # undated single-device investigations. The live MCP manifest and existing
-    # identity/schema/effect gates authorise every operation. This protects
-    # investigation quality when the model hallucinates a tool name.
+    # Read-first V2 bootstrap: positive current-session discovery can fill
+    # absent generic gateway enums; it never supersedes an explicit denial.
     if (bootstrap_device_context and incident_window is None
             and len(set(known_ids)) == 1 and not stop_after_incident_history):
+        discovered, checks = await discover_device_operations(
+            registry.values(), executor,
+            deadline_remaining=max(0.0, min(12.0, deadline - time.monotonic())),
+        )
+        bootstrap_diagnostics.extend(checks)
+        for name, ops in discovered.items():
+            verified_operations.setdefault(name, set()).update(ops)
         for stage in ("current", "history"):
             if executed >= max_total_reads or time.monotonic() >= deadline:
+                bootstrap_diagnostics.append({
+                    "stage": stage, "reason": "read_or_time_budget_exhausted"})
                 break
             proposals = device_context_proposals(
-                registry.values(), known_ids, case, stage=stage)
+                registry.values(), known_ids, case, stage=stage,
+                learned_operations=verified_operations,
+            )
             if not proposals:
+                bootstrap_diagnostics.append({
+                    "stage": stage, "reason": "no_authorised_live_operation_or_schema"})
                 continue
             approved = review_model_read_proposals(
                 case, proposals, registry.values(), verified_entity_ids=known_ids,
-                learned_operations=learned_operations, previous_calls=prior_calls,
+                learned_operations=verified_operations, previous_calls=prior_calls,
                 max_total_reads=max_total_reads, max_reads_this_round=1,
                 budget_used_reads=executed, incident_window=incident_window,
             )
             rejections.extend(x.reason for x in approved.rejected)
+            if not approved.approved:
+                bootstrap_diagnostics.append({
+                    "stage": stage, "reason": "read_plan_rejected",
+                    "validation": [r.reason for r in approved.rejected[:3]],
+                })
             for item in approved.approved:
+                before = len(read_failures)
                 await execute_checked_read(item, -4 if stage == "current" else -5)
+                bootstrap_diagnostics.append({
+                    "stage": stage,
+                    "status": ("read_attempt_failed" if len(read_failures) > before
+                               else "read_attempt_completed"),
+                })
 
     # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
     # replacement for model planning. It can make useful progress even when
@@ -390,7 +420,7 @@ async def run_read_only_investigation(
         if proposals:
             approved = review_model_read_proposals(
                 case, proposals, registry.values(), verified_entity_ids=known_ids,
-                learned_operations=learned_operations, previous_calls=prior_calls,
+                learned_operations=verified_operations, previous_calls=prior_calls,
                 max_total_reads=max_total_reads, max_reads_this_round=1,
                 budget_used_reads=executed, incident_window=incident_window,
             )
@@ -406,7 +436,7 @@ async def run_read_only_investigation(
         if proposals:
             approved = review_model_read_proposals(
                 case, proposals, registry.values(), verified_entity_ids=known_ids,
-                learned_operations=learned_operations, previous_calls=prior_calls,
+                learned_operations=verified_operations, previous_calls=prior_calls,
                 max_total_reads=max_total_reads, max_reads_this_round=1,
                 budget_used_reads=executed, incident_window=incident_window,
             )
@@ -465,7 +495,7 @@ async def run_read_only_investigation(
         planned = scope_model_reads_to_verified_target(planned, known_ids)
         review = review_model_read_proposals(
             case, planned, registry.values(), verified_entity_ids=known_ids,
-            learned_operations=learned_operations,
+            learned_operations=verified_operations,
             previous_calls=prior_calls, max_total_reads=max_total_reads,
             max_reads_this_round=max_reads_per_round,
             budget_used_reads=executed,
@@ -512,7 +542,7 @@ async def run_read_only_investigation(
         rejected_proposals=rejections, incident_window=incident_window,
         planning_diagnostics=planning_diagnostics,
         history_comparison=compare_history_samples(receipts),
-        read_failures=read_failures,
+        read_failures=read_failures, bootstrap_diagnostics=bootstrap_diagnostics,
     )
 
 

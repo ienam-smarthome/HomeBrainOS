@@ -6,29 +6,54 @@ No network request, write or trusted inference happens in this module.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import math
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 from .evidence import CaseFile
 
 
-def _gateway(tools: Iterable[MCPTool], operation: str) -> MCPTool | None:
+def _gateway(
+    tools: Iterable[MCPTool], operation: str, *,
+    learned_operations: Mapping[str, set[str]] | None = None,
+) -> MCPTool | None:
+    """Require positive live schema enum or exact same-session discovery.
+
+    Gateway names or static operation knowledge are never sufficient. An
+    explicit live enum that excludes the operation is authoritative even if
+    fuzzy discovery returned a conflicting result.
+    """
+    learned = learned_operations or {}
     for tool in tools:
         if not isinstance(tool, MCPTool) or tool.name != "hub_read_devices":
             continue
         if classify_tool_effect(tool, {}) is not ToolEffect.READ:
             continue
         ann = tool.annotations if isinstance(tool.annotations, dict) else {}
-        if ann.get("readOnlyHint") is False or ann.get("mutates") is True or ann.get("destructiveHint") is True:
+        if (ann.get("readOnlyHint") is False or ann.get("mutates") is True
+                or ann.get("destructiveHint") is True):
             continue
-        props = tool.input_schema.get("properties", {}) if isinstance(tool.input_schema, dict) else {}
+        props = (tool.input_schema.get("properties", {})
+                 if isinstance(tool.input_schema, dict) else {})
         op_schema = props.get("tool", {}) if isinstance(props, dict) else {}
-        if operation in op_schema.get("enum", []):
+        explicit = op_schema.get("enum") if isinstance(op_schema, dict) else None
+        if isinstance(explicit, list):
+            if operation in explicit:
+                return tool
+        elif operation in learned.get(tool.name, set()):
             return tool
     return None
+
+
+def _accepts_field(schema: dict[str, Any], field: str) -> bool:
+    fields = schema.get("properties", {})
+    return (isinstance(fields, dict) and field in fields
+            or schema.get("additionalProperties") is not False
+            and schema.get("type") in ("object", None))
+
 
 
 def _args_schema(tool: MCPTool) -> dict[str, Any]:
@@ -65,7 +90,20 @@ def _last_reported_age_hours(case: CaseFile, ident: str) -> int | None:
             if not isinstance(stamp, str):
                 continue
             try:
-                moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                try:
+                    moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                except ValueError:
+                    # Hubitat can expose human-readable BST/GMT values.
+                    # Only accept exact, locally verifiable clock suffixes.
+                    parts = stamp.rsplit(" ", 2)
+                    if len(parts) != 3 or parts[1] not in ("BST", "GMT"):
+                        continue
+                    raw = parts[0] + " " + parts[2]
+                    naive = datetime.strptime(raw, "%a %b %d %H:%M:%S %Y")
+                    zone = ZoneInfo("Europe/London")
+                    moment = naive.replace(tzinfo=zone)
+                    if moment.tzname() != parts[1]:
+                        continue
                 if moment.tzinfo is None:
                     continue
                 age = (datetime.now(timezone.utc) - moment.astimezone(timezone.utc)).total_seconds()
@@ -78,21 +116,21 @@ def _last_reported_age_hours(case: CaseFile, ident: str) -> int | None:
 
 def device_context_proposals(
     tools: Iterable[MCPTool], verified_ids: Iterable[str], case: CaseFile, *,
-    stage: str,
+    stage: str, learned_operations: Mapping[str, set[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Suggest one scope-bound read when the current live manifest permits it."""
     ident = _safe_identifier(verified_ids)
     if ident is None:
         return []
     if stage == "current":
-        gateway = _gateway(tools, "hub_get_device")
+        gateway = _gateway(tools, "hub_get_device", learned_operations=learned_operations)
         if gateway is None:
             return []
         schema = _args_schema(gateway)
         fields = schema.get("properties", {})
         fields = fields if isinstance(fields, dict) else {}
         required = schema.get("required", [])
-        if not isinstance(required, list) or "deviceId" not in fields:
+        if not isinstance(required, list) or not _accepts_field(schema, "deviceId"):
             return []
         args: dict[str, Any] = {"deviceId": ident}
         if "mode" in required:
@@ -106,25 +144,25 @@ def device_context_proposals(
         return [_proposal(gateway, "hub_get_device", args,
                           "Current device status and source-reported last contact")]
     if stage == "history":
-        gateway = _gateway(tools, "hub_list_device_events")
+        gateway = _gateway(tools, "hub_list_device_events", learned_operations=learned_operations)
         if gateway is None:
             return []
         schema = _args_schema(gateway)
         fields = schema.get("properties", {})
         fields = fields if isinstance(fields, dict) else {}
         required = schema.get("required", [])
-        if not isinstance(required, list) or "deviceId" not in fields:
+        if not isinstance(required, list) or not _accepts_field(schema, "deviceId"):
             return []
         args = {"deviceId": ident}
-        if "hoursBack" in fields:
+        if _accepts_field(schema, "hoursBack"):
             lookback = _last_reported_age_hours(case, ident) or 168
-            constraint = fields["hoursBack"].get("maximum")
+            constraint = fields.get("hoursBack", {}).get("maximum")
             if type(constraint) is int and constraint > 0:
                 lookback = min(lookback, constraint)
             args["hoursBack"] = lookback
-        if "limit" in fields:
+        if _accepts_field(schema, "limit"):
             limit = 500
-            bound = fields["limit"].get("maximum")
+            bound = fields.get("limit", {}).get("maximum")
             if type(bound) is int and bound > 0:
                 limit = min(limit, bound)
             args["limit"] = limit
@@ -134,8 +172,8 @@ def device_context_proposals(
                          isinstance(snap.get("attributes"), dict) and
                          "switch" in snap["attributes"]
                          for snap in case.device_snapshots)
-        if "attribute" in fields and (has_switch or "attribute" in required):
-            choices = fields["attribute"].get("enum", [])
+        if _accepts_field(schema, "attribute") and (has_switch or "attribute" in required):
+            choices = fields.get("attribute", {}).get("enum", [])
             if isinstance(choices, list) and choices and "switch" not in choices:
                 return []
             args["attribute"] = "switch"
