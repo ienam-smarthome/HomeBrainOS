@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.153**.
+Current add-on version: **0.18.154**.
 
 ## Architecture
+
+v0.18.154 explicitly separates write requests from read-only Investigation V2 before inventory, model or MCP calls. It reuses the production write-intent classifier and adds a negative-only guard for compound direct commands, returning a clear message to use main HomeBrain Ask/Chat without issuing any action. Broader opt-in read-only V2 testing is documented in [V2 test readiness](docs/INVESTIGATION-V2-TEST-READINESS.md); V2 is not a replacement for production device control. See [release notes](CHANGELOG-0.18.154.md).
 
 v0.18.153 bounds the opt-in V2 read-only investigation model-planning round to 15 seconds after verified source reads; its deterministic report preserves current switch/network state and the latest switch report even when the model times out. The compact timeline retains both oldest and newest switch events; MQTT and power disclaimers are shown only for relevant source attributes. It never promotes the reporting bridge into a verified controlling automation. See [release notes](CHANGELOG-0.18.153.md).
 
