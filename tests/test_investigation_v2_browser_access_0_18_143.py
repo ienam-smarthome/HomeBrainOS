@@ -108,7 +108,7 @@ def test_remember_cookie_is_http_only_strict_samesite_revocable_and_no_store():
     assert 'connection.headers.get("x-homebrain-v2-request") != "read-only"' in slice_
     assert 'supplied_token=provided' in slice_
     assert 'explicit_opt_in=True' in slice_
-    assert "set_cookie" not in app[app.index('@app.get("/v2-test")'):app.index('@app.get("/api/v2/auth/status")')]
+    assert "set_cookie" not in app[app.index('@app.get("/v2-test", response_class=HTMLResponse)'):app.index('@app.get("/api/v2/auth/status")')]
 
 
 def test_v2_cookie_is_not_a_general_production_chat_auth_method():
