@@ -145,6 +145,19 @@ class V2ModelProposer:
         self.max_case_chars = min(100000, max(1000, int(max_case_chars)))
         self.last_prompt_chars = 0
         self.advertised_tool_count = len(self.available_read_schema)
+        self.validation_feedback: list[str] = []
+
+    def set_validation_feedback(self, reasons: list[str]) -> None:
+        """Only bounded host validator codes are returned to the planner."""
+        allowed = {
+            "tool not in live MCP manifest",
+            "sub-operation absent from verified live manifest/discovery",
+            "arguments.args: required field missing",
+            "duplicate read or discriminator",
+            "target ID has no independent verified scope",
+        }
+        self.validation_feedback = [r for r in reasons if r in allowed][:4]
+
 
     async def __call__(self, case: CaseFile, round_index: int) -> Mapping[str, Any]:
         evidence = planning_evidence(case, self.incident_window)
@@ -159,6 +172,7 @@ class V2ModelProposer:
                                           if self.incident_window else None),
             "case_file": evidence,
             "available_tools": self.available_read_schema,
+            "previous_plan_validation": list(self.validation_feedback),
             "required_result": {
                 "hypotheses": [{"id": "h1", "explanation": "tentative cause",
                                 "supporting_record_ids": [],
