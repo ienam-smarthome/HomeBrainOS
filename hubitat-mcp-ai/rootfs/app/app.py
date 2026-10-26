@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Literal
 import uvicorn
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
 from api_response_builder import build_agent_response
@@ -90,6 +90,10 @@ from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
 from webui import render_page
 from investigation_v2.test_webui import render_v2_test_page
+from investigation_v2.browser_access import (
+    COOKIE_NAME, COOKIE_AGE_SECONDS, mint_browser_access,
+    verify_browser_access,
+)
 from investigation_v2.test_service import (
     match_verified_device_ids, require_test_access,
     resolve_verified_device_subjects,
@@ -1378,12 +1382,75 @@ async def v2_test_panel() -> HTMLResponse:
     return HTMLResponse(render_v2_test_page(), headers={"Cache-Control":"no-store"})
 
 
+def _v2_browser_enabled() -> tuple[bool, str]:
+    enabled = _bool(OPTIONS.get("investigation_v2_testing_enabled"), False)
+    secret = str(OPTIONS.get("investigation_v2_test_token") or "")
+    return enabled and len(secret) >= 16, secret
+
+
+@app.get("/api/v2/auth/status")
+async def v2_test_auth_status(connection: Request) -> JSONResponse:
+    """No-store status only. Never expose the configured secret or cookie."""
+    enabled, configured = _v2_browser_enabled()
+    saved = enabled and verify_browser_access(
+        connection.cookies.get(COOKIE_NAME), configured,
+    )
+    return JSONResponse(
+        {"saved_access": saved},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/v2/auth/remember")
+async def v2_test_auth_remember(connection: Request) -> JSONResponse:
+    """Explicit operator opt-in to a 30-day, HttpOnly, revocable cookie."""
+    enabled, configured = _v2_browser_enabled()
+    provided = str(connection.headers.get("x-homebrain-v2-test-token") or "")
+    try:
+        require_test_access(
+            enabled=enabled, configured_token=configured,
+            supplied_token=provided, explicit_opt_in=True,
+        )
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
+    value = mint_browser_access(configured)
+    response = JSONResponse({"saved_access": True},
+                            headers={"Cache-Control": "no-store"})
+    response.set_cookie(
+        key=COOKIE_NAME, value=value, max_age=COOKIE_AGE_SECONDS,
+        expires=COOKIE_AGE_SECONDS, path="/", httponly=True,
+        secure=connection.url.scheme == "https", samesite="strict",
+    )
+    return response
+
+
+@app.post("/api/v2/auth/forget")
+async def v2_test_auth_forget(connection: Request) -> JSONResponse:
+    # A custom application header prevents a cross-site HTML form from
+    # silently signing the operator out. No live hub/device actions.
+    if connection.headers.get("x-homebrain-v2-request") != "read-only":
+        raise HTTPException(status_code=403, detail="V2 browser request rejected")
+    response = JSONResponse({"saved_access": False},
+                            headers={"Cache-Control": "no-store"})
+    response.delete_cookie(key=COOKIE_NAME, path="/", samesite="strict",
+                           secure=connection.url.scheme == "https", httponly=True)
+    return response
+
+
 @app.post("/api/v2/test")
 async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]:
     """Manual experiment only: no production agent route or Hubitat mutation."""
     enabled = _bool(OPTIONS.get("investigation_v2_testing_enabled"), False)
     configured = str(OPTIONS.get("investigation_v2_test_token") or "")
     provided = str(connection.headers.get("x-homebrain-v2-test-token") or "")
+    if not provided:
+        # Cookies are accepted only on explicitly labelled same-origin
+        # read-only fetch requests, not cross-site form submissions.
+        browser_intent = connection.headers.get("x-homebrain-v2-request")
+        if browser_intent == "read-only" and verify_browser_access(
+            connection.cookies.get(COOKIE_NAME), configured,
+        ):
+            provided = configured  # Host-side equivalence; never serialized.
     try:
         require_test_access(enabled=enabled, configured_token=configured,
                             supplied_token=provided,
