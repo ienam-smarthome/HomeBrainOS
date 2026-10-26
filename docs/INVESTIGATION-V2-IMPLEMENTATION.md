@@ -280,6 +280,16 @@ The explicit V2 model planning time budget is 60 seconds, and diagnostics
 retain source sample counts and planning elapsed time. Production V1/writes
 are unaffected.
 
+## Human-readable measured duration (0.18.136)
+
+The test dashboard displays elapsed API-reported wall-clock duration in
+minutes plus seconds (three-decimal precision), and in total seconds. Both
+are derived from the same elapsed_ms measured by the backend; exact original
+milliseconds remain in the copyable technical report. Invalid/missing times
+fail gracefully. The command-retention label now says *retrieved*, not that
+Hubitat history is complete. Budget-limited/timeout experiments explicitly
+report their incomplete status instead of the ambiguous 'Test complete'.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

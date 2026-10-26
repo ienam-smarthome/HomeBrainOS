@@ -105,6 +105,20 @@ function formatTestError(response,data){
   }
   return (status+': '+problem).slice(0,950);
 }
+// Show elapsed wall-clock time in familiar minutes and seconds, while
+// preserving full millisecond precision from the API for debugging.
+function readableDuration(ms){
+  if(typeof ms!=='number'||!Number.isFinite(ms)||ms<0)return null;
+  const wholeMinutes=Math.floor(ms/60000);
+  const remainingMs=ms-wholeMinutes*60000;
+  const seconds=(ms/1000).toFixed(3);
+  const remainder=(remainingMs/1000).toFixed(3);
+  return {
+    primary:wholeMinutes+' min '+remainder+' sec',
+    seconds:seconds+' seconds',
+    milliseconds:ms
+  };
+}
 function metric(label,value){
   const outer=document.createElement('div'),number=document.createElement('strong'),caption=document.createElement('small');
   outer.className='metric';number.textContent=value===null||value===undefined?'—':String(value);
@@ -153,8 +167,11 @@ el('run').onclick=async()=>{
              data.resolution_method==='device_name'?'matched friendly name':'verified ID override')
       : '';
     const score=data.scorecard?.v2_measured||{};
-    metric('Duration',data.elapsed_ms+' ms');metric('MCP reads',data.investigation?.executed_reads);
-    metric('Command retention',score.command_records?score.commands_retained+'/'+score.command_records:'No command evidence');
+    const duration=readableDuration(data.elapsed_ms);
+    metric(duration?'Duration · '+duration.seconds:'Duration',
+           duration?.primary??'Unavailable');
+    metric('MCP reads',data.investigation?.executed_reads);
+    metric('Commands retained (retrieved)',score.command_records?score.commands_retained+'/'+score.command_records:'No command evidence');
     metric('Invalid citations',score.invalid_citations);
     metric('Validation flags',score.validator_flags?.length??0);
     metric('Historical source complete',score.source_complete_proven===true?'Proven':'Not proven');
@@ -162,6 +179,9 @@ el('run').onclick=async()=>{
     metric('In-window observations',fm.incident_records);
     metric('Historical page reached start',fm.incident_start_reached_by_returned_page===true?'Yes':'Not verified');
     el('details').textContent=JSON.stringify({
+      duration:duration?.primary??null,
+      duration_seconds:duration?.seconds??null,
+      duration_ms:duration?.milliseconds??null,
       resolved_devices:data.resolved_devices,
       resolution_method:data.resolution_method,
       forensic_metrics:data.forensic_metrics,
@@ -184,7 +204,15 @@ el('run').onclick=async()=>{
       reference_timestamp_check:data.scorecard?.reference_external,
       causal_accuracy_comparison_completed:false
     },null,2);
-    el('output').hidden=false;el('status').textContent=' Test complete — review source coverage and uncertainties.';
+    el('output').hidden=false;
+    const stop=data.investigation?.stopped_because;
+    el('status').textContent=(
+      stop==='read_budget_reached'?' Test finished — MCP read budget reached; investigation incomplete.':
+      stop==='planning_timeout'?' Test finished — AI planning timed out; investigation incomplete.':
+      stop==='planning_unavailable'?' Test finished — AI planning unavailable; investigation incomplete.':
+      stop==='no_approved_discriminating_reads'?' Test finished — no further approved read; investigate evidence gaps.':
+      ' Test finished — review source coverage and uncertainties.'
+    );
   }catch(error){el('status').textContent=' Test failed: '+String(error?.message||'Unknown error')}
   finally{button.disabled=false}
 };
