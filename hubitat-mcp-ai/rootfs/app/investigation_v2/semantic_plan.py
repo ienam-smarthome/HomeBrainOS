@@ -33,7 +33,9 @@ _MODEL_SYSTEM = (
     "For a current list of switched-on lights select scope=lights, "
     "attribute=switch, operator=eq, value=on, aggregation=list. "
     "For numerical rankings select top or bottom and attribute such as power. "
-    "Measurement role interpretation is a separate later step. Do not "
+    "For a power or energy ranking specifically asking for individual " 
+    "consumers, use optional measurement_target=individual_load; otherwise "
+    "use all_meters. Measurement role interpretation is a separate later step. Do not "
     "attempt to list or classify meters in this first JSON objective. "
     "Power/energy rankings may compare devices only after scope validation. "
     "For counts select count. Never interpret an event-history question as "
@@ -66,6 +68,7 @@ class SemanticPlan:
     aggregation: str = "list"
     limit: int = 15
     measurement_roles: tuple[dict[str, str], ...] = ()
+    measurement_target: str = "all_meters"
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -75,6 +78,8 @@ class SemanticPlan:
         }
         if self.measurement_roles:
             result["measurement_roles"] = list(self.measurement_roles)
+        if self.measurement_target != "all_meters":
+            result["measurement_target"] = self.measurement_target
         return result
 
 
@@ -114,8 +119,12 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
         raise ValueError("semantic plan not an object")
     keys={"mode","scope","device_name","room","attribute","operator",
           "value","aggregation","limit"}
-    if set(raw) not in (keys, keys | {"measurement_roles"}):
+    optional={"measurement_roles","measurement_target"}
+    if not keys.issubset(raw) or set(raw)-keys-optional:
         raise ValueError("semantic plan has unexpected or missing keys")
+    measurement_target=raw.get("measurement_target","all_meters")
+    if measurement_target not in ("all_meters","individual_load"):
+        raise ValueError("unsupported measurement target")
     roles = validated_model_hints(
         raw.get("measurement_roles"), profile.get("meter_candidates", []),
     )
@@ -176,7 +185,7 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
         mode=mode,scope=scope,device_name=name,room=room,
         attribute=attribute,operator=operator,
         value=value,aggregation=aggregation,limit=limit,
-        measurement_roles=roles,
+        measurement_roles=roles,measurement_target=measurement_target,
     )
 
 
@@ -203,6 +212,7 @@ async def semantic_plan(
     prompt=json.dumps({
         "question":question,
         "inventory_vocabulary":intent_vocabulary,
+        "optional_output_keys":["measurement_target"],
         "required_output_keys":[
             "mode","scope","device_name","room","attribute","operator",
             "value","aggregation","limit",
