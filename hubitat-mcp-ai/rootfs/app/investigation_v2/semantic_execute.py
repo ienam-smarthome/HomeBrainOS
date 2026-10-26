@@ -15,6 +15,7 @@ from device_state_summary import (
     capability_names, device_attributes, is_light_device, room_name,
 )
 from .semantic_plan import SemanticPlan
+from .measurement_semantics import measurement_scope, ROLES
 
 
 def _display(value: Any, max_chars: int = 100) -> str:
@@ -43,6 +44,27 @@ def _number(value: Any) -> float | None:
             numeric=float(match.group(1))
             return numeric if math.isfinite(numeric) else None
     return None
+
+
+def _quantity(value: Any, attribute: str | None) -> float | None:
+    """Canonical unit conversion: W for power, kWh for accumulated energy."""
+    if attribute not in ("power", "energy"):
+        return _number(value)
+    if type(value) in (int,float):
+        return _number(value)
+    if not isinstance(value,str):
+        return None
+    match=re.fullmatch(r"\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*([A-Za-z]+)?\s*",value)
+    if match is None:
+        return None
+    amount=float(match.group(1))
+    if not math.isfinite(amount):
+        return None
+    unit=(match.group(2) or ("W" if attribute=="power" else "kWh")).casefold()
+    scales=({"w":1.0,"kw":1000.0,"mw":1000000.0}
+            if attribute=="power" else
+            {"kwh":1.0,"wh":0.001,"mwh":1000.0})
+    return amount*scales[unit] if unit in scales else None
 
 
 def _equal(a: Any,b: Any) -> bool:
@@ -108,6 +130,7 @@ def execute_inventory_plan(
     provenance: Mapping[str,Any],
     *,
     checked_at: datetime | None = None,
+    operator_roles: Mapping[str,str] | None = None,
 ) -> dict[str,Any]:
     if plan.mode!="inventory":
         raise ValueError("not a current inventory plan")
@@ -116,18 +139,63 @@ def execute_inventory_plan(
     source=list(_devices_for_plan(devices,plan))
     present=[]
     missing=0
+    out_of_scope=[]
+    unresolved_scope=[]
+    overlap_suppressed=0
+    inferred_individual_loads=[]
+    unsupported_capability=0
+    missing_expected=0
+    is_meter_quantity=plan.attribute in ("power","energy")
+    comparison_of_individuals=(
+        is_meter_quantity and plan.scope!="named"
+        and plan.aggregation in ("top","bottom","sum","average")
+    )
     for ident,device in source:
         value=_value(device,plan.attribute) if plan.attribute else None
         if plan.attribute and value is None:
             missing+=1
+            if is_meter_quantity:
+                caps=capability_names(device)
+                advertised=("powermeter" if plan.attribute=="power"
+                            else "energymeter")
+                if advertised in caps:
+                    missing_expected+=1
+                else:
+                    unsupported_capability+=1
             continue
+        if is_meter_quantity:
+            numeric=_quantity(value,plan.attribute)
+            if numeric is None:
+                missing+=1
+                continue
+            value=numeric
         if not _matches(value,plan.operator,plan.value):
             continue
+        if comparison_of_individuals:
+            scope=measurement_scope(
+                device, hints=plan.measurement_roles, operator_roles=operator_roles,
+            )
+            if scope.role in ("site_total","circuit_subtotal"):
+                out_of_scope.append({
+                    "id":ident,
+                    "label":str(device.get("label") or device.get("name") or "Device")[:95],
+                    "role":scope.role,
+                    "provenance":scope.provenance,
+                    "verified":scope.verified,
+                })
+                overlap_suppressed+=1
+                continue
+            if scope.role=="unknown" or (
+                plan.aggregation in ("sum","average") and not scope.verified
+            ):
+                unresolved_scope.append(ident)
+            if scope.role=="individual_load" and not scope.verified:
+                inferred_individual_loads.append(ident)
         present.append((ident,device,value))
     if plan.aggregation in ("top","bottom","sum","average"):
         numeric=[]
         for ident,device,value in present:
-            amount=_number(value)
+            amount=_quantity(value,plan.attribute)
             if amount is None:
                 missing+=1
             else:
@@ -151,10 +219,15 @@ def execute_inventory_plan(
     attr=plan.attribute or "device"
     aggregate_value=None
     if plan.aggregation in ("sum","average"):
-        aggregate_value=(sum(float(row[2]) for row in present)
-                         if plan.aggregation=="sum" else
-                         (sum(float(row[2]) for row in present)/len(present)
-                          if present else None))
+        if comparison_of_individuals and (out_of_scope or unresolved_scope):
+            # Do not return a mathematically precise but physically misleading
+            # total when parent/submeter relationships remain unresolved.
+            aggregate_value=None
+        else:
+            aggregate_value=(sum(float(row[2]) for row in present)
+                             if plan.aggregation=="sum" else
+                             (sum(float(row[2]) for row in present)/len(present)
+                              if present else None))
     title={
         "list":f"{total} matching device(s)",
         "count":f"{total} matching device(s)",
@@ -163,11 +236,19 @@ def execute_inventory_plan(
         "sum":f"Total {attr} from {total} measured device(s)",
         "average":f"Average {attr} across {total} measured device(s)",
     }[plan.aggregation]
+    if comparison_of_individuals and plan.aggregation in ("top","bottom") and (
+        unresolved_scope or inferred_individual_loads
+    ):
+        title+=" — provisional meter-scope classification"
     if plan.aggregation in ("sum","average"):
         if aggregate_value is None:
-            title+=": no numeric values available"
+            title+=(": withheld — overlapping or unclassified meter scopes"
+                    if comparison_of_individuals and
+                       (out_of_scope or unresolved_scope)
+                    else ": no numeric values available")
         else:
-            units=" W" if attr=="power" else " %" if attr=="battery" else ""
+            units=(" W" if attr=="power" else " kWh" if attr=="energy"
+                   else " %" if attr=="battery" else "")
             title+=f": {aggregate_value:,.2f}{units}"
     lines=[title+" (Hubitat current reported states)."]
     if plan.scope!="all":
@@ -182,13 +263,46 @@ def execute_inventory_plan(
             label=_display(device.get("label") or device.get("name") or "Device")
             room=_display(room_name(device) or "Unassigned")
             reading=("" if not plan.attribute else
-                     " — "+_display(value)+" "+("W" if attr=="power" and _number(value) is not None else ""))
+                     " — "+_display(value)+" "+(
+                         "W" if attr=="power" and _number(value) is not None
+                         else "kWh" if attr=="energy" and _number(value) is not None
+                         else ""))
             lines.append(f"• {room} — {label}{reading}")
     if total>plan.limit and plan.aggregation!="count":
         lines.append(f"... and {total-plan.limit} more matching device(s).")
+    if out_of_scope:
+        lines.append(
+            f"{len(out_of_scope)} site/circuit aggregate meter(s) were shown "
+            "separately rather than mixed into individual-load rankings:"
+        )
+        for meter in out_of_scope[:10]:
+            lines.append(
+                "• "+_display(meter["label"])+": "+meter["role"]+
+                (" (operator-confirmed)" if meter["verified"]
+                 else " (classification not independently verified)")
+            )
+        lines.append("A whole-house meter and its downstream loads overlap: "
+                     "never add them together.")
+    if unresolved_scope:
+        lines.append(
+            f"{len(unresolved_scope)} candidate measurement scope(s) remain "
+            "unknown or unconfirmed; totals cannot treat these as independently "
+            "metered loads.")
+    if inferred_individual_loads and plan.aggregation in ("top","bottom"):
+        lines.append(f"{len(inferred_individual_loads)} candidate individual "
+                     "load role(s) were suggested by AI but not confirmed. "
+                     "This ranking remains provisional.")
     if missing:
-        lines.append(f"{missing} scoped device(s) lacked a usable {attr} reading; "
-                     "those measurements were excluded, not assumed zero.")
+        if is_meter_quantity:
+            lines.append(
+                f"{missing} device(s) had no usable {attr} reading: "
+                f"{missing_expected} advertised the matching meter capability "
+                f"but lacked a value; {unsupported_capability} did not advertise "
+                "that capability (measurement support unverified). "
+                "They were excluded, not assumed zero.")
+        else:
+            lines.append(f"{missing} scoped device(s) lacked a usable {attr} reading; "
+                         "those measurements were excluded, not assumed zero.")
     if not complete:
         lines.append("Inventory coverage is not verified complete. "
                      "Counts and rankings may omit devices.")
@@ -201,8 +315,11 @@ def execute_inventory_plan(
         "semantic_plan":plan.to_dict(),
         "answer":{"text":answer,"displayed_record_ids":[],
                   "omitted_material_record_ids":[],
-                  "validation_issues":[] if complete and not missing else
-                      ["inventory_coverage_or_readings_incomplete"],
+                  "validation_issues":(
+                      [] if complete and not missing and not out_of_scope and
+                            not unresolved_scope and not inferred_individual_loads else
+                      ["inventory_coverage_or_measurement_scope_unverified"]
+                  ),
                   "root_cause_verified":False,"human_review_required":False},
         "report":{"text":answer,"technical_answer_retained":False},
         "inventory_query":{
@@ -213,6 +330,15 @@ def execute_inventory_plan(
             "aggregation":plan.aggregation,"attribute":plan.attribute,
             "aggregate_value":aggregate_value,
             "shown_count":len(subset) if plan.aggregation!="count" else 0,
+            "suppressed_overlapping_meters":out_of_scope,
+            "unclassified_measurement_scopes":len(unresolved_scope),
+            "inferred_individual_loads":len(inferred_individual_loads),
+            "missing_expected_measurements":missing_expected,
+            "unverified_measurement_support":unsupported_capability,
+            "aggregate_safe":not (
+                comparison_of_individuals and
+                (out_of_scope or unresolved_scope)
+            ),
         },
         "resolved_devices":[],"resolution_method":"semantic_verified_inventory",
         "test_mode":"explicit_read_only",

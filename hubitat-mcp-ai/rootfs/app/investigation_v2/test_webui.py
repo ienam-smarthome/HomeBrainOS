@@ -181,6 +181,12 @@ el('run').onclick=async()=>{
       metric('Matching devices',q.matched_count);
       metric('Devices in scope',q.scoped_count);
       metric('Missing readings',q.missing_readings);
+      if(q.suppressed_overlapping_meters?.length){
+        metric('Separate aggregates',q.suppressed_overlapping_meters.length);
+      }
+      if(q.unclassified_measurement_scopes){
+        metric('Scope not verified',q.unclassified_measurement_scopes);
+      }
       metric('Inventory coverage',q.inventory_complete===true?'Verified':'Not verified');
       metric('Inventory pages',q.inventory_pages);
     }else if(data.answer_mode==='semantic_unavailable'){

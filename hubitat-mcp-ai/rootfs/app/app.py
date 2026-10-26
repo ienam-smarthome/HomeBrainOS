@@ -99,6 +99,7 @@ from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import semantic_plan
 from investigation_v2.semantic_execute import execute_inventory_plan
+from investigation_v2.measurement_semantics import load_operator_meter_roles
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HomeBrainOS.App")
@@ -1416,7 +1417,12 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             if semantic.mode == "inventory":
                 try:
                     result = execute_inventory_plan(
-                        semantic, audit_devices, inventory_provenance)
+                        semantic, audit_devices, inventory_provenance,
+                        operator_roles=load_operator_meter_roles(
+                            OPTIONS.get("v2_measurement_roles_json", "{}"),
+                            audit_devices,
+                        ),
+                    )
                 except ValueError as exc:
                     raise HTTPException(status_code=422,detail=str(exc)) from None
                 result["elapsed_ms"]=round((time.perf_counter()-started)*1000)

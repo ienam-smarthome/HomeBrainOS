@@ -89,8 +89,11 @@ def test_rank_top_power_and_host_computes_exact_sum_not_model_arithmetic():
     assert "85" in lines and "8" in lines and "6" in lines
     total=execute_inventory_plan(verified(attribute="power",aggregation="sum"),
                                  DEVICES,PROVENANCE)
-    assert total["inventory_query"]["aggregate_value"]==99
-    assert "99.00 W" in total["answer"]["text"]
+    # Without scope identities these meter values may overlap, so total
+    # power cannot be added safely even when all numeric readings exist.
+    assert total["inventory_query"]["aggregate_value"] is None
+    assert "withheld" in total["answer"]["text"]
+    assert total["inventory_query"]["aggregate_safe"] is False
     assert total["inventory_query"]["missing_readings"]>=1
 
 
