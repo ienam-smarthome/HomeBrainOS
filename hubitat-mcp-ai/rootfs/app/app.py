@@ -98,6 +98,7 @@ from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import semantic_plan
+from investigation_v2.role_enrichment import enrich_measurement_roles
 from investigation_v2.semantic_execute import execute_inventory_plan
 from investigation_v2.measurement_semantics import load_operator_meter_roles
 
@@ -1397,24 +1398,65 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         semantic = None
         audit_devices = None
         if not payload.device_ids and not payload.device_name:
-            # The model INTERPRETS the question; it does not grant any tools,
-            # IDs or control permissions. Current inventory is read by the
-            # host using the established paginated, read-only MCP contract.
+            # Source discovery, intent planning, and optional measurement
+            # classification are separate, observable stages. None of them
+            # grants tool or device-control authority to the model.
+            inventory_started=time.perf_counter()
             try:
                 audit_devices, inventory_provenance = await mcp.get_audit_devices()
-                semantic = await semantic_plan(
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("V2 fresh inventory unavailable")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Hubitat read-only inventory was unavailable; no commands sent",
+                ) from None
+            inventory_ms=round((time.perf_counter()-inventory_started)*1000)
+            planning_started=time.perf_counter()
+            try:
+                semantic=await semantic_plan(
                     payload.question, audit_devices, agent.transport.chat,
                     timeout_seconds=25,
                 )
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("V2 semantic interpretation unavailable")
-                raise HTTPException(
-                    status_code=503,
-                    detail="V2 could not safely interpret this request from a live inventory; no commands were sent",
-                ) from None
+            except Exception as exc:
+                cause=("timeout" if isinstance(exc,TimeoutError)
+                       else "invalid_plan" if isinstance(exc,(ValueError,TypeError,KeyError))
+                       else "provider_failure")
+                logger.warning("V2 semantic plan unavailable: %s (%s)",
+                               cause,type(exc).__name__)
+                message=(
+                    "HomeBrain retrieved Hubitat inventory, but could not "
+                    "safely interpret the question. No device commands were "
+                    "sent. Check the planning diagnostics in the report."
+                )
+                return {
+                    "answer_mode":"semantic_unavailable",
+                    "answer":{"text":message,"displayed_record_ids":[],
+                              "omitted_material_record_ids":[],
+                              "validation_issues":["semantic_plan_"+cause],
+                              "root_cause_verified":False,"human_review_required":True},
+                    "report":{"text":message,"technical_answer_retained":False},
+                    "semantic_diagnostics":{
+                        "phase":"intent_planning","outcome":cause,
+                        "inventory_ms":inventory_ms,
+                        "planning_ms":round((time.perf_counter()-planning_started)*1000),
+                        "inventory_devices":len(audit_devices),
+                        "inventory_complete":inventory_provenance.get("complete") is True,
+                    },
+                    "resolved_devices":[],"resolution_method":"semantic_objective",
+                    "elapsed_ms":round((time.perf_counter()-started)*1000),
+                    "test_mode":"explicit_read_only",
+                }
+            planning_ms=round((time.perf_counter()-planning_started)*1000)
             if semantic.mode == "inventory":
+                enrichment_started=time.perf_counter()
+                semantic, role_diagnostic=await enrich_measurement_roles(
+                    semantic, audit_devices, agent.transport.chat,
+                    timeout_seconds=12,
+                )
                 try:
                     result = execute_inventory_plan(
                         semantic, audit_devices, inventory_provenance,
@@ -1426,6 +1468,18 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 except ValueError as exc:
                     raise HTTPException(status_code=422,detail=str(exc)) from None
                 result["elapsed_ms"]=round((time.perf_counter()-started)*1000)
+                result["semantic_diagnostics"]={
+                    "phase":"completed","outcome":"success",
+                    "inventory_ms":inventory_ms,"planning_ms":planning_ms,
+                    "role_enrichment_ms":round((time.perf_counter()-enrichment_started)*1000),
+                    "meter_roles":role_diagnostic,
+                    "inventory_devices":len(audit_devices),
+                    "inventory_complete":inventory_provenance.get("complete") is True,
+                }
+                if role_diagnostic.get("outcome")=="unavailable":
+                    result["answer"]["validation_issues"].append(
+                        "optional_measurement_role_enrichment_unavailable"
+                    )
                 return result
             if semantic.mode in ("unsupported","historical"):
                 # Unsupported whole-house history must not be misrepresented
