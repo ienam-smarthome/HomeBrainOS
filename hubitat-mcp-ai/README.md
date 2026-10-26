@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.141**.
+Current add-on version: **0.18.142**.
 
 ## Architecture
+
+v0.18.142 stages generic V2 semantic question interpretation separately from optional meter-role inference, reducing the intent prompt size and preserving a source-safe answer if meter enrichment cannot finish. Failed planning now returns stage-specific diagnostics instead of an opaque 503. See [release notes](CHANGELOG-0.18.142.md).
+
 
 v0.18.141 introduces typed measurement scope to V2 inventory queries: current site totals, circuit subtotals and individual meters are separated, AI scope interpretations are explicitly unverified and device IDs must exist in the live inventory; one-time operator-confirmed role mappings can be supplied in add-on configuration. See [release notes](CHANGELOG-0.18.141.md).
 

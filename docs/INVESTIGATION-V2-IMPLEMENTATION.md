@@ -372,6 +372,20 @@ instantaneous power equals accumulated energy. This does not yet retrieve the
 `00 Energy Usage` Hubitat application ledger, so the screenshot reconciliation
 is a reference benchmark, not a claimed live synchronization.
 
+## Staged semantic interpretation (v0.18.142)
+
+First model pass parses the generic inventory intent from a bounded attribute
+and room vocabulary, **without** the expensive meter identity catalogue.
+For energy/power comparisons, an optional second, time-bounded model pass
+suggests meter scope roles for a limited set of actual live inventory IDs.
+Invalid/slow role enrichment is nonfatal: a properly validated base answer
+returns with unclassified readings and explicit uncertainty. The typed
+`measurement_target=individual_load` intent prevents unverified scopes from
+appearing as confirmed individual loads; unknown meters are shown separately.
+Planning failures return an opt-in V2 safe diagnostic result with stage and
+cause (timeout / validation / provider) rather than collapsing into one 503.
+No unverified fallback plan is generated, and production V1 remains unchanged.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
