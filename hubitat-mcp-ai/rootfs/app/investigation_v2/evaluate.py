@@ -77,6 +77,7 @@ async def evaluate_v2_with_model(
     bootstrap_device_context: bool = False,
     verified_device_label: str | None = None,
     force_duration_mode: bool = False,
+    semantic_unavailable_reason: str | None = None,
 ) -> V2Evaluation:
     """Run one explicit read-only experiment with the configured chat provider.
 
@@ -91,8 +92,20 @@ async def evaluate_v2_with_model(
         raise ValueError("MCP client/executor mismatch")
     tools = await mcp.list_tools()
     resolved_ids = tuple(verified_entity_ids)
-    propose = V2ModelProposer(chat, tools, verified_entity_ids=resolved_ids,
-                              incident_window=incident_window)
+    if semantic_unavailable_reason is not None:
+        # The first model call already failed before investigation. Do not
+        # repeatedly invoke the unavailable provider or invent an intent.
+        # Host-gated context reads can still establish limited source facts.
+        if semantic_unavailable_reason not in ("timeout", "invalid_plan", "provider_failure"):
+            raise ValueError("Invalid semantic fallback reason")
+        if len(resolved_ids) != 1:
+            raise ValueError("Semantic fallback requires one verified device")
+
+        async def propose(_case, _round):
+            return {"hypotheses": [], "reads": [], "finish": True}
+    else:
+        propose = V2ModelProposer(chat, tools, verified_entity_ids=resolved_ids,
+                                  incident_window=incident_window)
     duration_intent = bool(incident_window is not None and
                            (force_duration_mode or is_state_duration_request(
                                question, incident_window)))
@@ -107,6 +120,36 @@ async def evaluate_v2_with_model(
         bootstrap_device_context=bootstrap_device_context,
         stop_after_incident_history=duration_intent,
     )
+    if semantic_unavailable_reason is not None:
+        # Do not upgrade this best-effort source collection into a model-based
+        # investigation or pretend that the user intent was classified.
+        result = replace(result, stopped_because="semantic_intent_unavailable")
+        raw = assemble_grounded_answer(
+            result.case, result.hypotheses,
+            {"selected_record_ids": [r.record_id for r in result.case.records],
+             "hypothesis_order": []},
+        )
+        issue = "semantic_plan_" + semantic_unavailable_reason
+        answer = replace(
+            raw,
+            validation_issues=(*raw.validation_issues, issue,
+                               "semantic_intent_unverified_host_only"),
+        )
+        report = (
+            "**Limited evidence recovery — AI intent planning unavailable**\n"
+            "The original question was not semantically classified. "
+            "The single named device was independently verified against "
+            "Hubitat inventory; only safe, read-only source evidence follows. "
+            "This is not a full investigation or a verified root cause.\n\n"
+            + format_investigation_report(
+                result.case, result.hypotheses,
+                result.stopped_because, incident_window,
+            )
+        )
+        return V2Evaluation(
+            investigation=result, answer=answer,
+            report=report, incident_window=incident_window,
+        )
     if duration_intent and incident_window is not None:
         # Calculations from validated event-time state transitions belong to
         # the host, not a generative model. Unknown boundaries remain unknown.

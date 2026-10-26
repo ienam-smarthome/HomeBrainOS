@@ -137,11 +137,15 @@ def test_v2_endpoint_dispatches_semantic_group_before_singular_resolution():
     code=(APP/"app.py").read_text()
     route=code[code.index("async def v2_test("):code.index('@app.post("/api/chat")')]
     intent=route.index("semantic = await semantic_plan(")
-    identity=route.index("resolve_verified_device_subjects(")
+    # Success path still executes whole-group inventory before entering
+    # singular device resolution. A separate error-only path may now verify
+    # one uniquely named device after semantic planning has failed.
+    identity=route.index("            if payload.device_ids or payload.device_name:")
     assert intent < identity
     assert "await mcp.get_audit_devices()" in route[:identity]
     assert "execute_inventory_plan(" in route[:identity]
     assert "return result" in route[:identity]
+    assert "fallback_ids, _, _ = resolve_verified_device_subjects(" in route[:identity]
     assert "current_light_group_question(" not in route
 
 def test_v2_dashboard_shows_group_metrics_without_causal_scores():
