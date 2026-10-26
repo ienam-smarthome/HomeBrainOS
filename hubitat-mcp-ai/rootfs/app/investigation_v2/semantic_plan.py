@@ -83,7 +83,10 @@ class SemanticPlan:
         return result
 
 
-def inventory_profile(devices: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def inventory_profile(
+    devices: Sequence[Mapping[str, Any]], *,
+    include_meter_candidates: bool = True,
+) -> dict[str, Any]:
     """Return field and room vocabulary, never raw device attributes or tokens."""
     attrs: set[str] = set()
     rooms: set[str] = set()
@@ -97,7 +100,7 @@ def inventory_profile(devices: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             if device.get(key) is not None:
                 attrs.add(key.casefold())
     return {
-        "meter_candidates": candidates(devices),
+        "meter_candidates": candidates(devices) if include_meter_candidates else [],
         "available_attributes":sorted(attrs),
         "rooms":sorted(rooms, key=str.casefold)[:120],
         "known_scopes":sorted(_SCOPES),
@@ -199,7 +202,7 @@ async def semantic_plan(
 ) -> SemanticPlan:
     if not isinstance(question,str) or not 5<=len(question)<=12000:
         raise ValueError("question out of range")
-    profile=inventory_profile(devices)
+    profile=inventory_profile(devices, include_meter_candidates=False)
     # Phase one deliberately excludes the potentially large device catalogue.
     # The AI selects a typed objective; phase two (optional) classifies only
     # meter candidates when actually needed. This is not word routing.
