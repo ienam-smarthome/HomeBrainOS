@@ -204,7 +204,10 @@ def test_code_integrates_semantic_model_before_old_named_device_match():
     code=(APP/"app.py").read_text()
     route=code[code.index('async def v2_test('):code.index('@app.post("/api/chat")')]
     assert "semantic = await semantic_plan(" in route
-    assert route.index("semantic = await semantic_plan(") < route.index("resolve_verified_device_subjects(")
+    # A source-verified unique device may now bypass preliminary intent
+    # classification; broad/multi-device requests still use semantic planning.
+    assert route.index("resolve_verified_device_subjects(") < route.index("semantic = await semantic_plan(")
+    assert "if len(candidates) == 1:" in route
     assert "execute_inventory_plan(" in route
     assert "current_light_group_question" not in route
     assert "get_audit_devices()" in route
