@@ -386,6 +386,22 @@ Planning failures return an opt-in V2 safe diagnostic result with stage and
 cause (timeout / validation / provider) rather than collapsing into one 503.
 No unverified fallback plan is generated, and production V1 remains unchanged.
 
+## Revocable remembered browser access (v0.18.143)
+
+The manual read-only test page may opt into a 30-day HttpOnly,
+SameSite=Strict signed browser credential. The browser never stores the raw
+operator test token in localStorage/sessionStorage, and JavaScript cannot read
+the cookie. The server validates the cookie signature and expiry from the
+currently configured V2 test secret, so rotating that secret or disabling V2
+invalidates access. The established explicit per-test opt-in remains mandatory.
+Cookie-authenticated test POSTs also require a custom read-only application
+header, preventing a cross-site HTML form from silently invoking the test.
+Dedicated status/sign-out routes use no-store and do not return credentials.
+This is still bearer-based authentication: **HTTP LAN connections expose
+browser credentials in transit**, so users should prefer HTTPS or restrict
+to a trusted local network. This does not change MCP token storage, production
+V1 chat auth, Hubitat commands or write gates.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

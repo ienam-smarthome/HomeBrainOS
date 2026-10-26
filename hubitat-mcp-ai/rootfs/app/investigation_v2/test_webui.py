@@ -1,4 +1,4 @@
-"""Standalone opt-in V2 test panel. No token is embedded or persisted."""
+"""Standalone opt-in V2 test panel. The raw operator token is never persisted."""
 from __future__ import annotations
 
 
@@ -12,7 +12,7 @@ main{max-width:860px;margin:24px auto;padding:0 14px}
 section{background:#202024;padding:18px;border-radius:12px;margin-bottom:14px}
 label{display:block;margin:12px 0 5px;font-weight:600}
 textarea,input{width:100%;box-sizing:border-box;background:#111115;color:#fff;border:1px solid #555;border-radius:7px;padding:10px;font:inherit}
-textarea{min-height:76px}button{padding:12px 17px;border:0;border-radius:8px;background:#4f83ea;color:#fff;font-weight:700;cursor:pointer}
+textarea{min-height:76px}input[type=checkbox]{width:auto;margin-right:7px}button{padding:12px 17px;border:0;border-radius:8px;background:#4f83ea;color:#fff;font-weight:700;cursor:pointer}
 button:disabled{opacity:.6}small,p{color:#c5c5d0;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111115;padding:14px;border-radius:8px}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.metric{background:#121217;padding:12px;border-radius:8px}
 .metric strong{display:block;font-size:21px;margin-bottom:4px}a{color:#a9c5ff}
@@ -23,6 +23,10 @@ No device control, rule edits or automatic background comparison.</p>
 <section>
 <label for="secret">V2 test access token (set in add-on configuration)</label>
 <input id="secret" type="password" autocomplete="off" placeholder="Operator test token">
+<label class="rememberLabel" for="remember"><input id="remember" type="checkbox">Remember access on this browser for 30 days</label>
+<p><small id="rememberHelp">Optional. Saves a revocable browser sign-in cookie, not your raw access token. Use only on a trusted device.</small></p>
+<p id="savedStatus" role="status" aria-live="polite"></p>
+<button type="button" id="forgetAccess" hidden>Forget saved access</button>
 <label for="question">Investigation question</label>
 <textarea id="question" placeholder="Why did Livingroom Light 1 stay on overnight?"></textarea>
 <p><small>HomeBrain automatically identifies the device from your question using
@@ -52,6 +56,42 @@ Exact timestamp scores do not measure reasoning correctness. Source coverage can
 </section>
 </main><script>
 const el=id=>document.getElementById(id);
+let savedAccess=false;
+const authUrl=path=>new URL(path,new URL('./',location.href));
+function showSavedAccess(value){
+  savedAccess=value===true;
+  el('savedStatus').textContent=savedAccess
+    ? 'Saved access is active in this browser. The token field can stay blank.'
+    : 'No saved browser access. Enter the V2 test token to run a test.';
+  el('forgetAccess').hidden=!savedAccess;
+}
+async function checkSavedAccess(){
+  try{
+    const response=await fetch(authUrl('api/v2/auth/status'),{
+      credentials:'same-origin',cache:'no-store'
+    });
+    const data=await response.json().catch(()=>null);
+    showSavedAccess(response.ok&&data?.saved_access===true);
+  }catch(error){showSavedAccess(false)}
+}
+if(location.protocol==='http:'){
+  el('rememberHelp').textContent+=
+    ' Warning: this connection uses HTTP, so browser credentials are not encrypted in transit. Prefer HTTPS.';
+}
+el('forgetAccess').onclick=async()=>{
+  try{
+    const response=await fetch(authUrl('api/v2/auth/forget'),{
+      method:'POST',credentials:'same-origin',cache:'no-store',
+      headers:{'X-HomeBrain-V2-Request':'read-only'}
+    });
+    if(!response.ok)throw new Error('Could not clear saved browser access.');
+    el('secret').value='';
+    el('remember').checked=false;
+    showSavedAccess(false);
+    el('status').textContent=' Saved browser access cleared.';
+  }catch(error){el('status').textContent=' '+error.message}
+};
+void checkSavedAccess();
 // HTTP ingress uses a non-secure local origin: clipboard.writeText may be
 // unavailable. Fall back to an ephemeral selected textarea; never persist
 // report contents or the operator's test token.
@@ -138,14 +178,32 @@ el('run').onclick=async()=>{
   try{
     const question=el('question').value.trim();
     const ids=el('ids').value.split(',').map(x=>x.trim()).filter(Boolean);
-    if(el('secret').value.length<16)
+    let token=el('secret').value;
+    if(!savedAccess&&token.length<16)
       throw new Error('Enter the V2 test token from the add-on configuration (at least 16 characters).');
     if(question.length<5)
       throw new Error('Enter an investigation question (at least five characters).');
     if(ids.length>4||ids.some(x=>!/^\d{1,20}$/.test(x)))
       throw new Error('The optional override accepts at most four numeric Hubitat device IDs.');
-    const response=await fetch(new URL('api/v2/test',new URL('./',location.href)),{
-      method:'POST',headers:{'Content-Type':'application/json','X-HomeBrain-V2-Test-Token':el('secret').value},
+    if(el('remember').checked&&token.length>=16){
+      const rememberResponse=await fetch(authUrl('api/v2/auth/remember'),{
+        method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{
+          'X-HomeBrain-V2-Test-Token':token,
+          'X-HomeBrain-V2-Request':'read-only'
+        }
+      });
+      const remembered=await rememberResponse.json().catch(()=>null);
+      if(!rememberResponse.ok)throw new Error(formatTestError(rememberResponse,remembered));
+      showSavedAccess(remembered?.saved_access===true);
+      el('secret').value='';
+      token='';
+    }
+    const headers={'Content-Type':'application/json',
+                   'X-HomeBrain-V2-Request':'read-only'};
+    if(token)headers['X-HomeBrain-V2-Test-Token']=token;
+    const response=await fetch(authUrl('api/v2/test'),{
+      method:'POST',credentials:'same-origin',headers,
       body:JSON.stringify({
         explicit_opt_in:true,question,
         device_ids:ids,

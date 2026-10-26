@@ -146,7 +146,9 @@ def test_v2_frontend_uses_safe_diagnostic_format_and_does_not_echo_token():
     assert "item.loc" in page
     assert "HTTP '+response.status" in page
     assert "formatTestError(response,data)" in page
-    assert "el('secret').value.length<16" in page
+    assert "if(!savedAccess&&token.length<16)" in page
+    assert "if(token)headers['X-HomeBrain-V2-Test-Token']=token;" in page
+    assert "credentials:'same-origin'" in page
     assert "const ids=el('ids').value.split(',')" in page
     assert "localStorage" not in page
     assert "sessionStorage" not in page
