@@ -133,15 +133,16 @@ def test_untrusted_label_cannot_inject_markdown_or_markup():
     assert "*Light*" not in text
 
 
-def test_v2_endpoint_dispatches_group_before_singular_resolution():
+def test_v2_endpoint_dispatches_semantic_group_before_singular_resolution():
     code=(APP/"app.py").read_text()
-    group=code.index("if current_light_group_question(payload.question)")
-    identity=code.index("ids, resolved, resolve_method = resolve_verified_device_subjects(",group)
-    assert group<identity
-    assert "await mcp.get_audit_devices()" in code[group:identity]
-    assert "return result" in code[group:identity]
-    assert 'mcp.get_cached_devices(refresh=True)' in code[identity-110:identity]
-
+    route=code[code.index("async def v2_test("):code.index('@app.post("/api/chat")')]
+    intent=route.index("semantic = await semantic_plan(")
+    identity=route.index("resolve_verified_device_subjects(")
+    assert intent < identity
+    assert "await mcp.get_audit_devices()" in route[:identity]
+    assert "execute_inventory_plan(" in route[:identity]
+    assert "return result" in route[:identity]
+    assert "current_light_group_question(" not in route
 
 def test_v2_dashboard_shows_group_metrics_without_causal_scores():
     html=render_v2_test_page()

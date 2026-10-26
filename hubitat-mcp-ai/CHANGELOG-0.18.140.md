@@ -1,0 +1,8 @@
+# HomeBrainOS 0.18.140 — semantic V2 intelligence core (read-only)
+
+- Introduces a model-proposed **typed objective**, not regex/keyword classification. The model chooses current-inventory query, single-device investigation, duration, cross-device historical request or unsupported objective; host performs validation.
+- Generic source-backed inventory interpreter supports subject filters (all/light/switch/sensor/exact device), rooms, live attribute equality/ranges, lists, counts, top/bottom rankings, sums and averages. Attributes/rooms must exist in a fresh Hubitat inventory; measurements missing from a device are never filled with zero.
+- Keeps **all real work host-owned**: canonical device IDs are verified from the live inventory, facts and arithmetic come only from real attribute values, and current snapshot coverage is explicit. The model cannot grant MCP tools or send commands.
+- The V2 test UI shows appropriate semantic-query counts/coverage rather than meaningless forensic command retention. User-defined device overrides and past incident investigations continue using the existing read-only V2 engine.
+- Novel cross-device history questions have an explicit unsupported response until evidence-safe historical set reads are implemented. This initial layer is V2-only and may be slower than the old fixed phrase shortcut; it is intentionally an architecture pilot, not a claim of Claude-level reasoning.
+- Adds adversarial regression tests for instruction injection, fabricated fields, ambiguous identities, numeric accuracy, incomplete inventory, unsupported historical objectives, and no write calls.

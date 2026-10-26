@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.139**.
+Current add-on version: **0.18.140**.
 
 ## Architecture
+
+v0.18.140 introduces a **semantic objective → host validation → generic evidence query** layer for opt-in V2, replacing phrase-bound current-group routing. The model can interpret novel inventory questions into typed selection, filtering, grouping, ranking and aggregation instructions, while the host verifies all fields and performs read-only computations. See [release notes](CHANGELOG-0.18.140.md).
+
 
 v0.18.139 adds read-only, full-group current light state questions to Investigation V2. Device identification is no longer mandatory for an explicitly plural inventory question; V2 reuses the paginated, state-aware Hubitat reader and the same established light/state helpers as HomeBrain. See [release notes](CHANGELOG-0.18.139.md).
 

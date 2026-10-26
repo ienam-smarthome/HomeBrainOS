@@ -162,6 +162,10 @@ el('run').onclick=async()=>{
     const targets=Array.isArray(data.resolved_devices)?data.resolved_devices:[];
     el('resolvedDevices').textContent=data.answer_mode==='current_group_state'
       ? 'Hubitat light inventory · read-only reported states'
+      : data.answer_mode==='semantic_inventory'
+      ? 'Semantic inventory query · host-verified reported states'
+      : data.answer_mode==='semantic_unavailable'
+      ? 'Semantic objective not yet supported · no device changes'
       : targets.length
       ? 'Verified Hubitat device'+(targets.length>1?'s':'')+': '+
         targets.map(t=>(t.label||'Device')+' (#'+t.id+')').join(', ')+
@@ -172,7 +176,16 @@ el('run').onclick=async()=>{
     const duration=readableDuration(data.elapsed_ms);
     metric(duration?'Duration · '+duration.seconds:'Duration',
            duration?.primary??'Unavailable');
-    if(data.answer_mode==='current_group_state'){
+    if(data.answer_mode==='semantic_inventory'){
+      const q=data.inventory_query||{};
+      metric('Matching devices',q.matched_count);
+      metric('Devices in scope',q.scoped_count);
+      metric('Missing readings',q.missing_readings);
+      metric('Inventory coverage',q.inventory_complete===true?'Verified':'Not verified');
+      metric('Inventory pages',q.inventory_pages);
+    }else if(data.answer_mode==='semantic_unavailable'){
+      metric('Execution','No reads beyond verified inventory');
+    }else if(data.answer_mode==='current_group_state'){
       const gs=data.group_status||{};
       metric('Lights reported '+String(gs.requested_state||'').toUpperCase(),gs.matched_count);
       metric('Lights identified',gs.identified_lights);
@@ -199,6 +212,8 @@ el('run').onclick=async()=>{
       resolution_method:data.resolution_method,
       answer_mode:data.answer_mode,
       group_status:data.group_status,
+      semantic_plan:data.semantic_plan,
+      inventory_query:data.inventory_query,
       forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
       planning_rounds:data.investigation?.rounds,
@@ -224,6 +239,8 @@ el('run').onclick=async()=>{
     const stop=data.investigation?.stopped_because;
     el('status').textContent=(
       data.answer_mode==='current_group_state'?' Live group-state read completed; inspect inventory coverage.':
+      data.answer_mode==='semantic_inventory'?' Verified semantic inventory query completed.':
+      data.answer_mode==='semantic_unavailable'?' V2 returned a safe capability limitation; no writes.':
       stop==='read_budget_reached'?' Test finished — MCP read budget reached; investigation incomplete.':
       stop==='planning_timeout'?' Test finished — AI planning timed out; investigation incomplete.':
       stop==='planning_unavailable'?' Test finished — AI planning unavailable; investigation incomplete.':
