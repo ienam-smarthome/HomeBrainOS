@@ -219,7 +219,7 @@ def build_case_file(original_user_request: str,
                 app_id = _id(entry.get("id"))
                 label = entry.get("name")
                 if (app_id and isinstance(label, str) and 0 < len(label) <= 101
-                        and not any(ch in label for ch in "<>[]{}\\\n\\r")):
+                        and all(ch.isprintable() and ch not in "<>[]{}" for ch in label)):
                     if app_id in case.app_identities and case.app_identities[app_id] != label:
                         case.app_identities.pop(app_id, None)
                     else:
