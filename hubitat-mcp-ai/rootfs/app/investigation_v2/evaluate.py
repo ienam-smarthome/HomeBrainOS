@@ -75,6 +75,7 @@ async def evaluate_v2_with_model(
     planning_timeout_seconds: float = 60.0,
     bootstrap_source_identity: bool = True,
     verified_device_label: str | None = None,
+    force_duration_mode: bool = False,
 ) -> V2Evaluation:
     """Run one explicit read-only experiment with the configured chat provider.
 
@@ -91,7 +92,9 @@ async def evaluate_v2_with_model(
     resolved_ids = tuple(verified_entity_ids)
     propose = V2ModelProposer(chat, tools, verified_entity_ids=resolved_ids,
                               incident_window=incident_window)
-    duration_intent = is_state_duration_request(question, incident_window)
+    duration_intent = bool(incident_window is not None and
+                           (force_duration_mode or is_state_duration_request(
+                               question, incident_window)))
     result = await run_read_only_investigation(
         question=question, mcp=mcp, executor=executor, propose=propose,
         verified_entity_ids=resolved_ids,

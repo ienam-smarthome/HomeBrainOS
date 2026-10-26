@@ -336,6 +336,26 @@ inventory honestly. No identity/cardinality, source schema or device write
 authority is silently broadened. The test UI hides irrelevant incident-only
 metrics for this answer mode. V1 and normal investigative V2 are unchanged.
 
+## Semantic intelligence adapter, V2-only (0.18.140)
+
+Every unforced test question now goes through the configured AI model to
+propose a small *typed, read-only objective* instead of routing on word lists.
+The host owns the live paginated inventory, available attribute vocabulary,
+allowed subject scopes (all/lights/switches/sensors/named), filters, rankings,
+aggregations and evidence provenance. Numeric results are calculated from
+source values and missing values are excluded explicitly. Named devices
+are matched to live inventory rather than accepting model-authored IDs.
+Questions classified as historical investigations reuse the existing V2
+read-only loop and atomic evidence checks. Multi-device historical comparisons
+not yet implemented return a transparent limitation rather than a false
+current-state answer. No model-generated tool invocation, direct device
+control, cached permission bypass or production V1 routing is introduced.
+
+This is **architectural groundwork**: the new model interpretation adds
+latency to current inventory reads, and further phases should extend the
+same typed objective/execution contract to cross-device history and causal
+analysis. Existing manually specified devices bypass interpretation.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

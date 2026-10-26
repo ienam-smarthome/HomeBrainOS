@@ -97,7 +97,8 @@ from investigation_v2.test_service import (
 from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
-from investigation_v2.group_state import current_light_group_question, current_light_group_answer
+from investigation_v2.semantic_plan import semantic_plan
+from investigation_v2.semantic_execute import execute_inventory_plan
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HomeBrainOS.App")
@@ -1391,26 +1392,66 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
 
     async def experiment() -> dict[str, Any]:
-        # Intent comes BEFORE mandatory singular entity resolution. A user
-        # asking about *all lights* has deliberately not named one device.
-        # The established audited inventory reader requests live states and
-        # verifies pagination; no model- or command-capable path is used.
-        if current_light_group_question(payload.question) and not payload.device_ids and not payload.device_name:
-            started = time.perf_counter()
+        started = time.perf_counter()
+        semantic = None
+        audit_devices = None
+        if not payload.device_ids and not payload.device_name:
+            # The model INTERPRETS the question; it does not grant any tools,
+            # IDs or control permissions. Current inventory is read by the
+            # host using the established paginated, read-only MCP contract.
             try:
-                group_devices, provenance = await mcp.get_audit_devices()
-                result = current_light_group_answer(payload.question, group_devices, provenance)
+                audit_devices, inventory_provenance = await mcp.get_audit_devices()
+                semantic = await semantic_plan(
+                    payload.question, audit_devices, agent.transport.chat,
+                    timeout_seconds=25,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("V2 current group-state read unavailable")
-                raise HTTPException(status_code=503, detail="Live Hubitat light states unavailable; no devices changed") from None
-            result["elapsed_ms"] = round((time.perf_counter()-started)*1000)
-            return result
+                logger.exception("V2 semantic interpretation unavailable")
+                raise HTTPException(
+                    status_code=503,
+                    detail="V2 could not safely interpret this request from a live inventory; no commands were sent",
+                ) from None
+            if semantic.mode == "inventory":
+                try:
+                    result = execute_inventory_plan(
+                        semantic, audit_devices, inventory_provenance)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422,detail=str(exc)) from None
+                result["elapsed_ms"]=round((time.perf_counter()-started)*1000)
+                return result
+            if semantic.mode in ("unsupported","historical"):
+                # Unsupported whole-house history must not be misrepresented
+                # as a present-state inventory query or fabricated timeline.
+                subject=("A cross-device historical comparison" if
+                         semantic.mode=="historical" else "This question")
+                message=(subject+" is not yet supported by the safe V2 "
+                         "inventory executor. Current inventory answers and "
+                         "single-device investigation are available; no "
+                         "device state was changed.")
+                return {
+                    "answer_mode":"semantic_unavailable",
+                    "answer":{"text":message,"displayed_record_ids":[],
+                              "omitted_material_record_ids":[],
+                              "validation_issues":["unsupported_evidence_objective"],
+                              "root_cause_verified":False,"human_review_required":True},
+                    "report":{"text":message,"technical_answer_retained":False},
+                    "semantic_plan":semantic.to_dict(),
+                    "resolved_devices":[],"resolution_method":"semantic_objective",
+                    "elapsed_ms":round((time.perf_counter()-started)*1000),
+                    "test_mode":"explicit_read_only",
+                }
         try:
-            devices = await mcp.get_cached_devices(refresh=True)
+            # Named historical cases retain the existing strict read plan.
+            # Device identities may come from the *model's phrase*, but only
+            # live Hubitat names/IDs can satisfy the host verification gate.
+            devices = (audit_devices if audit_devices is not None
+                       else await mcp.get_cached_devices(refresh=True))
+            selected_name=(semantic.device_name if semantic is not None
+                           and semantic.scope=="named" else payload.device_name)
             ids, resolved, resolve_method = resolve_verified_device_subjects(
-                payload.question, devices, device_name=payload.device_name,
+                payload.question, devices, device_name=selected_name,
                 device_ids=payload.device_ids)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -1446,6 +1487,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 max_rounds=3, max_total_reads=8,
                 incident_window=incident_window,
                 verified_device_label=resolved[0]["label"] if len(resolved)==1 else None,
+                force_duration_mode=semantic is not None and semantic.mode=="duration",
             )
         except asyncio.CancelledError:
             raise
@@ -1458,6 +1500,10 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         result["test_mode"] = "explicit_read_only"
         result["resolved_devices"] = resolved
         result["resolution_method"] = resolve_method
+        if semantic is not None:
+            result["semantic_plan"] = semantic.to_dict()
+            result["answer_mode"] = ("semantic_duration" if semantic.mode=="duration"
+                                    else "semantic_investigation")
         result["scorecard"] = replay_scorecard(
             evaluated.investigation.case, evaluated.answer,
             existing_v1_answer=payload.existing_v1_answer,
