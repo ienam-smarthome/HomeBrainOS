@@ -172,7 +172,32 @@ def resolve_verified_device_subjects(
     ], "question"
 
 
+def resolve_planned_device_subjects(
+    question: str, live_devices: Any, *,
+    model_device_name: str | None = None,
+) -> tuple[tuple[str, ...], list[dict[str, str]], str]:
+    """Ground automatic device identity in the question before model proposals.
+
+    A model-selected name is a proposed description, not identity authority.
+    The host prefers unambiguous phrases in the original question and only
+    accepts a model name if the question contains no matching device name
+    and the proposed name uniquely matches a real live-inventory label.
+    An ambiguous phrase is never resolved using the model's guess.
+    """
+    try:
+        return resolve_verified_device_subjects(question, live_devices)
+    except ValueError as exc:
+        if not str(exc).startswith(
+            "No device name in the question matched live Hubitat inventory."
+        ) or not model_device_name:
+            raise
+    ids, resolved, _ = resolve_verified_device_subjects(
+        question, live_devices, device_name=model_device_name,
+    )
+    return ids, resolved, "model_name_verified"
+
+
 __all__ = [
     "require_test_access", "match_verified_device_ids",
-    "resolve_verified_device_subjects",
+    "resolve_verified_device_subjects", "resolve_planned_device_subjects",
 ]
