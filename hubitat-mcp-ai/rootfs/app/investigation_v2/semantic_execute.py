@@ -142,6 +142,9 @@ def execute_inventory_plan(
     out_of_scope=[]
     unresolved_scope=[]
     overlap_suppressed=0
+    inferred_individual_loads=[]
+    unsupported_capability=0
+    missing_expected=0
     is_meter_quantity=plan.attribute in ("power","energy")
     comparison_of_individuals=(
         is_meter_quantity and plan.scope!="named"
@@ -151,6 +154,14 @@ def execute_inventory_plan(
         value=_value(device,plan.attribute) if plan.attribute else None
         if plan.attribute and value is None:
             missing+=1
+            if is_meter_quantity:
+                caps=capability_names(device)
+                advertised=("powermeter" if plan.attribute=="power"
+                            else "energymeter")
+                if advertised in caps:
+                    missing_expected+=1
+                else:
+                    unsupported_capability+=1
             continue
         if is_meter_quantity:
             numeric=_quantity(value,plan.attribute)
@@ -174,8 +185,12 @@ def execute_inventory_plan(
                 })
                 overlap_suppressed+=1
                 continue
-            if scope.role=="unknown":
+            if scope.role=="unknown" or (
+                plan.aggregation in ("sum","average") and not scope.verified
+            ):
                 unresolved_scope.append(ident)
+            if scope.role=="individual_load" and not scope.verified:
+                inferred_individual_loads.append(ident)
         present.append((ident,device,value))
     if plan.aggregation in ("top","bottom","sum","average"):
         numeric=[]
@@ -265,13 +280,25 @@ def execute_inventory_plan(
         lines.append("A whole-house meter and its downstream loads overlap: "
                      "never add them together.")
     if unresolved_scope:
-        lines.append(f"{len(unresolved_scope)} displayed candidate meter(s) "
-                     "have an unknown measurement scope. Rankings remain "
-                     "provisional until these are classified.")
+        lines.append(
+            f"{len(unresolved_scope)} candidate measurement scope(s) remain "
+            "unknown or unconfirmed; totals cannot treat these as independently "
+            "metered loads.")
+    if inferred_individual_loads and plan.aggregation in ("top","bottom"):
+        lines.append(f"{len(inferred_individual_loads)} candidate individual "
+                     "load role(s) were suggested by AI but not confirmed. "
+                     "This ranking remains provisional.")
     if missing:
-        lines.append(f"{missing} scoped device(s) lacked a usable {attr} reading; "
-                     "this includes devices that may not support that measurement. "
-                     "Values were excluded, not assumed zero.")
+        if is_meter_quantity:
+            lines.append(
+                f"{missing} device(s) had no usable {attr} reading: "
+                f"{missing_expected} advertised the matching meter capability "
+                f"but lacked a value; {unsupported_capability} did not advertise "
+                "that capability (measurement support unverified). "
+                "They were excluded, not assumed zero.")
+        else:
+            lines.append(f"{missing} scoped device(s) lacked a usable {attr} reading; "
+                         "those measurements were excluded, not assumed zero.")
     if not complete:
         lines.append("Inventory coverage is not verified complete. "
                      "Counts and rankings may omit devices.")
@@ -286,7 +313,7 @@ def execute_inventory_plan(
                   "omitted_material_record_ids":[],
                   "validation_issues":(
                       [] if complete and not missing and not out_of_scope and
-                            not unresolved_scope else
+                            not unresolved_scope and not inferred_individual_loads else
                       ["inventory_coverage_or_measurement_scope_unverified"]
                   ),
                   "root_cause_verified":False,"human_review_required":False},
@@ -301,6 +328,9 @@ def execute_inventory_plan(
             "shown_count":len(subset) if plan.aggregation!="count" else 0,
             "suppressed_overlapping_meters":out_of_scope,
             "unclassified_measurement_scopes":len(unresolved_scope),
+            "inferred_individual_loads":len(inferred_individual_loads),
+            "missing_expected_measurements":missing_expected,
+            "unverified_measurement_support":unsupported_capability,
             "aggregate_safe":not (
                 comparison_of_individuals and
                 (out_of_scope or unresolved_scope)

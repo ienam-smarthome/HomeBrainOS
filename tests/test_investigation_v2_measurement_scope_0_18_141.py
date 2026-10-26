@@ -80,6 +80,7 @@ def test_general_power_ranking_never_mixes_a_site_total_with_downstream_loads():
     assert len(output["inventory_query"]["suppressed_overlapping_meters"])==2
     assert output["inventory_query"]["matched_count"]==5
     assert output["inventory_query"]["unclassified_measurement_scopes"]==0
+    assert output["inventory_query"]["inferred_individual_loads"]==5
     assert "never add them together" in report
     assert output["inventory_query"]["aggregate_safe"] is False
 
@@ -174,7 +175,7 @@ def test_model_prompt_contains_bounded_evidence_catalogue_not_brand_rules():
 
 
 def test_role_config_is_opt_in_and_v2_only():
-    cfg=(APP.parents[2]/"config.yaml").read_text()
+    cfg=(APP.parents[1]/"config.yaml").read_text()
     assert 'v2_measurement_roles_json: "{}"' in cfg
     assert 'v2_measurement_roles_json: str' in cfg
     from investigation_v2.test_webui import render_v2_test_page
