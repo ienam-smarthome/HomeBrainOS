@@ -25,8 +25,14 @@ No device control, rule edits or automatic background comparison.</p>
 <input id="secret" type="password" autocomplete="off" placeholder="Operator test token">
 <label for="question">Investigation question</label>
 <textarea id="question" placeholder="Why did Livingroom Light 1 stay on overnight?"></textarea>
-<label for="ids">Verified Hubitat device ID(s), separated by commas (maximum 4)</label>
-<input id="ids" placeholder="7805">
+<p><small>HomeBrain automatically identifies the device from your question using
+the live Hubitat inventory. A device ID is not required.</small></p>
+<details id="targetOverride"><summary>Advanced: specify a device only if automatic matching fails</summary>
+<label for="deviceName">Device name (optional)</label>
+<input id="deviceName" placeholder="Livingroom Light 1">
+<label for="ids">Device ID override (optional; maximum 4, separated by commas)</label>
+<input id="ids" placeholder="e.g. 7805">
+</details>
 <label for="v1">Existing V1 answer (optional, paste with Ctrl+V)</label>
 <textarea id="v1" placeholder="V1 answer for timestamp-presence comparison"></textarea>
 <label for="reference">Claude/reference answer (optional, paste with Ctrl+V)</label>
@@ -38,6 +44,7 @@ Exact timestamp scores do not measure reasoning correctness. Source coverage can
 </section>
 <section id="output" hidden>
 <h2>V2 investigation summary</h2>
+<p id="resolvedDevices"></p>
 <div><button type="button" id="copyAnswer">Copy answer</button> <button type="button" id="copyReport">Copy full report</button></div>
 <pre id="answer"></pre>
 <h2>Measured checks</h2><div class="metrics" id="metrics"></div>
@@ -90,7 +97,7 @@ function formatTestError(response,data){
   else if(detail&&typeof detail==='object')
     problem=itemText(detail);
   if(!problem){
-    if(response.status===422)problem='Invalid test request. Check the question and device IDs.';
+    if(response.status===422)problem='Could not verify a unique device from the live inventory. Check the question or use Advanced options.';
     else if(response.status===404)problem='V2 API endpoint unavailable. Confirm add-on version and reload the test page.';
     else if(response.status===403)problem='V2 test access rejected. Check the token matches the saved add-on setting.';
     else if(response.status===503)problem='V2 server or Hubitat read temporarily unavailable; check add-on logs.';
@@ -121,13 +128,14 @@ el('run').onclick=async()=>{
       throw new Error('Enter the V2 test token from the add-on configuration (at least 16 characters).');
     if(question.length<5)
       throw new Error('Enter an investigation question (at least five characters).');
-    if(ids.length<1||ids.length>4||ids.some(x=>!/^\d{1,20}$/.test(x)))
-      throw new Error('Enter one to four numeric Hubitat device IDs, separated by commas.');
+    if(ids.length>4||ids.some(x=>!/^\d{1,20}$/.test(x)))
+      throw new Error('The optional override accepts at most four numeric Hubitat device IDs.');
     const response=await fetch(new URL('api/v2/test',new URL('./',location.href)),{
       method:'POST',headers:{'Content-Type':'application/json','X-HomeBrain-V2-Test-Token':el('secret').value},
       body:JSON.stringify({
         explicit_opt_in:true,question,
         device_ids:ids,
+        device_name:el('deviceName').value.trim()||null,
         existing_v1_answer:el('v1').value||null,
         reference_answer:el('reference').value||null
       })
@@ -137,6 +145,13 @@ el('run').onclick=async()=>{
     if(!data||typeof data!=='object'||!data.answer)
       throw new Error('HTTP '+response.status+': V2 endpoint returned no investigation result.');
     el('answer').textContent=data.report?.text||data.answer?.text||'No answer returned';
+    const targets=Array.isArray(data.resolved_devices)?data.resolved_devices:[];
+    el('resolvedDevices').textContent=targets.length
+      ? 'Verified Hubitat device'+(targets.length>1?'s':'')+': '+
+        targets.map(t=>(t.label||'Device')+' (#'+t.id+')').join(', ')+
+        ' · '+(data.resolution_method==='question'?'identified from question':
+             data.resolution_method==='device_name'?'matched friendly name':'verified ID override')
+      : '';
     const score=data.scorecard?.v2_measured||{};
     metric('Duration',data.elapsed_ms+' ms');metric('MCP reads',data.investigation?.executed_reads);
     metric('Command retention',score.command_records?score.commands_retained+'/'+score.command_records:'No command evidence');
@@ -147,6 +162,8 @@ el('run').onclick=async()=>{
     metric('In-window observations',fm.incident_records);
     metric('Historical page reached start',fm.incident_start_reached_by_returned_page===true?'Yes':'Not verified');
     el('details').textContent=JSON.stringify({
+      resolved_devices:data.resolved_devices,
+      resolution_method:data.resolution_method,
       forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
       full_source_backed_answer:data.answer?.text,

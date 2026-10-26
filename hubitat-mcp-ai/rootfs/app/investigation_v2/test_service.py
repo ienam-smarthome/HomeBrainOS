@@ -7,6 +7,8 @@ any model-proposed permission. No implicit background/shadow execution.
 from __future__ import annotations
 
 import hmac
+import re
+import unicodedata
 from typing import Any, Iterable
 
 
@@ -45,4 +47,122 @@ def match_verified_device_ids(requested: Iterable[str],
     return tuple(ids)
 
 
-__all__ = ["require_test_access", "match_verified_device_ids"]
+
+def _words(value: str) -> tuple[str, ...]:
+    if not isinstance(value, str):
+        return ()
+    return tuple(re.findall(r"[^\\W_]+", unicodedata.normalize("NFKC", value).casefold(),
+                            flags=re.UNICODE))
+
+
+def _inventory(live_devices: Any) -> dict[str, dict[str, Any]]:
+    """Index trusted live identity IDs with labels and names; never model output."""
+    if not isinstance(live_devices, list) or not live_devices:
+        raise ValueError("Live Hubitat device inventory unavailable")
+    devices: dict[str, dict[str, Any]] = {}
+    for row in live_devices:
+        if not isinstance(row, dict) or type(row.get("id")) not in (str, int):
+            continue
+        ident = str(row["id"])
+        if not ident.isdecimal() or len(ident) > 20:
+            continue
+        aliases = []
+        for key in ("label", "name"):
+            value = row.get(key)
+            if isinstance(value, str) and 1 <= len(value) <= 160 and _words(value):
+                aliases.append(value.strip())
+        if not aliases:
+            continue
+        entry = devices.setdefault(ident, {"id": ident, "label": aliases[0], "aliases": []})
+        for alias in aliases:
+            if alias not in entry["aliases"]:
+                entry["aliases"].append(alias)
+    if not devices:
+        raise ValueError("Live Hubitat device names unavailable")
+    return devices
+
+
+def resolve_verified_device_subjects(
+    question: str, live_devices: Any, *,
+    device_name: str | None = None,
+    device_ids: Iterable[str] = (),
+) -> tuple[tuple[str, ...], list[dict[str, str]], str]:
+    """Read-only target resolution: exact host inventory names, no LLM ID guesses.
+
+    Explicit IDs (advanced override) retain the existing strict verification.
+    An optional entered friendly name must uniquely equal a live label/name.
+    Otherwise identify longest whole-name mentions in the question. Ambiguous
+    identity is never silently converted into a device read.
+    """
+    inventory = _inventory(live_devices)
+    requested_ids = list(device_ids)
+    if requested_ids:
+        ids = match_verified_device_ids(requested_ids, live_devices)
+        return ids, [
+            {"id": ident, "label": inventory.get(ident, {}).get("label", "Device " + ident)}
+            for ident in ids
+        ], "manual_id"
+
+    hint = (device_name or "").strip()
+    if hint:
+        key = _words(hint)
+        matching = [item for item in inventory.values()
+                    if any(_words(alias) == key for alias in item["aliases"])]
+        if len(matching) != 1:
+            raise ValueError(
+                "Device name does not uniquely match the live Hubitat inventory. "
+                "Choose a full unique device name or use an ID under Advanced options."
+            )
+        item = matching[0]
+        return (item["id"],), [{"id": item["id"], "label": item["label"]}], "device_name"
+
+    if not isinstance(question, str) or not question.strip():
+        raise ValueError("An investigation question is required")
+    normalized = unicodedata.normalize("NFKC", question).casefold()
+    mentions: list[tuple[int, int, str, str, int]] = []
+    for item in inventory.values():
+        for alias in item["aliases"]:
+            words = _words(alias)
+            # Single generic labels (e.g. TV, ON, Fan) can accidentally match
+            # normal prose. They remain accessible via exact friendly-name hint.
+            if not words or (len(words) == 1 and len(words[0]) < 6):
+                continue
+            expression = r"(?<!\\w)" + r"[\\W_]+".join(map(re.escape, words)) + r"(?!\\w)"
+            for match in re.finditer(expression, normalized):
+                mentions.append((match.start(), match.end(), item["id"], item["label"],
+                                 len("".join(words))))
+    if not mentions:
+        raise ValueError(
+            "No device name in the question matched live Hubitat inventory. "
+            "Enter a full device name under Advanced options; no device was queried."
+        )
+
+    # Prefer most-specific complete names: shorter aliases inside longer names
+    # must never silently add another device. Tied different devices are unsafe.
+    mentions.sort(key=lambda item: (-(item[1]-item[0]), -item[4], item[0], item[2]))
+    selected: list[tuple[int, int, str, str, int]] = []
+    for mention in mentions:
+        overlapping = [row for row in selected
+                       if mention[0] < row[1] and row[0] < mention[1]]
+        if overlapping:
+            best = overlapping[0]
+            if mention[:2] == best[:2] and mention[2] != best[2]:
+                raise ValueError(
+                    "Ambiguous device name: multiple Hubitat devices match the same phrase. "
+                    "Enter a full unique device name under Advanced options."
+                )
+            continue
+        if mention[2] not in {row[2] for row in selected}:
+            selected.append(mention)
+    if len(selected) > 4:
+        raise ValueError("More than four Hubitat device names matched; narrow the question")
+    selected.sort(key=lambda item: item[0])
+    return tuple(row[2] for row in selected), [
+        {"id": row[2], "label": row[3]} for row in selected
+    ], "question"
+
+
+__all__ = [
+    "require_test_access", "match_verified_device_ids",
+    "resolve_verified_device_subjects",
+]

@@ -194,6 +194,16 @@ competing-controller lead when independently linked issued commands exist, and
 next checks. Full source-ID transcript remains available under Investigation
 details. Normal Ask and writes are unchanged.
 
+## Device identity resolution (0.18.131)
+
+V2 test users can now ask a question naming a Hubitat device without knowing its
+numeric ID. The admission layer matches full names or labels using the freshly
+read Hubitat inventory, gives longer overlapping aliases priority and rejects
+ambiguous/absent identities without executing a read. Optional advanced device
+name or exact ID override uses the same host-verification boundary. The model
+never invents or grants device IDs; all downstream MCP read-only checks remain.
+Normal V1 is unaffected.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
