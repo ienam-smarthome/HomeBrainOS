@@ -73,13 +73,41 @@ def _inventory(live_devices: Any) -> dict[str, dict[str, Any]]:
                 aliases.append(value.strip())
         if not aliases:
             continue
-        entry = devices.setdefault(ident, {"id": ident, "label": aliases[0], "aliases": []})
+        friendly = row.get("label")
+        friendly_words = (_words(friendly) if isinstance(friendly, str) else ())
+        entry = devices.setdefault(
+            ident, {"id": ident, "label": aliases[0],
+                    "aliases": [], "friendly_words": friendly_words})
+        if friendly_words and not entry["friendly_words"]:
+            entry["friendly_words"] = friendly_words
+            entry["label"] = friendly.strip()
         for alias in aliases:
             if alias not in entry["aliases"]:
                 entry["aliases"].append(alias)
     if not devices:
         raise ValueError("Live Hubitat device names unavailable")
     return devices
+
+
+def _ambiguous_inventory_targets(items: Iterable[dict[str, Any]]) -> str:
+    """Safe, bounded candidate disclosure for an authenticated V2 operator.
+
+    The choices are verified Hubitat inventory identities, never model guesses.
+    Duplicate friendly labels remain ambiguous and require explicit ID input.
+    """
+    distinct = {item["id"]: item for item in items}
+    choices = sorted(distinct.values(), key=lambda item: int(item["id"]))
+    labels = []
+    for item in choices[:6]:
+        label = re.sub(r"[^\\w .,&()/-]", "", item["label"])[:72].strip()
+        labels.append(f"{label or 'Device'} (#{item['id']})")
+    suffix = "; more matches exist" if len(choices) > 6 else ""
+    return (
+        "Ambiguous device name: multiple Hubitat devices have the same "
+        "highest-priority verified name and cannot be matched uniquely. "
+        + "Matching IDs: " + "; ".join(labels) + suffix
+        + ". Select the intended ID under Advanced options."
+    )
 
 
 def resolve_verified_device_subjects(
@@ -111,18 +139,25 @@ def resolve_verified_device_subjects(
         key = _words(hint)
         matching = [item for item in inventory.values()
                     if any(_words(alias) == key for alias in item["aliases"])]
-        if len(matching) != 1:
+        # Friendly Hubitat labels are user-defined device identities; a
+        # second device's generic driver name must not override an exact
+        # label. Duplicate friendly labels remain ambiguous.
+        preferred = [item for item in matching if item["friendly_words"] == key]
+        candidates = preferred or matching
+        if len(candidates) != 1:
+            if len(candidates) > 1:
+                raise ValueError(_ambiguous_inventory_targets(candidates))
             raise ValueError(
                 "Device name does not uniquely match the live Hubitat inventory. "
                 "Choose a full unique device name or use an ID under Advanced options."
             )
-        item = matching[0]
+        item = candidates[0]
         return (item["id"],), [{"id": item["id"], "label": item["label"]}], "device_name"
 
     if not isinstance(question, str) or not question.strip():
         raise ValueError("An investigation question is required")
     normalized = unicodedata.normalize("NFKC", question).casefold()
-    mentions: list[tuple[int, int, str, str, int]] = []
+    mentions: list[tuple[int, int, str, str, int, int]] = []
     for item in inventory.values():
         for alias in item["aliases"]:
             words = _words(alias)
@@ -139,8 +174,12 @@ def resolve_verified_device_subjects(
                     before = normalized[max(0, match.start()-18):match.start()]
                     if not re.search(r"\b(?:the|my|our|this|that)\s+$",before):
                         continue
+                # Rank actual friendly-label matches above generic device
+                # names only for an identical whole-phrase match. Longer
+                # different phrases still win regardless of their source.
+                priority = 2 if item["friendly_words"] == words else 1
                 mentions.append((match.start(), match.end(), item["id"], item["label"],
-                                 len("".join(words))))
+                                 len("".join(words)), priority))
     if not mentions:
         raise ValueError(
             "No device name in the question matched live Hubitat inventory. "
@@ -149,18 +188,21 @@ def resolve_verified_device_subjects(
 
     # Prefer most-specific complete names: shorter aliases inside longer names
     # must never silently add another device. Tied different devices are unsafe.
-    mentions.sort(key=lambda item: (-(item[1]-item[0]), -item[4], item[0], item[2]))
-    selected: list[tuple[int, int, str, str, int]] = []
+    mentions.sort(key=lambda item: (-(item[1]-item[0]), -item[4], -item[5],
+                                    item[0], item[2]))
+    selected: list[tuple[int, int, str, str, int, int]] = []
     for mention in mentions:
         overlapping = [row for row in selected
                        if mention[0] < row[1] and row[0] < mention[1]]
         if overlapping:
             best = overlapping[0]
-            if mention[:2] == best[:2] and mention[2] != best[2]:
-                raise ValueError(
-                    "Ambiguous device name: multiple Hubitat devices match the same phrase. "
-                    "Enter a full unique device name under Advanced options."
-                )
+            if (mention[:2] == best[:2] and mention[2] != best[2]
+                    and mention[5] == best[5]):
+                tied = [inventory[ident] for ident in (mention[2], best[2])]
+                raise ValueError(_ambiguous_inventory_targets(tied))
+            # For an identical phrase, a verified friendly label takes
+            # precedence over a different device's generic name. Do not
+            # privilege arbitrary ID ordering or unverified model hints.
             continue
         if mention[2] not in {row[2] for row in selected}:
             selected.append(mention)
