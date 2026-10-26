@@ -58,7 +58,7 @@ def test_second_independent_history_sample_can_recover_command_not_in_first():
     before=receipt([E_OFF,E_BUTTON],source_request_id="first")
     after=receipt([E_OFF,E_LEVEL,E_BUTTON],limit=500,source_request_id="second")
     # One HTTP response containing earlier events never proves completeness.
-    assert before["details"]["requestedWindowReached"] is None
+    assert before["details"]["requestedWindowReached"] is False
     case=build_case_file(question(),[before,after])
     assert len(case.records)==3
     assert [x.action for x in case.records]==["command-off","command-setLevel","command-off"]
