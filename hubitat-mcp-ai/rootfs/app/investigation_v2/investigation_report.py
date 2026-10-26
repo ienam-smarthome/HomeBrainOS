@@ -128,13 +128,17 @@ def format_investigation_report(
             if len(names) > 1 and "BST" in names and "GMT" in names:
                 lines.append("Times are local. UK clocks went back from BST to GMT on 25 October; the repeated hour is shown with its timezone.")
         known = sum(bool(row.producer_id) for row in records)
-        show_source = known * 4 >= len(records)
+        # Even when most state reports have no known issuer, preserve
+        # attribution for a concrete issued command.
+        show_source = (known * 4 >= len(records)
+                       or any(row.producer_id for row in commands))
+        clock_heading = "Local time" if window is not None else "UTC time"
         if not show_source:
             lines.append("**Source note:** Issuing apps are not identified for most returned records. Missing source metadata is not evidence of manual control.")
         lines.extend(
-            ["| Time | Observation | Source |", "|---|---|---|"]
+            [f"| {clock_heading} | Observation | Source |", "|---|---|---|"]
             if show_source else
-            ["| Time | Observation |", "|---|---|"]
+            [f"| {clock_heading} | Observation |", "|---|---|"]
         )
         priority = [row for row in records
                     if row.stage == "command_issued"
