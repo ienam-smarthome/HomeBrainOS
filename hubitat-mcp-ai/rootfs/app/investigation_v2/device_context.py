@@ -143,7 +143,7 @@ def device_context_proposals(
             return []
         return [_proposal(gateway, "hub_get_device", args,
                           "Current device status and source-reported last contact")]
-    if stage == "history":
+    if stage in ("history", "history_unfiltered"):
         gateway = _gateway(tools, "hub_list_device_events", learned_operations=learned_operations)
         if gateway is None:
             return []
@@ -161,7 +161,7 @@ def device_context_proposals(
                 lookback = min(lookback, constraint)
             args["hoursBack"] = lookback
         if _accepts_field(schema, "limit"):
-            limit = 500
+            limit = 50
             bound = fields.get("limit", {}).get("maximum")
             if type(bound) is int and bound > 0:
                 limit = min(limit, bound)
@@ -172,7 +172,14 @@ def device_context_proposals(
                          isinstance(snap.get("attributes"), dict) and
                          "switch" in snap["attributes"]
                          for snap in case.device_snapshots)
-        if _accepts_field(schema, "attribute") and (has_switch or "attribute" in required):
+        if stage == "history_unfiltered":
+            # A second, smaller request without the switch filter is useful
+            # ONLY after a verified empty filtered source result. Never omit
+            # a field required by the live gateway schema.
+            if "attribute" in required:
+                return []
+            args["limit"] = min(args.get("limit", 50), 50) if "limit" in args else 50
+        elif _accepts_field(schema, "attribute") and (has_switch or "attribute" in required):
             choices = fields.get("attribute", {}).get("enum", [])
             if isinstance(choices, list) and choices and "switch" not in choices:
                 return []
@@ -180,7 +187,9 @@ def device_context_proposals(
         if any(field not in args for field in required):
             return []
         return [_proposal(gateway, "hub_list_device_events", args,
-                          "Recover state transitions without repeated health-status noise")]
+                          ("Recover bounded unfiltered history after verified empty switch results"
+                           if stage == "history_unfiltered" else
+                           "Recover state transitions without repeated health-status noise"))]
     return []
 
 
