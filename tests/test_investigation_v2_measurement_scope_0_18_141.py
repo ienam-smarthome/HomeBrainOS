@@ -113,7 +113,8 @@ def test_unclassified_site_meter_is_disclosed_as_a_provisional_measurement():
     out=execute_inventory_plan(plan(),DEVICES,PROVENANCE)
     assert out["inventory_query"]["unclassified_measurement_scopes"]>=6
     assert "unknown or unconfirmed" in out["answer"]["text"]
-    assert "Provider Live Meter" in out["answer"]["text"]\n    assert out["inventory_query"]["suppressed_overlapping_meters"][0]["label"]=="Electrical Submeter"
+    assert "Provider Live Meter" in out["answer"]["text"]
+    assert out["inventory_query"]["suppressed_overlapping_meters"][0]["label"]=="Electrical Submeter"
     # Without confirmed or inferred metadata we must not silently claim that
     # all displayed meters are individual loads.
     assert out["answer"]["validation_issues"]
