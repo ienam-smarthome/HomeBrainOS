@@ -167,6 +167,29 @@ async def evaluate_v2_with_model(
             investigation=result, answer=grounded,
             report=narrative, incident_window=incident_window,
         )
+    # With read-time status but no authenticated timestamped records, the
+    # host already knows every reportable observation. Another model-driven
+    # atomic-claim pass cannot create source record IDs; it previously spent
+    # expensive reasoning rounds making unsupported radio/mesh hypotheses.
+    # Render the allowlisted source snapshot deterministically instead.
+    if result.case.device_snapshots and not result.case.records:
+        grounded = assemble_grounded_answer(
+            result.case, [],
+            {"selected_record_ids": [], "hypothesis_order": []},
+        )
+        grounded = replace(
+            grounded, validation_issues=(*grounded.validation_issues,
+                                        "current_snapshot_without_timed_history",
+                                        "atomic_claim_selection_not_applicable"),
+        )
+        return V2Evaluation(
+            investigation=result, answer=grounded,
+            report=format_investigation_report(
+                result.case, [], result.stopped_because, incident_window,
+            ),
+            incident_window=incident_window,
+        )
+
     # If planning itself timed out or the transport failed, don't issue more
     # large model calls for atomic selection and repair. The host can still
     # render every authenticated event with no invented causal hypothesis.

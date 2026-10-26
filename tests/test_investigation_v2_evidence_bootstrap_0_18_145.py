@@ -70,7 +70,7 @@ def test_snapshot_retains_only_safe_device_status_and_last_contact():
     args = hist[0]["arguments"]["args"]
     assert args["hoursBack"] >= 336  # live lastSeen extends beyond 7-day default
     assert args["attribute"] == "switch"
-    assert args["limit"] == 500
+    assert args["limit"] == 50
 
 
 def test_manifest_write_and_ambiguous_target_cannot_trigger_any_reads():
