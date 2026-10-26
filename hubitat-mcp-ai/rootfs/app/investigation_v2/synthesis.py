@@ -55,7 +55,7 @@ def _observation(row: EvidenceItem) -> str:
 
 
 _DISPLAY_STATUS_KEYS = (
-    "healthStatus", "deviceHealth", "mqttStatus", "switch",
+    "healthStatus", "deviceHealth", "networkStatus", "mqttStatus", "switch",
     "lastSeen", "lastMessage", "lastActivity", "power", "energy",
 )
 
@@ -76,14 +76,18 @@ def _reported_snapshot(case: CaseFile) -> list[str]:
               if key in attrs and type(attrs[key]) in (str, int, float, bool)]
     if not values:
         return []
-    return [
+    lines = [
         "Current Hubitat device snapshot (read-time reported values, not "
         "a historical event or proof of physical reachability):",
         "- " + ", ".join(values),
-        "A connected MQTT client status alone does not verify that this "
-        "device is reachable. Any reported power/energy value may be stale.",
-        "",
     ]
+    if "mqttStatus" in attrs:
+        lines.append("A connected MQTT client status alone does not verify "
+                     "that this device is reachable.")
+    if "power" in attrs or "energy" in attrs:
+        lines.append("Reported power/energy values may be stale.")
+    lines.append("")
+    return lines
 
 
 def assemble_grounded_answer(
