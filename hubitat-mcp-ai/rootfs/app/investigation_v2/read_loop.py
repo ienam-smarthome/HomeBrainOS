@@ -25,6 +25,7 @@ from .receipt_projection import project_read_receipt
 from .temporal_scope import IncidentWindow
 from .hypothesis_temporal_integrity import hypothesis_clock_issues
 from .source_identity import source_identity_proposals, source_configuration_proposals
+from .read_diagnostics import classify_exception, classify_execution
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class InvestigationResult:
     incident_window: IncidentWindow | None = None
     planning_diagnostics: list[dict[str, Any]] = field(default_factory=list)
     history_comparison: dict[str, Any] = field(default_factory=dict)
+    read_failures: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         # No raw tool text, credentials, IPs or model transport responses.
@@ -60,6 +62,7 @@ class InvestigationResult:
             "rejected_proposals": list(self.rejected_proposals),
             "planning_diagnostics": list(self.planning_diagnostics),
             "history_comparison": dict(self.history_comparison),
+            "read_failures": list(self.read_failures),
             "root_cause_verified": False,
             "production_answer_used": False,
             "requested_incident_window": (self.incident_window.to_dict()
@@ -205,6 +208,7 @@ async def run_read_only_investigation(
     hypotheses: dict[str, Hypothesis] = {}
     rejections: list[str] = []
     planning_diagnostics: list[dict[str, Any]] = []
+    read_failures: list[dict[str, Any]] = []
     executed = 0
     rounds = 0
     reason = "round_budget_reached"
@@ -217,6 +221,8 @@ async def run_read_only_investigation(
             return
         prior_calls.append((item.tool, item.arguments))
         executed += 1
+        started_read = time.monotonic()
+        code: str | None = None
         try:
             execution = await asyncio.wait_for(
                 executor.execute(
@@ -225,27 +231,47 @@ async def run_read_only_investigation(
                 ),
                 timeout=min(per_read_timeout_seconds, max(0.1, deadline - time.monotonic())),
             )
-            accepted = (
-                execution.effect is ToolEffect.READ and
-                execution.name == item.tool and execution.success is True and
-                execution.result is not None and execution.result.name == item.tool
-            )
-            result = execution.result if accepted else None
-            if not accepted:
-                rejections.append("read failed or returned no authoritative result")
+            if execution.effect is not ToolEffect.READ:
+                code = "read_permission_changed"
+            else:
+                code = classify_execution(execution, item.tool)
+            # Even a successful wrapper can contain a protocol-level failure.
+            result = execution.result if code is None else None
+            if code is None and result is not None:
+                from mcp_client import tool_succeeded
+                if not tool_succeeded(result):
+                    code = "mcp_result_unsuccessful"
+                    result = None
         except asyncio.TimeoutError:
+            code = "read_timeout"
             result = None
-            rejections.append("bounded MCP read timed out")
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            code = classify_exception(exc)
             result = None
-            rejections.append("bounded MCP read failed")
+        if code is not None:
+            rejections.append("MCP read failed: " + code)
         receipt = project_read_receipt(
             item.tool, item.arguments, result,
             source_request_id=f"v2-{round_index}-{executed}",
             incident_window=incident_window,
         )
+        if code is not None:
+            # Local enum only: never propagate exception messages, raw URLs,
+            # serialized MCP outputs or untrusted error fields.
+            receipt["failure_code"] = code
+            args = item.arguments.get("args", {})
+            requested_id = args.get("appId", args.get("deviceId")) if isinstance(args, dict) else None
+            read_failures.append({
+                "source_request_id": receipt["source_request_id"],
+                "tool": item.tool,
+                "operation": str(item.arguments.get("tool", ""))[:80],
+                "target_id": str(requested_id) if isinstance(requested_id, (str,int))
+                          and str(requested_id).isdecimal() else None,
+                "code": code,
+                "elapsed_ms": min(200000, max(0, int((time.monotonic()-started_read)*1000))),
+            })
         receipts.append(receipt)
         case = build_case_file(question, receipts)
 
@@ -400,6 +426,7 @@ async def run_read_only_investigation(
         rejected_proposals=rejections, incident_window=incident_window,
         planning_diagnostics=planning_diagnostics,
         history_comparison=compare_history_samples(receipts),
+        read_failures=read_failures,
     )
 
 

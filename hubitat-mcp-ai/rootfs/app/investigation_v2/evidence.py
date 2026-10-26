@@ -12,6 +12,7 @@ import json
 from typing import Any, Iterable, Mapping
 
 from .adapters import supplemental_events
+from .read_diagnostics import safe_code as safe_failure_code
 
 STAGES = frozenset({
     "command_issued", "state_reported", "app_log_statement",
@@ -98,6 +99,7 @@ class Coverage:
     source_newest_utc: str | None = None
     requested_window_reached: bool | None = None
     projection_drop_counts: dict[str, int] = field(default_factory=dict)
+    failure_code: str | None = None
 
 
 @dataclass
@@ -312,6 +314,7 @@ def build_case_file(original_user_request: str,
              if key in ("wrong_target", "invalid_device_id", "invalid_name_or_time",
                         "outside_incident", "retention_cap")
              and type(value) is int and 0 <= value <= 100000},
+            safe_failure_code(raw.get("failure_code")),
         ))
         case.errors.extend(f"{source_id}: {issue}" for issue in errors)
     case.records = sorted(dedup.values(), key=lambda e: (e.timestamp_utc, e.record_id))

@@ -290,6 +290,19 @@ fail gracefully. The command-retention label now says *retrieved*, not that
 Hubitat history is complete. Budget-limited/timeout experiments explicitly
 report their incomplete status instead of the ambiguous 'Test complete'.
 
+## Host-classified MCP read failures (0.18.137)
+
+V2 read failures now expose a narrow local reason-code enum (timeout,
+transport, HTTP, MCP protocol/tool result, missing authoritative result,
+read-executor failure, identity mismatch). This information is derived solely
+from host-known exception **types** and ToolExecution shape, never server
+messages, raw MCP bodies, URLs or credentials. Errors appear on the typed
+coverage receipt, in bounded technical `read_failures`, and briefly in the
+human report. A failed tool read is not proof that the requested source data
+doesn't exist, and an operation that only returns coverage does not become
+a verified historical state. Live tests should compare cause codes from
+previously opaque app/source calls while retaining unchanged write gates.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

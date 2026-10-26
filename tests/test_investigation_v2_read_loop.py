@@ -210,7 +210,8 @@ async def test_timeout_preserves_failed_coverage_without_claiming_absence():
     assert result.case.records == []
     assert len(result.case.coverage) == 1
     assert result.case.coverage[0].succeeded is False
-    assert "bounded MCP read timed out" in result.rejected_proposals
+    assert "MCP read failed: read_timeout" in result.rejected_proposals
+    assert result.read_failures[0]["code"] == "read_timeout"
 
 
 @pytest.mark.asyncio
