@@ -64,7 +64,8 @@ def format_investigation_report(
                      f"(UTC; local hub zone {window.zone_name}).")
     relevant=[c for c in case.coverage if c.operation=="hub_list_device_events"]
     if window is not None and relevant:
-        if all(c.requested_window_reached is False for c in relevant if c.succeeded) and any(c.succeeded for c in relevant):
+        if (any(c.requested_window_reached is False for c in relevant if c.succeeded)
+                and not any(c.requested_window_reached is True for c in relevant)):
             lines.append("**Coverage warning:** returned history pages did not reach the incident start. No incident event must be treated as absent.")
         elif not any(c.requested_window_reached is True for c in relevant):
             lines.append("**Coverage warning:** the returned history has not established that the incident start was reached.")

@@ -143,7 +143,11 @@ el('run').onclick=async()=>{
     metric('Invalid citations',score.invalid_citations);
     metric('Validation flags',score.validator_flags?.length??0);
     metric('Historical source complete',score.source_complete_proven===true?'Proven':'Not proven');
+    const fm=data.forensic_metrics||{};
+    metric('In-window observations',fm.incident_records);
+    metric('Historical page reached start',fm.incident_start_reached_by_returned_page===true?'Yes':'Not verified');
     el('details').textContent=JSON.stringify({
+      forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
       full_source_backed_answer:data.answer?.text,
       requested_incident_window:data.investigation?.requested_incident_window,
