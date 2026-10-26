@@ -178,7 +178,8 @@ def device_context_proposals(
             # a field required by the live gateway schema.
             if "attribute" in required:
                 return []
-            args["limit"] = min(args.get("limit", 50), 50) if "limit" in args else 50
+            if "limit" in args:
+                args["limit"] = min(args["limit"], 50)
         elif _accepts_field(schema, "attribute") and (has_switch or "attribute" in required):
             choices = fields.get("attribute", {}).get("enum", [])
             if isinstance(choices, list) and choices and "switch" not in choices:
