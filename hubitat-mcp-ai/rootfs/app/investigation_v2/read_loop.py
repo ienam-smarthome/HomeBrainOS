@@ -23,6 +23,7 @@ from .evidence import CaseFile, build_case_file
 from .planning import review_model_read_proposals
 from .receipt_projection import project_read_receipt
 from .temporal_scope import IncidentWindow
+from .hypothesis_temporal_integrity import hypothesis_clock_issues
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ ModelProposer = Callable[[CaseFile, int], Awaitable[Mapping[str, Any]]]
 
 def _hypotheses(
     value: Any, case: CaseFile, existing: dict[str, Hypothesis],
+    incident_window: IncidentWindow | None = None,
 ) -> dict[str, Hypothesis]:
     if not isinstance(value, list):
         return existing
@@ -87,6 +89,11 @@ def _hypotheses(
             continue
         if (any(not isinstance(x, str) or x not in valid_ids for x in positive + negative)
                 or set(positive) & set(negative)):
+            continue
+        # Record IDs verify cited events, not the prose. Bare times may be
+        # UTC conversions presented as local times. Require an explicit
+        # timezone and an exact match to a cited source event.
+        if hypothesis_clock_issues(explanation, case, positive + negative, incident_window):
             continue
         updated[identifier] = Hypothesis(
             identifier, explanation, tuple(dict.fromkeys(positive)),
@@ -250,7 +257,8 @@ async def run_read_only_investigation(
         if not isinstance(output, dict):
             reason = "invalid_model_plan"
             break
-        hypotheses = _hypotheses(output.get("hypotheses"), case, hypotheses)
+        hypotheses = _hypotheses(output.get("hypotheses"), case, hypotheses,
+                                 incident_window=incident_window)
         planned = output.get("reads", [])
         if not isinstance(planned, list):
             reason = "invalid_model_plan"
@@ -266,7 +274,8 @@ async def run_read_only_investigation(
         )
         rejections.extend(x.reason for x in review.rejected)
         if not review.approved:
-            reason = "model_finished" if output.get("finish") is True else "no_approved_discriminating_reads"
+            reason = ("model_finished" if output.get("finish") is True and not review.rejected
+                      else "no_approved_discriminating_reads")
             break
 
         before_records = {record.record_id for record in case.records}

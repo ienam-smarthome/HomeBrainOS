@@ -226,6 +226,23 @@ incident window, not by first position in a broad chronology. An unproductive
 follow-up read is explicitly recorded as `no_new_usable_evidence`, preventing
 an identical expensive next model planning call. V2 remains opt-in read-only.
 
+## Hypothesis clock integrity and read-plan diagnosis (0.18.133)
+
+The V2 host now validates model-authored hypothesis clock strings against
+actual *linked* record timestamps. Every displayed HH:MM must explicitly
+identify its timezone (BST, GMT or UTC), and match at least one source
+record cited in that hypothesis. An ambiguous or unsupported clock claim
+does not enter the user-facing hypotheses; raw timestamped evidence remains.
+The model receives the same requirement as a planning instruction.
+
+The planner's read schema projection now includes nested required fields and
+additionalProperties=false, reducing invalid model tool requests. Test details
+now expose bounded, non-sensitive host rejection codes, current app identity
+mapping, planning rounds and read counts. This allows diagnosis of
+no_approved_discriminating_reads without revealing raw MCP responses.
+This release does not claim the underlying app config/execution tools are
+available; that remains a live MCP manifest and history question.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
