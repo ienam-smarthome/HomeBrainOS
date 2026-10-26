@@ -19,6 +19,7 @@ _ID = re.compile(r"^[0-9]{1,20}$")
 _EVENT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]{0,79}$")
 _SHORT_VALUE = re.compile(r"^[A-Za-z0-9 _.,:;@+/-]{0,80}$")
 _MAX_ROWS = 120
+_MAX_SCAN = 2000  # bound untrusted source pages before incident filtering
 
 
 def _id(value: Any) -> str | None:
@@ -38,11 +39,15 @@ def _timestamp(value: Any) -> str | None:
     return value.strip() if dt.tzinfo is not None and dt.utcoffset() is not None else None
 
 
-def _event_rows(raw_rows: Any, requested_id: str) -> tuple[list[dict[str, Any]], int]:
+def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindow | None = None) -> tuple[list[dict[str, Any]], int, str | None, str | None, bool]:
     if not isinstance(raw_rows, list):
-        return [], 0
+        return [], 0, None, None, False
     result: list[dict[str, Any]] = []
-    for row in raw_rows[:_MAX_ROWS]:
+    source_instants = []
+    # Scan a bounded source page, filter by the user-authorized time window,
+    # THEN cap retained incident observations. The inverse drops historical
+    # evidence whenever unrelated recent rows fill the start of the page.
+    for row in raw_rows[:_MAX_SCAN]:
         if not isinstance(row, dict):
             continue
         if (event_id := _id(row.get("deviceId"))) and event_id != requested_id:
@@ -52,6 +57,12 @@ def _event_rows(raw_rows: Any, requested_id: str) -> tuple[list[dict[str, Any]],
         name = row.get("name") or row.get("eventName")
         stamp = _timestamp(row.get("date") or row.get("timestamp"))
         if not isinstance(name, str) or not _EVENT_NAME.fullmatch(name) or not stamp:
+            continue
+        instant = datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone(timezone.utc)
+        source_instants.append(instant)
+        if incident_window is not None and not incident_window.contains(stamp):
+            continue
+        if len(result) >= _MAX_ROWS:
             continue
         event: dict[str, Any] = {"deviceId": requested_id, "name": name, "date": stamp}
         if name.startswith("command-") or row.get("type") == "command":
@@ -66,7 +77,9 @@ def _event_rows(raw_rows: Any, requested_id: str) -> tuple[list[dict[str, Any]],
             # No producer labels, free-form summaries or triggered listeners.
             event["producedBy"] = {"id": producer_id}
         result.append(event)
-    return result, len(raw_rows)
+    oldest = min(source_instants).isoformat() if source_instants else None
+    newest = max(source_instants).isoformat() if source_instants else None
+    return result, len(raw_rows), oldest, newest, len(raw_rows) > _MAX_SCAN
 
 
 def project_read_receipt(
@@ -105,18 +118,25 @@ def project_read_receipt(
         if not target or ("deviceId" in data and _id(data.get("deviceId")) != target):
             receipt["success"] = False
             return receipt
-        rows, original_count = _event_rows(data.get("events"), target)
-        if incident_window is not None:
-            rows = [event for event in rows if incident_window.contains(event["date"])]
+        rows, original_count, oldest, newest, scan_truncated = _event_rows(
+            data.get("events"), target, incident_window)
         if not isinstance(data.get("events"), list):
             return receipt
         details = {
             "deviceId": target, "events": rows,
             "sourceEventCount": original_count,
             "rowsOutsideRequestedWindowOrInvalid": original_count - len(rows),
+            "sourceOldestReturnedUtc": oldest,
+            "sourceNewestReturnedUtc": newest,
+            "sourceScanTruncated": scan_truncated,
+            "requestedWindowReached": (
+                (oldest <= incident_window.start_utc)
+                if incident_window is not None and oldest is not None
+                   and not scan_truncated else None),
             "requestedIncidentWindow": (incident_window.to_dict()
                                         if incident_window is not None else None),
-            "observedEventsTruncated": bool(original_count > _MAX_ROWS),
+            "observedEventsTruncated": bool(
+                original_count > _MAX_ROWS or scan_truncated),
         }
         for source_key in ("sourceCompleteToWindowStart", "sourceComplete",
                            "historySourceIntegrityVerified", "pageReachesStart"):

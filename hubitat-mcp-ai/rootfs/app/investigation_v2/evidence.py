@@ -93,6 +93,10 @@ class Coverage:
     pagination_cursor: str | None
     succeeded: bool
     errors: tuple[str, ...] = ()
+    source_returned_rows: int | None = None
+    source_oldest_utc: str | None = None
+    source_newest_utc: str | None = None
+    requested_window_reached: bool | None = None
 
 
 @dataclass
@@ -129,7 +133,9 @@ class CaseFile:
                 f"{c.source_request_id} target={c.query_target_id or 'unknown'} "
                 f"rows={c.returned_rows} page_reaches_start={c.page_reaches_start} "
                 f"source_complete={c.source_complete} "
-                f"integrity={c.source_integrity_verified} truncated={c.truncated}"
+                f"integrity={c.source_integrity_verified} truncated={c.truncated} "
+                f"source_rows={c.source_returned_rows} source_oldest={c.source_oldest_utc} "
+                f"requested_window_reached={c.requested_window_reached}"
             )
         lines.append("Stored configuration is a read-time snapshot, not verified historical "
                      "effective code or event-time automation behaviour.")
@@ -276,7 +282,12 @@ def build_case_file(original_user_request: str,
             min(times) if times else None, max(times) if times else None,
             page_reach, source_complete, truncated, integrity,
             str(details["nextCursor"]) if isinstance(details.get("nextCursor"), str) else None,
-            succeeded, tuple(errors)))
+            succeeded, tuple(errors),
+            details.get("sourceEventCount") if type(details.get("sourceEventCount")) is int else None,
+            details.get("sourceOldestReturnedUtc") if isinstance(details.get("sourceOldestReturnedUtc"), str) else None,
+            details.get("sourceNewestReturnedUtc") if isinstance(details.get("sourceNewestReturnedUtc"), str) else None,
+            details.get("requestedWindowReached") if type(details.get("requestedWindowReached")) is bool else None,
+        ))
         case.errors.extend(f"{source_id}: {issue}" for issue in errors)
     case.records = sorted(dedup.values(), key=lambda e: (e.timestamp_utc, e.record_id))
     return case
