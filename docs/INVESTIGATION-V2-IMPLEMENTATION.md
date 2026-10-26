@@ -356,6 +356,22 @@ latency to current inventory reads, and further phases should extend the
 same typed objective/execution contract to cross-device history and causal
 analysis. Existing manually specified devices bypass interpretation.
 
+## Measurement scope and safe energy arithmetic (v0.18.141)
+
+The generic semantic planner receives a bounded inventory-derived measurement
+catalogue and can suggest typed roles. Exact source ID + label checks prevent
+fabricated device IDs; these interpretations remain **unverified**. Source
+metadata roles or the optional operator-confirmed `v2_measurement_roles_json`
+(overrides keyed by current verified Hubitat device ID) take precedence.
+Current individual-load power/energy rankings separate site-wide and circuit
+aggregate readings; mixed or uncertain sums and averages are withheld instead
+of producing double-counted energy values. The result explicitly discloses
+unclassified meters and distinguishes unavailable power from unsupported
+capability. Unit parsing converts kW to W and Wh to kWh without assuming
+instantaneous power equals accumulated energy. This does not yet retrieve the
+`00 Energy Usage` Hubitat application ledger, so the screenshot reconciliation
+is a reference benchmark, not a claimed live synchronization.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
