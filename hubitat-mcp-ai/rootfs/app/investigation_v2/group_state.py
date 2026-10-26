@@ -30,11 +30,13 @@ def current_light_group_question(question: str) -> str | None:
 
 
 def _cell(value: Any) -> str:
-    """Keep display-only inventory labels from becoming formatting markup."""
-    text=str(value or "").strip()[:100]
-    text=re.sub(r"[\\r\\n\\t|<>\x00-\x1f]", " ",text)
-    return re.sub(r"([\\\\`*_\\[\\]])",r"\\\1",text) or "Unassigned"
-
+    """Render device labels as plain text, without Markdown or control chars."""
+    raw=str(value or "").strip()[:100]
+    clean=" ".join("".join(
+        ch if ch.isprintable() and ch not in "|<>\\\\`*_[]{}" else " "
+        for ch in raw
+    ).split())
+    return clean or "Unassigned"
 
 def current_light_group_answer(
     question: str,
@@ -92,25 +94,27 @@ def current_light_group_answer(
     note="**Inventory complete:** verified paginated Hubitat source." if complete else (
         "**Inventory coverage not verified:** this may be a partial list of lights."
     )
-    lines=[f"**Lights reported {prefix} by Hubitat**",
-           f"Found **{len(matched)}** reported {prefix} "
-           f"out of **{counted}** identified light devices at {read_time} UTC.",
-           note,
-           "These are Hubitat-reported switch states, not independent confirmation that bulbs are physically lit."]
+    headline=f"Hubitat reports {len(matched)} light(s) {prefix} out of {counted} identified lights."
+    lines=[
+        headline,
+        "Checked at "+read_time+" UTC.",
+    ]
     if matched:
-        lines.extend(["","| Room | Light | State |","|---|---|---|"])
-        for item in matched:
-            lines.append(f"| {item['room']} | {item['label']} | {prefix} |")
+        lines.append("")
+        lines.extend(
+            f"• {item['room']} — {item['label']}"
+            for item in matched
+        )
     else:
-        lines.append(
-            "No matching light was reported in this inventory. "
-            "This does not prove every physical light is in the opposite state."
-        )
+        lines.append("No matching lights were reported in the returned inventory.")
+    lines.append("")
+    if not complete:
+        lines.append("Coverage warning: the inventory may be incomplete; "
+                     "this is not a guaranteed whole-home count.")
     if unknown:
-        lines.append(
-            f"**{len(unknown)} light(s) have no usable switch state.** "
-            "They are not counted as ON or OFF."
-        )
+        lines.append(f"{len(unknown)} identified light(s) have unknown switch state.")
+    lines.append("These are Hubitat-reported switch states, not independent "
+                 "confirmation of physical bulb state.")
     return {
         "answer_mode":"current_group_state",
         "answer":{"text":"\n".join(lines),"displayed_record_ids":[],
