@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.142**.
+Current add-on version: **0.18.143**.
 
 ## Architecture
+
+v0.18.143 adds an opt-in browser sign-in for the V2 test page. It remembers access for 30 days in an HttpOnly, SameSite=Strict, HMAC-authenticated browser cookie without storing the raw operator token in browser localStorage or chat; changing the add-on V2 secret revokes remembered sessions. A **Forget saved access** control signs out. HTTP LAN access is not encrypted—use HTTPS on trusted devices where practical. See [release notes](CHANGELOG-0.18.143.md).
+
 
 v0.18.142 stages generic V2 semantic question interpretation separately from optional meter-role inference, reducing the intent prompt size and preserving a source-safe answer if meter enrichment cannot finish. Failed planning now returns stage-specific diagnostics instead of an opaque 503. See [release notes](CHANGELOG-0.18.142.md).
 
