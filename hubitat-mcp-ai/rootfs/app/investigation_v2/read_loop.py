@@ -73,6 +73,43 @@ class InvestigationResult:
 ModelProposer = Callable[[CaseFile, int], Awaitable[Mapping[str, Any]]]
 
 
+def scope_model_reads_to_verified_target(
+    proposals: Any, verified_ids: Iterable[str],
+) -> Any:
+    """Complete omitted deviceId only from ONE host-verified target.
+
+    Never override a model-supplied ID, never introduce a target for ambiguous
+    multi-device requests, and never widen the allowed read operations.
+    The ordinary manifest/schema/effect gate still authorises each proposal.
+    """
+    ids = tuple(str(x) for x in verified_ids if isinstance(x, (str, int))
+                and str(x).isdecimal())
+    if len(set(ids)) != 1 or not isinstance(proposals, list):
+        return proposals
+    ident = ids[0]
+    repaired = []
+    for proposal in proposals:
+        if not isinstance(proposal, dict):
+            repaired.append(proposal)
+            continue
+        arguments = proposal.get("arguments")
+        if not isinstance(arguments, dict) or proposal.get("tool") != "hub_read_devices":
+            repaired.append(proposal)
+            continue
+        if arguments.get("tool") not in ("hub_list_device_events", "hub_get_device"):
+            repaired.append(proposal)
+            continue
+        inner = arguments.get("args")
+        if not isinstance(inner, dict) or "deviceId" in inner:
+            repaired.append(proposal)
+            continue
+        enriched = dict(proposal)
+        enriched["arguments"] = dict(arguments)
+        enriched["arguments"]["args"] = {**inner, "deviceId": ident}
+        repaired.append(enriched)
+    return repaired
+
+
 def compare_history_samples(receipts: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     """Detect historical API response drift, not source completeness.
 
@@ -168,6 +205,7 @@ async def run_read_only_investigation(
     deadline_seconds: float = 170.0,
     incident_window: IncidentWindow | None = None,
     bootstrap_source_identity: bool = False,
+    stop_after_incident_history: bool = False,
 ) -> InvestigationResult:
     """Run a limited investigative read-only session under existing host gates.
 
@@ -306,6 +344,19 @@ async def run_read_only_investigation(
             # for discrepancies, even when the first page reached the start.
             if cov and not cov.succeeded:
                 break
+    # A validated state-duration objective needs historical state transitions,
+    # not causal hypothesis generation. The evaluator will compute an explicit
+    # interval report without a slow model or unverifiable arithmetic.
+    if stop_after_incident_history:
+        return InvestigationResult(
+            case=case, hypotheses=[], rounds=0, executed_reads=executed,
+            stopped_because="state_duration_history_collected",
+            rejected_proposals=rejections, incident_window=incident_window,
+            planning_diagnostics=planning_diagnostics,
+            history_comparison=compare_history_samples(receipts),
+            read_failures=read_failures,
+        )
+
     # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
     # replacement for model planning. It can make useful progress even when
     # the configured LLM takes too long to provide a structured proposal.
@@ -386,6 +437,7 @@ async def run_read_only_investigation(
             reason = "invalid_model_plan"
             break
 
+        planned = scope_model_reads_to_verified_target(planned, known_ids)
         review = review_model_read_proposals(
             case, planned, registry.values(), verified_entity_ids=known_ids,
             learned_operations=learned_operations,
