@@ -99,6 +99,7 @@ from investigation_v2.test_service import (
     resolve_verified_device_subjects, resolve_planned_device_subjects,
 )
 from investigation_v2.evaluate import evaluate_v2_with_model
+from investigation_v2.intent_boundary import incompatible_v2_control_request
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import semantic_plan
@@ -1459,6 +1460,25 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         if str(exc) == "v2_test_disabled":
             raise HTTPException(status_code=404, detail="V2 test mode is disabled") from None
         raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
+
+    # The production classifier already distinguishes explicit commands
+    # from causal questions about commands. Use it only as a NEGATIVE V2
+    # boundary: it cannot grant write authority or select a Hubitat tool.
+    # Reject before inventory/AI/MCP work, even with an Advanced ID override.
+    if incompatible_v2_control_request(payload.question):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "v2_control_not_supported",
+                "message": (
+                    "This is a device-control request, not a read-only "
+                    "investigation. No Hubitat command was sent. "
+                    "Use HomeBrain's main Ask/Chat interface to request "
+                    "the action, subject to its normal write permissions "
+                    "and confirmation checks."
+                ),
+            },
+        )
 
     async def experiment() -> dict[str, Any]:
         started = time.perf_counter()

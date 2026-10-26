@@ -20,6 +20,10 @@ button:disabled{opacity:.6}#status{display:block;margin-top:12px;overflow-wrap:a
 <h1>Investigation V2 · Test</h1>
 <p><a href="./">HomeBrain dashboard</a> · Manual read-only experiment. Normal Ask continues using V1.
 No device control, rule edits or automatic background comparison.</p>
+<p><strong>Want to turn a light on or off?</strong> Use the
+<a href="./">main HomeBrain Ask interface</a>. This V2 panel tests
+read-only status questions, history and investigations only; it cannot send
+a control command.</p>
 <section>
 <label for="secret">V2 test access token (set in add-on configuration)</label>
 <input id="secret" type="password" autocomplete="off" placeholder="Operator test token">
@@ -215,6 +219,14 @@ el('run').onclick=async()=>{
       })
     });
     const data=await response.json().catch(()=>null);
+    if(response.status===409&&data?.detail?.code==='v2_control_not_supported'){
+      // The server made this decision before fetching Hubitat inventory.
+      // It did not execute a device command.
+      el('status').textContent=String(data.detail.message||(
+        'Device-control request recognised. No command was sent. '+
+        'Use the main HomeBrain Ask interface for device control.'));
+      return;
+    }
     if(!response.ok)throw new Error(formatTestError(response,data));
     if(!data||typeof data!=='object'||!data.answer)
       throw new Error('HTTP '+response.status+': V2 endpoint returned no investigation result.');
