@@ -96,7 +96,7 @@ from investigation_v2.browser_access import (
 )
 from investigation_v2.test_service import (
     match_verified_device_ids, require_test_access,
-    resolve_verified_device_subjects,
+    resolve_verified_device_subjects, resolve_planned_device_subjects,
 )
 from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.replay_scorecard import replay_scorecard
@@ -1575,11 +1575,18 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             # live Hubitat names/IDs can satisfy the host verification gate.
             devices = (audit_devices if audit_devices is not None
                        else await mcp.get_cached_devices(refresh=True))
-            selected_name=(semantic.device_name if semantic is not None
-                           and semantic.scope=="named" else payload.device_name)
-            ids, resolved, resolve_method = resolve_verified_device_subjects(
-                payload.question, devices, device_name=selected_name,
-                device_ids=payload.device_ids)
+            if payload.device_ids or payload.device_name:
+                # Explicit operator overrides keep their strict verification.
+                ids, resolved, resolve_method = resolve_verified_device_subjects(
+                    payload.question, devices, device_name=payload.device_name,
+                    device_ids=payload.device_ids)
+            else:
+                # An AI name proposal must not override a clear name in the
+                # question. Live Hubitat identity remains authoritative.
+                ids, resolved, resolve_method = resolve_planned_device_subjects(
+                    payload.question, devices,
+                    model_device_name=(semantic.device_name if semantic is not None
+                                       and semantic.scope=="named" else None))
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         except Exception:

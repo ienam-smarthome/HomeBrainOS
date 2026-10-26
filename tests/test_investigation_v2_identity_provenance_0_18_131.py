@@ -147,6 +147,6 @@ def test_browser_auto_target_and_manual_override_are_not_credential_or_ui_guesse
     html=render_v2_test_page()
     assert "Advanced: specify a device only if automatic matching fails" in html
     assert "A device ID is not required" in html
-    assert "device_name:el('deviceName')" in html
+    assert "device_name:advanced?" in html
     assert "data.resolved_devices" in html
     assert "localStorage" not in html
