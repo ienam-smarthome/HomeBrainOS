@@ -181,6 +181,8 @@ def format_investigation_report(
         lines.append(f"Investigation stopped early ({stop_reason.replace('_',' ')}); some relevant reads may be missing.")
     if stop_reason == "no_new_usable_evidence":
         lines.append("The extra reads returned no new usable evidence; the investigation stopped rather than repeating an expensive AI planning round.")
+    if stop_reason == "no_approved_discriminating_reads":
+        lines.append("The model could not obtain another approved, useful read. Check the bounded read rejection reasons in Investigation details; this is not evidence that the relevant hub data does not exist.")
     lines.extend(["","**What would settle it**"])
     if pairs:
         ids=sorted({a.producer_id for p in pairs for a in p if a.producer_id})

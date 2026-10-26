@@ -40,7 +40,15 @@ _PLAN_SYSTEM = (
     "historical investigation with newer observations. "
     "Explain setLevel as possible turn-on intent for a dimmer without claiming "
     "physical execution; a later off command is still not switch-off proof. "
-    "Separate source observations, tentative alternatives and decisive reads."
+    "Separate source observations, tentative alternatives and decisive reads. "
+    "IMPORTANT for model hypotheses: UTC timestamps may be on the PREVIOUS "
+    "calendar day in a positive-offset local zone. Never write an HH:MM clock "
+    "time in hypothesis prose without a time-zone suffix (BST, GMT or UTC). "
+    "A named clock must match one of its linked evidence record times in that "
+    "zone; otherwise omit the clock from prose. Do not infer physical "
+    "nonexecution merely from an OFF command and missing later switch events. "
+    "After list-apps/lookup reads, prefer a discriminating app-specific "
+    "read when that operation is actually advertised by the live manifest."
 )
 
 
@@ -99,6 +107,15 @@ def _advertised_reads(manifest: Iterable[MCPTool]) -> list[dict[str, Any]]:
                 nested = value.get("properties")
                 if isinstance(nested, dict):
                     info["properties"] = project_properties(nested, depth+1)
+                    # The older planner only advertised nested property
+                    # types. Missing required fields caused the model to
+                    # propose calls that the host rightly rejected.
+                    required = value.get("required")
+                    if isinstance(required, list):
+                        info["required"] = [key for key in required[:24]
+                                            if isinstance(key, str) and key in nested]
+                if value.get("additionalProperties") is False:
+                    info["additionalProperties"] = False
                 result[key[:65]] = info
             return result
         exposed.append({
