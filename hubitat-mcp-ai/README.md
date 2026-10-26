@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.138**.
+Current add-on version: **0.18.139**.
 
 ## Architecture
+
+v0.18.139 adds read-only, full-group current light state questions to Investigation V2. Device identification is no longer mandatory for an explicitly plural inventory question; V2 reuses the paginated, state-aware Hubitat reader and the same established light/state helpers as HomeBrain. See [release notes](CHANGELOG-0.18.139.md).
+
 
 v0.18.138 adds host-local calendar resolution for 'today'/'yesterday', safe short-name identity matching for noun phrases, independently verified device ID completion for read requests, and deterministic switch ON/OFF duration calculation with explicit coverage caveats. See [release notes](CHANGELOG-0.18.138.md).
 

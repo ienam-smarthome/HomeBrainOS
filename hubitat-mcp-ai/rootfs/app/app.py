@@ -97,6 +97,7 @@ from investigation_v2.test_service import (
 from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
+from investigation_v2.group_state import current_light_group_question, current_light_group_answer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HomeBrainOS.App")
@@ -1390,6 +1391,22 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
 
     async def experiment() -> dict[str, Any]:
+        # Intent comes BEFORE mandatory singular entity resolution. A user
+        # asking about *all lights* has deliberately not named one device.
+        # The established audited inventory reader requests live states and
+        # verifies pagination; no model- or command-capable path is used.
+        if current_light_group_question(payload.question) and not payload.device_ids and not payload.device_name:
+            started = time.perf_counter()
+            try:
+                group_devices, provenance = await mcp.get_audit_devices()
+                result = current_light_group_answer(payload.question, group_devices, provenance)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("V2 current group-state read unavailable")
+                raise HTTPException(status_code=503, detail="Live Hubitat light states unavailable; no devices changed") from None
+            result["elapsed_ms"] = round((time.perf_counter()-started)*1000)
+            return result
         try:
             devices = await mcp.get_cached_devices(refresh=True)
             ids, resolved, resolve_method = resolve_verified_device_subjects(
