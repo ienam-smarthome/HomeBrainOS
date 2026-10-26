@@ -171,6 +171,8 @@ el('run').onclick=async()=>{
     metric(duration?'Duration · '+duration.seconds:'Duration',
            duration?.primary??'Unavailable');
     metric('MCP reads',data.investigation?.executed_reads);
+    const failedReads=Array.isArray(data.investigation?.read_failures)?data.investigation.read_failures:[];
+    metric('Failed MCP reads',failedReads.length);
     metric('Commands retained (retrieved)',score.command_records?score.commands_retained+'/'+score.command_records:'No command evidence');
     metric('Invalid citations',score.invalid_citations);
     metric('Validation flags',score.validator_flags?.length??0);
@@ -191,6 +193,7 @@ el('run').onclick=async()=>{
       read_rejection_reasons:data.investigation?.rejected_proposals,
       planning_diagnostics:data.investigation?.planning_diagnostics,
       history_comparison:data.investigation?.history_comparison,
+      read_failures:data.investigation?.read_failures,
 
       current_app_identities:data.investigation?.case?.app_identities,
       full_source_backed_answer:data.answer?.text,

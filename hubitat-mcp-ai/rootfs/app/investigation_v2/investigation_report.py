@@ -187,6 +187,16 @@ def format_investigation_report(
         lines.append("The extra reads returned no new usable evidence; the investigation stopped rather than repeating an expensive AI planning round.")
     if stop_reason == "no_approved_discriminating_reads":
         lines.append("The model could not obtain another approved, useful read. Check the bounded read rejection reasons in Investigation details; this is not evidence that the relevant hub data does not exist.")
+    failed = [c for c in case.coverage if not c.succeeded]
+    if failed:
+        lines.extend(["", "**Failed source reads**"])
+        for item in failed[:4]:
+            lines.append(
+                f"- {item.operation} for target {item.query_target_id or 'unspecified'}: "
+                f"{item.failure_code or 'cause unavailable'}; no source evidence was established by this read."
+            )
+        if len(failed) > 4:
+            lines.append(f"{len(failed)-4} additional failed reads appear in Investigation details.")
     lines.extend(["","**What would settle it**"])
     if pairs:
         ids=sorted({a.producer_id for p in pairs for a in p if a.producer_id})
