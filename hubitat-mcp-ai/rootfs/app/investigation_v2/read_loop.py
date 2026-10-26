@@ -24,6 +24,7 @@ from .planning import review_model_read_proposals
 from .receipt_projection import project_read_receipt
 from .temporal_scope import IncidentWindow
 from .hypothesis_temporal_integrity import hypothesis_clock_issues
+from .source_identity import source_identity_proposals
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class InvestigationResult:
     stopped_because: str
     rejected_proposals: list[str] = field(default_factory=list)
     incident_window: IncidentWindow | None = None
+    planning_diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         # No raw tool text, credentials, IPs or model transport responses.
@@ -55,6 +57,7 @@ class InvestigationResult:
             "executed_reads": self.executed_reads,
             "stopped_because": self.stopped_because,
             "rejected_proposals": list(self.rejected_proposals),
+            "planning_diagnostics": list(self.planning_diagnostics),
             "root_cause_verified": False,
             "production_answer_used": False,
             "requested_incident_window": (self.incident_window.to_dict()
@@ -119,6 +122,7 @@ async def run_read_only_investigation(
     planning_timeout_seconds: float = 40.0,
     deadline_seconds: float = 170.0,
     incident_window: IncidentWindow | None = None,
+    bootstrap_source_identity: bool = False,
 ) -> InvestigationResult:
     """Run a limited investigative read-only session under existing host gates.
 
@@ -158,6 +162,7 @@ async def run_read_only_investigation(
     prior_calls: list[tuple[str, Mapping[str, Any]]] = []
     hypotheses: dict[str, Hypothesis] = {}
     rejections: list[str] = []
+    planning_diagnostics: list[dict[str, Any]] = []
     executed = 0
     rounds = 0
     reason = "round_budget_reached"
@@ -232,28 +237,60 @@ async def run_read_only_investigation(
                 break
             if cov and not cov.succeeded:
                 break
+    # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
+    # replacement for model planning. It can make useful progress even when
+    # the configured LLM takes too long to provide a structured proposal.
+    if bootstrap_source_identity and executed < max_total_reads and time.monotonic() < deadline:
+        proposals = source_identity_proposals(registry.values(), case)
+        if proposals:
+            approved = review_model_read_proposals(
+                case, proposals, registry.values(), verified_entity_ids=known_ids,
+                learned_operations=learned_operations, previous_calls=prior_calls,
+                max_total_reads=max_total_reads, max_reads_this_round=1,
+                budget_used_reads=executed, incident_window=incident_window,
+            )
+            rejections.extend(x.reason for x in approved.rejected)
+            for item in approved.approved:
+                await execute_checked_read(item, -2)
+
     for round_index in range(max_rounds):
         rounds += 1
         # Models can propose, not install credentials, tools or permissions.
         if time.monotonic() >= deadline:
             reason = "deadline_reached"
             break
+        started = time.monotonic()
+        planning_budget = min(planning_timeout_seconds, max(0.1, deadline - started))
+        diag = {
+            "round": round_index,
+            "budget_ms": int(planning_budget * 1000),
+            "case_records": len(case.records),
+            "input_chars": None,
+            "advertised_tools": getattr(propose, "advertised_tool_count", None),
+            "elapsed_ms": None,
+            "outcome": "not_started",
+        }
         try:
             output = await asyncio.wait_for(
                 propose(case, round_index),
-                timeout=min(planning_timeout_seconds, max(0.1, deadline - time.monotonic())),
+                timeout=planning_budget,
             )
+            diag["outcome"] = "returned"
         except asyncio.CancelledError:
             raise
         except asyncio.TimeoutError:
             reason = "planning_timeout"
-            # No additional MCP reads or model-authored conclusions are
-            # permitted here. Preserve the incident observations for the
-            # standalone source-linked report and explain this coverage gap.
+            diag["outcome"] = "timeout"
             break
         except Exception:
             reason = "planning_unavailable"
+            diag["outcome"] = "error"
             break
+        finally:
+            diag["elapsed_ms"] = int((time.monotonic() - started) * 1000)
+            chars = getattr(propose, "last_prompt_chars", None)
+            diag["input_chars"] = chars if type(chars) is int and 0 <= chars <= 200000 else None
+            planning_diagnostics.append(diag)
         if not isinstance(output, dict):
             reason = "invalid_model_plan"
             break
@@ -302,6 +339,7 @@ async def run_read_only_investigation(
         case=case, hypotheses=list(hypotheses.values()), rounds=rounds,
         executed_reads=executed, stopped_because=reason,
         rejected_proposals=rejections, incident_window=incident_window,
+        planning_diagnostics=planning_diagnostics,
     )
 
 
