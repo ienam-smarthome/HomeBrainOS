@@ -1491,7 +1491,8 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     payload.question, audit_devices)
             except ValueError:
                 candidates = ()
-            if len(candidates) == 1:
+            if (len(candidates) == 1
+                    and inventory_provenance.get("complete") is True):
                 direct_verified_target = candidates[0]
                 planning_ms = 0
             else:
