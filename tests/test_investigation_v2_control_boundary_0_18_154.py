@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 from mcp_agent_orchestrator import _explicit_mutation_request
+from investigation_v2.intent_boundary import incompatible_v2_control_request
 from investigation_v2.test_webui import render_v2_test_page
 
 
@@ -57,13 +58,14 @@ READ_ONLY = (
 
 
 @pytest.mark.parametrize("question", DIRECT_CONTROL)
-def test_existing_production_classifier_recognises_control_intent(question):
-    assert _explicit_mutation_request(question) is True, question
+def test_v2_denies_direct_and_compound_control_without_write_permission(question):
+    assert incompatible_v2_control_request(question) is True, question
 
 
 @pytest.mark.parametrize("question", READ_ONLY)
 def test_existing_classifier_keeps_questions_about_commands_read_only(question):
     assert _explicit_mutation_request(question) is False, question
+    assert incompatible_v2_control_request(question) is False, question
 
 
 @pytest.mark.parametrize("question", DIRECT_CONTROL)
@@ -125,6 +127,5 @@ def test_v2_test_page_labels_control_boundary_and_handles_incompatible_action():
     assert "This V2 panel tests" in page
     assert "response.status===409&&data?.detail?.code==='v2_control_not_supported'" in page
     assert "No command was sent" in page
-    assert "location.href" not in page or "location.href" in page
     # No direct forwarding of V2 requests into production write endpoint.
     assert "fetch(authUrl('api/chat')" not in page
