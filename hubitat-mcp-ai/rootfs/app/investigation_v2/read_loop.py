@@ -412,6 +412,51 @@ async def run_read_only_investigation(
                                else "read_attempt_completed"),
                 })
 
+    # If an independently authorised, switch-filtered history request returned
+    # zero source rows, try one bounded unfiltered read. A zero row response
+    # from one query does NOT establish that no prior events occurred.
+    if (bootstrap_device_context and incident_window is None
+            and len(set(known_ids)) == 1
+            and executed < max_total_reads and time.monotonic() < deadline):
+        empty_switch = next((c for c in reversed(case.coverage)
+                             if c.operation == "hub_list_device_events"
+                             and c.succeeded
+                             and c.requested_filters.get("attribute") == "switch"
+                             and c.source_returned_rows == 0), None)
+        if empty_switch is not None:
+            proposals = device_context_proposals(
+                registry.values(), known_ids, case, stage="history_unfiltered",
+                learned_operations=verified_operations,
+            )
+            if proposals:
+                approved = review_model_read_proposals(
+                    case, proposals, registry.values(),
+                    verified_entity_ids=known_ids,
+                    learned_operations=verified_operations,
+                    previous_calls=prior_calls,
+                    max_total_reads=max_total_reads, max_reads_this_round=1,
+                    budget_used_reads=executed, incident_window=incident_window,
+                )
+                rejections.extend(r.reason for r in approved.rejected)
+                if not approved.approved:
+                    bootstrap_diagnostics.append({
+                        "stage": "history_unfiltered", "reason": "read_plan_rejected",
+                        "validation": [r.reason for r in approved.rejected[:3]],
+                    })
+                for item in approved.approved:
+                    prior = len(read_failures)
+                    await execute_checked_read(item, -6)
+                    bootstrap_diagnostics.append({
+                        "stage": "history_unfiltered",
+                        "status": ("read_attempt_failed" if len(read_failures) > prior
+                                   else "read_attempt_completed"),
+                    })
+            else:
+                bootstrap_diagnostics.append({
+                    "stage": "history_unfiltered",
+                    "reason": "read_schema_does_not_allow_unfiltered_events",
+                })
+
     # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
     # replacement for model planning. It can make useful progress even when
     # the configured LLM takes too long to provide a structured proposal.
