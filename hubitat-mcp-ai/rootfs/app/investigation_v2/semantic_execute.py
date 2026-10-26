@@ -236,6 +236,10 @@ def execute_inventory_plan(
         "sum":f"Total {attr} from {total} measured device(s)",
         "average":f"Average {attr} across {total} measured device(s)",
     }[plan.aggregation]
+    if comparison_of_individuals and plan.aggregation in ("top","bottom") and (
+        unresolved_scope or inferred_individual_loads
+    ):
+        title+=" — provisional meter-scope classification"
     if plan.aggregation in ("sum","average"):
         if aggregate_value is None:
             title+=(": withheld — overlapping or unclassified meter scopes"

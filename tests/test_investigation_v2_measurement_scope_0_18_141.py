@@ -112,7 +112,7 @@ def test_operator_roles_precede_model_and_source_and_are_checked_against_invento
 def test_unclassified_site_meter_is_disclosed_as_a_provisional_measurement():
     out=execute_inventory_plan(plan(),DEVICES,PROVENANCE)
     assert out["inventory_query"]["unclassified_measurement_scopes"]>=6
-    assert "unknown measurement scope" in out["answer"]["text"]
+    assert "unknown or unconfirmed" in out["answer"]["text"]
     assert "classification not independently verified" not in out["answer"]["text"]
     # Without confirmed or inferred metadata we must not silently claim that
     # all displayed meters are individual loads.
