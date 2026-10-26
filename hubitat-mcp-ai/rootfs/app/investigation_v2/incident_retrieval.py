@@ -19,7 +19,11 @@ def incident_first_proposals(
         return []
     gateway = next((t for t in tools if isinstance(t, MCPTool)
         and t.name == "hub_read_devices"
-        and classify_tool_effect(t, {}) is ToolEffect.READ), None)
+        and classify_tool_effect(t, {}) is ToolEffect.READ
+        and isinstance(t.annotations, dict)
+        and t.annotations.get("readOnlyHint") is not False
+        and t.annotations.get("mutates") is not True
+        and t.annotations.get("destructiveHint") is not True), None)
     if gateway is None:
         return []
     schema = gateway.input_schema if isinstance(gateway.input_schema, dict) else {}
