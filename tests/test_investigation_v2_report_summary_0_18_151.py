@@ -73,7 +73,7 @@ def test_report_preserves_mqtt_sequence_and_command_not_just_one_row():
     assert "mqttStatus = disconnected reported" in report
     assert "mqttStatus = connected reported" in report
     assert "24 Oct 20:51:12 UTC" in report
-    assert "| Time | Observation | Source |" in report
+    assert "| UTC time | Observation | Source |" in report
     assert "| Local time |" not in report
     assert "Times above are UTC" in report
     assert "12 deviceHealth observations alternated" in report
