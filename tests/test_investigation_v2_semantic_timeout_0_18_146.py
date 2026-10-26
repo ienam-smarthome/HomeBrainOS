@@ -168,13 +168,13 @@ def test_browser_semantic_timeout_recovery_and_broad_scope_safety(monkeypatch, t
 
     assert recovered.status_code == 200, recovered.text
     data = recovered.json()
-    assert data["answer_mode"] == "semantic_fallback_investigation"
+    assert data["answer_mode"] == "verified_device_investigation"
     assert data["resolved_devices"][0]["id"] == "7103"
-    assert data["semantic_diagnostics"]["reason"] == "timeout"
+    assert data["semantic_diagnostics"]["model_intent_planning_skipped"] is True
     assert data["semantic_diagnostics"]["target_verified"] is True
-    assert data["semantic_diagnostics"]["model_investigation_attempted"] is False
+    assert data["semantic_diagnostics"]["model_investigation_attempted"] is True
     assert data["semantic_diagnostics"]["inventory_devices"] == 3
-    assert calls[0]["semantic_unavailable_reason"] == "timeout"
+    assert calls[0]["semantic_unavailable_reason"] is None
     assert calls[0]["verified_entity_ids"] == ("7103",)
     assert calls[0]["bootstrap_device_context"] is True
     assert broad.status_code == 200

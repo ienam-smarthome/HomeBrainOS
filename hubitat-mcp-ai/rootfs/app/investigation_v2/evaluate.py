@@ -209,6 +209,30 @@ async def evaluate_v2_with_model(
                                                result.stopped_because, incident_window),
             incident_window=incident_window,
         )
+    # When speculative model reads add no typed evidence, asking another
+    # model to validate them creates latency and unsupported causal claims.
+    # Preserve all actual event records, commands, and current snapshots;
+    # do not promote hypotheses based only on MQTT client status or
+    # self-generated health flapping.
+    if result.stopped_because in (
+            "no_new_usable_evidence", "no_approved_discriminating_reads"):
+        grounded = assemble_grounded_answer(
+            result.case, [],
+            {"selected_record_ids": [r.record_id for r in result.case.records],
+             "hypothesis_order": []},
+        )
+        grounded = replace(
+            grounded, validation_issues=(*grounded.validation_issues,
+                                        "model_reads_no_new_discriminator",
+                                        "model_hypotheses_unverified"),
+        )
+        return V2Evaluation(
+            investigation=result, answer=grounded,
+            report=format_investigation_report(
+                result.case, [], result.stopped_because, incident_window,
+            ),
+            incident_window=incident_window,
+        )
     if enable_atomic_claim_validation is True:
         atomic = await synthesize_atomic_with_chat(
             case=result.case, hypotheses=result.hypotheses, chat=chat,
