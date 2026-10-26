@@ -90,7 +90,10 @@ from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
 from webui import render_page
 from investigation_v2.test_webui import render_v2_test_page
-from investigation_v2.test_service import match_verified_device_ids, require_test_access
+from investigation_v2.test_service import (
+    match_verified_device_ids, require_test_access,
+    resolve_verified_device_subjects,
+)
 from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
@@ -1355,7 +1358,8 @@ async def refresh() -> dict[str, Any]:
 
 class V2TestRequest(BaseModel):
     question: str = Field(min_length=5, max_length=12000)
-    device_ids: list[str] = Field(min_length=1, max_length=4)
+    device_ids: list[str] = Field(default_factory=list, max_length=4)
+    device_name: str | None = Field(default=None, max_length=160)
     explicit_opt_in: bool = False
     existing_v1_answer: str | None = Field(default=None, max_length=30000)
     reference_answer: str | None = Field(default=None, max_length=30000)
@@ -1388,7 +1392,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
     async def experiment() -> dict[str, Any]:
         try:
             devices = await mcp.get_cached_devices(refresh=True)
-            ids = match_verified_device_ids(payload.device_ids, devices)
+            ids, resolved, resolve_method = resolve_verified_device_subjects(
+                payload.question, devices, device_name=payload.device_name,
+                device_ids=payload.device_ids)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         except Exception:
@@ -1429,6 +1435,8 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         result = evaluated.to_dict()
         result["elapsed_ms"] = elapsed_ms
         result["test_mode"] = "explicit_read_only"
+        result["resolved_devices"] = resolved
+        result["resolution_method"] = resolve_method
         result["scorecard"] = replay_scorecard(
             evaluated.investigation.case, evaluated.answer,
             existing_v1_answer=payload.existing_v1_answer,
