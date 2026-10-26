@@ -66,7 +66,7 @@ class Executor:
         raise AssertionError(self.result_kind)
 
 
-def plan(case, round_index):
+async def plan(case, round_index):
     return {"hypotheses":[], "finish":False,
             "reads":[{
                 "tool":"hub_read_apps_code",
