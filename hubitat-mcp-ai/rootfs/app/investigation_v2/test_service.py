@@ -99,7 +99,7 @@ def _ambiguous_inventory_targets(items: Iterable[dict[str, Any]]) -> str:
     choices = sorted(distinct.values(), key=lambda item: int(item["id"]))
     labels = []
     for item in choices[:6]:
-        label = re.sub(r"[^\\w .,&()/-]", "", item["label"])[:72].strip()
+        label = re.sub(r"[^\w .,&()/-]", "", item["label"])[:72].strip()
         labels.append(f"{label or 'Device'} (#{item['id']})")
     suffix = "; more matches exist" if len(choices) > 6 else ""
     return (
@@ -191,6 +191,7 @@ def resolve_verified_device_subjects(
     mentions.sort(key=lambda item: (-(item[1]-item[0]), -item[4], -item[5],
                                     item[0], item[2]))
     selected: list[tuple[int, int, str, str, int, int]] = []
+    ambiguous: dict[tuple[int, int, int], dict[str, dict[str, Any]]] = {}
     for mention in mentions:
         overlapping = [row for row in selected
                        if mention[0] < row[1] and row[0] < mention[1]]
@@ -198,14 +199,39 @@ def resolve_verified_device_subjects(
             best = overlapping[0]
             if (mention[:2] == best[:2] and mention[2] != best[2]
                     and mention[5] == best[5]):
-                tied = [inventory[ident] for ident in (mention[2], best[2])]
-                raise ValueError(_ambiguous_inventory_targets(tied))
-            # For an identical phrase, a verified friendly label takes
-            # precedence over a different device's generic name. Do not
-            # privilege arbitrary ID ordering or unverified model hints.
+                key = (mention[0], mention[1], mention[5])
+                tied = ambiguous.setdefault(key, {})
+                tied[best[2]] = inventory[best[2]]
+                tied[mention[2]] = inventory[mention[2]]
+                # Do not abort before considering whether this is an
+                # incidental alias outside the actual named subject.
             continue
         if mention[2] not in {row[2] for row in selected}:
             selected.append(mention)
+
+    # Device names are not arbitrary search terms. An exact, multiword
+    # friendly label is a higher-confidence SUBJECT reference than incidental
+    # device names in instructions such as "check current device status" or
+    # "inspect switch events". The latter must not veto a verified subject,
+    # even if two unrelated devices expose that same generic alias.
+    anchored = [
+        row for row in selected
+        if row[5] == 2 and len(inventory[row[2]]["friendly_words"]) >= 2
+    ]
+    if anchored:
+        earliest = min(row[0] for row in anchored)
+        # Ambiguity at or before the first strong subject is not safely
+        # attributable to contextual wording: fail closed. Later unrelated
+        # ambiguous phrases do not silently replace or veto that subject.
+        blocking = [candidates for (start, _end, _priority), candidates
+                    in ambiguous.items() if start <= earliest]
+        if blocking:
+            raise ValueError(_ambiguous_inventory_targets(
+                item for group in blocking for item in group.values()))
+        selected = anchored
+    elif ambiguous:
+        raise ValueError(_ambiguous_inventory_targets(
+            item for group in ambiguous.values() for item in group.values()))
     if len(selected) > 4:
         raise ValueError("More than four Hubitat device names matched; narrow the question")
     selected.sort(key=lambda item: item[0])
