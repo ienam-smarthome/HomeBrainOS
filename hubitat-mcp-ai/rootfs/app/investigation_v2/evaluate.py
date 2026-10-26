@@ -7,7 +7,7 @@ explicitly enable this run. No writes, no model-native tool calls.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable, Mapping
 
 from mcp_client import HubitatMCPClient
@@ -15,7 +15,7 @@ from tool_executor import ToolExecutor
 
 from .model_adapter import Chat, V2ModelProposer
 from .read_loop import InvestigationResult, run_read_only_investigation
-from .synthesis import GroundedAnswer, synthesize_with_chat
+from .synthesis import GroundedAnswer, synthesize_with_chat, assemble_grounded_answer
 from .atomic_claims import ClaimReview, synthesize_atomic_with_chat
 from .narrative import NarrativeAudit
 from .temporal_scope import IncidentWindow
@@ -71,7 +71,7 @@ async def evaluate_v2_with_model(
     enable_atomic_claim_validation: bool = False,
     enable_evidence_narrative: bool = False,
     incident_window: IncidentWindow | None = None,
-    planning_timeout_seconds: float = 40.0,
+    planning_timeout_seconds: float = 60.0,
     bootstrap_source_identity: bool = True,
 ) -> V2Evaluation:
     """Run one explicit read-only experiment with the configured chat provider.
@@ -98,6 +98,25 @@ async def evaluate_v2_with_model(
         planning_timeout_seconds=planning_timeout_seconds,
         bootstrap_source_identity=bootstrap_source_identity,
     )
+    # If planning itself timed out or the transport failed, don't issue more
+    # large model calls for atomic selection and repair. The host can still
+    # render every authenticated event with no invented causal hypothesis.
+    if result.stopped_because in ("planning_timeout", "planning_unavailable"):
+        kept = assemble_grounded_answer(
+            result.case, result.hypotheses,
+            {"selected_record_ids": [r.record_id for r in result.case.records],
+             "hypothesis_order": [h.hypothesis_id for h in result.hypotheses]},
+        )
+        kept = replace(
+            kept, validation_issues=(*kept.validation_issues,
+                                    "model_planner_unavailable_host_fallback"),
+        )
+        return V2Evaluation(
+            investigation=result, answer=kept,
+            report=format_investigation_report(result.case, result.hypotheses,
+                                               result.stopped_because, incident_window),
+            incident_window=incident_window,
+        )
     if enable_atomic_claim_validation is True:
         atomic = await synthesize_atomic_with_chat(
             case=result.case, hypotheses=result.hypotheses, chat=chat,

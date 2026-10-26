@@ -68,11 +68,14 @@ def _timestamp(value: Any) -> str | None:
     return value.strip() if dt.tzinfo is not None and dt.utcoffset() is not None else None
 
 
-def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindow | None = None) -> tuple[list[dict[str, Any]], int, str | None, str | None, bool]:
+def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindow | None = None) -> tuple[list[dict[str, Any]], int, str | None, str | None, bool, dict[str, int]]:
     if not isinstance(raw_rows, list):
-        return [], 0, None, None, False
+        return [], 0, None, None, False, {}
     result: list[dict[str, Any]] = []
     source_instants = []
+    diagnostic_counts = {"wrong_target": 0, "invalid_device_id": 0,
+                         "invalid_name_or_time": 0, "outside_incident": 0,
+                         "retention_cap": 0}
     # Scan a bounded source page, filter by the user-authorized time window,
     # THEN cap retained incident observations. The inverse drops historical
     # evidence whenever unrelated recent rows fill the start of the page.
@@ -80,18 +83,23 @@ def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindo
         if not isinstance(row, dict):
             continue
         if (event_id := _id(row.get("deviceId"))) and event_id != requested_id:
+            diagnostic_counts["wrong_target"] += 1
             continue
         if "deviceId" in row and not _id(row.get("deviceId")):
+            diagnostic_counts["invalid_device_id"] += 1
             continue
         name = row.get("name") or row.get("eventName")
         stamp = _timestamp(row.get("date") or row.get("timestamp"))
         if not isinstance(name, str) or not _EVENT_NAME.fullmatch(name) or not stamp:
+            diagnostic_counts["invalid_name_or_time"] += 1
             continue
         instant = datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone(timezone.utc)
         source_instants.append(instant)
         if incident_window is not None and not incident_window.contains(stamp):
+            diagnostic_counts["outside_incident"] += 1
             continue
         if len(result) >= _MAX_ROWS:
+            diagnostic_counts["retention_cap"] += 1
             continue
         event: dict[str, Any] = {"deviceId": requested_id, "name": name, "date": stamp}
         if name.startswith("command-") or row.get("type") == "command":
@@ -108,7 +116,8 @@ def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindo
         result.append(event)
     oldest = min(source_instants).isoformat() if source_instants else None
     newest = max(source_instants).isoformat() if source_instants else None
-    return result, len(raw_rows), oldest, newest, len(raw_rows) > _MAX_SCAN
+    return (result, len(raw_rows), oldest, newest,
+            len(raw_rows) > _MAX_SCAN, diagnostic_counts)
 
 
 def _project_app_catalogue(data: Mapping[str, Any], operation: str) -> dict[str, Any]:
@@ -197,7 +206,7 @@ def project_read_receipt(
         if not target or ("deviceId" in data and _id(data.get("deviceId")) != target):
             receipt["success"] = False
             return receipt
-        rows, original_count, oldest, newest, scan_truncated = _event_rows(
+        rows, original_count, oldest, newest, scan_truncated, diagnostic_counts = _event_rows(
             data.get("events"), target, incident_window)
         if not isinstance(data.get("events"), list):
             return receipt
@@ -208,6 +217,7 @@ def project_read_receipt(
             "sourceOldestReturnedUtc": oldest,
             "sourceNewestReturnedUtc": newest,
             "sourceScanTruncated": scan_truncated,
+            "sourceProjectionDropCounts": diagnostic_counts,
             "requestedWindowReached": (
                 (oldest <= incident_window.start_utc)
                 if incident_window is not None and oldest is not None

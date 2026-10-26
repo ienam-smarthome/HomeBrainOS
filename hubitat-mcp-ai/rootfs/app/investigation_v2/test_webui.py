@@ -170,6 +170,8 @@ el('run').onclick=async()=>{
       reads_executed:data.investigation?.executed_reads,
       read_rejection_reasons:data.investigation?.rejected_proposals,
       planning_diagnostics:data.investigation?.planning_diagnostics,
+      history_comparison:data.investigation?.history_comparison,
+
       current_app_identities:data.investigation?.case?.app_identities,
       full_source_backed_answer:data.answer?.text,
       requested_incident_window:data.investigation?.requested_incident_window,

@@ -259,6 +259,27 @@ not interpreted as a host read rejection. The test UI exposes these metrics.
 Only the opt-in V2 evaluator enables identity preflight by default. V1 and
 actual Hubitat writes are unchanged.
 
+## V2 history consistency and planning-failure fallback (0.18.135)
+
+Explicitly dated V2 investigations take two distinct, bounded, permitted
+history snapshots (smaller and larger pages) before reasoning. The returned
+historical command and state sets are compared as source projections; missing
+from one response never proves the event did not happen, and even identical
+samples do not establish full source integrity. Bounded filtering-drop counts
+explain rows excluded for scope, invalid metadata or retention limits.
+
+The operator test also attempts one read-only current app configuration when
+command-history evidence independently verifies an issuer ID that is missing
+from the app-list identity catalogue. All calls pass the live manifest/schema,
+entity scope, read-effect and ToolExecutor safety checks. A current setting is
+never presented as historical execution evidence.
+
+When the LLM planner times out or errors, host-only synthesis preserves
+canonical evidence without further costly provider selection/repair requests.
+The explicit V2 model planning time budget is 60 seconds, and diagnostics
+retain source sample counts and planning elapsed time. Production V1/writes
+are unaffected.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
