@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.18.127"
+version: "0.18.128"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -101,6 +101,8 @@ options:
   ha_tts_enabled: true
   ha_tts_notify_service: ""
   ha_tts_media_stream: ""
+  investigation_v2_testing_enabled: false
+  investigation_v2_test_token: ""
   chatgpt_mcp_enabled: false
   chatgpt_mcp_require_bearer_auth: true
   chatgpt_mcp_token: ""
@@ -183,6 +185,8 @@ schema:
   ha_tts_enabled: bool
   ha_tts_notify_service: str
   ha_tts_media_stream: str
+  investigation_v2_testing_enabled: bool
+  investigation_v2_test_token: password
   chatgpt_mcp_enabled: bool
   chatgpt_mcp_require_bearer_auth: bool
   chatgpt_mcp_token: password

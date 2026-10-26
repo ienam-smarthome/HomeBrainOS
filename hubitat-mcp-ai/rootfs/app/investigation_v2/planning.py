@@ -180,6 +180,7 @@ def review_model_read_proposals(
     previous_calls: Iterable[tuple[str, Mapping[str, Any]]] = (),
     max_total_reads: int = 8,
     max_reads_this_round: int = 3,
+    budget_used_reads: int | None = None,
 ) -> ReadPlan:
     """Approve only information-seeking, manifest-matched, scoped safe reads.
 
@@ -204,7 +205,12 @@ def review_model_read_proposals(
                 continue
     # Executed attempts already appear in case.coverage. Do not charge
     # each read twice merely because its signature is also in prior_calls.
-    remaining = max(0, min(30, int(max_total_reads)) - max(len(case.coverage), len(prior)))
+    # A V2 test may start with prior host evidence (a large case). Those
+    # trusted observations must not exhaust THIS run's MCP read allowance.
+    # The explicit caller count is authoritative only for new V2 executions.
+    consumed = (max(0, int(budget_used_reads)) if budget_used_reads is not None
+                else max(len(case.coverage), len(prior)))
+    remaining = max(0, min(30, int(max_total_reads)) - consumed)
     batch = min(remaining, max(0, min(6, int(max_reads_this_round))))
     approved: list[ApprovedRead] = []
     rejected: list[RejectedRead] = []

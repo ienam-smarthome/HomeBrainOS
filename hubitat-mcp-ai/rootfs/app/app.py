@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hmac
 import logging
 import os
 import re
@@ -88,6 +89,10 @@ from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
 from pushover_notifier import PushoverNotifier
 from webui import render_page
+from investigation_v2.test_webui import render_v2_test_page
+from investigation_v2.test_service import match_verified_device_ids, require_test_access
+from investigation_v2.evaluate import evaluate_v2_with_model
+from investigation_v2.replay_scorecard import replay_scorecard
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HomeBrainOS.App")
@@ -191,6 +196,8 @@ def load_options() -> dict[str, Any]:
         "ha_tts_enabled": True,
         "ha_tts_notify_service": "",
         "ha_tts_media_stream": "",
+        "investigation_v2_testing_enabled": False,
+        "investigation_v2_test_token": "",
         "web_title": "Hubitat MCP AI",
     }
     if OPTIONS_PATH.exists():
@@ -1343,6 +1350,84 @@ async def refresh() -> dict[str, Any]:
     values = await mcp.list_tools(refresh=True)
     await mcp.get_cached_devices(refresh=True)
     return {"success": True, "tools": len(values), "version": VERSION}
+
+
+class V2TestRequest(BaseModel):
+    question: str = Field(min_length=5, max_length=12000)
+    device_ids: list[str] = Field(min_length=1, max_length=4)
+    explicit_opt_in: bool = False
+    existing_v1_answer: str | None = Field(default=None, max_length=30000)
+    reference_answer: str | None = Field(default=None, max_length=30000)
+
+
+@app.get("/v2-test", response_class=HTMLResponse)
+async def v2_test_panel() -> HTMLResponse:
+    enabled = _bool(OPTIONS.get("investigation_v2_testing_enabled"), False)
+    secret = str(OPTIONS.get("investigation_v2_test_token") or "")
+    if not enabled or len(secret) < 16:
+        raise HTTPException(status_code=404, detail="V2 test mode is disabled")
+    return HTMLResponse(render_v2_test_page(), headers={"Cache-Control":"no-store"})
+
+
+@app.post("/api/v2/test")
+async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]:
+    """Manual experiment only: no production agent route or Hubitat mutation."""
+    enabled = _bool(OPTIONS.get("investigation_v2_testing_enabled"), False)
+    configured = str(OPTIONS.get("investigation_v2_test_token") or "")
+    provided = str(connection.headers.get("x-homebrain-v2-test-token") or "")
+    try:
+        require_test_access(enabled=enabled, configured_token=configured,
+                            supplied_token=provided,
+                            explicit_opt_in=payload.explicit_opt_in)
+    except PermissionError as exc:
+        if str(exc) == "v2_test_disabled":
+            raise HTTPException(status_code=404, detail="V2 test mode is disabled") from None
+        raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
+
+    async def experiment() -> dict[str, Any]:
+        try:
+            devices = await mcp.get_cached_devices(refresh=True)
+            ids = match_verified_device_ids(payload.device_ids, devices)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except Exception:
+            raise HTTPException(status_code=503, detail="Hubitat identity verification unavailable") from None
+        started = time.perf_counter()
+        try:
+            evaluated = await evaluate_v2_with_model(
+                explicitly_authorised=True,
+                question=payload.question,
+                chat=agent.transport.chat,
+                mcp=mcp, executor=agent.executor,
+                verified_entity_ids=ids,
+                enable_atomic_claim_validation=True,
+                enable_evidence_narrative=True,
+                max_rounds=3, max_total_reads=8,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Opt-in V2 evaluation unavailable")
+            raise HTTPException(status_code=503, detail="V2 evaluation failed; no Hubitat writes attempted") from None
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        result = evaluated.to_dict()
+        result["elapsed_ms"] = elapsed_ms
+        result["test_mode"] = "explicit_read_only"
+        result["scorecard"] = replay_scorecard(
+            evaluated.investigation.case, evaluated.answer,
+            existing_v1_answer=payload.existing_v1_answer,
+            reference_answer=payload.reference_answer,
+            reads_executed=evaluated.investigation.executed_reads,
+            elapsed_ms=elapsed_ms,
+        )
+        return result
+
+    # Separate coordinator key: never cancel or reuse a production chat.
+    return await request_coordinator.run(
+        "investigation-v2-test-exclusive", experiment(),
+        connection=connection, request_id=uuid.uuid4().hex,
+        deadline_seconds=240,
+    )
 
 
 @app.post("/api/chat")

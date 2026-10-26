@@ -106,8 +106,15 @@ class V2ModelProposer:
     """Model-only planner. The read loop remains the authority and executor."""
 
     def __init__(self, chat: Chat, tool_manifest: Iterable[MCPTool], *,
-                 max_case_chars: int = 50000) -> None:
+                 max_case_chars: int = 50000,
+                 verified_entity_ids: Iterable[str] = ()) -> None:
         self.chat = chat
+        # Only host-verified identities may be advertised to the model; they
+        # still carry no permission to read or control any Hubitat device.
+        self.verified_entity_ids = sorted({
+            str(x) for x in verified_entity_ids
+            if type(x) in (str, int) and str(x).isdecimal()
+        })[:40]
         self.available_read_schema = _advertised_reads(tool_manifest)
         self.max_case_chars = min(100000, max(1000, int(max_case_chars)))
 
@@ -119,6 +126,7 @@ class V2ModelProposer:
         prompt = json.dumps({
             "original_question": case.original_user_request,
             "round": round_index,
+            "verified_target_ids": self.verified_entity_ids,
             "case_file": evidence,
             "available_tools": self.available_read_schema,
             "required_result": {
