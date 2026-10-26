@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.146**.
+Current add-on version: **0.18.147**.
 
 ## Architecture
+
+v0.18.147 resolves V2 name collisions by preferring an exact, independently verified Hubitat friendly label to another device's generic driver name when both match the same complete phrase. It still rejects genuinely duplicated friendly labels and now identifies their verified candidate device IDs for an Advanced override. The same rule applies to automatic matching, semantic fallback, and explicit friendly-name override. No live device writes or V1 changes. See [release notes](CHANGELOG-0.18.147.md).
 
 v0.18.146 prevents opt-in V2 from aborting after a semantic intent-planning timeout: when the original question independently matches exactly one Hubitat device, V2 continues with a bounded, host-only read-only evidence pass, skips further provider calls and clearly marks the answer as partial and the intent as unverified. Ambiguous/broad questions still fail closed, without inventing a target. End-to-end elapsed time now includes intent planning. See [release notes](CHANGELOG-0.18.146.md).
 
