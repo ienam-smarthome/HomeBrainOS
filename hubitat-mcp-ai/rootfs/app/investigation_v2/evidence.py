@@ -97,6 +97,7 @@ class Coverage:
     source_oldest_utc: str | None = None
     source_newest_utc: str | None = None
     requested_window_reached: bool | None = None
+    projection_drop_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -306,6 +307,11 @@ def build_case_file(original_user_request: str,
             details.get("sourceOldestReturnedUtc") if isinstance(details.get("sourceOldestReturnedUtc"), str) else None,
             details.get("sourceNewestReturnedUtc") if isinstance(details.get("sourceNewestReturnedUtc"), str) else None,
             details.get("requestedWindowReached") if type(details.get("requestedWindowReached")) is bool else None,
+            {key: value for key, value in
+             _mapping(details.get("sourceProjectionDropCounts")).items()
+             if key in ("wrong_target", "invalid_device_id", "invalid_name_or_time",
+                        "outside_incident", "retention_cap")
+             and type(value) is int and 0 <= value <= 100000},
         ))
         case.errors.extend(f"{source_id}: {issue}" for issue in errors)
     case.records = sorted(dedup.values(), key=lambda e: (e.timestamp_utc, e.record_id))
