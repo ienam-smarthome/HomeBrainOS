@@ -6,7 +6,8 @@ No network request, write or trusted inference happens in this module.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import math
 from typing import Any, Iterable, Mapping
 
@@ -89,7 +90,20 @@ def _last_reported_age_hours(case: CaseFile, ident: str) -> int | None:
             if not isinstance(stamp, str):
                 continue
             try:
-                moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                try:
+                    moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                except ValueError:
+                    # Hubitat can expose human-readable BST/GMT values.
+                    # Only accept exact, locally verifiable clock suffixes.
+                    parts = stamp.rsplit(" ", 2)
+                    if len(parts) != 3 or parts[1] not in ("BST", "GMT"):
+                        continue
+                    raw = parts[0] + " " + parts[2]
+                    naive = datetime.strptime(raw, "%a %b %d %H:%M:%S %Y")
+                    zone = ZoneInfo("Europe/London")
+                    moment = naive.replace(tzinfo=zone)
+                    if moment.tzname() != parts[1]:
+                        continue
                 if moment.tzinfo is None:
                     continue
                 age = (datetime.now(timezone.utc) - moment.astimezone(timezone.utc)).total_seconds()
@@ -137,7 +151,7 @@ def device_context_proposals(
         fields = schema.get("properties", {})
         fields = fields if isinstance(fields, dict) else {}
         required = schema.get("required", [])
-        if not isinstance(required, list) or "deviceId" not in fields:
+        if not isinstance(required, list) or not _accepts_field(schema, "deviceId"):
             return []
         args = {"deviceId": ident}
         if _accepts_field(schema, "hoursBack"):
