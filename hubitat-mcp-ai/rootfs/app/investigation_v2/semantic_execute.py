@@ -141,6 +141,7 @@ def execute_inventory_plan(
     missing=0
     out_of_scope=[]
     unresolved_scope=[]
+    unclassified_candidates=[]
     overlap_suppressed=0
     inferred_individual_loads=[]
     unsupported_capability=0
@@ -189,6 +190,17 @@ def execute_inventory_plan(
                 plan.aggregation in ("sum","average") and not scope.verified
             ):
                 unresolved_scope.append(ident)
+            if scope.role=="unknown" and plan.measurement_target=="individual_load":
+                # A source without a known measurement boundary must NOT be
+                # presented as an individually metered load. Put it in a
+                # separately explained category rather than silently ranking
+                # a possible whole-house total as a single appliance.
+                unclassified_candidates.append({
+                    "id":ident,
+                    "label":str(device.get("label") or device.get("name") or "Device")[:95],
+                    "reading":value,
+                })
+                continue
             if scope.role=="individual_load" and not scope.verified:
                 inferred_individual_loads.append(ident)
         present.append((ident,device,value))
@@ -288,6 +300,20 @@ def execute_inventory_plan(
             f"{len(unresolved_scope)} candidate measurement scope(s) remain "
             "unknown or unconfirmed; totals cannot treat these as independently "
             "metered loads.")
+    if unclassified_candidates:
+        lines.append(
+            f"{len(unclassified_candidates)} meter(s) excluded from the "
+            "individual-load ranking because their physical measurement "
+            "scope was not established:")
+        for candidate in sorted(
+            unclassified_candidates,
+            key=lambda x:-float(x["reading"]),
+        )[:10]:
+            lines.append(
+                "• "+_display(candidate["label"])+": "
+                +_display(candidate["reading"])+(" W" if attr=="power" else " kWh")
+                +" (measurement scope unknown)"
+            )
     if inferred_individual_loads and plan.aggregation in ("top","bottom"):
         lines.append(f"{len(inferred_individual_loads)} candidate individual "
                      "load role(s) were suggested by AI but not confirmed. "
@@ -332,6 +358,7 @@ def execute_inventory_plan(
             "shown_count":len(subset) if plan.aggregation!="count" else 0,
             "suppressed_overlapping_meters":out_of_scope,
             "unclassified_measurement_scopes":len(unresolved_scope),
+            "excluded_unknown_scope":len(unclassified_candidates),
             "inferred_individual_loads":len(inferred_individual_loads),
             "missing_expected_measurements":missing_expected,
             "unverified_measurement_support":unsupported_capability,
