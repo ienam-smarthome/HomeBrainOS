@@ -214,6 +214,18 @@ and interpret dimmer `setLevel` as probable ON intent, not physical proof.
 Planner timeouts remain explicitly flagged and are not silently treated as
 successful multi-source reasoning.
 
+## Relevant causal focus & typed app identity (0.18.132)
+
+The V2 planner's live `hub_list_apps` and `hub_list_rules` reads now project
+strictly validated *current* app ID/name pairs into the canonical case and
+model evidence brief. These are descriptive identity metadata only, never
+historical runtime logs or proof that an app executed. Conflicting IDs and
+untrusted label shapes cannot be treated as identities. The primary possible
+controller-interference pair is selected by temporal relevance to the user's
+incident window, not by first position in a broad chronology. An unproductive
+follow-up read is explicitly recorded as `no_new_usable_evidence`, preventing
+an identical expensive next model planning call. V2 remains opt-in read-only.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

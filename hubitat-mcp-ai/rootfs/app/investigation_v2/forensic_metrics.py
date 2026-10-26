@@ -23,6 +23,8 @@ def forensic_metrics(case: CaseFile, window: IncidentWindow | None) -> dict:
         "incident_records": len(relevant),
         "incident_command_records": len(commands),
         "incident_commands_with_source_id": len(attributed),
+        "known_app_names_for_issuers": sum(1 for row in attributed
+                                          if row.producer_id in case.app_identities),
         "incident_command_attribution_fraction": (len(attributed)/len(commands) if commands else None),
         "incident_history_pages": len(pages),
         "incident_start_reached_by_returned_page": (reached if pages else None),

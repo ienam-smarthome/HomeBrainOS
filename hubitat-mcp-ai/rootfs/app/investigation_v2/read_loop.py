@@ -269,6 +269,8 @@ async def run_read_only_investigation(
             reason = "model_finished" if output.get("finish") is True else "no_approved_discriminating_reads"
             break
 
+        before_records = {record.record_id for record in case.records}
+        before_identity = dict(case.app_identities)
         for item in review.approved:
             if time.monotonic() >= deadline:
                 reason = "deadline_reached"
@@ -278,6 +280,13 @@ async def run_read_only_investigation(
             break
         if executed >= max_total_reads:
             reason = "read_budget_reached"
+            break
+        if (hypotheses and before_records == {record.record_id for record in case.records}
+                and before_identity == case.app_identities):
+            # Source operations that were 'successful' but returned no typed
+            # observations/identities cannot inform another causal round.
+            # Avoid recycling the same model prompt until planning_timeout.
+            reason = "no_new_usable_evidence"
             break
 
     return InvestigationResult(
