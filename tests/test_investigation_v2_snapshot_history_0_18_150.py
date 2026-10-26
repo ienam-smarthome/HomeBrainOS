@@ -71,7 +71,7 @@ def test_synthesis_preserves_current_status_without_inventing_a_timed_event():
                    "lastSeen=Mon Oct 12 01:30:01 BST 2026"):
         assert sample in output.text
     assert "historical event or proof of physical reachability" in output.text
-    assert "Any reported power/energy value may be stale" in output.text
+    assert "Reported power/energy values may be stale" in output.text
     assert "No source-backed time-stamped event" in output.text
     assert "NEVER_EXPOSE_THIS_SECRET" not in output.text
 
