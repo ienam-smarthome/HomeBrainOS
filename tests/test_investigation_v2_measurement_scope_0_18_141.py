@@ -170,7 +170,7 @@ def test_model_prompt_contains_bounded_evidence_catalogue_not_brand_rules():
     profile=inventory_profile(DEVICES)
     assert len(profile["meter_candidates"])==7
     assert profile["meter_candidates"][0]["id"]=="9900"
-    assert "measurement_roles" in _MODEL_SYSTEM
+    assert "Measurement role interpretation is a separate later step" in _MODEL_SYSTEM
     assert "Octopus" not in _MODEL_SYSTEM
     assert "Provider Live Meter" not in _MODEL_SYSTEM
 

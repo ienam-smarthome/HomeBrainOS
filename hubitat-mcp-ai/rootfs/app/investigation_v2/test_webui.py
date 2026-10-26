@@ -187,6 +187,9 @@ el('run').onclick=async()=>{
       if(q.unclassified_measurement_scopes){
         metric('Scope not verified',q.unclassified_measurement_scopes);
       }
+      if(q.excluded_unknown_scope){
+        metric('Unranked meters',q.excluded_unknown_scope);
+      }
       metric('Inventory coverage',q.inventory_complete===true?'Verified':'Not verified');
       metric('Inventory pages',q.inventory_pages);
     }else if(data.answer_mode==='semantic_unavailable'){
@@ -220,6 +223,7 @@ el('run').onclick=async()=>{
       group_status:data.group_status,
       semantic_plan:data.semantic_plan,
       inventory_query:data.inventory_query,
+      semantic_diagnostics:data.semantic_diagnostics,
       forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
       planning_rounds:data.investigation?.rounds,

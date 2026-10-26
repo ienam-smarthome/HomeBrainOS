@@ -1415,7 +1415,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             inventory_ms=round((time.perf_counter()-inventory_started)*1000)
             planning_started=time.perf_counter()
             try:
-                semantic=await semantic_plan(
+                semantic = await semantic_plan(
                     payload.question, audit_devices, agent.transport.chat,
                     timeout_seconds=25,
                 )
