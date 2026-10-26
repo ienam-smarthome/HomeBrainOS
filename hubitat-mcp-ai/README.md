@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.129**.
+Current add-on version: **0.18.130**.
 
 ## Architecture
+
+v0.18.130 adds incident-first, verified-ID historical reads and a concise source-linked V2 test report, with the full atomic/technical answer collapsed below. V1 production remains unchanged. See [release notes](CHANGELOG-0.18.130.md).
+
 
 v0.18.129 improves V2 test errors: HTTP status and field-level validation details display without exposing tokens, with real endpoint auth/validation/success regression tests. See [release notes](CHANGELOG-0.18.129.md).
 

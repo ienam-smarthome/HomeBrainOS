@@ -19,6 +19,7 @@ from .synthesis import GroundedAnswer, synthesize_with_chat
 from .atomic_claims import ClaimReview, synthesize_atomic_with_chat
 from .narrative import NarrativeAudit
 from .temporal_scope import IncidentWindow
+from .investigation_report import format_investigation_report
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class V2Evaluation:
     answer: GroundedAnswer
     atomic_claim_review: ClaimReview | None = None
     narrative_audit: NarrativeAudit | None = None
+    report: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,6 +42,8 @@ class V2Evaluation:
                 "human_review_required": self.answer.human_review_required,
             },
             "production_answer_used": False,
+            "report": {"text": self.report or self.answer.text,
+                       "technical_answer_retained": True},
             "atomic_claim_review": (self.atomic_claim_review.to_dict()
                                     if self.atomic_claim_review else None),
             "narrative_audit": ({
@@ -95,11 +99,15 @@ async def evaluate_v2_with_model(
             investigation=result, answer=atomic.answer,
             atomic_claim_review=atomic.review,
             narrative_audit=atomic.narrative_audit,
+            report=format_investigation_report(result.case, result.hypotheses,
+                                               result.stopped_because, incident_window),
         )
     answer = await synthesize_with_chat(
         case=result.case, hypotheses=result.hypotheses, chat=chat,
     )
-    return V2Evaluation(investigation=result, answer=answer)
+    return V2Evaluation(investigation=result, answer=answer,
+                        report=format_investigation_report(result.case, result.hypotheses,
+                                                           result.stopped_because, incident_window))
 
 
 __all__ = ["V2Evaluation", "evaluate_v2_with_model"]

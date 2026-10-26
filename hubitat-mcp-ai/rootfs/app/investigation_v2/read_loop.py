@@ -155,6 +155,76 @@ async def run_read_only_investigation(
     rounds = 0
     reason = "round_budget_reached"
 
+    async def execute_checked_read(item: Any, round_index: int) -> None:
+        nonlocal executed, case
+        declared = registry.get(item.tool)
+        if declared is None or classify_tool_effect(declared, item.arguments) is not ToolEffect.READ:
+            rejections.append("read permission changed before execution")
+            return
+        prior_calls.append((item.tool, item.arguments))
+        executed += 1
+        try:
+            execution = await asyncio.wait_for(
+                executor.execute(
+                    item.tool, dict(item.arguments), tool=declared,
+                    record_evidence=False,
+                ),
+                timeout=min(per_read_timeout_seconds, max(0.1, deadline - time.monotonic())),
+            )
+            accepted = (
+                execution.effect is ToolEffect.READ and
+                execution.name == item.tool and execution.success is True and
+                execution.result is not None and execution.result.name == item.tool
+            )
+            result = execution.result if accepted else None
+            if not accepted:
+                rejections.append("read failed or returned no authoritative result")
+        except asyncio.TimeoutError:
+            result = None
+            rejections.append("bounded MCP read timed out")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            result = None
+            rejections.append("bounded MCP read failed")
+        receipt = project_read_receipt(
+            item.tool, item.arguments, result,
+            source_request_id=f"v2-{round_index}-{executed}",
+            incident_window=incident_window,
+        )
+        receipts.append(receipt)
+        case = build_case_file(question, receipts)
+
+    # Independent of model output: an explicit past incident with verified
+    # targets must first obtain a relevant device-history page. This protects
+    # against the model starting with generic rule lists or recent events.
+    # Every seed passes the identical production host schema/effect/ID gate.
+    if incident_window is not None and known_ids and max_total_reads:
+        from .incident_retrieval import incident_first_proposals
+        for limit in (150, 500):
+            if executed >= min(max_total_reads, 2) or time.monotonic() >= deadline:
+                break
+            proposals = incident_first_proposals(
+                registry.values(), known_ids, incident_window, limit=limit)
+            if not proposals:
+                rejections.append("incident-first source operation unavailable in live read manifest")
+                break
+            approved = review_model_read_proposals(
+                case, proposals, registry.values(), verified_entity_ids=known_ids,
+                learned_operations=learned_operations, previous_calls=prior_calls,
+                max_total_reads=max_total_reads, max_reads_this_round=1,
+                budget_used_reads=executed, incident_window=incident_window)
+            rejections.extend(x.reason for x in approved.rejected)
+            if not approved.approved:
+                break
+            await execute_checked_read(approved.approved[0], -1)
+            cov = case.coverage[-1] if case.coverage else None
+            # A page that reaches the start need not be retried. If it does
+            # not, only a higher-limit read is potentially informative.
+            if cov and cov.requested_window_reached is True:
+                break
+            if cov and not cov.succeeded:
+                break
     for round_index in range(max_rounds):
         rounds += 1
         # Models can propose, not install credentials, tools or permissions.
@@ -200,47 +270,7 @@ async def run_read_only_investigation(
             if time.monotonic() >= deadline:
                 reason = "deadline_reached"
                 break
-            declared = registry.get(item.tool)
-            if declared is None or classify_tool_effect(declared, item.arguments) is not ToolEffect.READ:
-                rejections.append("read permission changed before execution")
-                continue
-            # An existing executor can serve local read handlers or real MCP
-            # gateways; no V2-specific transport and no direct MCP mutations.
-            prior_calls.append((item.tool, item.arguments))
-            executed += 1
-            try:
-                execution = await asyncio.wait_for(
-                    executor.execute(
-                        item.tool, dict(item.arguments), tool=declared,
-                        record_evidence=False,
-                    ),
-                    timeout=min(per_read_timeout_seconds, max(0.1, deadline - time.monotonic())),
-                )
-                accepted = (
-                    execution.effect is ToolEffect.READ and
-                    execution.name == item.tool and
-                    execution.success is True and execution.result is not None and
-                    execution.result.name == item.tool
-                )
-                result = execution.result if accepted else None
-                if not accepted:
-                    rejections.append("read failed or returned no authoritative result")
-            except asyncio.TimeoutError:
-                result = None
-                rejections.append("bounded MCP read timed out")
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                result = None
-                rejections.append("bounded MCP read failed")
-
-            receipt = project_read_receipt(
-                item.tool, item.arguments, result,
-                source_request_id=f"v2-{round_index}-{executed}",
-                incident_window=incident_window,
-            )
-            receipts.append(receipt)
-            case = build_case_file(question, receipts)
+            await execute_checked_read(item, round_index)
         if reason == "deadline_reached":
             break
         if executed >= max_total_reads:

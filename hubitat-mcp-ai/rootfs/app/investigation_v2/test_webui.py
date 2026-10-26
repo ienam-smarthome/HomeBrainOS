@@ -37,11 +37,11 @@ Exact timestamp scores do not measure reasoning correctness. Source coverage can
 <span id="status" role="status" aria-live="polite"></span>
 </section>
 <section id="output" hidden>
-<h2>V2 answer</h2>
+<h2>V2 investigation summary</h2>
 <div><button type="button" id="copyAnswer">Copy answer</button> <button type="button" id="copyReport">Copy full report</button></div>
 <pre id="answer"></pre>
 <h2>Measured checks</h2><div class="metrics" id="metrics"></div>
-<h2>Investigation details</h2><button type="button" id="copyDetails">Copy investigation details</button><pre id="details"></pre>
+<details id="technicalReport"><summary>Investigation details and full source-backed answer</summary><button type="button" id="copyDetails">Copy investigation details</button><pre id="details"></pre></details>
 </section>
 </main><script>
 const el=id=>document.getElementById(id);
@@ -136,7 +136,7 @@ el('run').onclick=async()=>{
     if(!response.ok)throw new Error(formatTestError(response,data));
     if(!data||typeof data!=='object'||!data.answer)
       throw new Error('HTTP '+response.status+': V2 endpoint returned no investigation result.');
-    el('answer').textContent=data.answer?.text||'No answer returned';
+    el('answer').textContent=data.report?.text||data.answer?.text||'No answer returned';
     const score=data.scorecard?.v2_measured||{};
     metric('Duration',data.elapsed_ms+' ms');metric('MCP reads',data.investigation?.executed_reads);
     metric('Command retention',score.command_records?score.commands_retained+'/'+score.command_records:'No command evidence');
@@ -145,6 +145,7 @@ el('run').onclick=async()=>{
     metric('Historical source complete',score.source_complete_proven===true?'Proven':'Not proven');
     el('details').textContent=JSON.stringify({
       stopped_because:data.investigation?.stopped_because,
+      full_source_backed_answer:data.answer?.text,
       requested_incident_window:data.investigation?.requested_incident_window,
       hypotheses:data.investigation?.hypotheses,
       coverage:data.investigation?.case?.coverage,

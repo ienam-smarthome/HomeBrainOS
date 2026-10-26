@@ -179,6 +179,21 @@ Endpoint-level tests exercise the actual FastAPI route with a fake live Hubitat
 inventory and fake evaluation, plus disabled, mismatched-token, invalid-ID and
 body-validation cases. This does **not** claim a live Hubitat model test passed.
 
+## Incident-first forensic report (0.18.130)
+
+For explicit dated investigations, V2 now proposes a host-gated bounded initial
+device-history read for the verified target before asking the model to
+investigate hypotheses. An insufficient page can trigger one enlarged read, and
+both must pass the same MCP/ToolExecutor read-only safety checks. The read
+adapter scans a bounded returned page before time-window filtering, avoiding
+the earlier failure where unrelated recent events consumed the retention cap.
+The evidence schema records source oldest/newest timestamps and whether a page
+reached the requested start; it never equates page reach with source integrity.
+The operator test page displays a compact chronological report, tentative
+competing-controller lead when independently linked issued commands exist, and
+next checks. Full source-ID transcript remains available under Investigation
+details. Normal Ask and writes are unchanged.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
