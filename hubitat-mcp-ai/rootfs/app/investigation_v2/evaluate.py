@@ -21,6 +21,7 @@ from .narrative import NarrativeAudit
 from .temporal_scope import IncidentWindow
 from .investigation_report import format_investigation_report
 from .forensic_metrics import forensic_metrics
+from .state_duration import is_state_duration_request, format_state_duration_report
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ async def evaluate_v2_with_model(
     incident_window: IncidentWindow | None = None,
     planning_timeout_seconds: float = 60.0,
     bootstrap_source_identity: bool = True,
+    verified_device_label: str | None = None,
 ) -> V2Evaluation:
     """Run one explicit read-only experiment with the configured chat provider.
 
@@ -89,6 +91,7 @@ async def evaluate_v2_with_model(
     resolved_ids = tuple(verified_entity_ids)
     propose = V2ModelProposer(chat, tools, verified_entity_ids=resolved_ids,
                               incident_window=incident_window)
+    duration_intent = is_state_duration_request(question, incident_window)
     result = await run_read_only_investigation(
         question=question, mcp=mcp, executor=executor, propose=propose,
         verified_entity_ids=resolved_ids,
@@ -97,7 +100,25 @@ async def evaluate_v2_with_model(
         incident_window=incident_window,
         planning_timeout_seconds=planning_timeout_seconds,
         bootstrap_source_identity=bootstrap_source_identity,
+        stop_after_incident_history=duration_intent,
     )
+    if duration_intent and incident_window is not None:
+        # Calculations from validated event-time state transitions belong to
+        # the host, not a generative model. Unknown boundaries remain unknown.
+        narrative, displayed_ids = format_state_duration_report(
+            result.case, incident_window, device_label=verified_device_label,
+        )
+        grounded = GroundedAnswer(
+            text=narrative, displayed_record_ids=displayed_ids,
+            omitted_material_record_ids=(),
+            validation_issues=("state_duration_source_completeness_unverified",)
+            if not any(c.source_complete is True for c in result.case.coverage)
+            else (),
+        )
+        return V2Evaluation(
+            investigation=result, answer=grounded,
+            report=narrative, incident_window=incident_window,
+        )
     # If planning itself timed out or the transport failed, don't issue more
     # large model calls for atomic selection and repair. The host can still
     # render every authenticated event with no invented causal hypothesis.
