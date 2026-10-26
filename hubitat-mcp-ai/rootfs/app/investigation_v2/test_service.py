@@ -104,7 +104,7 @@ def _ambiguous_inventory_targets(items: Iterable[dict[str, Any]]) -> str:
     suffix = "; more matches exist" if len(choices) > 6 else ""
     return (
         "Ambiguous device name: multiple Hubitat devices have the same "
-        "highest-priority verified name. "
+        "highest-priority verified name and cannot be matched uniquely. "
         + "Matching IDs: " + "; ".join(labels) + suffix
         + ". Select the intended ID under Advanced options."
     )
