@@ -1397,7 +1397,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         # unavailable, do not silently invent a calendar: use UTC and show
         # the fallback basis in the explicit window metadata.
         zone_name = "UTC"
-        if re.search(r"\\d{1,2}\\s*(?:-|–|—|to)\\s*\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4}",
+        if re.search(r"\d{1,2}\s*(?:-|–|—|to)\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}",
                      payload.question, re.I):
             try:
                 _now_local, resolved_zone, _zone_basis = await _health_timezone.now_in_hub_timezone(
