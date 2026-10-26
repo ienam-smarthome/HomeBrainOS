@@ -108,7 +108,7 @@ def inventory_profile(devices: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
     if isinstance(raw,str):
-        if not 0<len(raw)<=3500:
+        if not 0<len(raw)<=14000:
             raise ValueError("semantic plan missing or oversized")
         text=raw.strip()
         if text.startswith("```") and text.endswith("```"):

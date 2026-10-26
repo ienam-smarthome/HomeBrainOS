@@ -54,7 +54,7 @@ def _quantity(value: Any, attribute: str | None) -> float | None:
         return _number(value)
     if not isinstance(value,str):
         return None
-    match=re.fullmatch(r"\\s*([-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))\\s*([A-Za-z]+)?\\s*",value)
+    match=re.fullmatch(r"\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*([A-Za-z]+)?\s*",value)
     if match is None:
         return None
     amount=float(match.group(1))
