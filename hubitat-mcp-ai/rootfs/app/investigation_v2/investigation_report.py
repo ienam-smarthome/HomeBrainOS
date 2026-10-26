@@ -77,6 +77,14 @@ def format_investigation_report(
         lines.append("The historical source is not independently proven complete.")
 
     lines.append("")
+    if case.device_snapshots:
+        latest = case.device_snapshots[-1]
+        attrs = latest.get("attributes", {})
+        if isinstance(attrs, dict) and attrs:
+            lines.extend(["", "**Current device snapshot (read-time, not a historical event)**",
+                          ", ".join(f"{key}={value}" for key, value in attrs.items())])
+            lines.append("An MQTT client reporting connected is not proof the physical device is reachable.")
+    lines.append("")
     lines.append("**Recorded timeline** (commands and reported states are different evidence)")
     if records:
         if window is not None:
@@ -97,7 +105,12 @@ def format_investigation_report(
         priority = [row for row in records
                     if row.stage == "command_issued"
                     or row.action in ("switch", "level", "networkStatus")]
-        chosen = priority if len(priority)<=14 else priority[:6]+priority[-8:]
+        if priority:
+            chosen = priority if len(priority)<=14 else priority[:6]+priority[-8:]
+        else:
+            # Preserve a useful timeline when events only contain health
+            # or connectivity reports; do not create a blank table.
+            chosen = records if len(records)<=8 else records[:3]+records[-3:]
         for row in chosen:
             cols = f"| {_time(row,window)} | {_event(row)}"
             lines.append(cols + (f" | {_actor(row,case)} |" if show_source else " |"))
@@ -133,7 +146,7 @@ def format_investigation_report(
             f"**Possible competing controllers:** {_actor(earlier,case)} issued OFF at "
             f"{_time(earlier,window)}; {_actor(later,case)} then issued "
             f"{later.action.replace('command-','')} at {_time(later,window)}. "
-            "This makes automation interference worth checking, but it does not prove the later command turned the physical light on."
+            "This makes automation interference worth checking, but it does not prove the later command turned the device physically changed state."
         )
     elif commands:
         lines.append("The command sequence is available, but no directly linked competing-controller sequence is yet established.")
@@ -145,7 +158,7 @@ def format_investigation_report(
             "A `setLevel()` command on a dimmable light commonly turns it ON while "
             "setting brightness, including when it was previously OFF. Here it "
             "shows the controller's intent, not independent confirmation that "
-            "the bulb actually lit."
+            "the device actually changed state."
         )
     offs = [row for row in commands if row.action == "command-off"]
     if offs:
@@ -153,7 +166,7 @@ def format_investigation_report(
         lines.append(
             f"Another OFF was issued at {_time(last_off,window)}. "
             "Without a subsequent independently reported switch state, "
-            "we cannot establish that the bulb obeyed it."
+            "we cannot establish that the device responded to it."
         )
     offline = [row for row in records if row.action == "networkStatus" and row.value == "offline"]
     online = [row for row in records if row.action == "networkStatus" and row.value == "online"]
@@ -180,7 +193,7 @@ def format_investigation_report(
         lines.append("Two bounded history requests were compared. This reduces reliance "
                      "on a single response but does not establish that Hubitat history is complete.")
     lines.extend(["","**What remains unverified**"])
-    lines.append("The initiating trigger, the effective historical rule conditions, and the physical bulb state are not established solely by these records.")
+    lines.append("The initiating trigger, the effective historical rule conditions, and the actual physical device state are not established solely by these records.")
     if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence"):
         lines.append(f"Investigation stopped early ({stop_reason.replace('_',' ')}); some relevant reads may be missing.")
     if stop_reason == "no_new_usable_evidence":
@@ -205,8 +218,8 @@ def format_investigation_report(
     elif commands:
         lines.append("- Map the recorded command source IDs to their controlling apps and compare relevant execution logs and conditions.")
     else:
-        lines.append("- Recover the source history for the requested dates, including pages reaching the start, before drawing conclusions.")
-    lines.append("- Check subsequent switch/level reports and physical observation before treating an OFF command as successful.")
+        lines.append("- Recover earlier device messages and state transitions reaching the start of the fault, not only recent health reports.")
+    lines.append("- Check device last-contact and switch reports, plus physical/network reachability, before treating a command as successful.")
     lines.append("- Cross-check bridge or external-platform activity and hub restart/network records where available.")
     lines.append("")
     lines.append("Detailed commands, source IDs, validation flags and read coverage remain in **Investigation details**.")

@@ -26,6 +26,7 @@ from .temporal_scope import IncidentWindow
 from .hypothesis_temporal_integrity import hypothesis_clock_issues
 from .source_identity import source_identity_proposals, source_configuration_proposals
 from .read_diagnostics import classify_exception, classify_execution
+from .device_context import device_context_proposals
 
 
 @dataclass(frozen=True)
@@ -205,6 +206,7 @@ async def run_read_only_investigation(
     deadline_seconds: float = 170.0,
     incident_window: IncidentWindow | None = None,
     bootstrap_source_identity: bool = False,
+    bootstrap_device_context: bool = False,
     stop_after_incident_history: bool = False,
 ) -> InvestigationResult:
     """Run a limited investigative read-only session under existing host gates.
@@ -357,6 +359,29 @@ async def run_read_only_investigation(
             read_failures=read_failures,
         )
 
+    # Current-state and transition-history preflight for explicitly opted-in,
+    # undated single-device investigations. The live MCP manifest and existing
+    # identity/schema/effect gates authorise every operation. This protects
+    # investigation quality when the model hallucinates a tool name.
+    if (bootstrap_device_context and incident_window is None
+            and len(set(known_ids)) == 1 and not stop_after_incident_history):
+        for stage in ("current", "history"):
+            if executed >= max_total_reads or time.monotonic() >= deadline:
+                break
+            proposals = device_context_proposals(
+                registry.values(), known_ids, case, stage=stage)
+            if not proposals:
+                continue
+            approved = review_model_read_proposals(
+                case, proposals, registry.values(), verified_entity_ids=known_ids,
+                learned_operations=learned_operations, previous_calls=prior_calls,
+                max_total_reads=max_total_reads, max_reads_this_round=1,
+                budget_used_reads=executed, incident_window=incident_window,
+            )
+            rejections.extend(x.reason for x in approved.rejected)
+            for item in approved.approved:
+                await execute_checked_read(item, -4 if stage == "current" else -5)
+
     # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
     # replacement for model planning. It can make useful progress even when
     # the configured LLM takes too long to provide a structured proposal.
@@ -448,6 +473,15 @@ async def run_read_only_investigation(
         )
         rejections.extend(x.reason for x in review.rejected)
         if not review.approved:
+            if (review.rejected and round_index + 1 < max_rounds
+                    and hasattr(propose, "set_validation_feedback")
+                    and callable(getattr(propose, "set_validation_feedback"))):
+                # Bounded, host-created validation classes, not model/tool text.
+                # Give the AI one further chance with the same authoritative
+                # live operation catalogue; it still cannot grant permission.
+                feedback = [x.reason for x in review.rejected[:4]]
+                propose.set_validation_feedback(feedback)
+                continue
             reason = ("model_finished" if output.get("finish") is True and not review.rejected
                       else "no_approved_discriminating_reads")
             break

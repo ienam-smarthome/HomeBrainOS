@@ -74,6 +74,7 @@ async def evaluate_v2_with_model(
     incident_window: IncidentWindow | None = None,
     planning_timeout_seconds: float = 60.0,
     bootstrap_source_identity: bool = True,
+    bootstrap_device_context: bool = False,
     verified_device_label: str | None = None,
     force_duration_mode: bool = False,
 ) -> V2Evaluation:
@@ -103,6 +104,7 @@ async def evaluate_v2_with_model(
         incident_window=incident_window,
         planning_timeout_seconds=planning_timeout_seconds,
         bootstrap_source_identity=bootstrap_source_identity,
+        bootstrap_device_context=bootstrap_device_context,
         stop_after_incident_history=duration_intent,
     )
     if duration_intent and incident_window is not None:

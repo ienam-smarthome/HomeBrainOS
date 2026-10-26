@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.144**.
+Current add-on version: **0.18.145**.
 
 ## Architecture
+
+v0.18.145 adds optional evidence-first V2 current-device status and adaptive switch-history preflight, with host-validated live gateway operations and limited AI replanning after tool-selection rejection. Read-time snapshots are separated from historical events; routine health-only event histories no longer render a blank timeline. This does not change production V1. See [release notes](CHANGELOG-0.18.145.md).
 
 v0.18.144 fixes V2 device identity selection: source-grounded names in the user's question take priority over AI-proposed labels; model-only names require a unique live Hubitat match and never resolve an ambiguous user phrase. Hidden Advanced overrides are no longer submitted and errors wrap below the Run button. Production V1 and write guards are unchanged. See [release notes](CHANGELOG-0.18.144.md).
 

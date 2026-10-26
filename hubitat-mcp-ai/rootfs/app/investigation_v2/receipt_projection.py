@@ -170,6 +170,52 @@ def _project_app_catalogue(data: Mapping[str, Any], operation: str) -> dict[str,
     }
 
 
+# Allowlisted read-time device context; NEVER copy driver preferences,
+# arbitrary attributes, credentials, IPs, URLs or free-form log messages.
+_STATUS_FIELDS = frozenset({
+    "switch", "healthStatus", "deviceHealth", "mqttStatus",
+    "networkStatus", "lastSeen", "lastActivity", "lastMessage",
+    "power", "energy", "battery", "presence", "temperature",
+    "humidity", "contact", "motion",
+})
+
+
+def _snapshot(data: Mapping[str, Any], target: str) -> dict[str, Any] | None:
+    source: Mapping[str, Any] = data
+    for key in ("device", "data", "result"):
+        child = source.get(key)
+        if isinstance(child, dict) and (not child.get("id") or _id(child.get("id")) == target):
+            source = child
+    reported = _id(source.get("id") or source.get("deviceId"))
+    if reported and reported != target:
+        return None
+    fields: dict[str, Any] = {}
+    containers = (source, source.get("attributes"), source.get("states"),
+                  source.get("currentStates"))
+    for obj in containers:
+        pairs: list[tuple[Any, Any]]
+        if isinstance(obj, dict):
+            pairs = list(obj.items())
+        elif isinstance(obj, list):
+            pairs = [(entry.get("name") or entry.get("attribute"),
+                      entry.get("currentValue", entry.get("value")))
+                     for entry in obj if isinstance(entry, dict)]
+        else:
+            continue
+        for key, value in pairs:
+            if key not in _STATUS_FIELDS:
+                continue
+            if isinstance(value, str) and (
+                _SHORT_VALUE.fullmatch(value) or _timestamp(value)
+            ):
+                fields[key] = value[:80]
+            elif type(value) in (int, float, bool) and (
+                not isinstance(value, float) or abs(value) < 1e12
+            ):
+                fields[key] = value
+    return {"deviceId": target, "attributes": fields}
+
+
 def project_read_receipt(
     name: str, arguments: Mapping[str, Any], result: MCPToolResult | None,
     *, source_request_id: str, read_at: str | None = None,
@@ -200,6 +246,18 @@ def project_read_receipt(
         return receipt
     if data.get("status") in ("pending", "in_progress"):
         receipt["success"] = False
+        return receipt
+    if op == "hub_get_device":
+        target = _id(args.get("deviceId"))
+        if not target:
+            receipt["success"] = False
+            return receipt
+        snapshot = _snapshot(data, target)
+        if snapshot is None:
+            receipt["success"] = False
+            return receipt
+        receipt["details"] = {"deviceId": target, "deviceSnapshot": snapshot}
+        receipt["evidence_kind"] = "typed_current_device_snapshot"
         return receipt
     if op == "hub_list_device_events":
         target = _id(args.get("deviceId"))

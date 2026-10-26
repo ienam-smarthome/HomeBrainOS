@@ -1618,6 +1618,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 verified_entity_ids=ids,
                 enable_atomic_claim_validation=True,
                 enable_evidence_narrative=True,
+                bootstrap_device_context=True,
                 max_rounds=3, max_total_reads=8,
                 incident_window=incident_window,
                 verified_device_label=resolved[0]["label"] if len(resolved)==1 else None,

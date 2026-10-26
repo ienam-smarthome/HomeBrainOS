@@ -109,6 +109,7 @@ class CaseFile:
     coverage: list[Coverage] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     app_identities: dict[str, str] = field(default_factory=dict)
+    device_snapshots: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,6 +118,7 @@ class CaseFile:
             "coverage": [asdict(item) for item in self.coverage],
             "errors": list(self.errors),
             "app_identities": dict(self.app_identities),
+            "device_snapshots": list(self.device_snapshots),
         }
 
     def evidence_brief(self) -> str:
@@ -132,6 +134,10 @@ class CaseFile:
                 f"issuer={item.producer_id or 'unverified'} "
                 f"basis={item.time_basis} from {item.tool}/{item.operation}"
             )
+        for snapshot in self.device_snapshots:
+            lines.append("Current device status at read time only (not historical event): "
+                         + str(snapshot.get("deviceId")) + " "
+                         + str(snapshot.get("attributes", {})))
         lines.append("Coverage (page reach is not source completeness):")
         for c in self.coverage:
             lines.append(
@@ -227,6 +233,20 @@ def build_case_file(original_user_request: str,
                         case.app_identities.pop(app_id, None)
                     else:
                         case.app_identities[app_id] = label
+        if (succeeded and raw.get("evidence_kind") == "typed_current_device_snapshot"
+                and target and (response_target is None or response_target == target)):
+            snap = details.get("deviceSnapshot")
+            if isinstance(snap, dict) and _id(snap.get("deviceId")) == target:
+                attrs = snap.get("attributes")
+                if isinstance(attrs, dict):
+                    # Host-projected snapshot is observation-at-read-time.
+                    # Never turn current values into historical transitions.
+                    case.device_snapshots.append({
+                        "deviceId": target,
+                        "attributes": {str(k): v for k, v in attrs.items()
+                                       if isinstance(k, str) and
+                                       type(v) in (str, int, float, bool)},
+                    })
         if target and response_target and target != response_target:
             errors.append("response target does not match request target")
         if not succeeded:
