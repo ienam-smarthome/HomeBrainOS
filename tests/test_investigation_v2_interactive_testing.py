@@ -97,7 +97,7 @@ def test_test_endpoint_stays_separate_from_production_chat():
     assert 'explicitly_authorised=True' in app
     assert 'enable_atomic_claim_validation=True' in app
     assert 'enable_evidence_narrative=True' in app
-    assert 'match_verified_device_ids(' in app
+    assert 'resolve_verified_device_subjects(' in app
     assert 'require_test_access(' in app
     v2=app.split('@app.post("/api/v2/test")',1)[1].split('@app.post("/api/chat")',1)[0]
     assert "agent.process_user_request_result" not in v2
