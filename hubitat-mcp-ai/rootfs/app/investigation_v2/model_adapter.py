@@ -15,6 +15,7 @@ from tool_registry import ToolEffect, classify_tool_effect
 
 from .evidence import CaseFile
 from .temporal_scope import IncidentWindow
+from .planning_evidence import planning_evidence
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
                 Awaitable[dict[str, Any]]]
@@ -41,14 +42,11 @@ _PLAN_SYSTEM = (
     "Explain setLevel as possible turn-on intent for a dimmer without claiming "
     "physical execution; a later off command is still not switch-off proof. "
     "Separate source observations, tentative alternatives and decisive reads. "
-    "IMPORTANT for model hypotheses: UTC timestamps may be on the PREVIOUS "
-    "calendar day in a positive-offset local zone. Never write an HH:MM clock "
-    "time in hypothesis prose without a time-zone suffix (BST, GMT or UTC). "
-    "A named clock must match one of its linked evidence record times in that "
-    "zone; otherwise omit the clock from prose. Do not infer physical "
-    "nonexecution merely from an OFF command and missing later switch events. "
-    "After list-apps/lookup reads, prefer a discriminating app-specific "
-    "read when that operation is actually advertised by the live manifest."
+    "In hypothesis prose, reference evidence IDs rather than calculating "
+    "clock times. The host already supplies exact UTC/local times and checks "
+    "any times you write. An issued OFF with no later switch report does not "
+    "prove nonexecution. Propose at most two precise next reads with tool "
+    "arguments copied from the advertised schema; avoid redundant list reads."
 )
 
 
@@ -145,9 +143,11 @@ class V2ModelProposer:
         })[:40]
         self.available_read_schema = _advertised_reads(tool_manifest)
         self.max_case_chars = min(100000, max(1000, int(max_case_chars)))
+        self.last_prompt_chars = 0
+        self.advertised_tool_count = len(self.available_read_schema)
 
     async def __call__(self, case: CaseFile, round_index: int) -> Mapping[str, Any]:
-        evidence = case.evidence_brief()
+        evidence = planning_evidence(case, self.incident_window)
         # Never silently omit a material command just to fit model context.
         if len(evidence) > self.max_case_chars:
             raise ValueError("Case evidence exceeds bounded model context")
@@ -172,6 +172,7 @@ class V2ModelProposer:
                 "finish": False,
             },
         }, ensure_ascii=True)
+        self.last_prompt_chars = len(prompt) + len(_PLAN_SYSTEM)
         answer = await self.chat([
             {"role": "system", "content": _PLAN_SYSTEM},
             {"role": "user", "content": prompt},

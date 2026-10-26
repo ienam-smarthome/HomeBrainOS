@@ -243,6 +243,22 @@ no_approved_discriminating_reads without revealing raw MCP responses.
 This release does not claim the underlying app config/execution tools are
 available; that remains a live MCP manifest and history question.
 
+## Planner reliability and measurable preflight (0.18.134)
+
+In opt-in testing, host-retained source command IDs enable a single read-only
+app-identity lookup *before* model planning, through exactly the same MCP
+manifest, schema, entity and ToolExecutor safety gates as model-proposed reads.
+There is no device-specific keyword routing or fallback hallucination. The
+planner now sees a compact projection containing all canonical event IDs,
+command-versus-state stages, explicit UTC/local timestamps, actor IDs, and
+coverage metadata; exhaustive original evidence remains unchanged for claim
+verification. Timed AI rounds report safe input length, timing, budget, and
+status without collecting private model text or tokens. A planning timeout is
+not interpreted as a host read rejection. The test UI exposes these metrics.
+
+Only the opt-in V2 evaluator enables identity preflight by default. V1 and
+actual Hubitat writes are unchanged.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

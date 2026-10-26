@@ -96,8 +96,10 @@ async def test_planner_exposes_nested_required_fields_and_rejects_native_tool_ca
     description=next(x for x in prompt["available_tools"] if x["name"]=="hub_read_apps_code")
     assert description["properties"]["args"]["required"]==["appId"]
     assert description["properties"]["args"]["additionalProperties"] is False
-    assert "BST" in messages[0][0]["content"]
-    assert "time-zone suffix" in messages[0][0]["content"]
+    # The model cites canonical evidence IDs; the HOST validates exact
+    # local/UTC conversion instead of making a slow model re-verify prose.
+    assert "reference evidence IDs" in messages[0][0]["content"]
+    assert "exact UTC/local times" in messages[0][0]["content"]
 
 
 class MCP:

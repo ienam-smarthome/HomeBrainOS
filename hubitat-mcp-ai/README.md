@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.133**.
+Current add-on version: **0.18.134**.
 
 ## Architecture
+
+v0.18.134 adds compact but complete-for-planning source evidence, safe provenance-driven app identity lookup before model planning, and bounded per-round planner timing diagnostics. See [release notes](CHANGELOG-0.18.134.md).
+
 
 v0.18.133 improves opt-in V2 model plan diagnostics and historical time accuracy. It verifies clock times in model hypotheses against the cited records and zone, projects nested MCP required fields to the planner, and exposes read rejection codes in the technical report. Production V1 is unchanged. See [release notes](CHANGELOG-0.18.133.md).
 

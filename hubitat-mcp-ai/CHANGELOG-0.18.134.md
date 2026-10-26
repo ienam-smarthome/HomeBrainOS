@@ -1,0 +1,8 @@
+# HomeBrainOS v0.18.134 — bounded, observable AI planning
+
+- A compact V2 planning evidence view preserves **every canonical source record ID**, timestamp in UTC and local timezone, action/stage, actor, target and source-coverage proof. The immutable full evidence case and atomic verification still use the original complete records. This reduces redundant provenance boilerplate passed to the model; it does not hide material commands.
+- Simplifies the model's timezone-writing instruction: reference source IDs rather than manually computing timestamps. Strict host-side hypothesis clock validation remains enabled, protecting the user from silent BST/UTC shifts.
+- Opt-in V2 now performs **one** extra provenance-driven installed-app identity lookup when authoritative historical commands already disclose issuing app IDs. The read uses the existing live MCP manifest and full read-only approval/execution pipeline, not unverified guesses or device-specific routing. If the operation is unavailable or rejected, investigation remains read-only and model planning proceeds.
+- Per-round metrics record planner input character count, recorded case size, elapsed time, time budget and timeout/error/success outcome; **no model response, raw MCP payload, credential or provider log** is captured. Visible under Investigation details.
+- Materialized verified target IDs once so generator inputs cannot be lost between model and host scope.
+- The feature remains separately token-gated, deliberately read-only and isolated from production V1. A successful preflight or fast planner is not proof of causal accuracy.

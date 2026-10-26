@@ -71,6 +71,8 @@ async def evaluate_v2_with_model(
     enable_atomic_claim_validation: bool = False,
     enable_evidence_narrative: bool = False,
     incident_window: IncidentWindow | None = None,
+    planning_timeout_seconds: float = 40.0,
+    bootstrap_source_identity: bool = True,
 ) -> V2Evaluation:
     """Run one explicit read-only experiment with the configured chat provider.
 
@@ -84,14 +86,17 @@ async def evaluate_v2_with_model(
     if executor.mcp is not mcp:
         raise ValueError("MCP client/executor mismatch")
     tools = await mcp.list_tools()
-    propose = V2ModelProposer(chat, tools, verified_entity_ids=verified_entity_ids,
+    resolved_ids = tuple(verified_entity_ids)
+    propose = V2ModelProposer(chat, tools, verified_entity_ids=resolved_ids,
                               incident_window=incident_window)
     result = await run_read_only_investigation(
         question=question, mcp=mcp, executor=executor, propose=propose,
-        verified_entity_ids=verified_entity_ids,
+        verified_entity_ids=resolved_ids,
         initial_receipts=initial_receipts,
         max_rounds=max_rounds, max_total_reads=max_total_reads,
         incident_window=incident_window,
+        planning_timeout_seconds=planning_timeout_seconds,
+        bootstrap_source_identity=bootstrap_source_identity,
     )
     if enable_atomic_claim_validation is True:
         atomic = await synthesize_atomic_with_chat(
