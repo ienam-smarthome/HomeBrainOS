@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.150**.
+Current add-on version: **0.18.151**.
 
 ## Architecture
+
+v0.18.151 improves the Investigation V2 evidence report for real source timelines: include relevant MQTT transitions alongside commands instead of hiding all but the command, summarise repeated health-status flips, accurately label UTC timestamps, and identify when the device's reported lastSeen precedes the earliest returned history. These are source-derived presentation changes, not AI-authored root causes or any additional device writes. See [release notes](CHANGELOG-0.18.151.md).
 
 v0.18.150 retains read-time device snapshots in the canonical grounded answer when the event timeline is empty, without treating a stale power value or MQTT client connection as physical proof. An empty switch-filtered event request can trigger one bounded unfiltered history read under the same live MCP permissions and verified-ID controls. Snapshot-only investigations skip unsupported atomic-claim model rounds. V1 and Hubitat automations remain unchanged. See [release notes](CHANGELOG-0.18.150.md).
 
