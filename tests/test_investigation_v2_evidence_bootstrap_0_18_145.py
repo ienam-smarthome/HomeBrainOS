@@ -156,7 +156,6 @@ async def test_live_gateway_preflight_then_bounded_replanning_when_tool_hallucin
     report = format_investigation_report(
         output.case, output.hypotheses, output.stopped_because)
     assert "Current device snapshot" in report
-    assert "14" not in report or "14" in report  # opaque IDs are not source clock claims
     assert "command" in report.lower()
     assert "physical bulb" not in report
     assert "SECRET_UNSAFE" not in json.dumps(output.to_dict())
