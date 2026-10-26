@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.145**.
+Current add-on version: **0.18.146**.
 
 ## Architecture
+
+v0.18.146 prevents opt-in V2 from aborting after a semantic intent-planning timeout: when the original question independently matches exactly one Hubitat device, V2 continues with a bounded, host-only read-only evidence pass, skips further provider calls and clearly marks the answer as partial and the intent as unverified. Ambiguous/broad questions still fail closed, without inventing a target. End-to-end elapsed time now includes intent planning. See [release notes](CHANGELOG-0.18.146.md).
 
 v0.18.145 adds optional evidence-first V2 current-device status and adaptive switch-history preflight, with host-validated live gateway operations and limited AI replanning after tool-selection rejection. Read-time snapshots are separated from historical events; routine health-only event histories no longer render a blank timeline. This does not change production V1. See [release notes](CHANGELOG-0.18.145.md).
 
