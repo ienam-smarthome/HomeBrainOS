@@ -323,6 +323,19 @@ time with explicit unverified-current-state and incomplete-source caveats.
 This generic pathway is not tied to TV IDs or product-specific terminology,
 leaves production V1 intact and never executes a device command.
 
+## Whole-group current light queries (0.18.139)
+
+The V2 admission layer can now distinguish an explicitly current *group* read
+(“Which lights are currently on?”) from a singular target or investigative
+question. It does not ask for a phantom device ID or invoke the AI to guess
+which light was meant. It uses the existing read-only paginated device audit
+contract, `device_state_summary.is_light_device` and `device_attributes`.
+A separate status result returns every identified matching light, its room,
+count and audit provenance, and labels unknown switch states and incomplete
+inventory honestly. No identity/cardinality, source schema or device write
+authority is silently broadened. The test UI hides irrelevant incident-only
+metrics for this answer mode. V1 and normal investigative V2 are unchanged.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.

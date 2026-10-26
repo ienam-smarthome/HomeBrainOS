@@ -160,7 +160,9 @@ el('run').onclick=async()=>{
       throw new Error('HTTP '+response.status+': V2 endpoint returned no investigation result.');
     el('answer').textContent=data.report?.text||data.answer?.text||'No answer returned';
     const targets=Array.isArray(data.resolved_devices)?data.resolved_devices:[];
-    el('resolvedDevices').textContent=targets.length
+    el('resolvedDevices').textContent=data.answer_mode==='current_group_state'
+      ? 'Hubitat light inventory · read-only reported states'
+      : targets.length
       ? 'Verified Hubitat device'+(targets.length>1?'s':'')+': '+
         targets.map(t=>(t.label||'Device')+' (#'+t.id+')').join(', ')+
         ' · '+(data.resolution_method==='question'?'identified from question':
@@ -170,6 +172,14 @@ el('run').onclick=async()=>{
     const duration=readableDuration(data.elapsed_ms);
     metric(duration?'Duration · '+duration.seconds:'Duration',
            duration?.primary??'Unavailable');
+    if(data.answer_mode==='current_group_state'){
+      const gs=data.group_status||{};
+      metric('Lights reported '+String(gs.requested_state||'').toUpperCase(),gs.matched_count);
+      metric('Lights identified',gs.identified_lights);
+      metric('Unknown switch state',gs.unknown_count);
+      metric('Inventory coverage',gs.inventory_complete===true?'Verified':'Not verified');
+      metric('Inventory pages',gs.inventory_pages);
+    }else{
     metric('MCP reads',data.investigation?.executed_reads);
     const failedReads=Array.isArray(data.investigation?.read_failures)?data.investigation.read_failures:[];
     metric('Failed MCP reads',failedReads.length);
@@ -180,12 +190,15 @@ el('run').onclick=async()=>{
     const fm=data.forensic_metrics||{};
     metric('In-window observations',fm.incident_records);
     metric('Historical page reached start',fm.incident_start_reached_by_returned_page===true?'Yes':'Not verified');
+    }
     el('details').textContent=JSON.stringify({
       duration:duration?.primary??null,
       duration_seconds:duration?.seconds??null,
       duration_ms:duration?.milliseconds??null,
       resolved_devices:data.resolved_devices,
       resolution_method:data.resolution_method,
+      answer_mode:data.answer_mode,
+      group_status:data.group_status,
       forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
       planning_rounds:data.investigation?.rounds,
@@ -210,6 +223,7 @@ el('run').onclick=async()=>{
     el('output').hidden=false;
     const stop=data.investigation?.stopped_because;
     el('status').textContent=(
+      data.answer_mode==='current_group_state'?' Live group-state read completed; inspect inventory coverage.':
       stop==='read_budget_reached'?' Test finished — MCP read budget reached; investigation incomplete.':
       stop==='planning_timeout'?' Test finished — AI planning timed out; investigation incomplete.':
       stop==='planning_unavailable'?' Test finished — AI planning unavailable; investigation incomplete.':
