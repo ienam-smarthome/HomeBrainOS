@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from mcp_client import MCPToolResult, tool_succeeded
 from existing_rule_settings_evidence import project_installed_app_settings
+from .temporal_scope import IncidentWindow
 
 _ID = re.compile(r"^[0-9]{1,20}$")
 _EVENT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]{0,79}$")
@@ -71,6 +72,7 @@ def _event_rows(raw_rows: Any, requested_id: str) -> tuple[list[dict[str, Any]],
 def project_read_receipt(
     name: str, arguments: Mapping[str, Any], result: MCPToolResult | None,
     *, source_request_id: str, read_at: str | None = None,
+    incident_window: IncidentWindow | None = None,
 ) -> dict[str, Any]:
     """Build one guarded, auditable source receipt without copying raw payload.
 
@@ -104,11 +106,16 @@ def project_read_receipt(
             receipt["success"] = False
             return receipt
         rows, original_count = _event_rows(data.get("events"), target)
+        if incident_window is not None:
+            rows = [event for event in rows if incident_window.contains(event["date"])]
         if not isinstance(data.get("events"), list):
             return receipt
         details = {
             "deviceId": target, "events": rows,
             "sourceEventCount": original_count,
+            "rowsOutsideRequestedWindowOrInvalid": original_count - len(rows),
+            "requestedIncidentWindow": (incident_window.to_dict()
+                                        if incident_window is not None else None),
             "observedEventsTruncated": bool(original_count > _MAX_ROWS),
         }
         for source_key in ("sourceCompleteToWindowStart", "sourceComplete",

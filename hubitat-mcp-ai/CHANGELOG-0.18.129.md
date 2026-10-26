@@ -1,5 +1,17 @@
 # HomeBrainOS 0.18.129 — V2 test request diagnostics
 
+## Added
+
+- Copy Answer, Copy Investigation Details and Copy Full Report controls with
+  secure clipboard use and a fallback for local non-HTTPS Home Assistant ingress.
+  Existing V1/Claude textareas accept ordinary Ctrl+V; no secrets are copied.
+- Explicit user-dated local incident windows (including UK October DST shift)
+  are passed to the planner, enforced for historical event reads, and applied
+  to event projection. Current-morning events outside the requested overnight
+  period are not displayed as explanations of the earlier incident.
+- Increased the V2 planning round's time allowance to 40 seconds (bounded by
+  the overall deadline) to avoid premature free-model planning timeouts.
+
 ## Fixed
 
 - V2 test UI no longer displays opaque `[object Object]` when FastAPI or

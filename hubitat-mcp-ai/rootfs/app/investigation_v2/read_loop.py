@@ -22,6 +22,7 @@ from tool_registry import ToolEffect, classify_tool_effect
 from .evidence import CaseFile, build_case_file
 from .planning import review_model_read_proposals
 from .receipt_projection import project_read_receipt
+from .temporal_scope import IncidentWindow
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class InvestigationResult:
     executed_reads: int
     stopped_because: str
     rejected_proposals: list[str] = field(default_factory=list)
+    incident_window: IncidentWindow | None = None
 
     def to_dict(self) -> dict[str, Any]:
         # No raw tool text, credentials, IPs or model transport responses.
@@ -54,6 +56,8 @@ class InvestigationResult:
             "rejected_proposals": list(self.rejected_proposals),
             "root_cause_verified": False,
             "production_answer_used": False,
+            "requested_incident_window": (self.incident_window.to_dict()
+                                          if self.incident_window else None),
         }
 
 
@@ -105,8 +109,9 @@ async def run_read_only_investigation(
     max_total_reads: int = 8,
     max_reads_per_round: int = 2,
     per_read_timeout_seconds: float = 20.0,
-    planning_timeout_seconds: float = 15.0,
-    deadline_seconds: float = 90.0,
+    planning_timeout_seconds: float = 40.0,
+    deadline_seconds: float = 170.0,
+    incident_window: IncidentWindow | None = None,
 ) -> InvestigationResult:
     """Run a limited investigative read-only session under existing host gates.
 
@@ -133,7 +138,7 @@ async def run_read_only_investigation(
     max_total_reads = max(0, min(12, int(max_total_reads)))
     max_reads_per_round = max(1, min(3, int(max_reads_per_round)))
     per_read_timeout_seconds = max(1.0, min(30.0, float(per_read_timeout_seconds)))
-    planning_timeout_seconds = max(1.0, min(30.0, float(planning_timeout_seconds)))
+    planning_timeout_seconds = max(1.0, min(60.0, float(planning_timeout_seconds)))
     deadline = time.monotonic() + max(3.0, min(180.0, float(deadline_seconds)))
     # list_tools() is the authoritative live tool list, not a model-generated
     # tool manifest. Missing/failed discovery aborts without any call.
@@ -184,6 +189,7 @@ async def run_read_only_investigation(
             previous_calls=prior_calls, max_total_reads=max_total_reads,
             max_reads_this_round=max_reads_per_round,
             budget_used_reads=executed,
+            incident_window=incident_window,
         )
         rejections.extend(x.reason for x in review.rejected)
         if not review.approved:
@@ -231,6 +237,7 @@ async def run_read_only_investigation(
             receipt = project_read_receipt(
                 item.tool, item.arguments, result,
                 source_request_id=f"v2-{round_index}-{executed}",
+                incident_window=incident_window,
             )
             receipts.append(receipt)
             case = build_case_file(question, receipts)
@@ -243,7 +250,7 @@ async def run_read_only_investigation(
     return InvestigationResult(
         case=case, hypotheses=list(hypotheses.values()), rounds=rounds,
         executed_reads=executed, stopped_because=reason,
-        rejected_proposals=rejections,
+        rejected_proposals=rejections, incident_window=incident_window,
     )
 
 
