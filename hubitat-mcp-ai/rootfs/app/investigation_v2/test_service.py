@@ -104,7 +104,7 @@ def _ambiguous_inventory_targets(
         label = re.sub(r"[^\w .,&()/-]", "", item["label"])[:72].strip()
         labels.append(f"{label or 'Device'} (#{item['id']})")
     suffix = "; more matches exist" if len(choices) > 6 else ""
-    phrase = (re.sub(r"[^\\w .,&()/-]", "", matched_phrase)[:80].strip()
+    phrase = (re.sub(r"[^\w .,&()/-]", "", matched_phrase)[:80].strip()
               if isinstance(matched_phrase, str) else "")
     phrase_text = f" Matching phrase: '{phrase}'." if phrase else ""
     return (
