@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.127**.
+Current add-on version: **0.18.128**.
 
 ## Architecture
+
+v0.18.128 adds a separate token-gated read-only V2 testing panel, a verified-device-ID admission gate, source-checked answers and timestamp-only V1/reference scorecards. Default chat remains V1; see [test setup](CHANGELOG-0.18.128.md).
+
 
 v0.18.127 adds an optional source-linked, concise explanation of chronological observations and an honest offline replay scorecard. All narratives require verified IDs, ordering and stages; **normal chat stays on V1**. See [release notes](CHANGELOG-0.18.127.md).
 

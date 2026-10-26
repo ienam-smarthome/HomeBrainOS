@@ -183,6 +183,7 @@ async def run_read_only_investigation(
             learned_operations=learned_operations,
             previous_calls=prior_calls, max_total_reads=max_total_reads,
             max_reads_this_round=max_reads_per_round,
+            budget_used_reads=executed,
         )
         rejections.extend(x.reason for x in review.rejected)
         if not review.approved:

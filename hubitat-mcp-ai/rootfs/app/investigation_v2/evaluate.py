@@ -75,7 +75,7 @@ async def evaluate_v2_with_model(
     if executor.mcp is not mcp:
         raise ValueError("MCP client/executor mismatch")
     tools = await mcp.list_tools()
-    propose = V2ModelProposer(chat, tools)
+    propose = V2ModelProposer(chat, tools, verified_entity_ids=verified_entity_ids)
     result = await run_read_only_investigation(
         question=question, mcp=mcp, executor=executor, propose=propose,
         verified_entity_ids=verified_entity_ids,

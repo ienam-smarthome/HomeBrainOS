@@ -154,6 +154,21 @@ of guessed. This is measurement infrastructure, NOT a completed Claude/V1/V2
 quality evaluation. Independent human/semantic scoring and performance runs
 are still required.
 
+## Manual test access (0.18.128)
+
+A disabled-by-default V2 test panel is available at `/v2-test` once an operator
+enables the add-on option `investigation_v2_testing_enabled` and sets a
+unique `investigation_v2_test_token` of at least 16 characters. The panel
+requires the token on each request (it is not cached), an explicit run opt-in,
+and exact device IDs verified against fresh Hubitat inventory. It invokes the
+existing opt-in evaluation seam with atomic claims + source narrative turned on,
+returning an actual read/latency scorecard. Captured V1/Claude text is optional
+and its score is **only literal timestamp presence**, not semantic equivalence.
+
+The general chatbot remains V1; V2 test requests neither reuse production
+chat tasks nor gain Hubitat write privileges. Do not expose the optional direct
+port to untrusted networks, and switch the test option off when done.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
