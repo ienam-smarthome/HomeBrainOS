@@ -54,6 +54,38 @@ def _observation(row: EvidenceItem) -> str:
     )
 
 
+_DISPLAY_STATUS_KEYS = (
+    "healthStatus", "deviceHealth", "mqttStatus", "switch",
+    "lastSeen", "lastMessage", "lastActivity", "power", "energy",
+)
+
+
+def _reported_snapshot(case: CaseFile) -> list[str]:
+    """Host-only reported values, not model claims or historical observations.
+
+    Only fields already projected by the narrow MCP evidence allowlist may
+    appear. A stale power reading does not establish current consumption.
+    """
+    if not case.device_snapshots:
+        return []
+    latest = case.device_snapshots[-1]
+    attrs = latest.get("attributes", {})
+    if not isinstance(attrs, dict):
+        return []
+    values = [f"{key}={attrs[key]}" for key in _DISPLAY_STATUS_KEYS
+              if key in attrs and type(attrs[key]) in (str, int, float, bool)]
+    if not values:
+        return []
+    return [
+        "Current Hubitat device snapshot (read-time reported values, not "
+        "a historical event or proof of physical reachability):",
+        "- " + ", ".join(values),
+        "A connected MQTT client status alone does not verify that this "
+        "device is reachable. Any reported power/energy value may be stale.",
+        "",
+    ]
+
+
 def assemble_grounded_answer(
     case: CaseFile, hypotheses: list[Hypothesis],
     selection: dict[str, Any] | None = None,
@@ -89,6 +121,8 @@ def assemble_grounded_answer(
     lines.extend(_observation(r) for r in ordered)
     if not ordered:
         lines.append("- No source-backed time-stamped event was recovered.")
+    lines.append("")
+    lines.extend(_reported_snapshot(case))
     if remaining:
         lines.append(f"- {remaining} further case-file observations were not selected; "
                      "the case file remains available for review.")
