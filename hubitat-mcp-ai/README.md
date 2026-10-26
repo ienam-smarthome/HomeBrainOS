@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.151**.
+Current add-on version: **0.18.152**.
 
 ## Architecture
+
+v0.18.152 uses a direct source-first Investigation V2 route when a provably complete, fresh Hubitat inventory uniquely identifies one named device in the question: the independent model intent stage is skipped, but strict device identity, read-only MCP tool/schema validation, and source-backed reporting remain mandatory. Broader or unverified scopes still use semantic planning. When speculative additional reads supply no new canonical evidence, V2 reports verified facts without a costly follow-up model claim-repair round or unsupported root-cause hypotheses. Production V1 and Hubitat automations are unaffected. See [release notes](CHANGELOG-0.18.152.md).
 
 v0.18.151 improves the Investigation V2 evidence report for real source timelines: include relevant MQTT transitions alongside commands instead of hiding all but the command, summarise repeated health-status flips, accurately label UTC timestamps, and identify when the device's reported lastSeen precedes the earliest returned history. These are source-derived presentation changes, not AI-authored root causes or any additional device writes. See [release notes](CHANGELOG-0.18.151.md).
 
