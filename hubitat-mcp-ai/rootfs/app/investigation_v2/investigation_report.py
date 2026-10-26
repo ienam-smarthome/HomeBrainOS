@@ -31,7 +31,11 @@ def _event(row: EvidenceItem) -> str:
     return row.action.replace("stored-setting:","Setting ")+(" = "+row.value if row.value is not None else "")
 
 
-def _actor(row: EvidenceItem) -> str:
+def _actor(row: EvidenceItem, case: CaseFile | None = None) -> str:
+    if row.producer_id and case is not None:
+        label = case.app_identities.get(row.producer_id)
+        if label:
+            return label + " (app #" + row.producer_id + ")"
     if row.producer_label and row.producer_id:
         return row.producer_label + " (#"+row.producer_id+")"
     if row.producer_id:
@@ -96,7 +100,7 @@ def format_investigation_report(
         chosen = priority if len(priority)<=14 else priority[:6]+priority[-8:]
         for row in chosen:
             cols = f"| {_time(row,window)} | {_event(row)}"
-            lines.append(cols + (f" | {_actor(row)} |" if show_source else " |"))
+            lines.append(cols + (f" | {_actor(row,case)} |" if show_source else " |"))
         if len(chosen) < len(records):
             lines.append(f"{len(records)-len(chosen)} additional observations appear in the technical report.")
     else:
@@ -109,10 +113,25 @@ def format_investigation_report(
            and a.producer_id and b.producer_id and a.producer_id!=b.producer_id
            and 0<(datetime.fromisoformat(b.timestamp_utc)-datetime.fromisoformat(a.timestamp_utc)).total_seconds()<=3600]
     if pairs:
+        # Focus on the user's incident, not the first eligible pair in an
+        # indiscriminate chronological scan. For broad dated overnight windows,
+        # events closest to the interval's midpoint are most useful leads;
+        # faster ON/level reversal breaks equal-distance ties.
+        if window is not None:
+            start=datetime.fromisoformat(window.start_utc)
+            end=datetime.fromisoformat(window.end_utc)
+            focus=start+(end-start)/2
+            pairs.sort(key=lambda pair: (
+                abs((datetime.fromisoformat(pair[1].timestamp_utc)-focus).total_seconds()),
+                (datetime.fromisoformat(pair[1].timestamp_utc) -
+                 datetime.fromisoformat(pair[0].timestamp_utc)).total_seconds(),
+            ))
+        else:
+            pairs.sort(key=lambda pair: datetime.fromisoformat(pair[1].timestamp_utc), reverse=True)
         earlier,later=pairs[0]
         lines.append(
-            f"**Possible competing controllers:** {_actor(earlier)} issued OFF at "
-            f"{_time(earlier,window)}; {_actor(later)} then issued "
+            f"**Possible competing controllers:** {_actor(earlier,case)} issued OFF at "
+            f"{_time(earlier,window)}; {_actor(later,case)} then issued "
             f"{later.action.replace('command-','')} at {_time(later,window)}. "
             "This makes automation interference worth checking, but it does not prove the later command turned the physical light on."
         )
@@ -153,12 +172,15 @@ def format_investigation_report(
     if backed:
         lines.extend(["","**Competing explanations (provisional)**"])
         for h in backed[:3]:
-            lines.append(f"- {h.explanation} (linked source records: "
-                         f"{', '.join(h.supporting_record_ids[:3]) or 'conflicting only'}).")
+            lines.append(f"- {h.explanation} (source links: "
+                         f"{', '.join(h.supporting_record_ids[:3]) or 'conflicting only'}; "
+                         "a hypothesis is not proof of its physical outcome).")
     lines.extend(["","**What remains unverified**"])
     lines.append("The initiating trigger, the effective historical rule conditions, and the physical bulb state are not established solely by these records.")
-    if stop_reason not in ("model_finished","round_budget_reached"):
+    if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence"):
         lines.append(f"Investigation stopped early ({stop_reason.replace('_',' ')}); some relevant reads may be missing.")
+    if stop_reason == "no_new_usable_evidence":
+        lines.append("The extra reads returned no new usable evidence; the investigation stopped rather than repeating an expensive AI planning round.")
     lines.extend(["","**What would settle it**"])
     if pairs:
         ids=sorted({a.producer_id for p in pairs for a in p if a.producer_id})

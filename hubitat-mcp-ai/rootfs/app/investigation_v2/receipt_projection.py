@@ -20,6 +20,9 @@ _EVENT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]{0,79}$")
 _SHORT_VALUE = re.compile(r"^[A-Za-z0-9 _.,:;@+/-]{0,80}$")
 _MAX_ROWS = 120
 _MAX_SCAN = 2000  # bound untrusted source pages before incident filtering
+_CATALOG_LABEL = re.compile(r"^[\w][ \w.,:+()'’/\-–&]{0,100}$", re.UNICODE)
+_PRIVATE_TERMS = ("password", "api_key", "apikey", "bearer", "token", "credential", "secret")
+
 
 
 def _id(value: Any) -> str | None:
@@ -108,6 +111,56 @@ def _event_rows(raw_rows: Any, requested_id: str, incident_window: IncidentWindo
     return result, len(raw_rows), oldest, newest, len(raw_rows) > _MAX_SCAN
 
 
+def _project_app_catalogue(data: Mapping[str, Any], operation: str) -> dict[str, Any]:
+    """Conservative app identities for source-ID interpretation, not actions.
+
+    Names from live hub inventory are metadata only. They are NEVER proof of
+    what a rule did on the historic date, and no other settings or arbitrary
+    log/source text enters the model.
+    """
+    source = data
+    for _ in range(3):
+        expected = ("apps", "installedApps") if operation == "hub_list_apps" else ("rules",)
+        if any(isinstance(source.get(key), list) for key in expected):
+            break
+        inner = next((source.get(key) for key in ("data", "result", "output")
+                      if isinstance(source.get(key), dict)), None)
+        if inner is None:
+            break
+        source = inner
+    names = ("apps", "installedApps") if operation == "hub_list_apps" else ("rules",)
+    raw_rows = next((source[key] for key in names
+                     if isinstance(source.get(key), list)), None)
+    if raw_rows is None:
+        return {"appCatalogReadable": False, "appIdentities": []}
+    identity: dict[str, str] = {}
+    conflicts: set[str] = set()
+    for item in raw_rows[:300]:
+        if not isinstance(item, dict):
+            continue
+        app_id = _id(item.get("id") or item.get("appId"))
+        label = item.get("label") or item.get("name")
+        if (app_id is None or not isinstance(label, str)
+                or not _CATALOG_LABEL.fullmatch(label.strip())
+                or any(word in label.casefold() for word in _PRIVATE_TERMS)):
+            continue
+        label = label.strip()
+        if app_id in identity and identity[app_id] != label:
+            conflicts.add(app_id)
+        else:
+            identity[app_id] = label
+    return {
+        "appCatalogReadable": True,
+        "appIdentities": [
+            {"id": app_id, "name": label}
+            for app_id, label in sorted(identity.items(), key=lambda row: int(row[0]))
+            if app_id not in conflicts
+        ],
+        "catalogRowsReturned": len(raw_rows),
+        "catalogTruncated": len(raw_rows) > 300,
+    }
+
+
 def project_read_receipt(
     name: str, arguments: Mapping[str, Any], result: MCPToolResult | None,
     *, source_request_id: str, read_at: str | None = None,
@@ -173,6 +226,12 @@ def project_read_receipt(
         if isinstance(data.get("nextCursor"), str):
             details["nextCursor"] = data["nextCursor"][:160]
         receipt["details"] = details
+        return receipt
+
+    if op in ("hub_list_apps", "hub_list_rules"):
+        receipt["details"] = _project_app_catalogue(data, op)
+        if receipt["details"].get("appCatalogReadable") is True:
+            receipt["evidence_kind"] = "typed_app_identity_catalogue"
         return receipt
 
     if op == "hub_get_app_config":

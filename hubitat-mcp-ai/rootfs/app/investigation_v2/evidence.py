@@ -105,6 +105,7 @@ class CaseFile:
     records: list[EvidenceItem] = field(default_factory=list)
     coverage: list[Coverage] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    app_identities: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,6 +113,7 @@ class CaseFile:
             "records": [asdict(item) for item in self.records],
             "coverage": [asdict(item) for item in self.coverage],
             "errors": list(self.errors),
+            "app_identities": dict(self.app_identities),
         }
 
     def evidence_brief(self) -> str:
@@ -137,6 +139,11 @@ class CaseFile:
                 f"source_rows={c.source_returned_rows} source_oldest={c.source_oldest_utc} "
                 f"requested_window_reached={c.requested_window_reached}"
             )
+        if self.app_identities:
+            lines.append("Current app identity lookup (names are not historical execution proof):")
+            for app_id, name in sorted(self.app_identities.items(), key=lambda row: int(row[0])):
+                if any(row.producer_id == app_id for row in self.records):
+                    lines.append(f"issuer #{app_id}: {name}")
         lines.append("Stored configuration is a read-time snapshot, not verified historical "
                      "effective code or event-time automation behaviour.")
         lines.append("Unverified: physical execution of command records and causal attribution "
@@ -205,6 +212,18 @@ def build_case_file(original_user_request: str,
         source_id = str(raw.get("source_request_id") or raw.get("sourceRequestId") or f"receipt-{index}")
         succeeded = raw.get("success") is True
         errors: list[str] = []
+        if (succeeded and op in ("hub_list_apps", "hub_list_rules")
+                and raw.get("evidence_kind") == "typed_app_identity_catalogue"
+                and details.get("appCatalogReadable") is True):
+            for entry in _rows(details.get("appIdentities")):
+                app_id = _id(entry.get("id"))
+                label = entry.get("name")
+                if (app_id and isinstance(label, str) and 0 < len(label) <= 101
+                        and all(ch.isprintable() and ch not in "<>[]{}" for ch in label)):
+                    if app_id in case.app_identities and case.app_identities[app_id] != label:
+                        case.app_identities.pop(app_id, None)
+                    else:
+                        case.app_identities[app_id] = label
         if target and response_target and target != response_target:
             errors.append("response target does not match request target")
         if not succeeded:
