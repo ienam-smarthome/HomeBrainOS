@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.135**.
+Current add-on version: **0.18.136**.
 
 ## Architecture
+
+v0.18.136 displays V2 elapsed time as minutes plus seconds (and total seconds), retains millisecond precision in the copyable report, and makes budget-stopped outcomes visible. See [release notes](CHANGELOG-0.18.136.md).
+
 
 v0.18.135 compares two bounded source-history samples, retrieves one source-attested unknown app configuration when available, and avoids extra provider calls when planning times out. See [release notes](CHANGELOG-0.18.135.md).
 
