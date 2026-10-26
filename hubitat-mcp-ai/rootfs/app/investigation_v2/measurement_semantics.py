@@ -141,7 +141,44 @@ def measurement_profile_summary(
             for role in sorted(roles)}
 
 
+
+def load_operator_meter_roles(
+    raw: Any, devices: Sequence[Mapping[str, Any]],
+) -> dict[str, str]:
+    """Parse opt-in operator-confirmed roles only for current numeric IDs.
+
+    This is a deliberate configuration decision, never a brand-name rule.
+    Unknown IDs, invalid roles, non-object JSON, and excessive keys fail
+    closed rather than silently changing accounting.
+    """
+    import json
+    if isinstance(raw, str):
+        if len(raw) > 12000:
+            raise ValueError("measurement role configuration too large")
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("invalid measurement role JSON") from exc
+    if not isinstance(raw, dict) or len(raw) > 250:
+        raise ValueError("measurement role configuration must be a bounded map")
+    known_ids = {
+        str(item.get("id", item.get("deviceId")))
+        for item in devices if isinstance(item, dict)
+        and type(item.get("id", item.get("deviceId"))) in (str, int)
+        and str(item.get("id", item.get("deviceId"))).isdecimal()
+    }
+    approved: dict[str, str] = {}
+    for ident, value in raw.items():
+        if not isinstance(ident, str) or not ident.isdecimal() or ident not in known_ids:
+            raise ValueError("measurement role references a device absent from live inventory")
+        role = _accepted_role(value)
+        if role is None:
+            raise ValueError("invalid measurement role assignment")
+        approved[ident] = role
+    return approved
+
 __all__ = [
     "ROLES", "ScopeEvidence", "candidates", "validated_model_hints",
     "measurement_scope", "measurement_profile_summary",
+    "load_operator_meter_roles",
 ]
