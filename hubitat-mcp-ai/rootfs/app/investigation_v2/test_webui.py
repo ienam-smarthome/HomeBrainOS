@@ -13,7 +13,7 @@ section{background:#202024;padding:18px;border-radius:12px;margin-bottom:14px}
 label{display:block;margin:12px 0 5px;font-weight:600}
 textarea,input{width:100%;box-sizing:border-box;background:#111115;color:#fff;border:1px solid #555;border-radius:7px;padding:10px;font:inherit}
 textarea{min-height:76px}input[type=checkbox]{width:auto;margin-right:7px}button{padding:12px 17px;border:0;border-radius:8px;background:#4f83ea;color:#fff;font-weight:700;cursor:pointer}
-button:disabled{opacity:.6}small,p{color:#c5c5d0;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111115;padding:14px;border-radius:8px}
+button:disabled{opacity:.6}#status{display:block;margin-top:12px;overflow-wrap:anywhere}small,p{color:#c5c5d0;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111115;padding:14px;border-radius:8px}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.metric{background:#121217;padding:12px;border-radius:8px}
 .metric strong{display:block;font-size:21px;margin-bottom:4px}a{color:#a9c5ff}
 </style></head><body><main>
@@ -32,6 +32,7 @@ No device control, rule edits or automatic background comparison.</p>
 <p><small>HomeBrain automatically identifies the device from your question using
 the live Hubitat inventory. A device ID is not required.</small></p>
 <details id="targetOverride"><summary>Advanced: specify a device only if automatic matching fails</summary>
+<p><small>Overrides apply only while Advanced is open. Collapse this section to restore automatic matching.</small></p>
 <label for="deviceName">Device name (optional)</label>
 <input id="deviceName" placeholder="Livingroom Light 1">
 <label for="ids">Device ID override (optional; maximum 4, separated by commas)</label>
@@ -177,7 +178,8 @@ el('run').onclick=async()=>{
   el('output').hidden=true;el('metrics').replaceChildren();
   try{
     const question=el('question').value.trim();
-    const ids=el('ids').value.split(',').map(x=>x.trim()).filter(Boolean);
+    const advanced=el('targetOverride').open;
+    const ids=advanced?el('ids').value.split(',').map(x=>x.trim()).filter(Boolean):[];
     let token=el('secret').value;
     if(!savedAccess&&token.length<16)
       throw new Error('Enter the V2 test token from the add-on configuration (at least 16 characters).');
@@ -207,7 +209,7 @@ el('run').onclick=async()=>{
       body:JSON.stringify({
         explicit_opt_in:true,question,
         device_ids:ids,
-        device_name:el('deviceName').value.trim()||null,
+        device_name:advanced?(el('deviceName').value.trim()||null):null,
         existing_v1_answer:el('v1').value||null,
         reference_answer:el('reference').value||null
       })
