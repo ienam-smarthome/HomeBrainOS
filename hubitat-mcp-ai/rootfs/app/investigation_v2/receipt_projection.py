@@ -48,7 +48,7 @@ def _source_producer_id(raw: Any) -> str | None:
         return next(iter(values))
     if isinstance(raw, str) and len(raw) <= 650:
         match = re.search(
-            r"""<a\\b[^>]{0,300}\\bhref\\s*=\\s*['"]/installedapp/configure/([0-9]{1,20})['"][^>]{0,300}>""",
+            r"""<a\b[^>]{0,300}\bhref\s*=\s*['"]/installedapp/configure/([0-9]{1,20})['"][^>]{0,300}>""",
             raw, re.IGNORECASE,
         )
         return _id(match.group(1)) if match else None
