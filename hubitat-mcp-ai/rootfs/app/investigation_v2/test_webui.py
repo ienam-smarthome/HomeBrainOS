@@ -161,7 +161,7 @@ el('run').onclick=async()=>{
     el('answer').textContent=data.report?.text||data.answer?.text||'No answer returned';
     const targets=Array.isArray(data.resolved_devices)?data.resolved_devices:[];
     el('resolvedDevices').textContent=data.answer_mode==='current_group_state'
-      ? 'Verified inventory group: lights · read-only live states'
+      ? 'Hubitat light inventory · read-only reported states'
       : targets.length
       ? 'Verified Hubitat device'+(targets.length>1?'s':'')+': '+
         targets.map(t=>(t.label||'Device')+' (#'+t.id+')').join(', ')+
