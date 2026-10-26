@@ -15,6 +15,8 @@ from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 
 from .evidence import CaseFile
+from .temporal_scope import IncidentWindow
+from datetime import datetime, timezone
 
 
 @dataclass(frozen=True)
@@ -181,6 +183,7 @@ def review_model_read_proposals(
     max_total_reads: int = 8,
     max_reads_this_round: int = 3,
     budget_used_reads: int | None = None,
+    incident_window: IncidentWindow | None = None,
 ) -> ReadPlan:
     """Approve only information-seeking, manifest-matched, scoped safe reads.
 
@@ -255,6 +258,38 @@ def review_model_read_proposals(
                 or str(v) not in known_ids) for _, v in scopes):
             rejected.append(RejectedRead(index, "target ID has no independent verified scope"))
             continue
+        # The user's explicit historical date is a host-owned objective.
+        # A current-event page cannot answer an earlier incident. Require
+        # a bounded target-specific read that actually reaches the start.
+        if incident_window is not None and args.get("tool") == "hub_list_device_events":
+            if not inner.get("deviceId"):
+                rejected.append(RejectedRead(index, "historical read requires verified deviceId"))
+                continue
+            since = inner.get("since")
+            hours = inner.get("hoursBack")
+            covers = False
+            if isinstance(since, str):
+                try:
+                    began = datetime.fromisoformat(since.replace("Z","+00:00"))
+                    start = datetime.fromisoformat(incident_window.start_utc)
+                    covers = began.tzinfo is not None and began <= start
+                except ValueError:
+                    covers = False
+            elif type(hours) in (int,float):
+                covers = hours >= incident_window.minimum_hours_back(now=datetime.now(timezone.utc))
+            if not covers:
+                rejected.append(RejectedRead(index, "read does not cover requested incident start"))
+                continue
+            until = inner.get("until")
+            if isinstance(until,str):
+                try:
+                    ended = datetime.fromisoformat(until.replace("Z","+00:00"))
+                    if ended.tzinfo is None or ended < datetime.fromisoformat(incident_window.end_utc):
+                        rejected.append(RejectedRead(index, "read ends before requested incident window"))
+                        continue
+                except ValueError:
+                    rejected.append(RejectedRead(index, "invalid historical read end time"))
+                    continue
         # No hidden control arguments, even if an upstream permissive schema
         # happens to allow additional properties.
         if any(key in inner for key in ("confirm", "command", "commands", "action", "mutate", "delete", "newValue")):

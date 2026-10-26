@@ -93,6 +93,7 @@ from investigation_v2.test_webui import render_v2_test_page
 from investigation_v2.test_service import match_verified_device_ids, require_test_access
 from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.replay_scorecard import replay_scorecard
+from investigation_v2.temporal_scope import explicit_incident_window
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HomeBrainOS.App")
@@ -1392,6 +1393,20 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             raise HTTPException(status_code=422, detail=str(exc)) from None
         except Exception:
             raise HTTPException(status_code=503, detail="Hubitat identity verification unavailable") from None
+        # Hub time is obtained from existing authoritative resolver. If
+        # unavailable, do not silently invent a calendar: use UTC and show
+        # the fallback basis in the explicit window metadata.
+        zone_name = "UTC"
+        if re.search(r"\d{1,2}\s*(?:-|–|—|to)\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}",
+                     payload.question, re.I):
+            try:
+                _now_local, resolved_zone, _zone_basis = await _health_timezone.now_in_hub_timezone(
+                    lambda: datetime.now(timezone.utc))
+                if resolved_zone:
+                    zone_name = resolved_zone
+            except Exception:
+                pass
+        incident_window = explicit_incident_window(payload.question, zone_name=zone_name)
         started = time.perf_counter()
         try:
             evaluated = await evaluate_v2_with_model(
@@ -1403,6 +1418,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 enable_atomic_claim_validation=True,
                 enable_evidence_narrative=True,
                 max_rounds=3, max_total_reads=8,
+                incident_window=incident_window,
             )
         except asyncio.CancelledError:
             raise

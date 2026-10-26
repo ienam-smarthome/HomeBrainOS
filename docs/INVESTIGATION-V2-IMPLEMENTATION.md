@@ -169,6 +169,16 @@ The general chatbot remains V1; V2 test requests neither reuse production
 chat tasks nor gain Hubitat write privileges. Do not expose the optional direct
 port to untrusted networks, and switch the test option off when done.
 
+## Browser error diagnostics (0.18.129)
+
+The V2 test page now retains HTTP status and safely summarizes structured FastAPI
+422 field errors and ingress/server error objects instead of rendering
+`[object Object]`. The UI rejects blank questions, malformed device ID lists
+and too-short tokens before submitting, without storing the token.
+Endpoint-level tests exercise the actual FastAPI route with a fake live Hubitat
+inventory and fake evaluation, plus disabled, mismatched-token, invalid-ID and
+body-validation cases. This does **not** claim a live Hubitat model test passed.
+
 ## Not yet implemented
 
 1. More verified MCP source adapters; never infer naive native-log timezones.
