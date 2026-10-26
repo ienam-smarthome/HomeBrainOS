@@ -64,6 +64,29 @@ def format_investigation_report(
             f"{len(records)-len(commands)} reported state observation(s). "
             "These support a partial sequence, not a proven single root cause."
         )
+    # Present source-backed current status regardless of AI availability.
+    # A read-time attribute is not a historical state transition.
+    if case.device_snapshots:
+        attrs = case.device_snapshots[-1].get("attributes", {})
+        if isinstance(attrs, dict):
+            brief = [f"{k}={attrs[k]}" for k in (
+                "switch", "networkStatus", "healthStatus", "deviceHealth",
+                "mqttStatus",
+            ) if k in attrs and type(attrs[k]) in (str, int, float, bool)]
+            if brief:
+                lines.append("**Current reported status:** " + ", ".join(brief)
+                             + " (Hubitat read-time snapshot).")
+    switches = [row for row in records if row.stage == "state_reported"
+                and row.action == "switch"]
+    if switches:
+        latest = max(switches, key=lambda row: row.timestamp_utc)
+        lines.append(
+            "**Latest switch report:** "
+            f"{latest.value} at {_time(latest, window)} "
+            f"(reported by {_actor(latest,case)}). "
+            "This event identifies the reporting source, not necessarily "
+            "the initiating automation."
+        )
     if window is not None:
         lines.append(f"Requested window: {window.start_utc} to {window.end_utc} "
                      f"(UTC; local hub zone {window.zone_name}).")
@@ -117,7 +140,8 @@ def format_investigation_report(
         if isinstance(attrs, dict) and attrs:
             lines.extend(["", "**Current device snapshot (read-time, not a historical event)**",
                           ", ".join(f"{key}={value}" for key, value in attrs.items())])
-            lines.append("An MQTT client reporting connected is not proof the physical device is reachable.")
+            if "mqttStatus" in attrs:
+                lines.append("An MQTT client reporting connected is not proof the physical device is reachable.")
     lines.append("")
     lines.append("**Recorded timeline** (commands and reported states are different evidence)")
     if records:
@@ -152,7 +176,10 @@ def format_investigation_report(
                         or r.action in ("switch", "level", "networkStatus")]
             mqtt = [r for r in priority if r.action == "mqttStatus"]
             health = [r for r in priority if r.action in ("deviceHealth", "healthStatus")]
-            focused = critical[:8] + mqtt[:6] + (
+            # Retain the newest as well as oldest switch reports.
+            important = (critical[:4] + critical[-4:]
+                         if len(critical) > 8 else critical)
+            focused = important + mqtt[:6] + (
                 health[:1] + health[-1:] if len(health)>2 else health
             )
             selected = {r.record_id for r in focused}
