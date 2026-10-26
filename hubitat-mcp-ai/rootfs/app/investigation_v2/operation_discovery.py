@@ -120,12 +120,18 @@ async def discover_device_operations(
         gateways = {item.get("gateway") for item in entries
                     if isinstance(item, dict) and item.get("tool") == operation
                     and isinstance(item.get("gateway"), str)}
-        if gateways == {gateway.name}:
+        # An operation may legally belong to both read and manage gateways.
+        # Ignore write gateways rather than rejecting a verified read member.
+        eligible_read = {name for name in gateways
+                         if name.startswith("hub_read_")
+                         and _valid_read(registry.get(name))}
+        if eligible_read == {gateway.name}:
             learned.setdefault(gateway.name, set()).add(operation)
             diag.append({"stage": operation, "status": "verified_live_discovery"})
         else:
             diag.append({"stage": operation, "reason": (
-                "search_ambiguous" if len(gateways) > 1 else "search_no_exact_mapping"
+                "search_ambiguous" if len(eligible_read) > 1
+                else "search_no_exact_mapping"
             )})
     return learned, diag
 
