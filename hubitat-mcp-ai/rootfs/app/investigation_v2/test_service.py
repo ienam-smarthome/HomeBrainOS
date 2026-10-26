@@ -222,7 +222,8 @@ def resolve_verified_device_subjects(
     # even if two unrelated devices expose that same generic alias.
     anchored = [
         row for row in selected
-        if row[5] == 2 and len(inventory[row[2]]["friendly_words"]) >= 2
+        if (row[0], row[1], row[5]) not in ambiguous
+        and row[5] == 2 and len(inventory[row[2]]["friendly_words"]) >= 2
     ]
     if anchored:
         earliest = min(row[0] for row in anchored)
