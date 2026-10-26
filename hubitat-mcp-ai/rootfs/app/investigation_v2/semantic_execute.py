@@ -54,10 +54,10 @@ def _equal(a: Any,b: Any) -> bool:
 
 
 def _matches(value: Any, op: str, bound: Any) -> bool:
-    if value is None:
-        return False
     if op=="none":
         return True
+    if value is None:
+        return False
     if op=="eq":
         return _equal(value,bound)
     if op=="ne":

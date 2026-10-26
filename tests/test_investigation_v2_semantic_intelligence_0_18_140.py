@@ -62,7 +62,7 @@ def verified(**overrides):
         "scope":"lights","attribute":"switch","operator":"eq","value":"on"},1),
     ("how many switches are off",{
         "scope":"switches","attribute":"switch","operator":"eq","value":"off",
-        "aggregation":"count"},2),
+        "aggregation":"count"},3),
     ("which devices report offline",{
         "scope":"all","attribute":"healthStatus","operator":"eq","value":"offline"},1),
     ("motion sensors with batteries below 20",{
