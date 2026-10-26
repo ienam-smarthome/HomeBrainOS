@@ -136,11 +136,11 @@ async def evaluate_v2_with_model(
                                "semantic_intent_unverified_host_only"),
         )
         report = (
-            "**Limited evidence recovery — AI intent planning unavailable**\\n"
+            "**Limited evidence recovery — AI intent planning unavailable**\n"
             "The original question was not semantically classified. "
             "The single named device was independently verified against "
             "Hubitat inventory; only safe, read-only source evidence follows. "
-            "This is not a full investigation or a verified root cause.\\n\\n"
+            "This is not a full investigation or a verified root cause.\n\n"
             + format_investigation_report(
                 result.case, result.hypotheses,
                 result.stopped_because, incident_window,
