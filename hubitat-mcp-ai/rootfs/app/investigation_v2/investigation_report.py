@@ -175,6 +175,10 @@ def format_investigation_report(
             lines.append(f"- {h.explanation} (source links: "
                          f"{', '.join(h.supporting_record_ids[:3]) or 'conflicting only'}; "
                          "a hypothesis is not proof of its physical outcome).")
+    if (window is not None and len([c for c in case.coverage
+                if c.operation == "hub_list_device_events" and c.succeeded]) >= 2):
+        lines.append("Two bounded history requests were compared. This reduces reliance "
+                     "on a single response but does not establish that Hubitat history is complete.")
     lines.extend(["","**What remains unverified**"])
     lines.append("The initiating trigger, the effective historical rule conditions, and the physical bulb state are not established solely by these records.")
     if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence"):

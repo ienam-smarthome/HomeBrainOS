@@ -24,7 +24,7 @@ from .planning import review_model_read_proposals
 from .receipt_projection import project_read_receipt
 from .temporal_scope import IncidentWindow
 from .hypothesis_temporal_integrity import hypothesis_clock_issues
-from .source_identity import source_identity_proposals
+from .source_identity import source_identity_proposals, source_configuration_proposals
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,7 @@ class InvestigationResult:
     rejected_proposals: list[str] = field(default_factory=list)
     incident_window: IncidentWindow | None = None
     planning_diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    history_comparison: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         # No raw tool text, credentials, IPs or model transport responses.
@@ -58,6 +59,7 @@ class InvestigationResult:
             "stopped_because": self.stopped_because,
             "rejected_proposals": list(self.rejected_proposals),
             "planning_diagnostics": list(self.planning_diagnostics),
+            "history_comparison": dict(self.history_comparison),
             "root_cause_verified": False,
             "production_answer_used": False,
             "requested_incident_window": (self.incident_window.to_dict()
@@ -66,6 +68,46 @@ class InvestigationResult:
 
 
 ModelProposer = Callable[[CaseFile, int], Awaitable[Mapping[str, Any]]]
+
+
+def compare_history_samples(receipts: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """Detect historical API response drift, not source completeness.
+
+    Only compare source-projected event fingerprints; no raw Hubitat payload,
+    credentials or model-generated timestamps enter these metrics.
+    """
+    import json
+    samples: list[set[str]] = []
+    commands: list[int] = []
+    for rec in receipts:
+        if (rec.get("sub_tool") != "hub_list_device_events" or
+                rec.get("success") is not True):
+            continue
+        details = rec.get("details")
+        rows = details.get("events") if isinstance(details, dict) else None
+        if not isinstance(rows, list):
+            continue
+        filtered = [row for row in rows if isinstance(row, dict)]
+        samples.append({
+            json.dumps(row, sort_keys=True, separators=(",", ":"))
+            for row in filtered
+        })
+        commands.append(sum(str(row.get("name", "")).startswith("command-")
+                            for row in filtered))
+    if len(samples) < 2:
+        return {"compared": False, "source_complete_verified": False}
+    first, second = samples[0], samples[1]
+    return {
+        "compared": True,
+        "first_event_count": len(first),
+        "second_event_count": len(second),
+        "first_command_count": commands[0],
+        "second_command_count": commands[1],
+        "first_only_event_count": len(first - second),
+        "second_only_event_count": len(second - first),
+        "different": first != second,
+        "source_complete_verified": False,
+    }
 
 
 def _hypotheses(
@@ -233,8 +275,9 @@ async def run_read_only_investigation(
             cov = case.coverage[-1] if case.coverage else None
             # A page that reaches the start need not be retried. If it does
             # not, only a higher-limit read is potentially informative.
-            if cov and cov.requested_window_reached is True:
-                break
+            # A page reaching the requested start does NOT establish source
+            # completeness. Take a second differently-sized bounded snapshot
+            # for discrepancies, even when the first page reached the start.
             if cov and not cov.succeeded:
                 break
     # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
@@ -252,6 +295,22 @@ async def run_read_only_investigation(
             rejections.extend(x.reason for x in approved.rejected)
             for item in approved.approved:
                 await execute_checked_read(item, -2)
+
+    # The catalogue may omit child apps even when their command issuer IDs
+    # are attested by the device's own event records. One targeted, read-only
+    # app-config lookup adds a potential discriminator before model latency.
+    if bootstrap_source_identity and executed < max_total_reads and time.monotonic() < deadline:
+        proposals = source_configuration_proposals(registry.values(), case)
+        if proposals:
+            approved = review_model_read_proposals(
+                case, proposals, registry.values(), verified_entity_ids=known_ids,
+                learned_operations=learned_operations, previous_calls=prior_calls,
+                max_total_reads=max_total_reads, max_reads_this_round=1,
+                budget_used_reads=executed, incident_window=incident_window,
+            )
+            rejections.extend(x.reason for x in approved.rejected)
+            for item in approved.approved:
+                await execute_checked_read(item, -3)
 
     for round_index in range(max_rounds):
         rounds += 1
@@ -340,6 +399,7 @@ async def run_read_only_investigation(
         executed_reads=executed, stopped_because=reason,
         rejected_proposals=rejections, incident_window=incident_window,
         planning_diagnostics=planning_diagnostics,
+        history_comparison=compare_history_samples(receipts),
     )
 
 

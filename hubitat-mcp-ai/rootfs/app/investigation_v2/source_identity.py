@@ -49,4 +49,57 @@ def source_identity_proposals(tools: Iterable[MCPTool], case: CaseFile) -> list[
     }]
 
 
-__all__ = ["source_identity_proposals"]
+def source_configuration_proposals(
+    tools: Iterable[MCPTool], case: CaseFile,
+) -> list[dict]:
+    """One read of an event-attested app issuer missing from current catalogue.
+
+    The historical event's producer ID is a read scope, not permission to
+    execute code or assume its current settings were effective then.
+    """
+    candidates = {
+        row.producer_id for row in case.records
+        if row.stage == "command_issued" and row.producer_id
+        and row.producer_id not in case.app_identities
+    }
+    if not candidates:
+        return []
+    gateway = next((t for t in tools if isinstance(t, MCPTool)
+                    and t.name == "hub_read_apps_code"
+                    and classify_tool_effect(t, {}) is ToolEffect.READ
+                    and isinstance(t.annotations, dict)
+                    and t.annotations.get("readOnlyHint") is not False
+                    and t.annotations.get("mutates") is not True
+                    and t.annotations.get("destructiveHint") is not True), None)
+    if gateway is None:
+        return []
+    schema = gateway.input_schema if isinstance(gateway.input_schema, dict) else {}
+    props = schema.get("properties", {})
+    field = props.get("tool", {}) if isinstance(props, dict) else {}
+    ops = field.get("enum", []) if isinstance(field, dict) else []
+    if not isinstance(ops, list) or "hub_get_app_config" not in ops:
+        return []
+    nested = props.get("args", {}) if isinstance(props, dict) else {}
+    required = nested.get("required", []) if isinstance(nested, dict) else []
+    if any(field not in ("appId",) for field in required):
+        return []
+    properties = nested.get("properties", {}) if isinstance(nested, dict) else {}
+    if not isinstance(properties, dict) or "appId" not in properties:
+        return []
+    # Choose the most frequently seen unlabelled command issuer without
+    # relying on particular device names or hard-coded app IDs.
+    ranking = sorted(candidates, key=lambda ident: (
+        -sum(row.producer_id == ident and row.stage == "command_issued"
+             for row in case.records), int(ident),
+    ))
+    ident = ranking[0]
+    return [{
+        "tool": "hub_read_apps_code",
+        "arguments": {"tool": "hub_get_app_config", "args": {"appId": ident}},
+        "discriminator": "Read current settings for event-confirmed unnamed app issuer",
+        "information_gain": "Find currently stored controller settings without inferring historical execution",
+        "hypothesis_ids": [],
+    }]
+
+
+__all__ = ["source_identity_proposals", "source_configuration_proposals"]
