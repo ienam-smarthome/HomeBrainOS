@@ -1464,6 +1464,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         started = time.perf_counter()
         semantic = None
         semantic_failure = None
+        direct_verified_target = None
         audit_devices = None
         if not payload.device_ids and not payload.device_name:
             # Source discovery, intent planning, and optional measurement
@@ -1481,57 +1482,70 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     detail="Hubitat read-only inventory was unavailable; no commands sent",
                 ) from None
             inventory_ms=round((time.perf_counter()-inventory_started)*1000)
-            planning_started=time.perf_counter()
+            # One unique device is already grounded in a refreshed Hubitat
+            # inventory. Skip a redundant LLM intent call and investigate it
+            # under existing read-only tool and identity gates. Broad and
+            # multi-device questions still use the semantic model.
             try:
-                semantic = await semantic_plan(
-                    payload.question, audit_devices, agent.transport.chat,
-                    timeout_seconds=25,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                cause=("timeout" if isinstance(exc,TimeoutError)
-                       else "invalid_plan" if isinstance(exc,(ValueError,TypeError,KeyError))
-                       else "provider_failure")
-                logger.warning("V2 semantic plan unavailable: %s (%s)",
-                               cause,type(exc).__name__)
-                # If the real user named EXACTLY one inventory-verified
-                # device, AI intent classification is not an authorisation
-                # dependency for bounded read-only evidence collection.
-                # No guessed ID, keyword router, or model-selected target.
+                candidates, _, _ = resolve_verified_device_subjects(
+                    payload.question, audit_devices)
+            except ValueError:
+                candidates = ()
+            if len(candidates) == 1:
+                direct_verified_target = candidates[0]
+                planning_ms = 0
+            else:
+                planning_started=time.perf_counter()
                 try:
-                    fallback_ids, _, _ = resolve_verified_device_subjects(
-                        payload.question, audit_devices)
-                except ValueError:
-                    fallback_ids = ()
-                if len(fallback_ids) == 1:
-                    semantic_failure = cause
-                    logger.info("V2 single-device read-only fallback: %s", cause)
-                else:
-                    message=(
-                        "HomeBrain retrieved Hubitat inventory, but could not "
-                        "safely interpret the question. No device commands were "
-                        "sent. Check the planning diagnostics in the report."
+                    semantic = await semantic_plan(
+                        payload.question, audit_devices, agent.transport.chat,
+                        timeout_seconds=25,
                     )
-                    return {
-                        "answer_mode":"semantic_unavailable",
-                        "answer":{"text":message,"displayed_record_ids":[],
-                                  "omitted_material_record_ids":[],
-                                  "validation_issues":["semantic_plan_"+cause],
-                                  "root_cause_verified":False,"human_review_required":True},
-                        "report":{"text":message,"technical_answer_retained":False},
-                        "semantic_diagnostics":{
-                            "phase":"intent_planning","outcome":cause,
-                            "inventory_ms":inventory_ms,
-                            "planning_ms":round((time.perf_counter()-planning_started)*1000),
-                            "inventory_devices":len(audit_devices),
-                            "inventory_complete":inventory_provenance.get("complete") is True,
-                        },
-                        "resolved_devices":[],"resolution_method":"semantic_objective",
-                        "elapsed_ms":round((time.perf_counter()-started)*1000),
-                        "test_mode":"explicit_read_only",
-                    }
-            planning_ms=round((time.perf_counter()-planning_started)*1000)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    cause=("timeout" if isinstance(exc,TimeoutError)
+                           else "invalid_plan" if isinstance(exc,(ValueError,TypeError,KeyError))
+                           else "provider_failure")
+                    logger.warning("V2 semantic plan unavailable: %s (%s)",
+                                   cause,type(exc).__name__)
+                    # If the real user named EXACTLY one inventory-verified
+                    # device, AI intent classification is not an authorisation
+                    # dependency for bounded read-only evidence collection.
+                    # No guessed ID, keyword router, or model-selected target.
+                    try:
+                        fallback_ids, _, _ = resolve_verified_device_subjects(
+                            payload.question, audit_devices)
+                    except ValueError:
+                        fallback_ids = ()
+                    if len(fallback_ids) == 1:
+                        semantic_failure = cause
+                        logger.info("V2 single-device read-only fallback: %s", cause)
+                    else:
+                        message=(
+                            "HomeBrain retrieved Hubitat inventory, but could not "
+                            "safely interpret the question. No device commands were "
+                            "sent. Check the planning diagnostics in the report."
+                        )
+                        return {
+                            "answer_mode":"semantic_unavailable",
+                            "answer":{"text":message,"displayed_record_ids":[],
+                                      "omitted_material_record_ids":[],
+                                      "validation_issues":["semantic_plan_"+cause],
+                                      "root_cause_verified":False,"human_review_required":True},
+                            "report":{"text":message,"technical_answer_retained":False},
+                            "semantic_diagnostics":{
+                                "phase":"intent_planning","outcome":cause,
+                                "inventory_ms":inventory_ms,
+                                "planning_ms":round((time.perf_counter()-planning_started)*1000),
+                                "inventory_devices":len(audit_devices),
+                                "inventory_complete":inventory_provenance.get("complete") is True,
+                            },
+                            "resolved_devices":[],"resolution_method":"semantic_objective",
+                            "elapsed_ms":round((time.perf_counter()-started)*1000),
+                            "test_mode":"explicit_read_only",
+                        }
+                planning_ms=round((time.perf_counter()-planning_started)*1000)
             if semantic is not None and semantic.mode == "inventory":
                 enrichment_started=time.perf_counter()
                 semantic, role_diagnostic=await enrich_measurement_roles(
@@ -1649,6 +1663,20 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         result["test_mode"] = "explicit_read_only"
         result["resolved_devices"] = resolved
         result["resolution_method"] = resolve_method
+        if direct_verified_target is not None:
+            result["answer_mode"] = "verified_device_investigation"
+            result["semantic_diagnostics"] = {
+                "phase": "evidence_first_verified_device",
+                "outcome": "direct_verified_target",
+                "inventory_ms": inventory_ms,
+                "planning_ms": 0,
+                "inventory_devices": len(audit_devices),
+                "inventory_complete": inventory_provenance.get("complete") is True,
+                "target_verified": True,
+                "target_id": direct_verified_target,
+                "model_intent_planning_skipped": True,
+                "model_investigation_attempted": True,
+            }
         if semantic_failure is not None:
             result["answer_mode"] = "semantic_fallback_investigation"
             result["semantic_diagnostics"] = {
