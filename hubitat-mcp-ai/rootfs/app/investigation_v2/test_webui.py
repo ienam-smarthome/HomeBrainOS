@@ -106,8 +106,8 @@ function metric(label,value){
 el('copyAnswer').onclick=()=>copyFrom('answer','V2 answer');
 el('copyDetails').onclick=()=>copyFrom('details','investigation details');
 el('copyReport').onclick=async()=>{
-  const full='Investigation V2 test\\n\\n'+el('answer').textContent+
-    '\\n\\nInvestigation details\\n'+el('details').textContent;
+  const full='Investigation V2 test\n\n'+el('answer').textContent+
+    '\n\nInvestigation details\n'+el('details').textContent;
   try{await copyTestText(full);el('status').textContent=' Copied full report.'}
   catch(error){el('status').textContent=' '+error.message}
 };
