@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.147**.
+Current add-on version: **0.18.148**.
 
 ## Architecture
+
+v0.18.148 strengthens Investigation V2 subject resolution for long investigations containing incidental references to status, MQTT and events: an independently unique multiword friendly-name mention is used as an anchor rather than allowing later unrelated ambiguous aliases to veto it. Genuine ambiguity at the primary subject still fails closed. Errors now display sanitized matching names and the conflicting phrase (when available) instead of blank `Device` placeholders. Opt-in V2 only; existing V1 and Hubitat automations unchanged. See [release notes](CHANGELOG-0.18.148.md).
 
 v0.18.147 resolves V2 name collisions by preferring an exact, independently verified Hubitat friendly label to another device's generic driver name when both match the same complete phrase. It still rejects genuinely duplicated friendly labels and now identifies their verified candidate device IDs for an Advanced override. The same rule applies to automatic matching, semantic fallback, and explicit friendly-name override. No live device writes or V1 changes. See [release notes](CHANGELOG-0.18.147.md).
 

@@ -89,7 +89,9 @@ def _inventory(live_devices: Any) -> dict[str, dict[str, Any]]:
     return devices
 
 
-def _ambiguous_inventory_targets(items: Iterable[dict[str, Any]]) -> str:
+def _ambiguous_inventory_targets(
+    items: Iterable[dict[str, Any]], *, matched_phrase: str | None = None,
+) -> str:
     """Safe, bounded candidate disclosure for an authenticated V2 operator.
 
     The choices are verified Hubitat inventory identities, never model guesses.
@@ -99,13 +101,16 @@ def _ambiguous_inventory_targets(items: Iterable[dict[str, Any]]) -> str:
     choices = sorted(distinct.values(), key=lambda item: int(item["id"]))
     labels = []
     for item in choices[:6]:
-        label = re.sub(r"[^\\w .,&()/-]", "", item["label"])[:72].strip()
+        label = re.sub(r"[^\w .,&()/-]", "", item["label"])[:72].strip()
         labels.append(f"{label or 'Device'} (#{item['id']})")
     suffix = "; more matches exist" if len(choices) > 6 else ""
+    phrase = (re.sub(r"[^\w .,&()/-]", "", matched_phrase)[:80].strip()
+              if isinstance(matched_phrase, str) else "")
+    phrase_text = f" Matching phrase: '{phrase}'." if phrase else ""
     return (
         "Ambiguous device name: multiple Hubitat devices have the same "
-        "highest-priority verified name and cannot be matched uniquely. "
-        + "Matching IDs: " + "; ".join(labels) + suffix
+        "highest-priority verified name and cannot be matched uniquely."
+        + phrase_text + " Matching IDs: " + "; ".join(labels) + suffix
         + ". Select the intended ID under Advanced options."
     )
 
@@ -146,7 +151,8 @@ def resolve_verified_device_subjects(
         candidates = preferred or matching
         if len(candidates) != 1:
             if len(candidates) > 1:
-                raise ValueError(_ambiguous_inventory_targets(candidates))
+                raise ValueError(_ambiguous_inventory_targets(
+                    candidates, matched_phrase=hint))
             raise ValueError(
                 "Device name does not uniquely match the live Hubitat inventory. "
                 "Choose a full unique device name or use an ID under Advanced options."
@@ -191,6 +197,7 @@ def resolve_verified_device_subjects(
     mentions.sort(key=lambda item: (-(item[1]-item[0]), -item[4], -item[5],
                                     item[0], item[2]))
     selected: list[tuple[int, int, str, str, int, int]] = []
+    ambiguous: dict[tuple[int, int, int], dict[str, dict[str, Any]]] = {}
     for mention in mentions:
         overlapping = [row for row in selected
                        if mention[0] < row[1] and row[0] < mention[1]]
@@ -198,14 +205,45 @@ def resolve_verified_device_subjects(
             best = overlapping[0]
             if (mention[:2] == best[:2] and mention[2] != best[2]
                     and mention[5] == best[5]):
-                tied = [inventory[ident] for ident in (mention[2], best[2])]
-                raise ValueError(_ambiguous_inventory_targets(tied))
-            # For an identical phrase, a verified friendly label takes
-            # precedence over a different device's generic name. Do not
-            # privilege arbitrary ID ordering or unverified model hints.
+                key = (mention[0], mention[1], mention[5])
+                tied = ambiguous.setdefault(key, {})
+                tied[best[2]] = inventory[best[2]]
+                tied[mention[2]] = inventory[mention[2]]
+                # Do not abort before considering whether this is an
+                # incidental alias outside the actual named subject.
             continue
         if mention[2] not in {row[2] for row in selected}:
             selected.append(mention)
+
+    # Device names are not arbitrary search terms. An exact, multiword
+    # friendly label is a higher-confidence SUBJECT reference than incidental
+    # device names in instructions such as "check current device status" or
+    # "inspect switch events". The latter must not veto a verified subject,
+    # even if two unrelated devices expose that same generic alias.
+    anchored = [
+        row for row in selected
+        if (row[0], row[1], row[5]) not in ambiguous
+        and row[5] == 2 and len(inventory[row[2]]["friendly_words"]) >= 2
+    ]
+    if anchored:
+        earliest = min(row[0] for row in anchored)
+        # Ambiguity at or before the first strong subject is not safely
+        # attributable to contextual wording: fail closed. Later unrelated
+        # ambiguous phrases do not silently replace or veto that subject.
+        blocking = [candidates for (start, _end, _priority), candidates
+                    in ambiguous.items() if start <= earliest]
+        if blocking:
+            first = min((key for key in ambiguous if key[0] <= earliest),
+                        key=lambda key: key[0])
+            raise ValueError(_ambiguous_inventory_targets(
+                (item for group in blocking for item in group.values()),
+                matched_phrase=normalized[first[0]:first[1]]))
+        selected = anchored
+    elif ambiguous:
+        first = min(ambiguous, key=lambda key: key[0])
+        raise ValueError(_ambiguous_inventory_targets(
+            (item for group in ambiguous.values() for item in group.values()),
+            matched_phrase=normalized[first[0]:first[1]]))
     if len(selected) > 4:
         raise ValueError("More than four Hubitat device names matched; narrow the question")
     selected.sort(key=lambda item: item[0])
