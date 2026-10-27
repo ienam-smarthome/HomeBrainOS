@@ -57,10 +57,13 @@ def source_configuration_proposals(
     The historical event's producer ID is a read scope, not permission to
     execute code or assume its current settings were effective then.
     """
+    # Knowing an issuer's NAME does not establish its configuration.
+    # Inspect one event-attested command issuer even when the app catalogue
+    # already provided its friendly name. The normal read review still gates
+    # this request by live manifest, args schema, and read-only permission.
     candidates = {
         row.producer_id for row in case.records
         if row.stage == "command_issued" and row.producer_id
-        and row.producer_id not in case.app_identities
     }
     if not candidates:
         return []
