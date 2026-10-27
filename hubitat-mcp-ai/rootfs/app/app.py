@@ -100,6 +100,7 @@ from investigation_v2.test_service import (
 )
 from investigation_v2.evaluate import evaluate_v2_with_model
 from investigation_v2.intent_boundary import incompatible_v2_control_request
+from investigation_v2.factual_objective import verified_factual_objective
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import semantic_plan
@@ -1657,6 +1658,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             payload.question, zone_name=zone_name,
             now=datetime.now(timezone.utc),
         )
+        factual_objective = (verified_factual_objective(
+            payload.question, [item["label"] for item in resolved])
+            if len(resolved) == 1 and semantic_failure is None else None)
         try:
             evaluated = await evaluate_v2_with_model(
                 explicitly_authorised=True,
@@ -1676,6 +1680,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 incident_window=incident_window,
                 verified_device_label=resolved[0]["label"] if len(resolved)==1 else None,
                 force_duration_mode=semantic is not None and semantic.mode=="duration",
+                factual_objective=factual_objective,
             )
         except asyncio.CancelledError:
             raise
@@ -1689,7 +1694,8 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         result["resolved_devices"] = resolved
         result["resolution_method"] = resolve_method
         if direct_verified_target is not None:
-            result["answer_mode"] = "verified_device_investigation"
+            result["answer_mode"] = ("verified_device_" + factual_objective
+                                     if factual_objective else "verified_device_investigation")
             result["semantic_diagnostics"] = {
                 "phase": "evidence_first_verified_device",
                 "outcome": "direct_verified_target",
@@ -1700,7 +1706,8 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 "target_verified": True,
                 "target_id": direct_verified_target,
                 "model_intent_planning_skipped": True,
-                "model_investigation_attempted": True,
+                "model_investigation_attempted": factual_objective is None,
+                "factual_objective": factual_objective,
             }
         if semantic_failure is not None:
             result["answer_mode"] = "semantic_fallback_investigation"
@@ -1719,6 +1726,8 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             result["semantic_plan"] = semantic.to_dict()
             result["answer_mode"] = ("semantic_duration" if semantic.mode=="duration"
                                     else "semantic_investigation")
+        if factual_objective is not None and direct_verified_target is None:
+            result["answer_mode"] = "verified_device_" + factual_objective
         result["scorecard"] = replay_scorecard(
             evaluated.investigation.case, evaluated.answer,
             existing_v1_answer=payload.existing_v1_answer,
