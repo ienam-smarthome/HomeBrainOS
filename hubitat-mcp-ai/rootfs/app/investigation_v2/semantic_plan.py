@@ -66,6 +66,7 @@ class SemanticPlan:
     device_names: tuple[str, ...] = ()
     room: str | None = None
     attribute: str | None = None
+    attributes: tuple[str, ...] = ()
     operator: str = "none"
     value: str | float | None = None
     aggregation: str = "list"
@@ -77,7 +78,9 @@ class SemanticPlan:
         result = {
             "mode":self.mode,"scope":self.scope,"device_name":self.device_name,
             **({"device_names":list(self.device_names)} if self.device_names else {}),
-            "room":self.room,"attribute":self.attribute,"operator":self.operator,
+            "room":self.room,"attribute":self.attribute,
+            **({"attributes":list(self.attributes)} if self.attributes else {}),
+            "operator":self.operator,
             "value":self.value,"aggregation":self.aggregation,"limit":self.limit,
         }
         if self.measurement_roles:
@@ -126,7 +129,7 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
         raise ValueError("semantic plan not an object")
     keys={"mode","scope","device_name","room","attribute","operator",
           "value","aggregation","limit"}
-    optional={"measurement_roles","measurement_target","device_names"}
+    optional={"measurement_roles","measurement_target","device_names","attributes"}
     if not keys.issubset(raw) or set(raw)-keys-optional:
         raise ValueError("semantic plan has unexpected or missing keys")
     measurement_target=raw.get("measurement_target","all_meters")
@@ -187,6 +190,19 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
             raise ValueError("predicate requires an available attribute")
         if aggregation in ("top","bottom","sum","average") and attribute is None:
             raise ValueError("ranking requires an available attribute")
+    chosen_attrs=raw.get("attributes",[])
+    if not isinstance(chosen_attrs,list) or len(chosen_attrs)>4 or any(
+        not isinstance(item,str) or item.casefold() not in _FIELDS
+        for item in chosen_attrs
+    ):
+        raise ValueError("current attribute list invalid")
+    chosen_attrs=tuple(x.casefold() for x in chosen_attrs)
+    if len(set(chosen_attrs))!=len(chosen_attrs):
+        raise ValueError("duplicate requested attributes")
+    if chosen_attrs and (mode!="inventory" or scope!="named" or
+                         operator!="none" or aggregation!="list" or
+                         attribute is not None):
+        raise ValueError("multi-attribute inventory requires a named unfiltered list")
     value=raw["value"]
     if value is not None and (
         type(value) not in (str,int,float) or
@@ -201,7 +217,7 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
         raise ValueError("numeric comparison needs a numeric bound")
     return SemanticPlan(
         mode=mode,scope=scope,device_name=name,device_names=multi,room=room,
-        attribute=attribute,operator=operator,
+        attribute=attribute,attributes=chosen_attrs,operator=operator,
         value=value,aggregation=aggregation,limit=limit,
         measurement_roles=roles,measurement_target=measurement_target,
     )
