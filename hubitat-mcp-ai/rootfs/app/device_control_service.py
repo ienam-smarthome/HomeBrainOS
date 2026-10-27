@@ -9,6 +9,7 @@ from typing import Any
 
 import re
 
+from device_command_receipts import adjudicate_command_receipt
 from device_state_summary import device_attributes, is_light_device, room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
@@ -1379,6 +1380,7 @@ class DeviceControlService:
             started = time.monotonic()
             command_success = False
             verified: bool | None = None
+            verification_status = "dispatch_failed"
             verification_message = ""
             result: MCPToolResult | None = None
             try:
@@ -1388,22 +1390,24 @@ class DeviceControlService:
                     )
                 command_success = self._tool_succeeded(result)
                 message = result.text
-                if expected_value is not None:
-                    wait_for = (
-                        result.data.get("waitFor")
-                        if isinstance(result.data, dict)
-                        else None
-                    )
-                    verified = (
-                        bool(wait_for.get("converged"))
-                        if isinstance(wait_for, dict)
-                        else False
-                    )
-                    verification_message = (
-                        json.dumps(wait_for)
-                        if isinstance(wait_for, dict)
-                        else "Command response omitted waitFor confirmation."
-                    )
+                wait_for = (
+                    result.data.get("waitFor")
+                    if isinstance(result.data, dict)
+                    else None
+                )
+                receipt = adjudicate_command_receipt(
+                    accepted=command_success, expected=expected_value,
+                    wait_for=wait_for,
+                )
+                verified = receipt.state_verified
+                verification_status = receipt.status
+                verification_message = (
+                    json.dumps(wait_for)
+                    if isinstance(wait_for, dict)
+                    else "Command response omitted waitFor confirmation."
+                    if expected_value is not None else
+                    "Dispatch acknowledged; no target-state precondition was known."
+                )
             except Exception as exc:
                 message = f"{type(exc).__name__}: {exc}"
                 logger.exception(
@@ -1436,7 +1440,9 @@ class DeviceControlService:
                 success=command_success and verified is not False,
                 elapsed_ms=round((time.monotonic() - started) * 1000),
                 summary=evidence_summary,
-                supports_live_claim=True,
+                # Accepted transport calls do not substantiate claimed state
+                # convergence. Evidence remains available with its distinction.
+                supports_live_claim=command_success and verified is True,
                 evidence_kind="device_command_result",
             )
             success = command_success and verified is not False
@@ -1472,10 +1478,16 @@ class DeviceControlService:
                 "success": success,
                 "command_sent": command_success,
                 "verified": verified,
+                "verification_status": verification_status,
+                "state_verification_source": (
+                    "hubitat_wait_for" if verified is True else None
+                ),
                 "message": message,
                 "verification_message": verification_message,
                 "already_in_state": already_in_state,
-                "changed": success and not already_in_state,
+                # A transport-accepted but unverified toggle is NOT a
+                # verified state change, even when it cannot pre-read switch.
+                "changed": success and verified is True and not already_in_state,
                 **(
                     {
                         "previous_level": pre_level,
@@ -1539,6 +1551,12 @@ class DeviceControlService:
             "executed": len(results),
             "succeeded": succeeded,
             "failed": failed,
+            "state_verified": bool(results) and all(
+                item.get("verified") is True for item in results
+            ),
+            "accepted_unverified": [
+                item for item in succeeded if item.get("verified") is None
+            ],
             "complete": True,
         }
         if needs_input_only:
