@@ -15,6 +15,7 @@ from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 
 from .evidence import CaseFile
+from .receipt_projection import PROJECTED_V2_READ_OPERATIONS
 from .temporal_scope import IncidentWindow
 from datetime import datetime, timezone
 
@@ -144,6 +145,8 @@ def _read_tool_advertised(tool: MCPTool, args: Mapping[str, Any],
         allowed = (set(choices) if isinstance(choices, list) else set()) | learned_operations.get(name, set())
         if operation not in allowed:
             return "sub-operation absent from verified live manifest/discovery"
+        if operation not in PROJECTED_V2_READ_OPERATIONS:
+            return "operation has no reviewed V2 typed evidence projection"
     return None
 
 
