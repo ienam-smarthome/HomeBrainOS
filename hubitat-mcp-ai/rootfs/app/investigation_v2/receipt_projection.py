@@ -20,6 +20,15 @@ _EVENT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]{0,79}$")
 _SHORT_VALUE = re.compile(r"^[A-Za-z0-9 _.,:;@+/-]{0,80}$")
 _MAX_ROWS = 120
 _MAX_SCAN = 2000  # bound untrusted source pages before incident filtering
+
+# Explicit projection contract. A generic read-only MCP operation is NOT
+# necessarily useful evidence: without a reviewed typed projection it consumes
+# planning budget but contributes no canonical observations. Keep this list
+# aligned with project_read_receipt() and its adapters, not tool descriptions.
+PROJECTED_V2_READ_OPERATIONS = frozenset({
+    "hub_get_device", "hub_list_device_events", "hub_list_apps",
+    "hub_list_rules", "hub_get_app_config", "hub_get_logs",
+})
 _CATALOG_LABEL = re.compile(r"^[\w][ \w.,:+()'’/\-–&]{0,100}$", re.UNICODE)
 _PRIVATE_TERMS = ("password", "api_key", "apikey", "bearer", "token", "credential", "secret")
 
