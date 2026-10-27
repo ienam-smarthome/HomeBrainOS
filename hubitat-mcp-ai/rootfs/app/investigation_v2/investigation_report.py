@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from .evidence import CaseFile, EvidenceItem
 from .read_loop import Hypothesis
 from .temporal_scope import IncidentWindow
+from .transition_links import incident_links
 
 
 def _time(row: EvidenceItem, window: IncidentWindow | None) -> str:
@@ -243,35 +244,22 @@ def format_investigation_report(
         lines.append("The command sequence is available, but no directly linked competing-controller sequence is yet established.")
     else:
         lines.append("No issued command supports identifying the initiating controller.")
-    # Host-reported event sequence is still useful when cloud planning
-    # times out. Correlation is never proof of physical network topology.
-    for cmd in commands:
-        if cmd.action != "command-off" or not cmd.target_id:
+    # Use the same source-grounded relationship index as controller discovery.
+    # Matching records are NOT a causal or independent physical proof.
+    for link in incident_links(case):
+        cmd, reported, failure = link.command, link.reported_state, link.adverse_state
+        if cmd.action != "command-off" or reported is None:
             continue
-        stamp = datetime.fromisoformat(cmd.timestamp_utc)
-        confirmed = [row for row in switches
-                     if row.target_id == cmd.target_id and row.value == "off"
-                     and 0 <= (datetime.fromisoformat(row.timestamp_utc)
-                               - stamp).total_seconds() <= 60]
-        failures = [row for row in records if row.target_id == cmd.target_id
-                    and row.stage == "state_reported"
-                    and row.action in ("healthStatus", "networkStatus", "deviceHealth")
-                    and str(row.value).lower() in ("offline", "disconnected", "stale")
-                    and 0 <= (datetime.fromisoformat(row.timestamp_utc)
-                              - stamp).total_seconds() <= 600]
-        if confirmed and failures:
-            reported = min(confirmed, key=lambda row: row.timestamp_utc)
-            failure = min(failures, key=lambda row: row.timestamp_utc)
-            lines.append(
-                "**Incident-linked sequence:** "
-                f"{_actor(cmd,case)} issued OFF at {_time(cmd,window)}, "
-                f"a switch=off state was reported at {_time(reported,window)}, "
-                f"and {failure.action}={failure.value} was reported at "
-                f"{_time(failure,window)}. This is consistent with an "
-                "OFF-related loss of contact but does not independently prove "
-                "the physical failure mechanism or network dependency."
-            )
-            break
+        lines.append(
+            "**Incident-linked sequence:** "
+            f"{_actor(cmd,case)} issued OFF at {_time(cmd,window)}, "
+            f"a switch=off state was reported at {_time(reported,window)}, "
+            f"and {failure.action}={failure.value} was reported at "
+            f"{_time(failure,window)}. This is consistent with an "
+            "OFF-related loss of contact but does not independently prove "
+            "the physical failure mechanism or network dependency."
+        )
+        break
     set_levels = [row for row in commands if row.action == "command-setLevel"]
     if set_levels:
         lines.append(
@@ -327,6 +315,18 @@ def format_investigation_report(
                 if c.operation == "hub_list_device_events" and c.succeeded]) >= 2):
         lines.append("Two bounded history requests were compared. This reduces reliance "
                      "on a single response but does not establish that Hubitat history is complete.")
+    # Configuration is read-time evidence, never retrospectively verified
+    # historical rule behaviour. Projected values are already allowlisted.
+    settings = [row for row in case.records if row.stage == "config_stored"]
+    if settings:
+        lines.extend(["", "**Current stored controller settings (not 12 October configuration)**"])
+        for row in settings[:8]:
+            lines.append(
+                f"- {_actor(row,case)}: {_event(row)} "
+                "(read-time stored setting; not proof of historical execution)"
+            )
+        if len(settings) > 8:
+            lines.append(f"{len(settings)-8} additional projected settings are in Investigation details.")
     lines.extend(["","**What remains unverified**"])
     lines.append("The initiating trigger, the effective historical rule conditions, and the actual physical device state are not established solely by these records.")
     if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence"):
