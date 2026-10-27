@@ -14,6 +14,7 @@ from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 
 from .evidence import CaseFile
+from .receipt_projection import PROJECTED_V2_READ_OPERATIONS
 from .temporal_scope import IncidentWindow
 from .planning_evidence import planning_evidence
 
@@ -85,6 +86,7 @@ def _advertised_reads(manifest: Iterable[MCPTool]) -> list[dict[str, Any]]:
             op for op in operations if isinstance(op, str)
             and op.startswith(("hub_get_", "hub_list_", "hub_read_", "hub_search_",
                                "hub_check_", "hub_find_"))
+            and op in PROJECTED_V2_READ_OPERATIONS
         ][:32]
         if name.startswith("hub_read_") and not op_names:
             continue
