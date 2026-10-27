@@ -115,6 +115,37 @@ def _ambiguous_inventory_targets(
     )
 
 
+# These are schema-level *read attributes*, never device aliases or
+# instructions to choose a target. The grammar below only disambiguates
+# attribute mentions adjacent to independently verified full device labels.
+_STATE_ATTRIBUTE_TERMS = frozenset({
+    "switch", "level", "power", "energy", "battery", "temperature",
+    "humidity", "motion", "contact", "presence", "illuminance",
+    "voltage", "current", "health", "network", "connectivity",
+})
+
+
+def _attribute_qualifier_before_subject(
+    text: str, *, start: int, end: int, subject_start: int,
+) -> bool:
+    """Identify 'switch state of Hallway Light 1' as a property, not a plug.
+
+    Only a narrow attribute + relation spanning directly to an already
+    verified multiword subject qualifies. No ambiguous name is suppressed
+    if the user actually refers to that device (e.g. 'check the switch
+    and Hallway Light 1'), or if no independent full-name anchor exists.
+    """
+    if not 0 <= start < end <= subject_start <= len(text):
+        return False
+    if text[start:end] not in _STATE_ATTRIBUTE_TERMS:
+        return False
+    between = text[end:subject_start]
+    return re.fullmatch(
+        r"\s+(?:state|status|value|reading|readings|measurement|level)"
+        r"\s+(?:of|for)\s+(?:the\s+)?", between,
+    ) is not None
+
+
 def resolve_verified_device_subjects(
     question: str, live_devices: Any, *,
     device_name: str | None = None,
@@ -227,16 +258,22 @@ def resolve_verified_device_subjects(
     ]
     if anchored:
         earliest = min(row[0] for row in anchored)
-        # Ambiguity at or before the first strong subject is not safely
-        # attributable to contextual wording: fail closed. Later unrelated
-        # ambiguous phrases do not silently replace or veto that subject.
-        blocking = [candidates for (start, _end, _priority), candidates
-                    in ambiguous.items() if start <= earliest]
-        if blocking:
-            first = min((key for key in ambiguous if key[0] <= earliest),
-                        key=lambda key: key[0])
+        # Earlier ambiguous generic aliases may be a *property* of the
+        # independently verified subject, not a third device. Suppress only
+        # the narrow "switch state of <full friendly label>" relationship.
+        # Every remaining earlier ambiguous device mention still fails closed.
+        # Do not use the model's guessed name or an inventory shortcut here.
+        blocking_keys = [
+            key for key in ambiguous
+            if key[0] <= earliest and not _attribute_qualifier_before_subject(
+                normalized, start=key[0], end=key[1],
+                subject_start=earliest,
+            )
+        ]
+        if blocking_keys:
+            first = min(blocking_keys, key=lambda key: key[0])
             raise ValueError(_ambiguous_inventory_targets(
-                (item for group in blocking for item in group.values()),
+                (item for key in blocking_keys for item in ambiguous[key].values()),
                 matched_phrase=normalized[first[0]:first[1]]))
         selected = anchored
     elif ambiguous:

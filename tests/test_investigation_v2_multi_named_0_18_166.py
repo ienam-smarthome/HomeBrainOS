@@ -16,6 +16,13 @@ DEVICES=[
   "roomName":"Living Room","attributes":[{"name":"switch","value":"off"}]},
  {"id":"9911","label":"Other Light","roomName":"Other",
   "attributes":[{"name":"switch","value":"on"}]},
+ # Two unrelated sockets expose generic driver name 'switch'.
+ # The word 'switch' in 'switch state of Hallway Light' is an attribute,
+ # NOT a third target. This reproduces the live 422 on 27 October.
+ {"id":"7786","label":"LivCAM socket","name":"switch","roomName":"Sockets",
+  "attributes":[{"name":"switch","value":"on"}]},
+ {"id":"7787","label":"FP2 Livingroom socket","name":"switch","roomName":"Sockets",
+  "attributes":[{"name":"switch","value":"off"}]},
 ]
 QUESTION="What is the current switch state of Hallway Light 1 and Livingroom Light 2? Read both devices directly from Hubitat. Do not change anything."
 
@@ -76,3 +83,42 @@ def test_legacy_single_named_device_remains_supported():
 def test_non_inventory_and_non_named_objectives_unaffected():
     plan=SemanticPlan(mode="investigation",scope="named",device_name="Hallway Light 1")
     assert ground_named_inventory_plan(plan,QUESTION,DEVICES) is plan
+
+
+def test_attribute_word_switch_is_not_a_third_device_subject():
+    ids, resolved, method = resolve_verified_device_subjects(QUESTION,DEVICES)
+    assert ids==("7829","7828")
+    assert [item["label"] for item in resolved]==[
+        "Hallway Light 1","Livingroom Light 2"]
+    assert method=="question"
+    result=execute_inventory_plan(
+        ground_named_inventory_plan(make_plan(),QUESTION,DEVICES),
+        DEVICES,{"complete":True,"pages":5})
+    assert result["inventory_query"]["matched_count"]==2
+    assert "LivCAM socket" not in result["answer"]["text"]
+    assert "FP2 Livingroom socket" not in result["answer"]["text"]
+
+
+@pytest.mark.parametrize("question",[
+    "Check the switch and Hallway Light 1.",
+    "Please read the switch, then Hallway Light 1.",
+    "Is switch on?",
+    "What is the state of the switch and Hallway Light 1?",
+])
+def test_genuine_generic_switch_device_ambiguity_still_fails_closed(question):
+    with pytest.raises(ValueError,match="Ambiguous device name"):
+        resolve_verified_device_subjects(question,DEVICES)
+
+
+def test_other_property_qualifier_before_strong_named_target():
+    sensors=[*DEVICES,
+        {"id":"8123","label":"Temp Meter A","name":"temperature"},
+        {"id":"8124","label":"Temp Meter B","name":"temperature"}]
+    ids,_,_=resolve_verified_device_subjects(
+        "What is the temperature reading of Hallway Light 1?",sensors)
+    assert ids==("7829",)
+
+
+def test_not_an_attribute_qualifier_without_an_exact_subject():
+    with pytest.raises(ValueError,match="Ambiguous device name"):
+        resolve_verified_device_subjects("What is the switch state?",DEVICES)
