@@ -7,6 +7,7 @@ snapshot. Missing measurements are never treated as zero or false.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 import math
 import re
 from typing import Any, Mapping, Sequence
@@ -111,17 +112,70 @@ def _devices_for_plan(devices: Sequence[Mapping[str,Any]],plan: SemanticPlan):
         values=[(i,d) for i,d in values if
                 any("sensor" in cap for cap in capability_names(d))]
     elif plan.scope=="named":
-        phrase=(plan.device_name or "").casefold()
-        values=[(i,d) for i,d in values
-                if any(isinstance(d.get(key),str)
-                       and d.get(key).strip().casefold()==phrase
-                       for key in ("name","label"))]
-        if len(values)!=1:
-            raise ValueError("Named device is absent or ambiguous in current inventory")
+        requested=plan.device_names or ((plan.device_name or ""),)
+        chosen=[]
+        for name in requested:
+            phrase=name.strip().casefold()
+            matches=[(i,d) for i,d in values
+                     if any(isinstance(d.get(key),str)
+                            and d.get(key).strip().casefold()==phrase
+                            for key in ("name","label"))]
+            # Exact-name duplicates and missing names must fail closed,
+            # not silently read other devices. Never construct IDs from AI.
+            if len(matches)!=1:
+                raise ValueError("Named device is absent or ambiguous in current inventory")
+            chosen.extend(matches)
+        if len({i for i,_ in chosen})!=len(chosen):
+            raise ValueError("Multiple supplied names resolve to one device")
+        values=chosen
     if plan.room:
         values=[(i,d) for i,d in values
                 if str(room_name(d) or "").casefold()==plan.room.casefold()]
     return values
+
+
+def ground_named_inventory_plan(
+    plan: SemanticPlan, question: str, devices: Sequence[Mapping[str, Any]],
+) -> SemanticPlan:
+    """Bind a named *read* plan to unique source identities in the question.
+
+    The model may fail to express multiple names or mistakenly join them into
+    one. Independently recovered, non-overlapping friendly labels are the
+    authority; the model cannot add a device absent from the question.
+    No device read or Hubitat command occurs in this function.
+    """
+    if plan.mode != "inventory" or plan.scope != "named":
+        return plan
+    from .test_service import resolve_verified_device_subjects
+    if plan.device_names:
+        # Even a syntactically valid name list is untrusted until its exact
+        # IDs are matched with the independently parsed user request.
+        ids, resolved, _ = resolve_verified_device_subjects(question, list(devices))
+        planned_ids = []
+        for name in plan.device_names:
+            selected, _labels, _method = resolve_verified_device_subjects(
+                question, list(devices), device_name=name)
+            planned_ids.extend(selected)
+        if (len(set(planned_ids)) != len(planned_ids)
+                or set(planned_ids) != set(ids)):
+            raise ValueError("Model-selected devices differ from verified question targets")
+        return replace(plan, device_names=tuple(item["label"] for item in resolved),
+                       device_name=None, room=None, limit=max(plan.limit,len(ids)))
+    try:
+        ids, resolved, _ = resolve_verified_device_subjects(question, list(devices))
+    except ValueError:
+        return plan  # Preserve existing unique single-name validation below.
+    if not 2 <= len(ids) <= 4:
+        return plan
+    if plan.aggregation != "list":
+        raise ValueError("Multi-device named read requires a list objective")
+    # Single joined model phrase or missing array cannot supersede the
+    # original verified question. Only read the devices explicitly mentioned.
+    # An inferred room filter must not silently drop an explicitly named
+    # device in another room. The host-verified full names are the scope.
+    return replace(plan, device_name=None, room=None,
+                   device_names=tuple(item["label"] for item in resolved),
+                   limit=max(plan.limit,len(ids)))
 
 
 def execute_inventory_plan(
@@ -264,7 +318,9 @@ def execute_inventory_plan(
             title+=f": {aggregate_value:,.2f}{units}"
     lines=[title+" (Hubitat current reported states)."]
     if plan.scope!="all":
-        lines.append("Group: "+_display(plan.device_name or plan.scope)+".")
+        lines.append("Group: "+_display(
+            ", ".join(plan.device_names) if plan.device_names else
+            plan.device_name or plan.scope)+".")
     if plan.room:
         lines.append("Room: "+_display(plan.room)+".")
     if plan.attribute and plan.operator!="none":
@@ -372,4 +428,4 @@ def execute_inventory_plan(
     }
 
 
-__all__=["execute_inventory_plan"]
+__all__=["execute_inventory_plan","ground_named_inventory_plan"]

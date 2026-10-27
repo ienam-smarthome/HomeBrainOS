@@ -27,8 +27,10 @@ _MODEL_SYSTEM = (
     "Inventory means only a CURRENT reported snapshot. Use duration for "
     "ON/OFF sessions over an explicit period, investigation for why something "
     "happened, and historical for cross-device state changes over time. "
-    "Set scope named only for a single specific device and quote its full "
-    "name from the question; never guess an ID. Choose only attributes from "
+    "Set scope named for one to four explicitly mentioned devices: use "
+    "device_name for exactly one or device_names (array) for two to four. "
+    "Copy each FULL distinct name from the question, not a joined phrase; "
+    "never guess a name or ID. Choose only attributes from "
     "available_attributes; source availability is not proof of completeness. "
     "For a current list of switched-on lights select scope=lights, "
     "attribute=switch, operator=eq, value=on, aggregation=list. "
@@ -61,6 +63,7 @@ class SemanticPlan:
     mode: str
     scope: str = "all"
     device_name: str | None = None
+    device_names: tuple[str, ...] = ()
     room: str | None = None
     attribute: str | None = None
     operator: str = "none"
@@ -73,6 +76,7 @@ class SemanticPlan:
     def to_dict(self) -> dict[str, Any]:
         result = {
             "mode":self.mode,"scope":self.scope,"device_name":self.device_name,
+            **({"device_names":list(self.device_names)} if self.device_names else {}),
             "room":self.room,"attribute":self.attribute,"operator":self.operator,
             "value":self.value,"aggregation":self.aggregation,"limit":self.limit,
         }
@@ -122,7 +126,7 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
         raise ValueError("semantic plan not an object")
     keys={"mode","scope","device_name","room","attribute","operator",
           "value","aggregation","limit"}
-    optional={"measurement_roles","measurement_target"}
+    optional={"measurement_roles","measurement_target","device_names"}
     if not keys.issubset(raw) or set(raw)-keys-optional:
         raise ValueError("semantic plan has unexpected or missing keys")
     measurement_target=raw.get("measurement_target","all_meters")
@@ -145,9 +149,20 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
     name=raw["device_name"]
     if name is not None and (not isinstance(name,str) or not 1<=len(name)<=160):
         raise ValueError("semantic device name invalid")
-    if scope=="named" and not name:
+    multi=raw.get("device_names",[])
+    if not isinstance(multi,list) or len(multi)>4 or any(
+        not isinstance(item,str) or not 1<=len(item.strip())<=160
+        for item in multi
+    ):
+        raise ValueError("named device list invalid")
+    multi=tuple(item.strip() for item in multi)
+    if len({item.casefold() for item in multi})!=len(multi):
+        raise ValueError("duplicate named device")
+    if scope=="named" and not (name or multi):
         raise ValueError("named device scope requires an exact name")
-    if scope!="named" and name is not None:
+    if scope=="named" and multi and name is not None:
+        raise ValueError("named list and singular name are mutually exclusive")
+    if scope!="named" and (name is not None or multi):
         raise ValueError("unexpected device name outside named scope")
     room=raw["room"]
     if room is not None:
@@ -185,7 +200,7 @@ def parse_semantic_plan(raw: Any, profile: Mapping[str, Any]) -> SemanticPlan:
     if operator in ("gt","gte","lt","lte") and type(value) not in (int,float):
         raise ValueError("numeric comparison needs a numeric bound")
     return SemanticPlan(
-        mode=mode,scope=scope,device_name=name,room=room,
+        mode=mode,scope=scope,device_name=name,device_names=multi,room=room,
         attribute=attribute,operator=operator,
         value=value,aggregation=aggregation,limit=limit,
         measurement_roles=roles,measurement_target=measurement_target,
@@ -215,7 +230,7 @@ async def semantic_plan(
     prompt=json.dumps({
         "question":question,
         "inventory_vocabulary":intent_vocabulary,
-        "optional_output_keys":["measurement_target"],
+        "optional_output_keys":["measurement_target","device_names"],
         "required_output_keys":[
             "mode","scope","device_name","room","attribute","operator",
             "value","aggregation","limit",

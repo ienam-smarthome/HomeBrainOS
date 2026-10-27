@@ -105,7 +105,7 @@ from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import semantic_plan
 from investigation_v2.role_enrichment import enrich_measurement_roles
-from investigation_v2.semantic_execute import execute_inventory_plan
+from investigation_v2.semantic_execute import execute_inventory_plan, ground_named_inventory_plan
 from investigation_v2.measurement_semantics import load_operator_meter_roles
 
 logging.basicConfig(level=logging.INFO)
@@ -1615,6 +1615,12 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                         }
                 planning_ms=round((time.perf_counter()-planning_started)*1000)
             if semantic is not None and semantic.mode == "inventory":
+                if semantic.scope == "named":
+                    try:
+                        semantic = ground_named_inventory_plan(
+                            semantic, payload.question, audit_devices)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=422, detail=str(exc)) from None
                 enrichment_started=time.perf_counter()
                 semantic, role_diagnostic=await enrich_measurement_roles(
                     semantic, audit_devices, agent.transport.chat,
@@ -1631,6 +1637,11 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 except ValueError as exc:
                     raise HTTPException(status_code=422,detail=str(exc)) from None
                 result["elapsed_ms"]=round((time.perf_counter()-started)*1000)
+                if semantic.scope == "named" and semantic.device_names:
+                    ids, resolved, _ = resolve_verified_device_subjects(
+                        payload.question, audit_devices)
+                    result["resolved_devices"] = resolved
+                    result["resolution_method"] = "verified_named_multi"
                 result["semantic_diagnostics"]={
                     "phase":"completed","outcome":"success",
                     "inventory_ms":inventory_ms,"planning_ms":planning_ms,
