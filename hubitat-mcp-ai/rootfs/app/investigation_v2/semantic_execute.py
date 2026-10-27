@@ -192,9 +192,9 @@ def ground_current_attribute_request(
             plan.attributes or plan.attribute not in (None, "switch", "level") or
             not isinstance(question, str)):
         return plan
-    wants_switch = re.search(r"\\bswitch\\s+(?:state|status|reading)\\b", question, re.I)
+    wants_switch = re.search(r"\bswitch\s+(?:state|status|reading)\b", question, re.I)
     wants_level = re.search(
-        r"\\b(?:brightness(?:\\s+level)?|dimmer\\s+level)\\b", question, re.I)
+        r"\b(?:brightness(?:\s+level)?|dimmer\s+level)\b", question, re.I)
     if wants_switch and wants_level:
         return replace(plan, attribute=None, attributes=("switch", "level"))
     return plan
