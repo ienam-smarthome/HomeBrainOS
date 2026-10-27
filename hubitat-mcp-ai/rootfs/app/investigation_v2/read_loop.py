@@ -475,6 +475,47 @@ async def run_read_only_investigation(
                     "reason": "read_schema_does_not_allow_unfiltered_events",
                 })
 
+    # An old device-reported lastSeen whose incident is missing from recent
+    # event pages is a useful historical search anchor, not proof of contact.
+    # Fetch at most ONE extra bounded source page before the model; never
+    # rewrite the user's incident window or bypass schema/ID/effect review.
+    if (bootstrap_device_context and factual_objective is None
+            and incident_window is None and len(set(known_ids)) == 1
+            and executed < max_total_reads and time.monotonic() < deadline):
+        from .last_contact_anchor import last_contact_anchor_proposals
+        proposals, strategy = last_contact_anchor_proposals(
+            registry.values(), known_ids, case,
+            learned_operations=verified_operations)
+        bootstrap_diagnostics.append({
+            "stage": "history_last_contact", "reason": strategy})
+        if proposals:
+            approved = review_model_read_proposals(
+                case, proposals, registry.values(), verified_entity_ids=known_ids,
+                learned_operations=verified_operations, previous_calls=prior_calls,
+                max_total_reads=max_total_reads, max_reads_this_round=1,
+                budget_used_reads=executed, incident_window=incident_window,
+            )
+            rejections.extend(x.reason for x in approved.rejected)
+            if not approved.approved:
+                bootstrap_diagnostics.append({
+                    "stage": "history_last_contact", "reason": "host_read_plan_rejected",
+                    "validation": [x.reason for x in approved.rejected[:3]],
+                })
+            for item in approved.approved:
+                before = len(read_failures)
+                await execute_checked_read(item, -7)
+                cov = case.coverage[-1] if case.coverage else None
+                bootstrap_diagnostics.append({
+                    "stage": "history_last_contact",
+                    "status": ("read_attempt_failed" if len(read_failures) > before
+                               else "read_attempt_completed"),
+                    # Source data are not assumed to have honoured since/until.
+                    "source_returned_rows": (cov.source_returned_rows if cov else None),
+                    "source_oldest_utc": (cov.oldest_utc if cov else None),
+                    "source_complete_verified": (cov.source_complete is True
+                                                 if cov else False),
+                })
+
     # Provenance-first enrichment is a HOST-APPROVED optional READ, not a
     # replacement for model planning. It can make useful progress even when
     # the configured LLM takes too long to provide a structured proposal.
@@ -513,10 +554,23 @@ async def run_read_only_investigation(
             for item in approved.approved:
                 before = len(read_failures)
                 await execute_checked_read(item, -3)
+                latest = receipts[-1] if receipts else {}
+                projected = latest.get("details", {}) if isinstance(latest, dict) else {}
+                readable = (isinstance(projected, dict)
+                            and projected.get("settingsReadable") is True)
+                fields_count = (sum(len(projected.get(key, []))
+                                    for key in ("indexedFields", "controllerFields")
+                                    if isinstance(projected.get(key), list))
+                                if readable else 0)
                 bootstrap_diagnostics.append({
                     "stage": "controller_config",
                     "status": ("read_attempt_failed" if len(read_failures) > before
                                else "read_attempt_completed"),
+                    "settings_projection": (
+                        "typed_fields_available" if fields_count
+                        else "readable_no_supported_fields" if readable
+                        else "settings_not_readable"),
+                    "typed_settings_fields": min(96, fields_count),
                 })
 
     for round_index in range(max_rounds):
