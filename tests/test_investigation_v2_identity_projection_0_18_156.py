@@ -151,10 +151,11 @@ def test_controller_attested_issuer_proposed_even_when_named():
         [app_gateway(["hub_get_app_config"])],
         command_case(), diagnostics=diag)
     assert len(proposals) == 1
-    assert proposals[0]["arguments"]["args"] == {"appId": "3103"}
+    assert proposals[0]["arguments"]["args"] == {"appId": "3103", "includeSettings": True}
     assert diag == [{"stage": "controller_config",
                      "status": "verified_issuer_proposal", "issuer_id": "3103",
-                     "argument_basis": "declared_app_id"}]
+                     "argument_basis": "declared_app_id",
+                     "settings_requested": "false"}]
 
 
 def test_endpoint_retrieves_identity_then_full_only_when_scope_needs_it():
