@@ -51,7 +51,7 @@ class ControlMCP:
             command = arguments["args"]["command"]
             return MCPToolResult(
                 "hub_manage_devices", arguments, {}, "ok",
-                {"success": True, "waitFor": {"converged": True, "value": command}},
+                {"success": True, "waitFor": {"converged": True, "value": arguments["args"].get("waitFor", {}).get("expectedValue", command)}},
             )
         if arguments.get("tool") == "hub_list_devices":
             return MCPToolResult(
