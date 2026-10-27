@@ -7,6 +7,7 @@ host review/executor path. An unavailable catalogue is not a failed model plan.
 """
 from __future__ import annotations
 from typing import Iterable
+from datetime import datetime
 from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 from .evidence import CaseFile
@@ -112,12 +113,33 @@ def source_configuration_proposals(
         if diagnostics is not None:
             diagnostics.append({"stage": "controller_config", "reason": "app_id_missing_from_live_schema"})
         return []
-    # Choose the most frequently seen event-attested command issuer without
-    # relying on particular device names or hard-coded app IDs.
-    ranking = sorted(candidates, key=lambda ident: (
-        -sum(row.producer_id == ident and row.stage == "command_issued"
-             for row in case.records), int(ident),
-    ))
+    # A command just before a reported adverse state is a stronger read lead
+    # than a later recovery attempt. Temporal order ranks reads, NEVER proves
+    # a causal relationship or physical execution.
+    adverse = [
+        row for row in case.records if row.stage == "state_reported"
+        and ((row.action in ("healthStatus", "deviceHealth", "networkStatus")
+              and str(row.value).lower() in ("offline", "stale", "disconnected"))
+             or (row.action == "mqttStatus"
+                 and str(row.value).lower() == "disconnected"))
+    ]
+
+    def rank(ident: str) -> tuple[int, float, int, int]:
+        commands = [row for row in case.records if row.stage == "command_issued"
+                    and row.producer_id == ident]
+        distances = []
+        for command in commands:
+            for state in adverse:
+                if not command.target_id or command.target_id != state.target_id:
+                    continue
+                delta = (datetime.fromisoformat(state.timestamp_utc)
+                         - datetime.fromisoformat(command.timestamp_utc)).total_seconds()
+                if 0 <= delta <= 600:
+                    distances.append(delta)
+        return (0 if distances else 1, min(distances) if distances else float("inf"),
+                -len(commands), int(ident))
+
+    ranking = sorted(candidates, key=rank)
     ident = ranking[0]
     # For an open generic gateway, check any additionalProperties subschema
     # before proposing the field; the same final host reviewer then validates
