@@ -156,3 +156,26 @@ def test_unrelated_device_failure_does_not_bias_issuer_ranking():
         "state_reported","healthStatus","offline",("other",)))
     proposed=source_configuration_proposals([manifest({"type":"object"})],case)
     assert proposed[0]["arguments"]["args"]["appId"]=="3103"
+
+
+def test_off_state_and_offline_sequence_survives_planner_timeout_report():
+    from investigation_v2.investigation_report import format_investigation_report
+    args={"tool":"hub_list_device_events","args":{"deviceId":"7103"}}
+    events=[
+        {"deviceId":"7103","name":"command-off","type":"command",
+         "date":"2026-10-12T00:30:01+00:00","producedBy":{"id":"3950"}},
+        {"deviceId":"7103","name":"switch","value":"off",
+         "date":"2026-10-12T00:30:02+00:00","producedBy":{"id":"7103"}},
+        {"deviceId":"7103","name":"healthStatus","value":"offline",
+         "date":"2026-10-12T00:33:46+00:00","producedBy":{"id":"7103"}},
+    ]
+    raw=MCPToolResult("hub_read_devices",args,raw={},text="",
+        data={"deviceId":"7103","events":events},is_error=False)
+    case=build_case_file("Investigate offline",[project_read_receipt(
+        "hub_read_devices",args,raw,source_request_id="historical")])
+    report=format_investigation_report(case,[],"planning_timeout")
+    assert "**Incident-linked sequence:**" in report
+    assert "switch=off state was reported" in report
+    assert "healthStatus=offline was reported" in report
+    assert "not independently prove" in report
+    assert "Without a subsequent independently reported switch state" not in report
