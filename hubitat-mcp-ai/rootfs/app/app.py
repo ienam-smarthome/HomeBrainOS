@@ -1532,6 +1532,24 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     detail="Hubitat read-only inventory was unavailable; no commands sent",
                 ) from None
             inventory_ms=round((time.perf_counter()-inventory_started)*1000)
+            # Diagnostic provenance stays tied to the actual Hubitat source.
+            # Times include client transport/queue waits; never label them
+            # measured hub CPU time, or infer that a partial page is complete.
+            _pages=inventory_provenance.get("page_timings_ms")
+            inventory_page_diagnostics={
+                "source": inventory_provenance.get("source"),
+                "mode": inventory_provenance.get("mode"),
+                "pages": inventory_provenance.get("pages"),
+                "first_page_ms": inventory_provenance.get("first_page_ms"),
+                "slowest_page_ms": inventory_provenance.get("slowest_page_ms"),
+                "parallel_page_max_concurrent": inventory_provenance.get(
+                    "parallel_page_max_concurrent"),
+                "page_timings_ms": [
+                    {"offset": row.get("offset"), "elapsed_ms": row.get("elapsed_ms"),
+                     "success": row.get("success") is True}
+                    for row in _pages[:10] if isinstance(row, dict)
+                ] if isinstance(_pages, list) else [],
+            }
             if (len(candidates) == 1
                     and inventory_provenance.get("complete") is True):
                 direct_verified_target = candidates[0]
@@ -1726,6 +1744,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 "identity_inventory_ms": identity_inventory_ms,
                 "full_inventory_ms": full_inventory_ms,
                 "inventory_projection": inventory_provenance.get("projection"),
+                "inventory_page_diagnostics": inventory_page_diagnostics,
                 "planning_ms": 0,
                 "inventory_devices": len(audit_devices),
                 "inventory_complete": inventory_provenance.get("complete") is True,
