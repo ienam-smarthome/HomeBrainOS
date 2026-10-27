@@ -52,7 +52,7 @@ def source_identity_proposals(tools: Iterable[MCPTool], case: CaseFile) -> list[
 def source_configuration_proposals(
     tools: Iterable[MCPTool], case: CaseFile,
 ) -> list[dict]:
-    """One read of an event-attested app issuer missing from current catalogue.
+    """One read of an event-attested command issuer's stored app config.
 
     The historical event's producer ID is a read scope, not permission to
     execute code or assume its current settings were effective then.
