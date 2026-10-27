@@ -178,6 +178,103 @@ def ground_named_inventory_plan(
                    limit=max(plan.limit,len(ids)))
 
 
+def ground_current_attribute_request(
+    plan: SemanticPlan, question: str,
+) -> SemanticPlan:
+    """Recover explicitly requested CURRENT properties, never a new intent.
+
+    Device identities are independently grounded before this stage. This
+    does not infer supported attributes, invent missing readings, or affect
+    duration/history/causal questions and any filter/ranking operations.
+    """
+    if (plan.mode != "inventory" or plan.scope != "named" or
+            plan.aggregation != "list" or plan.operator != "none" or
+            plan.attributes or plan.attribute not in (None, "switch", "level") or
+            not isinstance(question, str)):
+        return plan
+    wants_switch = re.search(r"\\bswitch\\s+(?:state|status|reading)\\b", question, re.I)
+    wants_level = re.search(
+        r"\\b(?:brightness(?:\\s+level)?|dimmer\\s+level)\\b", question, re.I)
+    if wants_switch and wants_level:
+        return replace(plan, attribute=None, attributes=("switch", "level"))
+    return plan
+
+
+def _execute_multi_attribute_inventory(
+    plan: SemanticPlan, source: list[tuple[str, Mapping[str, Any]]],
+    provenance: Mapping[str, Any], checked_at: datetime | None,
+) -> dict[str, Any]:
+    """Emit one source-backed value (or explicitly unavailable) per property."""
+    checked = checked_at or datetime.now(timezone.utc)
+    if checked.tzinfo is None or checked.utcoffset() is None:
+        raise ValueError("current time must be timezone aware")
+    if len(source) > 4:
+        raise ValueError("multi-attribute reads require at most four named devices")
+    complete = provenance.get("complete") is True
+    lines = [
+        f"{len(source)} matching device(s) (Hubitat current reported states).",
+        "Group: " + _display(", ".join(plan.device_names)
+                             if plan.device_names else plan.device_name or "named") + ".",
+        "",
+    ]
+    missing = 0
+    values = []
+    for ident, device in source:
+        attributes: dict[str, Any] = {}
+        readings: list[str] = []
+        for attribute in plan.attributes:
+            reading = _value(device, attribute)
+            # No model-supplied fallback, cached command receipt or history
+            # is an admissible substitute for a live read.
+            if reading is None or reading == "":
+                attributes[attribute] = None
+                readings.append(f"{attribute}=unavailable")
+                missing += 1
+            else:
+                attributes[attribute] = reading
+                suffix = "%" if attribute == "level" and _number(reading) is not None else ""
+                readings.append(f"{attribute}={_display(reading)}{suffix}")
+        label = _display(device.get("label") or device.get("name") or "Device")
+        room = _display(room_name(device) or "Unassigned")
+        lines.append(f"• {room} — {label} — " + ", ".join(readings))
+        values.append({"id": ident, "label": label, "reported_attributes": attributes})
+    if missing:
+        lines.append(f"{missing} requested reading(s) unavailable; no values inferred.")
+    if not complete:
+        lines.append("Inventory coverage not independently verified complete.")
+    lines.append(
+        "Read-only Hubitat snapshot at " +
+        checked.astimezone(timezone.utc).isoformat(timespec="seconds") +
+        ". Reported state is not independent physical confirmation."
+    )
+    answer = "\\n".join(lines)
+    return {
+        "answer_mode": "semantic_inventory",
+        "semantic_plan": plan.to_dict(),
+        "answer": {"text": answer, "displayed_record_ids": [],
+                   "omitted_material_record_ids": [],
+                   "validation_issues": ([] if complete and not missing
+                                         else ["missing_requested_current_attributes"]),
+                   "root_cause_verified": False, "human_review_required": False},
+        "report": {"text": answer, "technical_answer_retained": False},
+        "inventory_query": {
+            "matched_count": len(source), "scoped_count": len(source),
+            "missing_readings": missing, "inventory_complete": complete,
+            "inventory_pages": provenance.get("pages"),
+            "checked_at_utc": checked.astimezone(timezone.utc).isoformat(timespec="seconds"),
+            "aggregation": "list", "attribute": None,
+            "attributes": list(plan.attributes), "reported_device_values": values,
+            "aggregate_value": None, "shown_count": len(source),
+            "suppressed_overlapping_meters": [],
+            "unclassified_measurement_scopes": 0, "excluded_unknown_scope": 0,
+            "inferred_individual_loads": 0, "missing_expected_measurements": missing,
+            "unverified_measurement_support": 0, "aggregate_safe": True,
+        },
+        "resolved_devices": [], "resolution_method": "semantic_verified_inventory",
+        "test_mode": "explicit_read_only",
+    }
+
+
 def execute_inventory_plan(
     plan: SemanticPlan,
     devices: Sequence[Mapping[str,Any]],
@@ -191,6 +288,8 @@ def execute_inventory_plan(
     if not isinstance(devices,(list,tuple)) or not devices:
         raise ValueError("no current Hubitat inventory")
     source=list(_devices_for_plan(devices,plan))
+    if plan.attributes:
+        return _execute_multi_attribute_inventory(plan, source, provenance, checked_at)
     present=[]
     missing=0
     out_of_scope=[]
@@ -428,4 +527,4 @@ def execute_inventory_plan(
     }
 
 
-__all__=["execute_inventory_plan","ground_named_inventory_plan"]
+__all__=["execute_inventory_plan","ground_named_inventory_plan","ground_current_attribute_request"]
