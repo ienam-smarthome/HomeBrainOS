@@ -276,7 +276,13 @@ def format_investigation_report(
             "the device actually changed state."
         )
     offs = [row for row in commands if row.action == "command-off"]
-    if offs:
+    linked_off_ids = {
+        link.command.record_id for link in incident_links(case)
+        if link.command.action == "command-off" and link.reported_state is not None
+    }
+    # Incident-linked OFF + switch-off + adverse state has already been
+    # described. Repeating it as "Another OFF" invents a second event.
+    if offs and offs[-1].record_id not in linked_off_ids:
         last_off = offs[-1]
         # A reported switch transition after an issued OFF is relevant
         # evidence, even though it is not independent physical confirmation.
@@ -334,6 +340,24 @@ def format_investigation_report(
             )
         if len(settings) > 8:
             lines.append(f"{len(settings)-8} additional projected settings are in Investigation details.")
+    # An event-attested issuer missing from the *current* inventory is not
+    # automatically an uninstalled or deleted app; it may be a child app,
+    # changed identity or a catalogue projection limitation. Report the
+    # unresolved identity separately from the verified stored-setting target.
+    if any(c.operation in ("hub_list_apps", "hub_list_rules") and c.succeeded
+           for c in case.coverage):
+        unknown_issuers = sorted({
+            row.producer_id for row in commands
+            if row.producer_id and row.producer_id not in case.app_identities
+        }, key=int)
+        if unknown_issuers:
+            lines.append(
+                "**Unresolved current controller names:** event-attested "
+                + ", ".join("source #" + ident for ident in unknown_issuers)
+                + " did not match a name in the returned current app catalogue. "
+                  "This does not establish the app's parentage, deletion, "
+                  "or the historical rule that initiated its command."
+            )
     lines.extend(["","**What remains unverified**"])
     lines.append("The initiating trigger, the effective historical rule conditions, and the actual physical device state are not established solely by these records.")
     if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence"):
@@ -358,7 +382,19 @@ def format_investigation_report(
         lines.append("- Inspect the execution logs and effective source/configuration of the controlling Hubitat apps "
                      +", ".join("#"+x for x in ids)+", especially their actions between the listed commands.")
     elif commands:
-        lines.append("- Map the recorded command source IDs to their controlling apps and compare relevant execution logs and conditions.")
+        unidentified = sorted({
+            row.producer_id for row in commands
+            if row.producer_id and row.producer_id not in case.app_identities
+        }, key=int)
+        if unidentified:
+            lines.append(
+                "- Resolve the event-attested source "
+                + ", ".join("#" + ident for ident in unidentified)
+                + " to an actual controlling/parent app, then examine its "
+                  "execution log and effective historical rule conditions."
+            )
+        else:
+            lines.append("- Compare controlling-app execution logs and effective rule conditions around the observed commands.")
     else:
         lines.append("- Recover earlier device messages and state transitions reaching the start of the fault, not only recent health reports.")
     lines.append("- Check device last-contact and switch reports, plus physical/network reachability, before treating a command as successful.")
