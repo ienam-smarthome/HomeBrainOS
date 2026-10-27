@@ -232,7 +232,8 @@ def _execute_multi_attribute_inventory(
                 missing += 1
             else:
                 attributes[attribute] = reading
-                suffix = "%" if attribute == "level" and _number(reading) is not None else ""
+                suffix = ("%" if attribute == "level" and _number(reading) is not None
+                          and not str(reading).strip().endswith("%") else "")
                 readings.append(f"{attribute}={_display(reading)}{suffix}")
         label = _display(device.get("label") or device.get("name") or "Device")
         room = _display(room_name(device) or "Unassigned")
