@@ -22,6 +22,7 @@ from .temporal_scope import IncidentWindow
 from .investigation_report import format_investigation_report
 from .forensic_metrics import forensic_metrics
 from .state_duration import is_state_duration_request, format_state_duration_report
+from .factual_report import factual_report
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ async def evaluate_v2_with_model(
     verified_device_label: str | None = None,
     force_duration_mode: bool = False,
     semantic_unavailable_reason: str | None = None,
+    factual_objective: str | None = None,
 ) -> V2Evaluation:
     """Run one explicit read-only experiment with the configured chat provider.
 
@@ -92,6 +94,10 @@ async def evaluate_v2_with_model(
         raise ValueError("MCP client/executor mismatch")
     tools = await mcp.list_tools()
     resolved_ids = tuple(verified_entity_ids)
+    if factual_objective not in (None, "status", "history"):
+        raise ValueError("Invalid factual objective")
+    if factual_objective is not None and semantic_unavailable_reason is not None:
+        raise ValueError("Conflicting factual and semantic fallback objectives")
     if semantic_unavailable_reason is not None:
         # The first model call already failed before investigation. Do not
         # repeatedly invoke the unavailable provider or invent an intent.
@@ -103,6 +109,9 @@ async def evaluate_v2_with_model(
 
         async def propose(_case, _round):
             return {"hypotheses": [], "reads": [], "finish": True}
+    elif factual_objective is not None:
+        async def propose(_case, _round):
+            raise AssertionError("Factual evidence must not invoke model planning")
     else:
         propose = V2ModelProposer(chat, tools, verified_entity_ids=resolved_ids,
                                   incident_window=incident_window)
@@ -119,7 +128,23 @@ async def evaluate_v2_with_model(
         bootstrap_source_identity=bootstrap_source_identity,
         bootstrap_device_context=bootstrap_device_context,
         stop_after_incident_history=duration_intent,
+        factual_objective=factual_objective,
     )
+    if factual_objective is not None:
+        narrative, displayed = factual_report(result.case, factual_objective,
+                                               verified_device_label)
+        grounded = GroundedAnswer(
+            text=narrative, displayed_record_ids=displayed,
+            omitted_material_record_ids=(),
+            validation_issues=("factual_read_only_source_snapshot",
+                               "historical_source_completeness_unverified")
+            if factual_objective == "history" else
+                              ("factual_read_only_source_snapshot",),
+        )
+        return V2Evaluation(
+            investigation=result, answer=grounded,
+            report=narrative, incident_window=incident_window,
+        )
     if semantic_unavailable_reason is not None:
         # Do not upgrade this best-effort source collection into a model-based
         # investigation or pretend that the user intent was classified.

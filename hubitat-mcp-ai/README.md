@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.154**.
+Current add-on version: **0.18.155**.
 
 ## Architecture
+
+v0.18.155 introduces a question-bound, verified single-device factual path for current switch status and recent ON/OFF reports: host-validated reads answer those specific questions without waiting for a causal AI planner. Ambiguous and causal requests still run investigations. App configuration can now be requested for a command issuer independently verified by event history even when its name is already in the catalogue. No writes, and wider Claude-like causal reasoning remains under test. See [release notes](CHANGELOG-0.18.155.md).
+
 
 v0.18.154 explicitly separates write requests from read-only Investigation V2 before inventory, model or MCP calls. It reuses the production write-intent classifier and adds a negative-only guard for compound direct commands, returning a clear message to use main HomeBrain Ask/Chat without issuing any action. Broader opt-in read-only V2 testing is documented in [V2 test readiness](docs/INVESTIGATION-V2-TEST-READINESS.md); V2 is not a replacement for production device control. See [release notes](CHANGELOG-0.18.154.md).
 

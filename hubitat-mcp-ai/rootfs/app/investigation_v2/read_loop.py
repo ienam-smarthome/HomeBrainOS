@@ -211,6 +211,7 @@ async def run_read_only_investigation(
     bootstrap_source_identity: bool = False,
     bootstrap_device_context: bool = False,
     stop_after_incident_history: bool = False,
+    factual_objective: str | None = None,
 ) -> InvestigationResult:
     """Run a limited investigative read-only session under existing host gates.
 
@@ -220,6 +221,8 @@ async def run_read_only_investigation(
     """
     if not isinstance(question, str) or not question.strip():
         raise ValueError("Original investigation objective is required")
+    if factual_objective not in (None, "status", "history"):
+        raise ValueError("Unsupported factual evidence objective")
     if executor.mcp is not mcp:
         raise ValueError("Executor and MCP client must use the same session")
     if not callable(propose):
@@ -378,7 +381,8 @@ async def run_read_only_investigation(
         bootstrap_diagnostics.extend(checks)
         for name, ops in discovered.items():
             verified_operations.setdefault(name, set()).update(ops)
-        for stage in ("current", "history"):
+        for stage in (("current",) if factual_objective == "status"
+                      else ("current", "history")):
             if executed >= max_total_reads or time.monotonic() >= deadline:
                 bootstrap_diagnostics.append({
                     "stage": stage, "reason": "read_or_time_budget_exhausted"})
@@ -411,6 +415,20 @@ async def run_read_only_investigation(
                     "status": ("read_attempt_failed" if len(read_failures) > before
                                else "read_attempt_completed"),
                 })
+
+    # Simple factual questions finish with source evidence, not hypotheses.
+    # This branch is available only after independently verified identity and
+    # an exact host factual contract; ambiguous/causal questions use AI.
+    if factual_objective is not None:
+        return InvestigationResult(
+            case=case, hypotheses=[], rounds=0, executed_reads=executed,
+            stopped_because="factual_" + factual_objective + "_collected",
+            rejected_proposals=rejections, incident_window=incident_window,
+            planning_diagnostics=planning_diagnostics,
+            history_comparison=compare_history_samples(receipts),
+            read_failures=read_failures,
+            bootstrap_diagnostics=bootstrap_diagnostics,
+        )
 
     # If an independently authorised, switch-filtered history request returned
     # zero source rows, try one bounded unfiltered read. A zero row response
