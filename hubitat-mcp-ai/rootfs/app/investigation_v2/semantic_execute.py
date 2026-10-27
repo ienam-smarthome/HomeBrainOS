@@ -7,6 +7,7 @@ snapshot. Missing measurements are never treated as zero or false.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 import math
 import re
 from typing import Any, Mapping, Sequence
@@ -131,6 +132,52 @@ def _devices_for_plan(devices: Sequence[Mapping[str,Any]],plan: SemanticPlan):
         values=[(i,d) for i,d in values
                 if str(room_name(d) or "").casefold()==plan.room.casefold()]
     return values
+
+
+def ground_named_inventory_plan(
+    plan: SemanticPlan, question: str, devices: Sequence[Mapping[str, Any]],
+) -> SemanticPlan:
+    """Bind a named *read* plan to unique source identities in the question.
+
+    The model may fail to express multiple names or mistakenly join them into
+    one. Independently recovered, non-overlapping friendly labels are the
+    authority; the model cannot add a device absent from the question.
+    No device read or Hubitat command occurs in this function.
+    """
+    if plan.mode != "inventory" or plan.scope != "named":
+        return plan
+    from .test_service import resolve_verified_device_subjects
+    if plan.device_names:
+        # Even a syntactically valid name list is untrusted until its exact
+        # IDs are matched with the independently parsed user request.
+        ids, resolved, _ = resolve_verified_device_subjects(question, list(devices))
+        planned_ids = []
+        for name in plan.device_names:
+            selected, _labels, _method = resolve_verified_device_subjects(
+                question, list(devices), device_name=name)
+            planned_ids.extend(selected)
+        if (len(set(planned_ids)) != len(planned_ids)
+                or set(planned_ids) != set(ids)):
+            raise ValueError("Model-selected devices differ from verified question targets")
+        return replace(plan, device_names=tuple(item["label"] for item in resolved),
+                       device_name=None, limit=max(plan.limit,len(ids)))
+    try:
+        ids, resolved, _ = resolve_verified_device_subjects(question, list(devices))
+    except ValueError:
+        return plan  # Preserve existing unique single-name validation below.
+    if not 2 <= len(ids) <= 4:
+        return plan
+    if plan.aggregation != "list":
+        raise ValueError("Multi-device named read requires a list objective")
+    # Single joined model phrase or missing array cannot supersede the
+    # original verified question. Only read the devices explicitly mentioned.
+    if plan.room and any(str(room_name(next((
+        d for d in devices if str(d.get("id", d.get("deviceId"))) == ident
+    ), {})) or "").casefold() != plan.room.casefold() for ident in ids):
+        raise ValueError("Model room restriction conflicts with verified question targets")
+    return replace(plan, device_name=None,
+                   device_names=tuple(item["label"] for item in resolved),
+                   limit=max(plan.limit,len(ids)))
 
 
 def execute_inventory_plan(
@@ -383,4 +430,4 @@ def execute_inventory_plan(
     }
 
 
-__all__=["execute_inventory_plan"]
+__all__=["execute_inventory_plan","ground_named_inventory_plan"]
