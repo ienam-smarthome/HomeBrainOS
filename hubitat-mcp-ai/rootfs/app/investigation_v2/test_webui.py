@@ -16,6 +16,11 @@ textarea{min-height:76px}input[type=checkbox]{width:auto;margin-right:7px}button
 button:disabled{opacity:.6}#status{display:block;margin-top:12px;overflow-wrap:anywhere}small,p{color:#c5c5d0;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111115;padding:14px;border-radius:8px}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.metric{background:#121217;padding:12px;border-radius:8px}
 .metric strong{display:block;font-size:21px;margin-bottom:4px}a{color:#a9c5ff}
+.actionLink{display:inline-block;padding:12px 17px;border-radius:8px;background:#32755c;color:#fff;text-decoration:none;font-weight:700}
+.actionLink:focus-visible,button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.actionRow{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px}
+#controlHelp{margin-top:12px;padding:14px;border:1px solid #557e6d;border-radius:8px;background:#17251e}
+#controlHelp p{margin:4px 0 12px}
 </style></head><body><main>
 <h1>Investigation V2 · Test</h1>
 <p><a href="./">HomeBrain dashboard</a> · Manual read-only experiment. Normal Ask continues using V1.
@@ -48,7 +53,17 @@ the live Hubitat inventory. A device ID is not required.</small></p>
 <textarea id="reference" placeholder="External answer for timestamp-presence comparison"></textarea>
 <p><small>Free/default configured provider will be used, but model access can incur provider costs.
 Exact timestamp scores do not measure reasoning correctness. Source coverage can remain incomplete.</small></p>
+<div class="actionRow">
 <button id="run">Run V2 read-only test</button>
+<a class="actionLink" href="./" id="mainAskDirect">Open main Ask / device control</a>
+</div>
+<div id="controlHelp" hidden role="status" aria-live="polite">
+<strong>Device control belongs in HomeBrain Ask</strong>
+<p id="controlReason">No command was sent by Investigation V2. Use the main Ask interface for device control, with its normal permissions and confirmation checks.</p>
+<div class="actionRow">
+<button type="button" id="copyControlQuestion">Copy control request</button>
+<a class="actionLink" href="./" id="mainAskAfterRejection">Open main Ask</a>
+</div></div>
 <span id="status" role="status" aria-live="polite"></span>
 </section>
 <section id="output" hidden>
@@ -169,6 +184,12 @@ function metric(label,value){
   outer.className='metric';number.textContent=value===null||value===undefined?'—':String(value);
   caption.textContent=label;outer.append(number,caption);el('metrics').append(outer);
 }
+el('copyControlQuestion').onclick=async()=>{
+  try{
+    await copyTestText(el('question').value.trim());
+    el('status').textContent=' Copied request. Open main Ask and paste it to request the command.';
+  }catch(error){el('status').textContent=' '+error.message}
+};
 el('copyAnswer').onclick=()=>copyFrom('answer','V2 answer');
 el('copyDetails').onclick=()=>copyFrom('details','investigation details');
 el('copyReport').onclick=async()=>{
@@ -179,7 +200,7 @@ el('copyReport').onclick=async()=>{
 };
 el('run').onclick=async()=>{
   const button=el('run');button.disabled=true;el('status').textContent=' Running bounded read-only investigation…';
-  el('output').hidden=true;el('metrics').replaceChildren();
+  el('output').hidden=true;el('controlHelp').hidden=true;el('metrics').replaceChildren();
   try{
     const question=el('question').value.trim();
     const advanced=el('targetOverride').open;
@@ -222,9 +243,12 @@ el('run').onclick=async()=>{
     if(response.status===409&&data?.detail?.code==='v2_control_not_supported'){
       // The server made this decision before fetching Hubitat inventory.
       // It did not execute a device command.
-      el('status').textContent=String(data.detail.message||(
+      const explanation=String(data.detail.message||(
         'Device-control request recognised. No command was sent. '+
         'Use the main HomeBrain Ask interface for device control.'));
+      el('status').textContent=explanation;
+      el('controlReason').textContent=explanation;
+      el('controlHelp').hidden=false; // navigation only; never a write request
       return;
     }
     if(!response.ok)throw new Error(formatTestError(response,data));
