@@ -111,13 +111,22 @@ def _devices_for_plan(devices: Sequence[Mapping[str,Any]],plan: SemanticPlan):
         values=[(i,d) for i,d in values if
                 any("sensor" in cap for cap in capability_names(d))]
     elif plan.scope=="named":
-        phrase=(plan.device_name or "").casefold()
-        values=[(i,d) for i,d in values
-                if any(isinstance(d.get(key),str)
-                       and d.get(key).strip().casefold()==phrase
-                       for key in ("name","label"))]
-        if len(values)!=1:
-            raise ValueError("Named device is absent or ambiguous in current inventory")
+        requested=plan.device_names or ((plan.device_name or ""),)
+        chosen=[]
+        for name in requested:
+            phrase=name.strip().casefold()
+            matches=[(i,d) for i,d in values
+                     if any(isinstance(d.get(key),str)
+                            and d.get(key).strip().casefold()==phrase
+                            for key in ("name","label"))]
+            # Exact-name duplicates and missing names must fail closed,
+            # not silently read other devices. Never construct IDs from AI.
+            if len(matches)!=1:
+                raise ValueError("Named device is absent or ambiguous in current inventory")
+            chosen.extend(matches)
+        if len({i for i,_ in chosen})!=len(chosen):
+            raise ValueError("Multiple supplied names resolve to one device")
+        values=chosen
     if plan.room:
         values=[(i,d) for i,d in values
                 if str(room_name(d) or "").casefold()==plan.room.casefold()]
@@ -264,7 +273,9 @@ def execute_inventory_plan(
             title+=f": {aggregate_value:,.2f}{units}"
     lines=[title+" (Hubitat current reported states)."]
     if plan.scope!="all":
-        lines.append("Group: "+_display(plan.device_name or plan.scope)+".")
+        lines.append("Group: "+_display(
+            ", ".join(plan.device_names) if plan.device_names else
+            plan.device_name or plan.scope)+".")
     if plan.room:
         lines.append("Room: "+_display(plan.room)+".")
     if plan.attribute and plan.operator!="none":
