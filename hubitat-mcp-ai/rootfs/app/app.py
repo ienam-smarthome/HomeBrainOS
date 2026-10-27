@@ -1608,6 +1608,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 result["semantic_diagnostics"]={
                     "phase":"completed","outcome":"success",
                     "inventory_ms":inventory_ms,"planning_ms":planning_ms,
+                    "identity_inventory_ms":identity_inventory_ms,
+                    "full_inventory_ms":full_inventory_ms,
+                    "inventory_projection":inventory_provenance.get("projection"),
                     "role_enrichment_ms":round((time.perf_counter()-enrichment_started)*1000),
                     "meter_roles":role_diagnostic,
                     "inventory_devices":len(audit_devices),
