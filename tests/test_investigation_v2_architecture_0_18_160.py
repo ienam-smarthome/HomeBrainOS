@@ -155,7 +155,9 @@ async def test_host_v2_never_invokes_executor_for_model_requested_write():
             self.calls += 1
             raise AssertionError("No device or network tool may execute")
 
+    mcp = MCP()
     executor = FailIfCalled()
+    executor.mcp = mcp  # production contract: executor and reader share one connection
     async def propose(_casefile, _round):
         return {"hypotheses": [], "reads": [{
             "tool": "hub_manage_devices",
@@ -165,9 +167,8 @@ async def test_host_v2_never_invokes_executor_for_model_requested_write():
             "hypothesis_ids": [],
         }], "finish": True}
     # Explicit read-only V2 never shares the confirmed-write execution path.
-    original = case
     result = await run_read_only_investigation(
-        question="Why offline?", mcp=MCP(), executor=executor, propose=propose,
+        question="Why offline?", mcp=mcp, executor=executor, propose=propose,
         verified_entity_ids=["7103"], max_rounds=1, max_total_reads=2,
         bootstrap_source_identity=False, bootstrap_device_context=False,
         initial_receipts=[],
