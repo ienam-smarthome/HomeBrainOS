@@ -353,7 +353,15 @@ def _present_control(data: dict[str, Any]) -> str:
         if clarification:
             return clarification
 
-    succeeded_items = [x for x in data.get("succeeded", []) if isinstance(x, dict) and x.get("label")]
+    accepted_items = [x for x in data.get("succeeded", [])
+                      if isinstance(x, dict) and x.get("label")]
+    # Legacy result rows without a typed verified field retain their prior
+    # presentation; modern rows with verified=None must never be narrated
+    # as an observed state transition.
+    unconfirmed_accepts = [str(x["label"]) for x in accepted_items
+                           if "verified" in x and x["verified"] is None]
+    succeeded_items = [x for x in accepted_items
+                       if "verified" not in x or x["verified"] is True]
     succeeded = [str(x["label"]) for x in succeeded_items]
     unverified = [
         str(x.get("label")) for x in data.get("failed", [])
@@ -364,16 +372,24 @@ def _present_control(data: dict[str, Any]) -> str:
         if isinstance(x, dict) and x.get("label") and x.get("command_sent") is not True
     ]
     if not _coerce_bool(data.get("success"), default=False):
-        if succeeded or unverified or failed_items:
+        if succeeded or unverified or failed_items or unconfirmed_accepts:
             parts = []
             if succeeded:
-                parts.append(f"Succeeded: {_joined(succeeded)}.")
+                parts.append(f"Hubitat state confirmed: {_joined(succeeded)}.")
+            if unconfirmed_accepts:
+                parts.append(f"Command accepted, state not verified: {_joined(unconfirmed_accepts)}.")
             if unverified:
                 parts.append(f"Command sent but state verification failed: {_joined(unverified)}.")
             if failed_items:
                 parts.append(f"Failed: {_joined(failed_items)}.")
             return " ".join(parts)
         return _error(data, "The Hubitat device command failed.")
+    if unconfirmed_accepts and not succeeded_items:
+        return (
+            f"Command accepted for {_joined(unconfirmed_accepts)}, but no "
+            "post-command device state was verified. Do not assume the "
+            "device changed; check its live state before retrying."
+        )
     command = str(data.get("command") or "")
     if command == "adjust_level":
         try:
@@ -504,6 +520,11 @@ def _present_control(data: dict[str, Any]) -> str:
         message = (
             f"{message} {len(already_in_state)} {was_were} already {state_word}: "
             f"{_joined(already_in_state)}."
+        )
+    if unconfirmed_accepts:
+        message += (
+            f" Command accepted but state unverified for "
+            f"{_joined(unconfirmed_accepts)}; verify live state before retrying."
         )
     note = data.get("note")
     if note:
