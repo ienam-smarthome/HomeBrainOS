@@ -1714,10 +1714,11 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 bootstrap_device_context=True,
                 semantic_unavailable_reason=semantic_failure,
                 max_rounds=2, max_total_reads=8,
-                # Read-time source facts are available before this optional
-                # round. Do not let a slow local/remote model hang a simple
-                # named-device question for a full minute.
-                planning_timeout_seconds=15.0,
+                # Factual status/history queries never invoke this planner.
+                # Causal analysis needs time to select useful evidence rather
+                # than hitting the observed 15-second provider ceiling. Keep
+                # a bounded timeout; any later causal claim still needs proof.
+                planning_timeout_seconds=(35.0 if factual_objective is None else 15.0),
                 incident_window=incident_window,
                 verified_device_label=resolved[0]["label"] if len(resolved)==1 else None,
                 force_duration_mode=semantic is not None and semantic.mode=="duration",

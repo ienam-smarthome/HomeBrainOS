@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.157**.
+Current add-on version: **0.18.158**.
 
 ## Architecture
+
+v0.18.158 adds an evidence-first historical read around the device-reported lastSeen (never equating it with confirmed physical contact), a schema-gated includeSettings option for event-attested controller app configuration, diagnostics for empty projections, and a longer but bounded investigation-only model planning budget. Factual questions remain unchanged and entirely avoid model planning. See [release notes](CHANGELOG-0.18.158.md).
+
 
 v0.18.157 permits the verified controller-settings read when the live MCP gateway advertises a read-only `hub_get_app_config` operation with a generic open argument-object schema. Closed/incompatible schemas remain rejected; all calls still pass source-ID verification and the host read-only validator. V2 also exposes bounded per-page inventory timings to diagnose latency. See [release notes](CHANGELOG-0.18.157.md).
 

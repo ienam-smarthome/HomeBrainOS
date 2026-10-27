@@ -58,9 +58,13 @@ def test_generic_schema_allows_exact_proven_issuer_under_host_gate(schema,basis)
     diagnostics=[]
     proposals=source_configuration_proposals([tool],case,diagnostics=diagnostics)
     assert len(proposals)==1
-    assert proposals[0]["arguments"]=={"tool":"hub_get_app_config","args":{"appId":"3103"}}
+    expected_args={"appId":"3103"}
+    if basis=="open_args_schema":
+        expected_args["includeSettings"]=True
+    assert proposals[0]["arguments"]=={"tool":"hub_get_app_config","args":expected_args}
     assert diagnostics == [{"stage":"controller_config","status":"verified_issuer_proposal",
-                            "issuer_id":"3103","argument_basis":basis}]
+                            "issuer_id":"3103","argument_basis":basis,
+                            "settings_requested":"true" if basis=="open_args_schema" else "false"}]
     reviewed=review_model_read_proposals(
         case,proposals,[tool],verified_entity_ids=["7103"],
         max_total_reads=8,max_reads_this_round=1)

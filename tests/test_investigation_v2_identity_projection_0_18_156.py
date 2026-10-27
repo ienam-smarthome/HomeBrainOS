@@ -154,7 +154,8 @@ def test_controller_attested_issuer_proposed_even_when_named():
     assert proposals[0]["arguments"]["args"] == {"appId": "3103"}
     assert diag == [{"stage": "controller_config",
                      "status": "verified_issuer_proposal", "issuer_id": "3103",
-                     "argument_basis": "declared_app_id"}]
+                     "argument_basis": "declared_app_id",
+                     "settings_requested": "false"}]
 
 
 def test_endpoint_retrieves_identity_then_full_only_when_scope_needs_it():
@@ -165,5 +166,5 @@ def test_endpoint_retrieves_identity_then_full_only_when_scope_needs_it():
     assert 'inventory_provenance.get("projection")=="identity_only"' in section
     assert "resolve_verified_device_subjects(" in section
     assert "full_inventory_ms" in section
-    assert "planning_timeout_seconds=15.0" in section
+    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in section
     assert "agent.process_user_request_result" not in section
