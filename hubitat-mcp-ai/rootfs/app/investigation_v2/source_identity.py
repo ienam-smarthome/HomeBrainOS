@@ -90,25 +90,50 @@ def source_configuration_proposals(
             diagnostics.append({"stage": "controller_config", "reason": "operation_not_in_live_enum"})
         return []
     nested = props.get("args", {}) if isinstance(props, dict) else {}
-    required = nested.get("required", []) if isinstance(nested, dict) else []
-    if any(field not in ("appId",) for field in required):
+    if not isinstance(nested, dict) or nested.get("type") not in (None, "object"):
+        if diagnostics is not None:
+            diagnostics.append({"stage": "controller_config", "reason": "unsupported_args_schema"})
+        return []
+    required = nested.get("required", [])
+    if (not isinstance(required, list)
+            or any(field not in ("appId",) for field in required)):
         if diagnostics is not None:
             diagnostics.append({"stage": "controller_config", "reason": "unsupported_required_args"})
         return []
-    properties = nested.get("properties", {}) if isinstance(nested, dict) else {}
-    if not isinstance(properties, dict) or "appId" not in properties:
+    properties = nested.get("properties", {})
+    # Some genuine live MCP gateways expose a generic, open object for
+    # operation-specific args. JSON Schema permits appId in that case even
+    # when the name is missing from properties; the host still validates
+    # the complete proposal and independently attests the issuer ID.
+    declared = isinstance(properties, dict) and "appId" in properties
+    open_args = (isinstance(properties, dict) and not declared
+                 and nested.get("additionalProperties") is not False)
+    if not (declared or open_args):
         if diagnostics is not None:
             diagnostics.append({"stage": "controller_config", "reason": "app_id_missing_from_live_schema"})
         return []
-    # Choose the most frequently seen unlabelled command issuer without
+    # Choose the most frequently seen event-attested command issuer without
     # relying on particular device names or hard-coded app IDs.
     ranking = sorted(candidates, key=lambda ident: (
         -sum(row.producer_id == ident and row.stage == "command_issued"
              for row in case.records), int(ident),
     ))
     ident = ranking[0]
+    # For an open generic gateway, check any additionalProperties subschema
+    # before proposing the field; the same final host reviewer then validates
+    # the *entire* live tool manifest, argument shape and source identity.
+    if open_args and isinstance(nested.get("additionalProperties"), dict):
+        from .planning import _schema_problem
+        if _schema_problem({"appId": ident}, nested) is not None:
+            if diagnostics is not None:
+                diagnostics.append({"stage": "controller_config", "reason": "open_args_value_rejected"})
+            return []
     if diagnostics is not None:
-        diagnostics.append({"stage": "controller_config", "status": "verified_issuer_proposal", "issuer_id": ident})
+        diagnostics.append({
+            "stage": "controller_config", "status": "verified_issuer_proposal",
+            "issuer_id": ident,
+            "argument_basis": "declared_app_id" if declared else "open_args_schema",
+        })
     return [{
         "tool": "hub_read_apps_code",
         "arguments": {"tool": "hub_get_app_config", "args": {"appId": ident}},
