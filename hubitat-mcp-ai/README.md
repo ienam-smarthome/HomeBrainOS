@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.155**.
+Current add-on version: **0.18.156**.
 
 ## Architecture
+
+v0.18.156 separates a fresh identity-only V2 inventory projection from the expensive full state/capability audit, allowing uniquely named devices to proceed with independently verified labels before targeted status/event reads. Broad or ambiguous questions still retrieve full inventory; audit completeness and pagination proofs remain mandatory for the direct target route. Controller source reads now include explicit live-manifest/schema/rejection diagnostics when app configuration is not available. Gains remain to be established by live testing. See [release notes](CHANGELOG-0.18.156.md).
+
 
 v0.18.155 introduces a question-bound, verified single-device factual path for current switch status and recent ON/OFF reports: host-validated reads answer those specific questions without waiting for a causal AI planner. Ambiguous and causal requests still run investigations. App configuration can now be requested for a command issuer independently verified by event history even when its name is already in the catalogue. No writes, and wider Claude-like causal reasoning remains under test. See [release notes](CHANGELOG-0.18.155.md).
 
