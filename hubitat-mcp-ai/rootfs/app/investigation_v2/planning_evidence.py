@@ -45,8 +45,13 @@ def _planning_indices(case: CaseFile) -> set[int]:
         # are still retained in the canonical source-backed investigation.
         if (row.stage in ("command_issued", "config_stored",
                           "independent_physical_observation")
-                or row.action in ("switch", "healthStatus", "networkStatus",
-                                  "deviceHealth")):
+                or row.action in ("switch", "healthStatus", "networkStatus")
+                or (row.action == "deviceHealth" and
+                    str(row.value).lower() in ("online", "offline", "connected",
+                                               "disconnected"))):
+            # Alternating stale/unknown is a driver watchdog classification,
+            # not independent contact; coalesce samples into explicit counts.
+            # Keep substantive online/offline classifications individually.
             picked.add(i)
     for indices in seen.values():
         # Bound polling samples by signal and device: first, last, nearest
