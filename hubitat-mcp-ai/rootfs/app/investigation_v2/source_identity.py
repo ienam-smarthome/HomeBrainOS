@@ -128,15 +128,23 @@ def source_configuration_proposals(
             if diagnostics is not None:
                 diagnostics.append({"stage": "controller_config", "reason": "open_args_value_rejected"})
             return []
+    # The upstream app-config read defaults to excluding settings. Request
+    # them only when the same live read schema accepts the optional boolean.
+    # Otherwise preserve the original narrow read, never bypassing validation.
+    from .planning import _schema_problem
+    config_args: dict[str, str | bool] = {"appId": ident}
+    if _schema_problem({**config_args, "includeSettings": True}, nested) is None:
+        config_args["includeSettings"] = True
     if diagnostics is not None:
         diagnostics.append({
             "stage": "controller_config", "status": "verified_issuer_proposal",
             "issuer_id": ident,
             "argument_basis": "declared_app_id" if declared else "open_args_schema",
+            "settings_requested": "true" if config_args.get("includeSettings") is True else "false",
         })
     return [{
         "tool": "hub_read_apps_code",
-        "arguments": {"tool": "hub_get_app_config", "args": {"appId": ident}},
+        "arguments": {"tool": "hub_get_app_config", "args": config_args},
         "discriminator": "Read stored settings for event-confirmed command issuer",
         "information_gain": "Find currently stored controller settings without inferring historical execution",
         "hypothesis_ids": [],
