@@ -160,7 +160,7 @@ def ground_named_inventory_plan(
                 or set(planned_ids) != set(ids)):
             raise ValueError("Model-selected devices differ from verified question targets")
         return replace(plan, device_names=tuple(item["label"] for item in resolved),
-                       device_name=None, limit=max(plan.limit,len(ids)))
+                       device_name=None, room=None, limit=max(plan.limit,len(ids)))
     try:
         ids, resolved, _ = resolve_verified_device_subjects(question, list(devices))
     except ValueError:
@@ -171,11 +171,9 @@ def ground_named_inventory_plan(
         raise ValueError("Multi-device named read requires a list objective")
     # Single joined model phrase or missing array cannot supersede the
     # original verified question. Only read the devices explicitly mentioned.
-    if plan.room and any(str(room_name(next((
-        d for d in devices if str(d.get("id", d.get("deviceId"))) == ident
-    ), {})) or "").casefold() != plan.room.casefold() for ident in ids):
-        raise ValueError("Model room restriction conflicts with verified question targets")
-    return replace(plan, device_name=None,
+    # An inferred room filter must not silently drop an explicitly named
+    # device in another room. The host-verified full names are the scope.
+    return replace(plan, device_name=None, room=None,
                    device_names=tuple(item["label"] for item in resolved),
                    limit=max(plan.limit,len(ids)))
 
