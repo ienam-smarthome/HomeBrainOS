@@ -68,11 +68,18 @@ def last_contact_anchor_proposals(
     age = (clock.astimezone(timezone.utc) - anchor).total_seconds()
     if not 24 * 3600 <= age <= 31 * 86400:
         return [], "no_old_last_seen_anchor"
-    if any(c.operation == "hub_list_device_events"
-           and c.query_target_id == ident
-           and c.oldest_utc is not None
-           and datetime.fromisoformat(c.oldest_utc) <= anchor + timedelta(hours=2)
-           for c in case.coverage):
+    # A lastSeen value alone doesn't establish that an event source has a
+    # gap worth backfilling. Only compare with actual timestamped history
+    # returned for this exact target; avoid a fourth speculative read when
+    # all historical pages were empty.
+    historical_pages = [c for c in case.coverage
+                        if c.operation == "hub_list_device_events"
+                        and c.query_target_id == ident and c.succeeded
+                        and c.oldest_utc is not None]
+    if not historical_pages:
+        return [], "no_timed_history_for_gap_comparison"
+    if any(datetime.fromisoformat(c.oldest_utc) <= anchor + timedelta(hours=2)
+           for c in historical_pages):
         return [], "reported_contact_window_already_observed"
     gateway = _gateway(tools, "hub_list_device_events",
                        learned_operations=learned_operations)
