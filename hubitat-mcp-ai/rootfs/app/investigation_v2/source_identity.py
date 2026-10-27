@@ -7,7 +7,7 @@ host review/executor path. An unavailable catalogue is not a failed model plan.
 """
 from __future__ import annotations
 from typing import Iterable
-from datetime import datetime
+from .transition_links import incident_links
 from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 from .evidence import CaseFile
@@ -113,31 +113,23 @@ def source_configuration_proposals(
         if diagnostics is not None:
             diagnostics.append({"stage": "controller_config", "reason": "app_id_missing_from_live_schema"})
         return []
-    # A command just before a reported adverse state is a stronger read lead
-    # than a later recovery attempt. Temporal order ranks reads, NEVER proves
-    # a causal relationship or physical execution.
-    adverse = [
-        row for row in case.records if row.stage == "state_reported"
-        and ((row.action in ("healthStatus", "deviceHealth", "networkStatus")
-              and str(row.value).lower() in ("offline", "stale", "disconnected"))
-             or (row.action == "mqttStatus"
-                 and str(row.value).lower() == "disconnected"))
-    ]
+    # The same canonical incident relationship drives both the source read
+    # priority and the user report. This prevents divergent causal heuristics.
+    related = incident_links(case)
+    distance_by_issuer: dict[str, float] = {}
+    for link in related:
+        issuer = link.command.producer_id
+        if issuer:
+            distance_by_issuer[issuer] = min(
+                distance_by_issuer.get(issuer, float("inf")),
+                link.seconds_to_adverse,
+            )
 
     def rank(ident: str) -> tuple[int, float, int, int]:
-        commands = [row for row in case.records if row.stage == "command_issued"
-                    and row.producer_id == ident]
-        distances = []
-        for command in commands:
-            for state in adverse:
-                if not command.target_id or command.target_id != state.target_id:
-                    continue
-                delta = (datetime.fromisoformat(state.timestamp_utc)
-                         - datetime.fromisoformat(command.timestamp_utc)).total_seconds()
-                if 0 <= delta <= 600:
-                    distances.append(delta)
-        return (0 if distances else 1, min(distances) if distances else float("inf"),
-                -len(commands), int(ident))
+        count = sum(row.producer_id == ident and row.stage == "command_issued"
+                    for row in case.records)
+        return (0 if ident in distance_by_issuer else 1,
+                distance_by_issuer.get(ident, float("inf")), -count, int(ident))
 
     ranking = sorted(candidates, key=rank)
     ident = ranking[0]
