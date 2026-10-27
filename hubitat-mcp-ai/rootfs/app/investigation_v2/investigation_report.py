@@ -254,11 +254,26 @@ def format_investigation_report(
     offs = [row for row in commands if row.action == "command-off"]
     if offs:
         last_off = offs[-1]
-        lines.append(
-            f"Another OFF was issued at {_time(last_off,window)}. "
-            "Without a subsequent independently reported switch state, "
-            "we cannot establish that the device responded to it."
-        )
+        # A reported switch transition after an issued OFF is relevant
+        # evidence, even though it is not independent physical confirmation.
+        reports = [row for row in switches
+                   if row.target_id == last_off.target_id
+                   and row.timestamp_utc >= last_off.timestamp_utc]
+        off_reports = [row for row in reports if row.value == "off"]
+        if off_reports:
+            first = min(off_reports, key=lambda row: row.timestamp_utc)
+            lines.append(
+                f"OFF was issued at {_time(last_off,window)} and a subsequent "
+                f"switch=off was reported at {_time(first,window)}. "
+                "This is a Hubitat state report, not independent physical "
+                "proof that the equipment or its network connection changed."
+            )
+        else:
+            lines.append(
+                f"OFF was issued at {_time(last_off,window)}. "
+                "No subsequent switch=off report was recovered from these "
+                "incomplete sources; physical execution remains unverified."
+            )
     offline = [row for row in records if row.action == "networkStatus" and row.value == "offline"]
     online = [row for row in records if row.action == "networkStatus" and row.value == "online"]
     if offline:
