@@ -495,7 +495,8 @@ async def run_read_only_investigation(
     # are attested by the device's own event records. One targeted, read-only
     # app-config lookup adds a potential discriminator before model latency.
     if bootstrap_source_identity and executed < max_total_reads and time.monotonic() < deadline:
-        proposals = source_configuration_proposals(registry.values(), case)
+        proposals = source_configuration_proposals(
+            registry.values(), case, diagnostics=bootstrap_diagnostics)
         if proposals:
             approved = review_model_read_proposals(
                 case, proposals, registry.values(), verified_entity_ids=known_ids,
@@ -504,8 +505,19 @@ async def run_read_only_investigation(
                 budget_used_reads=executed, incident_window=incident_window,
             )
             rejections.extend(x.reason for x in approved.rejected)
+            if not approved.approved:
+                bootstrap_diagnostics.append({
+                    "stage": "controller_config", "reason": "host_read_plan_rejected",
+                    "validation": [r.reason for r in approved.rejected[:3]],
+                })
             for item in approved.approved:
+                before = len(read_failures)
                 await execute_checked_read(item, -3)
+                bootstrap_diagnostics.append({
+                    "stage": "controller_config",
+                    "status": ("read_attempt_failed" if len(read_failures) > before
+                               else "read_attempt_completed"),
+                })
 
     for round_index in range(max_rounds):
         rounds += 1

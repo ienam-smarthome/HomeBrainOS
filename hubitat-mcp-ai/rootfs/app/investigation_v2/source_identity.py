@@ -50,7 +50,8 @@ def source_identity_proposals(tools: Iterable[MCPTool], case: CaseFile) -> list[
 
 
 def source_configuration_proposals(
-    tools: Iterable[MCPTool], case: CaseFile,
+    tools: Iterable[MCPTool], case: CaseFile, *,
+    diagnostics: list[dict[str, str]] | None = None,
 ) -> list[dict]:
     """One read of an event-attested command issuer's stored app config.
 
@@ -66,6 +67,8 @@ def source_configuration_proposals(
         if row.stage == "command_issued" and row.producer_id
     }
     if not candidates:
+        if diagnostics is not None:
+            diagnostics.append({"stage": "controller_config", "reason": "no_event_attested_command_issuer"})
         return []
     gateway = next((t for t in tools if isinstance(t, MCPTool)
                     and t.name == "hub_read_apps_code"
@@ -75,19 +78,27 @@ def source_configuration_proposals(
                     and t.annotations.get("mutates") is not True
                     and t.annotations.get("destructiveHint") is not True), None)
     if gateway is None:
+        if diagnostics is not None:
+            diagnostics.append({"stage": "controller_config", "reason": "safe_read_gateway_unavailable"})
         return []
     schema = gateway.input_schema if isinstance(gateway.input_schema, dict) else {}
     props = schema.get("properties", {})
     field = props.get("tool", {}) if isinstance(props, dict) else {}
     ops = field.get("enum", []) if isinstance(field, dict) else []
     if not isinstance(ops, list) or "hub_get_app_config" not in ops:
+        if diagnostics is not None:
+            diagnostics.append({"stage": "controller_config", "reason": "operation_not_in_live_enum"})
         return []
     nested = props.get("args", {}) if isinstance(props, dict) else {}
     required = nested.get("required", []) if isinstance(nested, dict) else []
     if any(field not in ("appId",) for field in required):
+        if diagnostics is not None:
+            diagnostics.append({"stage": "controller_config", "reason": "unsupported_required_args"})
         return []
     properties = nested.get("properties", {}) if isinstance(nested, dict) else {}
     if not isinstance(properties, dict) or "appId" not in properties:
+        if diagnostics is not None:
+            diagnostics.append({"stage": "controller_config", "reason": "app_id_missing_from_live_schema"})
         return []
     # Choose the most frequently seen unlabelled command issuer without
     # relying on particular device names or hard-coded app IDs.
@@ -96,10 +107,12 @@ def source_configuration_proposals(
              for row in case.records), int(ident),
     ))
     ident = ranking[0]
+    if diagnostics is not None:
+        diagnostics.append({"stage": "controller_config", "status": "verified_issuer_proposal", "issuer_id": ident})
     return [{
         "tool": "hub_read_apps_code",
         "arguments": {"tool": "hub_get_app_config", "args": {"appId": ident}},
-        "discriminator": "Read current settings for event-confirmed unnamed app issuer",
+        "discriminator": "Read stored settings for event-confirmed command issuer",
         "information_gain": "Find currently stored controller settings without inferring historical execution",
         "hypothesis_ids": [],
     }]

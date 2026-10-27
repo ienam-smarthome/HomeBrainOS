@@ -128,7 +128,7 @@ def _test_app(monkeypatch, tmp_path):
 
 def test_browser_semantic_timeout_recovery_and_broad_scope_safety(monkeypatch, tmp_path):
     mod = _test_app(monkeypatch, tmp_path)
-    async def fake_inventory():
+    async def fake_inventory(*, identity_only=False):
         return ([{"id":"7103", "label":"Bedroom 3 Mesh"},
                  {"id":"7104", "label":"Bedroom 3 PC"},
                  {"id":"5000", "label":"Fridge"}], {"complete": True})
@@ -184,7 +184,7 @@ def test_browser_semantic_timeout_recovery_and_broad_scope_safety(monkeypatch, t
 
 def test_duplicate_device_names_do_not_bypass_semantic_failure(monkeypatch, tmp_path):
     mod = _test_app(monkeypatch, tmp_path)
-    async def fake_inventory():
+    async def fake_inventory(*, identity_only=False):
         return ([{"id": "7103", "label": "Bedroom 3 Mesh"},
                  {"id": "9103", "label": "Bedroom 3 Mesh"}], {"complete": True})
     async def timeout(*args, **kwargs):

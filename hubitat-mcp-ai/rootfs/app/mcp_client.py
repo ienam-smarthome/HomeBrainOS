@@ -399,8 +399,8 @@ class HubitatMCPClient:
             if self._device_manifest_inflight is task:
                 self._device_manifest_inflight = None
 
-    async def get_audit_devices(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        """Fetch fresh health evidence without command metadata or cache pollution.
+    async def get_audit_devices(self, *, identity_only: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Fetch fresh verified inventory with optional minimal identity projection.
 
         The detailed command-capable manifest remains untouched. Concurrent
         page reads are permitted only when the gateway explicitly reports a
@@ -431,6 +431,7 @@ class HubitatMCPClient:
             devices = await self.get_cached_devices(refresh=True)
             return list(devices), {
                 "source": "full_detailed_fallback",
+                "projection": "full",
                 "reason": reason,
                 "pages": pages_fetched,
                 "read_elapsed_ms": round((time.monotonic() - started) * 1000),
@@ -443,9 +444,9 @@ class HubitatMCPClient:
             return await fallback("projected_gateway_unavailable")
 
         plan = device_read_plan(
-            include_states=True,
-            include_capabilities=True,
-            include_last_activity=True,
+            include_states=not identity_only,
+            include_capabilities=not identity_only,
+            include_last_activity=not identity_only,
         )
         page_size = 50
 
@@ -577,6 +578,7 @@ class HubitatMCPClient:
                 raise MCPError("projected inventory identity/total verification failed")
             return list(devices), {
                 "source": "fresh_projected_gateway",
+                "projection": "identity_only" if identity_only else "full",
                 "mode": mode,
                 "pages": pages_fetched,
                 "devices": len(devices),

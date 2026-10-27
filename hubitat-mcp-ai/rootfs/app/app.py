@@ -1492,8 +1492,37 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             # classification are separate, observable stages. None of them
             # grants tool or device-control authority to the model.
             inventory_started=time.perf_counter()
+            identity_inventory_ms=0
+            full_inventory_ms=0
             try:
-                audit_devices, inventory_provenance = await mcp.get_audit_devices()
+                # A single verified named-device read needs only IDs/labels.
+                # Keep the live total, pagination, uniqueness and generation
+                # checks; never promote cached/model names into authority.
+                identity_started=time.perf_counter()
+                audit_devices, inventory_provenance = await mcp.get_audit_devices(
+                    identity_only=True)
+                identity_inventory_ms=round(
+                    (time.perf_counter()-identity_started)*1000)
+                try:
+                    candidates, _, _ = resolve_verified_device_subjects(
+                        payload.question, audit_devices)
+                except ValueError:
+                    candidates = ()
+                # Broad and ambiguous questions still require a complete
+                # state/capability vocabulary. The identity-only projection
+                # must never feed a whole-house state result.
+                if (not (len(candidates)==1
+                         and inventory_provenance.get("complete") is True)
+                        and inventory_provenance.get("projection")=="identity_only"):
+                    full_started=time.perf_counter()
+                    audit_devices, inventory_provenance = await mcp.get_audit_devices()
+                    full_inventory_ms=round(
+                        (time.perf_counter()-full_started)*1000)
+                    try:
+                        candidates, _, _ = resolve_verified_device_subjects(
+                            payload.question, audit_devices)
+                    except ValueError:
+                        candidates = ()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -1503,15 +1532,6 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     detail="Hubitat read-only inventory was unavailable; no commands sent",
                 ) from None
             inventory_ms=round((time.perf_counter()-inventory_started)*1000)
-            # One unique device is already grounded in a refreshed Hubitat
-            # inventory. Skip a redundant LLM intent call and investigate it
-            # under existing read-only tool and identity gates. Broad and
-            # multi-device questions still use the semantic model.
-            try:
-                candidates, _, _ = resolve_verified_device_subjects(
-                    payload.question, audit_devices)
-            except ValueError:
-                candidates = ()
             if (len(candidates) == 1
                     and inventory_provenance.get("complete") is True):
                 direct_verified_target = candidates[0]
@@ -1588,6 +1608,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 result["semantic_diagnostics"]={
                     "phase":"completed","outcome":"success",
                     "inventory_ms":inventory_ms,"planning_ms":planning_ms,
+                    "identity_inventory_ms":identity_inventory_ms,
+                    "full_inventory_ms":full_inventory_ms,
+                    "inventory_projection":inventory_provenance.get("projection"),
                     "role_enrichment_ms":round((time.perf_counter()-enrichment_started)*1000),
                     "meter_roles":role_diagnostic,
                     "inventory_devices":len(audit_devices),
@@ -1700,6 +1723,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 "phase": "evidence_first_verified_device",
                 "outcome": "direct_verified_target",
                 "inventory_ms": inventory_ms,
+                "identity_inventory_ms": identity_inventory_ms,
+                "full_inventory_ms": full_inventory_ms,
+                "inventory_projection": inventory_provenance.get("projection"),
                 "planning_ms": 0,
                 "inventory_devices": len(audit_devices),
                 "inventory_complete": inventory_provenance.get("complete") is True,
