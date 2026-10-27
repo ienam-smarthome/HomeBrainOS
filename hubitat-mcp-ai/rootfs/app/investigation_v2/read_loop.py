@@ -581,9 +581,25 @@ async def run_read_only_investigation(
             break
         started = time.monotonic()
         planning_budget = min(planning_timeout_seconds, max(0.1, deadline - started))
+        # Once the canonical case already contains an incident-linked
+        # command/state/failure sequence AND typed stored controller settings,
+        # further LLM planning is advisory. Bound optional model latency and
+        # keep the evidence-backed host report rather than repeatedly spending
+        # a full provider timeout for observations already recovered.
+        # With missing discriminators or only partial source evidence, keep
+        # the caller's full planning budget for additional model-led reads.
+        from .transition_links import incident_links
+        advisory_ready = (
+            any(link.reported_state is not None for link in incident_links(case))
+            and any(item.stage == "config_stored" for item in case.records)
+        )
+        if advisory_ready:
+            planning_budget = min(planning_budget, 15.0)
         diag = {
             "round": round_index,
             "budget_ms": int(planning_budget * 1000),
+            "budget_policy": ("source_backed_advisory" if advisory_ready
+                              else "full_discriminating_plan"),
             "case_records": len(case.records),
             "input_chars": None,
             "advertised_tools": getattr(propose, "advertised_tool_count", None),

@@ -66,6 +66,17 @@ async def test_minimal_live_identity_inventory_uses_no_state_or_capabilities():
     assert provenance["complete"] is True
     assert provenance["mode"] == "bounded_parallel_pages"
     assert len(calls) == 2
+    # Only a fully validated inventory may feed the bounded repeat-test cache.
+    recent = client.recent_verified_audit_identities(max_age_seconds=90)
+    assert recent is not None
+    assert len(recent[0]) == 51
+    assert recent[1]["source"] == "recent_verified_projected_inventory"
+    assert recent[1]["pages"] == 0
+    # Mutating the returned copy must never mutate the stored authoritative snapshot.
+    recent[0][0]["label"] = "TAMPERED"
+    assert client.recent_verified_audit_identities()[0][0]["label"] == "Device 1"
+    client.invalidate_live_device_snapshot()
+    assert client.recent_verified_audit_identities() is None
     ids, matches, method = resolve_verified_device_subjects(
         "Investigate Device 51", devices)
     assert ids == ("51",)
@@ -100,6 +111,7 @@ async def test_incomplete_identity_inventory_remains_explicitly_unverified():
     assert devices and provenance["complete"] is False
     assert provenance["source"] == "full_detailed_fallback"
     assert provenance["projection"] == "full"
+    assert client.recent_verified_audit_identities() is None
 
 
 def command_case():

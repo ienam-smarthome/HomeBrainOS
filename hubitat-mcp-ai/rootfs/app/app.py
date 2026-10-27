@@ -1499,7 +1499,15 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 # Keep the live total, pagination, uniqueness and generation
                 # checks; never promote cached/model names into authority.
                 identity_started=time.perf_counter()
-                audit_devices, inventory_provenance = await mcp.get_audit_devices(
+                # A prior complete projected inventory can be reused for a
+                # short READ-ONLY V2 test interval. Writes invalidate it by
+                # generation; stale, incomplete and ambiguous snapshots fall
+                # back to a fresh, total-verified page audit.
+                recent = mcp.recent_verified_audit_identities()
+                if recent is not None:
+                    audit_devices, inventory_provenance = recent
+                else:
+                    audit_devices, inventory_provenance = await mcp.get_audit_devices(
                     identity_only=True)
                 identity_inventory_ms=round(
                     (time.perf_counter()-identity_started)*1000)
@@ -1686,8 +1694,10 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         # unavailable, do not silently invent a calendar: use UTC and show
         # the fallback basis in the explicit window metadata.
         zone_name = "UTC"
-        if re.search(r"\d{1,2}\s*(?:-|–|—|to)\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}|\b(?:today|yesterday)\b",
-                     payload.question, re.I):
+        # Use the same calendar parser as Investigation V2: a single
+        # explicit date is an incident window too, not a UTC-only request.
+        # Never guess the hub zone from the server or browser locale.
+        if explicit_incident_window(payload.question, zone_name="UTC") is not None:
             try:
                 _now_local, resolved_zone, _zone_basis = await _health_timezone.now_in_hub_timezone(
                     lambda: datetime.now(timezone.utc))

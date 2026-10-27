@@ -143,6 +143,7 @@ class HubitatMCPClient:
             int, asyncio.Task[dict[str, Any]]
         ] | None = None
         self._live_device_snapshot_generation = 0
+        self._verified_audit_identity_snapshot: tuple[float, int, list[dict[str, Any]], dict[str, Any]] | None = None
         self._device_manifest_inflight: asyncio.Task[list[dict[str, Any]]] | None = None
 
     @staticmethod
@@ -399,6 +400,35 @@ class HubitatMCPClient:
             if self._device_manifest_inflight is task:
                 self._device_manifest_inflight = None
 
+    def recent_verified_audit_identities(
+        self, *, max_age_seconds: float = 90.0,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+        """Freshness-bounded READ-ONLY identity reuse for repeated V2 tests.
+
+        An inventory is eligible only after the entire original projected
+        page set passed total/unique-ID/generation validation. A write or
+        cache invalidation increments the generation and revokes reuse.
+        Never serve a partially fetched inventory or reuse these labels as
+        write-authorisation or current device-state evidence.
+        """
+        snapshot = self._verified_audit_identity_snapshot
+        if snapshot is None:
+            return None
+        stamp, generation, devices, source = snapshot
+        age = self._clock() - stamp
+        if (generation != self._live_device_snapshot_generation
+                or not 0 <= age <= min(120.0, max(0.0, float(max_age_seconds)))
+                or source.get("complete") is not True
+                or source.get("projection") != "identity_only"):
+            return None
+        return [dict(item) for item in devices], {
+            **source, "source": "recent_verified_projected_inventory",
+            "mode": "verified_identity_ttl", "pages": 0,
+            "page_timings_ms": [], "first_page_ms": None,
+            "slowest_page_ms": 0, "cached_age_ms": int(age * 1000),
+            "complete": True,
+        }
+
     async def get_audit_devices(self, *, identity_only: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Fetch fresh verified inventory with optional minimal identity projection.
 
@@ -576,7 +606,7 @@ class HubitatMCPClient:
                 or generation != self._live_device_snapshot_generation
             ):
                 raise MCPError("projected inventory identity/total verification failed")
-            return list(devices), {
+            provenance = {
                 "source": "fresh_projected_gateway",
                 "projection": "identity_only" if identity_only else "full",
                 "mode": mode,
@@ -586,6 +616,12 @@ class HubitatMCPClient:
                 **timing_summary(),
                 "complete": True,
             }
+            if identity_only:
+                self._verified_audit_identity_snapshot = (
+                    self._clock(), generation,
+                    [dict(item) for item in devices], dict(provenance),
+                )
+            return list(devices), provenance
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -864,6 +900,7 @@ class HubitatMCPClient:
 
     def invalidate_live_device_snapshot(self) -> None:
         self._live_device_snapshot_generation += 1
+        self._verified_audit_identity_snapshot = None
         self._live_device_snapshot = None
         self._live_context_snapshot = None
 

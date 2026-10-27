@@ -34,6 +34,13 @@ def _event(row: EvidenceItem) -> str:
 
 
 def _actor(row: EvidenceItem, case: CaseFile | None = None) -> str:
+    # A retrieved settings row is scoped to its matched appId rather than
+    # produced by an event issuer. Use that independently read target ID
+    # for attribution; do not invent an app name or historical behaviour.
+    if row.stage == "config_stored" and row.target_id:
+        label = case.app_identities.get(row.target_id) if case else None
+        return ((label + " (app #" + row.target_id + ")") if label
+                else "Controller app #" + row.target_id)
     if row.producer_id and case is not None:
         label = case.app_identities.get(row.producer_id)
         if label:
@@ -319,7 +326,7 @@ def format_investigation_report(
     # historical rule behaviour. Projected values are already allowlisted.
     settings = [row for row in case.records if row.stage == "config_stored"]
     if settings:
-        lines.extend(["", "**Current stored controller settings (not 12 October configuration)**"])
+        lines.extend(["", "**Current stored controller settings (not verified historical configuration)**"])
         for row in settings[:8]:
             lines.append(
                 f"- {_actor(row,case)}: {_event(row)} "
