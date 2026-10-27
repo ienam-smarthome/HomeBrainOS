@@ -247,7 +247,7 @@ def _execute_multi_attribute_inventory(
         checked.astimezone(timezone.utc).isoformat(timespec="seconds") +
         ". Reported state is not independent physical confirmation."
     )
-    answer = "\\n".join(lines)
+    answer = "\n".join(lines)
     return {
         "answer_mode": "semantic_inventory",
         "semantic_plan": plan.to_dict(),
