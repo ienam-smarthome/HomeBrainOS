@@ -118,3 +118,41 @@ def test_v2_endpoint_exposes_identity_page_timings():
     assert '"first_page_ms"' in route
     assert '"slowest_page_ms"' in route
     assert '"identity_only"' in route
+
+
+def test_incident_adverse_transition_prioritises_off_issuer_over_later_on():
+    """The first relevant read must follow the incident, not numeric ID."""
+    args={"tool":"hub_list_device_events","args":{"deviceId":"7103"}}
+    events=[
+        {"deviceId":"7103","name":"command-off","type":"command",
+         "date":"2026-10-12T00:30:01+00:00","producedBy":{"id":"3950"}},
+        {"deviceId":"7103","name":"switch","value":"off",
+         "date":"2026-10-12T00:30:02+00:00","producedBy":{"id":"7103"}},
+        {"deviceId":"7103","name":"healthStatus","value":"offline",
+         "date":"2026-10-12T00:33:46+00:00","producedBy":{"id":"7103"}},
+        {"deviceId":"7103","name":"command-on","type":"command",
+         "date":"2026-10-24T20:51:12+00:00","producedBy":{"id":"3103"}},
+    ]
+    result=MCPToolResult("hub_read_devices",args,raw={},text="",
+        data={"deviceId":"7103","events":events},is_error=False)
+    receipt=project_read_receipt("hub_read_devices",args,result,
+        source_request_id="incident")
+    case=build_case_file("Why offline?",[receipt])
+    proposed=source_configuration_proposals([manifest({"type":"object"})],case)
+    assert proposed[0]["arguments"]["args"]["appId"]=="3950"
+    approved=review_model_read_proposals(case,proposed,
+        [manifest({"type":"object"})],verified_entity_ids=["7103"],
+        max_total_reads=8)
+    assert len(approved.approved)==1
+
+
+def test_unrelated_device_failure_does_not_bias_issuer_ranking():
+    case=evidence()
+    from investigation_v2.evidence import EvidenceItem
+    case.records.append(EvidenceItem(
+        "other","observed","hub_read_devices","hub_list_device_events",
+        "device_events","9999","9999",None,
+        "2026-10-24T20:51:13+00:00","2026-10-24T20:51:13+00:00",
+        "state_reported","healthStatus","offline",("other",)))
+    proposed=source_configuration_proposals([manifest({"type":"object"})],case)
+    assert proposed[0]["arguments"]["args"]["appId"]=="3103"
