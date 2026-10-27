@@ -37,9 +37,9 @@ _CELSIUS = re.compile(r"(?<!\w)(-?\d+(?:\.\d+)?)\s*°\s*C\b", re.I)
 # E.g. "currently on with a brightness level of 30%" previously escaped
 # the heading-only numeric guard when the only source reported switch=on.
 _INLINE_LEVEL = re.compile(
-    r"(?i)\\b(?:brightness(?:\\s+level)?|dimmer\\s+level)\\s+"
-    r"(?:of\\s+|is\\s+|at\\s+|to\\s+)?(?:\\*\\*)?"
-    r"(\\d{1,3}(?:\\.\\d+)?)\\s*%?"
+    r"(?i)\b(?:brightness(?:\s+level)?|dimmer\s+level)\s+"
+    r"(?:of\s+|is\s+|at\s+|to\s+)?(?:\*\*)?"
+    r"(\d{1,3}(?:\.\d+)?)\s*%?"
 )
 
 
