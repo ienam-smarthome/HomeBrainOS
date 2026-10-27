@@ -55,10 +55,7 @@ def test_unrelated_or_non_current_question_never_infers_an_attribute_projection(
     assert ground_current_attribute_request(p,"Why did Livingroom Light 2 go off?") is p
     assert ground_current_attribute_request(p,"What is Livingroom Light 2?") is p
 
-@pytest.mark.parametrize("attributes",[[
-    {"name":"switch","value":"on"}],[]
-])
-def test_status_claim_from_switch_only_snapshot_cannot_invent_brightness(attributes):
+def test_status_claim_from_switch_only_snapshot_cannot_invent_brightness():
     evidence=[{"success":True,"evidence_kind":"targeted_device_lookup",
                "details":{"reportedDeviceState":{"deviceId":"7828",
                    "label":"Livingroom Light 2",
