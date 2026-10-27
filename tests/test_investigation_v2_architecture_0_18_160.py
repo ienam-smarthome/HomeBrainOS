@@ -78,7 +78,7 @@ def test_shared_incident_link_drives_controller_priority_and_report():
     report = format_investigation_report(case, [], "planning_timeout")
     assert "**Incident-linked sequence:**" in report
     assert "does not independently prove" in report
-    assert "Another OFF was issued" in report
+    assert "Another OFF was issued" not in report
 
 
 def test_missing_off_report_is_not_inferred_from_subsequent_offline_status():

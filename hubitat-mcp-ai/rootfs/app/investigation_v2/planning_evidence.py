@@ -32,7 +32,7 @@ def _planning_indices(case: CaseFile) -> set[int]:
     if len(records) <= 12:
         return set(range(len(records)))
     commands = [
-        datetime.fromisoformat(row.timestamp_utc)
+        (row.target_id, datetime.fromisoformat(row.timestamp_utc))
         for row in records if row.stage == "command_issued"
     ]
     picked: set[int] = set()
@@ -40,22 +40,36 @@ def _planning_indices(case: CaseFile) -> set[int]:
     for i, row in enumerate(records):
         key = (row.stage, row.action, row.target_id)
         seen.setdefault(key, []).append(i)
-        essential = (
-            row.stage in ("command_issued", "config_stored",
+        # Never coalesce a command, observed switch/availability transition,
+        # physical observation or typed stored configuration. Suppressed rows
+        # are still retained in the canonical source-backed investigation.
+        if (row.stage in ("command_issued", "config_stored",
                           "independent_physical_observation")
-            or row.action in ("switch", "healthStatus", "networkStatus")
-        )
-        near_command = any(
-            abs((datetime.fromisoformat(row.timestamp_utc) - stamp).total_seconds())
-            <= 15 * 60 for stamp in commands
-        )
-        if essential or near_command:
+                or row.action in ("switch", "healthStatus", "networkStatus")
+                or (row.action == "deviceHealth" and
+                    str(row.value).lower() in ("online", "offline", "connected",
+                                               "disconnected"))):
+            # Alternating stale/unknown is a driver watchdog classification,
+            # not independent contact; coalesce samples into explicit counts.
+            # Keep substantive online/offline classifications individually.
             picked.add(i)
     for indices in seen.values():
-        # Source before/after state context remains represented for every
-        # non-essential action, including lastSeen and MQTT client statuses.
+        # Bound polling samples by signal and device: first, last, nearest
+        # preceding and immediately following each incident command.
+        # A ±15-minute inclusion window previously retained every voltage,
+        # energy and lastSeen poll and inflated the planning input.
         picked.update(indices[:1])
         picked.update(indices[-1:])
+        for target, stamp in commands:
+            candidates = [(i, (datetime.fromisoformat(records[i].timestamp_utc)
+                               - stamp).total_seconds())
+                          for i in indices if records[i].target_id == target]
+            earlier = [i for i, seconds in candidates if -900 <= seconds <= 0]
+            later = [i for i, seconds in candidates if 0 < seconds <= 300]
+            if earlier:
+                picked.add(max(earlier, key=lambda i: records[i].timestamp_utc))
+            if later:
+                picked.add(min(later, key=lambda i: records[i].timestamp_utc))
     return picked
 
 
