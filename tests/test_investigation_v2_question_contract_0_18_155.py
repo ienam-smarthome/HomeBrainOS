@@ -182,4 +182,4 @@ def test_endpoint_reports_new_objective_and_keeps_causal_path():
     assert "verified_factual_objective(" in section
     assert "factual_objective=factual_objective" in section
     assert "model_investigation_attempted" in section
-    assert "planning_timeout_seconds=15.0" in section
+    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in section
