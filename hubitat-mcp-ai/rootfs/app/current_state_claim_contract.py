@@ -22,6 +22,8 @@ _ATTRIBUTE_ALIASES = {
     "power": ("power", "activepower", "powermeter"),
     "humidity": ("humidity", "relativehumidity"),
     "mode": ("thermostatmode", "mode"),
+    "level": ("level", "brightness", "dimmerlevel"),
+    "switch": ("switch",),
     "operatingstate": ("thermostatoperatingstate", "operatingstate", "heatingstate"),
 }
 _LABEL_VALUE = re.compile(
@@ -31,6 +33,15 @@ _LABEL_VALUE = re.compile(
 )
 _WATTS = re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:W|watts)\b", re.I)
 _CELSIUS = re.compile(r"(?<!\w)(-?\d+(?:\.\d+)?)\s*°\s*C\b", re.I)
+# Natural-language inline brightness is still a CURRENT measurement claim.
+# E.g. "currently on with a brightness level of 30%" previously escaped
+# the heading-only numeric guard when the only source reported switch=on.
+_INLINE_LEVEL = re.compile(
+    r"(?i)\\b(?:brightness(?:\\s+level)?|dimmer\\s+level)\\s+"
+    r"(?:of\\s+|is\\s+|at\\s+|to\\s+)?(?:\\*\\*)?"
+    r"(\\d{1,3}(?:\\.\\d+)?)\\s*%?"
+)
+
 
 
 def _recorded_value(attributes: dict[str, Any], name: str) -> Any:
@@ -86,6 +97,9 @@ def _unsupported_current_claims(message: str, attrs: dict[str, Any]) -> list[str
         reference = _recorded_value(attrs, field)
         if not _same_measurement(claim, reference):
             unknown.append(_norm(field))
+    for match in _INLINE_LEVEL.finditer(message):
+        if not _same_measurement(match.group(1), _recorded_value(attrs, "level")):
+            unknown.append("level")
     for match in _WATTS.finditer(message):
         if not _same_measurement(match.group(1), _recorded_value(attrs, "power")):
             unknown.append("power")
@@ -130,6 +144,7 @@ def ground_current_device_status(
         ("temperature", "Temperature"), ("heatingSetpoint", "Setpoint"),
         ("thermostatSetpoint", "Setpoint"), ("thermostatMode", "Mode"),
         ("thermostatOperatingState", "Operating state"), ("power", "Power"),
+        ("level", "Brightness"),
     ):
         value = attrs.get(source_key)
         if value not in (None, ""):
