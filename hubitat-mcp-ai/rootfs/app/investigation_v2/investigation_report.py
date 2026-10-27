@@ -292,14 +292,14 @@ def format_investigation_report(
         if off_reports:
             first = min(off_reports, key=lambda row: row.timestamp_utc)
             lines.append(
-                f"OFF was issued at {_time(last_off,window)} and a subsequent "
+                f"Another OFF was issued at {_time(last_off,window)} and a subsequent "
                 f"switch=off was reported at {_time(first,window)}. "
                 "This is a Hubitat state report, not independent physical "
                 "proof that the equipment or its network connection changed."
             )
         else:
             lines.append(
-                f"OFF was issued at {_time(last_off,window)}. "
+                f"Another OFF was issued at {_time(last_off,window)}. "
                 "No subsequent switch=off report was recovered from these "
                 "incomplete sources; physical execution remains unverified."
             )
