@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .evidence import CaseFile
@@ -26,7 +26,10 @@ def _planning_indices(case: CaseFile) -> set[int]:
     background polling does not drown decisive incident evidence.
     """
     records = case.records
-    if len(records) <= 40:
+    # Above a small lossless case, sample background telemetry rather
+    # than carry every 2-minute electricity/meter update into a model plan.
+    # Command, switch, availability and config observations remain lossless.
+    if len(records) <= 12:
         return set(range(len(records)))
     commands = [
         datetime.fromisoformat(row.timestamp_utc)
