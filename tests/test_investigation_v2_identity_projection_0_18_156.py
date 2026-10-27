@@ -166,5 +166,5 @@ def test_endpoint_retrieves_identity_then_full_only_when_scope_needs_it():
     assert 'inventory_provenance.get("projection")=="identity_only"' in section
     assert "resolve_verified_device_subjects(" in section
     assert "full_inventory_ms" in section
-    assert "planning_timeout_seconds=15.0" in section
+    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in section
     assert "agent.process_user_request_result" not in section
