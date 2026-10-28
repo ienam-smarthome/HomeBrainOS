@@ -645,7 +645,7 @@ async def run_native_read_agent(
                 )
             for group in report["warning_error_groups"][:5]:
                 lines.append(
-                    f"  - {group['level']} / {group['source']}: "
+                    f"  - {group['level']} / {group['source_name']}: "
                     f"{group['message']} ({group['count']} rows)"
                 )
         else:
