@@ -266,3 +266,9 @@ def test_source_reported_response_size_limit_is_not_an_invented_success():
         "success": False, "error": {"code": "unknown_gateway_failure"}
     }, is_error=True)
     assert _oversized_hint(other) is None
+
+
+def test_metric_zero_and_false_are_not_silently_erased():
+    from investigation_v2.native_read_agent import _text
+    assert _text(False) == "False"
+    assert _text(0) == "0"
