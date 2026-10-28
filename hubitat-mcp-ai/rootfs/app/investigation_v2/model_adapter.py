@@ -156,7 +156,7 @@ class V2ModelProposer:
 
 
     async def __call__(self, case: CaseFile, round_index: int) -> Mapping[str, Any]:
-        evidence = planning_evidence(case, self.incident_window)
+        evidence = planning_evidence(case, self.incident_window, focus_latest=True)
         # Never silently omit a material command just to fit model context.
         if len(evidence) > self.max_case_chars:
             raise ValueError("Case evidence exceeds bounded model context")
