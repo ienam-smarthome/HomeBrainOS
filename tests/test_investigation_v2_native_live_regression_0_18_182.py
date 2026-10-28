@@ -69,7 +69,7 @@ def test_live_warn_entries_are_typed_and_usable_for_followup():
     assert audit["level_counts_in_returned_rows"] == {"WARN": 2, "INFO": 1}
     assert audit["warning_error_group_count"] == 2
     assert "30822s" in str(audit["warning_error_groups"])
-    assert attested_source_ids("hub_get_logs", LIVE_WARN) == {"7103", "4080"}
+    assert attested_source_ids("hub_get_logs", LIVE_WARN) == {"7103", "4080", "7000"}
     assert log_source(LIVE_WARN["entries"][0]) == ("dev", "7103", "Bedroom 3 Mesh")
 
 
@@ -175,7 +175,7 @@ async def test_fluid_model_cannot_make_info_only_logs_look_like_full_audit():
     assert output["answer"]["human_review_required"] is True
     assert "warning_error_log_coverage_unverified" in output["answer"]["validation_issues"]
     assert "not proof that there are no WARN/ERROR entries" in output["answer"]["text"]
-    assert "no WARN/ERROR in returned sample" in output["answer"]["text"]
+    assert "No WARN/ERROR in returned sample" in output["answer"]["text"]
 
 
 
