@@ -184,7 +184,7 @@ def _project_app_catalogue(data: Mapping[str, Any], operation: str) -> dict[str,
 _STATUS_FIELDS = frozenset({
     "switch", "healthStatus", "deviceHealth", "mqttStatus",
     "networkStatus", "lastSeen", "lastActivity", "lastMessage",
-    "power", "energy", "battery", "presence", "temperature",
+    "power", "energy", "battery", "level", "presence", "temperature",
     "humidity", "contact", "motion",
 })
 
