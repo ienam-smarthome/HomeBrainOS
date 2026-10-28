@@ -736,6 +736,28 @@ async def run_read_only_investigation(
                         "restart_verified": False,
                     })
 
+    from .incident_summary import latest_switch_incident
+    source_incident = latest_switch_incident(case)
+    # A planning model cannot obtain any new evidence after the host's READ
+    # budget is exhausted. When the already-collected source case contains a
+    # command/state pair plus a relevant configured sensor observation,
+    # return that evidence directly rather than spending 35s generating
+    # unexecutable proposals. The host narrative reports all limitations.
+    if (bootstrap_source_identity and factual_objective is None
+            and source_incident is not None
+            and source_incident["recent_motion_observations"] > 0
+            and executed >= max_total_reads):
+        bootstrap_diagnostics.append({
+            "stage": "source_first_decision",
+            "outcome": "verified_read_budget_exhausted",
+            "command_record_id": source_incident["command_id"],
+            "sensor_observations": source_incident["recent_motion_observations"],
+            "remaining_read_capacity": 0,
+            "model_planning_skipped": True,
+        })
+        reason = "source_backed_read_budget_reached"
+        max_rounds = 0
+
     for round_index in range(max_rounds):
         rounds += 1
         # Models can propose, not install credentials, tools or permissions.
@@ -752,16 +774,31 @@ async def run_read_only_investigation(
         # With missing discriminators or only partial source evidence, keep
         # the caller's full planning budget for additional model-led reads.
         from .transition_links import incident_links
+        source_incident = latest_switch_incident(case)
+        primary_source_ready = (
+            source_incident is not None
+            and source_incident["recent_motion_observations"] > 0
+            and any(row.stage == "config_stored"
+                    and row.target_id == source_incident["issuer_app_id"]
+                    for row in case.records)
+        )
         advisory_ready = (
             any(link.reported_state is not None for link in incident_links(case))
             and any(item.stage == "config_stored" for item in case.records)
         )
-        if advisory_ready:
+        if primary_source_ready:
+            # Relevant incident evidence is already gathered. The optional
+            # model can still propose a discriminating READ if budget remains,
+            # but it must not monopolise latency for an otherwise complete
+            # source-first answer.
+            planning_budget = min(planning_budget, 7.0)
+        elif advisory_ready:
             planning_budget = min(planning_budget, 15.0)
         diag = {
             "round": round_index,
             "budget_ms": int(planning_budget * 1000),
-            "budget_policy": ("source_backed_advisory" if advisory_ready
+            "budget_policy": ("source_first_advisory" if primary_source_ready
+                              else "source_backed_advisory" if advisory_ready
                               else "full_discriminating_plan"),
             "case_records": len(case.records),
             "input_chars": None,

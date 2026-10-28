@@ -12,6 +12,7 @@ from .evidence import CaseFile, EvidenceItem
 from .read_loop import Hypothesis
 from .temporal_scope import IncidentWindow
 from .transition_links import incident_links
+from .incident_summary import latest_switch_incident
 
 
 def _time(row: EvidenceItem, window: IncidentWindow | None) -> str:
@@ -141,6 +142,20 @@ def format_investigation_report(
                 except (ValueError, TypeError, OverflowError):
                     pass
 
+    candidate_incident = latest_switch_incident(case) if window is None else None
+    # Promote to the primary causal narrative only when a SOURCE-RECOVERED
+    # observation of an explicitly configured motion sensor exists. Generic
+    # offline/network fault investigations retain their older adverse-event
+    # link analysis, even if a command and switch report were paired.
+    source_incident = (
+        candidate_incident
+        if candidate_incident is not None
+        and candidate_incident["recent_motion_observations"] > 0
+        else None
+    )
+    if source_incident is not None:
+        lines.extend(["", "**Latest OFF/ON incident — source evidence**",
+                      *source_incident["lines"]])
     lines.append("")
     if case.device_snapshots:
         latest = case.device_snapshots[-1]
@@ -176,7 +191,13 @@ def format_investigation_report(
                     if row.stage == "command_issued"
                     or row.action in ("switch", "level", "networkStatus",
                                       "mqttStatus", "healthStatus", "deviceHealth")]
-        if priority:
+        if priority and source_incident is not None:
+            # The user's latest-switch incident is better served by the exact
+            # command/state/sensor witness records than by first/last pages
+            # dominated by unrelated historical network events.
+            chosen_ids = set(source_incident["record_ids"])
+            chosen = [row for row in records if row.record_id in chosen_ids]
+        elif priority:
             # Do not let repeated health statuses hide earlier MQTT changes
             # or an issued command. Source rows remain fully available in
             # the technical answer.
@@ -219,12 +240,19 @@ def format_investigation_report(
         lines.append("Times above are UTC; original source-clock timestamps remain in Investigation details.")
 
     lines.extend(["", "**Most useful lead**"])
+    if source_incident is not None:
+        lines.append(
+            "The latest command/state pair and the controller's configured "
+            "motion-sensor history are the primary evidence. Older controller "
+            "interactions are retained in Investigation details, not treated "
+            "as the cause of this latest transition."
+        )
     pairs=[(a,b) for i,a in enumerate(commands) for b in commands[i+1:]
            if a.target_id and a.target_id==b.target_id
            and a.action=="command-off" and b.action in ("command-on","command-setLevel")
            and a.producer_id and b.producer_id and a.producer_id!=b.producer_id
            and 0<(datetime.fromisoformat(b.timestamp_utc)-datetime.fromisoformat(a.timestamp_utc)).total_seconds()<=3600]
-    if pairs:
+    if pairs and source_incident is None:
         # Focus on the user's incident, not the first eligible pair in an
         # indiscriminate chronological scan. For broad dated overnight windows,
         # events closest to the interval's midpoint are most useful leads;
@@ -247,13 +275,13 @@ def format_investigation_report(
             f"{later.action.replace('command-','')} at {_time(later,window)}. "
             "This makes automation interference worth checking, but it does not prove the later command turned the device physically changed state."
         )
-    elif commands:
+    elif commands and source_incident is None:
         lines.append("The command sequence is available, but no directly linked competing-controller sequence is yet established.")
-    else:
+    elif source_incident is None:
         lines.append("No issued command supports identifying the initiating controller.")
     # Use the same source-grounded relationship index as controller discovery.
     # Matching records are NOT a causal or independent physical proof.
-    for link in incident_links(case):
+    for link in ([] if source_incident is not None else incident_links(case)):
         cmd, reported, failure = link.command, link.reported_state, link.adverse_state
         if cmd.action != "command-off" or reported is None:
             continue
@@ -268,7 +296,7 @@ def format_investigation_report(
         )
         break
     set_levels = [row for row in commands if row.action == "command-setLevel"]
-    if set_levels:
+    if set_levels and source_incident is None:
         lines.append(
             "A `setLevel()` command on a dimmable light commonly turns it ON while "
             "setting brightness, including when it was previously OFF. Here it "
@@ -282,7 +310,7 @@ def format_investigation_report(
     }
     # Incident-linked OFF + switch-off + adverse state has already been
     # described. Repeating it as "Another OFF" invents a second event.
-    if offs and offs[-1].record_id not in linked_off_ids:
+    if offs and source_incident is None and offs[-1].record_id not in linked_off_ids:
         last_off = offs[-1]
         # A reported switch transition after an issued OFF is relevant
         # evidence, even though it is not independent physical confirmation.
@@ -306,7 +334,7 @@ def format_investigation_report(
             )
     offline = [row for row in records if row.action == "networkStatus" and row.value == "offline"]
     online = [row for row in records if row.action == "networkStatus" and row.value == "online"]
-    if offline:
+    if offline and source_incident is None:
         nearest = next((on for on in online if
                         on.timestamp_utc > offline[0].timestamp_utc), None)
         lines.append(
@@ -360,8 +388,16 @@ def format_investigation_report(
             )
     lines.extend(["","**What remains unverified**"])
     lines.append("The initiating trigger, the effective historical rule conditions, and the actual physical device state are not established solely by these records.")
-    if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence"):
+    if stop_reason not in ("model_finished","round_budget_reached","no_new_usable_evidence",
+                            "source_backed_read_budget_reached"):
         lines.append(f"Investigation stopped early ({stop_reason.replace('_',' ')}); some relevant reads may be missing.")
+    if stop_reason == "source_backed_read_budget_reached":
+        lines.append(
+            "The host reached its authorised read budget after collecting "
+            "command, state and configured motion evidence. No additional "
+            "model planning was attempted because it could not authorise "
+            "another read; the source-backed report remains available."
+        )
     if stop_reason == "no_new_usable_evidence":
         lines.append("The extra reads returned no new usable evidence; the investigation stopped rather than repeating an expensive AI planning round.")
     if stop_reason == "no_approved_discriminating_reads":
@@ -377,7 +413,14 @@ def format_investigation_report(
         if len(failed) > 4:
             lines.append(f"{len(failed)-4} additional failed reads appear in Investigation details.")
     lines.extend(["","**What would settle it**"])
-    if pairs:
+    if source_incident is not None:
+        lines.append(
+            f"- For app #{source_incident['issuer_app_id']}, compare its "
+            "historical handler execution with the current inactive-off "
+            "setting and the source-reported sensor timeline; do not "
+            "infer a precise configured delay without its typed setting."
+        )
+    elif pairs:
         ids=sorted({a.producer_id for p in pairs for a in p if a.producer_id})
         lines.append("- Inspect the execution logs and effective source/configuration of the controlling Hubitat apps "
                      +", ".join("#"+x for x in ids)+", especially their actions between the listed commands.")
