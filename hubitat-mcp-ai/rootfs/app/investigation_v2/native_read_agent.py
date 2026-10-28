@@ -340,6 +340,7 @@ async def run_native_read_agent(
     identity_lookup_attempted = False
     identity_lookup_ms = 0
     synthesis_status = "not_needed"
+    coverage_challenge_used = False
     synthesis_elapsed_ms = 0
     answer_text = ""
     reason = "round_budget_reached"
@@ -364,6 +365,35 @@ async def run_native_read_agent(
             break
         calls = reply.get("tool_calls")
         if not isinstance(calls, list) or not calls:
+            # General evidence-coverage critique, not question-word routing.
+            # A model must not call a noisy INFO page a log error audit.
+            # One bounded extra model opportunity can request a better read.
+            unfiltered_log_gap = any(
+                isinstance(w.get("source_data"), dict)
+                and isinstance(w["source_data"].get("log_summary"), dict)
+                and w["source_data"]["log_summary"].get(
+                    "warning_error_group_count") == 0
+                and w.get("read_filters", {}).get("level") is None
+                and w["source_data"]["log_summary"].get(
+                    "level_counts_in_returned_rows", {}).get("INFO", 0) > 0
+                for w in witnesses
+            )
+            if (unfiltered_log_gap and not coverage_challenge_used
+                    and round_no + 1 < max_rounds
+                    and attempted < max_reads
+                    and deadline - time.monotonic() > 3):
+                coverage_challenge_used = True
+                messages.append({"role": "assistant",
+                                 "content": _text(reply.get("content"), 450)})
+                messages.append({"role": "user", "content":
+                                 "Evidence coverage check: the returned log "
+                                 "page contains INFO but no WARN/ERROR, and "
+                                 "you have not made a severity-filtered log "
+                                 "read. Do not infer no problems from that "
+                                 "sample. Choose an independently permitted "
+                                 "discriminating MCP read or explicitly state "
+                                 "this limitation."})
+                continue
             answer_text = _text(reply.get("content"), 4500)
             reason = "model_finished"
             break
@@ -481,6 +511,14 @@ async def run_native_read_agent(
             witness = {
                 "read": attempted,
                 "tool": name, "operation": op,
+                "read_filters": {
+                    k: v for k, v in (
+                        args.get("args") if isinstance(args.get("args"), dict)
+                        else args
+                    ).items()
+                    if k in ("level", "limit", "mode")
+                    and type(v) in (str, int) and len(str(v)) < 50
+                },
                 "elapsed_ms": round((time.monotonic()-before)*1000),
                 "source_data": summary,
                 "source_complete": False,
@@ -658,6 +696,7 @@ async def run_native_read_agent(
             "verified_source_ids": len(verified_ids),
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "lazy_identity_lookup_ms": identity_lookup_ms,
+            "coverage_challenge_used": coverage_challenge_used,
             "final_synthesis": synthesis_status,
             "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
