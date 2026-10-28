@@ -55,7 +55,7 @@ def _attested_id(data: Mapping[str, Any]) -> str | None:
 async def read_verified_target_status(
     mcp: Any, verified_id: str, *,
     wanted_attributes: Sequence[str] = ("switch", "level"),
-    diagnostics: dict[str, str] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """Return (typed snapshot, honest scoped provenance), otherwise None.
 
@@ -95,6 +95,8 @@ async def read_verified_target_status(
         return declined("request_schema_rejected")
     # The exact, live-manifest-authorised operation is READ. No retries
     # on an error, and a malformed response cannot be promoted into state.
+    if diagnostics is not None:
+        diagnostics["gateway_read_attempted"] = True
     result = await mcp.call_tool(gateway.name, request)
     if not isinstance(result.data, dict):
         return declined("unstructured_source")
