@@ -18,7 +18,7 @@ from mcp_client import MCPTool, MCPToolResult
 from tool_registry import ToolEffect
 from investigation_v2.native_read_agent import (
     run_native_read_agent, _guard, _read_manifest, _observed_operations,
-    _group_logs, _payload,
+    _group_logs, _payload, _ids_from_read,
 )
 
 READ_DIAG = MCPTool(
@@ -218,3 +218,36 @@ def test_typed_metric_projection_never_exposes_credentials():
     assert "do-not-display" not in json.dumps(data)
     assert "super-secret" not in json.dumps(data)
     assert "private" not in json.dumps(data)
+
+
+def test_log_row_id_is_not_mistaken_for_verified_app_or_device():
+    rows = {"logs": [
+        {"id": "99999", "message": "Some log row", "appId": "4129"},
+        {"id": 88888, "message": "Other log", "source": {
+            "type": "app", "id": "3970"}},
+        {"id": 77777, "message": "Unknown source", "source": {
+            "type": "unknown", "id": "7103"}},
+    ]}
+    assert _ids_from_read("hub_get_logs", rows) == {"4129", "3970"}
+    assert "99999" not in _ids_from_read("hub_get_logs", rows)
+
+
+def test_nested_control_argument_cannot_be_smuggled_through_open_read_schema():
+    manifest = _read_manifest([READ_DIAG])
+    assert _guard("hub_read_diagnostics", {
+        "tool": "hub_get_logs",
+        "args": {"filter": {"nested": {"command": "off"}}},
+    }, manifest, {}, set()) == "write_argument_rejected"
+
+
+def test_same_millisecond_repeats_count_as_burst_even_when_unsorted():
+    rec = {"level": "warn", "source": {"id": "4129", "type": "app"},
+           "message": "HTTP 408 timeout"}
+    rows = {"logs": [
+        {**rec, "date": "2026-10-28T10:00:00Z"},
+        {**rec, "date": "2026-10-28T10:01:00Z"},
+        {**rec, "date": "2026-10-28T10:00:00Z"},
+    ]}
+    group = _group_logs(rows)["groups"][0]
+    assert group["count"] == 3
+    assert group["duplicate_timestamp_rows"] == 1
