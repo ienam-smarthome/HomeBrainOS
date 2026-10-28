@@ -240,3 +240,17 @@ async def test_lazy_device_identity_never_promotes_known_app_id_to_device_identi
     assert len(executor.calls)==2
     assert any(fail["code"]=="target_id_not_verified_from_live_source"
                for fail in output["native_diagnostics"]["failures"])
+
+
+
+def test_read_source_projection_never_discloses_unreviewed_raw_app_code():
+    payload={"id":"4080","type":"app","name":"Calendar Notifier",
+             "source":"def handler(): private_token = 'abc123'; send('private-data')",
+             "code":"// private implementation"}
+    projected=_payload(MCPToolResult("hub_read_apps_code",{},{},"",payload),
+                       "hub_get_source")
+    assert projected["source_content_available"] is True
+    assert projected["source_content_projected"] is False
+    assert "handler" not in str(projected)
+    assert "private-data" not in str(projected)
+    assert "private_token" not in str(projected)
