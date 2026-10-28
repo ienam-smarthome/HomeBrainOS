@@ -110,6 +110,9 @@ class CaseFile:
     errors: list[str] = field(default_factory=list)
     app_identities: dict[str, str] = field(default_factory=dict)
     device_snapshots: list[dict[str, Any]] = field(default_factory=list)
+    # Current app selections attested by an event-proven command issuer.
+    # These are NOT historical evidence of a sensor's state at command time.
+    app_sensor_references: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -119,6 +122,7 @@ class CaseFile:
             "errors": list(self.errors),
             "app_identities": dict(self.app_identities),
             "device_snapshots": list(self.device_snapshots),
+            "app_sensor_references": dict(self.app_sensor_references),
         }
 
     def evidence_brief(self) -> str:
@@ -153,6 +157,13 @@ class CaseFile:
             for app_id, name in sorted(self.app_identities.items(), key=lambda row: int(row[0])):
                 if any(row.producer_id == app_id for row in self.records):
                     lines.append(f"issuer #{app_id}: {name}")
+        if self.app_sensor_references:
+            lines.append("Event-issuer app's CURRENT stored sensor selections "
+                         "(not historical state or proven trigger):")
+            for app_id, refs in sorted(self.app_sensor_references.items(), key=lambda x: int(x[0])):
+                for ref in refs:
+                    lines.append(f"app #{app_id} setting={ref['key']} "
+                                 f"sensor IDs={','.join(ref['deviceIds'])}")
         lines.append("Stored configuration is a read-time snapshot, not verified historical "
                      "effective code or event-time automation behaviour.")
         lines.append("Unverified: physical execution of command records and causal attribution "
@@ -207,6 +218,7 @@ def build_case_file(original_user_request: str,
     """
     case = CaseFile(original_user_request=original_user_request)
     dedup: dict[str, EvidenceItem] = {}
+    pending_sensor_references: list[tuple[str, list[dict[str, Any]]]] = []
     for index, raw in enumerate(receipts):
         if not isinstance(raw, dict):
             case.errors.append(f"receipt[{index}]: not an object")
@@ -233,6 +245,38 @@ def build_case_file(original_user_request: str,
                         case.app_identities.pop(app_id, None)
                     else:
                         case.app_identities[app_id] = label
+        if (succeeded and op == "hub_get_app_config"
+                and raw.get("evidence_kind") == "typed_existing_rule_partial_settings"
+                and details.get("settingsReadable") is True):
+            expected_app = _id(args.get("appId"))
+            if expected_app and _id(details.get("appId")) == expected_app:
+                refs = details.get("deviceReferences")
+                if isinstance(refs, list) and len(refs) <= 8:
+                    verified: list[dict[str, Any]] = []
+                    accepted_keys = frozenset({
+                        "motionSensors", "motionSensor",
+                        "keepOnSensors", "keepOnSensor",
+                        "contactSensors", "contactSensor",
+                        "presenceSensors", "presenceSensor",
+                        "temperatureSensors", "temperatureSensor",
+                        "humiditySensors", "humiditySensor",
+                        "illuminanceSensors", "illuminanceSensor",
+                    })
+                    for ref in refs:
+                        if not isinstance(ref, dict) or ref.get("key") not in accepted_keys:
+                            continue
+                        ids = ref.get("deviceIds")
+                        if (not isinstance(ids, list) or not 0 < len(ids) <= 8
+                                or any(_id(ident) is None for ident in ids)):
+                            continue
+                        verified.append({
+                            "key": ref["key"],
+                            "deviceIds": sorted({_id(x) for x in ids}, key=int),
+                            "source_request_id": source_id,
+                            "source_basis": "read_time_stored_controller_config",
+                        })
+                    if verified:
+                        pending_sensor_references.append((expected_app, verified))
         if (succeeded and raw.get("evidence_kind") == "typed_current_device_snapshot"
                 and target and (response_target is None or response_target == target)):
             snap = details.get("deviceSnapshot")
@@ -338,4 +382,9 @@ def build_case_file(original_user_request: str,
         ))
         case.errors.extend(f"{source_id}: {issue}" for issue in errors)
     case.records = sorted(dedup.values(), key=lambda e: (e.timestamp_utc, e.record_id))
+    attested_issuers = {item.producer_id for item in case.records
+                        if item.stage == "command_issued" and item.producer_id}
+    for app_id, refs in pending_sensor_references:
+        if app_id in attested_issuers:
+            case.app_sensor_references[app_id] = refs
     return case
