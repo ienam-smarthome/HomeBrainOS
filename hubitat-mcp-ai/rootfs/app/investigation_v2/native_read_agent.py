@@ -64,6 +64,11 @@ _SYSTEM = (
     "deviceId=<verified ID>, limit=100. Query errors and warnings "
     "separately; never send a comma-separated level. The read gateway "
     "must not persist snapshots or change hub state. "
+    "Device-event results are newest-first and may be capped. A successful "
+    "history read does NOT cover an earlier WARN window unless returned "
+    "event timestamps overlap; to investigate a source-attested method "
+    "warning, consider hoursBack, limit and attribute=command-<method> "
+    "on hub_list_device_events, if the live schema accepts them. "
     "When a verified device's event history shows producedBy.appId, that "
     "app is a source-attested command issuer. Inspect its app configuration "
     "or read-only source when investigating a causal mechanism; do not "
@@ -933,6 +938,20 @@ async def run_native_read_agent(
             "not proof that there are no WARN/ERROR entries elsewhere. "
             "A dedicated severity-filtered log read is still required.", "",
         ])
+    if causal_coverage_gap is not None:
+        warning_window = causal_coverage_gap.get("warning_window", {})
+        checked = causal_coverage_gap.get("event_windows_checked", [])
+        sample = checked[0] if checked else {}
+        lines.extend([
+            "**Evidence gap: event history does not establish the warning-window caller**",
+            "Warning period: " + str(warning_window.get("oldest", "unknown")) +
+            " to " + str(warning_window.get("newest", "unknown")) +
+            ". Event sample: " + str(sample.get("oldest", "not read")) +
+            " to " + str(sample.get("newest", "not read")) +
+            ". Relevant issuing apps are unverified; source clocks may use "
+            "different zones, and a source window is not guaranteed complete.",
+            "",
+        ])
     if projections_empty:
         lines.extend([
             "**Uninterpreted source fields**",
@@ -999,6 +1018,8 @@ async def run_native_read_agent(
         validation_issues.append("warning_error_log_coverage_unverified")
     if projections_empty:
         validation_issues.append("gateway_projection_incomplete")
+    if causal_coverage_gap is not None:
+        validation_issues.append("warning_window_actor_provenance_unverified")
     return {
         "answer_mode": "native_mcp_investigation",
         "answer": {"text": text, "displayed_record_ids": [],
