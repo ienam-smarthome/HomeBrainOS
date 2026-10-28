@@ -25,6 +25,7 @@ from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
 from .native_tool_protocol import operation_problem, guidance_for, source_highlights, evidence_fallback
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
+from .native_device_projection import device_mode_evidence
 from evidence_gateway_contract import missing_required_read_fields
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
@@ -193,6 +194,8 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
             "unmapped_source_fields", "source_field_names",
         }):
             projected["projection_empty"] = True
+    if operation == "hub_get_device":
+        projected.update(device_mode_evidence(data))
     if operation == "hub_get_logs":
         log_groups = compact_logs(data)
         if log_groups is not None:
@@ -397,6 +400,9 @@ async def run_native_read_agent(
     discovered: dict[str, set[str]] = {}
     prior: set[str] = set()
     timed_out_operations: set[tuple[str, str]] = set()
+    failed_scoped_reads: dict[tuple[str, str], int] = {}
+    blocked_repeat_errors = 0
+    final_synthesis_skipped_reason: str | None = None
     recovery_rejections = 0
     witnesses: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -528,6 +534,14 @@ async def run_native_read_agent(
             op_requested = args.get("tool") if name.startswith("hub_read_") else name
             if (name, str(op_requested)) in timed_out_operations:
                 issue = "operation_prior_timeout"
+            inner = args.get("args", args)
+            target = (str(inner.get("deviceId") or inner.get("appId") or "")
+                      if isinstance(inner, dict) else "")
+            scoped_key = (str(op_requested), target)
+            if (target and failed_scoped_reads.get(scoped_key, 0) >= 2
+                    and issue is None):
+                blocked_repeat_errors += 1
+                issue = "repeated_target_read_error"
             if issue == "target_id_not_verified_from_live_source":
                 # Lookup happens only when the model proposes a target-specific
                 # READ whose ID was not already attested in a source receipt.
@@ -609,6 +623,10 @@ async def run_native_read_agent(
             except Exception as exc:
                 error = classify_exception(exc)
             if error:
+                if target:
+                    failed_scoped_reads[scoped_key] = (
+                        failed_scoped_reads.get(scoped_key, 0) + 1
+                    )
                 if error == "read_timeout":
                     timed_out_operations.add((name, str(op)))
                 hint = (_oversized_hint(execution.result)
@@ -680,7 +698,38 @@ async def run_native_read_agent(
                 break
         else:
             recovery_rejections = 0
-    if witnesses and not answer_text and deadline - time.monotonic() > 2:
+    # If the model exhausted planning after collecting both a subject's
+    # current-state read and target-specific warnings, another expensive
+    # model-only pass is often futile. Keep the host-attested conclusion
+    # immediately available rather than losing eight seconds to a timeout.
+    def _has_independent_target_evidence() -> bool:
+        if not focus_ids:
+            return False
+        current = any(
+            w.get("operation") == "hub_get_device"
+            and str(w.get("source_data", {}).get("id")) in focus_ids
+            for w in witnesses
+        )
+        warnings = any(
+            w.get("operation") == "hub_get_logs"
+            and any(
+                isinstance(g, dict) and str(g.get("source_id")) in focus_ids
+                for g in w.get("source_data", {}).get("log_summary", {})
+                          .get("warning_error_groups", [])
+            )
+            for w in witnesses
+        )
+        return current and warnings
+    if (not answer_text and reason in (
+            "round_budget_reached", "no_approved_reads", "no_new_source_evidence",
+            "read_budget_reached")
+            and _has_independent_target_evidence()
+            and (rounds >= max_rounds or blocked_repeat_errors
+                 or sum(failed_scoped_reads.values()) >= 2
+                 or redundant_evidence_reads >= 2)):
+        final_synthesis_skipped_reason = "source_evidence_at_investigation_limit"
+    if (witnesses and not answer_text and final_synthesis_skipped_reason is None
+            and deadline - time.monotonic() > 2):
         # The read loop may end at a budget, repeated proposal or source gap.
         # Request ONE final answer with tools=[], not another planning pass.
         # Feed only bounded, redacted witness projections. The host report
@@ -845,6 +894,12 @@ async def run_native_read_agent(
             "named_identity_lookups": named_identity_lookups,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
+            "blocked_repeat_errors": blocked_repeat_errors,
+            "failed_scoped_operations": [
+                {"operation": op, "target": target, "failures": count}
+                for (op, target), count in sorted(failed_scoped_reads.items())
+            ],
+            "final_synthesis_skipped_reason": final_synthesis_skipped_reason,
             "timed_out_operations": [f"{name}:{operation}"
                                      for name, operation in sorted(timed_out_operations)],
             "source_highlights": (focused_highlights(witnesses, sorted(focus_ids))

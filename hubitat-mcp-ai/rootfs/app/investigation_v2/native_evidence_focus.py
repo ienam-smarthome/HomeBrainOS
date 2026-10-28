@@ -48,7 +48,31 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
         ref="Read #"+str(w.get("read"))
         if op=="hub_get_device" and str(data.get("id")) in focus:
             attrs=_attrs(data)
-            if not attrs:continue
+            if not attrs:
+                # The configuration and sectioned-details operations are
+                # independent evidence, not failed current-attribute reads.
+                # Preserve bounded structural metadata to guide a distinct
+                # driver/source investigation instead of hiding it.
+                mode=data.get("device_mode")
+                if mode:
+                    pieces=[]
+                    info=data.get("device_identity")
+                    if isinstance(info,dict) and info:
+                        pieces.append("driver identity="+safe_string(info,220))
+                    source=data.get("driver_source_metadata")
+                    if isinstance(source,dict) and source:
+                        pieces.append("driver source availability="+safe_string(source,130))
+                    names=data.get("preference_names")
+                    if isinstance(names,list) and names:
+                        pieces.append("preference field names="+safe_string(names[:8],180))
+                    sections=data.get("section_read_status")
+                    if isinstance(sections,dict) and sections:
+                        pieces.append("section status="+safe_string(sections,170))
+                    if pieces:
+                        add(f"{ref}: device {data.get('id')} {mode} returned "
+                            + "; ".join(pieces)
+                            + " (metadata only; not driver-code execution proof).")
+                continue
             fingerprint=read_fingerprint(op,data)
             if fingerprint in fingerprints:continue
             fingerprints.add(fingerprint)
