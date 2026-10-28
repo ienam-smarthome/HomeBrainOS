@@ -27,7 +27,7 @@ operation just to investigate why an attested controller issued a command.
   when both fields are explicitly advertised and the source command has
   a valid timestamp. Otherwise the collector uses bounded hoursBack.
 - Request one bounded read-only log coverage sample from the event-attested
-  controller if hub_manage_logs/hub_get_logs is present in the live
+  controller if a positively advertised hub_read_diagnostics/hub_get_logs is present in the live
   read-only manifest. Log text and private fields are deliberately dropped:
   timestamps and source availability only.
 - Surface explicit stage diagnostics: controller_sensors with verified
@@ -42,7 +42,8 @@ operation just to investigate why an attested controller issued a command.
 
 All work is READ-only. No Hubitat device commands, Rule Machine writes or
 production Main Ask controls are changed. V2's HTTP read-only boundary
-and confirmation rules remain intact. Unsupported live tool schemas,
+and confirmation rules remain intact. Management gateways are never used to bypass the V2 read-only boundary,
+including for log retrieval. Unsupported live tool schemas,
 missing selections, stale/missing command evidence and budget exhaustion
 produce source-limited diagnostics and leave causal uncertainty intact.
 
