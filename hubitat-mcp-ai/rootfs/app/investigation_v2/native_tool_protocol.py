@@ -60,6 +60,8 @@ def guidance_for(code: str) -> str | None:
             "Read-only V2 cannot persist snapshots or change hub state.",
         "operation_prior_timeout":
             "That operation already timed out; use a targeted read instead of retrying broad inventory.",
+        "repeated_target_read_error":
+            "This READ operation failed twice for the same verified target, even with different arguments. Stop trying variants of the same operation; choose an independently discovered read or finish with the evidence already collected.",
         "duplicate_read": "Choose a different read; exact same arguments were already tried.",
         "mcp_tool_reported_error":
             "Upstream rejected the request. Review valid arguments; do not repeat the same request.",
