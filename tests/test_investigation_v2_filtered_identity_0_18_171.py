@@ -108,6 +108,18 @@ async def test_complete_filtered_identity_is_scoped_source_verification():
      "total": 2, "hasMore": False},
     {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
      "total": 204, "hasMore": False},
+    {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+     "totalDevices": 203, "hasMore": False},
+    {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+     "total": True, "hasMore": False},
+    {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+     "total": "not-a-number", "hasMore": False},
+    {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+     "hasMore": 0},
+    {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+     "hasMore": True, "nextOffset": 50},
+    {"devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+     "hasMore": False, "nextOffset": 50},
     {"devices": [{"id": "7828", "label": "Wrong Device"}],
      "total": 1, "hasMore": False},
     {"devices": [{"id": "not-an-id", "label": "Livingroom Light 2"}],
@@ -120,6 +132,37 @@ async def test_no_scoped_identity_from_partial_duplicate_unfiltered_or_wrong_pag
         m, "Livingroom Light 2", diagnostics=diag) is None
     assert diag["identity_lookup"] in (
         "filtered_coverage_unverified", "filtered_identity_mismatch")
+    if diag["identity_lookup"] == "filtered_coverage_unverified":
+        assert diag["filtered_coverage"]["coverage_confirmed"] is False
+        assert "7828" not in json.dumps(diag)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata", [
+    {"hasMore": False},
+    {"hasMore": False, "nextOffset": None},
+    {"hasMore": False, "nextOffset": 0},
+    {"hasMore": False, "totalDevices": 1},
+    {"hasMore": False, "total": "1"},
+    {"total": 1},
+    {"totalDevices": "1"},
+])
+async def test_terminal_coverage_variants_from_existing_audit_contract(metadata):
+    page = {
+        "devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+        **metadata,
+    }
+    m = MCP(page=page, filter_enabled=False)
+    diag = {}
+    result = await read_filtered_target_identity(
+        m, "Livingroom Light 2", diagnostics=diag)
+    assert result is not None
+    assert result[0][0]["id"] == "7828"
+    assert result[1]["home_inventory_complete"] is False
+    assert diag["identity_lookup"] == "filtered_unique_exact_label"
+    assert diag["filtered_coverage"]["coverage_confirmed"] is True
+    assert diag["filtered_coverage"]["rows"] == 1
+    assert "7828" not in json.dumps(diag)
 
 
 @pytest.mark.asyncio
@@ -201,8 +244,13 @@ async def test_legacy_contract_never_opens_a_write_or_undeclared_operation():
 
 
 @pytest.mark.parametrize("filter_enabled", [True, False])
+@pytest.mark.parametrize("coverage", [
+    {"hasMore": False},
+    {"totalDevices": 1, "hasMore": False},
+    {"total": 1, "hasMore": False},
+])
 def test_http_fast_scoped_read_never_uses_204_device_inventory(
-    monkeypatch, tmp_path, filter_enabled,
+    monkeypatch, tmp_path, filter_enabled, coverage,
 ):
     options = tmp_path / "options.json"
     options.write_text(json.dumps({
@@ -214,7 +262,11 @@ def test_http_fast_scoped_read_never_uses_204_device_inventory(
     monkeypatch.setenv("CONFIG_PATH", str(options))
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
-    m = MCP(filter_enabled=filter_enabled)
+    m = MCP(filter_enabled=filter_enabled, page={
+        "devices": [{"id": "7828", "label": "Livingroom Light 2",
+                     "name": "Generic dimmer", "room": "Living Room"}],
+        **coverage,
+    })
     async def forbid_inventory(*_args, **_kwargs):
         raise AssertionError("unfiltered inventory should not run")
     async def forbid_model(*_args, **_kwargs):
