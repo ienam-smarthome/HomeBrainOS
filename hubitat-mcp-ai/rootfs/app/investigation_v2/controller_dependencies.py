@@ -14,6 +14,7 @@ from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 from .device_context import _gateway, _args_schema, _accepts_field
 from .evidence import CaseFile
+from .causal_evidence import focused_switch_command
 from .planning import _schema_problem
 
 
@@ -117,13 +118,15 @@ def controller_sensor_history_proposals(
 
 
 def controller_log_coverage_proposals(
-    tools: Iterable[MCPTool], case: CaseFile,
+    tools: Iterable[MCPTool], case: CaseFile, *,
+    verified_target_ids: Iterable[str] = (),
 ) -> list[dict[str, Any]]:
-    """Request logs only via explicitly allowed READ gateways, not management."""
-    issuers = sorted({
-        item.producer_id for item in case.records
-        if item.stage == "command_issued" and item.producer_id
-    }, key=int)
+    """Scope logs to the same source-attested latest switch issuer as config."""
+    focus, _ = focused_switch_command(
+        case, verified_target_ids=verified_target_ids)
+    if focus is None or not focus.producer_id:
+        return []
+    issuer_id = focus.producer_id
     for tool in tools:
         if (not isinstance(tool, MCPTool)
                 or tool.name not in {"hub_read_diagnostics", "hub_read_logs"}
@@ -142,7 +145,7 @@ def controller_log_coverage_proposals(
         required = inner.get("required", [])
         if not isinstance(required, list) or any(x != "appId" for x in required):
             continue
-        for app_id in issuers[:1]:
+        for app_id in (issuer_id,):
             args: dict[str, Any] = {"appId": app_id}
             if _accepts_field(inner, "hoursBack"):
                 args["hoursBack"] = 48

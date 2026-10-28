@@ -7,6 +7,7 @@ host review/executor path. An unavailable catalogue is not a failed model plan.
 """
 from __future__ import annotations
 from typing import Iterable
+from .causal_evidence import focused_switch_command
 from .transition_links import incident_links
 from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
@@ -53,6 +54,7 @@ def source_identity_proposals(tools: Iterable[MCPTool], case: CaseFile) -> list[
 def source_configuration_proposals(
     tools: Iterable[MCPTool], case: CaseFile, *,
     diagnostics: list[dict[str, str]] | None = None,
+    verified_target_ids: Iterable[str] = (),
 ) -> list[dict]:
     """One read of an event-attested command issuer's stored app config.
 
@@ -113,26 +115,39 @@ def source_configuration_proposals(
         if diagnostics is not None:
             diagnostics.append({"stage": "controller_config", "reason": "app_id_missing_from_live_schema"})
         return []
-    # The same canonical incident relationship drives both the source read
-    # priority and the user report. This prevents divergent causal heuristics.
-    related = incident_links(case)
-    distance_by_issuer: dict[str, float] = {}
-    for link in related:
-        issuer = link.command.producer_id
-        if issuer:
-            distance_by_issuer[issuer] = min(
-                distance_by_issuer.get(issuer, float("inf")),
-                link.seconds_to_adverse,
-            )
-
-    def rank(ident: str) -> tuple[int, float, int, int]:
-        count = sum(row.producer_id == ident and row.stage == "command_issued"
-                    for row in case.records)
-        return (0 if ident in distance_by_issuer else 1,
-                distance_by_issuer.get(ident, float("inf")), -count, int(ident))
-
-    ranking = sorted(candidates, key=rank)
-    ident = ranking[0]
+    scoped = {str(x) for x in verified_target_ids
+              if type(x) in (str, int) and str(x).isdecimal()}
+    if scoped:
+        # New V2 host path: independently verified IDs focus the most recent
+        # attested switch transition, never a historic network incident.
+        focused, focus_basis = focused_switch_command(
+            case, verified_target_ids=scoped)
+        if diagnostics is not None:
+            diagnostics.append({
+                "stage": "controller_config", "incident_focus": focus_basis,
+                "paired_command_id": focused.record_id if focused else None,
+            })
+        if focused is None or not focused.producer_id:
+            return []
+        ident = focused.producer_id
+    else:
+        # Backward-compatible unscoped standalone evidence helper:
+        # retain its historical adverse-event exploration behaviour.
+        # Production V2 always supplies verified_target_ids.
+        related = incident_links(case)
+        distances: dict[str, float] = {}
+        for link in related:
+            issuer = link.command.producer_id
+            if issuer:
+                distances[issuer] = min(
+                    distances.get(issuer, float("inf")),
+                    link.seconds_to_adverse)
+        def rank(issuer: str) -> tuple[int, float, int, int]:
+            count = sum(row.stage == "command_issued"
+                        and row.producer_id == issuer for row in case.records)
+            return (0 if issuer in distances else 1,
+                    distances.get(issuer, float("inf")), -count, int(issuer))
+        ident = min(candidates, key=rank)
     # For an open generic gateway, check any additionalProperties subschema
     # before proposing the field; the same final host reviewer then validates
     # the *entire* live tool manifest, argument shape and source identity.

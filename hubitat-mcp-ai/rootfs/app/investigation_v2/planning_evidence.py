@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .evidence import CaseFile
 from .temporal_scope import IncidentWindow
 from .transition_links import incident_links
-from .causal_evidence import command_state_pairs, command_history_coverage
+from .causal_evidence import command_state_pairs, command_history_coverage, focused_switch_command
 
 
 def _planning_indices(case: CaseFile) -> set[int]:
@@ -74,9 +74,48 @@ def _planning_indices(case: CaseFile) -> set[int]:
     return picked
 
 
-def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
+def planning_evidence(
+    case: CaseFile, window: IncidentWindow | None, *,
+    focus_latest: bool = False,
+) -> str:
     zone = ZoneInfo(window.zone_name) if window is not None else None
     kept = _planning_indices(case)
+    # The canonical case always stays lossless. Only a MODEL'S planning
+    # input for a large, undated case may focus around the latest attested
+    # switch incident. Explicit historical-window investigations remain
+    # lossless, and an unpaired switch report does not justify guessing.
+    focused_command, focus_basis = focused_switch_command(case)
+    reduced_latest = False
+    if (focus_latest and window is None and len(case.records) > 48
+            and focused_command is not None
+            and focus_basis == "paired_latest_switch_transition"):
+        switch_reports = [r for r in case.records
+                          if r.stage == "state_reported" and r.action == "switch"
+                          and r.target_id == focused_command.target_id
+                          and r.time_basis == "event_time"]
+        if switch_reports:
+            anchor = max(switch_reports, key=lambda row: row.timestamp_utc)
+            moment = datetime.fromisoformat(anchor.timestamp_utc)
+            recent = {
+                idx for idx, row in enumerate(case.records)
+                if (row.stage == "config_stored"
+                    or row.target_id == focused_command.target_id
+                    and abs((datetime.fromisoformat(row.timestamp_utc)-moment).total_seconds()) <= 7200
+                    or row.target_id != focused_command.target_id
+                    and -7200 <= (datetime.fromisoformat(row.timestamp_utc)-moment).total_seconds() <= 7200)
+            }
+            earlier: dict[tuple[str, str, str | None], list[int]] = {}
+            for idx in sorted(kept - recent):
+                row = case.records[idx]
+                earlier.setdefault((row.stage, row.action, row.producer_id), []).append(idx)
+            for indices in earlier.values():
+                recent.update(indices[-1:])
+            recent.update(idx for idx,row in enumerate(case.records)
+                          if row.record_id == focused_command.record_id
+                          or row.record_id == anchor.record_id)
+            if len(recent) < len(kept):
+                kept = recent
+                reduced_latest = True
     events = []
     omitted = Counter()
     for i, row in enumerate(case.records):
@@ -118,7 +157,12 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
     # Never turn event chronology into an unverified rule decision.
     # These immutable typed links are useful to every model/provider,
     # including native-tool and structured-proposal planners.
-    command_pairs = [pair.to_dict() for pair in command_state_pairs(case)[:16]]
+    # Put the most recent attested command/state relationships first. An
+    # older 16-pair prefix can silently omit the decisive latest OFF.
+    command_pairs = [pair.to_dict() for pair in sorted(
+        command_state_pairs(case),
+        key=lambda pair: (pair.state_utc, pair.command_utc), reverse=True
+    )[:12]]
     command_coverage = []
     for target in targets:
         coverage_info = command_history_coverage(case, target)
@@ -145,6 +189,10 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
     return json.dumps({
         "records": events,
         "total_case_records": len(case.records),
+        **({"planning_view": "latest_attested_switch_incident",
+            "full_case_retained_for_audit": True,
+            "suppressed_older_records": len(case.records)-len(events)}
+           if reduced_latest else {}),
         "coalesced_context": [
             {"stage": stage, "action": action, "rows": count}
             for (stage, action), count in sorted(omitted.items())

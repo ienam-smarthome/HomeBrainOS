@@ -87,6 +87,52 @@ def command_state_pairs(
     return pairs
 
 
+
+def focused_switch_command(
+    case: CaseFile, *, verified_target_ids: Any = (),
+) -> tuple[EvidenceItem | None, str]:
+    """Pick an attested issuer for the LATEST reported switch transition.
+
+    Do not mistake historical offline incidents, the frequency of older
+    commands, or numeric app-ID ordering for evidence about the latest
+    switch transition. An unmatched latest reported switch state is an
+    explicit *gap*, not licence to select an older, unrelated controller.
+
+    Without any switch reports at all, the latest independently recorded
+    command may still justify an issuer config read, but no state change
+    or verified cause is implied.
+    """
+    scoped = {
+        str(i) for i in verified_target_ids
+        if type(i) in (str, int) and str(i).isdecimal()
+    }
+    def in_scope(target: str | None) -> bool:
+        return bool(target) and (not scoped or target in scoped)
+
+    reports = [row for row in case.records
+               if row.stage == "state_reported" and row.action == "switch"
+               and str(row.value).lower() in ("on", "off")
+               and row.time_basis == "event_time" and in_scope(row.target_id)]
+    commands = [row for row in case.records
+                if row.stage == "command_issued"
+                and row.time_basis == "event_time"
+                and row.producer_id and in_scope(row.target_id)]
+    if reports:
+        latest = max(reports, key=lambda r: (r.timestamp_utc, r.record_id))
+        pairs = [p for p in command_state_pairs(case)
+                 if p.state_record_id == latest.record_id and p.issuer_app_id]
+        if pairs:
+            indexed = {c.record_id: c for c in commands}
+            paired = indexed.get(pairs[0].command_record_id)
+            if paired is not None:
+                return paired, "paired_latest_switch_transition"
+        return None, "latest_switch_transition_unpaired"
+    if commands:
+        return (max(commands, key=lambda r: (r.timestamp_utc, r.record_id)),
+                "latest_command_without_switch_report")
+    return None, "no_attested_command_issuer"
+
+
 def command_history_coverage(case: CaseFile, device_id: str) -> dict[str, Any]:
     """Source-scoped command-history availability, never absence of commands."""
     pages = [
@@ -141,4 +187,5 @@ def causal_evidence_bundle(case: CaseFile, device_id: str) -> dict[str, Any]:
 __all__ = [
     "CommandStatePair", "command_state_pairs",
     "command_history_coverage", "causal_evidence_bundle",
+    "focused_switch_command",
 ]
