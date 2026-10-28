@@ -152,3 +152,16 @@ async def test_two_failed_same_target_reads_stop_more_device_errors_and_skip_syn
     assert diag["final_synthesis"] == "host_evidence_fallback"
     assert "runQ" in result["answer"]["text"]
     assert "hub instability is not independently verified" in result["answer"]["text"]
+
+
+
+def test_devices_tab_summary_is_not_a_clean_warn_error_history():
+    from investigation_v2.native_source_adapters import compact_logs
+    info = compact_logs({"total": 370, "entries": [
+        {"device": "7934", "runtimeStats": {"busy": True}}
+    ]})
+    assert info["returned_rows"] == 1
+    assert info["uninterpretable_rows"] == 1
+    assert info["returned_format_incomplete"] is True
+    assert info["warning_error_audit_complete"] is False
+    assert info["warning_error_group_count"] == 0
