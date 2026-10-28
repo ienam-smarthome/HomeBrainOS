@@ -116,9 +116,10 @@ def event_summary(data: Any) -> dict[str, Any] | None:
         if len(rows) < 80:
             rows.append(sanitized)
     return {
-        "events": rows, "count": len(events),
         "issuer_apps": sorted(issuers.values(),
                               key=lambda r: (-r["count"], r["appId"]))[:12],
+        "count": len(events),
+        "events": rows,
         "provenance_basis": "device-scoped event source producedBy.appId",
         "source_complete": False}
 
@@ -195,3 +196,76 @@ def source_metadata(data: Any) -> dict[str, Any]:
         for k in ("source", "code", "text", "content"))
     result["source_content_projected"] = False
     return result
+
+
+def correlated_command_warnings(witnesses: list[dict[str, Any]],
+                                focus_ids: set[str]) -> list[dict[str, Any]]:
+    """Source timestamp coincidences, explicitly NOT proven causal links.
+
+    Uses printed same-date local clock values only; event timestamps may
+    include offsets while Hubitat log timestamps have no verified zone.
+    Correlates general 'method X' warnings to command-X events, regardless
+    of device, app, or method naming.
+    """
+    import re
+    def millis(value: Any) -> tuple[str, int] | None:
+        match = re.search(
+            r"(\d{4}-\d{2}-\d{2})[T ](\\d{2}): (\d{2}): (\d{2})[.](\\d{1,3})",
+            str(value or ""))
+        if not match:
+            return None
+        day, hh, mm, ss, ms = match.groups()
+        return day, ((int(hh)*60+int(mm))*60+int(ss))*1000 + int(ms.ljust(3,"0"))
+    commands=[]
+    warnings=[]
+    for witness in witnesses[:16]:
+        data=witness.get("source_data")
+        if not isinstance(data,dict):
+            continue
+        op=witness.get("operation")
+        if op=="hub_list_device_events" and str(witness.get("read_filters",{}).get("deviceId")) in focus_ids:
+            for event in data.get("events",[])[:100]:
+                if not isinstance(event,dict):
+                    continue
+                name=event.get("name")
+                producer=event.get("producedBy")
+                if isinstance(name,str) and name.startswith("command-") and isinstance(producer,dict) and producer.get("appId"):
+                    parsed=millis(event.get("date"))
+                    if parsed:
+                        commands.append((name[8:].casefold(),str(producer["appId"]),
+                                         safe_string(producer.get("name"),80),
+                                         event.get("date"),parsed,witness["read"]))
+        if op=="hub_get_logs":
+            summary=data.get("log_summary",{})
+            if not isinstance(summary,dict):
+                continue
+            for group in summary.get("warning_error_groups",[]):
+                if not isinstance(group,dict) or str(group.get("source_id")) not in focus_ids:
+                    continue
+                method=re.search(r"\\bmethod\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+                                 str(group.get("message") or ""),re.I)
+                if not method:
+                    continue
+                for field in ("oldest_returned","newest_returned"):
+                    parsed=millis(group.get(field))
+                    if parsed:
+                        warnings.append((method.group(1).casefold(),
+                                         group[field],parsed,witness["read"]))
+    found=[]
+    seen=set()
+    for method,app_id,app_name,when,(day,number),event_read in commands:
+        for warn_method,warn_when,(warn_day,warn_number),log_read in warnings:
+            difference=abs(number-warn_number)
+            ident=(app_id,method,when,warn_when)
+            if (method==warn_method and day==warn_day and difference<=1000
+                    and ident not in seen):
+                seen.add(ident)
+                found.append({
+                    "appId":app_id,"app":app_name,"command":method,
+                    "command_time":safe_string(when,65),
+                    "warning_time":safe_string(warn_when,65),
+                    "wall_clock_delta_ms":difference,
+                    "event_read":event_read,"log_read":log_read,
+                    "causal_proof":False,
+                    "time_zone_alignment_verified":False})
+    return sorted(found,key=lambda row:row["wall_clock_delta_ms"])[:6]
