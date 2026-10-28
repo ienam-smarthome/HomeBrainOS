@@ -945,6 +945,20 @@ async def run_native_read_agent(
             for w in witnesses
         )
         return current and warnings
+    if (not answer_text and reason == "repeated_invalid_proposal"
+            and focus_ids
+            and any(
+                w.get("operation") == "hub_get_logs"
+                and any(isinstance(g, dict)
+                        and str(g.get("source_id")) in focus_ids
+                        for g in w.get("source_data", {}).get("log_summary", {})
+                                  .get("warning_error_groups", []))
+                for w in witnesses
+            )):
+        # Invalid model proposals add no new knowledge. A source-backed
+        # partial answer is preferable to waiting on another doomed
+        # synthesis call; keep uncertainty and incomplete coverage visible.
+        final_synthesis_skipped_reason = "repeated_invalid_reads_with_target_warnings"
     if (not answer_text and reason in (
             "round_budget_reached", "no_approved_reads", "no_new_source_evidence",
             "read_budget_reached")
