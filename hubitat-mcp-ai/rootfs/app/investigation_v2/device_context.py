@@ -196,6 +196,7 @@ def device_context_proposals(
                         except (ValueError, TypeError, OverflowError):
                             continue
                 if (instants and "hoursBack" not in required
+                        and "since" in fields and "until" in fields
                         and _accepts_field(schema, "since")
                         and _accepts_field(schema, "until")):
                     target_time = max(instants)
