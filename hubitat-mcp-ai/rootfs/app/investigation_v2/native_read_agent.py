@@ -24,6 +24,7 @@ from .read_diagnostics import classify_execution, classify_exception
 from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
 from .native_tool_protocol import operation_problem, guidance_for, source_highlights, evidence_fallback
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
+from evidence_gateway_contract import missing_required_read_fields
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
                 Awaitable[dict[str, Any]]]
@@ -88,6 +89,10 @@ _SAFE_KEYS = frozenset({
     "duration", "age", "ageSeconds", "statusCount",
     "deviceCount", "offlineCount", "critical", "warning",
     "problems", "summary", "gatewayStatus", "zigbee", "zwave",
+    "staleDevices", "unknownDevices", "recommendation",
+    "hubMeshEnabled", "fullRefreshInterval", "peers", "sharedDevices",
+    "localLinkedDevices", "availableLinkedDevices", "privateDeviceCount",
+    "modeHubId", "sourceCoverage", "availableSections", "sectionRead",
 })
 _CONTROL_KEYS = frozenset({
     "command", "commands", "confirm", "confirmation", "action",
@@ -330,6 +335,12 @@ def _guard(name: str, args: dict[str, Any],
     contract_issue = operation_problem(name, args)
     if contract_issue:
         return contract_issue
+    if missing_required_read_fields(name, args):
+        # The thin gateway schema does not express concrete operation
+        # requirements. Fail before ToolExecutor and teach the model to
+        # obtain independently verified identity rather than sending a
+        # device read with no deviceId.
+        return "missing_required_operation_fields"
     err = _schema_problem(args, tool.input_schema)
     if err:
         return "live_schema_rejected"
