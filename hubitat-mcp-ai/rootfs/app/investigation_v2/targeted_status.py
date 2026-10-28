@@ -77,8 +77,10 @@ async def read_filtered_target_identity(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
     """Read a COMPLETE exact-label-filtered source page, or decline.
 
-    Requires the live read-only schema to advertise the labelFilter. The
-    provider's total and hasMore/nextOffset attest *filter coverage*; they do
+    Requires a positively advertised READ sub-operation and an inner args
+    schema that either advertises labelFilter or is OPEN and compatible with
+    the established production read contract. The provider's total and
+    hasMore/nextOffset attest *filter coverage*; they do
     NOT attest the user's entire Hubitat inventory. Only a unique exact
     friendly label can be selected. No device status or writes are read here.
     """
@@ -92,11 +94,24 @@ async def read_filtered_target_identity(
             diagnostics["identity_lookup"] = "filtered_gateway_unavailable"
         return None
     nested = _args_schema(gateway)
-    properties = nested.get("properties")
+    # MCP schemas commonly declare only {"type":"object"} for a gateway's
+    # generic inner args, with no 'properties' key at all. An absent key
+    # describes an OPEN object, not an unusable or forbidden argument set.
+    # Reject a malformed schema or an explicitly closed object instead.
+    raw_properties = nested.get("properties", {})
     required = nested.get("required", [])
-    if not isinstance(properties, dict) or not isinstance(required, list):
+    if (not isinstance(raw_properties, dict)
+            or not isinstance(required, list)
+            or any(not isinstance(key, str) for key in required)
+            or nested.get("type") not in (None, "object")):
         if diagnostics is not None:
             diagnostics["identity_lookup"] = "filtered_schema_unusable"
+        return None
+    properties = raw_properties
+    if ("labelFilter" not in properties
+            and nested.get("additionalProperties") is False):
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filter_explicitly_forbidden"
         return None
     # Production Main Ask already uses hub_list_devices(labelFilter=...) even
     # where the public gateway declares only an open or generic inner args
@@ -122,16 +137,11 @@ async def read_filtered_target_identity(
             diagnostics["identity_lookup"] = "filtered_schema_required_fields"
         return None
     request = {"tool": "hub_list_devices", "args": args}
-    # For the legacy gateway, validate all other arguments against its
-    # advertised wrapper, while supplying only this one proven production
-    # read argument from a fixed host contract. The backend can reject it;
-    # its reply cannot authorise a target without complete source coverage.
-    schema_request = request if filter_advertised else {
-        "tool": "hub_list_devices",
-        "args": {key: value for key, value in args.items()
-                 if key != "labelFilter"},
-    }
-    if _schema_problem(schema_request, gateway.input_schema) is not None:
+    # Validate the REAL request, including labelFilter. The compatibility
+    # path applies only to a gateway that permits additional args, never to
+    # an explicitly closed schema that prohibits the field. Runtime output
+    # still must prove a unique, terminal, exact-label filtered result.
+    if _schema_problem(request, gateway.input_schema) is not None:
         if diagnostics is not None:
             diagnostics["identity_lookup"] = "filtered_schema_rejected"
         return None
