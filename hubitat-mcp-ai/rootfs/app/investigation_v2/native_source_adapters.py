@@ -59,7 +59,14 @@ def log_source(row: Mapping[str, Any]) -> tuple[str, str | None, str]:
     name = safe_string(row.get("name") or row.get("appName"), 110)
     message = str(row.get("message") or row.get("msg") or "")
     matched = _LOG_PREFIX.match(message)
-    if matched and matched.group(1) == source_type and name == matched.group(3):
+    # Normalise cosmetic label differences (case, brackets, punctuation),
+    # but require BOTH source kind and full label to agree with the
+    # structured prefix. Never accept a source ID from free text alone.
+    def stable_label(v: str) -> str:
+        return " ".join(re.findall(r"[^\W_]+", v.casefold(), flags=re.UNICODE))
+    normalized_kind = "dev" if source_type in ("dev", "device") else source_type
+    if (matched and matched.group(1) == normalized_kind
+            and name and stable_label(name) == stable_label(matched.group(3))):
         return matched.group(1), matched.group(2), name
     source = row.get("source")
     if isinstance(source, dict):

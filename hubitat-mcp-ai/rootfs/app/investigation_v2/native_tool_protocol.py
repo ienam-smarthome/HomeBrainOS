@@ -41,6 +41,8 @@ def guidance_for(code: str) -> str | None:
         "invalid_log_level":
             "Use a single log level: trace, debug, info, warn, error, all; request warn and error separately.",
         "invalid_log_limit": "Use integer limit from 1 to 500.",
+        "missing_required_operation_fields":
+            "A concrete read operation lacks required input (for example deviceId for hub_get_device). Use homebrain_find_device to resolve a named device against verified live identity, then pass that deviceId.",
         "write_side_effect_flag_forbidden":
             "Read-only V2 cannot persist snapshots or change hub state.",
         "operation_prior_timeout":
