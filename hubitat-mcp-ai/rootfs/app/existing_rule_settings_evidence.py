@@ -27,6 +27,39 @@ _IDENT = re.compile(r"^[1-9]\d{0,8}$")
 _MAX_SETTINGS = 384
 _MAX_FACTS = 28
 _MAX_DEVICE_IDS = 8
+# Explicit Hubitat settings keys expressing device selections, not arbitrary
+# integers in labels, schedules, URL strings or other config fields.
+_SENSOR_REFERENCE_KEYS = frozenset({
+    "motionSensors", "motionSensor", "keepOnSensors", "keepOnSensor",
+    "contactSensors", "contactSensor", "presenceSensors", "presenceSensor",
+    "temperatureSensors", "temperatureSensor", "humiditySensors",
+    "humiditySensor", "illuminanceSensors", "illuminanceSensor",
+})
+_MAX_REFERENCE_GROUPS = 8
+
+
+def _selected_sensor_ids(value: Any) -> list[str]:
+    """Extract native device-selection identifiers, never numbers from labels.
+
+    A Hubitat selection is a map keyed by device IDs, a list of IDs, or a
+    bounded list of objects with an explicit id. Arbitrary strings that look
+    like Groovy names are never scraped for digits.
+    """
+    raw: list[Any]
+    if isinstance(value, dict):
+        raw = list(value.keys())[:32]
+    elif isinstance(value, (list, tuple)):
+        raw = list(value)[:32]
+    else:
+        raw = [value]
+    ids: set[str] = set()
+    for row in raw:
+        candidate = row.get("id") if isinstance(row, dict) else row
+        if (type(candidate) in (str, int)
+                and _IDENT.fullmatch(str(candidate))):
+            ids.add(str(candidate))
+    return sorted(ids, key=int)[:_MAX_DEVICE_IDS]
+
 
 
 def _boolean(value: Any) -> bool | None:
@@ -77,11 +110,21 @@ def project_installed_app_settings(data: Any, expected_app_id: str) -> dict[str,
     result = dict(empty, settingsReadable=True)
     indexed: list[dict[str, Any]] = []
     controller: list[dict[str, Any]] = []
+    references: list[dict[str, Any]] = []
     for key, value in list(settings.items())[:_MAX_SETTINGS]:
         if len(indexed) + len(controller) >= _MAX_FACTS:
             result["settingsTruncated"] = True
             break
         if not isinstance(key, str) or len(key) > 64:
+            continue
+        if key in _SENSOR_REFERENCE_KEYS:
+            ids = _selected_sensor_ids(value)
+            if ids and len(references) < _MAX_REFERENCE_GROUPS:
+                references.append({"key": key, "deviceIds": ids})
+            if len(ids) == _MAX_DEVICE_IDS or len(references) >= _MAX_REFERENCE_GROUPS:
+                # The bounded projection does not claim to contain every
+                # sensor in a large controller configuration.
+                result["settingsTruncated"] = True
             continue
         index = _INDEXED.fullmatch(key)
         if index:
@@ -134,6 +177,8 @@ def project_installed_app_settings(data: Any, expected_app_id: str) -> dict[str,
                                    )})
     result["indexedFields"] = indexed
     result["controllerFields"] = controller
+    if references:
+        result["deviceReferences"] = references
     return result
 
 
