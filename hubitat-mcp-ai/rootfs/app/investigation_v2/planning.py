@@ -202,6 +202,13 @@ def review_model_read_proposals(
     known_ids.update(e.producer_id for e in case.records if e.producer_id)
     known_ids.update(e.target_id for e in case.records
                      if e.target_id and e.stage == "config_stored")
+    # Current, ID-matched settings of an EVENT-ATTESTED command issuer may
+    # scope follow-up READs of its selected sensors. The case builder admits
+    # only explicit device selectors, never model prose, names or credentials.
+    for references in case.app_sensor_references.values():
+        for entry in references:
+            known_ids.update(str(x) for x in entry.get("deviceIds", [])
+                             if type(x) in (str, int) and str(x).isdecimal())
     prior = set()
     for name, args in previous_calls:
         if isinstance(name, str) and isinstance(args, dict):

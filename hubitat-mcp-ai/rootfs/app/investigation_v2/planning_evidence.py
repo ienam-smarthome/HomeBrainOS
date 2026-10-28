@@ -133,6 +133,15 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
                 "issues": coverage_info["issues"],
                 "observed_command_records": coverage_info["observed_command_records"],
             })
+    # Stored references are provenance-typed current selections, never
+    # inferred sensor triggers or guaranteed historical rule configuration.
+    selected_sensor_ids = [
+        {"app_id": app_id, "setting": entry["key"],
+         "sensor_ids": entry["deviceIds"][:8],
+         "historical_selection_verified": False}
+        for app_id, references in sorted(case.app_sensor_references.items(), key=lambda x: int(x[0]))
+        for entry in references[:8]
+    ][:16]
     return json.dumps({
         "records": events,
         "total_case_records": len(case.records),
@@ -146,6 +155,8 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
            if command_coverage else {}),
         "coverage": coverage,
         "current_app_name_by_issuer_id": identities,
+        **({"current_controller_sensor_selections": selected_sensor_ids}
+           if selected_sensor_ids else {}),
         "constraints": [
             "Command issued does not prove physical state changed",
             "A command-state time pair is not proof of internal automation logic",
@@ -154,6 +165,8 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
             "Coalesced model context is retained in the full source case",
             "History source completeness unverified unless explicit",
             "Current settings do not prove historical execution",
+            *(['Current sensor selections do not prove event-time triggers']
+              if selected_sensor_ids else []),
             "Use event record IDs; never invent clock times or command issuers",
         ],
     }, ensure_ascii=True, separators=(",", ":"))

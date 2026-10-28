@@ -640,6 +640,101 @@ async def run_read_only_investigation(
                     "typed_settings_fields": min(96, fields_count),
                 })
 
+    # Phase 1 source-first controller dependency expansion. Only READs for
+    # sensor IDs in the *typed current settings* of an event-attested command
+    # issuer can be proposed. The unchanged host reviewer checks every
+    # source ID, gateway, effect, schema, duplicate and read budget again.
+    if (bootstrap_source_identity and factual_objective is None
+            and executed < max_total_reads and time.monotonic() < deadline):
+        from .controller_dependencies import (
+            controller_sensor_history_proposals,
+            controller_log_coverage_proposals,
+        )
+        sensor_proposals = controller_sensor_history_proposals(
+            registry.values(), case,
+            learned_operations=verified_operations, limit=2,
+        )
+        if not case.app_sensor_references:
+            bootstrap_diagnostics.append({
+                "stage": "controller_sensors",
+                "reason": "no_verified_current_controller_sensor_selections",
+            })
+        elif not sensor_proposals:
+            bootstrap_diagnostics.append({
+                "stage": "controller_sensors",
+                "reason": "live_event_history_schema_or_incident_window_unavailable",
+            })
+        if sensor_proposals:
+            review = review_model_read_proposals(
+                case, sensor_proposals, registry.values(),
+                verified_entity_ids=known_ids,
+                learned_operations=verified_operations,
+                previous_calls=prior_calls,
+                max_total_reads=max_total_reads,
+                max_reads_this_round=min(2, max_total_reads-executed),
+                budget_used_reads=executed, incident_window=incident_window,
+            )
+            rejections.extend(item.reason for item in review.rejected)
+            if review.rejected:
+                bootstrap_diagnostics.append({
+                    "stage": "controller_sensors", "reason": "host_scope_or_schema_rejected",
+                    "validation": [r.reason for r in review.rejected[:3]],
+                })
+            for item in review.approved:
+                if executed >= max_total_reads or time.monotonic() >= deadline:
+                    break
+                fail_before = len(read_failures)
+                await execute_checked_read(item, -9)
+                sensor_id = str(item.arguments.get("args", {}).get("deviceId", ""))
+                cov = case.coverage[-1] if case.coverage else None
+                bootstrap_diagnostics.append({
+                    "stage": "controller_sensors",
+                    "sensor_id": sensor_id if sensor_id.isdecimal() else None,
+                    "status": ("read_attempt_failed"
+                               if len(read_failures) > fail_before
+                               else "read_attempt_completed"),
+                    "observed_rows": cov.returned_rows if cov else 0,
+                    "source_complete": cov.source_complete is True if cov else False,
+                })
+        if executed < max_total_reads and time.monotonic() < deadline:
+            log_proposals = controller_log_coverage_proposals(
+                registry.values(), case)
+            if not log_proposals:
+                bootstrap_diagnostics.append({
+                    "stage": "controller_logs",
+                    "reason": "read_only_log_operation_unavailable",
+                })
+            else:
+                review = review_model_read_proposals(
+                    case, log_proposals, registry.values(),
+                    verified_entity_ids=known_ids,
+                    learned_operations=verified_operations,
+                    previous_calls=prior_calls,
+                    max_total_reads=max_total_reads, max_reads_this_round=1,
+                    budget_used_reads=executed, incident_window=incident_window,
+                )
+                rejections.extend(item.reason for item in review.rejected)
+                if review.rejected:
+                    bootstrap_diagnostics.append({
+                        "stage": "controller_logs",
+                        "reason": "host_read_plan_rejected",
+                        "validation": [r.reason for r in review.rejected[:3]],
+                    })
+                for item in review.approved:
+                    fail_before = len(read_failures)
+                    await execute_checked_read(item, -10)
+                    cov = case.coverage[-1] if case.coverage else None
+                    bootstrap_diagnostics.append({
+                        "stage": "controller_logs",
+                        "status": ("read_attempt_failed"
+                                   if len(read_failures) > fail_before
+                                   else "read_attempt_completed"),
+                        "oldest_available_utc": cov.oldest_utc if cov else None,
+                        "newest_available_utc": cov.newest_utc if cov else None,
+                        "source_complete": cov.source_complete is True if cov else False,
+                        "restart_verified": False,
+                    })
+
     for round_index in range(max_rounds):
         rounds += 1
         # Models can propose, not install credentials, tools or permissions.
