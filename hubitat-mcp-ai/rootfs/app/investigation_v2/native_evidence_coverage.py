@@ -188,6 +188,54 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
     }
 
 
+
+def repeated_log_evidence(previous: Sequence[Mapping[str, Any]],
+                          projected: Mapping[str, Any]) -> bool:
+    """No newly observed WARN/ERROR group/time extent, not an exact-call dedup.
+
+    A narrower query returning one subset already grouped in a broader source
+    read does not independently corroborate the warning or add observations.
+    Use exact group identity and contained time range; if bounds are missing,
+    be conservative and never infer redundancy from message alone.
+    """
+    current = projected.get("log_summary")
+    if not isinstance(current, dict):
+        return False
+    groups = current.get("warning_error_groups")
+    if not isinstance(groups, list) or not groups:
+        return False
+    known: list[dict[str, Any]] = []
+    for witness in previous:
+        if witness.get("operation") != "hub_get_logs":
+            continue
+        data = witness.get("source_data")
+        summary = data.get("log_summary") if isinstance(data, dict) else None
+        if isinstance(summary, dict):
+            known.extend(g for g in summary.get("warning_error_groups", [])
+                         if isinstance(g, dict))
+    if not known:
+        return False
+    for item in groups:
+        if not isinstance(item, dict):
+            return False
+        start = _wall_time(item.get("oldest_returned"))
+        end = _wall_time(item.get("newest_returned"))
+        if start is None or end is None:
+            return False
+        if not any(
+            item.get("source_type") == prior.get("source_type")
+            and item.get("source_id") == prior.get("source_id")
+            and item.get("message") == prior.get("message")
+            and (prior_start := _wall_time(prior.get("oldest_returned"))) is not None
+            and (prior_end := _wall_time(prior.get("newest_returned"))) is not None
+            and prior_start <= start <= end <= prior_end
+            and int(item.get("count", 0)) <= int(prior.get("count", 0))
+            for prior in known
+        ):
+            return False
+    return True
+
+
 def gateway_offers_operation(manifest: Mapping[str, Any],
                              discovered: Mapping[str, set[str]],
                              operation: str) -> bool:
@@ -216,4 +264,4 @@ def useful_discovery_fingerprint(source: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 __all__ = ["gap_for_target", "gateway_offers_operation",
-           "useful_discovery_fingerprint"]
+           "useful_discovery_fingerprint", "repeated_log_evidence"]
