@@ -23,6 +23,7 @@ from .planning import _schema_problem
 from .read_diagnostics import classify_execution, classify_exception
 from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
 from .native_tool_protocol import operation_problem, guidance_for, source_highlights, evidence_fallback
+from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
                 Awaitable[dict[str, Any]]]
@@ -36,6 +37,9 @@ _SYSTEM = (
     "tools, not device control. You may investigate hub health, log errors, "
     "apps, rules, devices, interactions or historic incidents. DO NOT require "
     "a device name or fetch full inventory unless the evidence needs one. "
+    "For a named device without a verified ID, call homebrain_find_device "
+    "first; do not guess deviceId or search an unrelated Hub Mesh setting. "
+    "Hub Mesh is hub-to-hub sharing, not a normal device with Mesh in its label. "
     "For logs, distinguish INFO from WARN/ERROR and request severity-filtered "
     "rows when the returned sample contains only INFO. Do not call an INFO "
     "event a triggered alert. Avoid unbounded full-device listings when a "
@@ -351,7 +355,7 @@ async def run_native_read_agent(
     manifest = _read_manifest(tools)
     if not manifest:
         raise ValueError("No live read-only MCP tools verified")
-    offered = _model_tools(manifest)
+    offered = _model_tools(manifest) + [lookup_tool()]
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": question},
@@ -366,6 +370,7 @@ async def run_native_read_agent(
     attempted = 0
     rounds = 0
     identity_lookup_attempted = False
+    named_identity_lookups: list[dict[str, Any]] = []
     identity_lookup_ms = 0
     synthesis_status = "not_needed"
     coverage_challenge_used = False
@@ -445,6 +450,43 @@ async def run_native_read_agent(
                 continue
             name, args = parsed
             key = json.dumps([name, args], sort_keys=True, default=str)
+            if name == LOOKUP_NAME:
+                # The model chooses WHEN a device label needs resolution.
+                # This is a bounded host-local READ, never forwarded as an MCP
+                # command. Only one unique match is authorised for follow-up.
+                if (set(args) != {"name"} or not isinstance(args["name"], str)
+                        or len(args["name"]) > 120):
+                    failures.append({"tool": name, "code": "invalid_identity_query"})
+                    messages.append({"role": "tool", "content": json.dumps({
+                        "status": "invalid_identity_query", "matches": []})})
+                    continue
+                if key in prior or len(named_identity_lookups) >= 3:
+                    failures.append({"tool": name, "code": "duplicate_or_excess_identity_lookup"})
+                    messages.append({"role": "tool", "content": json.dumps({
+                        "status": "lookup_budget_exhausted", "matches": []})})
+                    continue
+                prior.add(key)
+                accepted_this_round += 1
+                identity_lookup_attempted = True
+                start_identity = time.monotonic()
+                found = await resolve_named_device(
+                    mcp, args["name"],
+                    timeout=min(6.0, max(0.1, deadline-time.monotonic())),
+                )
+                identity_lookup_ms += round(
+                    (time.monotonic()-start_identity)*1000)
+                if found["status"] == "unique":
+                    verified_ids.add(found["matches"][0]["id"])
+                named_identity_lookups.append({
+                    "query": _text(args["name"], 100),
+                    "status": found["status"],
+                    "count": len(found["matches"]),
+                })
+                messages.append({"role": "tool", "content": json.dumps({
+                    **found, "authority": "fresh_complete_hubitat_identity",
+                    "read_only": True,
+                }, ensure_ascii=True)})
+                continue
             issue = _guard(name, args, manifest, discovered, verified_ids)
             op_requested = args.get("tool") if name.startswith("hub_read_") else name
             if (name, str(op_requested)) in timed_out_operations:
@@ -743,6 +785,7 @@ async def run_native_read_agent(
             "model_tool_calls_allowed": bool(offered),
             "verified_source_ids": len(verified_ids),
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
+            "named_identity_lookups": named_identity_lookups,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
             "timed_out_operations": [f"{name}:{operation}"
