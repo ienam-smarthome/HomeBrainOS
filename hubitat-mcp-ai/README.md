@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.191**.
+Current add-on version: **0.18.192**.
+
+v0.18.192 prioritises attested callers during slow driver-method warnings over unrelated later generic warnings, detects repeated event-history subsets, deduplicates named callers in conclusions, and provides the verified device ID when a proposed detail read omits it. [Release notes](CHANGELOG-0.18.192.md).
 
 v0.18.191 separates independently verified app command issuers from unresolved driver-method execution. It avoids fabricating command names from internal warning methods, offers app-specific read-only follow-up, and prevents invalid device-scoped global driver-list reads. See [release notes](CHANGELOG-0.18.191.md).
 
