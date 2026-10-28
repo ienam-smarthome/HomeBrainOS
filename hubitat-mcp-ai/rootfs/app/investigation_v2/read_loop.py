@@ -21,6 +21,7 @@ from tool_registry import ToolEffect, classify_tool_effect
 
 from .evidence import CaseFile, build_case_file
 from .planning import review_model_read_proposals
+from .read_operation_canonicalizer import canonicalize_read_suboperations
 from .receipt_projection import project_read_receipt
 from .temporal_scope import IncidentWindow
 from .hypothesis_temporal_integrity import hypothesis_clock_issues
@@ -637,6 +638,9 @@ async def run_read_only_investigation(
             reason = "invalid_model_plan"
             break
 
+        planned, alias_repairs = canonicalize_read_suboperations(
+            planned, registry.values(), verified_entity_ids=known_ids)
+        diag["canonical_read_aliases"] = alias_repairs
         planned = scope_model_reads_to_verified_target(planned, known_ids)
         review = review_model_read_proposals(
             case, planned, registry.values(), verified_entity_ids=known_ids,
@@ -648,6 +652,17 @@ async def run_read_only_investigation(
         )
         rejections.extend(x.reason for x in review.rejected)
         if not review.approved:
+            # Do not spend another full provider round retrying tool names
+            # which are absent from this live manifest. They cannot become
+            # authorised by LLM insistence; a new investigation with updated
+            # discovery is the right boundary.
+            unknown_only = (bool(review.rejected)
+                            and all(item.reason == "tool not in live MCP manifest"
+                                    for item in review.rejected))
+            if unknown_only:
+                diag["unavailable_model_tool_count"] = len(review.rejected)
+                reason = "model_read_tools_unavailable"
+                break
             if (review.rejected and round_index + 1 < max_rounds
                     and hasattr(propose, "set_validation_feedback")
                     and callable(getattr(propose, "set_validation_feedback"))):
