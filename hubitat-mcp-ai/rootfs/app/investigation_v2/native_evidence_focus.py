@@ -91,6 +91,18 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     return (safe_string(e.get("name"),32)+"="+safe_string(e.get("value"),45)
                             +" at "+safe_string(e.get("date") or e.get("time"),53))
                 add(f"{ref}: {len(selected)} target events returned; newest {label(selected[0])}; oldest {label(selected[-1])}. Driver status events are NOT device heartbeats.")
+            if scoped:
+                for issuer in data.get("issuer_apps",[])[:8]:
+                    if not isinstance(issuer,dict):
+                        continue
+                    commands=issuer.get("commands")
+                    add(f"{ref}: issuing app {safe_string(issuer.get('name'),75)} "
+                        f"(app ID {safe_string(issuer.get('appId'),18)}) issued "
+                        f"{safe_string(issuer.get('count'),12)} commands: "
+                        f"{safe_string(commands,155)}; between "
+                        f"{safe_string(issuer.get('oldest'),45)} and "
+                        f"{safe_string(issuer.get('newest'),45)}. "
+                        "This is command provenance, not proof of cause.")
         elif op=="hub_get_logs":
             summary=data.get("log_summary")
             if not isinstance(summary,dict):continue
