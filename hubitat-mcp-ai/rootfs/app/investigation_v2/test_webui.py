@@ -260,6 +260,8 @@ el('run').onclick=async()=>{
       ? 'Hubitat light inventory · read-only reported states'
       : data.answer_mode==='semantic_inventory'
       ? 'Semantic inventory query · host-verified reported states'
+      : data.answer_mode==='semantic_system_diagnostics'
+      ? 'Whole-hub diagnostics · read-only System Check'
       : data.answer_mode==='semantic_unavailable'
       ? 'Semantic objective not yet supported · no device changes'
       : targets.length
@@ -288,6 +290,12 @@ el('run').onclick=async()=>{
       }
       metric('Inventory coverage',q.inventory_complete===true?'Verified':'Not verified');
       metric('Inventory pages',q.inventory_pages);
+    }else if(data.answer_mode==='semantic_system_diagnostics'){
+      const audit=data.system_audit||{};
+      metric('System status',audit.status||'Unverified');
+      metric('Flagged findings',audit.attention_count);
+      metric('Log source',audit.log_available===true?'Available (sample)':'Unavailable');
+      metric('Log rows',audit.log_rows_returned??'Unverified');
     }else if(data.answer_mode==='semantic_unavailable'){
       metric('Execution','No reads beyond verified inventory');
     }else if(data.answer_mode==='current_group_state'){
@@ -319,6 +327,7 @@ el('run').onclick=async()=>{
       group_status:data.group_status,
       semantic_plan:data.semantic_plan,
       inventory_query:data.inventory_query,
+      system_audit:data.system_audit,
       semantic_diagnostics:data.semantic_diagnostics,
       forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
@@ -347,6 +356,7 @@ el('run').onclick=async()=>{
     el('status').textContent=(
       data.answer_mode==='current_group_state'?' Live group-state read completed; inspect inventory coverage.':
       data.answer_mode==='semantic_inventory'?' Verified semantic inventory query completed.':
+      data.answer_mode==='semantic_system_diagnostics'?' Read-only whole-hub diagnostic completed; review source coverage.':
       data.answer_mode==='semantic_unavailable'?' V2 returned a safe capability limitation; no writes.':
       stop==='read_budget_reached'?' Test finished — MCP read budget reached; investigation incomplete.':
       stop==='planning_timeout'?' Test finished — AI planning timed out; investigation incomplete.':
