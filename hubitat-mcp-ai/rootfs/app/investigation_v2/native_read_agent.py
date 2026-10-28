@@ -219,7 +219,9 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     elif operation == "hub_get_app_config":
         projected.update(app_config_summary(data))
     elif operation == "hub_get_source":
-        projected.update(source_metadata(data))
+        # Do not leak raw source strings through the generic projection.
+        # Source-code analysis needs a separately reviewed, bounded reader.
+        projected = source_metadata(data)
     if operation == "hub_get_logs":
         log_groups = compact_logs(data)
         if log_groups is not None:
