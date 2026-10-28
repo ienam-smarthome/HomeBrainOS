@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.193**.
+Current add-on version: **0.18.194**.
+
+v0.18.194 enforces device-scoped event-history reads when a uniquely verified target has matching WARN evidence, rejects repeated invalid proposals before they waste more investigation rounds, and skips redundant final model synthesis after those failures. Explicit hub/location history remains available. See [release notes](CHANGELOG-0.18.194.md).
 
 v0.18.193 separates known command issuers from the still-unattributed cause of a generic load warning, exposes bounded numeric memory-history measurements (or explicitly reports when history contains only timestamps), and gives the model an early source-derived coverage hint while preserving read-only tool selection. See [release notes](CHANGELOG-0.18.193.md).
 
