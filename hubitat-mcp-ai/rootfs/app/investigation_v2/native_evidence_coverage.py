@@ -195,6 +195,51 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
         }
     if chosen is None:
         return None
+    # Two independent facts must remain separate: source-attested apps have
+    # issued commands to the device, but a generic load warning might have
+    # NO command issuer recorded during its specific time window. A lack of
+    # coincidence is not a lack of device callers and is not a proof that
+    # any of those callers caused the generic runtime load.
+    if chosen["method"] is None:
+        verified_callers = sorted({
+            issuer for window in events
+            for _name, _stamp, issuer in window["command_times"]
+            if issuer.isdecimal()
+        })
+        if verified_callers:
+            return {
+                "kind": "target_generic_warning_origin_unverified",
+                "focus_ids": sorted(focus),
+                "method": None,
+                "warning_window": {
+                    "oldest": chosen["start_text"],
+                    "newest": chosen["end_text"],
+                    "timezone_verified": False,
+                },
+                "device_command_issuers_verified": True,
+                "incident_window_issuer_verified": False,
+                "observed_calling_app_ids": verified_callers[:10],
+                "candidate_read": "hub_get_logs",
+                "candidate_filters": {
+                    "mode": "past", "level": "warn", "limit": 200,
+                },
+                "candidate_alternatives": [
+                    "hub_get_metrics", "hub_get_app_config",
+                ],
+                "materiality": (
+                    "The device has separately attested command callers, but "
+                    "none of the returned commands coincide with this generic "
+                    "warning. A broader time-bounded WARN history might "
+                    "recover a more diagnostic internal method warning; "
+                    "independent performance or source evidence may help."
+                ),
+                "limitation": (
+                    "No observed app command has been attributed to this "
+                    "particular generic warning. Do not infer the command "
+                    "issuer is unknown for the device or that previous "
+                    "command issuers caused the runtime load."
+                ),
+            }
     expanded_start = chosen["start"] - timedelta(minutes=5)
     expanded_end = chosen["end"] + timedelta(minutes=5)
     overlaps = [
