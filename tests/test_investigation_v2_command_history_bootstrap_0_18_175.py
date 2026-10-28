@@ -156,7 +156,7 @@ async def test_optional_attribute_in_live_schema_is_required_for_unfiltered_read
         question="Investigate latest OFF",mcp=mcp,executor=exe,
         propose=done,verified_entity_ids=(TARGET,),
         bootstrap_device_context=True,max_rounds=1)
-    assert [op for op,_ in exe.calls]==["hub_get_device","hub_list_device_events"]
+    assert [op for op,_ in exe.calls]==["hub_list_device_events"]
     assert any(d.get("stage")=="history_command_context"
                and d.get("reason")=="unfiltered_history_operation_or_schema_unavailable"
                for d in result.bootstrap_diagnostics)
