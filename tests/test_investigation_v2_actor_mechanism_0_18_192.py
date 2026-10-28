@@ -85,8 +85,10 @@ def test_generic_warning_without_any_attested_command_still_unattributed():
     gap=gap_for_target([read(4,"hub_get_logs",only),
                         read(5,"hub_list_device_events",hist,{"deviceId":"7934"})],
                        ["7934"],can_read_events=True)
-    assert gap["kind"]=="target_warning_command_issuer_unverified"
+    assert gap["kind"]=="target_generic_warning_origin_unverified"
     assert gap["method"] is None
+    assert gap["device_command_issuers_verified"] is True
+    assert gap["incident_window_issuer_verified"] is False
 
 
 def test_command_refresh_filtered_subset_of_prior_events_is_redundant():
