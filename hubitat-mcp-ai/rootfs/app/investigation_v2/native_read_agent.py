@@ -800,12 +800,11 @@ async def run_native_read_agent(
                 break
         else:
             recovery_rejections = 0
-    if causal_coverage_gap is None:
-        causal_coverage_gap = gap_for_target(
-            witnesses, sorted(focus_ids),
-            can_read_events=gateway_offers_operation(
-                manifest, discovered, "hub_list_device_events"),
-        )
+    causal_coverage_gap = gap_for_target(
+        witnesses, sorted(focus_ids),
+        can_read_events=gateway_offers_operation(
+            manifest, discovered, "hub_list_device_events"),
+    )
     # If the model exhausted planning after collecting both a subject's
     # current-state read and target-specific warnings, another expensive
     # model-only pass is often futile. Keep the host-attested conclusion
