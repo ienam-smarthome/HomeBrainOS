@@ -141,7 +141,12 @@ def _attribute_qualifier_before_subject(
         return False
     between = text[end:subject_start]
     return re.fullmatch(
+        # Pair-valued status questions must retain a SINGLE verified
+        # device subject: "switch state and brightness level of <label>".
+        # Bare "switch and <label>" is still an ambiguous extra device.
         r"\s+(?:state|status|value|reading|readings|measurement|level)"
+        r"(?:\s+and\s+(?:brightness(?:\s+level)?|dimmer\s+level|"
+        r"switch(?:\s+(?:state|status))?|power|temperature|humidity|battery))?"
         r"\s+(?:of|for)\s+(?:the\s+)?", between,
     ) is not None
 

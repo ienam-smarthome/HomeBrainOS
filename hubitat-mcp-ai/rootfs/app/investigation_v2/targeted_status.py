@@ -55,6 +55,7 @@ def _attested_id(data: Mapping[str, Any]) -> str | None:
 async def read_verified_target_status(
     mcp: Any, verified_id: str, *,
     wanted_attributes: Sequence[str] = ("switch", "level"),
+    diagnostics: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """Return (typed snapshot, honest scoped provenance), otherwise None.
 
@@ -62,53 +63,60 @@ async def read_verified_target_status(
     The caller must already have uniquely bound verified_id via a complete
     identity audit; revalidate digits here as defence in depth.
     """
+    def declined(reason: str) -> None:
+        if diagnostics is not None:
+            diagnostics["outcome"] = reason
+        return None
+
     if not isinstance(verified_id, str) or not verified_id.isdecimal():
-        return None
+        return declined("invalid_verified_id")
     if tuple(wanted_attributes) != ("switch", "level"):
-        return None
+        return declined("unsupported_attribute_contract")
     tools = await mcp.list_tools()
     gateway = _gateway(tools, "hub_get_device")
     if gateway is None:
-        return None
+        return declined("live_read_operation_unavailable")
     nested = _args_schema(gateway)
     props = nested.get("properties", {})
     props = props if isinstance(props, dict) else {}
     required = nested.get("required", [])
     if not isinstance(required, list) or not _accepts_field(nested, "deviceId"):
-        return None
+        return declined("missing_live_device_id_schema")
     args: dict[str, Any] = {"deviceId": verified_id}
     if "mode" in required:
         allowed = props.get("mode", {}).get("enum", [])
         if not isinstance(allowed, list) or "status" not in allowed:
-            return None
+            return declined("status_mode_not_advertised")
         args["mode"] = "status"
     if any(key not in args for key in required):
-        return None
+        return declined("unsupported_required_args")
     request = {"tool": "hub_get_device", "args": args}
     if _schema_problem(request, gateway.input_schema) is not None:
-        return None
+        return declined("request_schema_rejected")
     # The exact, live-manifest-authorised operation is READ. No retries
     # on an error, and a malformed response cannot be promoted into state.
+    if diagnostics is not None:
+        diagnostics["gateway_read_attempted"] = True
     result = await mcp.call_tool(gateway.name, request)
     if not isinstance(result.data, dict):
-        return None
+        return declined("unstructured_source")
     if _attested_id(result.data) != verified_id:
-        return None
+        return declined("source_id_missing_or_mismatched")
     receipt = project_read_receipt(
         gateway.name, request, result,
         source_request_id="targeted-current-read",
     )
     if receipt.get("success") is not True:
-        return None
+        return declined("typed_source_receipt_failed")
     detail = receipt.get("details") or {}
     snapshot = detail.get("deviceSnapshot")
     if not isinstance(snapshot, dict) or snapshot.get("deviceId") != verified_id:
-        return None
+        return declined("typed_snapshot_id_mismatch")
     attrs = snapshot.get("attributes")
     if not isinstance(attrs, dict) or not any(
         key in attrs for key in wanted_attributes
     ):
-        return None
+        return declined("requested_attributes_not_projectable")
     # Provenance is *scoped* to this one fresh device read. It says nothing
     # about whether all devices or all possible states were returned.
     provenance = {
@@ -120,6 +128,8 @@ async def read_verified_target_status(
         "source_operation": "hub_get_device",
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
     }
+    if diagnostics is not None:
+        diagnostics["outcome"] = "verified_targeted_source"
     return snapshot, provenance
 
 
