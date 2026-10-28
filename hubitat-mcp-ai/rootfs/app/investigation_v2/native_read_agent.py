@@ -26,6 +26,9 @@ from .native_tool_protocol import operation_problem, guidance_for, source_highli
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
+from .native_provenance import (source_identities, event_summary,
+                                dependent_summary, driver_summary,
+                                app_config_summary, source_metadata)
 from evidence_gateway_contract import missing_required_read_fields
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
@@ -196,6 +199,22 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
             projected["projection_empty"] = True
     if operation == "hub_get_device":
         projected.update(device_mode_evidence(data))
+    elif operation == "hub_list_device_events":
+        event_evidence = event_summary(data)
+        if event_evidence is not None:
+            projected = event_evidence
+    elif operation == "hub_list_device_dependents":
+        refs = dependent_summary(data)
+        if refs is not None:
+            projected = refs
+    elif operation == "hub_list_drivers":
+        refs = driver_summary(data)
+        if refs is not None:
+            projected = refs
+    elif operation == "hub_get_app_config":
+        projected.update(app_config_summary(data))
+    elif operation == "hub_get_source":
+        projected.update(source_metadata(data))
     if operation == "hub_get_logs":
         log_groups = compact_logs(data)
         if log_groups is not None:
@@ -332,7 +351,8 @@ def _contains_control_key(value: Any, depth: int = 0) -> bool:
 
 def _guard(name: str, args: dict[str, Any],
            manifest: Mapping[str, MCPTool],
-           discovered: Mapping[str, set[str]], verified_ids: set[str]) -> str | None:
+           discovered: Mapping[str, set[str]], verified_ids: set[str],
+           verified_typed: Mapping[str, set[str]] | None = None) -> str | None:
     tool = manifest.get(name)
     if tool is None:
         return "tool_not_on_live_read_manifest"
@@ -354,9 +374,21 @@ def _guard(name: str, args: dict[str, Any],
         inner = args
     for id_key in ("deviceId", "appId"):
         value = inner.get(id_key)
+        category = "device" if id_key == "deviceId" else "app"
+        allowed = (verified_ids if verified_typed is None
+                   else verified_typed.get(category, set()))
         if value is not None and (type(value) not in (str, int)
-                                 or str(value) not in verified_ids):
+                                 or str(value) not in allowed):
             return "target_id_not_verified_from_live_source"
+    if verified_typed is not None and args.get("tool") == "hub_get_source":
+        source_kind = inner.get("type")
+        source_id = inner.get("id")
+        if source_id is not None:
+            if source_kind not in ("app", "driver"):
+                return "source_type_not_attested"
+            if (type(source_id) not in (str, int)
+                    or str(source_id) not in verified_typed.get(source_kind, set())):
+                return "target_id_not_verified_from_live_source"
     contract_issue = operation_problem(name, args)
     if contract_issue:
         return contract_issue
@@ -397,6 +429,7 @@ async def run_native_read_agent(
         {"role": "user", "content": question},
     ]
     verified_ids: set[str] = set()
+    verified_typed: dict[str, set[str]] = {"device": set(), "app": set(), "driver": set()}
     discovered: dict[str, set[str]] = {}
     prior: set[str] = set()
     timed_out_operations: set[tuple[str, str]] = set()
@@ -519,6 +552,7 @@ async def run_native_read_agent(
                     (time.monotonic()-start_identity)*1000)
                 if found["status"] == "unique":
                     verified_ids.add(found["matches"][0]["id"])
+                    verified_typed["device"].add(found["matches"][0]["id"])
                     focus_ids.add(found["matches"][0]["id"])
                 named_identity_lookups.append({
                     "query": _text(args["name"], 100),
@@ -530,7 +564,8 @@ async def run_native_read_agent(
                     "read_only": True,
                 }, ensure_ascii=True)})
                 continue
-            issue = _guard(name, args, manifest, discovered, verified_ids)
+            issue = _guard(name, args, manifest, discovered, verified_ids,
+                           verified_typed)
             op_requested = args.get("tool") if name.startswith("hub_read_") else name
             if (name, str(op_requested)) in timed_out_operations:
                 issue = "operation_prior_timeout"
@@ -568,6 +603,7 @@ async def run_native_read_agent(
                             if isinstance(row, dict)
                             and str(row.get("id") or row.get("deviceId") or "").isdecimal()
                         )
+                        verified_typed["device"].update(verified_ids)
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -575,7 +611,8 @@ async def run_native_read_agent(
                     finally:
                         identity_lookup_ms += round(
                             (time.monotonic() - before_identity) * 1000)
-                    issue = _guard(name, args, manifest, discovered, verified_ids)
+                    issue = _guard(name, args, manifest, discovered, verified_ids,
+                           verified_typed)
             if key in prior:
                 issue = "duplicate_read"
             if issue is not None:
@@ -645,6 +682,21 @@ async def run_native_read_agent(
                 continue
             assert result is not None
             verified_ids.update(attested_source_ids(op, result.data))
+            # The read receipts attest app and driver identities separately.
+            # Event issuers become trusted app IDs only for a device-scoped
+            # read already approved by the host; no app identifier is guessed.
+            typed = source_identities(
+                op, result.data,
+                scoped_device_id=(
+                    target if isinstance(inner, dict)
+                    and inner.get("deviceId") is not None
+                    and target in verified_typed["device"]
+                    else None
+                ),
+            )
+            for entity_type, identities in typed.items():
+                verified_typed[entity_type].update(identities)
+                verified_ids.update(identities)
             if name == "hub_search_tools":
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
@@ -890,6 +942,7 @@ async def run_native_read_agent(
             "successful_reads": len(witnesses),
             "model_tool_calls_allowed": bool(offered),
             "verified_source_ids": len(verified_ids),
+            "verified_typed_ids": {kind: sorted(ids) for kind, ids in verified_typed.items()},
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "named_identity_lookups": named_identity_lookups,
             "lazy_identity_lookup_ms": identity_lookup_ms,
