@@ -99,6 +99,7 @@ from investigation_v2.test_service import (
     resolve_verified_device_subjects, resolve_planned_device_subjects,
 )
 from investigation_v2.evaluate import evaluate_v2_with_model
+from investigation_v2.native_read_agent import run_native_read_agent
 from investigation_v2.intent_boundary import incompatible_v2_control_request
 from investigation_v2.factual_objective import verified_factual_objective
 from investigation_v2.replay_scorecard import replay_scorecard
@@ -1376,6 +1377,7 @@ class V2TestRequest(BaseModel):
     device_ids: list[str] = Field(default_factory=list, max_length=4)
     device_name: str | None = Field(default=None, max_length=160)
     explicit_opt_in: bool = False
+    agent_mode: Literal["legacy", "native_reads"] = "legacy"
     existing_v1_answer: str | None = Field(default=None, max_length=30000)
     reference_answer: str | None = Field(default=None, max_length=30000)
 
@@ -1488,6 +1490,27 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
 
     async def experiment() -> dict[str, Any]:
         started = time.perf_counter()
+        # General-purpose, model-native READ investigation starts with live
+        # MCP tools, not with a device lookup, a keyword router, or a
+        # predetermined System Check. Legacy V2 remains available for A/B
+        # regressions until this experimental engine passes live acceptance.
+        if payload.agent_mode == "native_reads":
+            try:
+                result = await run_native_read_agent(
+                    question=payload.question, chat=agent.transport.chat,
+                    mcp=mcp, executor=agent.executor,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("V2 native read agent unavailable")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Native read-only investigation unavailable; no Hubitat commands sent",
+                ) from None
+            result["elapsed_ms"] = round(
+                (time.perf_counter() - started) * 1000)
+            return result
         semantic = None
         semantic_failure = None
         direct_verified_target = None

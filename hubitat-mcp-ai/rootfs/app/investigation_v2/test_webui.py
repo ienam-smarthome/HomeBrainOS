@@ -38,7 +38,14 @@ a control command.</p>
 <button type="button" id="forgetAccess" hidden>Forget saved access</button>
 <label for="question">Investigation question</label>
 <textarea id="question" placeholder="Why did Livingroom Light 1 stay on overnight?"></textarea>
-<p><small>HomeBrain automatically identifies the device from your question using
+<p><small>Native READ agent begins with tool discovery and requires no device ID.
+Legacy V2 still uses a verified Hubitat inventory for individual-device tests.</small></p>
+<label for="agentMode">Investigation engine</label>
+<select id="agentMode" style="width:100%;padding:10px;background:#111115;color:#fff;border:1px solid #555;border-radius:7px">
+<option value="native_reads" selected>Native MCP read agent (new general-purpose test)</option>
+<option value="legacy">Legacy V2 investigation (comparison)</option>
+</select>
+<p hidden><small>HomeBrain automatically identifies the device from your question using
 the live Hubitat inventory. A device ID is not required.</small></p>
 <details id="targetOverride"><summary>Advanced: specify a device only if automatic matching fails</summary>
 <p><small>Overrides apply only while Advanced is open. Collapse this section to restore automatic matching.</small></p>
@@ -234,6 +241,7 @@ el('run').onclick=async()=>{
       body:JSON.stringify({
         explicit_opt_in:true,question,
         device_ids:ids,
+        agent_mode:el('agentMode').value,
         device_name:advanced?(el('deviceName').value.trim()||null):null,
         existing_v1_answer:el('v1').value||null,
         reference_answer:el('reference').value||null
@@ -260,6 +268,8 @@ el('run').onclick=async()=>{
       ? 'Hubitat light inventory · read-only reported states'
       : data.answer_mode==='semantic_inventory'
       ? 'Semantic inventory query · host-verified reported states'
+      : data.answer_mode==='native_mcp_investigation'
+      ? 'Native MCP agent · model-selected read tools'
       : data.answer_mode==='semantic_system_diagnostics'
       ? 'Whole-hub diagnostics · read-only System Check'
       : data.answer_mode==='semantic_unavailable'
@@ -290,6 +300,13 @@ el('run').onclick=async()=>{
       }
       metric('Inventory coverage',q.inventory_complete===true?'Verified':'Not verified');
       metric('Inventory pages',q.inventory_pages);
+    }else if(data.answer_mode==='native_mcp_investigation'){
+      const n=data.native_diagnostics||{};
+      metric('Model rounds',n.rounds);
+      metric('MCP reads',n.reads_executed);
+      metric('Successful reads',n.successful_reads);
+      metric('Stop reason',n.stop_reason||'Unknown');
+      metric('Failed/rejected reads',n.failures?.length??0);
     }else if(data.answer_mode==='semantic_system_diagnostics'){
       const audit=data.system_audit||{};
       metric('System status',audit.status||'Unverified');
@@ -328,6 +345,7 @@ el('run').onclick=async()=>{
       semantic_plan:data.semantic_plan,
       inventory_query:data.inventory_query,
       system_audit:data.system_audit,
+      native_diagnostics:data.native_diagnostics,
       semantic_diagnostics:data.semantic_diagnostics,
       forensic_metrics:data.forensic_metrics,
       stopped_because:data.investigation?.stopped_because,
@@ -356,6 +374,7 @@ el('run').onclick=async()=>{
     el('status').textContent=(
       data.answer_mode==='current_group_state'?' Live group-state read completed; inspect inventory coverage.':
       data.answer_mode==='semantic_inventory'?' Verified semantic inventory query completed.':
+      data.answer_mode==='native_mcp_investigation'?' Native MCP read-agent finished; review evidence coverage.':
       data.answer_mode==='semantic_system_diagnostics'?' Read-only whole-hub diagnostic completed; review source coverage.':
       data.answer_mode==='semantic_unavailable'?' V2 returned a safe capability limitation; no writes.':
       stop==='read_budget_reached'?' Test finished — MCP read budget reached; investigation incomplete.':
