@@ -121,13 +121,49 @@ async def test_no_scoped_identity_from_partial_duplicate_unfiltered_or_wrong_pag
 
 
 @pytest.mark.asyncio
-async def test_missing_live_filter_schema_skips_without_network():
+async def test_legacy_gateway_uses_production_read_contract_with_strict_source_coverage():
     m = MCP(filter_enabled=False)
+    diag = {}
+    result = await read_filtered_target_identity(
+        m, "Livingroom Light 2", diagnostics=diag)
+    assert result is not None
+    assert result[0][0]["id"] == "7828"
+    assert diag["identity_lookup"] == "filtered_unique_exact_label"
+    assert diag["filter_contract"] == "host_allowlisted_production_read_contract"
+    assert len(m.calls) == 1
+    assert m.calls[0][1]["tool"] == "hub_list_devices"
+    assert m.calls[0][1]["args"]["labelFilter"] == "Livingroom Light 2"
+
+
+@pytest.mark.asyncio
+async def test_legacy_filter_ignored_cannot_prove_a_target():
+    m = MCP(filter_enabled=False, page={
+        "devices": [{"id": "7828", "label": "Livingroom Light 2"}],
+        "total": 204, "hasMore": True, "nextOffset": 50,
+    })
+    diagnostics = {}
+    assert await read_filtered_target_identity(
+        m, "Livingroom Light 2", diagnostics=diagnostics) is None
+    assert diagnostics["filter_contract"] == "host_allowlisted_production_read_contract"
+    assert diagnostics["identity_lookup"] == "filtered_coverage_unverified"
+
+
+@pytest.mark.asyncio
+async def test_legacy_contract_never_opens_a_write_or_undeclared_operation():
+    m = MCP(filter_enabled=False)
+    m.tools[0].annotations["readOnlyHint"] = False
     diag = {}
     assert await read_filtered_target_identity(
         m, "Livingroom Light 2", diagnostics=diag) is None
-    assert diag == {"identity_lookup": "filter_not_advertised"}
-    assert m.calls == []
+    assert diag["identity_lookup"] == "filtered_gateway_unavailable"
+    assert not m.calls
+    m = MCP(filter_enabled=False)
+    m.tools[0].input_schema["properties"]["tool"]["enum"] = ["hub_get_device"]
+    diag = {}
+    assert await read_filtered_target_identity(
+        m, "Livingroom Light 2", diagnostics=diag) is None
+    assert diag["identity_lookup"] == "filtered_gateway_unavailable"
+    assert not m.calls
 
 
 def test_http_fast_scoped_read_never_uses_204_device_inventory(monkeypatch, tmp_path):
