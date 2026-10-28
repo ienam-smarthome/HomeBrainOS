@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.179**.
+Current add-on version: **0.18.180**.
+
+v0.18.180 adds a model-selected, system-scoped **read-only** V2 audit for whole-hub health, automation and log questions. The host uses the established System Check with persistence disabled, not device-name guessing or Hubitat writes. Log sampling and source failures are always disclosed. See [release notes](CHANGELOG-0.18.180.md).
 
 ## Architecture
 

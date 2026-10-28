@@ -104,6 +104,7 @@ from investigation_v2.factual_objective import verified_factual_objective
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import SemanticPlan, semantic_plan
+from investigation_v2.system_diagnostics import format_system_diagnostics
 from investigation_v2.targeted_status import (
     current_status_attributes, read_verified_target_status,
     explicit_current_device_name, read_filtered_target_identity,
@@ -1780,6 +1781,40 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     result["answer"]["validation_issues"].append(
                         "optional_measurement_role_enrichment_unavailable"
                     )
+                return result
+            if semantic is not None and (
+                    semantic.mode == "diagnostics"
+                    or (semantic.mode == "investigation" and semantic.scope == "all")):
+                # Model chooses a SYSTEM objective, not a guessed device.
+                # The host reuses the established read-only system audit and
+                # never persists or changes scheduled System Check snapshots.
+                # An unverified device name is not needed for whole-hub logs.
+                try:
+                    snapshot = await health_audit.run(
+                        reason="v2-read-only", persist=False)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("V2 read-only system diagnostics unavailable")
+                    raise HTTPException(
+                        status_code=503,
+                        detail="V2 system diagnostics could not read the hub; no commands sent",
+                    ) from None
+                result = format_system_diagnostics(snapshot)
+                result["elapsed_ms"] = round((time.perf_counter()-started)*1000)
+                result["semantic_plan"] = semantic.to_dict()
+                result["semantic_diagnostics"] = {
+                    "phase": "system_scope",
+                    "outcome": "source_backed",
+                    "inventory_ms": inventory_ms,
+                    "planning_ms": planning_ms,
+                    "inventory_devices": len(audit_devices),
+                    "inventory_complete": inventory_provenance.get("complete") is True,
+                    "system_audit_ms": snapshot.get("elapsed_ms"),
+                    "target_id": None,
+                    "device_resolution_attempted": False,
+                    "model_issued_tools": False,
+                }
                 return result
             if semantic is not None and semantic.mode in ("unsupported","historical"):
                 # Unsupported whole-house history must not be misrepresented

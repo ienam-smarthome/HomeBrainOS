@@ -234,6 +234,29 @@ async def evaluate_v2_with_model(
                                                result.stopped_because, incident_window),
             incident_window=incident_window,
         )
+    # Once the host read budget is exhausted with an attested latest switch
+    # command/state/motion chain, no model can acquire another discriminator.
+    # Do not spend additional (potentially minutes-long) atomic/narrative
+    # model calls to re-select facts the host can already cite. The concise
+    # source-first report remains the primary answer, with gaps intact.
+    if result.stopped_because == "source_backed_read_budget_reached":
+        grounded = assemble_grounded_answer(
+            result.case, [],
+            {"selected_record_ids": [r.record_id for r in result.case.records],
+             "hypothesis_order": []},
+        )
+        grounded = replace(
+            grounded, validation_issues=(*grounded.validation_issues,
+                                        "source_backed_read_budget_reached",
+                                        "atomic_model_selection_not_needed"),
+        )
+        return V2Evaluation(
+            investigation=result, answer=grounded,
+            report=format_investigation_report(
+                result.case, [], result.stopped_because, incident_window,
+            ),
+            incident_window=incident_window,
+        )
     # When speculative model reads add no typed evidence, asking another
     # model to validate them creates latency and unsupported causal claims.
     # Preserve all actual event records, commands, and current snapshots;
