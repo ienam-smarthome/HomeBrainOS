@@ -82,4 +82,36 @@ def project_metrics(data: Any) -> dict[str, Any]:
     return result
 
 
-__all__ = ["project_metrics"]
+def project_memory_history(data: Any) -> dict[str, Any]:
+    """Expose bounded numeric history, and explicitly flag timestamp-only rows.
+
+    The generic evidence projector previously retained only timestamp fields.
+    Numeric memory/CPU values are useful if the gateway actually returns
+    them, but their absence must not be inferred to mean stable hub health.
+    """
+    raw = unwrapped(data)
+    entries = raw.get("entries")
+    records = _numbers(entries, max_rows=60) if isinstance(entries, list) else []
+    records = records if isinstance(records, list) else []
+    numeric_rows = sum(
+        isinstance(row, dict) and any(
+            type(value) in (int, float, bool)
+            for name, value in row.items() if name not in _TIME_KEYS
+        ) for row in records
+    )
+    summary = raw.get("summary")
+    result = {
+        "entries": records,
+        "source_rows_reported": len(entries) if isinstance(entries, list) else None,
+        "projected_rows": len(records),
+        "numeric_observation_rows": numeric_rows,
+        "source_complete": False,
+    }
+    if isinstance(summary, dict):
+        result["summary"] = _numbers(summary, max_rows=30)
+    if numeric_rows == 0:
+        result["history_numeric_values_unavailable"] = True
+    return result
+
+
+__all__ = ["project_metrics", "project_memory_history"]
