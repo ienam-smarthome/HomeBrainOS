@@ -124,6 +124,17 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                 add(f"{ref}: log sample has no target-specific warnings; "
                     f"sample {scope}, timestamps {window}; coverage incomplete. "
                     "This is NOT evidence the target's earlier warnings stopped.",False)
+        elif op in ("hub_get_metrics", "hub_get_performance_stats"):
+            current=data.get("current")
+            trends=data.get("trends")
+            if isinstance(current,dict) and current:
+                add(f"{ref}: hub-reported current performance measurements "
+                    f"{safe_string(current,300)}. These readings do not "
+                    "independently attribute performance impact to a device.")
+            if isinstance(trends,(dict,list)) and trends:
+                add(f"{ref}: bounded hub performance trend samples "
+                    f"{safe_string(trends,240)}; source history completeness "
+                    "and causal attribution unverified.",False)
         elif op=="hub_list_device_dependents":
             if str(w.get("read_filters",{}).get("deviceId")) in focus:
                 apps=data.get("apps_using")

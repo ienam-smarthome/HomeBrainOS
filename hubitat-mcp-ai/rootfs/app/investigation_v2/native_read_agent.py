@@ -26,6 +26,11 @@ from .native_tool_protocol import operation_problem, guidance_for, source_highli
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
+from .native_metrics_evidence import project_metrics
+from .native_evidence_coverage import (
+    gap_for_target, gateway_offers_operation,
+    useful_discovery_fingerprint,
+)
 from .native_provenance import (source_identities, event_summary,
                                 dependent_summary, driver_summary,
                                 app_config_summary, source_metadata)
@@ -218,6 +223,8 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
             projected = refs
     elif operation == "hub_get_app_config":
         projected.update(app_config_summary(data))
+    elif operation in ("hub_get_metrics", "hub_get_performance_stats"):
+        projected.update(project_metrics(data))
     elif operation == "hub_get_source":
         # Do not leak raw source strings through the generic projection.
         # Source-code analysis needs a separately reviewed, bounded reader.
@@ -456,10 +463,35 @@ async def run_native_read_agent(
     identity_lookup_ms = 0
     synthesis_status = "not_needed"
     coverage_challenge_used = False
+    causal_coverage_challenge_used = False
+    causal_coverage_gap: dict[str, Any] | None = None
+    repeated_discovery = 0
+    discovery_fingerprints: set[tuple[str, ...]] = set()
     synthesis_elapsed_ms = 0
     answer_text = ""
     reason = "round_budget_reached"
-    for round_no in range(max_rounds):
+    for round_no in range(max_rounds + 1):
+        if round_no >= max_rounds:
+            # One model-chosen follow-up chance when warning evidence lacks
+            # source-attested command actor provenance.
+            causal_coverage_gap = gap_for_target(
+                witnesses, sorted(focus_ids),
+                can_read_events=gateway_offers_operation(
+                    manifest, discovered, "hub_list_device_events"),
+            )
+            if (causal_coverage_challenge_used or causal_coverage_gap is None
+                    or attempted >= max_reads
+                    or deadline - time.monotonic() <= 4):
+                break
+            causal_coverage_challenge_used = True
+            messages.append({"role": "user", "content":
+                "Evidence-coverage review (not an instruction to assume a "
+                "cause): a verified target has WARN/ERROR observations but "
+                "no device-scoped issuer event history. Decide whether an "
+                "independently permitted read such as hub_list_device_events "
+                "would help discriminate a calling automation from a driver "
+                "stall. Read only if material, otherwise explain the gap. "
+                "Command timestamps and warnings are not proof of cause."})
         rounds += 1
         left = deadline - time.monotonic()
         if left <= 1:
@@ -709,6 +741,12 @@ async def run_native_read_agent(
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
             summary = _payload(result, op)
+            if name == "hub_search_tools":
+                found_keys = useful_discovery_fingerprint(summary)
+                if found_keys and found_keys in discovery_fingerprints:
+                    repeated_discovery += 1
+                if found_keys:
+                    discovery_fingerprints.add(found_keys)
             fingerprint = read_fingerprint(op, summary)
             repeated_evidence = bool(fingerprint and fingerprint in seen_fingerprints)
             if fingerprint:
@@ -741,6 +779,10 @@ async def run_native_read_agent(
                         "source_data": focused_model_view(op, summary, sorted(focus_ids)),
                         "source_complete": False,
                     })
+            if name == "hub_search_tools" and repeated_discovery > 0:
+                view["discovery_advice"] = (
+                    "This search repeats a previously seen tool set. "
+                    "Prefer a targeted evidence read instead.")
             messages.append({"role": "tool", "content":
                              json.dumps(view, ensure_ascii=True)[:12000]})
         if redundant_evidence_reads >= 2 and focus_ids:
@@ -758,6 +800,11 @@ async def run_native_read_agent(
                 break
         else:
             recovery_rejections = 0
+    causal_coverage_gap = gap_for_target(
+        witnesses, sorted(focus_ids),
+        can_read_events=gateway_offers_operation(
+            manifest, discovered, "hub_list_device_events"),
+    )
     # If the model exhausted planning after collecting both a subject's
     # current-state read and target-specific warnings, another expensive
     # model-only pass is often futile. Keep the host-attested conclusion
@@ -955,6 +1002,9 @@ async def run_native_read_agent(
             "named_identity_lookups": named_identity_lookups,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
+            "causal_coverage_challenge_used": causal_coverage_challenge_used,
+            "causal_coverage_gap": causal_coverage_gap,
+            "repeated_discovery": repeated_discovery,
             "blocked_repeat_errors": blocked_repeat_errors,
             "failed_scoped_operations": [
                 {"operation": op, "target": target, "failures": count}
