@@ -604,7 +604,8 @@ async def run_read_only_investigation(
     # app-config lookup adds a potential discriminator before model latency.
     if bootstrap_source_identity and executed < max_total_reads and time.monotonic() < deadline:
         proposals = source_configuration_proposals(
-            registry.values(), case, diagnostics=bootstrap_diagnostics)
+            registry.values(), case, diagnostics=bootstrap_diagnostics,
+            verified_target_ids=known_ids)
         if proposals:
             approved = review_model_read_proposals(
                 case, proposals, registry.values(), verified_entity_ids=known_ids,
@@ -698,7 +699,7 @@ async def run_read_only_investigation(
                 })
         if executed < max_total_reads and time.monotonic() < deadline:
             log_proposals = controller_log_coverage_proposals(
-                registry.values(), case)
+                registry.values(), case, verified_target_ids=known_ids)
             if not log_proposals:
                 bootstrap_diagnostics.append({
                     "stage": "controller_logs",
