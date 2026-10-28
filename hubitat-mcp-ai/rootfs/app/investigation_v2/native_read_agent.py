@@ -26,6 +26,7 @@ from .native_tool_protocol import operation_problem, guidance_for, source_highli
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
+from .native_read_scope import target_history_scope_problem
 from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
@@ -471,6 +472,8 @@ async def run_native_read_agent(
     blocked_repeat_errors = 0
     final_synthesis_skipped_reason: str | None = None
     recovery_rejections = 0
+    invalid_contract_attempts: dict[str, int] = {}
+    rejected_scope_history_reads = 0
     witnesses: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     attempted = 0
@@ -697,22 +700,37 @@ async def run_native_read_agent(
                             (time.monotonic() - before_identity) * 1000)
                     issue = _guard(name, args, manifest, discovered, verified_ids,
                            verified_typed)
+            if issue is None and isinstance(inner, dict):
+                issue = target_history_scope_problem(
+                    str(op_requested), inner, sorted(focus_ids), witnesses)
             if key in prior:
                 issue = "duplicate_read"
+            rejected_key = str(op_requested) if issue in (
+                "missing_required_operation_fields",
+                "target_device_history_scope_missing",
+            ) else None
+            if rejected_key and invalid_contract_attempts.get(rejected_key, 0) >= 2:
+                issue = "repeated_invalid_read_proposal"
             if issue is not None:
                 failures.append({"tool": name[:80], "operation": op_requested,
                                  "code": issue})
+                if rejected_key:
+                    invalid_contract_attempts[rejected_key] = (
+                        invalid_contract_attempts.get(rejected_key, 0) + 1)
+                if issue == "target_device_history_scope_missing":
+                    rejected_scope_history_reads += 1
                 hint = guidance_for(issue) or "Choose a different verified read"
-                if (issue == "missing_required_operation_fields"
-                        and op_requested == "hub_get_device"
+                if (issue in ("missing_required_operation_fields",
+                              "target_device_history_scope_missing")
                         and len(focus_ids) == 1):
                     # A model can omit the same required ID repeatedly even
                     # after resolving it. Supply only the already verified
                     # subject to the model; never auto-insert/execute a call.
                     hint += (" The independently verified current target is "
                              "deviceId=" + next(iter(focus_ids)) +
-                             ". If device detail is needed, explicitly pass "
-                             "that ID in args and choose a supported mode.")
+                             ". Explicitly supply that deviceId to the "
+                             "relevant read operation; the host will not "
+                             "insert it or execute the rejected proposal.")
                 messages.append({"role": "tool", "content": json.dumps({
                     "error": issue, "hint": hint,
                 })})
@@ -889,6 +907,9 @@ async def run_native_read_agent(
             reason = "read_budget_reached"
             break
         if accepted_this_round == 0:
+            if any(count >= 2 for count in invalid_contract_attempts.values()):
+                reason = "repeated_invalid_proposal"
+                break
             recovery_rejections += 1
             # One bounded repair round after malformed arguments is useful;
             # repeated disallowed or duplicate operations must never loop.
@@ -924,6 +945,20 @@ async def run_native_read_agent(
             for w in witnesses
         )
         return current and warnings
+    if (not answer_text and reason == "repeated_invalid_proposal"
+            and focus_ids
+            and any(
+                w.get("operation") == "hub_get_logs"
+                and any(isinstance(g, dict)
+                        and str(g.get("source_id")) in focus_ids
+                        for g in w.get("source_data", {}).get("log_summary", {})
+                                  .get("warning_error_groups", []))
+                for w in witnesses
+            )):
+        # Invalid model proposals add no new knowledge. A source-backed
+        # partial answer is preferable to waiting on another doomed
+        # synthesis call; keep uncertainty and incomplete coverage visible.
+        final_synthesis_skipped_reason = "repeated_invalid_reads_with_target_warnings"
     if (not answer_text and reason in (
             "round_budget_reached", "no_approved_reads", "no_new_source_evidence",
             "read_budget_reached")
@@ -1172,6 +1207,9 @@ async def run_native_read_agent(
             "redundant_snapshot_reads": redundant_snapshot_reads,
             "redundant_log_subsets": redundant_log_subsets,
             "redundant_event_subsets": redundant_event_subsets,
+            "rejected_scope_history_reads": rejected_scope_history_reads,
+            "invalid_contract_attempts": dict(sorted(
+                invalid_contract_attempts.items())),
             "final_synthesis": synthesis_status,
             "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
