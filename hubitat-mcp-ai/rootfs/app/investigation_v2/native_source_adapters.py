@@ -127,7 +127,15 @@ def compact_logs(data: Any) -> dict[str, Any] | None:
     stamps: dict[tuple[str, str, str], set[str]] = {}
     counts: Counter[str] = Counter()
     observed_times: list[str] = []
+    uninterpretable_rows = 0
     for row in rows:
+        if (not isinstance(row.get("level") or row.get("severity"), str)
+                or not isinstance(row.get("message") or row.get("msg")
+                                  or row.get("description"), str)):
+            # Some Logs-page modes return a tab summary as an 'entries' item,
+            # not a conventional log record. An UNKNOWN row cannot refute
+            # historical WARN/ERRORs for any device.
+            uninterpretable_rows += 1
         level = safe_string(row.get("level") or row.get("severity") or "unknown", 20).upper()
         counts[level] += 1
         stamp = safe_string(row.get("time") or row.get("date")
@@ -166,6 +174,8 @@ def compact_logs(data: Any) -> dict[str, Any] | None:
     total = total if type(total) is int and total >= 0 else None
     return {
         "returned_rows": len(rows),
+        "uninterpretable_rows": uninterpretable_rows,
+        "returned_format_incomplete": uninterpretable_rows > 0,
         "total_reported_by_gateway": total,
         "level_counts_in_returned_rows": dict(counts),
         "warning_error_groups": ordered[:15],
