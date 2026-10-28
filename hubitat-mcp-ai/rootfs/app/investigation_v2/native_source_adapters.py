@@ -81,8 +81,18 @@ def attested_source_ids(operation: str, data: Any) -> set[str]:
         "hub_get_device_health": ("devices", ("id", "deviceId")),
     }
     if operation == "hub_get_logs":
-        return {identity for row in (log_rows(d) or [])
-                if (identity := log_source(row)[1]) is not None}
+        result: set[str] = set()
+        for row in log_rows(d) or []:
+            # Structured sourceId/appId/deviceId fields are source identities;
+            # the generic log row "id" remains a log entry ID, never a target.
+            for key in ("appId", "deviceId", "sourceId"):
+                value = row.get(key)
+                if type(value) in (str, int) and str(value).isdecimal():
+                    result.add(str(value))
+            source_identity = log_source(row)[1]
+            if source_identity is not None:
+                result.add(source_identity)
+        return result
     contract = contracts.get(operation)
     if contract is None:
         return set()
