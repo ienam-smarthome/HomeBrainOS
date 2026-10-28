@@ -27,6 +27,7 @@ from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_name
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
 from .native_read_scope import target_history_scope_problem
+from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
@@ -83,6 +84,11 @@ _SYSTEM = (
     "appear in the incident window, caller provenance is verified while "
     "the driver execution mechanism remains unknown. Prefer a targeted "
     "read of those independently attested apps over a large driver listing. "
+    "For hub_get_app_config, supply args.appId from an independently "
+    "verified caller. For hub_get_source, the required args are type='app' "
+    "and id=<verified appId>, or type='driver' and id=<separately attested "
+    "driver ID>. Both id and type are mandatory; an appId is NOT a "
+    "driver ID. Verify each READ's concrete schema before using it. "
     "When a verified device's event history shows producedBy.appId, that "
     "app is a source-attested command issuer. Inspect its app configuration "
     "or read-only source when investigating a causal mechanism; do not "
@@ -241,7 +247,9 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
         if refs is not None:
             projected = refs
     elif operation == "hub_get_app_config":
-        projected.update(app_config_summary(data))
+        # Nested source settingsPage.app is not part of the generic safe-key
+        # projection; retain whitelisted metadata instead of empty labels.
+        projected = app_config_summary(data)
     elif operation in ("hub_get_metrics", "hub_get_performance_stats"):
         projected.update(project_metrics(data))
     elif operation == "hub_get_memory_history":
@@ -731,8 +739,13 @@ async def run_native_read_agent(
                              ". Explicitly supply that deviceId to the "
                              "relevant read operation; the host will not "
                              "insert it or execute the rejected proposal.")
+                contract = (read_contract_feedback(
+                    name, args, verified_typed)
+                    if issue == "missing_required_operation_fields" else None)
                 messages.append({"role": "tool", "content": json.dumps({
                     "error": issue, "hint": hint,
+                    **({"required_read_contract": contract}
+                       if contract is not None else {}),
                 })})
                 continue
             if attempted >= max_reads:
@@ -813,6 +826,15 @@ async def run_native_read_agent(
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
             summary = _payload(result, op)
+            if op == "hub_get_app_config" and isinstance(inner, dict):
+                arg_id = str(inner.get("appId") or "")
+                if arg_id in verified_typed["app"]:
+                    summary["requested_app_id"] = arg_id
+                    summary["requested_app_id_verified"] = True
+                    source_id = summary.get("id") or summary.get("appId")
+                    if source_id is not None:
+                        summary["source_app_id_matches_request"] = (
+                            str(source_id) == arg_id)
             if name == "hub_search_tools":
                 found_keys = useful_discovery_fingerprint(summary)
                 if found_keys and found_keys in discovery_fingerprints:
