@@ -75,7 +75,16 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                 for g in matches[:6]:
                     add(f"{ref}: {safe_string(g.get('level'),12)} from {safe_string(g.get('source_name'),60)} (ID {safe_string(g.get('source_id'),20)}): {safe_string(g.get('message'),260)} ({g.get('count')} sampled rows; {safe_string(g.get('oldest_returned'),45)} to {safe_string(g.get('newest_returned'),45)}).")
             else:
-                add(f"{ref}: log sample has no target-specific warnings; coverage incomplete.",False)
+                filters=w.get("read_filters")
+                filters=filters if isinstance(filters,dict) else {}
+                window=(f"{safe_string(summary.get('oldest_returned') or 'unknown',48)} "
+                        f"to {safe_string(summary.get('newest_returned') or 'unknown',48)}")
+                scope=(f"mode={safe_string(filters.get('mode','past'),30)}; "
+                       f"level={safe_string(filters.get('level','unfiltered'),25)}; "
+                       f"returned={safe_string(summary.get('returned_rows'),15)}")
+                add(f"{ref}: log sample has no target-specific warnings; "
+                    f"sample {scope}, timestamps {window}; coverage incomplete. "
+                    "This is NOT evidence the target's earlier warnings stopped.",False)
         elif op=="hub_get_device_health":
             for field in ("staleDevices","unknownDevices"):
                 rows=data.get(field)

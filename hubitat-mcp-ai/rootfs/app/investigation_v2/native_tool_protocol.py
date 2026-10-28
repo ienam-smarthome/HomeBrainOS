@@ -27,6 +27,14 @@ def operation_problem(gateway: str, arguments: Mapping[str, Any]) -> str | None:
             not isinstance(level, str) or level.lower() not in LOG_LEVELS
         ):
             return "invalid_log_level"
+        # The MCP gateway has a flat args object but mode-specific contracts.
+        # 'level' applies to historical past logs, not the Logs-page device,
+        # app or job tabs. Sending mode=devices with level emits a separate
+        # MCP Rule Server ERROR and hides the original diagnostic question.
+        # Omitted mode means the server's default 'past'.
+        mode = inner.get("mode", "past")
+        if level is not None and mode != "past":
+            return "log_mode_level_incompatible"
         limit = inner.get("limit")
         if limit is not None and (
             type(limit) is not int or not 1 <= limit <= 500
@@ -41,6 +49,11 @@ def guidance_for(code: str) -> str | None:
         "invalid_log_level":
             "Use a single log level: trace, debug, info, warn, error, all; request warn and error separately.",
         "invalid_log_limit": "Use integer limit from 1 to 500.",
+        "log_mode_level_incompatible":
+            "Log level is a past-history filter, not a device/app/job-tab filter. "
+            "For severity-filtered history use mode='past', level='warn' "
+            "(or level='error'), optionally deviceId/appId and a bounded limit; "
+            "for mode='devices' omit level entirely. Do not repeat the invalid pair.",
         "missing_required_operation_fields":
             "A concrete read operation lacks required input (for example deviceId for hub_get_device). Use homebrain_find_device to resolve a named device against verified live identity, then pass that deviceId.",
         "write_side_effect_flag_forbidden":

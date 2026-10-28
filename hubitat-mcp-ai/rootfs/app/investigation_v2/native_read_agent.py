@@ -48,9 +48,13 @@ _SYSTEM = (
     "targeted read or source-attested ID can answer the question. "
     "Tools may be gateways: use hub_search_tools to discover exact operation "
     "and gateway mappings if the live schema does not enumerate operations. "
-    "For hub_get_logs level must be ONE of trace, debug, info, warn, "
-    "error, all; never pass comma-separated levels (request warn and error "
-    "separately). A recordSnapshot option must not persist state. "
+    "For hub_get_logs, severity level is permitted ONLY with mode=past "
+    "(or omitted mode, which defaults to past). For mode=devices, apps, "
+    "jobs or other Logs-page tabs, OMIT level. To investigate historical "
+    "warnings for a verified device, prefer mode=past, level=warn, "
+    "deviceId=<verified ID>, limit=100. Query errors and warnings "
+    "separately; never send a comma-separated level. The read gateway "
+    "must not persist snapshots or change hub state. "
     "Read metrics, logs and health separately where useful. Follow the most "
     "material offender, compare sources, ask another read if uncertain. "
     "Use returned source IDs only after the host verifies them. Maximum "
@@ -641,7 +645,7 @@ async def run_native_read_agent(
                         args.get("args") if isinstance(args.get("args"), dict)
                         else args
                     ).items()
-                    if k in ("level", "limit", "mode")
+                    if k in ("level", "limit", "mode", "deviceId", "appId")
                     and type(v) in (str, int) and len(str(v)) < 50
                 },
                 "elapsed_ms": round((time.monotonic()-before)*1000),
