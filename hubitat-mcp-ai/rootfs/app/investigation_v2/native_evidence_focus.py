@@ -157,6 +157,14 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
             log_messages.extend(safe_string(g.get("message"),260).lower()
                 for g in report.get("warning_error_groups",[]) if isinstance(g,dict)
                 and str(g.get("source_id")) in focus_ids)
+    issuing_apps=[]
+    for w in witnesses:
+        if (w.get("operation")=="hub_list_device_events"
+                and str(w.get("read_filters",{}).get("deviceId")) in focus_ids):
+            evidence=w.get("source_data",{})
+            if isinstance(evidence,dict):
+                issuing_apps.extend(x for x in evidence.get("issuer_apps",[])
+                                    if isinstance(x,dict))
     if str(status.get("healthStatus","")).lower()=="offline":
         conclusion=("The device is reported offline with stale telemetry. "
                     "Its physical failure mechanism is not established; power, "
@@ -168,6 +176,14 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
                     "hub instability is not independently verified.")
     else:
         conclusion="These observations establish reported symptoms, not a verified root cause."
+    if issuing_apps and any("excessive hub load" in m or "ran for" in m
+                            for m in log_messages):
+        source_apps=", ".join(
+            f"{safe_string(x.get('name'),58)} (app {safe_string(x.get('appId'),16)})"
+            for x in issuing_apps[:5])
+        conclusion+=(" Automations observed issuing commands to this device: "
+                     +source_apps+". These are investigation leads, not "
+                     "proof that a caller caused the long-running operation.")
     lines=["**What the target's sources establish**",
            *["- "+fact for fact in facts[:10]],"",
            "**Supported conclusion:** "+conclusion,"",
