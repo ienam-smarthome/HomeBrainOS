@@ -217,7 +217,10 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
             "deviceId": sorted(focus)[0],
             "hoursBack": 48,
             "limit": 50,
-            # Do not assume arbitrary driver methods are public commands.
+            # When an incident has NO caller commands at all, the filter
+            # is only a possible probe; zero returned rows are inconclusive.
+            **({"attribute": "command-" + chosen["method"]}
+               if chosen["method"] else {}),
         },
         "candidate_filter_caveat": (
             "Example filters only: hoursBack must be adjusted to cover the "
