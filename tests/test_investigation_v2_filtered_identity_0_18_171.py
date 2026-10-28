@@ -32,11 +32,13 @@ def gateway(*, filter_enabled=True):
     }
     if filter_enabled:
         args["labelFilter"] = {"type": "string"}
+    inner = ({"type": "object", "properties": args,
+              "additionalProperties": False}
+             if filter_enabled else {"type": "object"})
     return MCPTool("hub_read_devices", "Read Hubitat devices",
         {"type": "object", "properties": {
             "tool": {"type": "string", "enum": ["hub_list_devices", "hub_get_device"]},
-            "args": {"type": "object", "properties": args,
-                     "additionalProperties": False},
+            "args": inner,
         }, "required": ["tool", "args"], "additionalProperties": False},
         annotations={"readOnlyHint": True, "mutates": False})
 
@@ -149,6 +151,38 @@ async def test_legacy_filter_ignored_cannot_prove_a_target():
 
 
 @pytest.mark.asyncio
+async def test_explicit_closed_inner_schema_without_filter_must_fail_closed():
+    m = MCP(filter_enabled=False)
+    m.tools[0].input_schema["properties"]["args"] = {
+        "type": "object", "properties": {
+            "deviceId": {"type": "string"},
+        }, "additionalProperties": False,
+    }
+    diag = {}
+    assert await read_filtered_target_identity(
+        m, "Livingroom Light 2", diagnostics=diag) is None
+    assert diag["identity_lookup"] == "filter_explicitly_forbidden"
+    assert m.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_schema", [
+    {"type": "array", "properties": {}},
+    {"type": "object", "properties": []},
+    {"type": "object", "required": None},
+    {"type": "object", "required": [123]},
+])
+async def test_malformed_generic_inner_schema_does_not_send_a_read(bad_schema):
+    m = MCP(filter_enabled=False)
+    m.tools[0].input_schema["properties"]["args"] = bad_schema
+    diag = {}
+    assert await read_filtered_target_identity(
+        m, "Livingroom Light 2", diagnostics=diag) is None
+    assert diag["identity_lookup"] == "filtered_schema_unusable"
+    assert m.calls == []
+
+
+@pytest.mark.asyncio
 async def test_legacy_contract_never_opens_a_write_or_undeclared_operation():
     m = MCP(filter_enabled=False)
     m.tools[0].annotations["readOnlyHint"] = False
@@ -166,7 +200,10 @@ async def test_legacy_contract_never_opens_a_write_or_undeclared_operation():
     assert not m.calls
 
 
-def test_http_fast_scoped_read_never_uses_204_device_inventory(monkeypatch, tmp_path):
+@pytest.mark.parametrize("filter_enabled", [True, False])
+def test_http_fast_scoped_read_never_uses_204_device_inventory(
+    monkeypatch, tmp_path, filter_enabled,
+):
     options = tmp_path / "options.json"
     options.write_text(json.dumps({
         "investigation_v2_testing_enabled": True,
@@ -177,7 +214,7 @@ def test_http_fast_scoped_read_never_uses_204_device_inventory(monkeypatch, tmp_
     monkeypatch.setenv("CONFIG_PATH", str(options))
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
-    m = MCP()
+    m = MCP(filter_enabled=filter_enabled)
     async def forbid_inventory(*_args, **_kwargs):
         raise AssertionError("unfiltered inventory should not run")
     async def forbid_model(*_args, **_kwargs):
@@ -201,6 +238,9 @@ def test_http_fast_scoped_read_never_uses_204_device_inventory(monkeypatch, tmp_
     assert diag["planning_ms"] == 0
     assert diag["target_id"] == "7828"
     assert diag["targeted_status"]["identity_lookup"] == "filtered_unique_exact_label"
+    assert diag["targeted_status"]["filter_contract"] == (
+        "live_schema" if filter_enabled
+        else "host_allowlisted_production_read_contract")
     assert body["inventory_query"]["inventory_scope"] == "exact_label"
     assert body["inventory_query"]["home_inventory_complete"] is False
     assert body["inventory_query"]["reported_device_values"][0]["reported_attributes"] == {
