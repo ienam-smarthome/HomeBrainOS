@@ -27,6 +27,7 @@ from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_name
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
 from .native_read_scope import target_history_scope_problem
+from .native_source_readiness import source_read_summary, repeated_broad_log_scope
 from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_evidence_coverage import (
@@ -84,6 +85,12 @@ _SYSTEM = (
     "appear in the incident window, caller provenance is verified while "
     "the driver execution mechanism remains unknown. Prefer a targeted "
     "read of those independently attested apps over a large driver listing. "
+    "A source read marked successful by the gateway may contain only "
+    "metadata and no code. Never claim method analysis unless the source "
+    "readiness receipt verifies complete, identity-matched code. "
+    "Do not repeat a broad log request solely with a bigger limit when "
+    "an earlier identical scope returned fewer rows than requested; "
+    "instead use a grounded since/until, cursor, or targeted filter. "
     "For hub_get_app_config, supply args.appId from an independently "
     "verified caller. For hub_get_source, the required args are type='app' "
     "and id=<verified appId>, or type='driver' and id=<separately attested "
@@ -255,9 +262,10 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     elif operation == "hub_get_memory_history":
         projected = project_memory_history(data)
     elif operation == "hub_get_source":
-        # Do not leak raw source strings through the generic projection.
-        # Source-code analysis needs a separately reviewed, bounded reader.
-        projected = source_metadata(data)
+        # No raw Groovy, settings or executable source enters model context.
+        # Complete source produces lexical method evidence only; a successful
+        # empty read is explicitly *not* an implementation inspection.
+        projected = source_read_summary(data)
     if operation == "hub_get_logs":
         log_groups = compact_logs(data)
         if log_groups is not None:
@@ -711,6 +719,10 @@ async def run_native_read_agent(
             if issue is None and isinstance(inner, dict):
                 issue = target_history_scope_problem(
                     str(op_requested), inner, sorted(focus_ids), witnesses)
+            if (issue is None and op_requested == "hub_get_logs"
+                    and isinstance(inner, dict)
+                    and repeated_broad_log_scope(inner, witnesses)):
+                issue = "repeated_broad_log_scope"
             if key in prior:
                 issue = "duplicate_read"
             rejected_key = str(op_requested) if issue in (
@@ -826,6 +838,16 @@ async def run_native_read_agent(
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
             summary = _payload(result, op)
+            if op == "hub_get_source" and isinstance(inner, dict):
+                requested_type = inner.get("type")
+                requested_id = str(inner.get("id") or "")
+                if (requested_type in ("app", "driver") and requested_id
+                        in verified_typed[requested_type]):
+                    # The actual response must still be independently
+                    # checked for a matching ID and full source coverage.
+                    summary = source_read_summary(
+                        result.data, requested_type=requested_type,
+                        requested_id=requested_id)
             if op == "hub_get_app_config" and isinstance(inner, dict):
                 arg_id = str(inner.get("appId") or "")
                 if arg_id in verified_typed["app"]:
@@ -873,7 +895,8 @@ async def run_native_read_agent(
                         else args
                     ).items()
                     if k in ("level", "limit", "mode", "deviceId", "appId",
-                             "attribute", "hoursBack")
+                             "id", "type", "since", "until", "cursor",
+                             "pattern", "attribute", "hoursBack")
                     and type(v) in (str, int) and len(str(v)) < 50
                 },
                 "elapsed_ms": round((time.monotonic()-before)*1000),

@@ -89,6 +89,13 @@ def guidance_for(code: str) -> str | None:
             "independent tool discovery; device inspection such as "
             "hub_get_device belongs on hub_read_devices, not "
             "hub_read_apps_code. Do not execute or invent a mapping.",
+        "repeated_broad_log_scope":
+            "This broad past-log scope was already read and returned fewer "
+            "rows than its requested limit. Increasing only limit is "
+            "unlikely to discriminate the cause. If source coverage is "
+            "needed, choose a verified target filter, since/until time "
+            "window, pattern or pagination cursor. Earlier sample was "
+            "partial: this rejection does not prove log history complete.",
         "duplicate_read": "Choose a different read; exact same arguments were already tried.",
         "mcp_tool_reported_error":
             "Upstream rejected the request. Review valid arguments; do not repeat the same request.",
