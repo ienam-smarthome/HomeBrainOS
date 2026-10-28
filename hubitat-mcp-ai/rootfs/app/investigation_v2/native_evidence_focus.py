@@ -81,9 +81,11 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
         elif op=="hub_list_device_events":
             events=data.get("events")
             if not isinstance(events,list):continue
+            scoped=str(w.get("read_filters",{}).get("deviceId")) in focus
             selected=[e for e in events[:80] if isinstance(e,dict)
-                      and (not isinstance(e.get("producedBy"),dict)
-                           or str(e["producedBy"].get("deviceId")) in focus)]
+                      and (scoped or
+                           (isinstance(e.get("producedBy"),dict)
+                            and str(e["producedBy"].get("deviceId")) in focus))]
             if selected:
                 def label(e:dict)->str:
                     return (safe_string(e.get("name"),32)+"="+safe_string(e.get("value"),45)
