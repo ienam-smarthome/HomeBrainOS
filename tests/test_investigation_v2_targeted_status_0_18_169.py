@@ -14,13 +14,20 @@ sys.path.insert(0, str(APP))
 
 from investigation_v2.targeted_status import (
     current_status_attributes, read_verified_target_status)
+from investigation_v2.test_service import resolve_verified_device_subjects
 from mcp_client import MCPTool, MCPToolResult
 
 
 QUESTION = ("Read the current switch state and brightness level of "
             "Livingroom Light 2 directly from Hubitat. Do not change anything.")
-TARGET = [{"id": "7828", "label": "Livingroom Light 2",
-           "name": "Generic Dimmer", "roomName": "Living Room"}]
+# The real Hubitat inventory also contains two generic driver names
+# 'switch'. The user means the ATTRIBUTE, not either socket.
+TARGET = [
+    {"id": "7828", "label": "Livingroom Light 2",
+     "name": "Generic Dimmer", "roomName": "Living Room"},
+    {"id": "7786", "label": "LivCAM socket", "name": "switch"},
+    {"id": "7787", "label": "FP2 Livingroom socket", "name": "switch"},
+]
 
 
 def read_gateway(readonly=True, with_mode=True, expose=True):
@@ -148,8 +155,39 @@ def test_v2_http_targeted_read_skips_all_full_inventory_and_model(monkeypatch, t
     assert body["semantic_diagnostics"]["full_inventory_ms"] == 0
     assert body["semantic_diagnostics"]["planning_ms"] == 0
     assert body["semantic_diagnostics"]["target_id"] == "7828"
+    assert body["semantic_diagnostics"]["targeted_status"]["outcome"] == (
+        "verified_targeted_source")
+    assert body["semantic_diagnostics"]["targeted_status"]["candidate_count"] == 1
     assert body["inventory_query"]["reported_device_values"][0]["reported_attributes"] == {
         "switch": "on", "level": 30}
     assert "switch=on, level=30%" in body["answer"]["text"]
     assert len(fake.calls) == 1
     assert body["test_mode"] == "explicit_read_only"
+
+def test_coordinated_attribute_phrase_anchors_one_full_named_device():
+    ids, resolved, method = resolve_verified_device_subjects(QUESTION, TARGET)
+    assert ids == ("7828",)
+    assert resolved == [{"id": "7828", "label": "Livingroom Light 2"}]
+    assert method == "question"
+    assert current_status_attributes(QUESTION, [resolved[0]["label"]]) == (
+        "switch", "level")
+    with pytest.raises(ValueError, match="Ambiguous device name"):
+        resolve_verified_device_subjects(
+            "Check the switch and Livingroom Light 2.", TARGET)
+
+
+@pytest.mark.asyncio
+async def test_source_failure_reports_a_bounded_reason_without_source_data():
+    diagnostics = {}
+    fake = FakeMCP(device_id="7829")
+    assert await read_verified_target_status(
+        fake, "7828", diagnostics=diagnostics) is None
+    assert diagnostics == {"outcome": "source_id_missing_or_mismatched"}
+    assert "UNTRUSTED" not in json.dumps(diagnostics)
+    diagnostics.clear()
+    fake = FakeMCP(expose=False)
+    assert await read_verified_target_status(
+        fake, "7828", diagnostics=diagnostics) is None
+    assert diagnostics == {"outcome": "live_read_operation_unavailable"}
+    assert not fake.calls
+
