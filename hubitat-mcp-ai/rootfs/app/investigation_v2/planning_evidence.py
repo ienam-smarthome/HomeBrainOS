@@ -165,7 +165,8 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
             "Coalesced model context is retained in the full source case",
             "History source completeness unverified unless explicit",
             "Current settings do not prove historical execution",
-            "Current app sensor references do not prove event-time configuration or a trigger",
+            *(['Current sensor selections do not prove past triggers']
+              if selected_sensor_ids else []),
             "Use event record IDs; never invent clock times or command issuers",
         ],
     }, ensure_ascii=True, separators=(",", ":"))
