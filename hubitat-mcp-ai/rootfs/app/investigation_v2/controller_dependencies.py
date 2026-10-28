@@ -119,13 +119,14 @@ def controller_sensor_history_proposals(
 def controller_log_coverage_proposals(
     tools: Iterable[MCPTool], case: CaseFile,
 ) -> list[dict[str, Any]]:
-    """Request only available read-only app log metadata, not a restart claim."""
+    """Request logs only via explicitly allowed READ gateways, not management."""
     issuers = sorted({
         item.producer_id for item in case.records
         if item.stage == "command_issued" and item.producer_id
     }, key=int)
     for tool in tools:
-        if (not isinstance(tool, MCPTool) or tool.name != "hub_manage_logs"
+        if (not isinstance(tool, MCPTool)
+                or tool.name not in {"hub_read_diagnostics", "hub_read_logs"}
                 or classify_tool_effect(tool, {}) is not ToolEffect.READ):
             continue
         ann = tool.annotations if isinstance(tool.annotations, dict) else {}
