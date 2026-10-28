@@ -22,6 +22,11 @@ ID. This is a scope/capability mismatch, not missing user information.
   A successful MCP request does not prove exhaustive log coverage.
 - The browser shows system-audit metrics without inventing a device target.
   Source text is bounded and redactable, and is displayed using textContent.
+- When V2 has an already source-backed latest-switch incident but its MCP read
+  budget is exhausted, it now skips BOTH the futile planner and the redundant
+  atomic/narrative model synthesis calls; the host cites the attested evidence
+  directly with historical/physical limits. This addresses a second cause of
+  the observed 171.853-second v0.18.179 run; actual P95 still needs live tests.
 - Regression tests cover the original whole-hub 422 scenario, safe scope
   validation, system-wide fallback, log-read failures, redaction and a strict
   non-persistence audit call.
