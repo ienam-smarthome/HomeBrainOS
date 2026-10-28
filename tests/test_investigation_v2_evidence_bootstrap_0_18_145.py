@@ -135,7 +135,7 @@ class RejectedThenFinished:
 
 
 @pytest.mark.asyncio
-async def test_live_gateway_preflight_then_bounded_replanning_when_tool_hallucinated():
+async def test_live_gateway_preflight_stops_when_only_tool_is_unavailable():
     mcp = FakeMCP()
     executor = FakeExecutor(mcp)
     model = RejectedThenFinished()
@@ -148,11 +148,12 @@ async def test_live_gateway_preflight_then_bounded_replanning_when_tool_hallucin
     assert [op for op, _ in executor.calls] == [
         "hub_get_device", "hub_list_device_events"]
     assert executor.calls[1][1]["hoursBack"] >= 336
-    assert output.stopped_because == "model_finished"
+    assert output.stopped_because == "model_read_tools_unavailable"
     assert output.executed_reads == 2
-    assert len(model.rounds) == 2
+    assert len(model.rounds) == 1
     assert model.rounds[0][1:] == (2, 1)
-    assert model.feedback == ["tool not in live MCP manifest"]
+    assert model.feedback == []
+    assert output.planning_diagnostics[0]["unavailable_model_tool_count"] == 1
     report = format_investigation_report(
         output.case, output.hypotheses, output.stopped_because)
     assert "Current device snapshot" in report
