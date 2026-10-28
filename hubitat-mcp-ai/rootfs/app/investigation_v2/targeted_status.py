@@ -94,12 +94,21 @@ async def read_filtered_target_identity(
     nested = _args_schema(gateway)
     properties = nested.get("properties")
     required = nested.get("required", [])
-    if (not isinstance(properties, dict)
-            or not isinstance(required, list)
-            or "labelFilter" not in properties):
+    if not isinstance(properties, dict) or not isinstance(required, list):
         if diagnostics is not None:
-            diagnostics["identity_lookup"] = "filter_not_advertised"
+            diagnostics["identity_lookup"] = "filtered_schema_unusable"
         return None
+    # Production Main Ask already uses hub_list_devices(labelFilter=...) even
+    # where the public gateway declares only an open or generic inner args
+    # object. The *operation* itself must still be explicitly advertised as
+    # READ by _gateway, and every returned row must pass exact-label and
+    # complete filtered-coverage checks. Do not invent a write permission
+    # or treat an unsupported filter as a successful narrowed query.
+    filter_advertised = "labelFilter" in properties
+    if diagnostics is not None:
+        diagnostics["filter_contract"] = (
+            "live_schema" if filter_advertised
+            else "host_allowlisted_production_read_contract")
     args: dict[str, Any] = {"labelFilter": requested_label}
     # Explicitly bound pagination and summary identity projection only.
     for key, value in (
@@ -113,7 +122,16 @@ async def read_filtered_target_identity(
             diagnostics["identity_lookup"] = "filtered_schema_required_fields"
         return None
     request = {"tool": "hub_list_devices", "args": args}
-    if _schema_problem(request, gateway.input_schema) is not None:
+    # For the legacy gateway, validate all other arguments against its
+    # advertised wrapper, while supplying only this one proven production
+    # read argument from a fixed host contract. The backend can reject it;
+    # its reply cannot authorise a target without complete source coverage.
+    schema_request = request if filter_advertised else {
+        "tool": "hub_list_devices",
+        "args": {key: value for key, value in args.items()
+                 if key != "labelFilter"},
+    }
+    if _schema_problem(schema_request, gateway.input_schema) is not None:
         if diagnostics is not None:
             diagnostics["identity_lookup"] = "filtered_schema_rejected"
         return None
