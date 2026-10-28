@@ -210,7 +210,7 @@ def correlated_command_warnings(witnesses: list[dict[str, Any]],
     import re
     def millis(value: Any) -> tuple[str, int] | None:
         match = re.search(
-            r"(\d{4}-\d{2}-\d{2})[T ](\\d{2}): (\d{2}): (\d{2})[.](\\d{1,3})",
+            r"(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2}):(\d{2})[.](\d{1,3})",
             str(value or ""))
         if not match:
             return None
@@ -242,7 +242,7 @@ def correlated_command_warnings(witnesses: list[dict[str, Any]],
             for group in summary.get("warning_error_groups",[]):
                 if not isinstance(group,dict) or str(group.get("source_id")) not in focus_ids:
                     continue
-                method=re.search(r"\\bmethod\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+                method=re.search(r"\bmethod\s+([A-Za-z_][A-Za-z0-9_]*)\b",
                                  str(group.get("message") or ""),re.I)
                 if not method:
                     continue
