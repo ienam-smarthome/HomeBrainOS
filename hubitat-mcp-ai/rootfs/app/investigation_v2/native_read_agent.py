@@ -22,6 +22,7 @@ from tool_registry import ToolEffect, classify_tool_effect
 from .planning import _schema_problem
 from .read_diagnostics import classify_execution, classify_exception
 from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
+from .native_tool_protocol import operation_problem, guidance_for, source_highlights, evidence_fallback
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
                 Awaitable[dict[str, Any]]]
@@ -41,6 +42,9 @@ _SYSTEM = (
     "targeted read or source-attested ID can answer the question. "
     "Tools may be gateways: use hub_search_tools to discover exact operation "
     "and gateway mappings if the live schema does not enumerate operations. "
+    "For hub_get_logs level must be ONE of trace, debug, info, warn, "
+    "error, all; never pass comma-separated levels (request warn and error "
+    "separately). A recordSnapshot option must not persist state. "
     "Read metrics, logs and health separately where useful. Follow the most "
     "material offender, compare sources, ask another read if uncertain. "
     "Use returned source IDs only after the host verifies them. Maximum "
@@ -319,6 +323,9 @@ def _guard(name: str, args: dict[str, Any],
         if value is not None and (type(value) not in (str, int)
                                  or str(value) not in verified_ids):
             return "target_id_not_verified_from_live_source"
+    contract_issue = operation_problem(name, args)
+    if contract_issue:
+        return contract_issue
     err = _schema_problem(args, tool.input_schema)
     if err:
         return "live_schema_rejected"
@@ -352,6 +359,8 @@ async def run_native_read_agent(
     verified_ids: set[str] = set()
     discovered: dict[str, set[str]] = {}
     prior: set[str] = set()
+    timed_out_operations: set[tuple[str, str]] = set()
+    recovery_rejections = 0
     witnesses: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     attempted = 0
@@ -431,6 +440,9 @@ async def run_native_read_agent(
             name, args = parsed
             key = json.dumps([name, args], sort_keys=True, default=str)
             issue = _guard(name, args, manifest, discovered, verified_ids)
+            op_requested = args.get("tool") if name.startswith("hub_read_") else name
+            if (name, str(op_requested)) in timed_out_operations:
+                issue = "operation_prior_timeout"
             if issue == "target_id_not_verified_from_live_source":
                 # Lookup happens only when the model proposes a target-specific
                 # READ whose ID was not already attested in a source receipt.
@@ -468,9 +480,12 @@ async def run_native_read_agent(
             if key in prior:
                 issue = "duplicate_read"
             if issue is not None:
-                failures.append({"tool": name[:80], "code": issue})
-                messages.append({"role": "tool", "content": json.dumps(
-                    {"error": issue, "host_rule": "Choose a different verified READ"})})
+                failures.append({"tool": name[:80], "operation": op_requested,
+                                 "code": issue})
+                messages.append({"role": "tool", "content": json.dumps({
+                    "error": issue,
+                    "hint": guidance_for(issue) or "Choose a different verified read",
+                })})
                 continue
             if attempted >= max_reads:
                 reason = "read_budget_reached"
@@ -509,6 +524,8 @@ async def run_native_read_agent(
             except Exception as exc:
                 error = classify_exception(exc)
             if error:
+                if error == "read_timeout":
+                    timed_out_operations.add((name, str(op)))
                 hint = (_oversized_hint(execution.result)
                         if execution is not None and execution.name == name
                         else None)
@@ -519,6 +536,8 @@ async def run_native_read_agent(
                 messages.append({"role": "tool", "content": json.dumps({
                     "error": safe_error, "source_complete": False,
                     **({"suggestion": hint} if hint else {}),
+                    **({"hint": guidance_for(safe_error)}
+                       if guidance_for(safe_error) else {}),
                 })})
                 continue
             assert result is not None
@@ -551,20 +570,24 @@ async def run_native_read_agent(
         if attempted >= max_reads:
             reason = "read_budget_reached"
             break
-        if accepted_this_round == 0 and round_no >= 1:
-            reason = "no_approved_reads"
-            break
+        if accepted_this_round == 0:
+            recovery_rejections += 1
+            # One bounded repair round after malformed arguments is useful;
+            # repeated disallowed or duplicate operations must never loop.
+            if recovery_rejections >= 2 or round_no + 1 >= max_rounds:
+                reason = "no_approved_reads"
+                break
+        else:
+            recovery_rejections = 0
     if witnesses and not answer_text and deadline - time.monotonic() > 2:
         # The read loop may end at a budget, repeated proposal or source gap.
         # Request ONE final answer with tools=[], not another planning pass.
         # Feed only bounded, redacted witness projections. The host report
         # below still separates model interpretation from actual source data.
         synthesis_start = time.monotonic()
-        final_witnesses = [
-            {"read_id": w["read"], "operation": w["operation"],
-             "data": w["source_data"]}
-            for w in witnesses[:10]
-        ]
+        # Condense all source reads BEFORE the model request; dumping full
+        # event lists into 15 KB pushed the material lastSeen/offline data out.
+        final_witnesses = source_highlights(witnesses)
         try:
             response = await asyncio.wait_for(
                 chat([
@@ -583,7 +606,7 @@ async def run_native_read_agent(
                         "source_complete": False,
                     }, ensure_ascii=True, default=str)[:15000]},
                 ], []),
-                timeout=min(15.0, max(1.0, deadline - time.monotonic())),
+                timeout=min(8.0, max(1.0, deadline - time.monotonic())),
             )
             if isinstance(response, dict) and not response.get("tool_calls"):
                 candidate = response.get("content")
@@ -604,8 +627,8 @@ async def run_native_read_agent(
         answer_text = ("No verified MCP evidence was recovered. "
                        "The question cannot be answered from live sources.")
     elif not answer_text:
-        answer_text = ("Investigation evidence collected; the model did not "
-                       "complete a supported causal explanation.")
+        answer_text = evidence_fallback(witnesses, failures)
+        synthesis_status = "host_evidence_fallback"
     # Make uncertainty prominent even when the model produces a fluent answer.
     # A recent all-INFO log sample is not a severity-filtered error audit.
     log_audits = [
@@ -716,6 +739,9 @@ async def run_native_read_agent(
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
+            "timed_out_operations": [f"{name}:{operation}"
+                                     for name, operation in sorted(timed_out_operations)],
+            "source_highlights": source_highlights(witnesses),
             "final_synthesis": synthesis_status,
             "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
