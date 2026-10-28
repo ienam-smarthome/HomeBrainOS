@@ -602,13 +602,14 @@ async def run_native_read_agent(
                             lookup(),
                             timeout=min(6.0, max(0.1, deadline - time.monotonic())),
                         )
-                        verified_ids.update(
+                        confirmed_devices = {
                             str(row.get("id") or row.get("deviceId"))
                             for row in identities[:800]
                             if isinstance(row, dict)
                             and str(row.get("id") or row.get("deviceId") or "").isdecimal()
-                        )
-                        verified_typed["device"].update(verified_ids)
+                        }
+                        verified_ids.update(confirmed_devices)
+                        verified_typed["device"].update(confirmed_devices)
                     except asyncio.CancelledError:
                         raise
                     except Exception:
