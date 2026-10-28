@@ -186,8 +186,12 @@ async def test_model_one_extra_round_after_wrong_event_window_gets_app_issuer():
     assert d["causal_coverage_gap"] is None
     assert d["redundant_log_subsets"]==1
     assert d["verified_typed_ids"]["app"]==["4080"]
-    assert result["answer"]["validation_issues"]==[
-        "model_claims_not_atomically_verified","historical_coverage_unverified"]
+    assert "model_claims_not_atomically_verified" in result["answer"]["validation_issues"]
+    assert "historical_coverage_unverified" in result["answer"]["validation_issues"]
+    # The simulated diagnostics read deliberately lacks some typed metrics
+    # structure, and that separate uncertainty must remain visible.
+    assert "gateway_projection_incomplete" in result["answer"]["validation_issues"]
+    assert "warning_window_actor_provenance_unverified" not in result["answer"]["validation_issues"]
     assert executor.calls[-1][1]["args"]["attribute"]=="command-setVolume"
     assert executor.calls[-1][1]["args"]["hoursBack"]==48
     assert "Calendar Notifier" in result["answer"]["text"]
