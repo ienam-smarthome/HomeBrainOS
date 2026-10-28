@@ -65,8 +65,9 @@ def test_app_issuers_survive_scoped_event_projection_without_private_content():
                  "hub_list_device_events")
     assert obj["count"]==7
     assert {r["appId"] for r in obj["issuer_apps"]}=={"4080","1679"}
-    assert obj["issuer_apps"][0]["commands"]["speak"]==2
-    assert obj["issuer_apps"][1]["commands"]["refresh"]==2
+    by_id={item["appId"]:item for item in obj["issuer_apps"]}
+    assert by_id["4080"]["commands"]["speak"]==2
+    assert by_id["1679"]["commands"]["refresh"]==2
     assert "command-setVolume" in str(obj)
     for secret in ("dentist","private.mp3","Private details"):
         assert secret not in str(obj)
