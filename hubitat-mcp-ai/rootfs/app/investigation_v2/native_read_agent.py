@@ -69,6 +69,12 @@ _SYSTEM = (
     "event timestamps overlap; to investigate a source-attested method "
     "warning, consider hoursBack, limit and attribute=command-<method> "
     "on hub_list_device_events, if the live schema accepts them. "
+    "When a driver method WARN has no matching command event, do NOT "
+    "assume there must be a command with that method name: a driver method "
+    "can be an internal queue or callback. If app-issued commands already "
+    "appear in the incident window, caller provenance is verified while "
+    "the driver execution mechanism remains unknown. Prefer a targeted "
+    "read of those independently attested apps over a large driver listing. "
     "When a verified device's event history shows producedBy.appId, that "
     "app is a source-attested command issuer. Inspect its app configuration "
     "or read-only source when investigating a causal mechanism; do not "
@@ -491,16 +497,25 @@ async def run_native_read_agent(
                     or deadline - time.monotonic() <= 4):
                 break
             causal_coverage_challenge_used = True
+            if causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
+                instruction = (
+                    "The device event history ALREADY attests calling apps "
+                    "in the warning period. Do NOT claim the caller is unknown "
+                    "or invent command-<internal driver method> as an event "
+                    "filter. The driver callback mechanism is unverified. "
+                    "Consider a permitted source-attested app configuration "
+                    "read for one known caller before searching the entire "
+                    "driver catalogue. Do not assert causal proof.")
+            else:
+                instruction = (
+                    "A scoped device event read is insufficient if its "
+                    "returned timestamps miss the warning window or do not "
+                    "establish a relevant issuer. If material, choose a bounded "
+                    "history read with supported hoursBack/attribute filters. "
+                    "No command history is complete merely because a read succeeded.")
             messages.append({"role": "user", "content":
-                "Evidence coverage assessment from typed source observations, "
-                "not a device-specific command. A prior device-event read is "
-                "not sufficient if its returned time range misses the "
-                "slow-method WARN window or contains no relevant command "
-                "issuers. Decide whether to request a bounded, independently "
-                "permitted history using supported hoursBack, limit and "
-                "attribute filters, or explain why further evidence is "
-                "unavailable. The candidate is NOT an automatic read or "
-                "causal claim. Source clock alignment is unverified. "
+                "Evidence coverage assessment from typed source observations. "
+                + instruction + " Candidate evidence: "
                 + json.dumps(causal_coverage_gap, default=str)[:2500]})
         rounds += 1
         left = deadline - time.monotonic()
@@ -940,18 +955,31 @@ async def run_native_read_agent(
         ])
     if causal_coverage_gap is not None:
         warning_window = causal_coverage_gap.get("warning_window", {})
-        checked = causal_coverage_gap.get("event_windows_checked", [])
-        sample = checked[0] if checked else {}
-        lines.extend([
-            "**Evidence gap: event history does not establish the warning-window caller**",
-            "Warning period: " + str(warning_window.get("oldest", "unknown")) +
-            " to " + str(warning_window.get("newest", "unknown")) +
-            ". Event sample: " + str(sample.get("oldest", "not read")) +
-            " to " + str(sample.get("newest", "not read")) +
-            ". Relevant issuing apps are unverified; source clocks may use "
-            "different zones, and a source window is not guaranteed complete.",
-            "",
-        ])
+        if causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
+            app_ids = causal_coverage_gap.get("observed_calling_app_ids", [])
+            lines.extend([
+                "**Verified callers; internal driver mechanism unresolved**",
+                "App IDs " + ", ".join(map(str, app_ids)) +
+                " issued device commands during the reported warning period. "
+                "The WARN method " + str(causal_coverage_gap.get("method", "unknown")) +
+                " has no matching command event in the bounded sample; it "
+                "must not be assumed to be an API command. Source timing "
+                "correlation does not establish which driver callback stalled.",
+                "",
+            ])
+        else:
+            checked = causal_coverage_gap.get("event_windows_checked", [])
+            sample = checked[0] if checked else {}
+            lines.extend([
+                "**Evidence gap: event history does not establish the warning-window caller**",
+                "Warning period: " + str(warning_window.get("oldest", "unknown")) +
+                " to " + str(warning_window.get("newest", "unknown")) +
+                ". Event sample: " + str(sample.get("oldest", "not read")) +
+                " to " + str(sample.get("newest", "not read")) +
+                ". Relevant issuing apps are unverified; source clocks may use "
+                "different zones, and a source window is not guaranteed complete.",
+                "",
+            ])
     if projections_empty:
         lines.extend([
             "**Uninterpreted source fields**",
@@ -1019,7 +1047,11 @@ async def run_native_read_agent(
     if projections_empty:
         validation_issues.append("gateway_projection_incomplete")
     if causal_coverage_gap is not None:
-        validation_issues.append("warning_window_actor_provenance_unverified")
+        validation_issues.append(
+            "driver_execution_cause_unverified"
+            if causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified"
+            else "warning_window_actor_provenance_unverified"
+        )
     return {
         "answer_mode": "native_mcp_investigation",
         "answer": {"text": text, "displayed_record_ids": [],
