@@ -115,15 +115,17 @@ async def test_generic_manifest_discovery_yields_status_and_history_without_mode
     )
     assert [n for n, _ in executor.calls] == [
         "hub_search_tools", "hub_search_tools", "hub_read_devices",
-        "hub_read_devices"]
-    assert result.executed_reads == 2
+        "hub_read_devices", "hub_read_devices"]
+    assert executor.calls[-1][1]["tool"] == "hub_list_device_events"
+    assert "attribute" not in executor.calls[-1][1]["args"]
+    assert result.executed_reads == 3
     assert len(result.case.device_snapshots) == 1
     assert len(result.case.records) >= 1
     assert "SECRET_NOT_FOR_MODEL" not in json.dumps(result.to_dict())
     assert sum(x.get("status") == "verified_live_discovery"
                for x in result.bootstrap_diagnostics) == 2
     assert sum(x.get("status") == "read_attempt_completed"
-               for x in result.bootstrap_diagnostics) == 2
+               for x in result.bootstrap_diagnostics) == 3
 
 
 @pytest.mark.asyncio

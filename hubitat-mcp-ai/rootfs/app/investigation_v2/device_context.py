@@ -143,7 +143,7 @@ def device_context_proposals(
             return []
         return [_proposal(gateway, "hub_get_device", args,
                           "Current device status and source-reported last contact")]
-    if stage in ("history", "history_unfiltered"):
+    if stage in ("history", "history_unfiltered", "history_command_context"):
         gateway = _gateway(tools, "hub_list_device_events", learned_operations=learned_operations)
         if gateway is None:
             return []
@@ -172,13 +172,41 @@ def device_context_proposals(
                          isinstance(snap.get("attributes"), dict) and
                          "switch" in snap["attributes"]
                          for snap in case.device_snapshots)
-        if stage == "history_unfiltered":
-            # A second, smaller request without the switch filter is useful
-            # ONLY after a verified empty filtered source result. Never omit
-            # a field required by the live gateway schema.
+        if stage in ("history_unfiltered", "history_command_context"):
+            # In a causal investigation, switch-only history excludes
+            # separate command-off/on events. Even a NONEMPTY switch-only
+            # page does not establish absence of command issuance.
             if "attribute" in required:
                 return []
-            if "limit" in args:
+            if stage == "history_command_context":
+                # Prefer an event window around the latest attested switch
+                # transition if the live schema accepts BOTH bounds. No
+                # invented incident clock or broad whole-home reads.
+                from datetime import timedelta
+                instants = []
+                for record in case.records:
+                    if (record.target_id == ident
+                            and record.stage == "state_reported"
+                            and record.action == "switch"
+                            and str(record.value).lower() == "off"):
+                        try:
+                            instant = datetime.fromisoformat(record.timestamp_utc)
+                            if instant.utcoffset() is not None:
+                                instants.append(instant.astimezone(timezone.utc))
+                        except (ValueError, TypeError, OverflowError):
+                            continue
+                if (instants and "hoursBack" not in required
+                        and "since" in fields and "until" in fields
+                        and _accepts_field(schema, "since")
+                        and _accepts_field(schema, "until")):
+                    target_time = max(instants)
+                    args.pop("hoursBack", None)
+                    args["since"] = (target_time-timedelta(hours=2)).isoformat()
+                    args["until"] = (target_time+timedelta(hours=2)).isoformat()
+                if "limit" in args:
+                    bound = fields.get("limit", {}).get("maximum")
+                    args["limit"] = min(150, bound) if type(bound) is int and bound > 0 else 150
+            elif "limit" in args:
                 args["limit"] = min(args["limit"], 50)
         elif _accepts_field(schema, "attribute") and (has_switch or "attribute" in required):
             choices = fields.get("attribute", {}).get("enum", [])
@@ -190,6 +218,8 @@ def device_context_proposals(
         return [_proposal(gateway, "hub_list_device_events", args,
                           ("Recover bounded unfiltered history after verified empty switch results"
                            if stage == "history_unfiltered" else
+                           "Recover command events excluded by the switch-only history filter"
+                           if stage == "history_command_context" else
                            "Recover state transitions without repeated health-status noise"))]
     return []
 
