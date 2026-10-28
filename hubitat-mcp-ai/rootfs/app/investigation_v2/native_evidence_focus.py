@@ -8,6 +8,7 @@ import hashlib
 import json
 from typing import Any, Mapping, Sequence
 from .native_source_adapters import safe_string
+from .native_provenance import correlated_command_warnings
 
 _CORE=("healthStatus","deviceHealth","networkStatus","mqttStatus",
        "lastSeen","lastMessage","lastContact","dataAgeSeconds",
@@ -130,7 +131,14 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     for row in rows:
                         if isinstance(row,dict) and str(row.get("id")) in focus:
                             add(f"{ref}: {field} includes {safe_string(row.get('name'),80)} (ID {row.get('id')}).")
-    return (primary+secondary)[:16]
+    for match in correlated_command_warnings(list(witnesses), focus):
+        add(f"Read #{match['event_read']} vs Read #{match['log_read']}: "
+            f"app {safe_string(match['app'],65)} (ID {match['appId']}) "
+            f"issued {match['command']} at {match['command_time']}; "
+            f"device-method warning at {match['warning_time']} "
+            f"({match['wall_clock_delta_ms']}ms wall-clock difference). "
+            "Clock timezone alignment and causation are unverified.")
+    return (primary+secondary)[:18]
 
 def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
                      failures:Sequence[Mapping[str,Any]],
