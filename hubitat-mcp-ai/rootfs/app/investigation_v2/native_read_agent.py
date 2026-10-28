@@ -66,6 +66,9 @@ _SAFE_KEYS = frozenset({
     "truncated", "nextCursor", "response_too_large", "result",
     "data", "output", "details", "capabilities", "attributes",
     "producedBy", "switch", "motion", "battery", "lastActivity",
+    "metrics", "healthAlerts", "health_alerts", "backupStatus",
+    "firmware", "freeMem", "entries", "severity", "appName",
+    "description", "msg", "event",
 })
 _CONTROL_KEYS = frozenset({
     "command", "commands", "confirm", "confirmation", "action",
@@ -108,27 +111,33 @@ def _group_logs(data: Mapping[str, Any]) -> dict[str, Any] | None:
     if not isinstance(rows, list):
         return None
     groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    observed_stamps: dict[tuple[str, str, str], set[str]] = {}
     for raw in rows[:350]:
         if not isinstance(raw, dict):
             continue
         level = _text(raw.get("level") or raw.get("severity") or "unknown", 22)
         source = raw.get("source")
+        source_type = _text(raw.get("sourceType") or "unspecified", 30)
         if isinstance(source, dict):
+            source_type = _text(source.get("type") or source_type, 30)
             source = source.get("id") or source.get("name")
         source = _text(source or raw.get("appId") or raw.get("deviceId") or "unknown", 80)
         message = _text(raw.get("message") or raw.get("msg") or raw.get("description"), 350)
         # Numeric watchdog counts and transport retry numbers are variable, not
         # independent fault identities. Preserve raw representative message.
         fingerprint = re.sub(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", "#", message).casefold()
-        key = (source, level, fingerprint)
+        key = (source_type + ":" + source, level, fingerprint)
         rec = groups.setdefault(key, {
             "source": source, "level": level, "message": message,
             "count": 0, "duplicate_timestamp_rows": 0,
             "oldest": None, "newest": None,
         })
         stamp = _text(raw.get("date") or raw.get("timestamp"), 70) or None
-        if stamp and stamp == rec["newest"]:
-            rec["duplicate_timestamp_rows"] += 1
+        if stamp:
+            prior_stamps = observed_stamps.setdefault(key, set())
+            if stamp in prior_stamps:
+                rec["duplicate_timestamp_rows"] += 1
+            prior_stamps.add(stamp)
         rec["count"] += 1
         if stamp:
             rec["oldest"] = min(stamp, rec["oldest"]) if rec["oldest"] else stamp
@@ -228,34 +237,40 @@ def _ids_from_read(op: str, data: Any) -> set[str]:
     if not isinstance(data, dict):
         return set()
     evidence_keys = {
-        "hub_list_devices": ("devices",),
-        "hub_list_apps": ("apps",),
-        "hub_list_rules": ("rules",),
-        "hub_get_logs": ("logs",),
-        "hub_get_device_health": ("devices",),
+        "hub_list_devices": ("devices", ("id", "deviceId")),
+        "hub_list_apps": ("apps", ("id", "appId")),
+        "hub_list_rules": ("rules", ("id", "appId")),
+        # Log entry ID is a log-row identifier, never an app or device ID.
+        "hub_get_logs": ("logs", ("appId", "deviceId", "sourceId")),
+        "hub_get_device_health": ("devices", ("id", "deviceId")),
     }
-    keys = evidence_keys.get(op, ())
+    spec = evidence_keys.get(op)
+    if spec is None:
+        return set()
+    key, id_fields = spec
     for root in ("result", "data", "output"):
         child = data.get(root)
         if isinstance(child, dict):
             data = child
             break
     ids: set[str] = set()
-    for key in keys:
-        rows = data.get(key)
-        if not isinstance(rows, list):
+    rows = data.get(key)
+    if not isinstance(rows, list):
+        return ids
+    for row in rows[:500]:
+        if not isinstance(row, dict):
             continue
-        for row in rows[:500]:
-            if not isinstance(row, dict):
-                continue
-            for k in ("id", "deviceId", "appId", "sourceId"):
-                value = row.get(k)
-                if type(value) in (int, str) and str(value).isdecimal():
-                    ids.add(str(value))
+        for field in id_fields:
+            value = row.get(field)
+            if type(value) in (int, str) and str(value).isdecimal():
+                ids.add(str(value))
+        if op == "hub_get_logs":
             source = row.get("source")
             if isinstance(source, dict):
+                kind = str(source.get("type") or source.get("sourceType") or "").lower()
                 value = source.get("id")
-                if type(value) in (int, str) and str(value).isdecimal():
+                if (kind in ("app", "device", "dev")
+                        and type(value) in (int, str) and str(value).isdecimal()):
                     ids.add(str(value))
     return ids
 
@@ -282,6 +297,20 @@ def _observed_operations(result: Any, manifest: Mapping[str, MCPTool]) -> dict[s
     return verified
 
 
+def _contains_control_key(value: Any, depth: int = 0) -> bool:
+    if depth > 6:
+        return True
+    if isinstance(value, dict):
+        return any(
+            isinstance(key, str) and key in _CONTROL_KEYS
+            or _contains_control_key(inner, depth+1)
+            for key, inner in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_control_key(item, depth+1) for item in value[:50])
+    return False
+
+
 def _guard(name: str, args: dict[str, Any],
            manifest: Mapping[str, MCPTool],
            discovered: Mapping[str, set[str]], verified_ids: set[str]) -> str | None:
@@ -290,7 +319,7 @@ def _guard(name: str, args: dict[str, Any],
         return "tool_not_on_live_read_manifest"
     if classify_tool_effect(tool, args) is not ToolEffect.READ:
         return "tool_is_not_read_only"
-    if any(k in _CONTROL_KEYS for k in args):
+    if _contains_control_key(args):
         return "write_argument_rejected"
     if name.startswith("hub_read_"):
         op = args.get("tool")
@@ -300,7 +329,7 @@ def _guard(name: str, args: dict[str, Any],
         if (not isinstance(enum, list) or op not in enum) and op not in discovered.get(name, set()):
             return "operation_not_independently_discovered"
         inner = args.get("args", {})
-        if not isinstance(inner, dict) or any(k in _CONTROL_KEYS for k in inner):
+        if not isinstance(inner, dict) or _contains_control_key(inner):
             return "unsafe_arguments"
     else:
         inner = args
