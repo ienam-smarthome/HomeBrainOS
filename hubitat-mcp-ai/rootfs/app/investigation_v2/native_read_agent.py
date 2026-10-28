@@ -174,6 +174,24 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     return projected
 
 
+def _oversized_hint(result: Any) -> str | None:
+    """Treat a typed size-limit envelope as a narrower-read instruction.
+
+    Never retry the same expensive query and never execute source-supplied
+    suggestions. The model may propose a new READ, which is revalidated.
+    """
+    data = getattr(result, "data", None)
+    if not isinstance(data, dict):
+        return None
+    candidate = data.get("error")
+    nested = candidate if isinstance(candidate, dict) else {}
+    code = nested.get("code") or data.get("code")
+    if code != "response_too_large":
+        return None
+    suggestion = nested.get("suggestion") or data.get("suggestion")
+    return _text(suggestion, 200) or "Use narrower filters, pagination or a shorter time range"
+
+
 def _read_manifest(tools: Iterable[MCPTool]) -> dict[str, MCPTool]:
     admitted: dict[str, MCPTool] = {}
     for tool in tools:
@@ -437,6 +455,7 @@ async def run_native_read_agent(
             before = time.monotonic()
             result = None
             error = None
+            execution = None
             try:
                 execution = await asyncio.wait_for(
                     executor.execute(name, args, tool=manifest[name],
@@ -459,11 +478,17 @@ async def run_native_read_agent(
             except Exception as exc:
                 error = classify_exception(exc)
             if error:
+                hint = (_oversized_hint(execution.result)
+                        if execution is not None and execution.name == name
+                        else None)
+                safe_error = "response_too_large" if hint else error
                 failures.append({"tool": name, "operation": op,
-                                 "code": error, "elapsed_ms":
+                                 "code": safe_error, "elapsed_ms":
                                  round((time.monotonic()-before)*1000)})
-                messages.append({"role": "tool", "content": json.dumps(
-                    {"error": error, "source_complete": False})})
+                messages.append({"role": "tool", "content": json.dumps({
+                    "error": safe_error, "source_complete": False,
+                    **({"suggestion": hint} if hint else {}),
+                })})
                 continue
             assert result is not None
             verified_ids.update(_ids_from_read(op, result.data))
