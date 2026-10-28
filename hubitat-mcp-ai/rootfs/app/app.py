@@ -1543,7 +1543,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                         targeted_started = time.perf_counter()
                         targeted = None
                         targeted_diagnostics["outcome"] = "preflight"
-                        targeted_diagnostics["gateway_read_attempted"] = True
+                        targeted_diagnostics["preflight_attempted"] = True
                         try:
                             targeted = await read_verified_target_status(
                                 mcp, _id[0], wanted_attributes=wanted,
