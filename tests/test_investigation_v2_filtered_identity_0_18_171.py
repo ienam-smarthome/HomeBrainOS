@@ -244,8 +244,13 @@ async def test_legacy_contract_never_opens_a_write_or_undeclared_operation():
 
 
 @pytest.mark.parametrize("filter_enabled", [True, False])
+@pytest.mark.parametrize("coverage", [
+    {"hasMore": False},
+    {"totalDevices": 1, "hasMore": False},
+    {"total": 1, "hasMore": False},
+])
 def test_http_fast_scoped_read_never_uses_204_device_inventory(
-    monkeypatch, tmp_path, filter_enabled,
+    monkeypatch, tmp_path, filter_enabled, coverage,
 ):
     options = tmp_path / "options.json"
     options.write_text(json.dumps({
@@ -257,7 +262,11 @@ def test_http_fast_scoped_read_never_uses_204_device_inventory(
     monkeypatch.setenv("CONFIG_PATH", str(options))
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
-    m = MCP(filter_enabled=filter_enabled)
+    m = MCP(filter_enabled=filter_enabled, page={
+        "devices": [{"id": "7828", "label": "Livingroom Light 2",
+                     "name": "Generic dimmer", "room": "Living Room"}],
+        **coverage,
+    })
     async def forbid_inventory(*_args, **_kwargs):
         raise AssertionError("unfiltered inventory should not run")
     async def forbid_model(*_args, **_kwargs):
