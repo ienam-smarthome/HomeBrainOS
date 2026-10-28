@@ -12,7 +12,8 @@ APP=Path(__file__).resolve().parents[1]/"hubitat-mcp-ai"/"rootfs"/"app"
 sys.path.insert(0,str(APP))
 from mcp_client import MCPTool, MCPToolResult
 from investigation_v2.native_provenance import (
-    event_summary, source_identities, correlated_command_warnings)
+    event_summary, source_identities, correlated_command_warnings,
+    dependent_summary, driver_summary)
 from investigation_v2.native_read_agent import _payload, _guard, run_native_read_agent
 from investigation_v2.native_evidence_focus import focused_highlights, focused_fallback
 from test_investigation_v2_native_read_agent_0_18_181 import (
@@ -119,3 +120,79 @@ def test_same_method_command_and_warning_form_correlation_not_causal_proof():
     assert "Calendar Notifier" in fallback
     assert "Adhan Player" in fallback
     assert "not proof" in fallback
+
+
+
+def call(gateway, operation, **args):
+    return {"function":{"name":gateway,"arguments":{
+        "tool":operation,"args":args}}}
+
+
+@pytest.mark.asyncio
+async def test_model_can_follow_device_event_issuers_into_two_app_configs_and_source():
+    mcp=FakeMCP([READ_DEVICES,READ_APPS])
+    async def identities():
+        return [{"id":"7934","label":"Google Nest Hub"}]
+    mcp.get_device_identities=identities
+    executor=FakeExecutor(mcp,[
+        EVENTS,
+        {"appId":"4080","name":"Calendar Notifier","enabled":True,
+         "settings":{"targetDeviceId":"7934","apiKey":"private"}},
+        {"appId":"1679","name":"Adhan Player","enabled":True},
+        {"id":"4080","type":"app","name":"Calendar Notifier",
+         "source":"def handler():\n    callDevice(...)\n"},
+    ])
+    round_no=0
+    async def model(messages,tools):
+        nonlocal round_no
+        round_no+=1
+        if round_no==1:
+            return {"tool_calls":[{"function":{"name":"homebrain_find_device",
+                                                "arguments":{"name":"Google Nest Hub"}}}]}
+        if round_no==2:
+            return {"tool_calls":[call("hub_read_devices",
+                                      "hub_list_device_events",
+                                      deviceId="7934",limit=50)]}
+        if round_no==3:
+            # Both app IDs were independently attested by producedBy.appId.
+            assert '"appId": "4080"' in messages[-1]["content"]
+            return {"tool_calls":[
+                call("hub_read_apps_code","hub_get_app_config",appId="4080"),
+                call("hub_read_apps_code","hub_get_app_config",appId="1679"),
+            ]}
+        if round_no==4:
+            return {"tool_calls":[
+                call("hub_read_apps_code","hub_get_source",type="app",id="4080")]}
+        return {"content":("Two independently attested apps issued commands "
+                           "to device 7934, but the driver execution cause "
+                           "remains unverified.")}
+    result=await run_native_read_agent(
+        question="Which automations interact with the Google Nest Hub?",
+        chat=model,mcp=mcp,executor=executor,max_rounds=6)
+    assert result["native_diagnostics"]["successful_reads"]==4
+    assert result["native_diagnostics"]["reads_executed"]==4
+    assert result["native_diagnostics"]["verified_typed_ids"]["app"]==["1679","4080"]
+    assert result["native_diagnostics"]["verified_typed_ids"]["device"]==["7934"]
+    assert [c[1]["tool"] for c in executor.calls]==[
+        "hub_list_device_events","hub_get_app_config",
+        "hub_get_app_config","hub_get_source"]
+    assert result["native_diagnostics"]["failures"]==[]
+    assert "two" in result["answer"]["text"].lower()
+
+
+def test_source_ids_from_dependencies_and_drivers_are_typed_not_interchangeable():
+    from investigation_v2.native_provenance import (
+        dependent_summary, driver_summary, source_identities)
+    dependency={"deviceId":"7934","appsUsing":[
+        {"id":4080,"name":"Calendar Notifier"},
+        {"appId":"1679","label":"Adhan Player"}]}
+    assert source_identities("hub_list_device_dependents",dependency)["app"]==set()
+    attest=source_identities("hub_list_device_dependents",dependency,
+                              scoped_device_id="7934")
+    assert attest["app"]=={"4080","1679"}
+    assert "apps_using" in dependent_summary(dependency)
+    drivers={"drivers":[{"id":"3907","name":"Google Cast"},
+                        {"id":"3908","name":"Tasmota Device"}]}
+    assert source_identities("hub_list_drivers",drivers)["driver"]=={"3907","3908"}
+    assert "3907" not in attest["app"]
+    assert driver_summary(drivers)["drivers"][0]["driverId"]=="3907"
