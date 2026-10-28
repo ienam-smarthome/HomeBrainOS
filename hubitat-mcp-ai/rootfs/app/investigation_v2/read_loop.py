@@ -476,6 +476,72 @@ async def run_read_only_investigation(
                     "reason": "read_schema_does_not_allow_unfiltered_events",
                 })
 
+    # A nonempty switch-filtered source page is still command-INCOMPLETE:
+    # Hubitat command-off/on events are separate event names, not values of
+    # attribute 'switch'. This deterministic source step uses the same host
+    # READ/effect/schema/ID gate as the model and needs no AI guess.
+    if (bootstrap_device_context and factual_objective is None
+            and incident_window is None and len(set(known_ids)) == 1
+            and executed < max_total_reads and time.monotonic() < deadline):
+        switch_pages = [
+            cov for cov in case.coverage
+            if cov.operation == "hub_list_device_events" and cov.succeeded
+            and cov.requested_filters.get("attribute") == "switch"
+            and (cov.source_returned_rows or 0) > 0
+        ]
+        command_records = [rec for rec in case.records
+                           if rec.stage == "command_issued"]
+        latest_off = any(
+            rec.stage == "state_reported" and rec.action == "switch"
+            and str(rec.value).lower() == "off"
+            and rec.target_id in set(known_ids)
+            for rec in case.records
+        )
+        if switch_pages and latest_off and not command_records:
+            bootstrap_diagnostics.append({
+                "stage": "history_command_context",
+                "reason": "switch_attribute_filter_excludes_commands",
+                "source_scope": "verified_single_device",
+            })
+            proposals = device_context_proposals(
+                registry.values(), known_ids, case,
+                stage="history_command_context",
+                learned_operations=verified_operations,
+            )
+            if proposals:
+                review = review_model_read_proposals(
+                    case, proposals, registry.values(),
+                    verified_entity_ids=known_ids,
+                    learned_operations=verified_operations,
+                    previous_calls=prior_calls,
+                    max_total_reads=max_total_reads, max_reads_this_round=1,
+                    budget_used_reads=executed, incident_window=incident_window,
+                )
+                rejections.extend(x.reason for x in review.rejected)
+                if not review.approved:
+                    bootstrap_diagnostics.append({
+                        "stage": "history_command_context",
+                        "reason": "host_read_plan_rejected",
+                        "validation": [x.reason for x in review.rejected[:3]],
+                    })
+                for item in review.approved:
+                    failures_before = len(read_failures)
+                    await execute_checked_read(item, -8)
+                    bootstrap_diagnostics.append({
+                        "stage": "history_command_context",
+                        "status": ("read_attempt_failed"
+                                   if len(read_failures) > failures_before
+                                   else "read_attempt_completed"),
+                        "command_records_found": sum(
+                            rec.stage == "command_issued"
+                            for rec in case.records),
+                    })
+            else:
+                bootstrap_diagnostics.append({
+                    "stage": "history_command_context",
+                    "reason": "unfiltered_history_operation_or_schema_unavailable",
+                })
+
     # An old device-reported lastSeen whose incident is missing from recent
     # event pages is a useful historical search anchor, not proof of contact.
     # Fetch at most ONE extra bounded source page before the model; never
