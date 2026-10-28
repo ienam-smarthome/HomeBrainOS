@@ -61,6 +61,13 @@ def test_metrics_are_numeric_and_safe_with_sample_limits():
                   "hub_get_metrics")
     assert live["current"]["dbSizeMB"]==195
     assert "trends" in live
+    from investigation_v2.native_evidence_focus import focused_highlights
+    highlights=focused_highlights([
+        {"read":3,"operation":"hub_get_metrics","source_data":live}
+    ],["7934"])
+    assert any("dbSizeMB" in line for line in highlights)
+    assert any("trend samples" in line for line in highlights)
+    assert any("attribution" in line for line in highlights)
 
 
 def test_causal_coverage_requires_source_attested_target_logs_and_available_events():
