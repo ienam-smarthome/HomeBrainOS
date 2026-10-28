@@ -118,53 +118,15 @@ def _project(value: Any, *, depth: int = 0) -> Any:
 
 
 def _group_logs(data: Mapping[str, Any]) -> dict[str, Any] | None:
-    rows = data.get("logs")
-    if not isinstance(rows, list):
+    """Compatibility projection; single implementation lives in source adapters."""
+    summary = compact_logs(data)
+    if summary is None:
         return None
-    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
-    observed_stamps: dict[tuple[str, str, str], set[str]] = {}
-    for raw in rows[:350]:
-        if not isinstance(raw, dict):
-            continue
-        level = _text(raw.get("level") or raw.get("severity") or "unknown", 22)
-        source = raw.get("source")
-        source_type = _text(raw.get("sourceType") or "unspecified", 30)
-        if isinstance(source, dict):
-            source_type = _text(source.get("type") or source_type, 30)
-            source = source.get("id") or source.get("name")
-        source = _text(source or raw.get("appId") or raw.get("deviceId") or "unknown", 80)
-        message = _text(raw.get("message") or raw.get("msg") or raw.get("description"), 350)
-        # Numeric watchdog counts and transport retry numbers are variable, not
-        # independent fault identities. Preserve raw representative message.
-        fingerprint = re.sub(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", "#", message).casefold()
-        key = (source_type + ":" + source, level, fingerprint)
-        rec = groups.setdefault(key, {
-            "source": source, "level": level, "message": message,
-            "count": 0, "duplicate_timestamp_rows": 0,
-            "oldest": None, "newest": None,
-        })
-        stamp = _text(raw.get("date") or raw.get("timestamp"), 70) or None
-        if stamp:
-            prior_stamps = observed_stamps.setdefault(key, set())
-            if stamp in prior_stamps:
-                rec["duplicate_timestamp_rows"] += 1
-            prior_stamps.add(stamp)
-        rec["count"] += 1
-        if stamp:
-            rec["oldest"] = min(stamp, rec["oldest"]) if rec["oldest"] else stamp
-            rec["newest"] = max(stamp, rec["newest"]) if rec["newest"] else stamp
-    ordered = sorted(groups.values(), key=lambda x: (
-        0 if x["level"].casefold() in ("error", "err", "fatal") else 1,
-        -x["count"], x["source"]
-    ))
     return {
-        "returned_rows": len(rows),
-        "groups": ordered[:16],
-        "group_count": len(groups),
-        "truncated": data.get("truncated") is True or len(rows) > 350,
-        "coverage_proven_complete": False,
+        **summary,
+        "groups": summary["warning_error_groups"],
+        "group_count": summary["warning_error_group_count"],
     }
-
 
 def _payload(result: Any, operation: str) -> dict[str, Any]:
     data = result.data if isinstance(result.data, dict) else {}
@@ -272,47 +234,8 @@ def _arguments(call: Any) -> tuple[str, dict[str, Any]] | None:
 
 
 def _ids_from_read(op: str, data: Any) -> set[str]:
-    """Trust only typed ID columns from a successful source read."""
-    if not isinstance(data, dict):
-        return set()
-    evidence_keys = {
-        "hub_list_devices": ("devices", ("id", "deviceId")),
-        "hub_list_apps": ("apps", ("id", "appId")),
-        "hub_list_rules": ("rules", ("id", "appId")),
-        # Log entry ID is a log-row identifier, never an app or device ID.
-        "hub_get_logs": ("logs", ("appId", "deviceId", "sourceId")),
-        "hub_get_device_health": ("devices", ("id", "deviceId")),
-    }
-    spec = evidence_keys.get(op)
-    if spec is None:
-        return set()
-    key, id_fields = spec
-    for root in ("result", "data", "output"):
-        child = data.get(root)
-        if isinstance(child, dict):
-            data = child
-            break
-    ids: set[str] = set()
-    rows = data.get(key)
-    if not isinstance(rows, list):
-        return ids
-    for row in rows[:500]:
-        if not isinstance(row, dict):
-            continue
-        for field in id_fields:
-            value = row.get(field)
-            if type(value) in (int, str) and str(value).isdecimal():
-                ids.add(str(value))
-        if op == "hub_get_logs":
-            source = row.get("source")
-            if isinstance(source, dict):
-                kind = str(source.get("type") or source.get("sourceType") or "").lower()
-                value = source.get("id")
-                if (kind in ("app", "device", "dev")
-                        and type(value) in (int, str) and str(value).isdecimal()):
-                    ids.add(str(value))
-    return ids
-
+    """Compatibility entry point for the common source-attestation adapter."""
+    return attested_source_ids(op, data)
 
 def _observed_operations(result: Any, manifest: Mapping[str, MCPTool]) -> dict[str, set[str]]:
     """Only exact, structured same-session hub_search_tools mappings count."""
