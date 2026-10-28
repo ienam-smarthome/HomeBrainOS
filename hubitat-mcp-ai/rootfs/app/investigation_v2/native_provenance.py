@@ -182,21 +182,73 @@ def driver_summary(data: Any) -> dict[str, Any] | None:
 
 
 def app_config_summary(data: Any) -> dict[str, Any]:
+    """Project the real nested app settings page, not just the envelope.
+
+    hub_get_app_config may return:
+        {success, page:{name:settingsPage}, app:{...}, childApps:[...],
+         settingsKeyCount, settingsNote, endpoint}
+    Privacy: no endpoints, settings values, arbitrary HTML or source code.
+    This is metadata about *current* settings, not historical action evidence.
+    """
     raw = unwrapped(data)
-    result = {}
-    for key in ("id", "appId", "name", "label", "type",
-                "enabled", "paused", "status"):
-        value = raw.get(key)
-        if type(value) in (bool, str, int):
-            result[key] = value if isinstance(value, bool) else safe_string(value, 100)
-    for key in ("settings", "preferences", "inputs"):
-        value = raw.get(key)
-        if isinstance(value, dict):
-            result[key + "_field_names"] = [
-                safe_string(name, 75) for name in list(value)[:50]
-                if isinstance(name, str) and
-                not any(private in name.casefold() for private in (
-                    "password", "token", "secret", "credential", "key", "url"))]
+    app = raw.get("app")
+    app = app if isinstance(app, dict) else {}
+    result: dict[str, Any] = {
+        "app_config_projection_basis": (
+            "source app/settings-page metadata, never settings values"),
+        "settings_values_projected": False,
+        "source_complete": False,
+    }
+    if type(raw.get("success")) is bool:
+        result["success"] = raw["success"]
+    page = raw.get("page")
+    if isinstance(page, dict) and isinstance(page.get("name"), str):
+        result["page_name"] = safe_string(page["name"], 50)
+
+    # Inner app metadata is authoritative for the content of this
+    # successful read; it does not independently attest an app ID for
+    # a *new* read. The already checked caller's appId is retained
+    # separately by the native read agent from the approved arguments.
+    for field in ("id", "appId", "name", "label", "appName", "type",
+                  "appType", "namespace", "parentAppId",
+                  "enabled", "paused", "status"):
+        value = app.get(field)
+        if value is None:
+            value = raw.get(field)
+        if type(value) in (bool, int, str):
+            result[field] = (value if type(value) is bool
+                             else safe_string(value, 95))
+
+    # Field *names* may help the model select a source-code or app read;
+    # never leak a form value or settingsNote into the model context.
+    forbidden = ("password", "token", "secret", "credential", "apikey",
+                 "api_key", "key", "uri", "url", "endpoint", "account",
+                 "email", "phone", "address", "pin", "cookie")
+    for field in ("settings", "preferences", "inputs"):
+        for container, prefix in ((app, "app_"), (raw, "")):
+            value = container.get(field)
+            if not isinstance(value, dict):
+                continue
+            names = [safe_string(k, 65) for k in list(value)[:80]
+                     if isinstance(k, str) and len(k) <= 80
+                     and not any(x in k.casefold() for x in forbidden)]
+            result[prefix + field + "_field_names"] = names[:45]
+            result[prefix + field + "_reported_count"] = len(value)
+    key_count = raw.get("settingsKeyCount")
+    if type(key_count) is int and 0 <= key_count <= 100000:
+        result["settings_key_count"] = key_count
+    children = raw.get("childApps")
+    if isinstance(children, list):
+        result["child_app_count"] = len(children)
+        result["child_app_ids"] = [
+            str(id_value) for entry in children[:20]
+            if isinstance(entry, dict)
+            if (id_value := numeric_id(entry.get("appId") or entry.get("id")))
+        ]
+    result["app_section_present"] = bool(app)
+    if not app and not any(k in result for k in (
+            "id", "appId", "label", "name", "appName")):
+        result["app_identity_not_projected"] = True
     return result
 
 

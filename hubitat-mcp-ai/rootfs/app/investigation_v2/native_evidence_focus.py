@@ -175,13 +175,27 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                         f"{safe_string(data.get('count'),10)} apps: {app_names}. "
                         "These are dependency references, not confirmed command issuers.")
         elif op=="hub_get_app_config":
-            app_id=data.get("appId") or data.get("id")
-            add(f"{ref}: app {safe_string(data.get('label') or data.get('name'),72)} "
-                f"(ID {safe_string(app_id,18)}) config: "
-                f"enabled={safe_string(data.get('enabled'),15)}, "
-                f"paused={safe_string(data.get('paused'),15)}, "
-                f"setting field names={safe_string(data.get('settings_field_names'),170)}. "
-                "Current config does not prove historical action.")
+            app_id=data.get("requested_app_id") or data.get("appId") or data.get("id")
+            name=data.get("label") or data.get("name") or data.get("appName")
+            fields=data.get("app_settings_field_names") or data.get("settings_field_names") or []
+            if data.get("source_app_id_matches_request") is False:
+                add(f"{ref}: app config ID does NOT match approved appId "
+                    f"{safe_string(app_id,18)}. Treat this as an identity "
+                    "inconsistency, not evidence about the requested app.")
+            else:
+                source_section=bool(data.get("app_section_present"))
+                add(f"{ref}: verified app config READ for app ID "
+                    f"{safe_string(app_id,18)}; "
+                    f"source label={safe_string(name or 'not provided',72)}, "
+                    f"page={safe_string(data.get('page_name'),36)}, "
+                    f"nested app section present={source_section}; "
+                    f"enabled={safe_string(data.get('enabled'),15)}, "
+                    f"paused={safe_string(data.get('paused'),15)}, "
+                    f"settings field names={safe_string(fields,170)}, "
+                    f"child apps={safe_string(data.get('child_app_count'),12)}. "
+                    "Only current metadata and non-sensitive field names "
+                    "were read; settings values, code and historical app "
+                    "execution remain unverified.")
         elif op=="hub_get_source":
             add(f"{ref}: source metadata for {safe_string(data.get('type'),18)} "
                 f"{safe_string(data.get('id'),18)}; "
