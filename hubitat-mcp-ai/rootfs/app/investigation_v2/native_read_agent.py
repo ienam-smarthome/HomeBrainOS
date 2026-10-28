@@ -77,7 +77,7 @@ _CONTROL_KEYS = frozenset({
 
 
 def _text(value: Any, limit: int = 280) -> str:
-    raw = str(value or "")[:1800]
+    raw = str(value if value is not None else "")[:1800]
     raw = _URL.sub("[URL redacted]", raw)
     raw = _REDACT.sub("[credential redacted]", raw)
     raw = "".join(ch if ch.isprintable() and ch not in "<>\x60" else " "
