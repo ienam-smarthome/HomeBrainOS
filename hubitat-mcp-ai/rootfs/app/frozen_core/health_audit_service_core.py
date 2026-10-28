@@ -1068,7 +1068,7 @@ class HealthAuditService:
         })
         return findings, issues
 
-    async def run(self, *, reason: str = "manual") -> dict[str, Any]:
+    async def run(self, *, reason: str = "manual", persist: bool = True) -> dict[str, Any]:
         async with self._lock:
             started = time.monotonic()
             checked_at = self._now()
@@ -1454,7 +1454,8 @@ class HealthAuditService:
                     "motion_active_hours": self.motion_active_hours,
                 },
             }
-            self._persist(result, previous)
+            if persist:
+                self._persist(result, previous)
             return result
 
 
