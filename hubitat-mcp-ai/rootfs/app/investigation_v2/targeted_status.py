@@ -41,6 +41,133 @@ def current_status_attributes(
     return ("switch", "level") if template in allowed else ()
 
 
+
+# A filtered identity query is available only for these *entire* factual
+# templates. Extracting a user-supplied name is not an AI identity guess.
+_EXPLICIT_CURRENT = (
+    re.compile(
+        r"(?i)^\s*read the current switch state and brightness(?: level)? of "
+        r"(?P<name>[^?!.]{3,160}?) directly from hubitat\.? "
+        r"do not change anything\.?\s*$"
+    ),
+    re.compile(
+        r"(?i)^\s*what is the current switch state and brightness(?: level)? of "
+        r"(?P<name>[^?!.]{3,160}?)\??\s*$"
+    ),
+)
+
+
+def explicit_current_device_name(question: str) -> str | None:
+    if not isinstance(question, str) or len(question) > 400:
+        return None
+    for template in _EXPLICIT_CURRENT:
+        match = template.fullmatch(question)
+        if match:
+            name = " ".join(match.group("name").strip().split())
+            if (3 <= len(name) <= 160
+                    and " and " not in name.casefold()
+                    and not re.search(r"\b(?:device\s*[0-9]+|#\d+)\b", name, re.I)):
+                return name
+    return None
+
+
+async def read_filtered_target_identity(
+    mcp: Any, requested_label: str,
+    *, diagnostics: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """Read a COMPLETE exact-label-filtered source page, or decline.
+
+    Requires the live read-only schema to advertise the labelFilter. The
+    provider's total and hasMore/nextOffset attest *filter coverage*; they do
+    NOT attest the user's entire Hubitat inventory. Only a unique exact
+    friendly label can be selected. No device status or writes are read here.
+    """
+    if (not isinstance(requested_label, str)
+            or not 3 <= len(requested_label) <= 160
+            or " and " in requested_label.casefold()):
+        return None
+    gateway = _gateway(await mcp.list_tools(), "hub_list_devices")
+    if gateway is None:
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filtered_gateway_unavailable"
+        return None
+    nested = _args_schema(gateway)
+    properties = nested.get("properties")
+    required = nested.get("required")
+    if (not isinstance(properties, dict)
+            or not isinstance(required, list)
+            or "labelFilter" not in properties):
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filter_not_advertised"
+        return None
+    args: dict[str, Any] = {"labelFilter": requested_label}
+    # Explicitly bound pagination and summary identity projection only.
+    for key, value in (
+        ("fields", ["id", "name", "label", "room"]),
+        ("limit", 50), ("offset", 0), ("detailed", False),
+    ):
+        if key in properties:
+            args[key] = value
+    if any(key not in args for key in required):
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filtered_schema_required_fields"
+        return None
+    request = {"tool": "hub_list_devices", "args": args}
+    if _schema_problem(request, gateway.input_schema) is not None:
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filtered_schema_rejected"
+        return None
+    if diagnostics is not None:
+        diagnostics["filtered_gateway_read_attempted"] = True
+    result = await mcp.call_tool(gateway.name, request)
+    from mcp_client import tool_succeeded
+    if not tool_succeeded(result):
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filtered_source_failed"
+        return None
+    from mcp_client import HubitatMCPClient
+    source = HubitatMCPClient._find_device_page(result.data)
+    rows = HubitatMCPClient._find_device_list(result.data)
+    if (not isinstance(source, dict) or not isinstance(rows, list)
+            or not isinstance(source.get("total"), int)
+            or isinstance(source["total"], bool)
+            or source["total"] != len(rows)
+            or source.get("hasMore") is not False
+            or len(rows) != 1
+            or source.get("nextOffset") not in (None, 0)):
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filtered_coverage_unverified"
+        return None
+    row = rows[0]
+    if not isinstance(row, dict):
+        return None
+    ident = row.get("id")
+    friendly = row.get("label")
+    if (type(ident) not in (int, str)
+            or not str(ident).isdecimal()
+            or len(str(ident)) > 20
+            or not isinstance(friendly, str)
+            or friendly.strip().casefold() != requested_label.strip().casefold()):
+        if diagnostics is not None:
+            diagnostics["identity_lookup"] = "filtered_identity_mismatch"
+        return None
+    identity = {key: row[key] for key in ("id", "name", "label", "room", "roomName")
+                if key in row}
+    identity["id"] = str(ident)
+    if diagnostics is not None:
+        diagnostics["identity_lookup"] = "filtered_unique_exact_label"
+    return [identity], {
+        "source": "verified_hubitat_label_filter",
+        "projection": "filtered_identity_only",
+        "mode": "single_complete_filtered_page",
+        "pages": 1,
+        "scope": "exact_label",
+        "complete": True,
+        "home_inventory_complete": False,
+        "page_timings_ms": [],
+    }
+
+
 def _attested_id(data: Mapping[str, Any]) -> str | None:
     """Only an explicit source-reported ID can attest the queried target."""
     source: Mapping[str, Any] = data
@@ -133,4 +260,5 @@ async def read_verified_target_status(
     return snapshot, provenance
 
 
-__all__ = ["current_status_attributes", "read_verified_target_status"]
+__all__ = ["current_status_attributes", "read_verified_target_status",
+           "explicit_current_device_name", "read_filtered_target_identity"]
