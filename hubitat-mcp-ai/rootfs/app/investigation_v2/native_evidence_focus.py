@@ -8,6 +8,7 @@ import hashlib
 import json
 from typing import Any, Mapping, Sequence
 from .native_source_adapters import safe_string
+from .native_provenance import correlated_command_warnings
 
 _CORE=("healthStatus","deviceHealth","networkStatus","mqttStatus",
        "lastSeen","lastMessage","lastContact","dataAgeSeconds",
@@ -81,14 +82,28 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
         elif op=="hub_list_device_events":
             events=data.get("events")
             if not isinstance(events,list):continue
+            scoped=str(w.get("read_filters",{}).get("deviceId")) in focus
             selected=[e for e in events[:80] if isinstance(e,dict)
-                      and (not isinstance(e.get("producedBy"),dict)
-                           or str(e["producedBy"].get("deviceId")) in focus)]
+                      and (scoped or
+                           (isinstance(e.get("producedBy"),dict)
+                            and str(e["producedBy"].get("deviceId")) in focus))]
             if selected:
                 def label(e:dict)->str:
                     return (safe_string(e.get("name"),32)+"="+safe_string(e.get("value"),45)
                             +" at "+safe_string(e.get("date") or e.get("time"),53))
                 add(f"{ref}: {len(selected)} target events returned; newest {label(selected[0])}; oldest {label(selected[-1])}. Driver status events are NOT device heartbeats.")
+            if scoped:
+                for issuer in data.get("issuer_apps",[])[:8]:
+                    if not isinstance(issuer,dict):
+                        continue
+                    commands=issuer.get("commands")
+                    add(f"{ref}: issuing app {safe_string(issuer.get('name'),75)} "
+                        f"(app ID {safe_string(issuer.get('appId'),18)}) issued "
+                        f"{safe_string(issuer.get('count'),12)} commands: "
+                        f"{safe_string(commands,155)}; between "
+                        f"{safe_string(issuer.get('oldest'),45)} and "
+                        f"{safe_string(issuer.get('newest'),45)}. "
+                        "This is command provenance, not proof of cause.")
         elif op=="hub_get_logs":
             summary=data.get("log_summary")
             if not isinstance(summary,dict):continue
@@ -109,6 +124,29 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                 add(f"{ref}: log sample has no target-specific warnings; "
                     f"sample {scope}, timestamps {window}; coverage incomplete. "
                     "This is NOT evidence the target's earlier warnings stopped.",False)
+        elif op=="hub_list_device_dependents":
+            if str(w.get("read_filters",{}).get("deviceId")) in focus:
+                apps=data.get("apps_using")
+                if isinstance(apps,list):
+                    app_names=", ".join(
+                        f"{safe_string(item.get('name'),55)} (app {safe_string(item.get('appId'),18)})"
+                        for item in apps[:8] if isinstance(item,dict))
+                    add(f"{ref}: target device is referenced by "
+                        f"{safe_string(data.get('count'),10)} apps: {app_names}. "
+                        "These are dependency references, not confirmed command issuers.")
+        elif op=="hub_get_app_config":
+            app_id=data.get("appId") or data.get("id")
+            add(f"{ref}: app {safe_string(data.get('label') or data.get('name'),72)} "
+                f"(ID {safe_string(app_id,18)}) config: "
+                f"enabled={safe_string(data.get('enabled'),15)}, "
+                f"paused={safe_string(data.get('paused'),15)}, "
+                f"setting field names={safe_string(data.get('settings_field_names'),170)}. "
+                "Current config does not prove historical action.")
+        elif op=="hub_get_source":
+            add(f"{ref}: source metadata for {safe_string(data.get('type'),18)} "
+                f"{safe_string(data.get('id'),18)}; "
+                f"content available={safe_string(data.get('source_content_available'),15)}; "
+                "source content not analysed in this adapter.")
         elif op=="hub_get_device_health":
             for field in ("staleDevices","unknownDevices"):
                 rows=data.get(field)
@@ -116,7 +154,14 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     for row in rows:
                         if isinstance(row,dict) and str(row.get("id")) in focus:
                             add(f"{ref}: {field} includes {safe_string(row.get('name'),80)} (ID {row.get('id')}).")
-    return (primary+secondary)[:16]
+    for match in correlated_command_warnings(list(witnesses), focus):
+        add(f"Read #{match['event_read']} vs Read #{match['log_read']}: "
+            f"app {safe_string(match['app'],65)} (ID {match['appId']}) "
+            f"issued {match['command']} at {match['command_time']}; "
+            f"device-method warning at {match['warning_time']} "
+            f"({match['wall_clock_delta_ms']}ms wall-clock difference). "
+            "Clock timezone alignment and causation are unverified.")
+    return (primary+secondary)[:18]
 
 def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
                      failures:Sequence[Mapping[str,Any]],
@@ -135,6 +180,14 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
             log_messages.extend(safe_string(g.get("message"),260).lower()
                 for g in report.get("warning_error_groups",[]) if isinstance(g,dict)
                 and str(g.get("source_id")) in focus_ids)
+    issuing_apps=[]
+    for w in witnesses:
+        if (w.get("operation")=="hub_list_device_events"
+                and str(w.get("read_filters",{}).get("deviceId")) in focus_ids):
+            evidence=w.get("source_data",{})
+            if isinstance(evidence,dict):
+                issuing_apps.extend(x for x in evidence.get("issuer_apps",[])
+                                    if isinstance(x,dict))
     if str(status.get("healthStatus","")).lower()=="offline":
         conclusion=("The device is reported offline with stale telemetry. "
                     "Its physical failure mechanism is not established; power, "
@@ -146,6 +199,14 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
                     "hub instability is not independently verified.")
     else:
         conclusion="These observations establish reported symptoms, not a verified root cause."
+    if issuing_apps and any("excessive hub load" in m or "ran for" in m
+                            for m in log_messages):
+        source_apps=", ".join(
+            f"{safe_string(x.get('name'),58)} (app {safe_string(x.get('appId'),16)})"
+            for x in issuing_apps[:5])
+        conclusion+=(" Automations observed issuing commands to this device: "
+                     +source_apps+". These are investigation leads, not "
+                     "proof that a caller caused the long-running operation.")
     lines=["**What the target's sources establish**",
            *["- "+fact for fact in facts[:10]],"",
            "**Supported conclusion:** "+conclusion,"",
@@ -160,6 +221,17 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
 
 def focused_model_view(operation:str,projected:Mapping[str,Any],
                        focus_ids:Sequence[str])->dict[str,Any]:
+    if operation=="hub_list_device_events" and focus_ids:
+        events=projected.get("events")
+        events=events if isinstance(events,list) else []
+        commands=[e for e in events if isinstance(e,dict)
+                  and str(e.get("name","")).startswith("command-")]
+        states=[e for e in events if isinstance(e,dict)
+                and not str(e.get("name","")).startswith("command-")]
+        return {"issuer_apps":projected.get("issuer_apps",[])[:10],
+                "count":projected.get("count"),
+                "events":commands[:20]+states[:5],
+                "source_complete":False}
     if operation!="hub_get_logs" or not focus_ids:return dict(projected)
     summary=projected.get("log_summary")
     if not isinstance(summary,dict):return dict(projected)
