@@ -164,7 +164,7 @@ async def test_read_budget_exhausted_skips_unexecutable_model_round():
     assert not calls
     assert r.executed_reads==0
     assert r.stopped_because=="source_backed_read_budget_reached"
-    assert r.planning_rounds==0
+    assert r.rounds==0
     assert r.planning_diagnostics==[]
     assert any(row.get("stage")=="source_first_decision" and
                row.get("model_planning_skipped") is True
