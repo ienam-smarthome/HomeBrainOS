@@ -39,9 +39,42 @@ diagnostics record `canonical_read_aliases` and a bounded
 `unavailable_model_tool_count`. This is an evidence-first stop, not
 an invented negative finding about available hub data.
 
+## Correctness-critical read-first recovery
+
+The 28 October live report included 11 switch-state observations but
+zero commands because bootstrap selected an attribute=switch history
+filter. Those observations do NOT establish that command-off events
+were absent. In a read-only causal investigation with a single verified
+device and a nonempty switch-filtered page containing the latest OFF,
+the V2 host now attempts a bounded unfiltered device-history read
+BEFORE model planning, if the live operation/schema permits it.
+
+If the server accepts both temporal bounds, the request is anchored to
+the latest independently reported OFF (two hours on each side).
+Otherwise it retains a bounded hoursBack query without attribute,
+rather than synthesising a command or weakening the normal MCP gate.
+If command-off events are present, the existing typed source projector
+captures their independently reported producer IDs and the existing
+issuer/app-config bootstrap may investigate those IDs.
+
+The early additional read is reported in bootstrap_diagnostics under
+history_command_context, including the explicit reason
+switch_attribute_filter_excludes_commands and the number of typed
+commands recovered. It never changes device state or treats a
+source-reported switch transition as an issued command.
+
+The model alias repair remains separately useful, but a read-first
+investigation must not depend on the model to request this essential
+unfiltered command-bearing source.
+
 ## Tests and limits
 
 Synthetic tests prove:
+- the observed October 28 00:14:56.868 UTC command-off by app 4020 is
+  recoverable via a host-approved unfiltered read even though a first
+  switch-only page reports only the 00:14:57.111 state OFF from #7790;
+- a causal question obtains that additional read before any AI planning,
+  while a factual status question does not;
 - a real read-operation alias resolves to the unique live READ gateway;
 - host-verified ID completion cannot override a model-supplied wrong ID;
 - unknown operations, write operations, mutating gateways, overlapping
