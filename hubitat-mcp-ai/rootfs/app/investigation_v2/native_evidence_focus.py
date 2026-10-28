@@ -124,6 +124,29 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                 add(f"{ref}: log sample has no target-specific warnings; "
                     f"sample {scope}, timestamps {window}; coverage incomplete. "
                     "This is NOT evidence the target's earlier warnings stopped.",False)
+        elif op=="hub_list_device_dependents":
+            if str(w.get("read_filters",{}).get("deviceId")) in focus:
+                apps=data.get("apps_using")
+                if isinstance(apps,list):
+                    app_names=", ".join(
+                        f"{safe_string(item.get('name'),55)} (app {safe_string(item.get('appId'),18)})"
+                        for item in apps[:8] if isinstance(item,dict))
+                    add(f"{ref}: target device is referenced by "
+                        f"{safe_string(data.get('count'),10)} apps: {app_names}. "
+                        "These are dependency references, not confirmed command issuers.")
+        elif op=="hub_get_app_config":
+            app_id=data.get("appId") or data.get("id")
+            add(f"{ref}: app {safe_string(data.get('label') or data.get('name'),72)} "
+                f"(ID {safe_string(app_id,18)}) config: "
+                f"enabled={safe_string(data.get('enabled'),15)}, "
+                f"paused={safe_string(data.get('paused'),15)}, "
+                f"setting field names={safe_string(data.get('settings_field_names'),170)}. "
+                "Current config does not prove historical action.")
+        elif op=="hub_get_source":
+            add(f"{ref}: source metadata for {safe_string(data.get('type'),18)} "
+                f"{safe_string(data.get('id'),18)}; "
+                f"content available={safe_string(data.get('source_content_available'),15)}; "
+                "source content not analysed in this adapter.")
         elif op=="hub_get_device_health":
             for field in ("staleDevices","unknownDevices"):
                 rows=data.get(field)
