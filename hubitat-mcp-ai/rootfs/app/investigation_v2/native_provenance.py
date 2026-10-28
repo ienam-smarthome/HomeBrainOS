@@ -115,11 +115,17 @@ def event_summary(data: Any) -> dict[str, Any] | None:
                 rec["samples"].append({"command": command, "date": stamp})
         if len(rows) < 80:
             rows.append(sanitized)
+    stamps=sorted(e["date"] for e in rows
+                  if isinstance(e.get("date"),str) and e["date"])
     return {
         "issuer_apps": sorted(issuers.values(),
                               key=lambda r: (-r["count"], r["appId"]))[:12],
         "count": len(events),
         "events": rows,
+        "oldest_returned": stamps[0] if stamps else None,
+        "newest_returned": stamps[-1] if stamps else None,
+        "returned_event_rows": len(rows),
+        "producer_app_count": len(issuers),
         "provenance_basis": "device-scoped event source producedBy.appId",
         "source_complete": False}
 
