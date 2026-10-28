@@ -197,10 +197,22 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     "were read; settings values, code and historical app "
                     "execution remain unverified.")
         elif op=="hub_get_source":
-            add(f"{ref}: source metadata for {safe_string(data.get('type'),18)} "
-                f"{safe_string(data.get('id'),18)}; "
-                f"content available={safe_string(data.get('source_content_available'),15)}; "
-                "source content not analysed in this adapter.")
+            kind=safe_string(data.get("requested_source_type") or "unknown",18)
+            identity=safe_string(data.get("requested_source_id") or
+                                 data.get("returned_source_id") or "unverified",20)
+            status=data.get("source_read_status")
+            if data.get("source_read_usable_for_method_reasoning") is True:
+                methods=data.get("declared_method_names",[])
+                add(f"{ref}: complete, identity-checked {kind} source ID "
+                    f"{identity} returned lexical method declarations "
+                    f"{safe_string(methods[:18],240)}. This is code "
+                    "structure only, NOT evidence of execution or cause.")
+            else:
+                add(f"{ref}: {kind} source read for ID {identity}: "
+                    f"{safe_string(status,60)}; "
+                    f"{safe_string(data.get('source_inspection_blocker'),235)} "
+                    "A successful gateway response with no code cannot "
+                    "support implementation or callback claims.")
         elif op=="hub_get_device_health":
             for field in ("staleDevices","unknownDevices"):
                 rows=data.get(field)
