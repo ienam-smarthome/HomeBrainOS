@@ -122,7 +122,6 @@ The repository drift test compares this table directly with the live directory. 
 | `device_query_service.py` | Performs read-side inventory queries and aggregation. |
 | `room_scoped_live_aggregates.py` | Applies original-question room constraints to live ON-light and non-light-switch aggregates using authoritative Hubitat room identities, independently of optional model tool parameters. Rejects unresolved scope instead of leaking whole-home results. |
 | `device_read_contract.py` | Centralizes Hubitat device-list projection modes, state-field normalization, and projected-state shape validation. |
-| `investigation_v2/targeted_status.py` | Authorises an exact, verified single-device current state query through the live MCP read manifest and produces a source-typed switch/brightness snapshot; falls back when unverified. |
 | `device_state_summary.py` | Provides shared pure device-state summary helpers. |
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
 | `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at <time>" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |
