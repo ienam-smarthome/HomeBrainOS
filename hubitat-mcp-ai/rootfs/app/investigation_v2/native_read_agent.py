@@ -35,6 +35,10 @@ _SYSTEM = (
     "tools, not device control. You may investigate hub health, log errors, "
     "apps, rules, devices, interactions or historic incidents. DO NOT require "
     "a device name or fetch full inventory unless the evidence needs one. "
+    "For logs, distinguish INFO from WARN/ERROR and request severity-filtered "
+    "rows when the returned sample contains only INFO. Do not call an INFO "
+    "event a triggered alert. Avoid unbounded full-device listings when a "
+    "targeted read or source-attested ID can answer the question. "
     "Tools may be gateways: use hub_search_tools to discover exact operation "
     "and gateway mappings if the live schema does not enumerate operations. "
     "Read metrics, logs and health separately where useful. Follow the most "
@@ -410,6 +414,10 @@ async def run_native_read_agent(
     failures: list[dict[str, Any]] = []
     attempted = 0
     rounds = 0
+    identity_lookup_attempted = False
+    identity_lookup_ms = 0
+    synthesis_status = "not_needed"
+    synthesis_elapsed_ms = 0
     answer_text = ""
     reason = "round_budget_reached"
     for round_no in range(max_rounds):
@@ -451,6 +459,40 @@ async def run_native_read_agent(
             name, args = parsed
             key = json.dumps([name, args], sort_keys=True, default=str)
             issue = _guard(name, args, manifest, discovered, verified_ids)
+            if issue == "target_id_not_verified_from_live_source":
+                # Lookup happens only when the model proposes a target-specific
+                # READ whose ID was not already attested in a source receipt.
+                # Use cached or one-shot live context instead of mandatory
+                # full 20s inventory; failed lookup never authorises a call.
+                inner = args.get("args", args)
+                unknown = {
+                    str(inner[k]) for k in ("deviceId",)
+                    if isinstance(inner, dict) and type(inner.get(k)) in (str, int)
+                    and str(inner[k]).isdecimal()
+                }
+                lookup = getattr(mcp, "get_device_identities", None)
+                if unknown and callable(lookup) and not identity_lookup_attempted:
+                    identity_lookup_attempted = True
+                    before_identity = time.monotonic()
+                    try:
+                        identities = await asyncio.wait_for(
+                            lookup(),
+                            timeout=min(6.0, max(0.1, deadline - time.monotonic())),
+                        )
+                        verified_ids.update(
+                            str(row.get("id") or row.get("deviceId"))
+                            for row in identities[:800]
+                            if isinstance(row, dict)
+                            and str(row.get("id") or row.get("deviceId") or "").isdecimal()
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        pass
+                    finally:
+                        identity_lookup_ms += round(
+                            (time.monotonic() - before_identity) * 1000)
+                    issue = _guard(name, args, manifest, discovered, verified_ids)
             if key in prior:
                 issue = "duplicate_read"
             if issue is not None:
@@ -532,6 +574,52 @@ async def run_native_read_agent(
         if accepted_this_round == 0 and round_no >= 1:
             reason = "no_approved_reads"
             break
+    if witnesses and not answer_text and deadline - time.monotonic() > 2:
+        # The read loop may end at a budget, repeated proposal or source gap.
+        # Request ONE final answer with tools=[], not another planning pass.
+        # Feed only bounded, redacted witness projections. The host report
+        # below still separates model interpretation from actual source data.
+        synthesis_start = time.monotonic()
+        final_witnesses = [
+            {"read_id": w["read"], "operation": w["operation"],
+             "data": w["source_data"]}
+            for w in witnesses[:10]
+        ]
+        try:
+            response = await asyncio.wait_for(
+                chat([
+                    {"role": "system", "content":
+                     "Answer the user's question using only verified source "
+                     "observations provided. Reference read IDs. Distinguish "
+                     "WARN and ERROR from INFO, source reporting from physical "
+                     "state, confirmed cause from hypothesis. Do not assert "
+                     "an error-free hub without suitable WARN/ERROR coverage. "
+                     "Disclose missing data, failures and time limits. No "
+                     "tool calls; give a concise answer even if incomplete."},
+                    {"role": "user", "content": json.dumps({
+                        "question": question,
+                        "source_evidence": final_witnesses,
+                        "failed_or_rejected_reads": failures[-12:],
+                        "source_complete": False,
+                    }, ensure_ascii=True, default=str)[:15000]},
+                ], []),
+                timeout=min(15.0, max(1.0, deadline - time.monotonic())),
+            )
+            if isinstance(response, dict) and not response.get("tool_calls"):
+                candidate = response.get("content")
+                if isinstance(candidate, str) and candidate.strip():
+                    answer_text = _text(candidate, 4500)
+                    synthesis_status = "completed"
+                else:
+                    synthesis_status = "empty_response"
+            else:
+                synthesis_status = "invalid_response"
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            synthesis_status = "unavailable"
+        finally:
+            synthesis_elapsed_ms = round((time.monotonic() - synthesis_start) * 1000)
     if not witnesses:
         answer_text = ("No verified MCP evidence was recovered. "
                        "The question cannot be answered from live sources.")
@@ -603,6 +691,10 @@ async def run_native_read_agent(
             "successful_reads": len(witnesses),
             "model_tool_calls_allowed": bool(offered),
             "verified_source_ids": len(verified_ids),
+            "lazy_identity_lookup_attempted": identity_lookup_attempted,
+            "lazy_identity_lookup_ms": identity_lookup_ms,
+            "final_synthesis": synthesis_status,
+            "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
             "stop_reason": reason,
             "failures": failures[:20],
