@@ -52,13 +52,30 @@ def source_read_summary(
     # strings or fragments merely because the tool itself returned success.
     from groovy_source_investigation import _source_body, _utf16_units
     body, meta=_source_body(data)
-    out["source_content_available"] = bool(body)
+    # A short or single-line raw source is still *present*, even when it
+    # cannot meet the completeness requirements for Groovy method analysis.
+    # Preserve the prior privacy contract without exposing any text.
+    source_keys = ("source", "sourceCode", "rawSource", "sourceText",
+                   "sourceChunk", "chunk", "content", "code", "text")
+    containers=[raw]
+    for wrapper in ("result", "data", "output"):
+        child=raw.get(wrapper)
+        if isinstance(child, dict):
+            containers.append(child)
+    content_present = bool(body) or any(
+        isinstance(item.get(key), str) and bool(item[key])
+        for item in containers for key in source_keys
+    )
+    out["source_content_available"] = content_present
     if not body:
-        out["source_read_status"] = "no_source_text_in_returned_payload"
+        out["source_read_status"] = (
+            "source_text_present_but_not_extractable"
+            if content_present else "no_source_text_in_returned_payload")
         out["source_inspection_blocker"] = (
-            "Read returned metadata but no extractable Groovy source. "
-            "No implementation method was inspected; check source ID/type "
-            "and source endpoint/permissions. Do not infer method absence.")
+            "Source is absent or not a complete extractable Groovy body. "
+            "No implementation method was inspected; check source ID/type, "
+            "source coverage and endpoint/permissions. Do not infer "
+            "method absence or causation.")
         return out
     total=meta.get("totalLength")
     offset=meta.get("offset",0)
