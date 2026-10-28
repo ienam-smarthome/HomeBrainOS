@@ -29,7 +29,7 @@ from .native_device_projection import device_mode_evidence
 from .native_metrics_evidence import project_metrics
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
-    useful_discovery_fingerprint,
+    useful_discovery_fingerprint, repeated_log_evidence,
 )
 from .native_provenance import (source_identities, event_summary,
                                 dependent_summary, driver_summary,
@@ -460,6 +460,8 @@ async def run_native_read_agent(
     focus_ids: set[str] = set()
     seen_fingerprints: set[str] = set()
     redundant_evidence_reads = 0
+    redundant_snapshot_reads = 0
+    redundant_log_subsets = 0
     identity_lookup_ms = 0
     synthesis_status = "not_needed"
     coverage_challenge_used = False
@@ -485,13 +487,16 @@ async def run_native_read_agent(
                 break
             causal_coverage_challenge_used = True
             messages.append({"role": "user", "content":
-                "Evidence-coverage review (not an instruction to assume a "
-                "cause): a verified target has WARN/ERROR observations but "
-                "no device-scoped issuer event history. Decide whether an "
-                "independently permitted read such as hub_list_device_events "
-                "would help discriminate a calling automation from a driver "
-                "stall. Read only if material, otherwise explain the gap. "
-                "Command timestamps and warnings are not proof of cause."})
+                "Evidence coverage assessment from typed source observations, "
+                "not a device-specific command. A prior device-event read is "
+                "not sufficient if its returned time range misses the "
+                "slow-method WARN window or contains no relevant command "
+                "issuers. Decide whether to request a bounded, independently "
+                "permitted history using supported hoursBack, limit and "
+                "attribute filters, or explain why further evidence is "
+                "unavailable. The candidate is NOT an automatic read or "
+                "causal claim. Source clock alignment is unverified. "
+                + json.dumps(causal_coverage_gap, default=str)[:2500]})
         rounds += 1
         left = deadline - time.monotonic()
         if left <= 1:
@@ -748,11 +753,18 @@ async def run_native_read_agent(
                 if found_keys:
                     discovery_fingerprints.add(found_keys)
             fingerprint = read_fingerprint(op, summary)
-            repeated_evidence = bool(fingerprint and fingerprint in seen_fingerprints)
+            repeat_snapshot = bool(fingerprint and fingerprint in seen_fingerprints)
+            repeat_log = (op == "hub_get_logs"
+                          and repeated_log_evidence(witnesses, summary))
+            repeated_evidence = repeat_snapshot or repeat_log
             if fingerprint:
                 seen_fingerprints.add(fingerprint)
             if repeated_evidence:
                 redundant_evidence_reads += 1
+            if repeat_snapshot:
+                redundant_snapshot_reads += 1
+            if repeat_log:
+                redundant_log_subsets += 1
             witness = {
                 "read": attempted,
                 "tool": name, "operation": op,
@@ -761,7 +773,8 @@ async def run_native_read_agent(
                         args.get("args") if isinstance(args.get("args"), dict)
                         else args
                     ).items()
-                    if k in ("level", "limit", "mode", "deviceId", "appId")
+                    if k in ("level", "limit", "mode", "deviceId", "appId",
+                             "attribute", "hoursBack")
                     and type(v) in (str, int) and len(str(v)) < 50
                 },
                 "elapsed_ms": round((time.monotonic()-before)*1000),
@@ -772,8 +785,12 @@ async def run_native_read_agent(
             witnesses.append(witness)
             view = ({"read_id": attempted, "operation": op,
                      "no_new_evidence": True,
-                     "hint": "The same device attributes were already retrieved. "
-                             "Choose an independent discriminator or finish."}
+                     "hint": ("This log sample is already contained in previous "
+                              "target WARN/ERROR evidence. Read a different "
+                              "source or historical incident window."
+                              if repeat_log else
+                              "The same device attributes were already retrieved. "
+                              "Choose an independent discriminator or finish.")}
                     if repeated_evidence else {
                         "read_id": attempted, "operation": op,
                         "source_data": focused_model_view(op, summary, sorted(focus_ids)),
@@ -785,7 +802,7 @@ async def run_native_read_agent(
                     "Prefer a targeted evidence read instead.")
             messages.append({"role": "tool", "content":
                              json.dumps(view, ensure_ascii=True)[:12000]})
-        if redundant_evidence_reads >= 2 and focus_ids:
+        if redundant_snapshot_reads >= 2 and focus_ids:
             reason = "no_new_source_evidence"
             break
         if attempted >= max_reads:
@@ -1017,6 +1034,8 @@ async def run_native_read_agent(
                                   if focus_ids else source_highlights(witnesses)),
             "focus_ids": sorted(focus_ids),
             "redundant_evidence_reads": redundant_evidence_reads,
+            "redundant_snapshot_reads": redundant_snapshot_reads,
+            "redundant_log_subsets": redundant_log_subsets,
             "final_synthesis": synthesis_status,
             "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
