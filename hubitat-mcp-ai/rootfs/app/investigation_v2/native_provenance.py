@@ -121,3 +121,77 @@ def event_summary(data: Any) -> dict[str, Any] | None:
                               key=lambda r: (-r["count"], r["appId"]))[:12],
         "provenance_basis": "device-scoped event source producedBy.appId",
         "source_complete": False}
+
+
+def dependent_summary(data: Any) -> dict[str, Any] | None:
+    raw = unwrapped(data)
+    apps = raw.get("appsUsing")
+    if not isinstance(apps, list):
+        return None
+    records = []
+    for item in apps[:150]:
+        if not isinstance(item, dict):
+            continue
+        ident = numeric_id(item.get("appId") or item.get("id"))
+        if ident:
+            records.append({
+                "appId": ident,
+                "name": safe_string(item.get("name") or item.get("label")
+                                    or item.get("appName"), 95)})
+    return {"apps_using": records[:80], "count": len(apps),
+            "deviceId": numeric_id(raw.get("deviceId")),
+            "source_complete": False}
+
+
+def driver_summary(data: Any) -> dict[str, Any] | None:
+    raw = unwrapped(data)
+    drivers = raw.get("drivers")
+    if not isinstance(drivers, list):
+        return None
+    records = []
+    for item in drivers[:300]:
+        if not isinstance(item, dict):
+            continue
+        ident = numeric_id(item.get("driverId") or item.get("id"))
+        if ident:
+            records.append({
+                "driverId": ident,
+                "name": safe_string(item.get("name") or item.get("label"), 95),
+                "namespace": safe_string(item.get("namespace"), 50)})
+    return {"drivers": records[:80], "count": len(drivers),
+            "source_complete": False}
+
+
+def app_config_summary(data: Any) -> dict[str, Any]:
+    raw = unwrapped(data)
+    result = {}
+    for key in ("id", "appId", "name", "label", "type",
+                "enabled", "paused", "status"):
+        value = raw.get(key)
+        if type(value) in (bool, str, int):
+            result[key] = value if isinstance(value, bool) else safe_string(value, 100)
+    for key in ("settings", "preferences", "inputs"):
+        value = raw.get(key)
+        if isinstance(value, dict):
+            result[key + "_field_names"] = [
+                safe_string(name, 75) for name in list(value)[:50]
+                if isinstance(name, str) and
+                not any(private in name.casefold() for private in (
+                    "password", "token", "secret", "credential", "key", "url"))]
+    return result
+
+
+def source_metadata(data: Any) -> dict[str, Any]:
+    """A source read without projected content is metadata, not code analysis."""
+    raw = unwrapped(data)
+    result = {}
+    for key in ("id", "name", "namespace", "type", "status",
+                "driverId", "appId", "version"):
+        value = raw.get(key)
+        if type(value) in (str, int, bool):
+            result[key] = safe_string(value, 95)
+    result["source_content_available"] = any(
+        isinstance(raw.get(k), str) and bool(raw.get(k))
+        for k in ("source", "code", "text", "content"))
+    result["source_content_projected"] = False
+    return result
