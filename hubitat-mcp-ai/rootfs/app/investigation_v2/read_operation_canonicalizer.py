@@ -1,7 +1,7 @@
 """Canonicalise only unambiguous, LIVE-advertised model read suboperations.
 
 This is a host-controlled MCP syntax adapter, not a semantic intent router.
-It never resolves an entity, guesses operation names, adds read permissions,
+It uses only separately verified target IDs, never guesses operation names or grants read permissions,
 or executes calls. All output is reviewed again by the existing V2 planner.
 """
 from __future__ import annotations
@@ -15,7 +15,8 @@ from .receipt_projection import PROJECTED_V2_READ_OPERATIONS
 
 
 def canonicalize_read_suboperations(
-    proposals: Any, manifest: Iterable[MCPTool],
+    proposals: Any, manifest: Iterable[MCPTool], *,
+    verified_entity_ids: Iterable[str] = (),
 ) -> tuple[Any, int]:
     """Resolve an operation-as-tool alias to one positively enumerated READ gateway.
 
@@ -26,6 +27,8 @@ def canonicalize_read_suboperations(
     """
     if not isinstance(proposals, list):
         return proposals, 0
+    scoped_ids = {str(x) for x in verified_entity_ids
+                  if type(x) in (int, str) and str(x).isdecimal()}
     tools = [t for t in manifest if isinstance(t, MCPTool)]
     actual_names = {t.name for t in tools}
     providers: dict[str, list[MCPTool]] = {}
@@ -78,6 +81,12 @@ def canonicalize_read_suboperations(
             inner = dict(arguments["args"])
         else:
             inner = dict(arguments)
+        # A required target may be completed only from one independently
+        # host-verified device ID, exactly as the existing V2 scope gate does.
+        # An explicit model-supplied deviceId is NEVER overwritten.
+        if (name in ("hub_get_device", "hub_list_device_events")
+                and "deviceId" not in inner and len(scoped_ids) == 1):
+            inner["deviceId"] = next(iter(scoped_ids))
         candidate_args = {"tool": name, "args": inner}
         if _schema_problem(candidate_args, gateway.input_schema) is not None:
             repaired.append(proposal)
