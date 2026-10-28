@@ -147,6 +147,23 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                 add(f"{ref}: bounded hub performance trend samples "
                     f"{safe_string(trends,240)}; source history completeness "
                     "and causal attribution unverified.",False)
+        elif op=="hub_get_memory_history":
+            rows=data.get("entries",[])
+            count=data.get("numeric_observation_rows",0)
+            if isinstance(rows,list):
+                if isinstance(count,int) and count>0:
+                    numeric=[item for item in rows if isinstance(item,dict)
+                             and any(type(v) in (int,float,bool)
+                                     for k,v in item.items() if k!="timestamp")]
+                    add(f"{ref}: {count} rows contain source-reported CPU/memory "
+                        f"measurements. Bounded sample: {safe_string(numeric[:2],230)}. "
+                        "These metrics do not independently attribute load "
+                        "to a device.",False)
+                else:
+                    add(f"{ref}: memory history returned {len(rows)} projected "
+                        "rows with no numeric CPU/memory measurements; "
+                        "timestamps alone cannot corroborate a hub-load "
+                        "warning or prove normal performance.",False)
         elif op=="hub_list_device_dependents":
             if str(w.get("read_filters",{}).get("deviceId")) in focus:
                 apps=data.get("apps_using")
