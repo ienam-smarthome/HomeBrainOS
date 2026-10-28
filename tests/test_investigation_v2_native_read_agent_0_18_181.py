@@ -99,13 +99,13 @@ def call(operation, **args):
 async def test_general_hub_question_no_inventory_or_device_gate(question):
     mcp = FakeMCP()
     logs = [
-        {"level": "warn", "source": {"id": "7103"},
+        {"level": "warn", "source": {"id": "7103", "type": "device"},
          "date": "2026-10-28T10:00:00Z",
          "message": "Watchdog fired after 26000s without data"},
-        {"level": "warn", "source": {"id": "7103"},
+        {"level": "warn", "source": {"id": "7103", "type": "device"},
          "date": "2026-10-28T10:05:00Z",
          "message": "Watchdog fired after 26300s without data"},
-        {"level": "error", "source": {"id": "4129"},
+        {"level": "error", "source": {"id": "4129", "type": "app"},
          "date": "2026-10-28T10:06:00Z",
          "message": "SenseCap D1 408 request timed out"},
     ]
@@ -192,10 +192,10 @@ def test_verified_search_mapping_only_accepts_live_read_gateway():
 
 def test_log_compaction_groups_varying_watchdog_counters_and_redacts_secrets():
     groups = _group_logs({"logs": [
-        {"level": "warn", "source": {"id": "7103"},
+        {"level": "warn", "source": {"id": "7103", "type": "device"},
          "date": "2026-10-28T10:00:00Z",
          "message": "Watchdog fired after 26591s without data"},
-        {"level": "warn", "source": {"id": "7103"},
+        {"level": "warn", "source": {"id": "7103", "type": "device"},
          "date": "2026-10-28T10:05:00Z",
          "message": "Watchdog fired after 26289s without data"},
         {"level": "error", "source": "4129",
