@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from .evidence import CaseFile
 from .temporal_scope import IncidentWindow
 from .transition_links import incident_links
+from .causal_evidence import command_state_pairs, command_history_coverage
 
 
 def _planning_indices(case: CaseFile) -> set[int]:
@@ -111,6 +112,17 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
         "seconds_to_adverse": round(link.seconds_to_adverse, 3),
         "physical_cause_verified": False,
     } for link in incident_links(case)[:8]]
+    targets = sorted({
+        r.target_id for r in case.records if r.target_id
+    }, key=lambda ident: int(ident))[:8]
+    # Never turn event chronology into an unverified rule decision.
+    # These immutable typed links are useful to every model/provider,
+    # including native-tool and structured-proposal planners.
+    command_pairs = [pair.to_dict() for pair in command_state_pairs(case)[:16]]
+    command_coverage = [
+        command_history_coverage(case, target)
+        for target in targets
+    ]
     return json.dumps({
         "records": events,
         "total_case_records": len(case.records),
@@ -119,10 +131,14 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
             for (stage, action), count in sorted(omitted.items())
         ],
         "incident_links": links,
+        "command_state_pairs": command_pairs,
+        "command_history_coverage": command_coverage,
         "coverage": coverage,
         "current_app_name_by_issuer_id": identities,
         "constraints": [
             "Command issued does not prove physical state changed",
+            "A command-state time pair is not proof of internal automation logic",
+            "Switch-only event history cannot establish no command was issued",
             "Incident links are temporal candidates, not causal proof",
             "Coalesced model context is retained in the full source case",
             "History source completeness unverified unless explicit",
