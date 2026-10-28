@@ -131,3 +131,32 @@ async def test_hub_question_does_not_need_identity_lookup():
     )
     assert out["native_diagnostics"]["named_identity_lookups"] == []
     assert not out["native_diagnostics"]["lazy_identity_lookup_attempted"]
+
+
+
+def test_missing_device_id_rejected_at_host_gate_not_zero_ms_executor_failure():
+    from investigation_v2.native_read_agent import _guard
+    args = {"tool": "hub_get_device", "args": {"mode": "summary"}}
+    assert _guard("hub_read_devices", args, {
+        "hub_read_devices": DEVICE
+    }, {}, set()) == "missing_required_operation_fields"
+
+
+def test_log_source_strictly_attests_cosmetic_nest_hub_label():
+    from investigation_v2.native_source_adapters import log_source
+    row = {
+        "type": "device",
+        "name": "Google Nest Hub - [Google Nest Hub]",
+        "message": "dev|7934|google nest hub - (Google Nest Hub)|Device 7934 generates excessive hub load",
+    }
+    assert log_source(row)[1] == "7934"
+    row["name"] = "Another device"
+    assert log_source(row)[1] is None
+
+
+def test_answer_redaction_keeps_human_readable_markdown():
+    from investigation_v2.native_read_agent import _answer_text
+    text = "## Findings\n\n- **Bedroom 3 Mesh:** offline\n- **Hub:** WARNING\n"
+    result = _answer_text(text)
+    assert "\n\n- " in result
+    assert "**Bedroom 3 Mesh:** offline" in result
