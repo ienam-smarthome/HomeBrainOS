@@ -21,6 +21,7 @@ from tool_executor import ToolExecutor
 from tool_registry import ToolEffect, classify_tool_effect
 from .planning import _schema_problem
 from .read_diagnostics import classify_execution, classify_exception
+from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
                 Awaitable[dict[str, Any]]]
@@ -69,6 +70,12 @@ _SAFE_KEYS = frozenset({
     "metrics", "healthAlerts", "health_alerts", "backupStatus",
     "firmware", "freeMem", "entries", "severity", "appName",
     "description", "msg", "event",
+    "nodes", "mesh", "meshNodes", "health", "deviceHealth",
+    "offline", "online", "unknown", "unavailable", "stale",
+    "lastSeen", "lastSeenAt", "lastMessage", "lastContact",
+    "duration", "age", "ageSeconds", "statusCount",
+    "deviceCount", "offlineCount", "critical", "warning",
+    "problems", "summary", "gatewayStatus", "zigbee", "zwave",
 })
 _CONTROL_KEYS = frozenset({
     "command", "commands", "confirm", "confirmation", "action",
@@ -167,10 +174,20 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     if not isinstance(projected, dict):
         projected = {}
     if operation == "hub_get_logs":
-        log_groups = _group_logs(data)
+        log_groups = compact_logs(data)
         if log_groups is not None:
-            projected = {"log_summary": log_groups,
-                         "source_complete": False}
+            projected = {"log_summary": log_groups, "source_complete": False}
+    if not projected:
+        # Successful gateway does not prove we understood its data.
+        projected = {
+            "projection_empty": True,
+            "source_field_names": [
+                k for k in list(unwrapped(data))[:30]
+                if isinstance(k, str) and len(k) <= 50
+                and not _SECRET_KEY.search(k)
+            ],
+            "source_complete": False,
+        }
     return projected
 
 
@@ -491,7 +508,7 @@ async def run_native_read_agent(
                 })})
                 continue
             assert result is not None
-            verified_ids.update(_ids_from_read(op, result.data))
+            verified_ids.update(attested_source_ids(op, result.data))
             if name == "hub_search_tools":
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
@@ -531,10 +548,21 @@ async def run_native_read_agent(
             lines.append(
                 f"- Read #{witness['read']}: {op}: "
                 f"{report['returned_rows']} returned log rows; "
-                f"{report['group_count']} fault/message groups "
-                "(historical completeness unverified)."
+                f"{report['warning_error_group_count']} WARN/ERROR groups; "
+                "full historical coverage unverified."
             )
-            for group in report["groups"][:5]:
+            lines.append("  - Sample levels: " + str(
+                report.get("level_counts_in_returned_rows", {})))
+            lines.append("  - Returned time range: " + str(
+                report.get("oldest_returned") or "unknown") + " to " + str(
+                report.get("newest_returned") or "unknown")
+                + " (timezone not verified).")
+            if not report["warning_error_groups"]:
+                lines.append(
+                    "  - No WARN/ERROR in returned sample; "
+                    "this does NOT establish that hub logs are clear."
+                )
+            for group in report["warning_error_groups"][:5]:
                 lines.append(
                     f"  - {group['level']} / {group['source']}: "
                     f"{group['message']} ({group['count']} rows)"
