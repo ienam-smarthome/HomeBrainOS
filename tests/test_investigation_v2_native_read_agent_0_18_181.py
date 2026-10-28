@@ -251,3 +251,18 @@ def test_same_millisecond_repeats_count_as_burst_even_when_unsorted():
     group = _group_logs(rows)["groups"][0]
     assert group["count"] == 3
     assert group["duplicate_timestamp_rows"] == 1
+
+
+def test_source_reported_response_size_limit_is_not_an_invented_success():
+    from investigation_v2.native_read_agent import _oversized_hint
+    big = MCPToolResult("hub_read_diagnostics", {}, {}, "", {
+        "success": False, "error": {
+            "code": "response_too_large",
+            "suggestion": "Narrow since window or use cursor pagination",
+        },
+    }, is_error=True)
+    assert "Narrow since" in _oversized_hint(big)
+    other = MCPToolResult("hub_read_diagnostics", {}, {}, "", {
+        "success": False, "error": {"code": "unknown_gateway_failure"}
+    }, is_error=True)
+    assert _oversized_hint(other) is None
