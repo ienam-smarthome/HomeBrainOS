@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.186**.
+Current add-on version: **0.18.187**.
+
+v0.18.187 preserves bounded, privacy-filtered driver/configuration/section metadata in Native V2, circuit-breaks two failed calls to the same target operation, and avoids an unnecessary final model timeout when source evidence is already sufficient for a qualified fallback at the investigation limit. It also distinguishes Logs-page summary rows from actual severity logs. [Release notes](CHANGELOG-0.18.187.md).
 
 v0.18.186 fixes native MCP diagnostic query compatibility: the model is prevented from combining a Logs-page tab such as `devices` with a `level` filter that the server rejects. Corrected, bounded `mode=past` severity reads can use verified device IDs. Focused negative evidence now shows the actual sampled time range rather than implying historical clearance. See [release notes](CHANGELOG-0.18.186.md).
 
