@@ -21,6 +21,11 @@ def operation_problem(gateway: str, arguments: Mapping[str, Any]) -> str | None:
     for field in _NON_READ_FLAGS:
         if field in inner and inner[field] not in (False, None):
             return "write_side_effect_flag_forbidden"
+    if arguments.get("tool") == "hub_list_drivers" and "deviceId" in inner:
+        # The catalogue is not a per-device driver lookup. Reject the
+        # unsupported target filter locally instead of producing multiple
+        # avoidable MCP errors and a giant global driver list.
+        return "catalog_device_filter_unsupported"
     if arguments.get("tool") == "hub_get_logs":
         level = inner.get("level")
         if level is not None and (
@@ -56,6 +61,11 @@ def guidance_for(code: str) -> str | None:
             "for mode='devices' omit level entirely. Do not repeat the invalid pair.",
         "missing_required_operation_fields":
             "A concrete read operation lacks required input (for example deviceId for hub_get_device). Use homebrain_find_device to resolve a named device against verified live identity, then pass that deviceId.",
+        "catalog_device_filter_unsupported":
+            "hub_list_drivers is a global catalogue and cannot identify the "
+            "driver of one device via deviceId. Read the verified device "
+            "configuration for driver identity, or inspect independently "
+            "attested calling apps with hub_get_app_config.",
         "write_side_effect_flag_forbidden":
             "Read-only V2 cannot persist snapshots or change hub state.",
         "operation_prior_timeout":

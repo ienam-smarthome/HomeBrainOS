@@ -8,6 +8,17 @@ from __future__ import annotations
 from typing import Any
 from .native_source_adapters import safe_string, unwrapped
 
+def _issuer_label(value: Any) -> str:
+    """Clean HTML-style remnants in source-provided display labels.
+
+    The hub may return a rich-text app name flattened to 'span style=...'.
+    Keep only the actual preceding title; retain exact numeric appId.
+    """
+    import re
+    text = safe_string(value, 150)
+    return re.split(r"\s+span\s+style\s*=", text, maxsplit=1, flags=re.I)[0][:95].strip()
+
+
 
 def numeric_id(value: Any) -> str | None:
     if type(value) not in (str, int):
@@ -89,10 +100,10 @@ def event_summary(data: Any) -> dict[str, Any] | None:
         sanitized: dict[str, Any] = {"name": name, "date": stamp}
         if app_id:
             sanitized["producedBy"] = {
-                "appId": app_id, "name": safe_string(producer.get("name"), 95)}
+                "appId": app_id, "name": _issuer_label(producer.get("name"))}
         elif device_id:
             sanitized["producedBy"] = {
-                "deviceId": device_id, "name": safe_string(producer.get("name"), 95)}
+                "deviceId": device_id, "name": _issuer_label(producer.get("name"))}
         # Never include descriptions or textual speech arguments.
         if not name.startswith("command-"):
             value = event.get("value")
@@ -103,7 +114,7 @@ def event_summary(data: Any) -> dict[str, Any] | None:
         elif app_id:
             command = name[len("command-"):]
             rec = issuers.setdefault(app_id, {
-                "appId": app_id, "name": safe_string(producer.get("name"), 95),
+                "appId": app_id, "name": _issuer_label(producer.get("name")),
                 "count": 0, "commands": {}, "newest": None,
                 "oldest": None, "samples": []})
             rec["count"] += 1
