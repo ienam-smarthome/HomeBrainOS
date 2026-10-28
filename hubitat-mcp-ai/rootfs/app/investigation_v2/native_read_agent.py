@@ -109,6 +109,20 @@ def _text(value: Any, limit: int = 280) -> str:
     return " ".join(raw.split())[:limit]
 
 
+
+def _answer_text(value: Any, limit: int = 4500) -> str:
+    """Redact model prose without flattening readable headings and bullets."""
+    if not isinstance(value, str):
+        return ""
+    raw = value[:limit+800]
+    raw = _URL.sub("[URL redacted]", raw)
+    raw = _REDACT.sub("[credential redacted]", raw)
+    raw = "".join(ch if ch.isprintable() or ch in "\n\t" else " "
+                  for ch in raw if ch not in "<>\x60")
+    rows = [" ".join(line.split()) for line in raw.splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(rows)).strip()[:limit]
+
+
 def _project(value: Any, *, depth: int = 0) -> Any:
     """Conservative typed read summary; never forward arbitrary raw objects."""
     if depth > 5:
@@ -444,7 +458,7 @@ async def run_native_read_agent(
                                  "discriminating MCP read or explicitly state "
                                  "this limitation."})
                 continue
-            answer_text = _text(reply.get("content"), 4500)
+            answer_text = _answer_text(reply.get("content"), 4500)
             reason = "model_finished"
             break
         # Native assistant calls are written back to the model's transcript
@@ -670,7 +684,7 @@ async def run_native_read_agent(
             if isinstance(response, dict) and not response.get("tool_calls"):
                 candidate = response.get("content")
                 if isinstance(candidate, str) and candidate.strip():
-                    answer_text = _text(candidate, 4500)
+                    answer_text = _answer_text(candidate, 4500)
                     synthesis_status = "completed"
                 else:
                     synthesis_status = "empty_response"
