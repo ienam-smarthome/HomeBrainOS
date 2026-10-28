@@ -684,9 +684,19 @@ async def run_native_read_agent(
             if issue is not None:
                 failures.append({"tool": name[:80], "operation": op_requested,
                                  "code": issue})
+                hint = guidance_for(issue) or "Choose a different verified read"
+                if (issue == "missing_required_operation_fields"
+                        and op_requested == "hub_get_device"
+                        and len(focus_ids) == 1):
+                    # A model can omit the same required ID repeatedly even
+                    # after resolving it. Supply only the already verified
+                    # subject to the model; never auto-insert/execute a call.
+                    hint += (" The independently verified current target is "
+                             "deviceId=" + next(iter(focus_ids)) +
+                             ". If device detail is needed, explicitly pass "
+                             "that ID in args and choose a supported mode.")
                 messages.append({"role": "tool", "content": json.dumps({
-                    "error": issue,
-                    "hint": guidance_for(issue) or "Choose a different verified read",
+                    "error": issue, "hint": hint,
                 })})
                 continue
             if attempted >= max_reads:
