@@ -139,6 +139,24 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     projected = _project(data)
     if not isinstance(projected, dict):
         projected = {}
+    # "success": true with all actual mesh/health measurements discarded is
+    # NOT a useful evidence projection. Detect unhandled source fields even
+    # if common status flags were projected.
+    raw_fields = unwrapped(data)
+    unmapped = [
+        k for k in list(raw_fields)[:50]
+        if isinstance(k, str) and len(k) <= 50
+        and not _SECRET_KEY.search(k) and k not in projected
+        and k not in ("result", "data", "output")
+    ]
+    if unmapped and operation != "hub_get_logs":
+        projected["projection_incomplete"] = True
+        projected["unmapped_source_fields"] = unmapped[:25]
+        if set(projected).issubset({
+            "success", "status", "projection_incomplete",
+            "unmapped_source_fields",
+        }):
+            projected["projection_empty"] = True
     if operation == "hub_get_logs":
         log_groups = compact_logs(data)
         if log_groups is not None:
