@@ -128,6 +128,7 @@ def test_historical_explicit_window_does_not_force_latest_report():
         start_utc="2026-10-22T00:00:00+00:00",
         end_utc="2026-10-23T00:00:00+00:00",
         zone_name="Europe/London",
+        interpretation="explicit_historical_fixture",
     )
     report=format_investigation_report(case,[],"model_finished",window)
     assert "**Latest OFF/ON incident — source evidence**" not in report
