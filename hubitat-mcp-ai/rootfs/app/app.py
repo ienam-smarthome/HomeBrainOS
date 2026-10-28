@@ -104,7 +104,10 @@ from investigation_v2.factual_objective import verified_factual_objective
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
 from investigation_v2.semantic_plan import SemanticPlan, semantic_plan
-from investigation_v2.targeted_status import current_status_attributes, read_verified_target_status
+from investigation_v2.targeted_status import (
+    current_status_attributes, read_verified_target_status,
+    explicit_current_device_name, read_filtered_target_identity,
+)
 from investigation_v2.role_enrichment import enrich_measurement_roles
 from investigation_v2.semantic_execute import execute_inventory_plan, ground_named_inventory_plan, ground_current_attribute_request
 from investigation_v2.measurement_semantics import load_operator_meter_roles
@@ -1510,9 +1513,28 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 recent = mcp.recent_verified_audit_identities()
                 if recent is not None:
                     audit_devices, inventory_provenance = recent
+                    targeted_diagnostics["identity_lookup"] = "recent_verified_full_index"
                 else:
-                    audit_devices, inventory_provenance = await mcp.get_audit_devices(
-                    identity_only=True)
+                    # Source-verified, exact-label, fully covered filtered
+                    # identity is adequate for this ONE bounded read-only
+                    # question, not a whole-home count or a write.
+                    candidate_label = explicit_current_device_name(payload.question)
+                    filtered = None
+                    if candidate_label:
+                        try:
+                            filtered = await read_filtered_target_identity(
+                                mcp, candidate_label,
+                                diagnostics=targeted_diagnostics)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            targeted_diagnostics["identity_lookup"] = (
+                                "filtered_source_exception")
+                    if filtered is not None:
+                        audit_devices, inventory_provenance = filtered
+                    else:
+                        audit_devices, inventory_provenance = await mcp.get_audit_devices(
+                            identity_only=True)
                 identity_inventory_ms=round(
                     (time.perf_counter()-identity_started)*1000)
                 try:
@@ -1534,7 +1556,8 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 # identity cache, model output, or an earlier write receipt.
                 if (len(candidates)==1
                         and inventory_provenance.get("complete") is True
-                        and inventory_provenance.get("projection")=="identity_only"):
+                        and inventory_provenance.get("projection") in (
+                            "identity_only", "filtered_identity_only")):
                     _id, _resolved, _method = resolve_verified_device_subjects(
                         payload.question, audit_devices)
                     wanted = current_status_attributes(
@@ -1576,6 +1599,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                             report = execute_inventory_plan(
                                 current_plan, [target_device], state_provenance)
                             report["resolved_devices"] = _resolved
+                            if inventory_provenance.get("projection") == "filtered_identity_only":
+                                report["inventory_query"]["inventory_scope"] = "exact_label"
+                                report["inventory_query"]["home_inventory_complete"] = False
                             report["resolution_method"] = "verified_targeted_current"
                             report["elapsed_ms"] = round(
                                 (time.perf_counter()-started)*1000)
@@ -1588,9 +1614,13 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                                     (time.perf_counter()-inventory_started)*1000),
                                 "targeted_read_ms":targeted_read_ms,
                                 "planning_ms":0,
-                                "inventory_projection":"identity_only",
+                                "inventory_projection":inventory_provenance.get("projection"),
                                 "inventory_devices":len(audit_devices),
                                 "inventory_complete":True,
+                                "identity_scope":inventory_provenance.get(
+                                    "scope", "complete_hub_identity"),
+                                "home_inventory_complete":inventory_provenance.get(
+                                    "projection") == "identity_only",
                                 "target_id":_id[0],
                                 "target_verified":True,
                                 "read_source":state_provenance["source"],
@@ -1606,9 +1636,12 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 # Broad and ambiguous questions still require a complete
                 # state/capability vocabulary. The identity-only projection
                 # must never feed a whole-house state result.
-                if (not (len(candidates)==1
-                         and inventory_provenance.get("complete") is True)
-                        and inventory_provenance.get("projection")=="identity_only"):
+                if (
+                    inventory_provenance.get("projection")=="filtered_identity_only"
+                    or (not (len(candidates)==1
+                             and inventory_provenance.get("complete") is True)
+                        and inventory_provenance.get("projection")=="identity_only")
+                ):
                     full_started=time.perf_counter()
                     audit_devices, inventory_provenance = await mcp.get_audit_devices()
                     full_inventory_ms=round(

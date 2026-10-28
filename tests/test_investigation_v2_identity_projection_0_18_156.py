@@ -174,7 +174,9 @@ def test_endpoint_retrieves_identity_then_full_only_when_scope_needs_it():
     code = (APP / "app.py").read_text()
     section = code.split("async def v2_test(", 1)[1].split(
         '@app.post("/api/chat")', 1)[0]
-    assert "get_audit_devices(\n                    identity_only=True)" in section
+    assert "get_audit_devices(" in section
+    assert "identity_only=True)" in section
+    assert "read_filtered_target_identity(" in section
     assert 'inventory_provenance.get("projection")=="identity_only"' in section
     assert "resolve_verified_device_subjects(" in section
     assert "full_inventory_ms" in section
