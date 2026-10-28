@@ -93,7 +93,7 @@ async def read_filtered_target_identity(
         return None
     nested = _args_schema(gateway)
     properties = nested.get("properties")
-    required = nested.get("required")
+    required = nested.get("required", [])
     if (not isinstance(properties, dict)
             or not isinstance(required, list)
             or "labelFilter" not in properties):
