@@ -195,7 +195,9 @@ def device_context_proposals(
                                 instants.append(instant.astimezone(timezone.utc))
                         except (ValueError, TypeError, OverflowError):
                             continue
-                if instants and _accepts_field(schema, "since") and _accepts_field(schema, "until"):
+                if (instants and "hoursBack" not in required
+                        and _accepts_field(schema, "since")
+                        and _accepts_field(schema, "until")):
                     target_time = max(instants)
                     args.pop("hoursBack", None)
                     args["since"] = (target_time-timedelta(hours=2)).isoformat()
