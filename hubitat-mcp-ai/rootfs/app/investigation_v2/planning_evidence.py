@@ -157,7 +157,12 @@ def planning_evidence(
     # Never turn event chronology into an unverified rule decision.
     # These immutable typed links are useful to every model/provider,
     # including native-tool and structured-proposal planners.
-    command_pairs = [pair.to_dict() for pair in command_state_pairs(case)[:16]]
+    # Put the most recent attested command/state relationships first. An
+    # older 16-pair prefix can silently omit the decisive latest OFF.
+    command_pairs = [pair.to_dict() for pair in sorted(
+        command_state_pairs(case),
+        key=lambda pair: (pair.state_utc, pair.command_utc), reverse=True
+    )[:12]]
     command_coverage = []
     for target in targets:
         coverage_info = command_history_coverage(case, target)
