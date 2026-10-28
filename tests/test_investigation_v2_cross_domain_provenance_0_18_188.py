@@ -197,3 +197,46 @@ def test_source_ids_from_dependencies_and_drivers_are_typed_not_interchangeable(
     assert source_identities("hub_list_drivers",drivers)["driver"]=={"3907","3908"}
     assert "3907" not in attest["app"]
     assert driver_summary(drivers)["drivers"][0]["driverId"]=="3907"
+
+
+
+@pytest.mark.asyncio
+async def test_lazy_device_identity_never_promotes_known_app_id_to_device_identity():
+    diag=MCPTool("hub_read_diagnostics","Logs",{
+        "type":"object","properties":{
+            "tool":{"type":"string","enum":["hub_get_logs"]},
+            "args":{"type":"object","additionalProperties":True}
+        },"required":["tool","args"]},annotations={"readOnlyHint":True})
+    mcp=FakeMCP([diag,READ_DEVICES])
+    async def identities():
+        return [{"id":"7934","label":"Google Nest Hub"}]
+    mcp.get_device_identities=identities
+    executor=FakeExecutor(mcp,[
+        {"entries":[{"level":"WARN","type":"app","name":"Calendar Notifier",
+                     "message":"app|4080|Calendar Notifier|source warning"}]},
+        {"id":"7934","label":"Google Nest Hub",
+         "attributes":[{"name":"networkStatus","value":"online"}]}
+    ])
+    turn=0
+    async def model(messages,tools):
+        nonlocal turn
+        turn+=1
+        if turn==1:
+            return {"tool_calls":[call("hub_read_diagnostics","hub_get_logs",
+                                       level="warn",mode="past",limit=20)]}
+        if turn==2:
+            return {"tool_calls":[call("hub_read_devices","hub_get_device",
+                                       deviceId="7934")]}
+        if turn==3:
+            return {"tool_calls":[call("hub_read_devices","hub_get_device",
+                                       deviceId="4080")]}
+        return {"content":"App warning and device status have distinct identities."}
+    output=await run_native_read_agent(
+        question="Investigate hub and connected device evidence",
+        chat=model,mcp=mcp,executor=executor)
+    typed=output["native_diagnostics"]["verified_typed_ids"]
+    assert typed["app"]==["4080"]
+    assert typed["device"]==["7934"]
+    assert len(executor.calls)==2
+    assert any(fail["code"]=="target_id_not_verified_from_live_source"
+               for fail in output["native_diagnostics"]["failures"])
