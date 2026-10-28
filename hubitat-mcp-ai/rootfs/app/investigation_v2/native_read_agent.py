@@ -29,7 +29,7 @@ from .native_device_projection import device_mode_evidence
 from .native_metrics_evidence import project_metrics
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
-    useful_discovery_fingerprint, repeated_log_evidence,
+    useful_discovery_fingerprint, repeated_log_evidence, repeated_event_evidence,
 )
 from .native_provenance import (source_identities, event_summary,
                                 dependent_summary, driver_summary,
@@ -473,6 +473,7 @@ async def run_native_read_agent(
     redundant_evidence_reads = 0
     redundant_snapshot_reads = 0
     redundant_log_subsets = 0
+    redundant_event_subsets = 0
     identity_lookup_ms = 0
     synthesis_status = "not_needed"
     coverage_challenge_used = False
@@ -776,7 +777,15 @@ async def run_native_read_agent(
             repeat_snapshot = bool(fingerprint and fingerprint in seen_fingerprints)
             repeat_log = (op == "hub_get_logs"
                           and repeated_log_evidence(witnesses, summary))
-            repeated_evidence = repeat_snapshot or repeat_log
+            repeat_events = (
+                op == "hub_list_device_events"
+                and repeated_event_evidence(
+                    witnesses, summary,
+                    scoped_device_id=str(inner.get("deviceId"))
+                    if isinstance(inner, dict) and inner.get("deviceId") is not None
+                    else None)
+            )
+            repeated_evidence = repeat_snapshot or repeat_log or repeat_events
             if fingerprint:
                 seen_fingerprints.add(fingerprint)
             if repeated_evidence:
@@ -785,6 +794,8 @@ async def run_native_read_agent(
                 redundant_snapshot_reads += 1
             if repeat_log:
                 redundant_log_subsets += 1
+            if repeat_events:
+                redundant_event_subsets += 1
             witness = {
                 "read": attempted,
                 "tool": name, "operation": op,
@@ -809,6 +820,10 @@ async def run_native_read_agent(
                               "target WARN/ERROR evidence. Read a different "
                               "source or historical incident window."
                               if repeat_log else
+                              "This event-history sample is already contained "
+                              "in a prior device-scoped read; investigate the "
+                              "verified command issuer or driver mechanism."
+                              if repeat_events else
                               "The same device attributes were already retrieved. "
                               "Choose an independent discriminator or finish.")}
                     if repeated_evidence else {
@@ -960,11 +975,18 @@ async def run_native_read_agent(
             lines.extend([
                 "**Verified callers; internal driver mechanism unresolved**",
                 "App IDs " + ", ".join(map(str, app_ids)) +
-                " issued device commands during the reported warning period. "
+                " issued device commands during the reported slow-method warning period. "
                 "The WARN method " + str(causal_coverage_gap.get("method", "unknown")) +
                 " has no matching command event in the bounded sample; it "
                 "must not be assumed to be an API command. Source timing "
-                "correlation does not establish which driver callback stalled.",
+                "correlation does not establish which driver callback stalled."
+                + ((" Separate generic load warnings from "
+                    + str(causal_coverage_gap["unattributed_generic_warning_window"].get("oldest"))
+                    + " to "
+                    + str(causal_coverage_gap["unattributed_generic_warning_window"].get("newest"))
+                    + " remain unattributed by this event sample.")
+                   if causal_coverage_gap.get("unattributed_generic_warning_window")
+                   else ""),
                 "",
             ])
         else:
@@ -1089,6 +1111,7 @@ async def run_native_read_agent(
             "redundant_evidence_reads": redundant_evidence_reads,
             "redundant_snapshot_reads": redundant_snapshot_reads,
             "redundant_log_subsets": redundant_log_subsets,
+            "redundant_event_subsets": redundant_event_subsets,
             "final_synthesis": synthesis_status,
             "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
