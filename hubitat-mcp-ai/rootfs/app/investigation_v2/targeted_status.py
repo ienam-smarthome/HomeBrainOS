@@ -87,9 +87,11 @@ def _filtered_coverage_evidence(
     if total_raw is None:
         total_raw = data.get("totalDevices")
     total: int | None = None
+    total_valid = total_raw is None
     if total_raw is not None and type(total_raw) in (int, str):
         try:
             total = int(total_raw)
+            total_valid = total >= 0
         except ValueError:
             pass
     has_more = data.get("hasMore")
@@ -99,9 +101,10 @@ def _filtered_coverage_evidence(
     covered = (
         isinstance(page, dict) and isinstance(rows, list)
         and count == 1
+        and total_valid
         and (total is None or total == count)
         and (total is not None or has_more is False)
-        and has_more in (None, False)
+        and (has_more is None or has_more is False)
         and terminal_cursor
     )
     # Source-shape metadata only. Never expose names, ID fields or raw MCP
