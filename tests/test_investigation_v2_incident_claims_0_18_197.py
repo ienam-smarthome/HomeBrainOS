@@ -169,8 +169,8 @@ async def test_live_shaped_model_conclusion_is_withheld_when_causally_ranked():
     }]}
     executor=FakeExecutor(mcp,[log,{"events":events()}])
     turn=0
-    def call(name,op=None,**kwargs):
-        return {"function":{"name":name,"arguments":{
+    def call(gateway,op=None,**kwargs):
+        return {"function":{"name":gateway,"arguments":{
             "tool":op,"args":kwargs
         } if op else kwargs}}
     async def model(messages,tools):
@@ -229,8 +229,8 @@ async def test_fact_only_model_answer_is_preserved():
         {"events":events()},
     ])
     step=0
-    def tool(name,op=None,**kwargs):
-        return {"function":{"name":name,"arguments":{
+    def tool(gateway,op=None,**kwargs):
+        return {"function":{"name":gateway,"arguments":{
             "tool":op,"args":kwargs
         } if op else kwargs}}
     async def model(messages,tools):
