@@ -26,7 +26,7 @@ from .native_tool_protocol import operation_problem, guidance_for, source_highli
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
-from .native_metrics_evidence import project_metrics
+from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
     useful_discovery_fingerprint, repeated_log_evidence, repeated_event_evidence,
@@ -69,6 +69,13 @@ _SYSTEM = (
     "event timestamps overlap; to investigate a source-attested method "
     "warning, consider hoursBack, limit and attribute=command-<method> "
     "on hub_list_device_events, if the live schema accepts them. "
+    "Independently verified device command issuers are not proof of who "
+    "caused a specific generic performance warning. When the bounded "
+    "warning sample contains ONLY generic load warnings, do not claim "
+    "an internal slow method or driver duration was measured in that sample; "
+    "look for a more discriminating historical WARN or runtime profile "
+    "if such a read is permitted. A later warning without overlapping "
+    "commands does not erase earlier verified device callers. "
     "When a driver method WARN has no matching command event, do NOT "
     "assume there must be a command with that method name: a driver method "
     "can be an internal queue or callback. If app-issued commands already "
@@ -236,6 +243,8 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
         projected.update(app_config_summary(data))
     elif operation in ("hub_get_metrics", "hub_get_performance_stats"):
         projected.update(project_metrics(data))
+    elif operation == "hub_get_memory_history":
+        projected = project_memory_history(data)
     elif operation == "hub_get_source":
         # Do not leak raw source strings through the generic projection.
         # Source-code analysis needs a separately reviewed, bounded reader.
@@ -498,7 +507,16 @@ async def run_native_read_agent(
                     or deadline - time.monotonic() <= 4):
                 break
             causal_coverage_challenge_used = True
-            if causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
+            if causal_coverage_gap.get("kind") == "target_generic_warning_origin_unverified":
+                instruction = (
+                    "The device's app command issuers are already verified, "
+                    "but no command in the bounded sample is linked to this "
+                    "separate generic load-warning interval. Do not claim "
+                    "the device's callers are unknown. To clarify the driver "
+                    "mechanism, consider a permitted broader/historical WARN "
+                    "read or independent performance/source evidence. "
+                    "A generic warning alone does not prove slow callbacks.")
+            elif causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
                 instruction = (
                     "The device event history ALREADY attests calling apps "
                     "in the warning period. Do NOT claim the caller is unknown "
@@ -841,6 +859,23 @@ async def run_native_read_agent(
                         "source_data": focused_model_view(op, summary, sorted(focus_ids)),
                         "source_complete": False,
                     })
+            if focus_ids and op in ("hub_list_device_events", "hub_get_logs", "hub_get_device"):
+                gap = gap_for_target(
+                    witnesses, sorted(focus_ids),
+                    can_read_events=gateway_offers_operation(
+                        manifest, discovered, "hub_list_device_events"),
+                )
+                if gap and (op == "hub_list_device_events" or repeat_snapshot):
+                    # Evidence-specific guidance immediately after the source
+                    # read, while model rounds remain. Suggestions never grant
+                    # a read or execute a Hubitat command.
+                    view["evidence_coverage_hint"] = {
+                        k: gap[k] for k in (
+                            "kind", "observed_calling_app_ids", "warning_window",
+                            "candidate_read", "candidate_filters", "materiality",
+                            "limitation",
+                        ) if k in gap
+                    }
             if name == "hub_search_tools" and repeated_discovery > 0:
                 view["discovery_advice"] = (
                     "This search repeats a previously seen tool set. "
@@ -980,7 +1015,20 @@ async def run_native_read_agent(
         ])
     if causal_coverage_gap is not None:
         warning_window = causal_coverage_gap.get("warning_window", {})
-        if causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
+        if causal_coverage_gap.get("kind") == "target_generic_warning_origin_unverified":
+            app_ids = causal_coverage_gap.get("observed_calling_app_ids", [])
+            lines.extend([
+                "**Verified device callers; generic warning origin unresolved**",
+                "App IDs " + ", ".join(map(str, app_ids)) +
+                " issued commands to the device, but the returned commands "
+                "do not coincide with the generic warning at " +
+                str(warning_window.get("oldest", "unknown")) + " to " +
+                str(warning_window.get("newest", "unknown")) +
+                ". No source-backed causal link to an issuing app or "
+                "particular driver callback is established.",
+                "",
+            ])
+        elif causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
             app_ids = causal_coverage_gap.get("observed_calling_app_ids", [])
             lines.extend([
                 "**Verified callers; internal driver mechanism unresolved**",
@@ -1079,9 +1127,11 @@ async def run_native_read_agent(
     if projections_empty:
         validation_issues.append("gateway_projection_incomplete")
     if causal_coverage_gap is not None:
+        gap_kind = causal_coverage_gap.get("kind")
         validation_issues.append(
-            "driver_execution_cause_unverified"
-            if causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified"
+            "generic_warning_cause_unverified" if gap_kind == "target_generic_warning_origin_unverified"
+            else "driver_execution_cause_unverified"
+            if gap_kind == "target_driver_execution_mechanism_unverified"
             else "warning_window_actor_provenance_unverified"
         )
     return {
