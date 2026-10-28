@@ -199,14 +199,22 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
             log_messages.extend(safe_string(g.get("message"),260).lower()
                 for g in report.get("warning_error_groups",[]) if isinstance(g,dict)
                 and str(g.get("source_id")) in focus_ids)
-    issuing_apps=[]
+    # Source subsets may repeat one app across distinct event reads. Retain
+    # distinct, type-attested callers without adding a second app identity
+    # or summing counts from overlapping samples.
+    issuer_index={}
     for w in witnesses:
         if (w.get("operation")=="hub_list_device_events"
                 and str(w.get("read_filters",{}).get("deviceId")) in focus_ids):
             evidence=w.get("source_data",{})
             if isinstance(evidence,dict):
-                issuing_apps.extend(x for x in evidence.get("issuer_apps",[])
-                                    if isinstance(x,dict))
+                for issuer in evidence.get("issuer_apps",[]):
+                    if not isinstance(issuer,dict):
+                        continue
+                    app_id=str(issuer.get("appId") or "")
+                    if app_id.isdecimal():
+                        issuer_index.setdefault(app_id,issuer)
+    issuing_apps=list(issuer_index.values())
     if str(status.get("healthStatus","")).lower()=="offline":
         conclusion=("The device is reported offline with stale telemetry. "
                     "Its physical failure mechanism is not established; power, "
