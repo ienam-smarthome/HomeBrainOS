@@ -119,10 +119,20 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
     # These immutable typed links are useful to every model/provider,
     # including native-tool and structured-proposal planners.
     command_pairs = [pair.to_dict() for pair in command_state_pairs(case)[:16]]
-    command_coverage = [
-        command_history_coverage(case, target)
-        for target in targets
-    ]
+    command_coverage = []
+    for target in targets:
+        coverage_info = command_history_coverage(case, target)
+        if (command_pairs
+                or "command_events_excluded_by_filter" in coverage_info["issues"]
+                or coverage_info["observed_command_records"] == 0):
+            # Compact evidence, not duplicated full coverage tables. Ordinary
+            # command-only historical data already appear in the records and
+            # basic source completeness list; no empty boilerplate arrays.
+            command_coverage.append({
+                "device_id": target,
+                "issues": coverage_info["issues"],
+                "observed_command_records": coverage_info["observed_command_records"],
+            })
     return json.dumps({
         "records": events,
         "total_case_records": len(case.records),
@@ -131,8 +141,9 @@ def planning_evidence(case: CaseFile, window: IncidentWindow | None) -> str:
             for (stage, action), count in sorted(omitted.items())
         ],
         "incident_links": links,
-        "command_state_pairs": command_pairs,
-        "command_history_coverage": command_coverage,
+        **({"command_state_pairs": command_pairs} if command_pairs else {}),
+        **({"command_history_coverage": command_coverage}
+           if command_coverage else {}),
         "coverage": coverage,
         "current_app_name_by_issuer_id": identities,
         "constraints": [
