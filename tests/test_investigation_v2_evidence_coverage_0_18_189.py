@@ -77,7 +77,9 @@ def test_causal_coverage_requires_source_attested_target_logs_and_available_even
     warning={"read":1,"operation":"hub_get_logs",
              "source_data":{"log_summary":{"warning_error_groups":[{
                  "source_id":"7934","level":"WARN",
-                 "message":"method runQ ran for 147,429ms"}]}}}
+                 "message":"method runQ ran for 147,429ms",
+                 "oldest_returned":"2026-10-28 17:42:22.697",
+                 "newest_returned":"2026-10-28 17:42:22.697"}]}}}
     no_focus=gap_for_target([warning],[],can_read_events=True)
     assert no_focus is None
     assert gap_for_target([warning],["7934"],can_read_events=False) is None
@@ -87,7 +89,7 @@ def test_causal_coverage_requires_source_attested_target_logs_and_available_even
     event={"read":2,"operation":"hub_list_device_events",
            "read_filters":{"deviceId":"7934"},"source_data":{"events":[]}}
     assert gap_for_target([warning,event],["7934"],
-                          can_read_events=True) is None
+                          can_read_events=True)["kind"] == "target_warning_event_window_uncovered"
 
 
 def test_discovery_has_semantic_fingerprint_not_response_metadata():
@@ -140,7 +142,7 @@ async def test_after_six_rounds_model_can_choose_one_event_coverage_read():
             return {"tool_calls":[call("hub_search_tools",
                                        {"query":f"read evidence {step}"})]}
         if step==7:
-            assert any("Evidence-coverage review" in m.get("content","")
+            assert any("Evidence coverage assessment" in m.get("content","")
                        for m in messages if m.get("role")=="user")
             assert "discovery_advice" in str(messages)
             return {"tool_calls":[read("hub_read_devices",
