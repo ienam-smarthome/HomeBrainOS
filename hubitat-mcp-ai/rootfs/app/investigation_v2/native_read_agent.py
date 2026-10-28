@@ -152,6 +152,7 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     if unmapped and operation != "hub_get_logs":
         projected["projection_incomplete"] = True
         projected["unmapped_source_fields"] = unmapped[:25]
+        projected["source_field_names"] = unmapped[:25]
         if set(projected).issubset({
             "success", "status", "projection_incomplete",
             "unmapped_source_fields",
