@@ -99,7 +99,10 @@ def _event_windows(witnesses: Sequence[Mapping[str, Any]],
             "read": w.get("read"),
             "start": times[0] if times else None,
             "end": times[-1] if times else None,
-            "command_times": [(e["name"], when) for e, when in commands if when],
+            "command_times": [
+                (e["name"], when, str(e["producedBy"]["appId"]))
+                for e, when in commands if when
+            ],
             "count": len(events) if isinstance(events, list) else 0,
             "filters": filters,
         })
@@ -116,24 +119,66 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
     if not warnings:
         return None
     events = _event_windows(witnesses, focus)
-    # When there are many grouped warnings, a single intersecting command
-    # observation is still not proof of ALL warning mechanisms. Prefer the
-    # narrowest slow-method window with no verified calling app.
+    # Separate caller attribution from driver-method causation. A method
+    # seen in a WARN record is not necessarily a callable device command:
+    # never synthesize command-<method> when no such event was observed.
     chosen = None
+    mechanism = None
     for warning in warnings:
-        # Allow five minutes of uncertainty around the printed source clocks.
         expanded_start = warning["start"] - timedelta(minutes=5)
         expanded_end = warning["end"] + timedelta(minutes=5)
-        matching_command = any(
-            when is not None and expanded_start <= when <= expanded_end
-            and (not warning["method"] or
-                 name.casefold() == ("command-" + warning["method"]).casefold())
+        in_period = [
+            (name, when, producer_id)
             for window in events
-            for name, when in window["command_times"]
-        )
-        if not matching_command:
-            chosen = warning
-            break
+            for name, when, producer_id in window["command_times"]
+            if expanded_start <= when <= expanded_end
+        ]
+        method = str(warning["method"] or "").casefold()
+        direct_match = [
+            cmd for cmd in in_period if
+            not method or cmd[0].casefold() == "command-" + method
+        ]
+        if direct_match:
+            # Command-to-warning association is source-supported, but cause
+            # remains unverified. No additional issuer-history read is needed.
+            continue
+        if in_period and method:
+            # Related apps are proven as callers, but this particular WARN
+            # method is not an observed API command. Driver implementation
+            # and app interactions remain an open mechanism question.
+            if mechanism is None:
+                mechanism = (warning, in_period)
+            continue
+        chosen = warning
+        break
+    if chosen is None and mechanism is not None:
+        warning, nearby = mechanism
+        caller_ids = sorted({
+            ident for _, _, ident in nearby if str(ident).isdecimal()
+        })
+        # The model can choose an app config read for a source-attested
+        # caller, not another speculative command-runQ search.
+        return {
+            "kind": "target_driver_execution_mechanism_unverified",
+            "focus_ids": sorted(focus),
+            "method": warning["method"],
+            "warning_window": {
+                "oldest": warning["start_text"],
+                "newest": warning["end_text"], "timezone_verified": False,
+            },
+            "actor_provenance_verified": bool(caller_ids),
+            "observed_calling_app_ids": caller_ids[:8],
+            "candidate_read": "hub_get_app_config" if caller_ids else None,
+            "candidate_filters": {"appId": caller_ids[0]} if caller_ids else {},
+            "materiality": (
+                "Source events establish command issuers during the slow "
+                "method period. Investigate the related app or device driver "
+                "execution path; do not invent a command matching a method "
+                "that appears only in a driver warning."),
+            "limitation": (
+                "An app command within the warning period does not prove "
+                "which callback blocked or establish the driver's mechanism."),
+        }
     if chosen is None:
         return None
     expanded_start = chosen["start"] - timedelta(minutes=5)
@@ -172,8 +217,7 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
             "deviceId": sorted(focus)[0],
             "hoursBack": 48,
             "limit": 50,
-            **({"attribute": "command-" + chosen["method"]}
-               if chosen["method"] else {}),
+            # Do not assume arbitrary driver methods are public commands.
         },
         "candidate_filter_caveat": (
             "Example filters only: hoursBack must be adjusted to cover the "
