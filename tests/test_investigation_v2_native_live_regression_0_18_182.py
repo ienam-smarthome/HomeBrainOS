@@ -176,3 +176,31 @@ async def test_fluid_model_cannot_make_info_only_logs_look_like_full_audit():
     assert "warning_error_log_coverage_unverified" in output["answer"]["validation_issues"]
     assert "not proof that there are no WARN/ERROR entries" in output["answer"]["text"]
     assert "no WARN/ERROR in returned sample" in output["answer"]["text"]
+
+
+
+@pytest.mark.asyncio
+async def test_model_gets_one_evidence_coverage_challenge_then_reads_warnings():
+    mcp=FakeMCP([READ_DIAG])
+    executor=FakeExecutor(mcp,[LIVE_INFO,LIVE_WARN])
+    step=0
+    async def model(messages,tools):
+        nonlocal step
+        step+=1
+        if step==1:
+            return {"tool_calls":[call("hub_get_logs", limit=100)]}
+        if step==2:
+            assert tools
+            return {"content":"No problems identified."}
+        if step==3:
+            assert "Evidence coverage check" in messages[-1]["content"]
+            return {"tool_calls":[call("hub_get_logs", level="warn", limit=100)]}
+        return {"content":"Bedroom 3 Mesh watchdog warning is present; causes still unverified."}
+    result=await run_native_read_agent(
+        question="check hub logs for any issues",chat=model,
+        mcp=mcp,executor=executor)
+    assert result["native_diagnostics"]["coverage_challenge_used"] is True
+    assert result["native_diagnostics"]["reads_executed"]==2
+    assert result["native_diagnostics"]["stop_reason"]=="model_finished"
+    assert "Bedroom 3 Mesh watchdog" in result["answer"]["text"]
+    assert result["native_diagnostics"]["read_summaries"][1]["read_filters"]["level"]=="warn"
