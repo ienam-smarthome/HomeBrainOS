@@ -204,3 +204,17 @@ async def test_model_gets_one_evidence_coverage_challenge_then_reads_warnings():
     assert result["native_diagnostics"]["stop_reason"]=="model_finished"
     assert "Bedroom 3 Mesh watchdog" in result["answer"]["text"]
     assert result["native_diagnostics"]["read_summaries"][1]["read_filters"]["level"]=="warn"
+
+
+
+def test_success_only_projection_must_disclose_discarded_mesh_data():
+    result = MCPToolResult("hub_read_devices", {}, {}, "", {
+        "success": True,
+        "meshCustomField": {"children": [{"deviceId": "7103"}]},
+    })
+    projected = _payload(result, "hub_get_hub_mesh")
+    assert projected["success"] is True
+    assert projected["projection_empty"] is True
+    assert projected["projection_incomplete"] is True
+    assert "meshCustomField" in projected["unmapped_source_fields"]
+    assert "children" not in str(projected)
