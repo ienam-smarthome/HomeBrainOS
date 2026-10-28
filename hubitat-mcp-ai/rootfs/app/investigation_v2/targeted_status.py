@@ -71,6 +71,56 @@ def explicit_current_device_name(question: str) -> str | None:
     return None
 
 
+def _filtered_coverage_evidence(
+    page: Any, rows: Any,
+) -> tuple[bool, dict[str, Any]]:
+    """Validate complete filter coverage using the SAME terminal-page rules
+    as HubitatMCPClient.get_audit_devices, never an unverified row count.
+
+    total/totalDevices may be absent on a terminal page, but then an
+    explicit hasMore=False is mandatory. If a reported total exists, it
+    must equal the number of returned rows. No advancing cursor permitted.
+    """
+    data = page if isinstance(page, dict) else {}
+    count = len(rows) if isinstance(rows, list) else 0
+    total_raw = data.get("total")
+    if total_raw is None:
+        total_raw = data.get("totalDevices")
+    total: int | None = None
+    if total_raw is not None and type(total_raw) in (int, str):
+        try:
+            total = int(total_raw)
+        except ValueError:
+            pass
+    has_more = data.get("hasMore")
+    next_offset = data.get("nextOffset")
+    terminal_cursor = next_offset is None or (
+        type(next_offset) in (int, str) and str(next_offset) == "0")
+    covered = (
+        isinstance(page, dict) and isinstance(rows, list)
+        and count == 1
+        and (total is None or total == count)
+        and (total is not None or has_more is False)
+        and has_more in (None, False)
+        and terminal_cursor
+    )
+    # Source-shape metadata only. Never expose names, ID fields or raw MCP
+    # messages in V2 diagnostics.
+    summary = {
+        "rows": count,
+        "page_object": isinstance(page, dict),
+        "total_present": "total" in data,
+        "totalDevices_present": "totalDevices" in data,
+        "reported_total": total,
+        "hasMore_present": "hasMore" in data,
+        "hasMore": has_more if type(has_more) is bool else None,
+        "nextOffset_present": "nextOffset" in data,
+        "terminal_cursor": terminal_cursor,
+        "coverage_confirmed": covered,
+    }
+    return covered, summary
+
+
 async def read_filtered_target_identity(
     mcp: Any, requested_label: str,
     *, diagnostics: dict[str, Any] | None = None,
@@ -156,13 +206,10 @@ async def read_filtered_target_identity(
     from mcp_client import HubitatMCPClient
     source = HubitatMCPClient._find_device_page(result.data)
     rows = HubitatMCPClient._find_device_list(result.data)
-    if (not isinstance(source, dict) or not isinstance(rows, list)
-            or not isinstance(source.get("total"), int)
-            or isinstance(source["total"], bool)
-            or source["total"] != len(rows)
-            or source.get("hasMore") is not False
-            or len(rows) != 1
-            or source.get("nextOffset") not in (None, 0)):
+    covered, coverage_shape = _filtered_coverage_evidence(source, rows)
+    if diagnostics is not None:
+        diagnostics["filtered_coverage"] = coverage_shape
+    if not covered:
         if diagnostics is not None:
             diagnostics["identity_lookup"] = "filtered_coverage_unverified"
         return None
