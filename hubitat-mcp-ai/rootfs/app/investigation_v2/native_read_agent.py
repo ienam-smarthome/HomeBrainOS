@@ -626,8 +626,40 @@ async def run_native_read_agent(
     elif not answer_text:
         answer_text = ("Investigation evidence collected; the model did not "
                        "complete a supported causal explanation.")
-    lines = ["**AI interpretation — verify against source evidence**", answer_text,
-             "", "**Verified read coverage**"]
+    # Make uncertainty prominent even when the model produces a fluent answer.
+    # A recent all-INFO log sample is not a severity-filtered error audit.
+    log_audits = [
+        w["source_data"]["log_summary"]
+        for w in witnesses
+        if isinstance(w.get("source_data"), dict)
+        and isinstance(w["source_data"].get("log_summary"), dict)
+    ]
+    info_only_logs = bool(log_audits) and all(
+        a.get("warning_error_group_count") == 0
+        and a.get("level_counts_in_returned_rows", {}).get("INFO", 0) > 0
+        for a in log_audits
+    )
+    projections_empty = [
+        w["operation"] for w in witnesses
+        if isinstance(w.get("source_data"), dict)
+        and w["source_data"].get("projection_empty") is True
+    ]
+    lines = []
+    if info_only_logs:
+        lines.extend([
+            "**Evidence limitation: hub log severity not verified**",
+            "Only INFO records appeared in the sampled log reads. This is "
+            "not proof that there are no WARN/ERROR entries elsewhere. "
+            "A dedicated severity-filtered log read is still required.", "",
+        ])
+    if projections_empty:
+        lines.extend([
+            "**Uninterpreted source fields**",
+            "Gateway reads returned data not yet understood by the "
+            "evidence adapter: " + ", ".join(projections_empty[:5]) + ".", "",
+        ])
+    lines.extend(["**AI interpretation — not independently claim-validated**",
+                  answer_text, "", "**Verified read coverage**"])
     for witness in witnesses[:12]:
         op = _text(witness["operation"], 64)
         details = witness["source_data"]
@@ -677,14 +709,24 @@ async def run_native_read_agent(
                   "reported state is not independent physical confirmation. "
                   "No Hubitat writes were performed."])
     text = "\n".join(lines)
+    validation_issues = ["model_claims_not_atomically_verified"]
+    if not witnesses:
+        validation_issues.append("no_verified_reads")
+    else:
+        validation_issues.append("historical_coverage_unverified")
+    if info_only_logs:
+        validation_issues.append("warning_error_log_coverage_unverified")
+    if projections_empty:
+        validation_issues.append("gateway_projection_incomplete")
     return {
         "answer_mode": "native_mcp_investigation",
         "answer": {"text": text, "displayed_record_ids": [],
                    "omitted_material_record_ids": [],
-                   "validation_issues": (["no_verified_reads"] if not witnesses
-                                         else ["historical_coverage_unverified"]),
+                   "validation_issues": validation_issues,
                    "root_cause_verified": False,
-                   "human_review_required": bool(failures or not witnesses)},
+                   "human_review_required": bool(
+                       failures or not witnesses or info_only_logs
+                       or projections_empty)},
         "report": {"text": text, "technical_answer_retained": True},
         "native_diagnostics": {
             "rounds": rounds, "reads_executed": attempted,
