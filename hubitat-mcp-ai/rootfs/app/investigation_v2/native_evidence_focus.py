@@ -196,6 +196,16 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     "Only current metadata and non-sensitive field names "
                     "were read; settings values, code and historical app "
                     "execution remain unverified.")
+        elif op=="hub_list_app_pages":
+            pages=data.get("page_names",[])
+            app_id=data.get("requested_app_id") or data.get("returned_app_id")
+            add(f"{ref}: read-only app page metadata for app ID "
+                f"{safe_string(app_id or 'unverified',18)}; "
+                f"primary page={safe_string(data.get('primary_page'),55)}, "
+                f"page names={safe_string(pages[:10],185)}, "
+                f"reported pages={safe_string(data.get('reported_page_count'),12)}. "
+                "Navigation metadata cannot establish current settings values, "
+                "executed code or historical cause.",False)
         elif op=="hub_get_source":
             kind=safe_string(data.get("requested_source_type") or "unknown",18)
             identity=safe_string(data.get("requested_source_id") or

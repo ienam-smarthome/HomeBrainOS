@@ -27,6 +27,11 @@ from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_name
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
 from .native_read_scope import target_history_scope_problem
+from .native_app_pages import app_pages_summary
+from .native_causal_claim_audit import (
+    incident_attribution_packet, unsupported_causal_ranking,
+    evidence_safe_incident_explanation,
+)
 from .native_source_readiness import source_read_summary, repeated_broad_log_scope
 from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
@@ -101,7 +106,12 @@ _SYSTEM = (
     "or read-only source when investigating a causal mechanism; do not "
     "mistake the device ID for an app or driver ID. Event timing is "
     "association, not proof of the caller causing the warning. "
-    "Read metrics, logs and health separately where useful. Follow the most "
+    "Read metrics, logs and health separately where useful. Prior observed "
+    "command bursts are performance leads, not evidence of their contribution "
+    "to a later generic warning. Do not name a 'most material offender' or "
+    "a 'most likely driver' for an incident until discriminating causal "
+    "evidence exists. Keep playTrack totals spanning several days distinct "
+    "from refresh commands in a 10-second burst. Follow the most "
     "material offender, compare sources, ask another read if uncertain. "
     "Use returned source IDs only after the host verifies them. Maximum "
     "two sequential tool calls each round. Stop once the evidence is enough "
@@ -257,6 +267,8 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
         # Nested source settingsPage.app is not part of the generic safe-key
         # projection; retain whitelisted metadata instead of empty labels.
         projected = app_config_summary(data)
+    elif operation == "hub_list_app_pages":
+        projected = app_pages_summary(data)
     elif operation in ("hub_get_metrics", "hub_get_performance_stats"):
         projected.update(project_metrics(data))
     elif operation == "hub_get_memory_history":
@@ -922,6 +934,11 @@ async def run_native_read_agent(
                         "source_data": focused_model_view(op, summary, sorted(focus_ids)),
                         "source_complete": False,
                     })
+            if focus_ids and op == "hub_list_device_events":
+                packet = incident_attribution_packet(
+                    witnesses, sorted(focus_ids))
+                if packet is not None:
+                    view["incident_attribution_evidence"] = packet
             if focus_ids and op in ("hub_list_device_events", "hub_get_logs", "hub_get_device"):
                 gap = gap_for_target(
                     witnesses, sorted(focus_ids),
@@ -1067,6 +1084,17 @@ async def run_native_read_agent(
         answer_text = (focused_fallback(witnesses, failures, sorted(focus_ids))
                        if focus_ids else None) or evidence_fallback(witnesses, failures)
         synthesis_status = "host_evidence_fallback"
+    # Independent post-answer claim audit: a model may offer a fluent
+    # speculative ranking even while admitting causality is unverified.
+    # Do not publish such a ranking as the incident conclusion when the
+    # source-backed temporal packet says no cause is attributed.
+    causal_packet = incident_attribution_packet(
+        witnesses, sorted(focus_ids))
+    rejected_causal_ranking = unsupported_causal_ranking(
+        answer_text, causal_packet)
+    if rejected_causal_ranking and causal_packet is not None:
+        answer_text = evidence_safe_incident_explanation(causal_packet)
+        synthesis_status = "unsupported_causal_ranking_replaced"
     # Make uncertainty prominent even when the model produces a fluent answer.
     # A recent all-INFO log sample is not a severity-filtered error audit.
     log_audits = [
@@ -1206,6 +1234,8 @@ async def run_native_read_agent(
         validation_issues.append("warning_error_log_coverage_unverified")
     if projections_empty:
         validation_issues.append("gateway_projection_incomplete")
+    if rejected_causal_ranking:
+        validation_issues.append("unsupported_causal_ranking_withheld")
     if causal_coverage_gap is not None:
         gap_kind = causal_coverage_gap.get("kind")
         validation_issues.append(
@@ -1222,7 +1252,7 @@ async def run_native_read_agent(
                    "root_cause_verified": False,
                    "human_review_required": bool(
                        failures or not witnesses or info_only_logs
-                       or projections_empty)},
+                       or projections_empty or rejected_causal_ranking)},
         "report": {"text": text, "technical_answer_retained": True},
         "native_diagnostics": {
             "rounds": rounds, "reads_executed": attempted,
@@ -1236,6 +1266,8 @@ async def run_native_read_agent(
             "coverage_challenge_used": coverage_challenge_used,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
+            "incident_attribution_evidence": causal_packet,
+            "unsupported_causal_ranking_withheld": rejected_causal_ranking,
             "repeated_discovery": repeated_discovery,
             "blocked_repeat_errors": blocked_repeat_errors,
             "failed_scoped_operations": [
