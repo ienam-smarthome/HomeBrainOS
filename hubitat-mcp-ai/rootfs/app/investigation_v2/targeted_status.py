@@ -27,7 +27,7 @@ def current_status_attributes(
     if not label:
         return ()
     cleaned = " ".join(re.sub(r"[?.!]", "", question).casefold().split())
-    hits = list(re.finditer(r"(?<!\\w)" + re.escape(label) + r"(?!\\w)", cleaned))
+    hits = list(re.finditer(r"(?<!\w)" + re.escape(label) + r"(?!\w)", cleaned))
     if len(hits) != 1:
         return ()
     match = hits[0]
