@@ -151,7 +151,15 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
             continue
         chosen = warning
         break
-    if chosen is None and mechanism is not None:
+    # A source-reported internal slow method with independently attested
+    # app-issued commands during its interval is more diagnostic than a
+    # separate, later generic "excessive load" warning. Preserve that generic
+    # warning as *unattributed*, but never let it erase verified app callers.
+    # This prioritises evidence type and chronology, not the question wording.
+    generic_unattributed = (
+        chosen if chosen is not None and chosen["method"] is None else None
+    )
+    if mechanism is not None and (chosen is None or generic_unattributed is not None):
         warning, nearby = mechanism
         caller_ids = sorted({
             ident for _, _, ident in nearby if str(ident).isdecimal()
@@ -168,6 +176,12 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
             },
             "actor_provenance_verified": bool(caller_ids),
             "observed_calling_app_ids": caller_ids[:8],
+            "unattributed_generic_warning_window": (
+                {"oldest": generic_unattributed["start_text"],
+                 "newest": generic_unattributed["end_text"],
+                 "timezone_verified": False}
+                if generic_unattributed is not None else None
+            ),
             "candidate_read": "hub_get_app_config" if caller_ids else None,
             "candidate_filters": {"appId": caller_ids[0]} if caller_ids else {},
             "materiality": (
@@ -283,6 +297,56 @@ def repeated_log_evidence(previous: Sequence[Mapping[str, Any]],
     return True
 
 
+
+def repeated_event_evidence(previous: Sequence[Mapping[str, Any]],
+                            projected: Mapping[str, Any],
+                            *, scoped_device_id: str | None = None) -> bool:
+    """A bounded event subset isn't new provenance if all rows were seen.
+
+    The comparison requires fully retained projected rows; otherwise a
+    truncated preview could conceal unseen events. Numeric issuer identity,
+    event time and name form the comparison. Similar text alone is not enough.
+    """
+    events = projected.get("events")
+    if not scoped_device_id or not isinstance(events, list) or not events:
+        return False
+    if projected.get("count") != len(events):
+        return False
+    def identity(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
+        issuer = row.get("producedBy")
+        if not isinstance(issuer, Mapping):
+            return None
+        app = issuer.get("appId")
+        device = issuer.get("deviceId")
+        if app is None and device is None:
+            return None
+        return (
+            row.get("name"), row.get("date"),
+            ("app", str(app)) if app is not None else ("device", str(device)),
+            row.get("value"),
+        )
+    observed = set()
+    for witness in previous:
+        if witness.get("operation") != "hub_list_device_events":
+            continue
+        filters = witness.get("read_filters")
+        if not isinstance(filters, Mapping) or str(filters.get("deviceId")) != str(scoped_device_id):
+            continue
+        source = witness.get("source_data")
+        if not isinstance(source, Mapping):
+            continue
+        for row in source.get("events", [])[:130]:
+            if isinstance(row, Mapping):
+                key = identity(row)
+                if key is not None:
+                    observed.add(key)
+    return bool(observed) and all(
+        isinstance(row, Mapping) and
+        (key := identity(row)) is not None and key in observed
+        for row in events
+    )
+
+
 def gateway_offers_operation(manifest: Mapping[str, Any],
                              discovered: Mapping[str, set[str]],
                              operation: str) -> bool:
@@ -311,4 +375,5 @@ def useful_discovery_fingerprint(source: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 __all__ = ["gap_for_target", "gateway_offers_operation",
-           "useful_discovery_fingerprint", "repeated_log_evidence"]
+           "useful_discovery_fingerprint", "repeated_log_evidence",
+           "repeated_event_evidence"]
