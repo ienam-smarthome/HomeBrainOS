@@ -119,7 +119,7 @@ def _group_logs(data: Mapping[str, Any]) -> dict[str, Any] | None:
         message = _text(raw.get("message") or raw.get("msg") or raw.get("description"), 350)
         # Numeric watchdog counts and transport retry numbers are variable, not
         # independent fault identities. Preserve raw representative message.
-        fingerprint = re.sub(r"\b\d+(?:\.\d+)?\b", "#", message).casefold()
+        fingerprint = re.sub(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", "#", message).casefold()
         key = (source, level, fingerprint)
         rec = groups.setdefault(key, {
             "source": source, "level": level, "message": message,
@@ -467,7 +467,8 @@ async def run_native_read_agent(
     elif not answer_text:
         answer_text = ("Investigation evidence collected; the model did not "
                        "complete a supported causal explanation.")
-    lines = [answer_text, "", "**Verified read coverage**"]
+    lines = ["**AI interpretation — verify against source evidence**", answer_text,
+             "", "**Verified read coverage**"]
     for witness in witnesses[:12]:
         op = _text(witness["operation"], 64)
         details = witness["source_data"]
@@ -487,6 +488,15 @@ async def run_native_read_agent(
         else:
             lines.append(f"- Read #{witness['read']}: {op} returned typed source data "
                          "(not proof of complete historical coverage).")
+            if isinstance(details, dict):
+                for key in ("alerts", "errors", "warnings"):
+                    value = details.get(key)
+                    if isinstance(value, list):
+                        for item in value[:5]:
+                            lines.append("  - Source " + key + ": " + _text(item, 180))
+                for key in ("safeMode", "uptime", "freeMemory", "temperature", "dbSize"):
+                    if key in details:
+                        lines.append(f"  - Source {key}: " + _text(details[key], 80))
     if failures:
         lines.extend(["", "**Unavailable or rejected reads**"])
         for fail in failures[:8]:
