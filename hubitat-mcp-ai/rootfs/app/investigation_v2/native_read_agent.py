@@ -21,6 +21,7 @@ from tool_executor import ToolExecutor
 from tool_registry import ToolEffect, classify_tool_effect
 from .planning import _schema_problem
 from .read_diagnostics import classify_execution, classify_exception
+from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
 
 Chat = Callable[[list[dict[str, Any]], list[dict[str, Any]]],
                 Awaitable[dict[str, Any]]]
@@ -34,6 +35,10 @@ _SYSTEM = (
     "tools, not device control. You may investigate hub health, log errors, "
     "apps, rules, devices, interactions or historic incidents. DO NOT require "
     "a device name or fetch full inventory unless the evidence needs one. "
+    "For logs, distinguish INFO from WARN/ERROR and request severity-filtered "
+    "rows when the returned sample contains only INFO. Do not call an INFO "
+    "event a triggered alert. Avoid unbounded full-device listings when a "
+    "targeted read or source-attested ID can answer the question. "
     "Tools may be gateways: use hub_search_tools to discover exact operation "
     "and gateway mappings if the live schema does not enumerate operations. "
     "Read metrics, logs and health separately where useful. Follow the most "
@@ -69,6 +74,12 @@ _SAFE_KEYS = frozenset({
     "metrics", "healthAlerts", "health_alerts", "backupStatus",
     "firmware", "freeMem", "entries", "severity", "appName",
     "description", "msg", "event",
+    "nodes", "mesh", "meshNodes", "health", "deviceHealth",
+    "offline", "online", "unknown", "unavailable", "stale",
+    "lastSeen", "lastSeenAt", "lastMessage", "lastContact",
+    "duration", "age", "ageSeconds", "statusCount",
+    "deviceCount", "offlineCount", "critical", "warning",
+    "problems", "summary", "gatewayStatus", "zigbee", "zwave",
 })
 _CONTROL_KEYS = frozenset({
     "command", "commands", "confirm", "confirmation", "action",
@@ -77,7 +88,7 @@ _CONTROL_KEYS = frozenset({
 
 
 def _text(value: Any, limit: int = 280) -> str:
-    raw = str(value if value is not None else "")[:1800]
+    raw = str(value if value is not None else "")[:min(6000, max(1800, limit + 300))]
     raw = _URL.sub("[URL redacted]", raw)
     raw = _REDACT.sub("[credential redacted]", raw)
     raw = "".join(ch if ch.isprintable() and ch not in "<>\x60" else " "
@@ -107,53 +118,15 @@ def _project(value: Any, *, depth: int = 0) -> Any:
 
 
 def _group_logs(data: Mapping[str, Any]) -> dict[str, Any] | None:
-    rows = data.get("logs")
-    if not isinstance(rows, list):
+    """Compatibility projection; single implementation lives in source adapters."""
+    summary = compact_logs(data)
+    if summary is None:
         return None
-    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
-    observed_stamps: dict[tuple[str, str, str], set[str]] = {}
-    for raw in rows[:350]:
-        if not isinstance(raw, dict):
-            continue
-        level = _text(raw.get("level") or raw.get("severity") or "unknown", 22)
-        source = raw.get("source")
-        source_type = _text(raw.get("sourceType") or "unspecified", 30)
-        if isinstance(source, dict):
-            source_type = _text(source.get("type") or source_type, 30)
-            source = source.get("id") or source.get("name")
-        source = _text(source or raw.get("appId") or raw.get("deviceId") or "unknown", 80)
-        message = _text(raw.get("message") or raw.get("msg") or raw.get("description"), 350)
-        # Numeric watchdog counts and transport retry numbers are variable, not
-        # independent fault identities. Preserve raw representative message.
-        fingerprint = re.sub(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", "#", message).casefold()
-        key = (source_type + ":" + source, level, fingerprint)
-        rec = groups.setdefault(key, {
-            "source": source, "level": level, "message": message,
-            "count": 0, "duplicate_timestamp_rows": 0,
-            "oldest": None, "newest": None,
-        })
-        stamp = _text(raw.get("date") or raw.get("timestamp"), 70) or None
-        if stamp:
-            prior_stamps = observed_stamps.setdefault(key, set())
-            if stamp in prior_stamps:
-                rec["duplicate_timestamp_rows"] += 1
-            prior_stamps.add(stamp)
-        rec["count"] += 1
-        if stamp:
-            rec["oldest"] = min(stamp, rec["oldest"]) if rec["oldest"] else stamp
-            rec["newest"] = max(stamp, rec["newest"]) if rec["newest"] else stamp
-    ordered = sorted(groups.values(), key=lambda x: (
-        0 if x["level"].casefold() in ("error", "err", "fatal") else 1,
-        -x["count"], x["source"]
-    ))
     return {
-        "returned_rows": len(rows),
-        "groups": ordered[:16],
-        "group_count": len(groups),
-        "truncated": data.get("truncated") is True or len(rows) > 350,
-        "coverage_proven_complete": False,
+        **summary,
+        "groups": summary["warning_error_groups"],
+        "group_count": summary["warning_error_group_count"],
     }
-
 
 def _payload(result: Any, operation: str) -> dict[str, Any]:
     data = result.data if isinstance(result.data, dict) else {}
@@ -166,11 +139,40 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
     projected = _project(data)
     if not isinstance(projected, dict):
         projected = {}
+    # "success": true with all actual mesh/health measurements discarded is
+    # NOT a useful evidence projection. Detect unhandled source fields even
+    # if common status flags were projected.
+    raw_fields = unwrapped(data)
+    unmapped = [
+        k for k in list(raw_fields)[:50]
+        if isinstance(k, str) and len(k) <= 50
+        and not _SECRET_KEY.search(k) and k not in projected
+        and k not in ("result", "data", "output")
+    ]
+    if unmapped and operation != "hub_get_logs":
+        projected["projection_incomplete"] = True
+        projected["unmapped_source_fields"] = unmapped[:25]
+        projected["source_field_names"] = unmapped[:25]
+        if set(projected).issubset({
+            "success", "status", "projection_incomplete",
+            "unmapped_source_fields", "source_field_names",
+        }):
+            projected["projection_empty"] = True
     if operation == "hub_get_logs":
-        log_groups = _group_logs(data)
+        log_groups = compact_logs(data)
         if log_groups is not None:
-            projected = {"log_summary": log_groups,
-                         "source_complete": False}
+            projected = {"log_summary": log_groups, "source_complete": False}
+    if not projected:
+        # Successful gateway does not prove we understood its data.
+        projected = {
+            "projection_empty": True,
+            "source_field_names": [
+                k for k in list(unwrapped(data))[:30]
+                if isinstance(k, str) and len(k) <= 50
+                and not _SECRET_KEY.search(k)
+            ],
+            "source_complete": False,
+        }
     return projected
 
 
@@ -251,47 +253,8 @@ def _arguments(call: Any) -> tuple[str, dict[str, Any]] | None:
 
 
 def _ids_from_read(op: str, data: Any) -> set[str]:
-    """Trust only typed ID columns from a successful source read."""
-    if not isinstance(data, dict):
-        return set()
-    evidence_keys = {
-        "hub_list_devices": ("devices", ("id", "deviceId")),
-        "hub_list_apps": ("apps", ("id", "appId")),
-        "hub_list_rules": ("rules", ("id", "appId")),
-        # Log entry ID is a log-row identifier, never an app or device ID.
-        "hub_get_logs": ("logs", ("appId", "deviceId", "sourceId")),
-        "hub_get_device_health": ("devices", ("id", "deviceId")),
-    }
-    spec = evidence_keys.get(op)
-    if spec is None:
-        return set()
-    key, id_fields = spec
-    for root in ("result", "data", "output"):
-        child = data.get(root)
-        if isinstance(child, dict):
-            data = child
-            break
-    ids: set[str] = set()
-    rows = data.get(key)
-    if not isinstance(rows, list):
-        return ids
-    for row in rows[:500]:
-        if not isinstance(row, dict):
-            continue
-        for field in id_fields:
-            value = row.get(field)
-            if type(value) in (int, str) and str(value).isdecimal():
-                ids.add(str(value))
-        if op == "hub_get_logs":
-            source = row.get("source")
-            if isinstance(source, dict):
-                kind = str(source.get("type") or source.get("sourceType") or "").lower()
-                value = source.get("id")
-                if (kind in ("app", "device", "dev")
-                        and type(value) in (int, str) and str(value).isdecimal()):
-                    ids.add(str(value))
-    return ids
-
+    """Compatibility entry point for the common source-attestation adapter."""
+    return attested_source_ids(op, data)
 
 def _observed_operations(result: Any, manifest: Mapping[str, MCPTool]) -> dict[str, set[str]]:
     """Only exact, structured same-session hub_search_tools mappings count."""
@@ -393,6 +356,11 @@ async def run_native_read_agent(
     failures: list[dict[str, Any]] = []
     attempted = 0
     rounds = 0
+    identity_lookup_attempted = False
+    identity_lookup_ms = 0
+    synthesis_status = "not_needed"
+    coverage_challenge_used = False
+    synthesis_elapsed_ms = 0
     answer_text = ""
     reason = "round_budget_reached"
     for round_no in range(max_rounds):
@@ -416,6 +384,35 @@ async def run_native_read_agent(
             break
         calls = reply.get("tool_calls")
         if not isinstance(calls, list) or not calls:
+            # General evidence-coverage critique, not question-word routing.
+            # A model must not call a noisy INFO page a log error audit.
+            # One bounded extra model opportunity can request a better read.
+            unfiltered_log_gap = any(
+                isinstance(w.get("source_data"), dict)
+                and isinstance(w["source_data"].get("log_summary"), dict)
+                and w["source_data"]["log_summary"].get(
+                    "warning_error_group_count") == 0
+                and w.get("read_filters", {}).get("level") is None
+                and w["source_data"]["log_summary"].get(
+                    "level_counts_in_returned_rows", {}).get("INFO", 0) > 0
+                for w in witnesses
+            )
+            if (unfiltered_log_gap and not coverage_challenge_used
+                    and round_no + 1 < max_rounds
+                    and attempted < max_reads
+                    and deadline - time.monotonic() > 3):
+                coverage_challenge_used = True
+                messages.append({"role": "assistant",
+                                 "content": _text(reply.get("content"), 450)})
+                messages.append({"role": "user", "content":
+                                 "Evidence coverage check: the returned log "
+                                 "page contains INFO but no WARN/ERROR, and "
+                                 "you have not made a severity-filtered log "
+                                 "read. Do not infer no problems from that "
+                                 "sample. Choose an independently permitted "
+                                 "discriminating MCP read or explicitly state "
+                                 "this limitation."})
+                continue
             answer_text = _text(reply.get("content"), 4500)
             reason = "model_finished"
             break
@@ -434,6 +431,40 @@ async def run_native_read_agent(
             name, args = parsed
             key = json.dumps([name, args], sort_keys=True, default=str)
             issue = _guard(name, args, manifest, discovered, verified_ids)
+            if issue == "target_id_not_verified_from_live_source":
+                # Lookup happens only when the model proposes a target-specific
+                # READ whose ID was not already attested in a source receipt.
+                # Use cached or one-shot live context instead of mandatory
+                # full 20s inventory; failed lookup never authorises a call.
+                inner = args.get("args", args)
+                unknown = {
+                    str(inner[k]) for k in ("deviceId",)
+                    if isinstance(inner, dict) and type(inner.get(k)) in (str, int)
+                    and str(inner[k]).isdecimal()
+                }
+                lookup = getattr(mcp, "get_device_identities", None)
+                if unknown and callable(lookup) and not identity_lookup_attempted:
+                    identity_lookup_attempted = True
+                    before_identity = time.monotonic()
+                    try:
+                        identities = await asyncio.wait_for(
+                            lookup(),
+                            timeout=min(6.0, max(0.1, deadline - time.monotonic())),
+                        )
+                        verified_ids.update(
+                            str(row.get("id") or row.get("deviceId"))
+                            for row in identities[:800]
+                            if isinstance(row, dict)
+                            and str(row.get("id") or row.get("deviceId") or "").isdecimal()
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        pass
+                    finally:
+                        identity_lookup_ms += round(
+                            (time.monotonic() - before_identity) * 1000)
+                    issue = _guard(name, args, manifest, discovered, verified_ids)
             if key in prior:
                 issue = "duplicate_read"
             if issue is not None:
@@ -491,7 +522,7 @@ async def run_native_read_agent(
                 })})
                 continue
             assert result is not None
-            verified_ids.update(_ids_from_read(op, result.data))
+            verified_ids.update(attested_source_ids(op, result.data))
             if name == "hub_search_tools":
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
@@ -499,6 +530,14 @@ async def run_native_read_agent(
             witness = {
                 "read": attempted,
                 "tool": name, "operation": op,
+                "read_filters": {
+                    k: v for k, v in (
+                        args.get("args") if isinstance(args.get("args"), dict)
+                        else args
+                    ).items()
+                    if k in ("level", "limit", "mode")
+                    and type(v) in (str, int) and len(str(v)) < 50
+                },
                 "elapsed_ms": round((time.monotonic()-before)*1000),
                 "source_data": summary,
                 "source_complete": False,
@@ -515,14 +554,92 @@ async def run_native_read_agent(
         if accepted_this_round == 0 and round_no >= 1:
             reason = "no_approved_reads"
             break
+    if witnesses and not answer_text and deadline - time.monotonic() > 2:
+        # The read loop may end at a budget, repeated proposal or source gap.
+        # Request ONE final answer with tools=[], not another planning pass.
+        # Feed only bounded, redacted witness projections. The host report
+        # below still separates model interpretation from actual source data.
+        synthesis_start = time.monotonic()
+        final_witnesses = [
+            {"read_id": w["read"], "operation": w["operation"],
+             "data": w["source_data"]}
+            for w in witnesses[:10]
+        ]
+        try:
+            response = await asyncio.wait_for(
+                chat([
+                    {"role": "system", "content":
+                     "Answer the user's question using only verified source "
+                     "observations provided. Reference read IDs. Distinguish "
+                     "WARN and ERROR from INFO, source reporting from physical "
+                     "state, confirmed cause from hypothesis. Do not assert "
+                     "an error-free hub without suitable WARN/ERROR coverage. "
+                     "Disclose missing data, failures and time limits. No "
+                     "tool calls; give a concise answer even if incomplete."},
+                    {"role": "user", "content": json.dumps({
+                        "question": question,
+                        "source_evidence": final_witnesses,
+                        "failed_or_rejected_reads": failures[-12:],
+                        "source_complete": False,
+                    }, ensure_ascii=True, default=str)[:15000]},
+                ], []),
+                timeout=min(15.0, max(1.0, deadline - time.monotonic())),
+            )
+            if isinstance(response, dict) and not response.get("tool_calls"):
+                candidate = response.get("content")
+                if isinstance(candidate, str) and candidate.strip():
+                    answer_text = _text(candidate, 4500)
+                    synthesis_status = "completed"
+                else:
+                    synthesis_status = "empty_response"
+            else:
+                synthesis_status = "invalid_response"
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            synthesis_status = "unavailable"
+        finally:
+            synthesis_elapsed_ms = round((time.monotonic() - synthesis_start) * 1000)
     if not witnesses:
         answer_text = ("No verified MCP evidence was recovered. "
                        "The question cannot be answered from live sources.")
     elif not answer_text:
         answer_text = ("Investigation evidence collected; the model did not "
                        "complete a supported causal explanation.")
-    lines = ["**AI interpretation — verify against source evidence**", answer_text,
-             "", "**Verified read coverage**"]
+    # Make uncertainty prominent even when the model produces a fluent answer.
+    # A recent all-INFO log sample is not a severity-filtered error audit.
+    log_audits = [
+        w["source_data"]["log_summary"]
+        for w in witnesses
+        if isinstance(w.get("source_data"), dict)
+        and isinstance(w["source_data"].get("log_summary"), dict)
+    ]
+    info_only_logs = bool(log_audits) and all(
+        a.get("warning_error_group_count") == 0
+        and a.get("level_counts_in_returned_rows", {}).get("INFO", 0) > 0
+        for a in log_audits
+    )
+    projections_empty = [
+        w["operation"] for w in witnesses
+        if isinstance(w.get("source_data"), dict)
+        and w["source_data"].get("projection_empty") is True
+    ]
+    lines = []
+    if info_only_logs:
+        lines.extend([
+            "**Evidence limitation: hub log severity not verified**",
+            "Only INFO records appeared in the sampled log reads. This is "
+            "not proof that there are no WARN/ERROR entries elsewhere. "
+            "A dedicated severity-filtered log read is still required.", "",
+        ])
+    if projections_empty:
+        lines.extend([
+            "**Uninterpreted source fields**",
+            "Gateway reads returned data not yet understood by the "
+            "evidence adapter: " + ", ".join(projections_empty[:5]) + ".", "",
+        ])
+    lines.extend(["**AI interpretation — not independently claim-validated**",
+                  answer_text, "", "**Verified read coverage**"])
     for witness in witnesses[:12]:
         op = _text(witness["operation"], 64)
         details = witness["source_data"]
@@ -531,12 +648,23 @@ async def run_native_read_agent(
             lines.append(
                 f"- Read #{witness['read']}: {op}: "
                 f"{report['returned_rows']} returned log rows; "
-                f"{report['group_count']} fault/message groups "
-                "(historical completeness unverified)."
+                f"{report['warning_error_group_count']} WARN/ERROR groups; "
+                "full historical coverage unverified."
             )
-            for group in report["groups"][:5]:
+            lines.append("  - Sample levels: " + str(
+                report.get("level_counts_in_returned_rows", {})))
+            lines.append("  - Returned time range: " + str(
+                report.get("oldest_returned") or "unknown") + " to " + str(
+                report.get("newest_returned") or "unknown")
+                + " (timezone not verified).")
+            if not report["warning_error_groups"]:
                 lines.append(
-                    f"  - {group['level']} / {group['source']}: "
+                    "  - No WARN/ERROR in returned sample; "
+                    "this does NOT establish that hub logs are clear."
+                )
+            for group in report["warning_error_groups"][:5]:
+                lines.append(
+                    f"  - {group['level']} / {group['source_name']}: "
                     f"{group['message']} ({group['count']} rows)"
                 )
         else:
@@ -561,20 +689,35 @@ async def run_native_read_agent(
                   "reported state is not independent physical confirmation. "
                   "No Hubitat writes were performed."])
     text = "\n".join(lines)
+    validation_issues = ["model_claims_not_atomically_verified"]
+    if not witnesses:
+        validation_issues.append("no_verified_reads")
+    else:
+        validation_issues.append("historical_coverage_unverified")
+    if info_only_logs:
+        validation_issues.append("warning_error_log_coverage_unverified")
+    if projections_empty:
+        validation_issues.append("gateway_projection_incomplete")
     return {
         "answer_mode": "native_mcp_investigation",
         "answer": {"text": text, "displayed_record_ids": [],
                    "omitted_material_record_ids": [],
-                   "validation_issues": (["no_verified_reads"] if not witnesses
-                                         else ["historical_coverage_unverified"]),
+                   "validation_issues": validation_issues,
                    "root_cause_verified": False,
-                   "human_review_required": bool(failures or not witnesses)},
+                   "human_review_required": bool(
+                       failures or not witnesses or info_only_logs
+                       or projections_empty)},
         "report": {"text": text, "technical_answer_retained": True},
         "native_diagnostics": {
             "rounds": rounds, "reads_executed": attempted,
             "successful_reads": len(witnesses),
             "model_tool_calls_allowed": bool(offered),
             "verified_source_ids": len(verified_ids),
+            "lazy_identity_lookup_attempted": identity_lookup_attempted,
+            "lazy_identity_lookup_ms": identity_lookup_ms,
+            "coverage_challenge_used": coverage_challenge_used,
+            "final_synthesis": synthesis_status,
+            "final_synthesis_ms": synthesis_elapsed_ms,
             "discovered_operations": {k: sorted(v) for k, v in discovered.items()},
             "stop_reason": reason,
             "failures": failures[:20],
