@@ -136,6 +136,7 @@ def event_summary(data: Any) -> dict[str, Any] | None:
         "oldest_returned": stamps[0] if stamps else None,
         "newest_returned": stamps[-1] if stamps else None,
         "returned_event_rows": len(rows),
+        "event_rows_omitted_from_model": max(0, len(events) - len(rows)),
         "producer_app_count": len(issuers),
         "provenance_basis": "device-scoped event source producedBy.appId",
         "source_complete": False}
