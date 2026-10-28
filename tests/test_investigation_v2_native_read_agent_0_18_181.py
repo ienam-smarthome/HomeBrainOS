@@ -148,7 +148,7 @@ def test_host_denies_any_write_even_when_model_invents_permissions():
                   manifest, {}, set()) == "unsafe_or_missing_operation"
     assert _guard("hub_read_diagnostics",
                   {"tool": "hub_get_logs", "args": {"command": "off"}},
-                  manifest, {}, set()) == "unsafe_arguments"
+                  manifest, {}, set()) == "write_argument_rejected"
     assert _guard("hub_read_apps_code",
                   {"tool": "hub_get_app_config", "args": {"appId": "4129"}},
                   manifest, {}, set()) == "target_id_not_verified_from_live_source"
