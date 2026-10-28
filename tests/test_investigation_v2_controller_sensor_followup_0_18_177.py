@@ -50,7 +50,7 @@ def manifest(*, include_sensor=True, allow_logs=True, write_sensor=False):
     dev=tool("hub_read_devices",device_ops,p,writable=write_sensor)
     app=tool("hub_read_apps_code",["hub_get_app_config"],
              {"appId":{"type":"string"},"includeSettings":{"type":"boolean"}})
-    logs=tool("hub_manage_logs",["hub_get_logs"],
+    logs=tool("hub_read_diagnostics",["hub_get_logs"],
               {"appId":{"type":"string"},"hoursBack":{"type":"integer"},
                "limit":{"type":"integer"}})
     return [dev, app]+([logs] if allow_logs else [])
@@ -150,7 +150,9 @@ def test_log_read_proposal_is_source_scoped_and_never_grants_mutations():
     assert p[0]["arguments"]["args"]["appId"]=="4020"
     assert not controller_log_coverage_proposals(manifest(allow_logs=False),case)
     assert not controller_log_coverage_proposals([tool(
-        "hub_manage_logs",["hub_get_logs"],{"appId":{"type":"string"}},
+        "hub_manage_logs",["hub_get_logs"],{"appId":{"type":"string"}})],case)
+    assert not controller_log_coverage_proposals([tool(
+        "hub_read_diagnostics",["hub_get_logs"],{"appId":{"type":"string"}},
         writable=True)],case)
 
 
