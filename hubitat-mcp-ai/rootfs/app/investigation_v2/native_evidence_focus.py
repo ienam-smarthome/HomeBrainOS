@@ -243,8 +243,9 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
     elif any("ran for" in m for m in log_messages):
         conclusion=("The returned logs report prolonged driver-method "
                     "executions on this device. An online network state does "
-                    "not refute a slow callback, and the mechanism and "
-                    "hub-wide impact have not been independently verified.")
+                    "not refute a slow callback. The driver mechanism "
+                    "remains unverified; its contribution to wider "
+                    "hub instability is not independently verified.")
     elif any("excessive hub load" in m for m in log_messages):
         conclusion=("The returned logs contain generic excessive-load "
                     "warnings for this device, but this sampled log evidence "
