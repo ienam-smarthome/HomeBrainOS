@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.188**.
+Current add-on version: **0.18.189**.
+
+v0.18.189 preserves safe numeric hub metrics/trends in native read evidence, tracks repeated tool discovery and allows one bounded, model-directed causal-coverage read when a target has warnings but no issuer-event evidence. It does not automatically choose or execute a device-event read. [Release notes](CHANGELOG-0.18.189.md).
 
 v0.18.188 adds source-typed cross-domain device/app/driver identities and preserves command issuer provenance from verified device events. Native V2 can inspect independently attested calling automations and report unverified timing coincidences with slow-operation warnings. [Release notes](CHANGELOG-0.18.188.md).
 
