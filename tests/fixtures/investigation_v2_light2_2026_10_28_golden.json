@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "case_id": "livingroom-light-2-off-2026-10-28",
+  "provenance": "User-supplied Claude read-only investigation transcription, NOT an independently recorded MCP transcript; replace with a redacted native capture for full golden acceptance.",
+  "question": "Investigate why Livingroom Light 2 turned OFF most recently. Do not change anything.",
+  "target_id": "7828",
+  "receipts": [
+    {
+      "tool": "hub_read_devices",
+      "sub_tool": "hub_list_device_events",
+      "success": true,
+      "mutates": false,
+      "effect": "read",
+      "source_request_id": "sample-switch-filtered",
+      "arguments": {
+        "tool": "hub_list_device_events",
+        "args": {
+          "deviceId": "7828",
+          "attribute": "switch",
+          "hoursBack": 48,
+          "limit": 50
+        }
+      },
+      "details": {
+        "deviceId": "7828",
+        "events": [
+          {
+            "deviceId": "7828",
+            "name": "switch",
+            "value": "on",
+            "date": "2026-10-27T23:17:53.000+00:00",
+            "producedBy": {
+              "id": "7790"
+            }
+          },
+          {
+            "deviceId": "7828",
+            "name": "switch",
+            "value": "off",
+            "date": "2026-10-28T00:14:57.111+00:00",
+            "producedBy": {
+              "id": "7790"
+            }
+          }
+        ],
+        "sourceComplete": false,
+        "historySourceIntegrityVerified": false,
+        "observedEventsTruncated": false
+      }
+    },
+    {
+      "tool": "hub_read_devices",
+      "sub_tool": "hub_list_device_events",
+      "success": true,
+      "mutates": false,
+      "effect": "read",
+      "source_request_id": "sample-unfiltered-events",
+      "arguments": {
+        "tool": "hub_list_device_events",
+        "args": {
+          "deviceId": "7828",
+          "hoursBack": 48,
+          "limit": 150
+        }
+      },
+      "details": {
+        "deviceId": "7828",
+        "events": [
+          {
+            "deviceId": "7828",
+            "name": "command-on",
+            "type": "command",
+            "date": "2026-10-27T23:17:53.000+00:00",
+            "producedBy": {
+              "id": "1252"
+            }
+          },
+          {
+            "deviceId": "7828",
+            "name": "command-off",
+            "type": "command",
+            "date": "2026-10-28T00:14:56.868+00:00",
+            "producedBy": {
+              "id": "4020"
+            }
+          },
+          {
+            "deviceId": "7828",
+            "name": "switch",
+            "value": "off",
+            "date": "2026-10-28T00:14:57.111+00:00",
+            "producedBy": {
+              "id": "7790"
+            }
+          }
+        ],
+        "sourceComplete": false,
+        "historySourceIntegrityVerified": false,
+        "observedEventsTruncated": false
+      }
+    }
+  ],
+  "source_assertions": [
+    {
+      "name": "latest_command",
+      "stage": "command_issued",
+      "action": "command-off",
+      "timestamp": "2026-10-28T00:14:56.868+00:00",
+      "producer_id": "4020"
+    },
+    {
+      "name": "latest_off",
+      "stage": "state_reported",
+      "action": "switch",
+      "value": "off",
+      "timestamp": "2026-10-28T00:14:57.111+00:00",
+      "producer_id": "7790"
+    }
+  ],
+  "expected_pair": {
+    "issuer_app_id": "4020",
+    "state_reporter_id": "7790",
+    "interval_ms": 243,
+    "target_id": "7828"
+  },
+  "reference_only_not_yet_source_verified": [
+    {
+      "fact": "FP400 motion inactive at 2026-10-28T00:14:00.481Z",
+      "needed": "verified sensor device ID + raw source event receipt"
+    },
+    {
+      "fact": "App 4020 configured 30-second inactivity-off action",
+      "needed": "typed hub_get_app_config settings for app 4020"
+    },
+    {
+      "fact": "Latest OFF approximately 56.387 seconds after FP400 inactive",
+      "needed": "source sensor event plus configured rule and event clocks"
+    },
+    {
+      "fact": "Hub restart about 2026-10-28T07:22:00Z and logs unavailable",
+      "needed": "hub restart evidence and bounded log coverage metadata"
+    },
+    {
+      "fact": "No manual button 1252 press at 00:14",
+      "needed": "bounded button command/event history, not empty filtered page"
+    },
+    {
+      "fact": "Rule Machine app 4246 not a controller of Light 2",
+      "needed": "typed device dependents and relevant rule configuration"
+    }
+  ],
+  "negative_checks": [
+    "Never attribute command issuer to the Matter reporting bridge #7790",
+    "Never infer missing commands from a switch-filtered page",
+    "Never assert physical state or historical rule branch from a switch event",
+    "Never promote reference-only sensor or restart claims into verified evidence"
+  ]
+}
