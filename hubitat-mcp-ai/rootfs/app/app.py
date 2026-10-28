@@ -1488,6 +1488,9 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         semantic_failure = None
         direct_verified_target = None
         audit_devices = None
+        targeted_diagnostics: dict[str, Any] = {
+            "outcome": "not_attempted", "gateway_read_attempted": False,
+        }
         if not payload.device_ids and not payload.device_name:
             # Source discovery, intent planning, and optional measurement
             # classification are separate, observable stages. None of them
@@ -1515,8 +1518,15 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 try:
                     candidates, _, _ = resolve_verified_device_subjects(
                         payload.question, audit_devices)
-                except ValueError:
+                    targeted_diagnostics["candidate_count"] = len(candidates)
+                except ValueError as exc:
                     candidates = ()
+                    targeted_diagnostics["outcome"] = (
+                        "ambiguous_question_device" if
+                        str(exc).startswith("Ambiguous device name:")
+                        else "question_device_unresolved"
+                    )
+                    targeted_diagnostics["candidate_count"] = 0
                 # Exact, single-device current switch+level read: after a
                 # COMPLETE ID-only inventory resolves a unique user-named
                 # target, read just that device's live attributes through a
@@ -1532,17 +1542,22 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     if wanted:
                         targeted_started = time.perf_counter()
                         targeted = None
+                        targeted_diagnostics["outcome"] = "preflight"
+                        targeted_diagnostics["gateway_read_attempted"] = True
                         try:
                             targeted = await read_verified_target_status(
-                                mcp, _id[0], wanted_attributes=wanted)
+                                mcp, _id[0], wanted_attributes=wanted,
+                                diagnostics=targeted_diagnostics)
                         except asyncio.CancelledError:
                             raise
                         except Exception as exc:
+                            targeted_diagnostics["outcome"] = "gateway_exception"
                             logger.warning(
                                 "V2 targeted current read unavailable: %s",
                                 type(exc).__name__)
                         targeted_read_ms=round(
                             (time.perf_counter()-targeted_started)*1000)
+                        targeted_diagnostics["elapsed_ms"] = targeted_read_ms
                         if targeted is not None:
                             snapshot, state_provenance = targeted
                             source_identity = next(
@@ -1581,8 +1596,13 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                                 "read_source":state_provenance["source"],
                                 "state_scope":state_provenance["scope"],
                                 "model_intent_planning_skipped":True,
+                                "targeted_status":dict(targeted_diagnostics),
                             }
                             return report
+                    else:
+                        targeted_diagnostics["outcome"] = "question_contract_not_matched"
+                elif targeted_diagnostics["outcome"] == "not_attempted":
+                    targeted_diagnostics["outcome"] = "verified_identity_not_eligible"
                 # Broad and ambiguous questions still require a complete
                 # state/capability vocabulary. The identity-only projection
                 # must never feed a whole-house state result.
@@ -1721,6 +1741,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     "meter_roles":role_diagnostic,
                     "inventory_devices":len(audit_devices),
                     "inventory_complete":inventory_provenance.get("complete") is True,
+                    "targeted_status":dict(targeted_diagnostics),
                 }
                 if role_diagnostic.get("outcome")=="unavailable":
                     result["answer"]["validation_issues"].append(
@@ -1844,6 +1865,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 "model_intent_planning_skipped": True,
                 "model_investigation_attempted": factual_objective is None,
                 "factual_objective": factual_objective,
+                "targeted_status":dict(targeted_diagnostics),
             }
         if semantic_failure is not None:
             result["answer_mode"] = "semantic_fallback_investigation"
@@ -1857,6 +1879,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 "inventory_complete": inventory_provenance.get("complete") is True,
                 "target_verified": True,
                 "model_investigation_attempted": False,
+                "targeted_status":dict(targeted_diagnostics),
             }
         if semantic is not None:
             result["semantic_plan"] = semantic.to_dict()
