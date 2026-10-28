@@ -91,10 +91,14 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                 def label(e:dict)->str:
                     return (safe_string(e.get("name"),32)+"="+safe_string(e.get("value"),45)
                             +" at "+safe_string(e.get("date") or e.get("time"),53))
-                add(f"{ref}: {len(selected)} target events returned; newest {label(selected[0])}; oldest {label(selected[-1])}. "
-                    "This is the returned event window, NOT complete coverage "
-                    "of an earlier log warning. Driver status events are "
-                    "NOT device heartbeats.")
+                raw_total=data.get("count")
+                extra=(f" ({len(selected)} projected from {raw_total} returned source rows)"
+                       if isinstance(raw_total,int) and raw_total>len(selected)
+                       else "")
+                add(f"{ref}: {len(selected)} target events displayed{extra}; newest {label(selected[0])}; oldest {label(selected[-1])}. "
+                    "This is the PROJECTED event window, not a guarantee "
+                    "that older source commands are represented. Driver "
+                    "status events are NOT device heartbeats.")
             if scoped:
                 for issuer in data.get("issuer_apps",[])[:8]:
                     if not isinstance(issuer,dict):
@@ -219,11 +223,17 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
         conclusion=("The device is reported offline with stale telemetry. "
                     "Its physical failure mechanism is not established; power, "
                     "network and device configuration still require discrimination.")
-    elif any("excessive hub load" in m or "ran for" in m for m in log_messages):
-        conclusion=("Repeated runtime/performance warnings are recorded for "
-                    "this device. A reported online network state does not "
-                    "refute slow driver execution. Its contribution to wider "
-                    "hub instability is not independently verified.")
+    elif any("ran for" in m for m in log_messages):
+        conclusion=("The returned logs report prolonged driver-method "
+                    "executions on this device. An online network state does "
+                    "not refute a slow callback, and the mechanism and "
+                    "hub-wide impact have not been independently verified.")
+    elif any("excessive hub load" in m for m in log_messages):
+        conclusion=("The returned logs contain generic excessive-load "
+                    "warnings for this device, but this sampled log evidence "
+                    "does not include an independently timed slow-driver "
+                    "method. Its cause and measured contribution to hub-wide "
+                    "performance remain unverified.")
     else:
         conclusion="These observations establish reported symptoms, not a verified root cause."
     if issuing_apps and any("excessive hub load" in m or "ran for" in m
@@ -232,8 +242,9 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
             f"{safe_string(x.get('name'),58)} (app {safe_string(x.get('appId'),16)})"
             for x in issuing_apps[:5])
         conclusion+=(" Automations observed issuing commands to this device: "
-                     +source_apps+". These are investigation leads, not "
-                     "proof that a caller caused the long-running operation.")
+                     +source_apps+". These caller identities are verified "
+                     "for the sampled device history, not proof that any "
+                     "caller caused a particular load warning or callback.")
     lines=["**What the target's sources establish**",
            *["- "+fact for fact in facts[:10]],"",
            "**Supported conclusion:** "+conclusion,"",
@@ -257,6 +268,8 @@ def focused_model_view(operation:str,projected:Mapping[str,Any],
                 and not str(e.get("name","")).startswith("command-")]
         return {"issuer_apps":projected.get("issuer_apps",[])[:10],
                 "count":projected.get("count"),
+                "displayed_event_rows":projected.get("returned_event_rows"),
+                "event_rows_omitted_from_model":projected.get("event_rows_omitted_from_model"),
                 "events":commands[:20]+states[:5],
                 "source_complete":False}
     if operation!="hub_get_logs" or not focus_ids:return dict(projected)
