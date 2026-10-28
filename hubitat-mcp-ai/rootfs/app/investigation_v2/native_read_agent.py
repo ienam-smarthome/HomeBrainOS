@@ -396,7 +396,13 @@ async def run_native_read_agent(
             # General evidence-coverage critique, not question-word routing.
             # A model must not call a noisy INFO page a log error audit.
             # One bounded extra model opportunity can request a better read.
-            unfiltered_log_gap = any(
+            severity_read_completed = any(
+                w.get("operation") == "hub_get_logs"
+                and str(w.get("read_filters", {}).get("level", "")).lower()
+                in ("warn", "error")
+                for w in witnesses
+            )
+            unfiltered_log_gap = not severity_read_completed and any(
                 isinstance(w.get("source_data"), dict)
                 and isinstance(w["source_data"].get("log_summary"), dict)
                 and w["source_data"]["log_summary"].get(
