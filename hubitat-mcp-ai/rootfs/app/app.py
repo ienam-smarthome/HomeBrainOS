@@ -103,7 +103,8 @@ from investigation_v2.intent_boundary import incompatible_v2_control_request
 from investigation_v2.factual_objective import verified_factual_objective
 from investigation_v2.replay_scorecard import replay_scorecard
 from investigation_v2.temporal_scope import explicit_incident_window
-from investigation_v2.semantic_plan import semantic_plan
+from investigation_v2.semantic_plan import SemanticPlan, semantic_plan
+from investigation_v2.targeted_status import current_status_attributes, read_verified_target_status
 from investigation_v2.role_enrichment import enrich_measurement_roles
 from investigation_v2.semantic_execute import execute_inventory_plan, ground_named_inventory_plan, ground_current_attribute_request
 from investigation_v2.measurement_semantics import load_operator_meter_roles
@@ -1516,6 +1517,72 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                         payload.question, audit_devices)
                 except ValueError:
                     candidates = ()
+                # Exact, single-device current switch+level read: after a
+                # COMPLETE ID-only inventory resolves a unique user-named
+                # target, read just that device's live attributes through a
+                # live-schema-approved READ tool. Never infer state from
+                # identity cache, model output, or an earlier write receipt.
+                if (len(candidates)==1
+                        and inventory_provenance.get("complete") is True
+                        and inventory_provenance.get("projection")=="identity_only"):
+                    _id, _resolved, _method = resolve_verified_device_subjects(
+                        payload.question, audit_devices)
+                    wanted = current_status_attributes(
+                        payload.question, [item["label"] for item in _resolved])
+                    if wanted:
+                        targeted_started = time.perf_counter()
+                        targeted = None
+                        try:
+                            targeted = await read_verified_target_status(
+                                mcp, _id[0], wanted_attributes=wanted)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            logger.warning(
+                                "V2 targeted current read unavailable: %s",
+                                type(exc).__name__)
+                        targeted_read_ms=round(
+                            (time.perf_counter()-targeted_started)*1000)
+                        if targeted is not None:
+                            snapshot, state_provenance = targeted
+                            source_identity = next(
+                                item for item in audit_devices
+                                if str(item.get("id")) == _id[0])
+                            target_device = {
+                                **source_identity,
+                                "attributes": snapshot["attributes"],
+                            }
+                            current_plan = SemanticPlan(
+                                mode="inventory",scope="named",
+                                device_name=_resolved[0]["label"],
+                                attributes=tuple(wanted),
+                                aggregation="list",limit=1,
+                            )
+                            report = execute_inventory_plan(
+                                current_plan, [target_device], state_provenance)
+                            report["resolved_devices"] = _resolved
+                            report["resolution_method"] = "verified_targeted_current"
+                            report["elapsed_ms"] = round(
+                                (time.perf_counter()-started)*1000)
+                            report["semantic_diagnostics"] = {
+                                "phase":"verified_targeted_current",
+                                "outcome":"success",
+                                "identity_inventory_ms":identity_inventory_ms,
+                                "full_inventory_ms":0,
+                                "inventory_ms":round(
+                                    (time.perf_counter()-inventory_started)*1000),
+                                "targeted_read_ms":targeted_read_ms,
+                                "planning_ms":0,
+                                "inventory_projection":"identity_only",
+                                "inventory_devices":len(audit_devices),
+                                "inventory_complete":True,
+                                "target_id":_id[0],
+                                "target_verified":True,
+                                "read_source":state_provenance["source"],
+                                "state_scope":state_provenance["scope"],
+                                "model_intent_planning_skipped":True,
+                            }
+                            return report
                 # Broad and ambiguous questions still require a complete
                 # state/capability vocabulary. The identity-only projection
                 # must never feed a whole-house state result.
