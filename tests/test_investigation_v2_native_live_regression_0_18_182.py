@@ -154,3 +154,25 @@ async def test_verified_target_can_be_lazily_confirmed_without_full_device_listi
     assert out["native_diagnostics"]["successful_reads"]==1
     assert out["native_diagnostics"]["verified_source_ids"]==1
     assert executor.calls[0][1]["args"]["deviceId"]=="7103"
+
+
+
+@pytest.mark.asyncio
+async def test_fluid_model_cannot_make_info_only_logs_look_like_full_audit():
+    mcp=FakeMCP([READ_DIAG])
+    executor=FakeExecutor(mcp,[LIVE_INFO])
+    step=0
+    async def model(messages,tools):
+        nonlocal step
+        step+=1
+        if step==1:
+            return {"tool_calls":[call("hub_get_logs", limit=100)]}
+        return {"content":"There are no critical system failures."}
+    output=await run_native_read_agent(
+        question="check hub logs for any issues",chat=model,
+        mcp=mcp,executor=executor)
+    assert output["native_diagnostics"]["reads_executed"]==1
+    assert output["answer"]["human_review_required"] is True
+    assert "warning_error_log_coverage_unverified" in output["answer"]["validation_issues"]
+    assert "not proof that there are no WARN/ERROR entries" in output["answer"]["text"]
+    assert "no WARN/ERROR in returned sample" in output["answer"]["text"]
