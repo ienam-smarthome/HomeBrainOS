@@ -86,6 +86,18 @@ def test_bounded_complete_source_yields_names_not_raw_code_or_secrets():
     assert "cause" in result["source_interpretation_limit"]
 
 
+def test_short_untrusted_source_is_present_but_not_analysed():
+    snippet="def handler(): private_token = 'abc123'; send('private-data')"
+    p=source_read_summary({"id":"4080","type":"app","source":snippet,
+                           "code":"// private implementation"},
+                          requested_type="app",requested_id="4080")
+    assert p["source_content_available"] is True
+    assert p["source_read_usable_for_method_reasoning"] is False
+    assert p["source_read_status"]=="source_text_present_but_not_extractable"
+    assert "private-data" not in str(p)
+    assert "abc123" not in str(p)
+
+
 def test_source_partial_or_identity_mismatch_fail_closed():
     body="def runQ(){\n log.debug 'the callback ran and stalled'\n}\n"
     for value in (
