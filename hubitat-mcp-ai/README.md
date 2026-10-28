@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.194**.
+Current add-on version: **0.18.195**.
+
+v0.18.195 projects source-attested nested app settings-page metadata instead of empty app reports, and gives the model a concrete, read-only `hub_get_source` argument contract with independently verified app/driver IDs after malformed proposals. Source-code contents and private setting values remain excluded. See [release notes](CHANGELOG-0.18.195.md).
 
 v0.18.194 enforces device-scoped event-history reads when a uniquely verified target has matching WARN evidence, rejects repeated invalid proposals before they waste more investigation rounds, and skips redundant final model synthesis after those failures. Explicit hub/location history remains available. See [release notes](CHANGELOG-0.18.194.md).
 
