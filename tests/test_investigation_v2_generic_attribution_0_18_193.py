@@ -52,7 +52,7 @@ def history():
     # The gateway's 92 historical events include 80 projected rows; keep
     # this source cap distinct from the command issuer summary.
     entries.extend(
-        {"name":"status","date":f"2026-10-23T04:18:{i:02d}.258+0100",
+        {"name":"status","date":f"2026-10-23T04:{18+i//60:02d}:{i%60:02d}.258+0100",
          "value":"online","producedBy":{"deviceId":"7934","name":"Google Nest Hub"}}
         for i in range(88)
     )
