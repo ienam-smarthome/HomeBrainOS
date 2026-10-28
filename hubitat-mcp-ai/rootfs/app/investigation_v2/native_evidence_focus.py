@@ -198,6 +198,17 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
 
 def focused_model_view(operation:str,projected:Mapping[str,Any],
                        focus_ids:Sequence[str])->dict[str,Any]:
+    if operation=="hub_list_device_events" and focus_ids:
+        events=projected.get("events")
+        events=events if isinstance(events,list) else []
+        commands=[e for e in events if isinstance(e,dict)
+                  and str(e.get("name","")).startswith("command-")]
+        states=[e for e in events if isinstance(e,dict)
+                and not str(e.get("name","")).startswith("command-")]
+        return {"issuer_apps":projected.get("issuer_apps",[])[:10],
+                "count":projected.get("count"),
+                "events":commands[:20]+states[:5],
+                "source_complete":False}
     if operation!="hub_get_logs" or not focus_ids:return dict(projected)
     summary=projected.get("log_summary")
     if not isinstance(summary,dict):return dict(projected)
