@@ -139,6 +139,7 @@ def focused_model_view(operation:str,projected:Mapping[str,Any],
         "newest_returned":summary.get("newest_returned"),
         "truncated_or_partial":summary.get("truncated_or_partial"),
         "warning_error_groups":groups[:8],
+        "target_group_count":len(groups),
         "other_group_count":max(0,summary.get("warning_error_group_count",0)-len(groups)),
         "warning_error_audit_complete":False},"source_complete":False}
 
