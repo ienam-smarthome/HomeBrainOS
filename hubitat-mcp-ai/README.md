@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.182**.
+Current add-on version: **0.18.183**.
+
+v0.18.183 strengthens the native read agent with operation-specific argument contracts, a timeout circuit breaker to avoid repeating expensive failed full inventories, and source-backed answer fallback when the LLM synthesis fails. Read-only behavior is preserved and production Main Ask remains unchanged. [Release notes](CHANGELOG-0.18.183.md).
 
 v0.18.182 fixes the native MCP READ agent after two live trials: log data returned as `entries` now provides severity-grouped WARN/ERROR evidence instead of noisy INFO chatter, IDs attested by structured log sources may support scoped follow-ups, a lazy identity lookup avoids forcing full device inventory, unknown gateway fields are exposed as projection gaps, and a bounded final answer attempt prevents otherwise blank conclusions. See [release notes](CHANGELOG-0.18.182.md).
 

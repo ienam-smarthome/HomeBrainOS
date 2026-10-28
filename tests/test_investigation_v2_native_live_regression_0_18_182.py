@@ -104,7 +104,7 @@ async def test_model_must_complete_explanation_after_no_approved_reads():
         step+=1
         if step == 1:
             return {"tool_calls":[call("hub_get_logs", level="warn", limit=100)]}
-        if tools and step == 2:
+        if tools and step in (2, 3):
             return {"tool_calls":[{"function":{"name":"hub_manage_rules",
                                                  "arguments":{"command":"delete"}}}]}
         assert tools == []
