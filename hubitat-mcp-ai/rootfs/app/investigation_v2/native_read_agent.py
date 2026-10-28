@@ -26,7 +26,7 @@ from .native_tool_protocol import operation_problem, guidance_for, source_highli
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
-from .native_metrics_evidence import project_metrics
+from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
     useful_discovery_fingerprint, repeated_log_evidence, repeated_event_evidence,
@@ -243,6 +243,8 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
         projected.update(app_config_summary(data))
     elif operation in ("hub_get_metrics", "hub_get_performance_stats"):
         projected.update(project_metrics(data))
+    elif operation == "hub_get_memory_history":
+        projected = project_memory_history(data)
     elif operation == "hub_get_source":
         # Do not leak raw source strings through the generic projection.
         # Source-code analysis needs a separately reviewed, bounded reader.
