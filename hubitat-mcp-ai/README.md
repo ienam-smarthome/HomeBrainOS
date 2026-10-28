@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.181**.
+Current add-on version: **0.18.182**.
+
+v0.18.182 fixes the native MCP READ agent after two live trials: log data returned as `entries` now provides severity-grouped WARN/ERROR evidence instead of noisy INFO chatter, IDs attested by structured log sources may support scoped follow-ups, a lazy identity lookup avoids forcing full device inventory, unknown gateway fields are exposed as projection gaps, and a bounded final answer attempt prevents otherwise blank conclusions. See [release notes](CHANGELOG-0.18.182.md).
 
 v0.18.181 introduces an explicit experimental **native MCP READ agent** in V2: the configured model selects live read gateways and investigates across hub, app, rule and device domains without forced device inventory or keyword routing. Host security validates every operation/ID/schema and preserves bounded source evidence. The legacy V2 evaluator remains selectable for A/B comparison; production Main Ask writes remain unchanged. See [release notes](CHANGELOG-0.18.181.md).
 
