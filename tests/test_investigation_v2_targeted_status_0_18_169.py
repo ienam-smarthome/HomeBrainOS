@@ -182,7 +182,8 @@ async def test_source_failure_reports_a_bounded_reason_without_source_data():
     fake = FakeMCP(device_id="7829")
     assert await read_verified_target_status(
         fake, "7828", diagnostics=diagnostics) is None
-    assert diagnostics == {"outcome": "source_id_missing_or_mismatched"}
+    assert diagnostics == {"outcome": "source_id_missing_or_mismatched",
+                           "gateway_read_attempted": True}
     assert "UNTRUSTED" not in json.dumps(diagnostics)
     diagnostics.clear()
     fake = FakeMCP(expose=False)
