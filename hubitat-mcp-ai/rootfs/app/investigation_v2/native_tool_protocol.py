@@ -61,6 +61,17 @@ def guidance_for(code: str) -> str | None:
             "for mode='devices' omit level entirely. Do not repeat the invalid pair.",
         "missing_required_operation_fields":
             "A concrete read operation lacks required input (for example deviceId for hub_get_device). Use homebrain_find_device to resolve a named device against verified live identity, then pass that deviceId.",
+        "target_device_history_scope_missing":
+            "This history request has no deviceId/appId and would read hub or "
+            "location events, not the independently verified target device. "
+            "Pass the previously verified deviceId to hub_list_device_events, "
+            "or explicitly select a hub/location event mode when that "
+            "separate source is genuinely needed. Do not assume these "
+            "histories are interchangeable.",
+        "repeated_invalid_read_proposal":
+            "The same READ operation failed argument/scope checks repeatedly. "
+            "Stop proposing that malformed read; choose another independently "
+            "authorised source or report the evidence limitation.",
         "catalog_device_filter_unsupported":
             "hub_list_drivers is a global catalogue and cannot identify the "
             "driver of one device via deviceId. Read the verified device "
