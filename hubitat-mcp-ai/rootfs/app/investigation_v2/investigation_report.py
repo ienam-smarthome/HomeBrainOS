@@ -142,7 +142,17 @@ def format_investigation_report(
                 except (ValueError, TypeError, OverflowError):
                     pass
 
-    source_incident = latest_switch_incident(case) if window is None else None
+    candidate_incident = latest_switch_incident(case) if window is None else None
+    # Promote to the primary causal narrative only when a SOURCE-RECOVERED
+    # observation of an explicitly configured motion sensor exists. Generic
+    # offline/network fault investigations retain their older adverse-event
+    # link analysis, even if a command and switch report were paired.
+    source_incident = (
+        candidate_incident
+        if candidate_incident is not None
+        and candidate_incident["recent_motion_observations"] > 0
+        else None
+    )
     if source_incident is not None:
         lines.extend(["", "**Latest OFF/ON incident — source evidence**",
                       *source_incident["lines"]])
