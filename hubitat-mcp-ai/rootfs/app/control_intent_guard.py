@@ -59,6 +59,53 @@ _EXPLICIT_READ_ONLY = re.compile(
 )
 
 
+# A shared, permission-only polarity check. This never selects a device,
+# operation or tool; positive writes still need independent host approval.
+_INDEPENDENT_ACTION = re.compile(
+    r"(?i)(?:[.!?;:,]\s*|\b(?:and(?:\s+then)?|but|instead)\s+)"
+    r"(?:(?:also|then|instead|now)\s+)?(?:please\s+)?"
+    r"(?P<verb>turn|switch|set|change|create|delete|disable|enable|"
+    r"restart|reboot|block|unblock|allow|configure|remove|pause|resume)\b"
+)
+_NEGATED_OBJECT = re.compile(
+    r"(?i)^\s*(?:nothing\b|none\b|neither\b|no\s+)"
+)
+_INFORMATIONAL_RESULT = re.compile(
+    r"(?i)^\s*(?:an?\s+|the\s+)?(?:report|summary|explanation|"
+    r"analysis|comparison|review|assessment|plan|draft|table|list|"
+    r"recommendation|timeline)\b"
+)
+_QUESTION_LEAD = re.compile(
+    r"(?i)^\s*(?:why|how|what|when|where|which|is|are|was|were|"
+    r"did|does|do|could|can|should|would|will)\b"
+)
+
+
+def independent_affirmative_mutation_clause(
+    prompt: str, *, start: int = 0,
+) -> bool:
+    """An independent positive imperative, not a quoted or negated action.
+
+    This predicate *only denies* read-only admission; it cannot authorise a
+    write. Textual deliverables are not hub-state modifications.
+    """
+    text = str(prompt or "")
+    part = text[max(0, start):]
+    first_question = part.find("?")
+    question_lead = bool(_QUESTION_LEAD.match(part))
+    for match in _INDEPENDENT_ACTION.finditer(part):
+        if question_lead and first_question >= 0 and match.start() < first_question:
+            continue
+        target = part[match.end():]
+        if _NEGATED_OBJECT.match(target):
+            continue
+        if (match.group("verb").casefold() in ("create", "change")
+                and _INFORMATIONAL_RESULT.match(target)):
+            continue
+        return True
+    return False
+
+
 def explicitly_read_only_request(prompt: str) -> bool:
     """No-write instruction for the current action, not a route to execute.
 
@@ -76,13 +123,8 @@ def explicitly_read_only_request(prompt: str) -> bool:
     # Only a *new* independently imperative clause after a scoped READ-ONLY
     # instruction can restore write intent. Embedded historical descriptions
     # like "turn ON" and explanatory questions do not.
-    independent_later_write = re.search(
-        r"(?i)[.!?;]\s+(?:(?:also|then|instead)\s+)?"
-        r"(?:please\s+)?(?:turn|switch|set|change|create|delete|"
-        r"disable|enable|restart|block|unblock|allow|configure)\b",
-        text[match.end():],
-    )
-    return independent_later_write is None
+    return not independent_affirmative_mutation_clause(
+        text, start=match.end())
 
 
 def unqualified_immediate_clause(prompt: str) -> bool:
@@ -196,4 +238,5 @@ __all__ = [
     "unqualified_immediate_clause", "semantic_control_clause_eligible",
     "unsafe_control_prompt", "explicitly_read_only_request",
     "needs_sensitive_control_confirmation",
+    "independent_affirmative_mutation_clause",
 ]

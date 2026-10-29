@@ -27,7 +27,7 @@ button:disabled{opacity:.6}#status{display:block;margin-top:12px;overflow-wrap:a
 No device control, rule edits or automatic background comparison.</p>
 <p><strong>Want to turn a light on or off?</strong> Use the
 <a href="./">main HomeBrain Ask interface</a>. This V2 panel tests
-read-only status questions, history and investigations only; it cannot send
+general read-only questions about your devices, rules, automations, history and system health; it cannot send
 a control command.</p>
 <section>
 <label for="secret">V2 test access token (set in add-on configuration)</label>
@@ -36,9 +36,9 @@ a control command.</p>
 <p><small id="rememberHelp">Optional. Saves a revocable browser sign-in cookie, not your raw access token. Use only on a trusted device.</small></p>
 <p id="savedStatus" role="status" aria-live="polite"></p>
 <button type="button" id="forgetAccess" hidden>Forget saved access</button>
-<label for="question">Investigation question</label>
-<textarea id="question" placeholder="Why did Livingroom Light 1 stay on overnight?"></textarea>
-<p><small>Native READ agent begins with tool discovery and requires no device ID.
+<label for="question">Ask HomeBrain about your Hubitat system</label>
+<textarea id="question" placeholder="Why did a light stay on? Which devices are offline? What is using power?"></textarea>
+<p><small>Native READ agent interprets the objective and chooses its own verified read tools; no device ID is required.
 Legacy V2 still uses a verified Hubitat inventory for individual-device tests.</small></p>
 <label for="agentMode">Investigation engine</label>
 <select id="agentMode" style="width:100%;padding:10px;background:#111115;color:#fff;border:1px solid #555;border-radius:7px">
