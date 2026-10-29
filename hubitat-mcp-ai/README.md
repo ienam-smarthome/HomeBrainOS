@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.235**.
+Current add-on version: **0.18.236**.
 
 v0.18.232 selects the actual event chain around the user's incident time instead of newest telemetry, includes setpoint/operating-state changes and offers a natural evidence-verified timeline when model reasoning cannot produce cited JSON. [Release notes](CHANGELOG-0.18.232.md).
 
