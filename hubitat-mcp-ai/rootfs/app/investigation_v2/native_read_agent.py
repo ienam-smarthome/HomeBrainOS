@@ -1425,9 +1425,10 @@ async def run_native_read_agent(
                 "different zones, and a source window is not guaranteed complete.",
                 "",
             ])
+    driver_blocker_lines = []
     if (source_readiness is not None and source_readiness.get("status")
             == "driver_source_unavailable_no_attested_id"):
-        lines.extend([
+        driver_blocker_lines = [
             "**Verified driver-source blocker**",
             "The target's configuration (Read #"
             + str(source_readiness.get("evidence_read"))
@@ -1435,7 +1436,7 @@ async def run_native_read_agent(
             "independently attested driver code ID. The internal "
             "implementation was not inspected; no method or CPU cause "
             "can be derived from source code in this investigation.", "",
-        ])
+        ]
     if projections_empty:
         lines.extend([
             "**Uninterpreted source fields**",
@@ -1446,8 +1447,12 @@ async def run_native_read_agent(
         ("**Incident assessment — source-bound evidence**"
          if source_bound_incident
          else "**Independent claim validation — source-bound evidence**"),
-        answer_text, "", "**Verified read coverage**"
+        answer_text, "",
     ])
+    # The supported answer comes first; a source-code blocker is a limit
+    # on deeper attribution, not the primary answer to the question.
+    lines.extend(driver_blocker_lines)
+    lines.append("**Verified read coverage**")
     for witness in witnesses[:12]:
         op = _text(witness["operation"], 64)
         details = witness["source_data"]
