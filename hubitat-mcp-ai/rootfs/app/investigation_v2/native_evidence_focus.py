@@ -174,6 +174,22 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     add(f"{ref}: target device is referenced by "
                         f"{safe_string(data.get('count'),10)} apps: {app_names}. "
                         "These are dependency references, not confirmed command issuers.")
+        elif op=="hub_get_source":
+            status=data.get("source_read_status", "unverified")
+            graph=data.get("static_method_paths")
+            if isinstance(graph,dict) and data.get("source_complete") is True:
+                rows=graph.get("method_paths",[])
+                focused=[row for row in rows if isinstance(row,dict)
+                         and (row.get("declared_method_calls")
+                              or row.get("platform_api_mentions"))]
+                add(f"{ref}: verified complete source; "
+                    f"{safe_string(graph.get('recognized_method_count'),12)} "
+                    "lexically recognised methods. Static call references "
+                    f"(not execution proof): {safe_string(focused[:3],440)}.")
+            else:
+                add(f"{ref}: source inspection not available "
+                    f"({safe_string(status,75)}); no driver/app execution "
+                    "path was verified.")
         elif op=="hub_get_app_config":
             app_id=data.get("requested_app_id") or data.get("appId") or data.get("id")
             name=data.get("label") or data.get("name") or data.get("appName")
