@@ -584,14 +584,25 @@ async def run_native_read_agent(
                 break
             causal_coverage_challenge_used = True
             if causal_coverage_gap.get("kind") == "target_generic_warning_origin_unverified":
-                instruction = (
-                    "The device's app command issuers are already verified, "
-                    "but no command in the bounded sample is linked to this "
-                    "separate generic load-warning interval. Do not claim "
-                    "the device's callers are unknown. To clarify the driver "
-                    "mechanism, consider a permitted broader/historical WARN "
-                    "read or independent performance/source evidence. "
-                    "A generic warning alone does not prove slow callbacks.")
+                if causal_coverage_gap.get("candidate_read") is None:
+                    instruction = (
+                        "The target-specific WARN log has already been sampled "
+                        "and app callers were independently observed at other "
+                        "times. The generic warning remains causally "
+                        "unattributed. Do not retry the same WARN scope with "
+                        "a larger limit. Choose only independently grounded "
+                        "new evidence (a distinct supported historical window, "
+                        "attested source, or runtime data), or finish with the "
+                        "verified limits. No read is required to justify an "
+                        "unknown root cause.")
+                else:
+                    instruction = (
+                        "The device's app command issuers are already verified, "
+                        "but no command in the bounded sample is linked to this "
+                        "separate generic load-warning interval. Do not claim "
+                        "the device's callers are unknown. A target-specific "
+                        "WARN read or independent source/performance evidence "
+                        "could discriminate mechanisms, without proving them.")
             elif causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
                 instruction = (
                     "The device event history ALREADY attests calling apps "
