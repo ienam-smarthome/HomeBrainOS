@@ -38,6 +38,7 @@ from .native_source_followup import source_path_followup
 from .native_focus_anchor import verified_device_focus
 from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
+from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_read_contracts import (read_contract_feedback,
                                     advertised_operation_contracts)
 from .native_metrics_evidence import project_metrics, project_memory_history
@@ -1212,6 +1213,13 @@ async def run_native_read_agent(
     # This does not affect model-controlled read selection or other topics.
     preliminary_incident = incident_attribution_packet(
         witnesses, sorted(focus_ids))
+    # Evidence-class diversity is a measurable signal that a final extra
+    # model-only JSON claim selection is unlikely to add new source facts.
+    # Only apply after an explicit READ budget boundary, and only after
+    # at least two distinct read operations and two fact classes.
+    readiness = evidence_readiness(
+        witnesses, claim_catalog(witnesses, sorted(focus_ids)),
+        stop_reason=reason)
     if (not answer_text and preliminary_incident is not None
             and source_bound_incident_required(preliminary_incident)
             and preliminary_incident.get("scoped_event_history_available")):
@@ -1261,6 +1269,10 @@ async def run_native_read_agent(
                  or sum(failed_scoped_reads.values()) >= 2
                  or redundant_evidence_reads >= 2)):
         final_synthesis_skipped_reason = "source_evidence_at_investigation_limit"
+    if (witnesses and not answer_text
+            and final_synthesis_skipped_reason is None
+            and readiness["host_factual_brief_ready"]):
+        final_synthesis_skipped_reason = "multi_source_factual_brief_ready"
     if (witnesses and not answer_text and final_synthesis_skipped_reason is None
             and deadline - time.monotonic() > 2):
         # The read loop may end at a budget, repeated proposal or source gap.
@@ -1476,6 +1488,14 @@ async def run_native_read_agent(
             "Gateway reads returned data not yet understood by the "
             "evidence adapter: " + ", ".join(projections_empty[:5]) + ".", "",
         ])
+    # Lead broad, multi-source answers with a short source-grounded brief.
+    # The full validated claim list remains available below. Do not replace
+    # a targeted causal incident assessment with a general template.
+    if (not source_bound_incident
+            and readiness["distinct_verified_fact_kinds"] >= 2):
+        lead = evidence_brief(validated_catalog)
+        if lead:
+            lines.extend([lead, ""])
     lines.extend([
         ("**Incident assessment — source-bound evidence**"
          if source_bound_incident
@@ -1623,6 +1643,11 @@ async def run_native_read_agent(
                 for (op, target), count in sorted(failed_scoped_reads.items())
             ],
             "final_synthesis_skipped_reason": final_synthesis_skipped_reason,
+            "general_evidence_readiness": readiness,
+            "source_grounded_brief_published": bool(
+                not source_bound_incident
+                and readiness["distinct_verified_fact_kinds"] >= 2
+                and validated_catalog),
             "timed_out_operations": [f"{name}:{operation}"
                                      for name, operation in sorted(timed_out_operations)],
             "source_highlights": (focused_highlights(witnesses, sorted(focus_ids))
