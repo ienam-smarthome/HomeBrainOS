@@ -203,4 +203,21 @@ def verify_model_explanation(
     }
 
 
-__all__ = ["verify_model_explanation"]
+def narrative_followup_eligible(
+    planning_model_ms: int, planning_model_calls: int, seconds_left: float,
+) -> bool:
+    """Do not add a short model call after consistently slow planning calls.
+
+    All inputs are measured durations, never a question-specific word or
+    device rule. A previously verified in-loop draft always wins separately.
+    """
+    if (type(planning_model_ms) is not int or planning_model_ms < 0
+            or type(planning_model_calls) is not int
+            or planning_model_calls < 1
+            or type(seconds_left) not in (int, float)
+            or not (8.0 <= seconds_left < 181.0)):
+        return False
+    return planning_model_ms / planning_model_calls <= 3000
+
+
+__all__ = ["verify_model_explanation", "narrative_followup_eligible"]
