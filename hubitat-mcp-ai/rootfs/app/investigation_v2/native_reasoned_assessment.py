@@ -23,7 +23,7 @@ _CONFIDENT = re.compile(
     r"(?i)\b(?:definitely|certainly|proven|proved|undeniably|"
     r"confirmed cause|root cause is|must have been)\b"
 )
-_NUMBER = re.compile(r"(?<!\w)\d{3,}(?!\w)")
+_NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?!\d)")
 
 
 def candidate_prompt() -> str:
