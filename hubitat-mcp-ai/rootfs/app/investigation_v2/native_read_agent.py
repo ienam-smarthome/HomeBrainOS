@@ -1404,6 +1404,12 @@ async def run_native_read_agent(
         if isinstance(w.get("source_data"), dict)
         and w["source_data"].get("projection_empty") is True
     ]
+    # Keep the user-facing answer short, while retaining every verified
+    # detail, failed read and confidence limit in the technical report.
+    concise_answer = ""
+    if (not source_bound_incident
+            and readiness["host_factual_brief_ready"]):
+        concise_answer = evidence_brief(validated_catalog)
     lines = []
     if info_only_logs:
         lines.extend([
@@ -1594,7 +1600,8 @@ async def run_native_read_agent(
         )
     return {
         "answer_mode": "native_mcp_investigation",
-        "answer": {"text": text, "displayed_record_ids": [],
+        "answer": {"text": concise_answer or text,
+                   "displayed_record_ids": [],
                    "omitted_material_record_ids": [],
                    "validation_issues": validation_issues,
                    "root_cause_verified": False,
@@ -1648,6 +1655,9 @@ async def run_native_read_agent(
                 not source_bound_incident
                 and readiness["distinct_verified_fact_kinds"] >= 2
                 and validated_catalog),
+            "concise_answer_source": (
+                "host_verified_claim_catalog" if concise_answer
+                else "full_source_report"),
             "timed_out_operations": [f"{name}:{operation}"
                                      for name, operation in sorted(timed_out_operations)],
             "source_highlights": (focused_highlights(witnesses, sorted(focus_ids))
