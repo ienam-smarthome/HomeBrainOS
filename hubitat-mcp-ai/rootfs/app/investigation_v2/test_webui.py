@@ -21,6 +21,12 @@ button:disabled{opacity:.6}#status{display:block;margin-top:12px;overflow-wrap:a
 .actionRow{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px}
 #controlHelp{margin-top:12px;padding:14px;border:1px solid #557e6d;border-radius:8px;background:#17251e}
 #controlHelp p{margin:4px 0 12px}
+.answerProse{background:#15151a;border-radius:10px;padding:16px;line-height:1.65;overflow-wrap:anywhere}
+.answerProse p{color:#f2f2f5;margin:0 0 12px}
+.answerProse p:last-child{margin-bottom:0}
+.answerProse ul{margin:6px 0 14px;padding-left:22px}
+.answerProse li{margin:5px 0}
+.answerProse strong{color:#fff}
 </style></head><body><main>
 <h1>Investigation V2 · Test</h1>
 <p><a href="./">HomeBrain dashboard</a> · Manual read-only experiment. Normal Ask continues using V1.
@@ -77,13 +83,46 @@ Exact timestamp scores do not measure reasoning correctness. Source coverage can
 <h2>V2 investigation summary</h2>
 <p id="resolvedDevices"></p>
 <div><button type="button" id="copyAnswer">Copy answer</button> <button type="button" id="copyReport">Copy full report</button></div>
-<pre id="answer"></pre>
+<div id="answer" class="answerProse" role="region" aria-label="Source-verified answer"></div>
 <h2>Measured checks</h2><div class="metrics" id="metrics"></div>
 <details id="technicalReport"><summary>Investigation details and full source-backed answer</summary><button type="button" id="copyDetails">Copy investigation details</button><pre id="details"></pre></details>
 </section>
 </main><script>
 const el=id=>document.getElementById(id);
 let savedAccess=false;
+let verifiedAnswerText='';
+// Render only bounded, recognised Markdown emphasis and bullets.
+// Every dynamic character becomes a text node: no HTML/script injection.
+function inlineAnswer(target,value){
+  for(const token of String(value).split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g)){
+    if(!token)continue;
+    if(token.startsWith('**')&&token.endsWith('**')){
+      const strong=document.createElement('strong');
+      strong.textContent=token.slice(2,-2);target.append(strong);
+    }else if(token.startsWith('*')&&token.endsWith('*')){
+      const em=document.createElement('em');
+      em.textContent=token.slice(1,-1);target.append(em);
+    }else target.append(document.createTextNode(token));
+  }
+}
+function renderVerifiedAnswer(value){
+  const root=el('answer');root.replaceChildren();
+  let list=null;
+  for(const raw of String(value).split(/\r?\n/)){
+    const line=raw.trim();
+    if(!line){list=null;continue}
+    const bullet=/^[-*]\s+(.+)$/.exec(line);
+    if(bullet){
+      if(!list){list=document.createElement('ul');root.append(list)}
+      const item=document.createElement('li');
+      inlineAnswer(item,bullet[1]);list.append(item);
+    }else{
+      list=null;
+      const item=document.createElement('p');
+      inlineAnswer(item,line);root.append(item);
+    }
+  }
+}
 const authUrl=path=>new URL(path,new URL('./',location.href));
 function showSavedAccess(value){
   savedAccess=value===true;
@@ -197,10 +236,13 @@ el('copyControlQuestion').onclick=async()=>{
     el('status').textContent=' Copied request. Open main Ask and paste it to request the command.';
   }catch(error){el('status').textContent=' '+error.message}
 };
-el('copyAnswer').onclick=()=>copyFrom('answer','V2 answer');
+el('copyAnswer').onclick=async()=>{
+  try{await copyTestText(verifiedAnswerText);el('status').textContent=' Copied V2 answer.'}
+  catch(error){el('status').textContent=' '+error.message}
+};
 el('copyDetails').onclick=()=>copyFrom('details','investigation details');
 el('copyReport').onclick=async()=>{
-  const full='Investigation V2 test\n\n'+el('answer').textContent+
+  const full='Investigation V2 test\n\n'+verifiedAnswerText+
     '\n\nInvestigation details\n'+el('details').textContent;
   try{await copyTestText(full);el('status').textContent=' Copied full report.'}
   catch(error){el('status').textContent=' '+error.message}
@@ -208,6 +250,7 @@ el('copyReport').onclick=async()=>{
 el('run').onclick=async()=>{
   const button=el('run');button.disabled=true;el('status').textContent=' Running bounded read-only investigation…';
   el('output').hidden=true;el('controlHelp').hidden=true;el('metrics').replaceChildren();
+  verifiedAnswerText='';
   try{
     const question=el('question').value.trim();
     const advanced=el('targetOverride').open;
@@ -265,7 +308,9 @@ el('run').onclick=async()=>{
     // User-facing verified answer is authoritative for the main panel.
     // report.text is deliberately a longer technical audit and must not
     // silently replace the concise answer when both are present.
-    el('answer').textContent=data.answer?.text||data.report?.text||'No answer returned';
+    verifiedAnswerText=data.answer?.text||data.report?.text||'No answer returned';
+    el('answer').textContent=verifiedAnswerText;
+    renderVerifiedAnswer(verifiedAnswerText);
     const targets=Array.isArray(data.resolved_devices)?data.resolved_devices:[];
     el('resolvedDevices').textContent=data.answer_mode==='current_group_state'
       ? 'Hubitat light inventory · read-only reported states'
