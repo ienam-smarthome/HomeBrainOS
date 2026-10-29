@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.203**.
+Current add-on version: **0.18.204**.
+
+v0.18.204 preserves independently verified device focus when the model reads the user's named target directly, and avoids discarded model-only synthesis for already source-authoritative generic warnings. [Release notes](CHANGELOG-0.18.204.md).
 
 v0.18.203 adds bounded cross-occurrence warning/state associations, deduplicates observed warning instants and prevents unscoped event-history reads once a unique target is verified. [Release notes](CHANGELOG-0.18.203.md).
 
