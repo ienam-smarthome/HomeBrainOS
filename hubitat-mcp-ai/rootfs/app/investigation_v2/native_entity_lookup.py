@@ -77,7 +77,10 @@ def choose_device(name: str, identities: Any) -> dict[str, Any]:
     if deduped:
         return {"status": "ambiguous", "matches": deduped[:8]}
     # Only uniquely *anchored* prefix searches, never interior substring.
-    if len(query) >= 8:
+    # Single-token place/group names can be shorter than eight characters
+    # (e.g. Kitchen, Hallway). Still require an anchored full-name prefix,
+    # never an interior substring, with bounded independently matched IDs.
+    if len(query) >= 5:
         prefixes = []
         for raw in identities[:1000]:
             if not isinstance(raw, dict):
