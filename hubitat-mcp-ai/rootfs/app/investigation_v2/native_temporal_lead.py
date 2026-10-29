@@ -301,11 +301,11 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
             if event["attribute"] in _ANCHORS:
                 details.append(
                     f"a `{event['attribute']}` event at {time} "
-                    f"({relative})"
+                    f"({relative})")
             elif event["attribute"] == "switch":
                 details.append(
                     f"a `switch={event['value']}` event at {time} "
-                    f"({relative})"
+                    f"({relative})")
             else:
                 minutes = int(span // 60)
                 seconds = span - minutes * 60
