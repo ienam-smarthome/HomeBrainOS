@@ -24,6 +24,7 @@ def source_read_summary(
     data: Any, *,
     requested_type: str | None = None,
     requested_id: str | None = None,
+    focus_methods: Sequence[str] = (),
 ) -> dict[str, Any]:
     raw=_unwrap(data)
     out: dict[str, Any] = {
@@ -80,9 +81,18 @@ def source_read_summary(
     total=meta.get("totalLength")
     offset=meta.get("offset",0)
     declared=meta.get("driverId") or meta.get("appId") or meta.get("id")
-    mismatch=(
-        out.get("requested_source_id") and declared is not None
-        and str(declared) != out["requested_source_id"]
+    # Request credentials are not source identity. Require a source-returned
+    # ID when a typed source read was requested. An app ID must never be
+    # accepted as driver-source identity (even when the numeric IDs coincide).
+    declared_kind = ("driver" if meta.get("driverId") is not None else
+                     "app" if meta.get("appId") is not None else None)
+    returned_id = out.get("returned_source_id")
+    mismatch = bool(
+        (out.get("requested_source_id") and
+         (returned_id is None or returned_id != out["requested_source_id"]))
+        or (out.get("requested_source_id") and declared is not None
+            and str(declared) != out["requested_source_id"])
+        or (requested_type and declared_kind and requested_type != declared_kind)
     )
     complete=(
         not mismatch and meta.get("success") is not False
@@ -117,9 +127,15 @@ def source_read_summary(
         out["declared_method_count_sample"] = len(names)
     except (ValueError, TypeError, AttributeError):
         out["method_declarations_unavailable"] = True
+    # Keep code and literal/argument content inside the host. Only report
+    # balanced candidate boundaries, names of declared local callees, and
+    # allowlisted platform API markers. This never proves a runtime branch.
+    from .native_method_paths import static_method_paths
+    out["static_method_paths"] = static_method_paths(
+        body, focus_methods=focus_methods)
     out["source_interpretation_limit"] = (
-        "Source declarations are code structure only; they do not prove "
-        "runtime execution, scheduling or cause.")
+        "Complete static source permits lexical call-path indexing, not "
+        "runtime execution, callback timing, network latency, CPU attribution or cause.")
     return out
 
 

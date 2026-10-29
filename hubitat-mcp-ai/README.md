@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.198**.
+Current add-on version: **0.18.199**.
+
+v0.18.199 adds identity-verified, privacy-filtered static Groovy method-call and platform-API evidence when a complete source read is available. This never proves executed code or the cause of a warning. [Release notes](CHANGELOG-0.18.199.md).
 
 v0.18.198 makes generic incident conclusions source-authoritative, withholding free-form model causal prose whenever incident attribution is unverified instead of relying on detectable words like “offender”. It records a per-fact evidence receipt ledger and retains model-chosen read-only investigation. [Release notes](CHANGELOG-0.18.198.md).
 
