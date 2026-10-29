@@ -72,8 +72,8 @@ def test_room_first_answer_lists_each_checked_light_once():
         assert text.count(f"**{label}:**") == 1
     assert "Other devices in this room" not in text
     assert "Additional room members" not in text
-    assert "**Coverage:** 5 other room member(s)" in text
-    assert "capabilities and current states have not been verified" in text
+    assert "**Coverage:** 5 other room devices were not checked" in text
+    assert "capabilities and current states are unverified" in text
     assert "off" in text
     assert "Bathroom Hi-P sensor" not in text
 
