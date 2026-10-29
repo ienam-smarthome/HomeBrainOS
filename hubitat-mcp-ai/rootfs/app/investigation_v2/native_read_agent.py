@@ -82,7 +82,10 @@ _SYSTEM = (
     "homebrain_find_device first; do not guess deviceIds. A candidate_group "
     "response gives independently sourced name candidates, NOT proved "
     "membership or state: request targeted reads for each relevant ID, "
-    "not an unbounded whole-hub device listing. If identity or status "
+    "not an unbounded whole-hub device listing. Several distinct "
+    "name-prefix matches are a candidate_group, not an ambiguous exact "
+    "label collision; inspect the returned name+ID pairs separately. "
+    "If identity or status "
     "cannot be verified, explain the unresolved subject rather than "
     "substituting unrelated health findings. " 
     "Do not search an unrelated Hub Mesh setting. "
@@ -890,6 +893,17 @@ async def run_native_read_agent(
                             (time.monotonic() - before_identity) * 1000)
                     issue = _guard(name, args, manifest, discovered, verified_ids,
                            verified_typed)
+            # When live identity has already provided a bounded list of
+            # possible named devices, another unscoped full-device inventory
+            # cannot help resolve *those* IDs. Decline that expensive
+            # fallback without consuming a READ or a 20s gateway timeout;
+            # offer the independently attested candidate IDs instead.
+            if (issue is None and op_requested == "hub_list_devices"
+                    and any(isinstance(row, dict)
+                            and row.get("status") == "candidate_group"
+                            and row.get("candidate_ids")
+                            for row in named_identity_lookups)):
+                issue = "bounded_identity_candidates_available"
             if issue is None and isinstance(inner, dict):
                 issue = target_history_scope_problem(
                     str(op_requested), inner, sorted(focus_ids), witnesses)
@@ -914,6 +928,21 @@ async def run_native_read_agent(
                 if issue == "target_device_history_scope_missing":
                     rejected_scope_history_reads += 1
                 hint = guidance_for(issue) or "Choose a different verified read"
+                if issue == "bounded_identity_candidates_available":
+                    groups = [
+                        row for row in named_identity_lookups
+                        if isinstance(row, dict)
+                        and row.get("status") == "candidate_group"
+                        and row.get("candidate_ids")
+                    ]
+                    candidates = groups[-1]["candidate_ids"][:8]
+                    hint = (
+                        "Current authoritative identity already returned "
+                        "candidate device IDs " + ", ".join(candidates)
+                        + ". Request model-selected hub_get_device READs "
+                        "with those exact IDs individually; name-prefix "
+                        "matches do not prove membership or actual state. "
+                        "The unscoped full-device listing is unnecessary.")
                 if (issue in ("missing_required_operation_fields",
                               "target_device_history_scope_missing")
                         and len(focus_ids) == 1):
