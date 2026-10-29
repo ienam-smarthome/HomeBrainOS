@@ -35,7 +35,12 @@ def candidate_prompt() -> str:
         "\"supporting_events\":[{\"read\":1,\"name\":\"switch\","
         "\"date\":\"unchanged timestamp from source evidence\"}],"
         "\"next_check\":\"one useful observation that would distinguish "
-        "the leading hypothesis from alternatives\"}. "
+        "the leading hypothesis from alternatives\","
+        "\"alternative\":\"another plausible explanation\"}. "
+        "Compare at least two mechanisms in your own reasoning and "
+        "prefer one only if observed events distinguish it. "
+        "A historical command followed by a brightness adjustment does "
+        "not prove a light stayed on or that a motion timer failed. "
         "Select at least two DISTINCT attested events listed in "
         "incident_evidence.material_event_examples and copy each exact "
         "read/name/date. Do not cite a tool result that merely mentions "
@@ -123,9 +128,19 @@ def verify_natural_hypothesis(
     next_check = " ".join(next_check.strip().split())
     if len(next_check) > 180 or _CONTROL.search(next_check):
         return reject("invalid_next_check")
+    alternative = candidate.get("alternative", "")
+    if not isinstance(alternative, str):
+        return reject("invalid_alternative")
+    alternative = " ".join(alternative.strip().split())
+    if (len(alternative) > 175 or _CONTROL.search(alternative)
+            or _CONFIDENT.search(alternative)
+            or _NUMBER.search(alternative)):
+        return reject("unsupported_alternative")
     statement = "**Possible explanation:** " + hypothesis
+    if alternative:
+        statement += " **Another possibility:** " + alternative
     if next_check:
-        statement += " **To distinguish the cause:** " + next_check
+        statement += " **Best next check:** " + next_check
     return {
         "accepted": True,
         "reason": "source_event_refs_verified_semantic_cause_not_proven",
