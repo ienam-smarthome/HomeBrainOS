@@ -146,6 +146,10 @@ async def test_complete_agent_keeps_device_focus_and_skips_discarded_synthesis()
     assert diag["incident_attribution_evidence"]["warning_state_correlations"][
         "warnings_with_nearby_state_in_returned_sample"]==1
     assert diag["final_synthesis_ms"]==0
+    assert diag["claim_publication"]["status"]=="host_authoritative_incident"
+    assert diag["claim_publication"]["authority"]=="host_incident_receipts"
+    assert diag["claim_publication"]["rejected_reasons"]==[]
+    assert diag["claim_publication"]["fallback"] is False
     assert diag["final_synthesis_skipped_reason"]=="host_authoritative_incident_evidence"
     assert "volume=50" in result["answer"]["text"]
     assert "Ikea bedroom 3 reported warning" not in result["answer"]["text"]

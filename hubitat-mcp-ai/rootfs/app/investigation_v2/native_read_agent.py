@@ -584,14 +584,25 @@ async def run_native_read_agent(
                 break
             causal_coverage_challenge_used = True
             if causal_coverage_gap.get("kind") == "target_generic_warning_origin_unverified":
-                instruction = (
-                    "The device's app command issuers are already verified, "
-                    "but no command in the bounded sample is linked to this "
-                    "separate generic load-warning interval. Do not claim "
-                    "the device's callers are unknown. To clarify the driver "
-                    "mechanism, consider a permitted broader/historical WARN "
-                    "read or independent performance/source evidence. "
-                    "A generic warning alone does not prove slow callbacks.")
+                if causal_coverage_gap.get("candidate_read") is None:
+                    instruction = (
+                        "The target-specific WARN log has already been sampled "
+                        "and app callers were independently observed at other "
+                        "times. The generic warning remains causally "
+                        "unattributed. Do not retry the same WARN scope with "
+                        "a larger limit. Choose only independently grounded "
+                        "new evidence (a distinct supported historical window, "
+                        "attested source, or runtime data), or finish with the "
+                        "verified limits. No read is required to justify an "
+                        "unknown root cause.")
+                else:
+                    instruction = (
+                        "The device's app command issuers are already verified, "
+                        "but no command in the bounded sample is linked to this "
+                        "separate generic load-warning interval. Do not claim "
+                        "the device's callers are unknown. A target-specific "
+                        "WARN read or independent source/performance evidence "
+                        "could discriminate mechanisms, without proving them.")
             elif causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
                 instruction = (
                     "The device event history ALREADY attests calling apps "
@@ -1262,7 +1273,24 @@ async def run_native_read_agent(
     # source-bound report; every other investigation receives a general
     # claim-gated, host-authored response, including legacy model prose.
     validated_catalog = claim_catalog(witnesses, sorted(focus_ids))
-    publication = publish_verified_claims(model_claim_proposal, validated_catalog)
+    if source_bound_incident:
+        # No model selection is necessary or used for the source-authoritative
+        # incident assessment. A skipped model synthesis is NOT a failed
+        # structured-claim response and must not be reported as one.
+        publication = {
+            "validation": {
+                "status": "host_authoritative_incident",
+                "accepted": [], "rejected": [],
+            },
+            "fallback": False, "published_claims": [],
+            "limits": (
+                "Host-authored generic incident report uses independently "
+                "verified source receipts; no model claims are published."
+            ),
+        }
+    else:
+        publication = publish_verified_claims(
+            model_claim_proposal, validated_catalog)
     # Model synthesis and publication validation are distinct diagnostic
     # stages. Preserve the former for replay/latency comparisons while only
     # the independently checked publication reaches the final report.
@@ -1430,7 +1458,10 @@ async def run_native_read_agent(
     if rejected_causal_ranking:
         validation_issues.append("unsupported_causal_ranking_withheld")
     if source_bound_incident:
-        validation_issues.append("unattributed_incident_model_narrative_withheld")
+        validation_issues.append(
+            "unattributed_incident_model_narrative_withheld"
+            if model_claim_proposal is not None
+            else "source_authoritative_unattributed_incident")
     if causal_coverage_gap is not None:
         gap_kind = causal_coverage_gap.get("kind")
         validation_issues.append(
@@ -1469,6 +1500,9 @@ async def run_native_read_agent(
             "factual_evidence_ledger": factual_ledger,
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
+                "authority": (
+                    "host_incident_receipts" if source_bound_incident
+                    else "validated_model_selection"),
                 "status": publication["validation"]["status"],
                 "accepted_count": len(publication["validation"]["accepted"]),
                 "rejected_reasons": publication["validation"]["rejected"][:20],

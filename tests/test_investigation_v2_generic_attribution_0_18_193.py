@@ -89,7 +89,10 @@ def test_generic_warning_distinguishes_verified_callers_from_incident_source():
     # the continuous min-max span of multiple grouped warnings.
     assert gap["warning_window"]["oldest"]=="2026-10-28T19:55:19.399000"
     assert gap["warning_window"]["newest"]=="2026-10-28T19:55:19.399000"
-    assert gap["candidate_read"]=="hub_get_logs"
+    # A target-scoped WARN read already exists. Suggesting the same broad
+    # query with only a larger limit would contradict the log-scope guard.
+    assert gap["candidate_read"] is None
+    assert gap["candidate_filters"] == {}
     assert "command-runQ" not in str(gap)
     assert "target_warning_command_issuer_unverified" not in str(gap)
 

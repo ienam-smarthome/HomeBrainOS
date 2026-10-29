@@ -225,6 +225,26 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
             if issuer.isdecimal()
         })
         if verified_callers:
+            # Do not recommend a larger *unbounded* WARN page once an
+            # independently filtered target warning read has completed.
+            # That very proposal is rejected by repeated_broad_log_scope.
+            # Suggestions remain non-executing and source-grounded; a new
+            # explicit historical window is a distinct permissible probe.
+            targeted_warn_read = any(
+                w.get("operation") == "hub_get_logs"
+                and isinstance(w.get("read_filters"), Mapping)
+                and str(w["read_filters"].get("deviceId")) in focus
+                and str(w["read_filters"].get("level", "")).lower()
+                in ("warn", "warning")
+                and isinstance(w.get("source_data"), Mapping)
+                and isinstance(w["source_data"].get("log_summary"), Mapping)
+                and any(
+                    isinstance(g, Mapping) and str(g.get("source_id")) in focus
+                    for g in w["source_data"]["log_summary"].get(
+                        "warning_error_groups", [])
+                )
+                for w in witnesses
+            )
             return {
                 "kind": "target_generic_warning_origin_unverified",
                 "focus_ids": sorted(focus),
@@ -237,19 +257,26 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
                 "device_command_issuers_verified": True,
                 "incident_window_issuer_verified": False,
                 "observed_calling_app_ids": verified_callers[:10],
-                "candidate_read": "hub_get_logs",
-                "candidate_filters": {
-                    "mode": "past", "level": "warn", "limit": 200,
+                "candidate_read": None if targeted_warn_read else "hub_get_logs",
+                "candidate_filters": {} if targeted_warn_read else {
+                    "mode": "past", "level": "warn",
+                    "deviceId": sorted(focus)[0], "limit": 100,
                 },
                 "candidate_alternatives": [
                     "hub_get_metrics", "hub_get_app_config",
                 ],
                 "materiality": (
-                    "The device has separately attested command callers, but "
-                    "none of the returned commands coincide with this generic "
-                    "warning. A broader time-bounded WARN history might "
-                    "recover a more diagnostic internal method warning; "
-                    "independent performance or source evidence may help."
+                    "A target-specific WARN read already returned the generic "
+                    "warning and a device-scoped event read identified historical "
+                    "callers but no warning-window command. Repeating that "
+                    "same WARN scope with only a larger limit is not a new "
+                    "discriminator. Consider independent runtime evidence, "
+                    "a separately attested source/app read, or a genuinely "
+                    "different source-grounded historical time window."
+                    if targeted_warn_read else
+                    "Historical callers are attested but the warning's origin "
+                    "is not. A target-scoped WARN read can check the specific "
+                    "device before independent source/performance inspection."
                 ),
                 "limitation": (
                     "No observed app command has been attributed to this "
