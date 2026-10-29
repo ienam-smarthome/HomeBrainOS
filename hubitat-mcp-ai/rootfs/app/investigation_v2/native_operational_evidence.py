@@ -74,8 +74,8 @@ def operational_evidence_facts(
                 if isinstance(row, Mapping) and _id(row.get("id"))
             ]
             add("health_sample_summary", ("health", "unknown_count", read),
-                f"Hubitat device-health read returned {len(valid)} devices "
-                "with unknown activity; absence of a recorded timestamp "
+                f"Hubitat device-health read returned {len(valid)} device "
+                "entries with unknown activity; absence of a recorded timestamp "
                 "does not prove a physical device is offline.")
             for row in valid[:4]:
                 ident = _id(row.get("id"))
