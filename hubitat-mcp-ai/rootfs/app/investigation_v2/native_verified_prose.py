@@ -167,6 +167,7 @@ def verify_model_explanation(
               if isinstance(c, Mapping) and c.get("source_id")}
     assembled = []
     seen = set()
+    ordered_ids = []
     for row in findings:
         if not isinstance(row, Mapping) or set(row) != {
             "source_id", "explanation", "next_check"}:
@@ -180,6 +181,7 @@ def verify_model_explanation(
         if explanation is None or next_check is None:
             return {"accepted": False, "reason": "unsupported_language"}
         seen.add(ident)
+        ordered_ids.append(ident)
         evidence = case.get("evidence_reads", [])
         if (not isinstance(evidence, list) or not evidence
                 or any(type(n) is not int for n in evidence)):
@@ -197,7 +199,7 @@ def verify_model_explanation(
                 + "\n\n**Limits:** This is an evidence-based triage, not "
                   "verification of physical connectivity, execution or a "
                   "root cause. The returned log window may be incomplete.",
-        "verified_subject_ids": [str(v) for v in seen],
+        "verified_subject_ids": ordered_ids,
     }
 
 
