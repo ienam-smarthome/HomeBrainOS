@@ -17,6 +17,8 @@ from investigation_v2.native_causal_claim_audit import (
     incident_attribution_packet, evidence_safe_incident_explanation)
 from investigation_v2.native_source_adapters import compact_logs
 from investigation_v2.native_evidence_focus import focused_highlights
+from investigation_v2.native_fact_ledger import factual_evidence_ledger
+from investigation_v2.native_claim_verifier import claim_catalog
 
 
 def stat(mode, source_id, pct, *, extra=None):
@@ -116,6 +118,15 @@ def test_device_and_attested_app_stats_are_scoped_and_read_receipted():
     highlights=" ".join(focused_highlights(rows,["7934"]))
     assert "pct=4.25" in highlights and "pct=1.25" in highlights
     assert "Unrelated entry" not in highlights
+    facts=factual_evidence_ledger(rows,["7934"])
+    assert len([f for f in facts if f["kind"]=="cumulative_runtime_stats"])==2
+    catalog=claim_catalog(rows,["7934"])
+    values=[c for c in catalog if c["kind"]=="runtime_stat"]
+    assert any(c["scope"]=="7934" and c["metric"]=="pct"
+               and c["numeric"]==4.25 for c in values)
+    assert any(c["scope"]=="4080" and c["metric"]=="pct"
+               and c["numeric"]==1.25 for c in values)
+    assert all(c["root_cause_verified"] is False for c in values)
 
 
 def test_stats_from_unrelated_app_or_device_are_excluded():
