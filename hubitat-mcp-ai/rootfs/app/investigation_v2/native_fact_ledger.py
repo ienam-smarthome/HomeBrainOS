@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
+from .native_runtime_stats import focused_runtime_stat_receipts
 
 _METHOD = re.compile(r"\bmethod\s+([A-Za-z_][A-Za-z0-9_]*)\b", re.I)
 _DURATION = re.compile(r"\bran for\s+([\d,]+)\s*ms\b", re.I)
@@ -21,16 +22,6 @@ def factual_evidence_ledger(
 ) -> list[dict[str, Any]]:
     """Host-attested, finite factual claims with original read numbers."""
     focus = {str(x) for x in focus_ids}
-    callers = {
-        str(app.get("appId"))
-        for receipt in witnesses[:16]
-        if receipt.get("operation") == "hub_list_device_events"
-        and isinstance(receipt.get("read_filters"), Mapping)
-        and str(receipt["read_filters"].get("deviceId")) in focus
-        and isinstance(receipt.get("source_data"), Mapping)
-        for app in receipt["source_data"].get("issuer_apps", [])
-        if isinstance(app, Mapping) and str(app.get("appId")).isdecimal()
-    }
     facts: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
     bound = max(1, min(80, max_facts))
@@ -53,32 +44,29 @@ def factual_evidence_ledger(
             # Native Logs-page device/app runtime stats use this same READ
             # operation; do not discard them as malformed severity log rows.
             stats = data.get("runtime_stats")
-            filters = w.get("read_filters")
-            filters = filters if isinstance(filters, Mapping) else {}
             if isinstance(stats, Mapping):
-                mode = stats.get("mode")
-                key_field = ("deviceId" if mode == "devices" else
-                             "appId" if mode == "apps" else None)
-                requested = str(filters.get(key_field) or "") if key_field else ""
-                if (not requested.isdecimal()
-                        or focus and mode == "devices" and requested not in focus
-                        or focus and mode == "apps" and requested not in callers):
-                    continue
-                for row in stats.get("rows", [])[:30]:
-                    if not isinstance(row, Mapping) or str(row.get("id")) != requested:
+                # One reusable source-scope rule governs incident text,
+                # highlights and general claim publication. Even a broad
+                # App Stats page contributes only independently verified
+                # callers of the actual focused device.
+                for row in focused_runtime_stat_receipts(witnesses,focus):
+                    if row["read"] != read:
                         continue
-                    values = {k: row[k] for k in ("pct", "total", "count")
-                              if type(row.get(k)) in (int, float)}
+                    values = {k: row[k] for k in ("pct","total","count")
+                              if type(row.get(k)) in (int,float)}
                     if values:
                         add({
                             "kind": "cumulative_runtime_stats",
                             "evidence_reads": [read],
-                            "source_kind": mode, "source_id": requested,
+                            "source_kind": row["kind"], "source_id": row["id"],
                             "metrics": values,
                             "limits": (
-                                "Logs-page performance snapshot, not the "
-                                "device/app's measured CPU at any past warning."),
-                        }, (op, mode, requested, tuple(sorted(values.items()))))
+                                "Hubitat Logs-page cumulative performance "
+                                "snapshot, not historical incident-time CPU "
+                                "attribution. Device and app percentages have "
+                                "different denominators."),
+                        }, (op,row["kind"],row["id"],
+                            tuple(sorted(values.items()))))
                 continue
             summary = data.get("log_summary")
             if not isinstance(summary, Mapping):

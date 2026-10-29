@@ -40,7 +40,8 @@ from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
-from .native_runtime_stats import project_log_runtime_stats
+from .native_runtime_stats import (
+    project_log_runtime_stats, verified_caller_app_ids)
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
     useful_discovery_fingerprint, repeated_log_evidence, repeated_event_evidence,
@@ -946,6 +947,8 @@ async def run_native_read_agent(
                         "read": attempted,
                         "device_id": anchored["device_id"],
                         "identity_basis": anchored["identity_basis"],
+                        **({"source_kind": anchored["source_kind"]}
+                           if anchored.get("source_kind") else {}),
                     })
             if op == "hub_get_source" and isinstance(inner, dict):
                 requested_type = inner.get("type")
@@ -1062,7 +1065,10 @@ async def run_native_read_agent(
                               "Choose an independent discriminator or finish.")}
                     if repeated_evidence else {
                         "read_id": attempted, "operation": op,
-                        "source_data": focused_model_view(op, summary, sorted(focus_ids)),
+                        "source_data": focused_model_view(
+                            op, summary, sorted(focus_ids),
+                            caller_app_ids=sorted(verified_caller_app_ids(
+                                witnesses, focus_ids))),
                         "source_complete": False,
                     })
             if focus_ids and op == "hub_list_device_events":
@@ -1411,24 +1417,32 @@ async def run_native_read_agent(
         details = witness["source_data"]
         if isinstance(details, dict) and "log_summary" in details:
             report = details["log_summary"]
+            groups=report.get("warning_error_groups",[])
+            if focus_ids:
+                groups=[g for g in groups if isinstance(g,dict)
+                        and str(g.get("source_id")) in focus_ids]
             lines.append(
                 f"- Read #{witness['read']}: {op}: "
                 f"{report['returned_rows']} returned log rows; "
-                f"{report['warning_error_group_count']} WARN/ERROR groups; "
-                "full historical coverage unverified."
+                f"{len(groups) if focus_ids else report['warning_error_group_count']} "
+                + ("target " if focus_ids else "")+
+                "WARN/ERROR groups; full historical coverage unverified."
             )
-            lines.append("  - Sample levels: " + str(
+            lines.append("  - Sample levels"
+                         + (" (all sources)" if focus_ids else "")
+                         + ": " + str(
                 report.get("level_counts_in_returned_rows", {})))
             lines.append("  - Returned time range: " + str(
                 report.get("oldest_returned") or "unknown") + " to " + str(
                 report.get("newest_returned") or "unknown")
                 + " (timezone not verified).")
-            if not report["warning_error_groups"]:
+            if not groups:
                 lines.append(
-                    "  - No WARN/ERROR in returned sample; "
-                    "this does NOT establish that hub logs are clear."
+                    "  - No " + ("target " if focus_ids else "")+
+                    "WARN/ERROR in returned sample; this does NOT "
+                    "establish that historical target/hub logs are clear."
                 )
-            for group in report["warning_error_groups"][:5]:
+            for group in groups[:5]:
                 lines.append(
                     f"  - {group['level']} / {group['source_name']}: "
                     f"{group['message']} ({group['count']} rows)"

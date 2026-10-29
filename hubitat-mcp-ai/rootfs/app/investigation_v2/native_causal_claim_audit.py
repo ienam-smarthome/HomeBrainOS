@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 from .native_evidence_coverage import _wall_time
 from .native_incident_cooccurrence import incident_state_cooccurrences
 from .native_incident_command_temporal import incident_command_temporal_leads
+from .native_runtime_stats import focused_runtime_stat_receipts
 
 # Claim-strength cues are assessed *after* the model answers, not for
 # interpreting the user's request or selecting a tool. They identify
@@ -159,32 +160,7 @@ def incident_attribution_packet(
         if len(group)>=4:
             bursts.append((aid,name,group[0],group[-1],len(group)))
     bursts.sort(key=lambda b:(-b[4],b[2]))
-    runtime_snapshots=[]
-    for receipt in witnesses[:16]:
-        if receipt.get("operation")!="hub_get_logs" or type(receipt.get("read")) is not int:
-            continue
-        source=receipt.get("source_data")
-        stats=source.get("runtime_stats") if isinstance(source,Mapping) else None
-        filters=receipt.get("read_filters")
-        if not isinstance(stats,Mapping) or not isinstance(filters,Mapping):
-            continue
-        mode=stats.get("mode")
-        requested=str(filters.get("deviceId" if mode=="devices" else "appId"))
-        if (mode=="devices" and requested not in focus or
-                mode=="apps" and requested not in app_summaries or
-                mode not in ("devices","apps")):
-            continue
-        for row in stats.get("rows",[])[:10]:
-            if not isinstance(row,Mapping) or str(row.get("id"))!=requested:
-                continue
-            runtime_snapshots.append({
-                "read":receipt["read"],"kind":mode,"id":requested,
-                "name":str(row.get("name") or "")[:65],
-                **{field:row[field] for field in ("pct","count","total","stateSize")
-                   if type(row.get(field)) in (int,float)},
-                "incident_time_aligned":False,
-                "snapshot_complete":False,
-            })
+    runtime_snapshots=focused_runtime_stat_receipts(witnesses,focus)
     return {
         "incident_type":"generic_device_warning",
         "separate_diagnostic_method_warnings_present":bool(distinct_slow_methods),
