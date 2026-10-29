@@ -30,7 +30,8 @@ from .native_read_scope import target_history_scope_problem
 from .native_app_pages import app_pages_summary
 from .native_causal_claim_audit import (
     incident_attribution_packet, unsupported_causal_ranking,
-    evidence_safe_incident_explanation,
+    evidence_safe_incident_explanation, incident_claim_ledger,
+    source_bound_incident_required,
 )
 from .native_source_readiness import source_read_summary, repeated_broad_log_scope
 from .native_read_contracts import read_contract_feedback
@@ -1092,9 +1093,18 @@ async def run_native_read_agent(
         witnesses, sorted(focus_ids))
     rejected_causal_ranking = unsupported_causal_ranking(
         answer_text, causal_packet)
-    if rejected_causal_ranking and causal_packet is not None:
+    # Do not depend on a fixed list of model phrasings ("offender",
+    # "contributor", "lead", "driven chiefly", etc.). For an unattributed
+    # generic incident the model is the *investigator*, not the authority
+    # to publish a cause. The separately derived claim ledger controls
+    # which observations may enter the final causal assessment. The
+    # free-form text is not atomically verified and is not released.
+    source_bound_incident = source_bound_incident_required(causal_packet)
+    claim_ledger = (incident_claim_ledger(causal_packet)
+                    if source_bound_incident and causal_packet else [])
+    if source_bound_incident and causal_packet is not None:
         answer_text = evidence_safe_incident_explanation(causal_packet)
-        synthesis_status = "unsupported_causal_ranking_replaced"
+        synthesis_status = "source_bound_unattributed_incident"
     # Make uncertainty prominent even when the model produces a fluent answer.
     # A recent all-INFO log sample is not a severity-filtered error audit.
     log_audits = [
@@ -1174,8 +1184,12 @@ async def run_native_read_agent(
             "Gateway reads returned data not yet understood by the "
             "evidence adapter: " + ", ".join(projections_empty[:5]) + ".", "",
         ])
-    lines.extend(["**AI interpretation — not independently claim-validated**",
-                  answer_text, "", "**Verified read coverage**"])
+    lines.extend([
+        ("**Incident assessment — source-bound evidence**"
+         if source_bound_incident
+         else "**AI interpretation — not independently claim-validated**"),
+        answer_text, "", "**Verified read coverage**"
+    ])
     for witness in witnesses[:12]:
         op = _text(witness["operation"], 64)
         details = witness["source_data"]
@@ -1236,6 +1250,8 @@ async def run_native_read_agent(
         validation_issues.append("gateway_projection_incomplete")
     if rejected_causal_ranking:
         validation_issues.append("unsupported_causal_ranking_withheld")
+    if source_bound_incident:
+        validation_issues.append("unattributed_incident_model_narrative_withheld")
     if causal_coverage_gap is not None:
         gap_kind = causal_coverage_gap.get("kind")
         validation_issues.append(
@@ -1252,7 +1268,8 @@ async def run_native_read_agent(
                    "root_cause_verified": False,
                    "human_review_required": bool(
                        failures or not witnesses or info_only_logs
-                       or projections_empty or rejected_causal_ranking)},
+                       or projections_empty or rejected_causal_ranking
+                       or source_bound_incident)},
         "report": {"text": text, "technical_answer_retained": True},
         "native_diagnostics": {
             "rounds": rounds, "reads_executed": attempted,
@@ -1267,6 +1284,8 @@ async def run_native_read_agent(
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
             "incident_attribution_evidence": causal_packet,
+            "incident_claim_ledger": claim_ledger,
+            "model_narrative_withheld_for_unattributed_incident": source_bound_incident,
             "unsupported_causal_ranking_withheld": rejected_causal_ranking,
             "repeated_discovery": repeated_discovery,
             "blocked_repeat_errors": blocked_repeat_errors,

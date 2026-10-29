@@ -50,15 +50,24 @@ def incident_attribution_packet(
         return None
     # Do not merge slow-method WARN with generic WARN; the narrowest
     # newest generic interval is the incident being audited here.
-    generic=[v for v in incidents if not re.search(
-        r"\bmethod\s+[A-Za-z_]\w*\b",str(v[2].get("message","")),re.I)]
+    # Source classification, not question-word routing: the canonical
+    # attribution contract below applies specifically to the generic
+    # high-load warning. Other WARN classes need their own source schema.
+    generic=[v for v in incidents if "excessive hub load" in
+             str(v[2].get("message","")).casefold()]
     if not generic:
         return None
+    distinct_slow_methods=[
+        v for v in incidents
+        if re.search(r"\bmethod\s+[A-Za-z_]\w*\b",
+                     str(v[2].get("message","")),re.I)
+    ]
     start,end,warn=sorted(generic,key=lambda v:(
         (v[1]-v[0]).total_seconds(),-v[1].timestamp()))[0]
     app_commands=[]
     device_events=[]
     app_summaries={}
+    event_read_ids=[]
     projected_source_rows=0
     omitted=0
     for witness in witnesses:
@@ -70,6 +79,8 @@ def incident_attribution_packet(
         d=witness.get("source_data",{})
         if not isinstance(d,dict):
             continue
+        if isinstance(witness.get("read"),int):
+            event_read_ids.append(witness["read"])
         projected_source_rows+=len(d.get("events",[]))
         omitted+=int(d.get("event_rows_omitted_from_model") or 0)
         for row in d.get("issuer_apps",[])[:12]:
@@ -90,8 +101,8 @@ def incident_attribution_packet(
                 app_commands.append((stamp,aid,name))
             elif did in focus:
                 device_events.append((stamp,name,str(row.get("value") or "")))
-    if not app_summaries:
-        return None
+    # An incident with no app-issued commands is still a real incident.
+    # Never interpret zero source rows as proof that no app issued commands.
     # Remove duplicate rows from overlapping source event reads.
     app_commands=sorted(set(app_commands))
     device_events=sorted(set(device_events))
@@ -125,12 +136,30 @@ def incident_attribution_packet(
     bursts.sort(key=lambda b:(-b[4],b[2]))
     return {
         "incident_type":"generic_device_warning",
+        "separate_diagnostic_method_warnings_present":bool(distinct_slow_methods),
+        "separate_diagnostic_method_warning_count":len(distinct_slow_methods),
         "warning_period":{
             "oldest":str(warn.get("oldest_returned")),
             "newest":str(warn.get("newest_returned")),
             "printed_timezone_alignment_verified":False},
         "device_caller_app_ids":sorted(app_summaries),
-        "caller_identities_verified":True,
+        "device_caller_names":{
+            k:str(app_summaries[k].get("name") or "")[:70]
+            for k in sorted(app_summaries)
+        },
+        "caller_identities_verified":bool(app_summaries),
+        "warning_read_ids":sorted({
+            w.get("read") for w in witnesses
+            if isinstance(w.get("read"),int)
+            and w.get("operation")=="hub_get_logs"
+            and any(isinstance(g,dict)
+                    and str(g.get("source_id")) in focus
+                    and "excessive hub load" in str(g.get("message","")).casefold()
+                    for g in w.get("source_data",{}).get("log_summary",{})
+                              .get("warning_error_groups",[]))
+        }),
+        "event_read_ids":sorted(set(event_read_ids)),
+        "scoped_event_history_available":bool(event_read_ids),
         "app_commands_within_warning_interval":len(incident_commands),
         "app_commands_within_five_minutes":len(recent_commands),
         "nearest_app_command_gap_seconds":(
@@ -180,43 +209,122 @@ def unsupported_causal_ranking(
     )
 
 
-def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
-    warning=packet["warning_period"]
-    caller=", ".join(packet["device_caller_app_ids"])
-    pieces=[
-        "**Source-grounded causal assessment**",
-        "The returned generic warning at "+str(warning["oldest"])+
-        " to "+str(warning["newest"])+
-        " does not identify a specific driver method or app as its cause.",
-        "Device-command issuers verified in bounded event history: app IDs "+
-        caller+". These identities do not attribute the warning.",
-        "Observed app commands within the warning interval: "+
-        str(packet["app_commands_within_warning_interval"])+
-        "; within a five-minute source-clock window: "+
-        str(packet["app_commands_within_five_minutes"])+".",
+def incident_claim_ledger(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Deterministic, source-receipt-backed facts with explicit uncertainty.
+
+    This ledger validates only the fixed observations it derives. It does not
+    assert that arbitrary free-text LLM claims have been verified. Future
+    structured model claims can reference these IDs and be checked before
+    publication.
+    """
+    log_reads=list(packet.get("warning_read_ids",[]))
+    event_reads=list(packet.get("event_read_ids",[]))
+    exists=bool(packet.get("scoped_event_history_available"))
+    state_count=len(packet.get("device_events_within_two_seconds",[]))
+    return [
+        {"id":"warning_observed","status":"verified",
+         "evidence_reads":log_reads,
+         "observation":"generic source-reported excessive-load warning"},
+        {"id":"device_command_issuers","status":(
+             "verified_in_bounded_sample"
+             if packet.get("caller_identities_verified") else "not_established"),
+         "evidence_reads":event_reads,
+         "app_ids":list(packet.get("device_caller_app_ids",[]))},
+        {"id":"warning_window_command_overlap","status":(
+             "bounded_sample_observation" if exists else "not_checked"),
+         "evidence_reads":event_reads+log_reads,
+         "observed_commands":packet.get("app_commands_within_warning_interval"),
+         "clock_alignment_verified":False,
+         "history_complete":False},
+        {"id":"device_state_near_warning","status":(
+             "bounded_sample_observation" if exists else "not_checked"),
+         "evidence_reads":event_reads+log_reads,
+         "observed_state_events":state_count,
+         "clock_alignment_verified":False},
+        {"id":"generic_warning_root_cause","status":"unverified",
+         "evidence_reads":log_reads+event_reads,
+         "reason":"No independent runtime/source method-to-CPU attribution."},
     ]
-    burst=packet.get("observed_command_bursts",[])
-    if burst:
-        b=burst[0]
-        pieces.append("A separate command burst is observable: app "+
-            str(b["appId"])+" issued "+
-            str(b["count_in_burst"])+" "+
-            str(b["command"])+" events between "+
-            str(b["first"])+" and "+str(b["last"])+
-            ". This pattern is not established as the warning's cause.")
+
+
+def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
+    """Publish only source-attested facts, never a fluent unverified ranking."""
+    warning=packet["warning_period"]
+    names=packet.get("device_caller_names",{})
+    callers=[
+        ((str(names.get(aid))+" (app "+str(aid)+")")
+         if names.get(aid) else "app "+str(aid))
+        for aid in packet.get("device_caller_app_ids",[])
+    ]
+    pieces=[
+        "**What caused the warning? Not yet established.**",
+        "The hub reported a generic excessive-load warning for the device "
+        "at "+str(warning["oldest"])+" to "+str(warning["newest"])+
+        ". The sampled message does not identify a driver method, "
+        "app, or measured CPU contribution.",
+    ]
+    if callers:
+        pieces.append("Verified command issuers in the sampled device "
+                      "history: "+", ".join(callers)+
+                      ". Command issuance is not evidence that any of "
+                      "these apps caused the warning.")
+    else:
+        pieces.append("No calling app is independently identified from the "
+                      "returned source evidence. This does not establish "
+                      "that the device has no callers.")
+    if packet.get("scoped_event_history_available"):
+        pieces.append(
+            "The bounded device-event sample contains "+
+            str(packet.get("app_commands_within_warning_interval",0))+
+            " app-issued commands within the printed warning window and "+
+            str(packet.get("app_commands_within_five_minutes",0))+
+            " within five minutes by source wall-clock time. "
+            "The event sample may omit records and the log/event "
+            "clock alignment is not independently verified.")
+    else:
+        pieces.append("No device-scoped event history was recovered, so "
+                      "commands around the incident have not been checked.")
+    bursts=packet.get("observed_command_bursts",[])
+    if bursts:
+        b=bursts[0]
+        gap=b.get("gap_from_warning_end_seconds")
+        timing=((" (approximately "+str(round(gap/60,1))+
+                 " minutes from the warning by source wall clock)")
+                if isinstance(gap,(int,float)) else "")
+        pieces.append(
+            "One separate activity lead: "+
+            str(b["count_in_burst"])+" "+str(b["command"])+
+            " events from app "+str(b["appId"])+" between "+
+            str(b["first"])+" and "+str(b["last"])+timing+
+            ". A burst observed at another time is not a proven "
+            "contributor to this incident.")
     states=packet.get("device_events_within_two_seconds",[])
     if states:
-        pieces.append("Source-clock-nearby device-reported events: "+
-            ", ".join(str(x["name"])+"="+str(x["value"])
-                      for x in states[:5])+
-            ". Their appearance does not establish a blocking callback.")
-    pieces.append("**Cause remains unverified.** No source-backed driver "
-                  "execution path or independently measured attribution "
-                  "supports ranking an app or network operation as the "
-                  "most likely cause. Returned event rows can be capped; "
-                  "source clock alignment is unverified.")
+        pieces.append("The device's source-reported state events near the "
+                      "warning include "+
+                      ", ".join(str(x["name"])+"="+str(x["value"])
+                                for x in states[:5])+
+                      ". These are time-associated observations, not proof "
+                      "of the initiating callback or network activity.")
+    pieces.append(
+        "**Remaining evidence gap:** The internal driver/app execution path, "
+        "the source of the status changes, and measured hub CPU impact "
+        "at the warning time were not independently established. "
+        "A complete driver source or incident-time runtime profile would "
+        "help discriminate possible mechanisms. No changes were made.")
     return "\n\n".join(pieces)
 
 
+def source_bound_incident_required(packet: Mapping[str,Any]|None) -> bool:
+    """Use a claim ledger—not model wording—to set publication authority."""
+    return bool(
+        packet and packet.get("incident_type")=="generic_device_warning"
+        and packet.get("causal_conclusion_strength")=="unattributed"
+        and not packet.get("separate_diagnostic_method_warnings_present")
+        and packet.get("independent_executed_method_or_cpu_attribution") is False
+    )
+
+
 __all__=["incident_attribution_packet","unsupported_causal_ranking",
-         "evidence_safe_incident_explanation"]
+         "evidence_safe_incident_explanation","incident_claim_ledger",
+         "source_bound_incident_required"]

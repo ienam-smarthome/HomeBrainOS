@@ -114,7 +114,7 @@ def test_post_answer_claim_gate_rejects_ranking_but_keeps_observations():
     assert "does not identify" in safe
     assert "app 1679" in safe
     assert "buffering" in safe and "idle" in safe
-    assert "most likely cause" in safe
+    assert "What caused the warning? Not yet established." in safe
     assert "app 4080" not in safe or "4080" in safe
 
 
@@ -198,12 +198,15 @@ async def test_live_shaped_model_conclusion_is_withheld_when_causally_ranked():
     assert d["successful_reads"]==2
     assert d["unsupported_causal_ranking_withheld"] is True
     assert d["incident_attribution_evidence"]["app_commands_within_warning_interval"]==0
-    assert d["final_synthesis"]=="unsupported_causal_ranking_replaced"
+    assert d["final_synthesis"]=="source_bound_unattributed_incident"
+    assert d["model_narrative_withheld_for_unattributed_incident"] is True
+    assert any(c["id"]=="generic_warning_root_cause" and c["status"]=="unverified"
+               for c in d["incident_claim_ledger"])
     assert "unsupported_causal_ranking_withheld" in result["answer"]["validation_issues"]
     assert result["answer"]["human_review_required"] is True
     assert "The most material offender" not in result["answer"]["text"]
-    assert "Source-grounded causal assessment" in result["answer"]["text"]
-    assert "cause remains unverified" in result["answer"]["text"].lower()
+    assert "What caused the warning? Not yet established." in result["answer"]["text"]
+    assert "Remaining evidence gap:" in result["answer"]["text"]
     assert len(executor.calls)==2
 
 
@@ -250,4 +253,6 @@ async def test_fact_only_model_answer_is_preserved():
         question="Review this device's warnings",
         chat=model,mcp=mcp,executor=executor,max_rounds=6)
     assert result["native_diagnostics"]["unsupported_causal_ranking_withheld"] is False
-    assert "11 refresh events" in result["answer"]["text"]
+    assert "11 command-refresh events" in result["answer"]["text"]
+    assert result["native_diagnostics"]["model_narrative_withheld_for_unattributed_incident"] is True
+    assert "unattributed_incident_model_narrative_withheld" in result["answer"]["validation_issues"]

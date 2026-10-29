@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.197**.
+Current add-on version: **0.18.198**.
+
+v0.18.198 makes generic incident conclusions source-authoritative, withholding free-form model causal prose whenever incident attribution is unverified instead of relying on detectable words like “offender”. It records a per-fact evidence receipt ledger and retains model-chosen read-only investigation. [Release notes](CHANGELOG-0.18.198.md).
 
 v0.18.197 audits model causal rankings against source-attested incident windows, command timing, observed command bursts and device-owned state transitions. Unsupported "most likely offender" conclusions are withheld in favour of source-grounded explanations; app-page reads now project safe navigation metadata rather than appearing as empty. See [release notes](CHANGELOG-0.18.197.md).
 
