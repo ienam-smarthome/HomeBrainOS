@@ -157,6 +157,6 @@ async def test_native_model_chosen_six_reads_answer_group_not_first_nine_facts()
     assert diag["entity_group_summary"]["matched_light_count"]==2
     assert diag["entity_group_summary"]["verified_device_read_count"]==6
     assert "Bathroom Light 2" in out["answer"]["text"]
-    assert out["answer"]["text"].count("switch=off")==2
+    assert "Bathroom Light 1 and Bathroom Light 2 are both off" in out["answer"]["text"]
     assert "Independent claim validation" in out["report"]["text"]
     assert all(call[1]["tool"]=="hub_get_device" for call in executor.calls)
