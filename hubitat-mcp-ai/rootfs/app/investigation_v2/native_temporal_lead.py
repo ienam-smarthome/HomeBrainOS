@@ -432,8 +432,8 @@ def temporal_lead_short_answer(lead: Mapping[str, Any]) -> str:
                    f"at {offline['timestamp']}.")
     end = (
         " **Cause not confirmed:** Those events do not establish whether "
-        "the automation cut power, the socket was physically disconnected, "
-        "or the network link failed. Check physical power first."
+        "the automation affected the power, someone physically disconnected "
+        "power, or the network link failed. Check power first."
         if lead.get("command") == "off" else
         " **Cause not confirmed:** A command and an offline report alone "
         "do not prove why communication stopped. Check power and network.")
