@@ -167,21 +167,35 @@ def test_exact_screenshot_query_is_admitted_to_native_model_and_no_writes(
     assert response.json()["answer_mode"]=="native_mcp_investigation"
     assert calls==["native_model"]
 
-def test_mixed_write_refused_before_model_inventory_or_mcp(monkeypatch,tmp_path):
+def test_mixed_write_model_handoff_before_inventory_or_mcp(monkeypatch,tmp_path):
     module=_api(monkeypatch,tmp_path)
-    async def forbidden(*a,**kw):
-        raise AssertionError("Admission must refuse explicit writes before tools")
-    monkeypatch.setattr(module,"run_native_read_agent",forbidden)
-    monkeypatch.setattr(module.mcp,"get_audit_devices",forbidden)
+    interpreted=[]
+    async def model_handoff(*,question,**kw):
+        interpreted.append(question)
+        return {
+            "answer_mode":"v2_control_handoff",
+            "answer":{"text":"Device-control request. No Hubitat command "
+                             "was sent. Use main Ask/Chat."},
+            "native_diagnostics":{"reads_executed":0,
+                                  "no_hubitat_writes":True},
+        }
+    async def forbidden_inventory(*a,**kw):
+        raise AssertionError("Native handoff must not prefetch inventory")
+    monkeypatch.setattr(module,"run_native_read_agent",model_handoff)
+    monkeypatch.setattr(module.mcp,"get_audit_devices",forbidden_inventory)
+    cases=[
+        "Read-only; now turn on the bathroom light.",
+        "Investigate the fan, then disable its app.",
+        "Create an automation to switch TV off at 9pm.",
+    ]
     with TestClient(module.app) as client:
-        for question in [
-            "Read-only; now turn on the bathroom light.",
-            "Investigate the fan, then disable its app.",
-            "Create an automation to switch TV off at 9pm.",
-        ]:
+        for question in cases:
             response=client.post("/api/v2/test",json={
                 "question":question,"explicit_opt_in":True,
                 "agent_mode":"native_reads"},
                 headers={"X-HomeBrain-V2-Test-Token":TOKEN})
             assert response.status_code==409,(question,response.text)
             assert response.json()["detail"]["code"]=="v2_control_not_supported"
+            assert response.json()["detail"]["interpretation"]==(
+                "model_selected_control_handoff")
+    assert interpreted==cases
