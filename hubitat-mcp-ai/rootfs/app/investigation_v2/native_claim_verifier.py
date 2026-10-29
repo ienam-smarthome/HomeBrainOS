@@ -31,7 +31,8 @@ _NUMERIC = {
     "temperature": "°C", "humidity": "%", "battery": "%",
     "power": "W", "level": "%", "illuminance": "lux",
     "cpuLoad": "%", "internalTempC": "°C",
-    "freeMemoryMB": "MB", "databaseSizeMB": "MB",
+    "freeMemoryMB": "MB", "freeMemoryKB": "KB",
+    "databaseSizeMB": "MB",
 }
 _STATES = {
     "switch": {"on", "off"}, "motion": {"active", "inactive"},
@@ -41,7 +42,10 @@ _STATES = {
     "status": {"idle", "playing", "paused", "buffering", "offline", "online"},
     "presence": {"present", "not present"},
 }
-_METRICS = frozenset(("cpuLoad", "internalTempC", "freeMemoryMB", "databaseSizeMB"))
+_METRICS = frozenset((
+    "cpuLoad", "internalTempC", "freeMemoryMB", "freeMemoryKB",
+    "databaseSizeMB",
+))
 _MAX_CLAIMS = 64
 
 
@@ -104,6 +108,28 @@ def claim_catalog(
             "scope": scope,
         })
 
+    # Labels are taken solely from the exact independently retrieved
+    # projected read, never a model assertion or a different entity.
+    def matching_source(read: int, op: str, src: str) -> Mapping[str, Any]:
+        for w in witnesses[:16]:
+            if w.get("read") != read or w.get("operation") != op:
+                continue
+            d = w.get("source_data", {})
+            if not isinstance(d, Mapping):
+                continue
+            if op == "hub_get_logs":
+                groups = d.get("log_summary", {}).get("warning_error_groups", [])
+            else:
+                groups = d.get("issuer_apps", [])
+            for row in groups[:25] if isinstance(groups, list) else []:
+                if not isinstance(row, Mapping):
+                    continue
+                ident = (row.get("source_id") if op == "hub_get_logs"
+                         else row.get("appId"))
+                if str(ident) == src:
+                    return row
+        return {}
+
     for fact in factual_evidence_ledger(witnesses, focus_ids, max_facts=40):
         reads = fact.get("evidence_reads", [])
         if not reads or type(reads[0]) is not int:
@@ -117,20 +143,32 @@ def claim_catalog(
                       " to " + str(fact.get("newest_returned") or "unknown")[:35])
             method = fact.get("named_method")
             duration = fact.get("source_reported_duration_ms")
-            detail = (f" reported slow method {method}" if isinstance(method, str)
-                      and _FIELD.fullmatch(method) else " had a warning")
+            original = matching_source(read, "hub_get_logs", str(src))
+            display_name = safe_string(original.get("source_name") or "", 75)
+            observed_msg = str(original.get("message") or "").casefold()
+            if isinstance(method, str) and _FIELD.fullmatch(method):
+                detail = f"reported slow method {method}"
+            elif "watchdog fired" in observed_msg:
+                detail = "watchdog warning; source-reported Watchdog fired"
+            else:
+                detail = "reported warning"
             if type(duration) is int:
                 detail += f" (source-reported {duration} ms)"
-            add("warning", f"Source {src or 'unknown'}: {severity}{detail}; "
-                f"sampled period {period}. Historical coverage is incomplete.",
+            label = display_name or ("Source " + str(src or "unknown"))
+            add("warning", f"{label} (source {src or 'unknown'}): "
+                f"{severity} {detail}; sampled period {period}. "
+                "Historical coverage is incomplete.",
                 read, (kind, src, severity, period, method, duration),
                 scope=str(src) if src else None)
         elif kind == "source_attested_device_command_issuer":
             dev, app = str(fact.get("device_id")), str(fact.get("app_id"))
             count = fact.get("observed_command_rows")
             count_text = str(count) if type(count) is int and 0 <= count < 100000 else "some"
+            caller = matching_source(read, "hub_list_device_events", app)
+            name = safe_string(caller.get("name") or "", 75)
+            app_label = f"{name} (app {app})" if name else f"app {app}"
             add("command_issuer",
-                f"In the bounded event sample for device {dev}, app {app} "
+                f"In the bounded event sample for device {dev}, {app_label} "
                 f"issued {count_text} recorded commands. This does not show causation.",
                 read, (kind, dev, app), scope=dev)
         elif kind == "verified_static_source_structure":
@@ -148,8 +186,11 @@ def claim_catalog(
         filters = w.get("read_filters")
         filters = filters if isinstance(filters, Mapping) else {}
         if op == "hub_get_device":
-            device = str(filters.get("deviceId") or data.get("id") or "")
-            if not device.isdecimal() or (focus and device not in focus):
+            device = str(filters.get("deviceId") or "")
+            if (not device.isdecimal()
+                    or (data.get("id") is not None
+                        and str(data["id"]) != device)
+                    or (focus and device not in focus)):
                 continue
             attrs = data.get("attributes", [])
             if not isinstance(attrs, list):
@@ -183,7 +224,8 @@ def claim_catalog(
                         unit=_NUMERIC.get(field), metric=field, scope="hub")
         elif op == "hub_get_app_config":
             app = str(data.get("requested_app_id") or filters.get("appId") or "")
-            if app.isdecimal() and (data.get("source_app_id_matches_request") is not False):
+            if (app.isdecimal() and data.get("requested_app_id_verified") is True
+                    and data.get("source_app_id_matches_request") is not False):
                 add("app_metadata", f"App {app} configuration metadata was read; "
                     "settings values and historical execution are not verified.",
                     read, (op, app), scope=app)
