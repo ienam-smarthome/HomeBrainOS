@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.217**.
+Current add-on version: **0.18.218**.
+
+v0.18.218 makes multiple independently attested name-prefix matches available as safe individual READ candidates, and prevents a redundant 20-second full-device-list fallback after a bounded identity lookup. [Release notes](CHANGELOG-0.18.218.md).
 
 v0.18.217 prevents unrelated generic health evidence from being presented as an answer to an unresolved named subject, and permits individually verified read-only exploration of small collectively named device candidates. [Release notes](CHANGELOG-0.18.217.md).
 
