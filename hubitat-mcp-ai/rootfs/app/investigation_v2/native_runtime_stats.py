@@ -35,7 +35,7 @@ def _nonnegative_number(value: Any) -> int | float | None:
 def project_log_runtime_stats(data: Any) -> dict[str, Any] | None:
     raw = unwrapped(data)
     mode = raw.get("mode")
-    if mode not in _MODES:
+    if not isinstance(mode, str) or mode not in _MODES:
         return None
     entries = raw.get("entries")
     if not isinstance(entries, list):
