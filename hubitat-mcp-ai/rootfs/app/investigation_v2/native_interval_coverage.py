@@ -164,5 +164,120 @@ def incomplete_interval_answer(coverage: Mapping[str,Any] | None) -> str | None:
         "and the controlling app's decision/input history."
     )
 
+
+def interval_reasoning_evidence(
+    coverage: Mapping[str,Any] | None,
+    witnesses: Sequence[Mapping[str,Any]],
+) -> dict[str,Any] | None:
+    """Make a proven interval eligible for the existing cited AI reasoning.
+
+    A relative-time interval request has no user calendar date, so the
+    dated-incident extractor cannot by itself provide an evidence packet.
+    This packet is based ONLY on an independently observed start and end,
+    plus events from the same source device near that interval.
+    """
+    if not isinstance(coverage,Mapping):
+        return None
+    if coverage.get("status")!="complete_source_reported_interval_observed":
+        return None
+    interval=coverage.get("most_recent_complete_interval")
+    if not isinstance(interval,Mapping):
+        return None
+    begin=_timestamp(interval["start"]["date"])
+    end=_timestamp(interval["end"]["date"])
+    if begin is None or end is None or end<=begin:
+        return None
+    from datetime import timedelta
+    scope=str(coverage.get("target_device_id") or "")
+    examples=[]
+    seen=set()
+    for w in witnesses[:20]:
+        if w.get("operation")!="hub_list_device_events":
+            continue
+        if str(w.get("read_filters",{}).get("deviceId") or "")!=scope:
+            continue
+        read=w.get("read")
+        if type(read) is not int:
+            continue
+        data=w.get("source_data")
+        if not isinstance(data,Mapping):
+            continue
+        for event in data.get("events",[])[:200]:
+            if not isinstance(event,Mapping):
+                continue
+            stamp=_timestamp(event.get("date"))
+            if (stamp is None or
+                    not begin-timedelta(minutes=10)<=stamp<=end+timedelta(minutes=5)):
+                continue
+            name=event.get("name")
+            if not isinstance(name,str):
+                continue
+            if (name not in _TRANSITIONS and
+                    name not in ("heatingSetpoint","thermostatSetpoint",
+                                 "thermostatMode","level","position")
+                    and not name.startswith("command-")):
+                continue
+            producer=event.get("producedBy")
+            kind="unattributed"
+            source_name=""
+            if isinstance(producer,Mapping):
+                if producer.get("appId") is not None:
+                    if not str(producer["appId"]).isdecimal():
+                        continue
+                    kind="issuing_app"
+                elif producer.get("deviceId") is not None:
+                    if str(producer["deviceId"])!=scope:
+                        continue
+                    kind="target_device"
+                source_name=str(producer.get("name") or "")[:80]
+            key=(read,name,str(event["date"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            example={
+                "read":read,"name":name,"date":str(event["date"]),
+                "source_name":source_name,"source_kind":kind,
+            }
+            if event.get("value") is not None:
+                example["value"]=str(event["value"])[:90]
+            examples.append(example)
+    examples.sort(key=lambda row:row["date"])
+    # Anchor the start and end before preserving potentially dense
+    # commands or telemetry, and cap without dropping the crucial pair.
+    anchors=[]
+    for endpoint in ("start","end"):
+        item=interval[endpoint]
+        anchor=next((row for row in examples
+                     if row["read"]==item["read"]
+                     and row["name"]==item["name"]
+                     and row["date"]==item["date"]),None)
+        if anchor is None:
+            return None
+        anchors.append(anchor)
+    chosen=anchors + [
+        row for row in examples
+        if row not in anchors
+    ][:16]
+    chosen.sort(key=lambda row:row["date"])
+    return {
+        "target_device_id":scope,
+        "incident_period":{
+            "start_utc_interpreted":(begin-timedelta(hours=2)).isoformat(),
+            "end_utc_interpreted":(end+timedelta(hours=2)).isoformat(),
+            "source":"verified_device_state_interval",
+            "hub_timezone_verified":False,
+        },
+        "scoped_event_reads":list(coverage.get("source_reads") or []),
+        "incident_answer_evidence_present":True,
+        "material_event_count":len(chosen),
+        "material_event_examples":chosen,
+        "controller_decision_log_examples":[],
+        "controller_decision_log_count":0,
+        "limits":"A complete source-reported device operating interval is "
+                 "observed, but the app's cause and input sensors are "
+                 "not automatically established.",
+    }
+
+
 __all__=["requires_complete_interval","complete_interval_coverage",
-         "incomplete_interval_answer"]
+         "incomplete_interval_answer","interval_reasoning_evidence"]
