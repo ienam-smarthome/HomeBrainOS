@@ -95,9 +95,10 @@ def verified_temporal_lead(
                 break
         if anchor:
             break
-    if anchor is None:
-        return None
-
+    # A source-attested device lastSeen event can also anchor the sequence
+    # if the model did not request a separate current device snapshot.
+    # We evaluate that fallback below after collecting only same-device
+    # events from an independently scoped, READ-only history receipt.
     commands = []
     # The projected event page may contain much more than the issuer's
     # five illustrative command samples. Retain bounded, same-device
@@ -178,6 +179,8 @@ def verified_temporal_lead(
                 if not isinstance(raw_value, str) or raw_value not in allowed[event_name]:
                     continue
             state_events.append({
+                "source_name": safe_string(actor.get("name") or
+                    "Device " + device_id, 80),
                 "attribute": event_name,
                 "value": safe_string(raw_value, 40)
                 if isinstance(raw_value, str) else None,
@@ -186,6 +189,40 @@ def verified_temporal_lead(
             })
     if not commands:
         return None
+    if anchor is None:
+        # Match the *reported value* of a contact event to its own event
+        # timestamp. A driver/watchdog event not attesting fresh contact
+        # cannot become a lastSeen anchor. Both identities and timestamps
+        # must originate in already verified, device-scoped source rows.
+        candidates = []
+        for event in state_events:
+            if event["attribute"] not in _ANCHORS:
+                continue
+            value_time = _timestamp(event["value"])
+            if value_time is None:
+                continue
+            if abs((event["timestamp"] - value_time).total_seconds()) > 5.0:
+                continue
+            closest_command = min(
+                commands, key=lambda item:
+                abs((item["timestamp"] - event["timestamp"]).total_seconds()))
+            gap = abs((closest_command["timestamp"] -
+                       event["timestamp"]).total_seconds())
+            if gap <= max(0.1, min(10.0, float(proximity_seconds))):
+                candidates.append((gap, event))
+        if not candidates:
+            return None
+        _, source = min(candidates, key=lambda item:
+                        (item[0], item[1]["timestamp"]))
+        anchor = {
+            "read": source["read"],
+            "attribute": source["attribute"],
+            "time": _timestamp(source["value"]),
+            "source_text": source["value"],
+            "device_name": source["source_name"],
+            "health": None,
+            "mqtt": None,
+        }
     # A repeated source page must not multiply apparent command history.
     unique = {(c["app_id"], c["command"], c["timestamp"]): c
               for c in commands}
@@ -359,4 +396,48 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
     )
 
 
-__all__ = ["verified_temporal_lead", "temporal_lead_brief"]
+def temporal_lead_short_answer(lead: Mapping[str, Any]) -> str:
+    """Answer a connectivity incident in plain language, preserving uncertainty.
+
+    Historical commands are only one possible explanation. A user unplugging
+    a socket is compatible with the same Hubitat reports, so neither cause
+    can be asserted from the event chronology alone.
+    """
+    device = safe_string(lead["device_name"], 80)
+    issuer = safe_string(lead["app_name"], 88)
+    switch = next((
+        e for e in lead.get("observed_event_sequence", [])
+        if e.get("attribute") == "switch"
+        and e.get("value") == lead.get("command")), None)
+    offline = next((
+        e for e in lead.get("observed_event_sequence", [])
+        if e.get("attribute") in ("healthStatus", "networkStatus", "deviceHealth")
+        and e.get("value") == "offline"), None)
+    if lead.get("health_status") == "offline" or offline:
+        start = (f"**Most likely explanation:** {device} lost its power "
+                 "or network connection.")
+    else:
+        start = (f"**Strongest clue:** {issuer} issued "
+                 f"`{lead['command']}` close to the last reported "
+                 "device contact.")
+    detail = (f" Hubitat recorded an `{lead['command']}` command "
+              f"from {issuer} (app {lead['app_id']}) at "
+              f"{lead['command_text']}, {lead['absolute_gap_seconds']} "
+              "seconds apart from the saved lastSeen/contact timestamp.")
+    if switch:
+        detail += (f" It then recorded `switch={switch['value']}` "
+                   f"at {switch['timestamp']}.")
+    if offline:
+        detail += (f" It reported `{offline['attribute']}=offline` "
+                   f"at {offline['timestamp']}.")
+    end = (
+        " **Cause not confirmed:** Those events do not establish whether "
+        "the automation affected the power, someone physically disconnected "
+        "power, or the network link failed. Check power first."
+        if lead.get("command") == "off" else
+        " **Cause not confirmed:** A command and an offline report alone "
+        "do not prove why communication stopped. Check power and network.")
+    return start + detail + end
+
+
+__all__ = ["verified_temporal_lead", "temporal_lead_brief", "temporal_lead_short_answer"]

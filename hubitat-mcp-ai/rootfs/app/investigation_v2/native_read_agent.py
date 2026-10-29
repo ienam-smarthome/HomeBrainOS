@@ -45,7 +45,11 @@ from .native_cross_source_brief import verified_source_cases, source_connected_b
 from .native_subject_relevance import subject_relevance_limit
 from .native_room_evidence import natural_entity_answer, verified_room_inventory
 from .native_room_catalog import source_room_catalog, question_room_matches
-from .native_temporal_lead import verified_temporal_lead, temporal_lead_brief
+from .native_temporal_lead import (verified_temporal_lead,
+                                   temporal_lead_brief,
+                                   temporal_lead_short_answer)
+from .native_history_recovery import (
+    requested_history_bounds, normalize_selected_history_read)
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -637,6 +641,7 @@ async def run_native_read_agent(
     recovery_rejections = 0
     invalid_contract_attempts: dict[str, int] = {}
     rejected_scope_history_reads = 0
+    normalized_history_reads: list[dict[str, Any]] = []
     witnesses: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     attempted = 0
@@ -891,6 +896,15 @@ async def run_native_read_agent(
                     "read_only": True,
                 }, ensure_ascii=True)})
                 continue
+            # Only the model's already chosen READ operation may have a
+            # unique source-attested device and explicit incident date
+            # normalized; subsequent host guard verifies the full result.
+            args, repair = normalize_selected_history_read(
+                name, args, focus_ids=focus_ids,
+                verified_device_ids=verified_typed["device"], question=question)
+            if repair is not None:
+                normalized_history_reads.append(repair)
+                key = json.dumps([name, args], sort_keys=True, default=str)
             issue = _guard(name, args, manifest, discovered, verified_ids,
                            verified_typed)
             op_requested = args.get("tool") if name.startswith("hub_read_") else name
@@ -1287,6 +1301,21 @@ async def run_native_read_agent(
                                 witnesses, focus_ids))),
                         "source_complete": False,
                     })
+            if op == "hub_list_rules" and isinstance(summary, dict):
+                rules = summary.get("rules")
+                if isinstance(rules, list) and any(
+                    isinstance(rule, dict)
+                    and str(rule.get("type")) == "Rule-5.1"
+                    for rule in rules[:100]
+                ):
+                    view["rule_engine_inspection_hint"] = (
+                        "The source returned Rule-5.1 (Rule Machine) apps. "
+                        "For an independently verified Rule-5.1 app ID, "
+                        "inspect its live-offered hub_get_app_config / "
+                        "app page or Rule Machine read operation. "
+                        "hub_get_custom_rule refers to a different custom "
+                        "rule engine; an empty custom-rule response does "
+                        "not establish absence of Rule Machine actions.")
             if op == "hub_list_rooms" and room_name_catalogs:
                 catalog = room_name_catalogs[-1]
                 matched = question_room_matches(question, catalog)
@@ -1324,6 +1353,7 @@ async def run_native_read_agent(
                         "oldest_returned": summary.get("oldest_returned"),
                         "newest_returned": summary.get("newest_returned"),
                         "history_complete": False,
+                        "requested_user_window": requested_history_bounds(question),
                         "advice": (
                             "These individual source events have already "
                             "been observed. A narrower interval with the "
@@ -1755,7 +1785,7 @@ async def run_native_read_agent(
         verified_narrative["text"]
         if verified_narrative.get("accepted") is True
         else grouped_answer["text"] if grouped_answer is not None
-        else temporal_lead_brief(temporal_lead) if temporal_lead is not None
+        else temporal_lead_short_answer(temporal_lead) if temporal_lead is not None
         else connected_brief)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
@@ -1870,6 +1900,11 @@ async def run_native_read_agent(
          else "**Independent claim validation — source-bound evidence**"),
         answer_text, "",
     ])
+    # Keep the complete chronology in the technical report, while the
+    # primary answer stays short and plainly distinguishes likely causes.
+    if temporal_lead is not None:
+        lines.extend(["**Detailed verified event chronology**",
+                      temporal_lead_brief(temporal_lead), ""])
     # The supported answer comes first; a source-code blocker is a limit
     # on deeper attribution, not the primary answer to the question.
     lines.extend(driver_blocker_lines)
@@ -2099,6 +2134,7 @@ async def run_native_read_agent(
             "redundant_log_subsets": redundant_log_subsets,
             "redundant_event_subsets": redundant_event_subsets,
             "rejected_scope_history_reads": rejected_scope_history_reads,
+            "normalized_history_reads": normalized_history_reads[:8],
             "invalid_contract_attempts": dict(sorted(
                 invalid_contract_attempts.items())),
             "final_synthesis": synthesis_status,

@@ -72,7 +72,7 @@ def test_unscoped_device_history_is_not_substituted_for_verified_device():
 
 
 @pytest.mark.asyncio
-async def test_host_rejects_unscoped_history_then_model_chooses_correct_device_read():
+async def test_host_normalizes_model_chosen_history_to_verified_unique_device():
     mcp=FakeMCP([DEVICE,READ_DIAG])
     async def identities():
         return [{"id":"7934","label":"Google Nest Hub"}]
@@ -97,18 +97,16 @@ async def test_host_rejects_unscoped_history_then_model_chooses_correct_device_r
             return {"tool_calls":[call("hub_read_devices",
                                        "hub_list_device_events",limit=100)]}
         if turn==4:
-            assert "target_device_history_scope_missing" in messages[-1]["content"]
-            assert "deviceId=7934" in messages[-1]["content"]
-            return {"tool_calls":[call("hub_read_devices",
-                                       "hub_list_device_events",
-                                       deviceId="7934",limit=100)]}
-        return {"content":"Verified app 4080 issued a past command; the warning cause remains unknown."}
+            assert "deviceId" in messages[-1]["content"]
+            return {"content":"Verified app 4080 issued a past command; the warning cause remains unknown."}
+        raise AssertionError("Model should finish after verified history read")
     answer=await run_native_read_agent(question="Investigate this device warning",
                                       chat=model,mcp=mcp,executor=executor)
     diagnostics=answer["native_diagnostics"]
     assert diagnostics["reads_executed"]==2
     assert diagnostics["successful_reads"]==2
-    assert diagnostics["rejected_scope_history_reads"]==1
+    assert diagnostics["rejected_scope_history_reads"]==0
+    assert diagnostics["normalized_history_reads"][0]["verified_device_id_inserted"] is True
     assert diagnostics["verified_typed_ids"]["app"]==["4080"]
     assert [entry[1]["tool"] for entry in executor.calls]==[
         "hub_get_logs","hub_list_device_events"]
