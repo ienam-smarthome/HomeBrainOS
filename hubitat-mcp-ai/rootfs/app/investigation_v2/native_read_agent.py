@@ -43,6 +43,7 @@ from .native_cross_source_brief import verified_source_cases, source_connected_b
 from .native_subject_relevance import subject_relevance_limit
 from .native_room_evidence import natural_entity_answer, verified_room_inventory
 from .native_room_catalog import source_room_catalog, question_room_matches
+from .native_temporal_lead import verified_temporal_lead, temporal_lead_brief
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -1305,6 +1306,19 @@ async def run_native_read_agent(
                     witnesses, sorted(focus_ids))
                 if packet is not None:
                     view["incident_attribution_evidence"] = packet
+            if focus_ids and op in ("hub_list_device_events", "hub_get_device"):
+                lead = verified_temporal_lead(witnesses, sorted(focus_ids))
+                if lead is not None:
+                    view["verified_command_time_lead"] = {
+                        **lead,
+                        "next_read_hint": (
+                            "A command and source-reported contact timestamp are "
+                            "close, but execution and mechanism are unverified. "
+                            "Use independently discovered READs of the issuer "
+                            "app configuration and device communication evidence "
+                            "to distinguish possible causes. Never infer a "
+                            "physical power cut solely from this timestamp."),
+                    }
             if focus_ids and op in ("hub_list_device_events", "hub_get_logs", "hub_get_device"):
                 gap = gap_for_target(
                     witnesses, sorted(focus_ids),
@@ -1702,10 +1716,14 @@ async def run_native_read_agent(
         natural_entity_answer(named_identity_lookups, witnesses, room_inventories)
         if not source_bound_incident and not focus_ids
         and relevance_blocker is None else None)
+    temporal_lead = (
+        verified_temporal_lead(witnesses, sorted(focus_ids))
+        if not source_bound_incident and relevance_blocker is None else None)
     concise_answer = (
         verified_narrative["text"]
         if verified_narrative.get("accepted") is True
         else grouped_answer["text"] if grouped_answer is not None
+        else temporal_lead_brief(temporal_lead) if temporal_lead is not None
         else connected_brief)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
@@ -1890,20 +1908,32 @@ async def run_native_read_agent(
         and relevance_blocker is None
         and verified_narrative.get("accepted") is not True
     )
+    host_temporal_lead_published = (
+        temporal_lead is not None
+        and not host_group_published
+        and relevance_blocker is None
+        and verified_narrative.get("accepted") is not True
+    )
     validation_issues = (
         ["source_verified_room_and_device_readings"]
         if host_group_published and grouped_answer["room_membership_verified"]
         else ["source_verified_device_readings"]
         if host_group_published
+        else ["source_verified_temporal_command_lead",
+              "physical_causation_unverified"]
+        if host_temporal_lead_published
         else [
             "structured_claims_validated" if publication["validation"]["accepted"]
             else "unstructured_or_unsupported_claims_withheld"
         ]
     )
-    if publication["validation"]["rejected"] and not host_group_published:
+    if (publication["validation"]["rejected"]
+            and not host_group_published and not host_temporal_lead_published):
         validation_issues.append("model_claims_withheld")
     if not witnesses:
         validation_issues.append("no_verified_reads")
+    elif host_temporal_lead_published:
+        validation_issues.append("historical_coverage_unverified")
     elif host_group_published:
         if grouped_answer["room_unread_count"]:
             validation_issues.append("some_room_member_states_unread")
@@ -1974,7 +2004,8 @@ async def run_native_read_agent(
             "factual_evidence_ledger": factual_ledger,
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
-                "used_for_display_answer": not host_group_published,
+                "used_for_display_answer": not (
+                    host_group_published or host_temporal_lead_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
                     else "validated_model_selection"),
@@ -2006,9 +2037,11 @@ async def run_native_read_agent(
                 else "model_authored_independently_checked" if
                 verified_narrative.get("accepted") is True
                 else "verified_entity_group_comparison" if grouped_answer
+                else "source_verified_temporal_lead" if temporal_lead is not None
                 else "cross_source_verified_case_graph" if connected_brief
                 else "host_verified_claim_catalog" if concise_answer
                 else "full_source_report"),
+            "verified_temporal_lead": temporal_lead,
             "entity_group_summary": (
                 {k: v for k, v in grouped_answer.items() if k != "text"}
                 if grouped_answer else None),
