@@ -35,7 +35,12 @@ def candidate_prompt() -> str:
         "\"supporting_events\":[{\"read\":1,\"name\":\"switch\","
         "\"date\":\"unchanged timestamp from source evidence\"}],"
         "\"next_check\":\"one useful observation that would distinguish "
-        "the leading hypothesis from alternatives\"}. "
+        "the leading hypothesis from alternatives\","
+        "\"alternative\":\"another plausible explanation\"}. "
+        "Compare at least two mechanisms in your own reasoning and "
+        "prefer one only if observed events distinguish it. "
+        "A historical command followed by a brightness adjustment does "
+        "not prove a light stayed on or that a motion timer failed. "
         "Select at least two DISTINCT attested events listed in "
         "incident_evidence.material_event_examples and copy each exact "
         "read/name/date. Do not cite a tool result that merely mentions "
@@ -88,7 +93,7 @@ def verify_natural_hypothesis(
     if not isinstance(provided, list) or len(provided) < 2 or len(provided) > 6:
         return reject("missing_independent_event_anchors")
     allowed = {
-        (str(event["read"]), str(event["name"]), str(event["date"]))
+        (str(event["read"]), str(event["name"]), str(event["date"])): event
         for event in coverage.get("material_event_examples", [])
         if isinstance(event, Mapping)
         and type(event.get("read")) is int
@@ -97,13 +102,24 @@ def verify_natural_hypothesis(
     }
     chosen = []
     for event in provided:
-        if not isinstance(event, Mapping) or set(event) != {"read", "name", "date"}:
+        if not isinstance(event, Mapping):
+            return reject("invalid_event_anchor")
+        required = {"read", "name", "date"}
+        optional = {"value", "source_name", "source_kind"}
+        if not required.issubset(event) or not set(event).issubset(required | optional):
             return reject("invalid_event_anchor")
         if type(event["read"]) is not int:
             return reject("invalid_read_id")
         key = (str(event["read"]), str(event["name"]), str(event["date"]))
-        if key not in allowed:
+        original = allowed.get(key)
+        if original is None:
             return reject("event_not_in_verified_incident_window")
+        # Model may quote a whole source event including value/producer;
+        # never let it invent or alter those extra fields. Only exact
+        # canonical projected values are accepted as evidence anchors.
+        if any(k not in original or str(event[k]) != str(original[k])
+               for k in optional if k in event):
+            return reject("event_attribute_not_attested")
         if key not in chosen:
             chosen.append(key)
     if len(chosen) < 2:
@@ -123,9 +139,19 @@ def verify_natural_hypothesis(
     next_check = " ".join(next_check.strip().split())
     if len(next_check) > 180 or _CONTROL.search(next_check):
         return reject("invalid_next_check")
+    alternative = candidate.get("alternative", "")
+    if not isinstance(alternative, str):
+        return reject("invalid_alternative")
+    alternative = " ".join(alternative.strip().split())
+    if (len(alternative) > 175 or _CONTROL.search(alternative)
+            or _CONFIDENT.search(alternative)
+            or _NUMBER.search(alternative)):
+        return reject("unsupported_alternative")
     statement = "**Possible explanation:** " + hypothesis
+    if alternative:
+        statement += " **Another possibility:** " + alternative
     if next_check:
-        statement += " **To distinguish the cause:** " + next_check
+        statement += " **Best next check:** " + next_check
     return {
         "accepted": True,
         "reason": "source_event_refs_verified_semantic_cause_not_proven",

@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.230**.
+Current add-on version: **0.18.231**.
+
+v0.18.231 unifies Native V2's model investigation policy, removing conflicting fact-ID instructions; sends event values and actor names to evidence-based reasoning, compares plausible causes, and reuses verified in-loop explanations. [Release notes](CHANGELOG-0.18.231.md).
 
 v0.18.230 adds optional model-authored, short, explicitly tentative incident hypotheses in Native V2 when the AI cites at least two exact returned events from the requested date. A host validator checks read IDs, events, timestamps and claimed numbers before publication, and otherwise preserves the source-only answer. [Release notes](CHANGELOG-0.18.230.md).
 
