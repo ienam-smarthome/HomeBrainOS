@@ -45,7 +45,9 @@ from .native_cross_source_brief import verified_source_cases, source_connected_b
 from .native_subject_relevance import subject_relevance_limit
 from .native_room_evidence import natural_entity_answer, verified_room_inventory
 from .native_room_catalog import source_room_catalog, question_room_matches
-from .native_temporal_lead import verified_temporal_lead, temporal_lead_brief
+from .native_temporal_lead import (verified_temporal_lead,
+                                   temporal_lead_brief,
+                                   temporal_lead_short_answer)
 from .native_history_recovery import (
     requested_history_bounds, normalize_selected_history_read)
 from .native_verified_prose import (
@@ -1783,7 +1785,7 @@ async def run_native_read_agent(
         verified_narrative["text"]
         if verified_narrative.get("accepted") is True
         else grouped_answer["text"] if grouped_answer is not None
-        else temporal_lead_brief(temporal_lead) if temporal_lead is not None
+        else temporal_lead_short_answer(temporal_lead) if temporal_lead is not None
         else connected_brief)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
@@ -1898,6 +1900,11 @@ async def run_native_read_agent(
          else "**Independent claim validation — source-bound evidence**"),
         answer_text, "",
     ])
+    # Keep the complete chronology in the technical report, while the
+    # primary answer stays short and plainly distinguishes likely causes.
+    if temporal_lead is not None:
+        lines.extend(["**Detailed verified event chronology**",
+                      temporal_lead_brief(temporal_lead), ""])
     # The supported answer comes first; a source-code blocker is a limit
     # on deeper attribution, not the primary answer to the question.
     lines.extend(driver_blocker_lines)
