@@ -71,7 +71,8 @@ def _joined_device(witnesses: Sequence[Mapping[str, Any]],
         if not isinstance(label, str) or not label.strip():
             continue
         capabilities = source.get("capabilities")
-        caps = set(capabilities[:80]) if isinstance(capabilities, list) else set()
+        caps = ({value for value in capabilities[:80] if isinstance(value, str)}
+                if isinstance(capabilities, list) else set())
         return {
             "id": ident, "label": safe_string(label, 90),
             "light": "Light" in caps,
