@@ -178,7 +178,11 @@ async def test_model_can_follow_device_event_issuers_into_two_app_configs_and_so
         "hub_list_device_events","hub_get_app_config",
         "hub_get_app_config","hub_get_source"]
     assert result["native_diagnostics"]["failures"]==[]
-    assert "two" in result["answer"]["text"].lower()
+    # Native v0.18.201 independently publishes attested issuer IDs, not
+    # the model's unvalidated claim that there were "two" apps.
+    answer = result["answer"]["text"]
+    assert "1679" in answer and "4080" in answer
+    assert result["native_diagnostics"]["claim_publication"]["model_prose_published"] is False
 
 
 def test_source_ids_from_dependencies_and_drivers_are_typed_not_interchangeable():
