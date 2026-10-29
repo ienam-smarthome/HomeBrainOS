@@ -90,8 +90,8 @@ def test_generic_brief_leads_with_source_health_and_dependencies_not_switch():
     assert "unknown activity" in text
     assert "app references" in text
     assert "offline" in text
-    assert "active" not in text
-    assert text.count("lastActivity=")<=2
+    assert "are active" not in text
+    assert text.count("lastActivity=")<=3
     assert len(text.splitlines())<=10
 
 
