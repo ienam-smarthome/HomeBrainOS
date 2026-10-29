@@ -24,6 +24,8 @@ from .read_diagnostics import classify_execution, classify_exception
 from .native_source_adapters import compact_logs, attested_source_ids, unwrapped
 from .native_tool_protocol import operation_problem, guidance_for, source_highlights, evidence_fallback
 from .native_entity_lookup import NAME as LOOKUP_NAME, lookup_tool, resolve_named_device
+from .native_intent_handoff import (
+    NAME as HANDOFF_NAME, handoff_tool, handoff_result)
 from .native_evidence_focus import read_fingerprint, focused_highlights, focused_fallback, focused_model_view
 from .native_device_projection import device_mode_evidence
 from .native_read_scope import target_history_scope_problem
@@ -68,6 +70,16 @@ _READ_PREFIXES = ("hub_get_", "hub_list_", "hub_read_", "hub_search_",
 _LIMIT = 12
 _SYSTEM = (
     "You are a general-purpose, evidence-led Hubitat assistant. Interpret "
+    "For EVERY user request, determine the actual intent from the complete "
+    "question, not word matches. The host has already guaranteed that you "
+    "cannot execute any writes in Investigation V2. If the user wants you "
+    "to make a Hubitat change, choose homebrain_request_main_ask as your "
+    "FIRST and ONLY tool and do not investigate device state. If the user "
+    "asks WHY or WHAT HAPPENED in the past, including wording like OFF "
+    "command, switch-state, restart logs, rule actions, or the instruction "
+    "read only; change nothing, that is an INVESTIGATION: choose your "
+    "evidence READ tools instead, not the handoff. No handoff just because "
+    "a verb also names a historical device event or a hyphenated noun. "
     "the user's real information objective before choosing any tool: a "
     "question might concern current device readings, a historical event, "
     "app/rule behavior, system health, performance, energy, or a comparison. "
@@ -605,7 +617,11 @@ async def run_native_read_agent(
     manifest = _read_manifest(tools)
     if not manifest:
         raise ValueError("No live read-only MCP tools verified")
-    offered = _model_tools(manifest) + [lookup_tool()]
+    # Every native question, including a possible write, is interpreted by
+    # the normal model planning pass. The model may select a *local*
+    # navigation-only handoff; actual tool execution is READ-only regardless
+    # of model intent or output.
+    offered = [handoff_tool()] + _model_tools(manifest) + [lookup_tool()]
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": question},
@@ -809,6 +825,22 @@ async def run_native_read_agent(
                 continue
             name, args = parsed
             key = json.dumps([name, args], sort_keys=True, default=str)
+            if name == HANDOFF_NAME:
+                # Model-led semantic refusal is not Hubitat authority. The
+                # tool is host-local and never reaches the MCP executor.
+                # Explicitly preserve any earlier READ count if the model
+                # made a suboptimal late handoff.
+                if args != {}:
+                    failures.append({"tool": name, "code": "invalid_handoff_args"})
+                    messages.append({"role": "tool", "content":
+                                     '{"error":"invalid_handoff_args"}'})
+                    continue
+                return handoff_result(
+                    reads_executed=attempted,
+                    successful_reads=len(witnesses),
+                    planning_model_calls=planning_model_calls,
+                    elapsed_ms=round((time.monotonic() - started)*1000),
+                )
             if name == LOOKUP_NAME:
                 # The model chooses WHEN a device label needs resolution.
                 # This is a bounded host-local READ, never forwarded as an MCP
