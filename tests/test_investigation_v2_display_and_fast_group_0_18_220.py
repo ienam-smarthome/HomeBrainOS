@@ -37,7 +37,12 @@ async def test_complete_six_device_group_skips_eight_second_claim_pass():
         return [{"id":r["source_data"]["id"],
                  "label":r["source_data"]["label"]} for r in rows]
     mcp.get_device_identities=identities
-    executor=FakeExecutor(mcp,[r["source_data"] for r in rows])
+    # FakeExecutor returns source data in call order. Match each actual
+    # model-selected scoped device ID; mismatched responses must *not*
+    # establish complete group evidence.
+    by_id={r["source_data"]["id"]:r["source_data"] for r in rows}
+    order=["7818","7821","1079","7746","7754","7851"]
+    executor=FakeExecutor(mcp,[by_id[ident] for ident in order])
     model_calls=0
     async def model(messages,tools):
         nonlocal model_calls
