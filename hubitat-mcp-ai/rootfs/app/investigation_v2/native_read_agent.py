@@ -2029,6 +2029,7 @@ async def run_native_read_agent(
         incident_gap is not None and relevance_blocker is None)
     host_temporal_lead_published = (
         temporal_lead is not None
+        and not model_reasoning_published
         and not host_group_published
         and relevance_blocker is None
         and verified_narrative.get("accepted") is not True
@@ -2158,6 +2159,7 @@ async def run_native_read_agent(
             "source_grounded_brief_published": bool(
                 not source_bound_incident
                 and not host_incident_gap_published
+                and not model_reasoning_published
                 and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
