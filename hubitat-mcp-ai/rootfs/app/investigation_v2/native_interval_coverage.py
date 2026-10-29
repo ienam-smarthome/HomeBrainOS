@@ -111,7 +111,7 @@ def complete_interval_coverage(
                          "date":prev_raw,"value":prev_value},
                 "end":{"read":read,"name":attr,
                        "date":raw,"value":value},
-                "duration_seconds":int((stamp-prev).total_seconds()),
+                "duration_seconds":int(round((stamp-prev).total_seconds())),
                 "source_state_observations_only":True,
             })
     found.sort(key=lambda row:row["end"]["date"],reverse=True)
