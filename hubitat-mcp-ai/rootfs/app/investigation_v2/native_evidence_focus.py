@@ -187,7 +187,7 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                     "lexically recognised methods. Static call references "
                     f"(not execution proof): {safe_string(focused[:3],440)}.")
             else:
-                add(f"{ref}: source inspection not available "
+                add(f"{ref}: source inspection cannot support implementation reasoning; source not available "
                     f"({safe_string(status,75)}); no driver/app execution "
                     "path was verified.")
         elif op=="hub_get_app_config":
