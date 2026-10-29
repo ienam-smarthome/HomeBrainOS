@@ -759,6 +759,10 @@ async def run_native_read_agent(
             in_loop_incident = (
                 dated_incident_evidence(question, witnesses, sorted(focus_ids))
                 if enable_model_reasoned_assessment else None)
+            if enable_model_reasoned_assessment and in_loop_incident is None:
+                in_loop_incident = interval_reasoning_evidence(
+                    complete_interval_coverage(
+                        question, witnesses, sorted(focus_ids)), witnesses)
             if (in_loop_incident is not None
                     and in_loop_incident["material_event_count"] >= 2):
                 # A reasoning-enabled model may finish using the planning
@@ -1562,7 +1566,7 @@ async def run_native_read_agent(
         not (preliminary_incident is not None
              and source_bound_incident_required(preliminary_incident))
         else None)
-    if (not answer_text and interval_unverified):
+    if interval_unverified:
         final_synthesis_skipped_reason = "explicit_complete_cycle_not_established"
     if (not answer_text and complete_group_evidence is not None
             and complete_group_evidence.get("room_unread_count", 0) == 0
