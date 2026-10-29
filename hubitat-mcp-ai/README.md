@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.214**.
+Current add-on version: **0.18.215**.
+
+v0.18.215 adds an optional model-authored, independently source-checked explanation and diagnostic next steps for broad Native V2 cases; unverified model text is withheld and the v0.18.214 answer remains as fallback. [Release notes](CHANGELOG-0.18.215.md).
 
 v0.18.214 links source-attested warning groups with independently matched device telemetry by ID. The concise general V2 answer now leads with corroborated, bounded evidence even when the model finishes normally; full source limits remain available in the technical report. [Release notes](CHANGELOG-0.18.214.md).
 
