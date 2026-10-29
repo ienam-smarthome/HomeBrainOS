@@ -82,7 +82,7 @@ def test_invalid_model_claim_cannot_erase_real_operational_observations():
                     "unsupported_claim":"Everything is healthy"}]},
         catalog)
     assert result["fallback"] is True
-    assert result["validation"]["rejected"]==["invalid_item"]
+    assert result["validation"]["rejected"]==["unvalidated_claim_fields"]
     text=result["text"]
     assert "51" in text and "stale" in text
     assert "unknown activity" in text
