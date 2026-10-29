@@ -917,8 +917,19 @@ async def run_native_read_agent(
                         if execution is not None and execution.name == name
                         else None)
                 safe_error = "response_too_large" if hint else error
+                # Preserve only bounded, non-secret scope fields from
+                # failed READ proposals. The failed configuration attempt
+                # is a real source-path limit, not an untried option.
+                safe_failure_filters = {
+                    k: inner[k] for k in ("deviceId", "appId", "mode")
+                    if isinstance(inner, dict) and k in inner
+                    and type(inner[k]) in (str, int)
+                    and len(str(inner[k])) <= 32
+                }
                 failures.append({"tool": name, "operation": op,
-                                 "code": safe_error, "elapsed_ms":
+                                 "code": safe_error,
+                                 "read_filters": safe_failure_filters,
+                                 "elapsed_ms":
                                  round((time.monotonic()-before)*1000)})
                 messages.append({"role": "tool", "content": json.dumps({
                     "error": safe_error, "source_complete": False,
@@ -1136,7 +1147,8 @@ async def run_native_read_agent(
                 # choose another READ; all proposed operations are checked by
                 # the same host safety/identity contracts before execution.
                 next_source = source_path_followup(
-                    witnesses, sorted(focus_ids), verified_typed["driver"])
+                    witnesses, sorted(focus_ids), verified_typed["driver"],
+                    failures=failures)
                 if next_source is not None:
                     view["source_path_followup"] = next_source
             if witnesses:
@@ -1183,7 +1195,8 @@ async def run_native_read_agent(
             manifest, discovered, "hub_list_device_events"),
     )
     source_readiness = source_path_followup(
-        witnesses, sorted(focus_ids), verified_typed["driver"])
+        witnesses, sorted(focus_ids), verified_typed["driver"],
+        failures=failures)
     # The source-authoritative generic-warning report supersedes an
     # unverified model-only synthesis. Skip that costly call only when
     # the actual WARN and target-scoped device-event evidence both exist.
@@ -1426,6 +1439,17 @@ async def run_native_read_agent(
                 "",
             ])
     driver_blocker_lines = []
+    if (source_readiness is not None and source_readiness.get("status")
+            == "driver_configuration_read_failed"):
+        driver_blocker_lines = [
+            "**Driver configuration source blocked**",
+            "A read-only configuration read for the independently verified "
+            "device failed at the upstream gateway ("
+            + _text(source_readiness.get("failure_code"), 65)
+            + "). No device driver ID or complete driver implementation "
+            "was returned; this is a failed inspection, not proof that the "
+            "driver has no code.", "",
+        ]
     if (source_readiness is not None and source_readiness.get("status")
             == "driver_source_unavailable_no_attested_id"):
         driver_blocker_lines = [
