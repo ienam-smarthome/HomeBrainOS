@@ -138,6 +138,34 @@ def source_highlights(witnesses: Sequence[Mapping[str, Any]],
                 add(f"{title}: {level} from {source} "
                     f"(source ID {safe_string(item.get('source_id'), 25)}): {message}")
             continue
+        if op == "hub_get_device_health":
+            stale = data.get("staleDevices")
+            unknown = data.get("unknownDevices")
+            if isinstance(stale, list) or isinstance(unknown, list):
+                count_stale = len(stale) if isinstance(stale, list) else "unknown"
+                count_unknown = len(unknown) if isinstance(unknown, list) else "unknown"
+                add(f"{title}: bounded device-health source includes "
+                    f"{count_stale} stale and {count_unknown} unknown-activity "
+                    "entries. Staleness is not verified offline connectivity.")
+                for row in ((stale or [])[:3] + (unknown or [])[:2]):
+                    if not isinstance(row, dict):
+                        continue
+                    add(f"{title}: {safe_string(row.get('name'),65)} "
+                        f"(ID {safe_string(row.get('id'),22)}) reports "
+                        f"lastActivity={safe_string(row.get('lastActivity'),65)}; "
+                        "current connectivity unverified.")
+            continue
+        if op == "hub_list_device_dependents":
+            apps = data.get("apps_using")
+            if isinstance(apps, list):
+                add(f"{title}: {len(apps)} source-reported app references "
+                    f"to device {safe_string(data.get('deviceId'),22)}. "
+                    "App references do not prove an automation is broken.")
+                for row in apps[:2]:
+                    if isinstance(row, dict):
+                        add(f"{title}: reference {safe_string(row.get('name'),65)} "
+                            f"(app {safe_string(row.get('appId'),22)}).")
+            continue
         if op == "hub_get_device":
             attrs = data.get("attributes", [])
             typed = {row.get("name"): row.get("value") for row in attrs
