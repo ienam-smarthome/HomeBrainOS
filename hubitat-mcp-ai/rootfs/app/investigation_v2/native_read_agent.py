@@ -56,7 +56,8 @@ from .native_reasoned_assessment import (
     candidate_prompt, verify_natural_hypothesis)
 from .native_operational_sequence import operational_sequence_brief
 from .native_interval_coverage import (
-    complete_interval_coverage, incomplete_interval_answer)
+    complete_interval_coverage, incomplete_interval_answer,
+    interval_reasoning_evidence)
 from .native_reasoning_policy import planning_system_prompt
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
 from .native_historical_frontier import (
@@ -1538,6 +1539,9 @@ async def run_native_read_agent(
         requested_interval_coverage is not None
         and requested_interval_coverage["status"] ==
         "complete_interval_not_established")
+    if incident_relevance is None and requested_interval_coverage is not None:
+        incident_relevance = interval_reasoning_evidence(
+            requested_interval_coverage, witnesses)
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
