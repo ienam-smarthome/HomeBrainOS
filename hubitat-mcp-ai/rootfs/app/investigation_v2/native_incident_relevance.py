@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 
 from .temporal_scope import explicit_incident_window
 from .native_event_relevance import select_incident_examples
+from .native_controller_decision import controller_decision_evidence
 
 # Narrow user-relevant event types. An IP refresh, driver watchdog status,
 # app configuration or unrelated later command doesn't tell us why a light
@@ -140,12 +141,16 @@ def dated_incident_evidence(
     }
     examples, selection = select_incident_examples(
         material, question, period)
+    upstream_logs = controller_decision_evidence(
+        witnesses, focus_ids, {"incident_period": period})
     return {
         "target_device_id": focus,
         "incident_period": period,
         "scoped_event_reads": scoped_reads[:8],
         "material_event_count": len(material),
         "material_event_examples": examples,
+        "controller_decision_log_examples": upstream_logs,
+        "controller_decision_log_count": len(upstream_logs),
         "material_event_selection": selection,
         "outside_incident_command_rows": unrelated_command_rows,
         "later_command_rows": later_command_rows,

@@ -56,6 +56,7 @@ from .native_reasoned_assessment import (
     candidate_prompt, verify_natural_hypothesis)
 from .native_operational_sequence import operational_sequence_brief
 from .native_reasoning_policy import planning_system_prompt
+from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -173,7 +174,7 @@ def _group_logs(data: Mapping[str, Any]) -> dict[str, Any] | None:
         "group_count": summary["warning_error_group_count"],
     }
 
-def _payload(result: Any, operation: str) -> dict[str, Any]:
+def _payload(result: Any, operation: str, *, read_filters: Mapping[str, Any] | None = None) -> dict[str, Any]:
     data = result.data if isinstance(result.data, dict) else {}
     for key in ("result", "data", "output"):
         child = data.get(key)
@@ -248,6 +249,12 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
             log_groups = compact_logs(data)
             if log_groups is not None:
                 projected = {"log_summary": log_groups, "source_complete": False}
+                app = str((read_filters or {}).get("appId") or "")
+                if app.isdecimal():
+                    execution = scoped_app_execution_lines(data, app)
+                    if execution:
+                        projected["app_execution_lines"] = execution
+                        projected["execution_time_zone_verified"] = False
     if not projected:
         # Successful gateway does not prove we understood its data.
         projected = {
@@ -1051,7 +1058,7 @@ async def run_native_read_agent(
             if name == "hub_search_tools":
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
-            summary = _payload(result, op)
+            summary = _payload(result, op, read_filters=inner)
             if op == "hub_list_rooms" and isinstance(summary, dict) and isinstance(
                     summary.get("rooms"), list):
                 room_name_catalogs.append(summary)
@@ -1231,6 +1238,22 @@ async def run_native_read_agent(
                     "read_only": True,
                     "state_not_covered": "Individually read any relevant room device state",
                 }
+            if focus_ids and op in ("hub_list_device_events", "hub_get_logs",
+                                    "hub_get_app_config"):
+                decision = controller_decision_followup(
+                    witnesses, sorted(focus_ids),
+                    dated_incident_evidence(question, witnesses, sorted(focus_ids)),
+                    app_logs_offered=bool(_verified_gateways_for_operation(
+                        "hub_get_logs", {}, manifest, discovered)))
+                if decision is not None:
+                    view["upstream_controller_decision_gap"] = decision
+                if op == "hub_get_logs" and summary.get("app_execution_lines"):
+                    # Bring the independently matched source-log anchors back
+                    # into the planning context, not merely the final report.
+                    linked = dated_incident_evidence(
+                        question, witnesses, sorted(focus_ids))
+                    if linked is not None:
+                        view["user_incident_evidence_coverage"] = linked
             if focus_ids and op == "hub_list_device_events":
                 if str(inner.get("deviceId")) in focus_ids:
                     # Make the already observed bounded source window explicit
