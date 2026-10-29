@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.210**.
+Current add-on version: **0.18.211**.
+
+v0.18.211 removes the broad production command shortcut classifier from V2 read-only admission, accepts negative action instructions and general Hubitat reasoning questions, and rejects independently affirmative write requests before tools run. [Release notes](CHANGELOG-0.18.211.md).
 
 v0.18.210 distinguishes failed source/configuration inspections from untried paths and prioritises source-attested warning-cluster activity while retaining bounded causal uncertainty. [Release notes](CHANGELOG-0.18.210.md).
 
