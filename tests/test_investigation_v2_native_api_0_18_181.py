@@ -70,6 +70,16 @@ def test_native_mode_requires_same_auth_and_control_boundary(monkeypatch, tmp_pa
     monkeypatch.setenv("CONFIG_PATH", str(config))
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
+    async def fake_model_handoff(*, question, **kwargs):
+        assert question == "turn off Livingroom Light 2"
+        return {
+            "answer_mode": "v2_control_handoff",
+            "answer": {"text": "No Hubitat command was sent. "
+                       "Use HomeBrain's main Ask/Chat interface."},
+            "native_diagnostics": {
+                "reads_executed": 0, "no_hubitat_writes": True},
+        }
+    monkeypatch.setattr(module, "run_native_read_agent", fake_model_handoff)
     with TestClient(module.app) as client:
         unsigned = client.post("/api/v2/test", json={
             "question": "check hub logs for any issues",
