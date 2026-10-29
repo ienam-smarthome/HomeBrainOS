@@ -161,6 +161,30 @@ def incident_attribution_packet(
             bursts.append((aid,name,group[0],group[-1],len(group)))
     bursts.sort(key=lambda b:(-b[4],b[2]))
     runtime_snapshots=focused_runtime_stat_receipts(witnesses,focus)
+    # Source retrieval for a verified caller is a *separate* evidence path.
+    # A success status with no source text must never imply a method was
+    # examined, and an app source does not attest a device driver callback.
+    caller_source_inspections=[]
+    for receipt in witnesses[:16]:
+        if (receipt.get("operation")!="hub_get_source"
+                or type(receipt.get("read")) is not int):
+            continue
+        data=receipt.get("source_data")
+        if not isinstance(data,Mapping):
+            continue
+        app_id=str(data.get("requested_source_id") or "")
+        if (data.get("requested_source_type")!="app"
+                or app_id not in app_summaries
+                or data.get("source_id_matches_request") is not True):
+            continue
+        caller_source_inspections.append({
+            "read":receipt["read"],"app_id":app_id,
+            "status":str(data.get("source_read_status") or "unverified")[:65],
+            "complete_code_available":(
+                data.get("source_complete") is True
+                and data.get("source_read_usable_for_method_reasoning") is True),
+            "driver_callback_verified":False,
+        })
     return {
         "incident_type":"generic_device_warning",
         "separate_diagnostic_method_warnings_present":bool(distinct_slow_methods),
@@ -176,6 +200,7 @@ def incident_attribution_packet(
         "warning_command_temporal_leads":incident_command_temporal_leads(
             witnesses, sorted(focus)),
         "runtime_performance_snapshots":runtime_snapshots[:12],
+        "caller_source_inspections":caller_source_inspections[:8],
         "device_caller_app_ids":sorted(app_summaries),
         "device_caller_names":{
             k:str(app_summaries[k].get("name") or "")[:70]
@@ -347,7 +372,17 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
                       "that the device has no callers, and does not revoke "
                       "caller identities attested in separate investigations.")
     if packet.get("scoped_event_history_available"):
-        pieces.append(
+        # The last warning instant is one particular timestamp within a
+        # sampled cluster, not the whole interval. The source-timed cluster
+        # receipts below are a stronger and less misleading summary when
+        # app commands occur between *other* warning timestamps.
+        cluster_evidence=packet.get("warning_command_temporal_leads")
+        clusters=(cluster_evidence.get("warning_clusters",[])
+                  if isinstance(cluster_evidence,Mapping) else [])
+        latest=(clusters[-1] if isinstance(clusters,list) and clusters else {})
+        if not (isinstance(latest,Mapping)
+                and latest.get("commands_in_window_with_edges",0)):
+            pieces.append(
             "The bounded device-event sample contains "+
             str(packet.get("app_commands_within_warning_interval",0))+
             (" app-issued commands at the selected warning timestamp and "
@@ -482,6 +517,26 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
                 str(record.get("id"))+"): "+fields+
                 ". This snapshot does not measure the device/app's CPU "
                 "contribution when the warning occurred.")
+    source_checks=packet.get("caller_source_inspections",[])
+    if isinstance(source_checks,list):
+        for entry in source_checks[:4]:
+            if not isinstance(entry,Mapping):
+                continue
+            if entry.get("complete_code_available") is True:
+                pieces.append(
+                    "Caller app "+str(entry.get("app_id"))+
+                    " returned identity-matched source structure (Read #"+
+                    str(entry.get("read"))+
+                    "); static code alone does not prove a driver callback "
+                    "executed or caused hub load.")
+            else:
+                pieces.append(
+                    "Caller app "+str(entry.get("app_id"))+
+                    " source was inspected (Read #"+str(entry.get("read"))+
+                    "), but no complete inspectable code was returned "
+                    "(source status: "+str(entry.get("status"))+
+                    "). An unavailable app source cannot identify the "
+                    "device driver's executed callback.")
     pieces.append(
         "**Remaining evidence gap:** The internal driver/app execution path, "
         "the source of the status changes, and measured hub CPU impact "
