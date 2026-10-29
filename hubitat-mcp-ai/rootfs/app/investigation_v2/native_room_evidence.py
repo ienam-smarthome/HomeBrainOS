@@ -105,8 +105,9 @@ def _human_state(item: Mapping[str, Any]) -> str:
         return "no recognised current state was returned"
     detail = ", ".join(phrases[:3])
     if item["light"] and "level" in values:
-        detail += (f"; saved dimmer level {values['level']}"
-                   " (not proof the light is illuminated)")
+        # The shared footer explains the saved-level limitation once;
+        # avoid repeating the same warning on every light's status line.
+        detail += f"; saved dimmer level {values['level']}"
     return detail
 
 
@@ -208,11 +209,13 @@ def natural_entity_answer(
                              + " — room membership was reported, but current "
                                "device state was not independently read.")
             else:
+                number = len(unread_room)
+                noun = "device" if number == 1 else "devices"
                 lines.append(
-                    f"**Coverage:** {len(unread_room)} other room "
-                    "member(s) were not individually read. Their capabilities "
-                    "and current states have not been verified; the light "
-                    "status above covers only devices actually checked.")
+                    f"**Coverage:** {number} other room {noun} were not "
+                    "checked. Their capabilities and current states are "
+                    "unverified; the light status above covers only the "
+                    "devices individually read.")
         if name_ids and room["inventory_complete"]:
             outside = [checked[i]["label"] for i in name_ids if i not in room_ids]
             if outside:
