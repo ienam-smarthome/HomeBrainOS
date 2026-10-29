@@ -99,8 +99,9 @@ async def test_model_can_propose_draft_together_with_a_read_tool_call():
             return {
                 "content":json.dumps({"findings":[{
                     "source_id":"9001",
-                    "explanation":"Sample outlet has 2 WARN rows in "
-                                  "the returned sample; this is worth checking.",
+                    "explanation":"Sample outlet has 2 WARN rows and "
+                                  "healthStatus=offline in the reported "
+                                  "readings; this is worth checking.",
                     "next_check":"Review the device logs and inspect "
                                  "recent activity."}]}),
                 "tool_calls":[_call(
