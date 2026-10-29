@@ -58,8 +58,9 @@ async def test_general_multisource_uses_source_brief_without_extra_model_round(
     assert d["source_grounded_brief_published"] is True
     assert d["general_evidence_readiness"]["accuracy_or_v1_superiority_measured"] is False
     report=answer["answer"]["text"]
-    assert report.index("**Evidence-based summary**") < report.index(
-        "**Independent claim validation")
+    assert report.startswith("**Evidence-based summary**")
+    assert "**Independent claim validation" not in report
+    assert "**Independent claim validation" in answer["report"]["text"]
     assert "Mesh outlet" in report
     assert "unknown activity" in report
     assert "offline" in report
