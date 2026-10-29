@@ -8,7 +8,7 @@ verified target-scoped historical event receipts.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Mapping
 
 
@@ -55,7 +55,7 @@ def operational_sequence_brief(
         stop_time = _stamp(stopped)
         starts = [e for e in states if str(e.get("value")).lower() == "heating"
                   and _stamp(e) < stop_time
-                  and stop_time - _stamp(e) <= __import__("datetime").timedelta(hours=3)]
+                  and stop_time - _stamp(e) <= timedelta(hours=3)]
         if not starts:
             continue
         last_started = starts[-1]
@@ -70,7 +70,7 @@ def operational_sequence_brief(
         after_target = (stop_time - _stamp(last_target)).total_seconds()
         if not 0 <= after_target <= 180:
             continue
-        if _stamp(prior_target) > _stamp(last_started) + __import__("datetime").timedelta(minutes=4):
+        if _stamp(prior_target) > _stamp(last_started) + timedelta(minutes=4):
             continue
         issuer = str(last_target.get("source_name") or "").strip()
         issuer = issuer if issuer and len(issuer) <= 75 else "the controlling automation"
