@@ -140,3 +140,16 @@ def test_absent_individual_timestamps_preserve_explicit_legacy_limits():
     assert packet["warning_occurrence_selected"] is None
     assert packet["warning_period"]["oldest"] == "2026-10-28 19:55:19.194"
     assert packet["warning_period"]["newest"] == "2026-10-29 01:03:20.292"
+
+
+def test_event_scope_rejection_has_explicit_nonexecuting_read_contract():
+    from investigation_v2.native_read_contracts import read_contract_feedback
+    feedback = read_contract_feedback(
+        "hub_read_devices",
+        {"tool": "hub_list_device_events", "args": {"limit": 50}},
+        {"device": {"7934"}, "app": set(), "driver": set()},
+    )
+    assert feedback["missing_required_fields"] == ["deviceId|appId"]
+    assert feedback["required_shape"]["args"] == {"deviceId": "verified device ID"}
+    assert feedback["verified_id_choices"]["device"] == ["7934"]
+    assert feedback["host_execution_attempted"] is False
