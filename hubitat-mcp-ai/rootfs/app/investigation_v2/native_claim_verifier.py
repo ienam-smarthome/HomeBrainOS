@@ -367,7 +367,7 @@ def publish_verified_claims(
         "",
         "**Conclusion and uncertainty**",
         "Only the observations above are independently verified in the "
-        "bounded returned data. An internal cause, device performance impact "
+        "bounded returned data. The root cause, device performance impact "
         "or real-world action is not established merely by these facts. "
         "Unsupported model conclusions were not published.",
     ])
