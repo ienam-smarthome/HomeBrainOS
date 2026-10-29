@@ -422,6 +422,31 @@ def _contains_control_key(value: Any, depth: int = 0) -> bool:
     return False
 
 
+def _verified_gateways_for_operation(
+    op: str, inner: Mapping[str, Any],
+    manifest: Mapping[str, MCPTool],
+    discovered: Mapping[str, set[str]],
+) -> list[str]:
+    """Only suggest actual live READ mappings, never infer a gateway.
+
+    Suggestions are not tool permissions; the model's next proposal passes
+    the normal effect, identity, scope and schema guards independently.
+    """
+    if not isinstance(op, str) or not op.startswith(_READ_PREFIXES):
+        return []
+    matches = []
+    for name, tool in manifest.items():
+        if not name.startswith("hub_read_"):
+            continue
+        enum = tool.input_schema.get("properties", {}).get("tool", {}).get("enum")
+        attested = ((isinstance(enum, list) and op in enum)
+                    or op in discovered.get(name, set()))
+        if (attested and classify_tool_effect(
+                tool, {"tool": op, "args": dict(inner)}) is ToolEffect.READ):
+            matches.append(name)
+    return sorted(matches)[:5]
+
+
 def _guard(name: str, args: dict[str, Any],
            manifest: Mapping[str, MCPTool],
            discovered: Mapping[str, set[str]], verified_ids: set[str],
@@ -778,8 +803,18 @@ async def run_native_read_agent(
                 contract = (read_contract_feedback(
                     name, args, verified_typed)
                     if issue == "missing_required_operation_fields" else None)
+                gateway_choices = (
+                    _verified_gateways_for_operation(
+                        str(op_requested),
+                        inner if isinstance(inner, dict) else {},
+                        manifest, discovered)
+                    if issue == "operation_not_independently_discovered"
+                    else [])
                 messages.append({"role": "tool", "content": json.dumps({
                     "error": issue, "hint": hint,
+                    **({"verified_read_gateways": gateway_choices}
+                       if issue == "operation_not_independently_discovered"
+                       else {}),
                     **({"required_read_contract": contract}
                        if contract is not None else {}),
                 })})
@@ -1055,6 +1090,8 @@ async def run_native_read_agent(
         can_read_events=gateway_offers_operation(
             manifest, discovered, "hub_list_device_events"),
     )
+    source_readiness = source_path_followup(
+        witnesses, sorted(focus_ids), verified_typed["driver"])
     # If the model exhausted planning after collecting both a subject's
     # current-state read and target-specific warnings, another expensive
     # model-only pass is often futile. Keep the host-attested conclusion
@@ -1268,6 +1305,17 @@ async def run_native_read_agent(
                 "different zones, and a source window is not guaranteed complete.",
                 "",
             ])
+    if (source_readiness is not None and source_readiness.get("status")
+            == "driver_source_unavailable_no_attested_id"):
+        lines.extend([
+            "**Verified driver-source blocker**",
+            "The target's configuration (Read #"
+            + str(source_readiness.get("evidence_read"))
+            + ") reports driver source unavailable and supplies no "
+            "independently attested driver code ID. The internal "
+            "implementation was not inspected; no method or CPU cause "
+            "can be derived from source code in this investigation.", "",
+        ])
     if projections_empty:
         lines.extend([
             "**Uninterpreted source fields**",
@@ -1378,6 +1426,7 @@ async def run_native_read_agent(
             "coverage_challenge_used": coverage_challenge_used,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
+            "source_path_readiness": source_readiness,
             "incident_attribution_evidence": causal_packet,
             "incident_claim_ledger": claim_ledger,
             "factual_evidence_ledger": factual_ledger,
