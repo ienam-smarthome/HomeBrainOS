@@ -802,7 +802,9 @@ async def run_native_read_agent(
                              "insert it or execute the rejected proposal.")
                 contract = (read_contract_feedback(
                     name, args, verified_typed)
-                    if issue == "missing_required_operation_fields" else None)
+                    if issue in ("missing_required_operation_fields",
+                                 "target_device_history_scope_missing")
+                    else None)
                 gateway_choices = (
                     _verified_gateways_for_operation(
                         str(op_requested),
