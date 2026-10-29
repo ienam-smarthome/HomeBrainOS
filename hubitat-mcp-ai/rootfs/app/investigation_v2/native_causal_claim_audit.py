@@ -159,6 +159,32 @@ def incident_attribution_packet(
         if len(group)>=4:
             bursts.append((aid,name,group[0],group[-1],len(group)))
     bursts.sort(key=lambda b:(-b[4],b[2]))
+    runtime_snapshots=[]
+    for receipt in witnesses[:16]:
+        if receipt.get("operation")!="hub_get_logs" or type(receipt.get("read")) is not int:
+            continue
+        source=receipt.get("source_data")
+        stats=source.get("runtime_stats") if isinstance(source,Mapping) else None
+        filters=receipt.get("read_filters")
+        if not isinstance(stats,Mapping) or not isinstance(filters,Mapping):
+            continue
+        mode=stats.get("mode")
+        requested=str(filters.get("deviceId" if mode=="devices" else "appId"))
+        if (mode=="devices" and requested not in focus or
+                mode=="apps" and requested not in app_summaries or
+                mode not in ("devices","apps")):
+            continue
+        for row in stats.get("rows",[])[:10]:
+            if not isinstance(row,Mapping) or str(row.get("id"))!=requested:
+                continue
+            runtime_snapshots.append({
+                "read":receipt["read"],"kind":mode,"id":requested,
+                "name":str(row.get("name") or "")[:65],
+                **{field:row[field] for field in ("pct","count","total","stateSize")
+                   if type(row.get(field)) in (int,float)},
+                "incident_time_aligned":False,
+                "snapshot_complete":False,
+            })
     return {
         "incident_type":"generic_device_warning",
         "separate_diagnostic_method_warnings_present":bool(distinct_slow_methods),
@@ -173,6 +199,7 @@ def incident_attribution_packet(
             witnesses, sorted(focus)),
         "warning_command_temporal_leads":incident_command_temporal_leads(
             witnesses, sorted(focus)),
+        "runtime_performance_snapshots":runtime_snapshots[:12],
         "device_caller_app_ids":sorted(app_summaries),
         "device_caller_names":{
             k:str(app_summaries[k].get("name") or "")[:70]
@@ -460,6 +487,25 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
                     " was reported "+str(source_state.get("reported_absolute_gap_ms"))+
                     " ms from the warning timestamp; source-clock "
                     "alignment and the initiating mechanism remain unverified.")
+    snapshots=packet.get("runtime_performance_snapshots",[])
+    if isinstance(snapshots,list) and snapshots:
+        pieces.append(
+            "**Cumulative runtime-statistics snapshots (not incident-time "
+            "measurements):** The following Hubitat Logs-page values were "
+            "returned independently of the historical WARN rows.")
+        for record in snapshots[:5]:
+            if not isinstance(record,Mapping):
+                continue
+            label=str(record.get("name") or record.get("id"))
+            fields=", ".join(
+                key+"="+str(record[key]) for key in ("pct","total","count")
+                if key in record)
+            pieces.append(
+                "Read #"+str(record.get("read"))+": "+
+                str(record.get("kind"))+" "+label+" (ID "+
+                str(record.get("id"))+"): "+fields+
+                ". This snapshot does not measure the device/app's CPU "
+                "contribution when the warning occurred.")
     pieces.append(
         "**Remaining evidence gap:** The internal driver/app execution path, "
         "the source of the status changes, and measured hub CPU impact "

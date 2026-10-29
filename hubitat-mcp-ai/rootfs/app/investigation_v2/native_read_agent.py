@@ -40,6 +40,7 @@ from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
+from .native_runtime_stats import project_log_runtime_stats
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
     useful_discovery_fingerprint, repeated_log_evidence, repeated_event_evidence,
@@ -118,6 +119,12 @@ _SYSTEM = (
     "or read-only source when investigating a causal mechanism; do not "
     "mistake the device ID for an app or driver ID. Event timing is "
     "association, not proof of the caller causing the warning. "
+    "For a source-reported excessive-load warning, current Hubitat Logs-page "
+    "device/app runtime statistics can provide a *different* discriminator: "
+    "hub_get_logs(mode='devices', deviceId=<verified deviceId>) or "
+    "hub_get_logs(mode='apps', appId=<attested appId>) on a live read-only "
+    "gateway, with NO severity level. Do not assume these cumulative "
+    "runtime stats measure CPU use at the historical warning time. "
     "Read metrics, logs and health separately where useful. Prior observed "
     "command bursts are performance leads, not evidence of their contribution "
     "to a later generic warning. Do not name a 'most material offender' or "
@@ -297,9 +304,16 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
         # empty read is explicitly *not* an implementation inspection.
         projected = source_read_summary(data)
     if operation == "hub_get_logs":
-        log_groups = compact_logs(data)
-        if log_groups is not None:
-            projected = {"log_summary": log_groups, "source_complete": False}
+        # Logs-page Device/App Stats are *not* severity log rows.
+        # The upstream server exposes them under hub_get_logs modes and
+        # removed the old hub_get_performance_stats operation.
+        stats = project_log_runtime_stats(data)
+        if stats is not None:
+            projected = {"runtime_stats": stats, "source_complete": False}
+        else:
+            log_groups = compact_logs(data)
+            if log_groups is not None:
+                projected = {"log_summary": log_groups, "source_complete": False}
     if not projected:
         # Successful gateway does not prove we understood its data.
         projected = {

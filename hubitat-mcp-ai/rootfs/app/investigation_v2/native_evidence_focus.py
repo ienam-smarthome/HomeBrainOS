@@ -112,6 +112,33 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                         f"{safe_string(issuer.get('newest'),45)}. "
                         "This is command provenance, not proof of cause.")
         elif op=="hub_get_logs":
+            stats=data.get("runtime_stats")
+            if isinstance(stats,dict):
+                mode=stats.get("mode")
+                filters=w.get("read_filters",{})
+                filters=filters if isinstance(filters,dict) else {}
+                callers={
+                    str(a.get("appId")) for receipt in witnesses[:16]
+                    if receipt.get("operation")=="hub_list_device_events"
+                    and str(receipt.get("read_filters",{}).get("deviceId")) in focus
+                    for a in receipt.get("source_data",{}).get("issuer_apps",[])
+                    if isinstance(a,dict)}
+                permitted=(focus if mode=="devices" else
+                           callers if mode=="apps" else set())
+                scoped=str(filters.get("deviceId" if mode=="devices"
+                                        else "appId")) in permitted
+                for item in stats.get("rows",[])[:8]:
+                    if not isinstance(item,dict):continue
+                    ident=str(item.get("id") or "")
+                    if not scoped or ident not in permitted:continue
+                    pieces=[str(k)+"="+safe_string(item[k],35)
+                            for k in ("pct","total","count","stateSize")
+                            if k in item]
+                    add(f"{ref}: Hubitat Logs {mode} cumulative stats for "
+                        f"{safe_string(item.get('name'),70)} (ID {ident}): "+
+                        ", ".join(pieces)+". Snapshot returned at read time, "
+                        "NOT incident-time CPU measurement.")
+                continue
             # A targeted WARN subset already contained in an earlier sampled
             # group adds no new source facts. Keep its complete receipt in
             # native diagnostics but do not crowd the user's conclusion.
