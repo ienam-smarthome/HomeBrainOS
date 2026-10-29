@@ -43,6 +43,55 @@ READ_DEVICE = MCPTool(
 )
 
 
+def test_source_verified_event_chronology_survives_missing_device_snapshot():
+    # The failed live path read event history but no current device detail.
+    # Independently device-issuer-attested contact and switch events can
+    # still produce a useful answer without pretending the app was cause.
+    from test_investigation_v2_event_sequence_0_18_226 import timeline
+    from investigation_v2.native_temporal_lead import (
+        verified_temporal_lead, temporal_lead_short_answer)
+    source = timeline()[1]
+    lead = verified_temporal_lead([source], ["7103"])
+    assert lead is not None
+    assert lead["device_name"] == "Bedroom 3 Mesh"
+    assert lead["command"] == "off"
+    assert lead["app_id"] == "3950"
+    assert lead["anchor_read"] == source["read"]
+    assert [e["attribute"] for e in lead["observed_event_sequence"]] == [
+        "lastSeen", "switch", "healthStatus"]
+    answer = temporal_lead_short_answer(lead)
+    assert "Most likely explanation" in answer
+    assert "socket was physically disconnected" in answer
+    assert "Cause not confirmed" in answer
+    assert "App 3950 caused" not in answer
+
+
+def test_recent_watchdog_only_events_do_not_fabricate_historical_cause():
+    from investigation_v2.native_provenance import event_summary
+    from investigation_v2.native_temporal_lead import verified_temporal_lead
+    rows = [{
+        "read": 3, "operation": "hub_list_device_events",
+        "read_filters": {"deviceId": "7103"},
+        "source_data": event_summary({"events": [{
+            "name": "deviceHealth", "value": "unknown",
+            "date": "2026-10-29T19:01:46.861+00:00",
+            "producedBy": {"deviceId": "7103", "name": "Bedroom 3 Mesh"},
+        }]}),
+    }]
+    assert verified_temporal_lead(rows, ["7103"]) is None
+
+
+def test_unverified_device_event_producer_cannot_anchor_cause():
+    import copy
+    from test_investigation_v2_event_sequence_0_18_226 import timeline
+    from investigation_v2.native_temporal_lead import verified_temporal_lead
+    source = copy.deepcopy(timeline()[1])
+    for event in source["source_data"]["events"]:
+        if event["name"] in ("lastSeen", "switch", "healthStatus"):
+            event["producedBy"]["deviceId"] = "9999"
+    assert verified_temporal_lead([source], ["7103"]) is None
+
+
 def test_user_date_bounds_reach_october_12_and_are_timezone_padded():
     scope = requested_history_bounds(QUESTION)
     assert scope["since"] == "2026-10-11T00:00:00+00:00"
