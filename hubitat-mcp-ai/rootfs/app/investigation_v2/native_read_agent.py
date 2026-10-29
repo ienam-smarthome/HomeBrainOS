@@ -41,6 +41,7 @@ from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_cross_source_brief import verified_source_cases, source_connected_brief
 from .native_subject_relevance import subject_relevance_limit
+from .native_entity_group_answer import entity_group_answer
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -1601,9 +1602,20 @@ async def run_native_read_agent(
     relevance_blocker = subject_relevance_limit(
         named_identity_lookups, witnesses,
         focus_ids=sorted(focus_ids), failures=failures)
+    # Complete candidate groups already have independently attested,
+    # source-ID-matched state for every requested entity. Compose one
+    # concise entity-aware comparison rather than a first-N attributes
+    # fallback that can omit later devices entirely. Never replace a
+    # targeted incident, a warning-based causal report or a blocked subject.
+    grouped_answer = (
+        entity_group_answer(named_identity_lookups, witnesses)
+        if not source_bound_incident and not focus_ids
+        and relevance_blocker is None else None)
     concise_answer = (
         verified_narrative["text"]
-        if verified_narrative.get("accepted") is True else connected_brief)
+        if verified_narrative.get("accepted") is True
+        else grouped_answer["text"] if grouped_answer is not None
+        else connected_brief)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
@@ -1871,9 +1883,13 @@ async def run_native_read_agent(
                 "unresolved_named_subject_evidence" if relevance_blocker
                 else "model_authored_independently_checked" if
                 verified_narrative.get("accepted") is True
+                else "verified_entity_group_comparison" if grouped_answer
                 else "cross_source_verified_case_graph" if connected_brief
                 else "host_verified_claim_catalog" if concise_answer
                 else "full_source_report"),
+            "entity_group_summary": (
+                {k: v for k, v in grouped_answer.items() if k != "text"}
+                if grouped_answer else None),
             "cross_source_case_count": len(verified_source_cases(witnesses)),
             "cross_source_connected_count": sum(
                 1 for c in verified_source_cases(witnesses)

@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.218**.
+Current add-on version: **0.18.219**.
+
+v0.18.219 now composes complete, readable answers for independently verified multi-device groups rather than dropping later entities from a capped list of attribute facts; it preserves explicit room-membership uncertainty and safe fallback. [Release notes](CHANGELOG-0.18.219.md).
 
 v0.18.218 makes multiple independently attested name-prefix matches available as safe individual READ candidates, and prevents a redundant 20-second full-device-list fallback after a bounded identity lookup. [Release notes](CHANGELOG-0.18.218.md).
 
