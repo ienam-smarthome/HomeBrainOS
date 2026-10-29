@@ -37,6 +37,8 @@ def candidate_prompt() -> str:
         "\"next_check\":\"one useful observation that would distinguish "
         "the leading hypothesis from alternatives\","
         "\"alternative\":\"another plausible explanation\"}. "
+        "Keep alternative explanations qualitative: omit numbers and "
+        "times unless citing an independently attested event. "
         "Compare at least two mechanisms in your own reasoning and "
         "prefer one only if observed events distinguish it. "
         "A historical command followed by a brightness adjustment does "
@@ -148,10 +150,19 @@ def verify_natural_hypothesis(
     if not isinstance(alternative, str):
         return reject("invalid_alternative")
     alternative = " ".join(alternative.strip().split())
-    if (len(alternative) > 175 or _CONTROL.search(alternative)
-            or _CONFIDENT.search(alternative)
-            or _NUMBER.search(alternative)):
+    # The optional alternative is not an independent safety boundary.
+    # A model may phrase a speculative alternative with an unverified
+    # number. Drop that *optional clause*, but retain the correctly
+    # source-anchored and verified leading hypothesis. Never accept or
+    # publish any unsupported numeric content.
+    if _CONTROL.search(alternative) or _CONFIDENT.search(alternative):
+        # Overconfidence/injection in an alternative is a substantive
+        # explanation-integrity failure, not a removable numeric detail.
         return reject("unsupported_alternative")
+    alternative_withheld = bool(
+        len(alternative) > 175 or _NUMBER.search(alternative))
+    if alternative_withheld:
+        alternative = ""
     statement = "**Possible explanation:** " + hypothesis
     if alternative:
         statement += " **Another possibility:** " + alternative
@@ -166,6 +177,7 @@ def verify_natural_hypothesis(
         "model_prose_published": True,
         "semantic_entailment_verified": False,
         "root_cause_verified": False,
+        "optional_alternative_withheld": alternative_withheld,
     }
 
 

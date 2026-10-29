@@ -57,6 +57,8 @@ from .native_reasoned_assessment import (
 from .native_operational_sequence import operational_sequence_brief
 from .native_reasoning_policy import planning_system_prompt
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
+from .native_historical_frontier import (
+    historical_controller_frontier, reject_redundant_controller_logs)
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -895,10 +897,18 @@ async def run_native_read_agent(
             # fallback without consuming a READ or a 20s gateway timeout;
             # offer the independently attested candidate IDs instead.
             if (issue is None and op_requested == "hub_list_devices"
-                    and any(isinstance(row, dict)
+                    and (
+                        any(isinstance(row, dict)
                             and row.get("status") == "candidate_group"
                             and row.get("candidate_ids")
-                            for row in named_identity_lookups)):
+                            for row in named_identity_lookups)
+                        or (requested_history_bounds(question) is not None
+                            and any(isinstance(row, dict)
+                                    and row.get("status") == "unique"
+                                    for row in named_identity_lookups)))):
+                # A dated, individually identified incident already has
+                # a bounded identity. Do not waste 20 seconds loading every
+                # device. The model can still choose relevant scoped READs.
                 issue = "bounded_identity_candidates_available"
             # A returned Hubitat room catalogue can identify a room named in
             # the original question. With a live-offered targeted room READ,
@@ -918,6 +928,15 @@ async def run_native_read_agent(
                     and isinstance(inner, dict)
                     and repeated_broad_log_scope(inner, witnesses)):
                 issue = "repeated_broad_log_scope"
+            if (issue is None and op_requested == "hub_get_logs"
+                    and isinstance(inner, dict) and focus_ids):
+                existing_coverage = dated_incident_evidence(
+                    question, witnesses, sorted(focus_ids))
+                history_frontier = historical_controller_frontier(
+                    question, witnesses, sorted(focus_ids), existing_coverage)
+                if reject_redundant_controller_logs(
+                        str(op_requested), inner, history_frontier):
+                    issue = "historical_controller_log_window_not_returned"
             if key in prior:
                 issue = "duplicate_read"
             rejected_key = str(op_requested) if issue in (
@@ -954,14 +973,22 @@ async def run_native_read_agent(
                         and row.get("status") == "candidate_group"
                         and row.get("candidate_ids")
                     ]
-                    candidates = groups[-1]["candidate_ids"][:8]
-                    hint = (
-                        "Current authoritative identity already returned "
-                        "candidate device IDs " + ", ".join(candidates)
-                        + ". Request model-selected hub_get_device READs "
-                        "with those exact IDs individually; name-prefix "
-                        "matches do not prove membership or actual state. "
-                        "The unscoped full-device listing is unnecessary.")
+                    if groups:
+                        candidates = groups[-1]["candidate_ids"][:8]
+                        hint = (
+                            "Current authoritative identity already returned "
+                            "candidate device IDs " + ", ".join(candidates)
+                            + ". Request model-selected hub_get_device READs "
+                            "with those exact IDs individually; name-prefix "
+                            "matches do not prove membership or actual state. "
+                            "The unscoped full-device listing is unnecessary.")
+                    elif len(focus_ids) == 1:
+                        hint = (
+                            "The user's dated incident has a fresh, uniquely "
+                            "source-verified device ID " + next(iter(focus_ids))
+                            + ". Request only scoped device/event history for "
+                            "that ID or independent issuer/input reads. No "
+                            "unbounded whole-hub inventory is needed.")
                 if (issue in ("missing_required_operation_fields",
                               "target_device_history_scope_missing")
                         and len(focus_ids) == 1):
@@ -1276,6 +1303,12 @@ async def run_native_read_agent(
                 }
             if focus_ids and op in ("hub_list_device_events", "hub_get_logs",
                                     "hub_get_app_config"):
+                source_coverage = dated_incident_evidence(
+                    question, witnesses, sorted(focus_ids))
+                controller_frontier = historical_controller_frontier(
+                    question, witnesses, sorted(focus_ids), source_coverage)
+                if controller_frontier is not None:
+                    view["historical_controller_source_frontier"] = controller_frontier
                 decision = controller_decision_followup(
                     witnesses, sorted(focus_ids),
                     dated_incident_evidence(question, witnesses, sorted(focus_ids)),
@@ -1387,6 +1420,9 @@ async def run_native_read_agent(
             if "source_claim_catalog" in view:
                 view = {"source_claim_catalog": view.pop("source_claim_catalog"),
                         **view}
+            if "historical_controller_source_frontier" in view:
+                view = {"historical_controller_source_frontier":
+                        view.pop("historical_controller_source_frontier"), **view}
             if "user_incident_evidence_coverage" in view:
                 # When tool JSON is bounded, the event sequence nearest
                 # the question's own time is more useful than recent
@@ -1796,6 +1832,24 @@ async def run_native_read_agent(
         operational_sequence_brief(incident_relevance, focused_name)
         if not source_bound_incident and relevance_blocker is None
         else None)
+    historical_frontier = historical_controller_frontier(
+        question, witnesses, sorted(focus_ids), incident_relevance)
+    if (verified_operating_sequence is not None
+            and historical_frontier is not None
+            and historical_frontier["status"] ==
+            "incident_not_in_returned_app_log_window"):
+        oldest = historical_frontier.get("earliest_source_log_timestamp")
+        sentence = (
+            " The controlling automation's historical decision at this "
+            "incident was not in the returned app logs"
+            + (f" (the oldest returned app entry is {oldest})" if oldest else "")
+            + ". The reason it removed demand remains unverified; "
+            "independently retained input-sensor history or archived "
+            "controller logs would be needed to establish that reason."
+        )
+        verified_operating_sequence = {
+            **verified_operating_sequence,
+            "text": verified_operating_sequence["text"] + sentence}
     host_sequence_published = (
         verified_operating_sequence is not None
         and model_reasoned_result.get("accepted") is not True
@@ -2101,6 +2155,7 @@ async def run_native_read_agent(
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
             "upstream_decision_challenge_used": upstream_decision_challenge_used,
+            "historical_controller_source_frontier": historical_frontier,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
             "source_path_readiness": source_readiness,
