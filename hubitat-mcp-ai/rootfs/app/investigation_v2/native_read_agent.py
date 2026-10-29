@@ -931,7 +931,7 @@ async def run_native_read_agent(
                             and row.get("status") == "candidate_group"
                             and row.get("candidate_ids")
                             for row in named_identity_lookups)
-                        or (requested_history_bounds(question) is not None
+                        or (len(focus_ids) == 1
                             and any(isinstance(row, dict)
                                     and row.get("status") == "unique"
                                     for row in named_identity_lookups)))):
@@ -950,6 +950,29 @@ async def run_native_read_agent(
                     and _verified_gateways_for_operation(
                         "hub_get_room", {}, manifest, discovered)):
                 issue = "bounded_room_catalog_available"
+            # A source-verified Rule-5.1 app is not a custom-rule
+            # definition. Avoid repeatedly asking a different rule engine
+            # for an incompatible source, without imposing a keyword route.
+            if (issue is None and op_requested == "hub_get_custom_rule"
+                    and isinstance(inner, dict)):
+                typed_rules = [
+                    rule for w in witnesses
+                    if w.get("operation") == "hub_list_rules"
+                    for rule in w.get("source_data", {}).get("rules", [])
+                    if isinstance(rule, dict)]
+                rule_id = str(inner.get("ruleId") or inner.get("appId")
+                              or inner.get("id") or "")
+                if typed_rules and (
+                        any(str(row.get("id")) == rule_id
+                            and str(row.get("type")) == "Rule-5.1"
+                            for row in typed_rules)
+                        or (not rule_id and
+                            all(str(row.get("type")) == "Rule-5.1"
+                                for row in typed_rules))):
+                    issue = "wrong_rule_engine_type"
+            if (issue is None and
+                    failed_operation_counts.get(str(op_requested), 0) >= 2):
+                issue = "operation_repeated_source_error"
             if issue is None and isinstance(inner, dict):
                 issue = target_history_scope_problem(
                     str(op_requested), inner, sorted(focus_ids), witnesses)
@@ -1093,6 +1116,9 @@ async def run_native_read_agent(
                     )
                 if error == "read_timeout":
                     timed_out_operations.add((name, str(op)))
+                if error == "mcp_tool_reported_error":
+                    failed_operation_counts[str(op)] = (
+                        failed_operation_counts.get(str(op), 0) + 1)
                 hint = (_oversized_hint(execution.result)
                         if execution is not None and execution.name == name
                         else None)
@@ -1354,6 +1380,10 @@ async def run_native_read_agent(
                     if linked is not None:
                         view["user_incident_evidence_coverage"] = linked
             if focus_ids and op == "hub_list_device_events":
+                interval_coverage = complete_interval_coverage(
+                    question, witnesses, sorted(focus_ids))
+                if interval_coverage is not None:
+                    view["requested_complete_interval_coverage"] = interval_coverage
                 if str(inner.get("deviceId")) in focus_ids:
                     # Make the already observed bounded source window explicit
                     # before a model asks for a narrower overlapping read.
@@ -1452,6 +1482,9 @@ async def run_native_read_agent(
             if "historical_controller_source_frontier" in view:
                 view = {"historical_controller_source_frontier":
                         view.pop("historical_controller_source_frontier"), **view}
+            if "requested_complete_interval_coverage" in view:
+                view = {"requested_complete_interval_coverage":
+                        view.pop("requested_complete_interval_coverage"), **view}
             if "user_incident_evidence_coverage" in view:
                 # When tool JSON is bounded, the event sequence nearest
                 # the question's own time is more useful than recent
