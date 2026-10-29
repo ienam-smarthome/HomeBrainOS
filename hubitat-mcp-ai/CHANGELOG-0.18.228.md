@@ -35,6 +35,11 @@ only a person has supplied.
   MCP manifest and effect/ID/argument guards. No model or host writes.
 - The model receives a source-based Rule Machine vs custom-rule hint
   **only when the live rules list actually describes Rule-5.1 apps**.
+- Derive a cautious timeline even without a separate device snapshot when
+  the verified, device-scoped event history itself contains an aligned,
+  matching-producer lastSeen event and separately sourced app command.
+  Recent driver-watchdog status rows alone cannot establish a historical
+  event or actuation.
 - Show a **short most-likely connectivity/power explanation** when device
   status and independently attested command chronology support that
   possibility. The answer keeps physical unplugging as a competing
