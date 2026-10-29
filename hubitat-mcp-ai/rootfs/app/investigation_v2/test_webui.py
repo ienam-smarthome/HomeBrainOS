@@ -262,7 +262,10 @@ el('run').onclick=async()=>{
     if(!response.ok)throw new Error(formatTestError(response,data));
     if(!data||typeof data!=='object'||!data.answer)
       throw new Error('HTTP '+response.status+': V2 endpoint returned no investigation result.');
-    el('answer').textContent=data.report?.text||data.answer?.text||'No answer returned';
+    // User-facing verified answer is authoritative for the main panel.
+    // report.text is deliberately a longer technical audit and must not
+    // silently replace the concise answer when both are present.
+    el('answer').textContent=data.answer?.text||data.report?.text||'No answer returned';
     const targets=Array.isArray(data.resolved_devices)?data.resolved_devices:[];
     el('resolvedDevices').textContent=data.answer_mode==='current_group_state'
       ? 'Hubitat light inventory · read-only reported states'
@@ -359,6 +362,7 @@ el('run').onclick=async()=>{
 
       current_app_identities:data.investigation?.case?.app_identities,
       full_source_backed_answer:data.answer?.text,
+      technical_source_report:data.report?.text,
       requested_incident_window:data.investigation?.requested_incident_window,
       hypotheses:data.investigation?.hypotheses,
       coverage:data.investigation?.case?.coverage,
