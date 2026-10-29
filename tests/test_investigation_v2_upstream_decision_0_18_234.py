@@ -160,5 +160,8 @@ async def test_no_historical_logs_permission_means_no_extra_model_challenge():
         question=QUESTION,chat=model,mcp=mcp,executor=executor,
         max_rounds=4,max_reads=3,
         enable_model_reasoned_assessment=True)
-    assert step==3
+    # Three tool-planning turns; the separate final JSON synthesis may
+    # invoke the model once more without granting any additional READ.
+    assert out["native_diagnostics"]["planning_model_calls"] == 3
+    assert len(executor.calls) == 1
     assert out["native_diagnostics"]["upstream_decision_challenge_used"] is False
