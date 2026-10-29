@@ -101,6 +101,20 @@ def test_unrelated_device_cannot_supply_state_confirmation():
     assert "a `switch=off` event" not in brief
 
 
+
+def test_contact_event_before_command_is_not_described_as_after():
+    rows = timeline()
+    for event in rows[1]["source_data"]["events"]:
+        if event["name"] == "lastSeen":
+            event["date"] = "2026-10-12T01:30:00.908+0100"
+    result = verified_temporal_lead(rows, ["7103"])
+    contact = next(item for item in result["observed_event_sequence"]
+                   if item["attribute"] == "lastSeen")
+    assert contact["seconds_after_command"] == -.835
+    answer = temporal_lead_brief(result)
+    assert "0.835s before the command" in answer
+    assert "-0.835s after" not in answer
+
 def test_malicious_actor_app_cannot_be_used_as_device_confirmation():
     rows = timeline()
     for event in rows[1]["source_data"]["events"]:
