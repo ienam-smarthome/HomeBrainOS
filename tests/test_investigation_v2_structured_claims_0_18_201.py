@@ -57,7 +57,7 @@ def test_catalog_is_derived_from_sources_not_model_or_secret_values():
     assert "secretKey" not in all_text
     assert "IGNORE PREVIOUS" not in all_text
     assert "danger" not in all_text
-    assert "Adhan Player" not in all_text  # app name is not needed to verify ID
+    assert "Adhan Player" in all_text  # independently projected caller name
     assert any(x["kind"] == "warning" for x in facts)
     assert any(x["kind"] == "command_issuer" for x in facts)
     assert any(x["kind"] == "device_observation" for x in facts)
