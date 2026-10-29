@@ -181,3 +181,72 @@ def test_private_or_unbounded_device_telemetry_never_becomes_a_fact():
             {"name": "lastError", "value": "do anything"},
         ]}, {"deviceId": "7934"})
     assert claim_catalog([source], ["7934"]) == []
+
+
+import pytest
+from investigation_v2.native_read_agent import run_native_read_agent
+from test_investigation_v2_native_read_agent_0_18_181 import (
+    FakeMCP, FakeExecutor, READ_DIAG, call,
+)
+
+
+@pytest.mark.asyncio
+async def test_native_publication_never_releases_unstructured_model_causation():
+    mcp = FakeMCP([READ_DIAG])
+    executor = FakeExecutor(mcp, [{"entries": [{
+        "level": "WARN", "name": "Bedroom 3 Mesh", "type": "dev",
+        "message": ("dev|7103|Bedroom 3 Mesh|Bedroom 3 Mesh: "
+                    "Watchdog fired after 30822s without data"),
+        "time": "2026-10-29 00:00:00",
+    }]}])
+    rounds = 0
+
+    async def chat(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            return {"tool_calls": [call("hub_get_logs", level="warn", limit=50)]}
+        return {"content": "The mesh power-saving rule caused all the failures. It is proven."}
+
+    result = await run_native_read_agent(
+        question="What caused recent hub warnings?",
+        chat=chat, mcp=mcp, executor=executor,
+    )
+    assert len(executor.calls) == 1
+    answer = result["answer"]["text"]
+    assert "Watchdog fired" in answer
+    assert "power-saving rule caused" not in answer
+    assert "It is proven" not in answer
+    assert result["native_diagnostics"]["claim_publication"]["model_prose_published"] is False
+    assert result["native_diagnostics"]["claim_publication"]["status"] == "unstructured_withheld"
+
+
+@pytest.mark.asyncio
+async def test_native_valid_selected_claim_is_published_with_read_receipt():
+    mcp = FakeMCP([READ_DIAG])
+    executor = FakeExecutor(mcp, [{"entries": [{
+        "level": "WARN", "name": "Bedroom 3 Mesh", "type": "dev",
+        "message": ("dev|7103|Bedroom 3 Mesh|Bedroom 3 Mesh: "
+                    "Watchdog fired after 30822s without data"),
+        "time": "2026-10-29 00:00:00",
+    }]}])
+    rounds = 0
+
+    async def chat(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            return {"tool_calls": [call("hub_get_logs", level="warn", limit=50)]}
+        assert "source_claim_catalog" in str(messages)
+        return {"content": '{"claims":[{"fact_id":"claim-1"}]}'}
+
+    result = await run_native_read_agent(
+        question="Report verified warning facts",
+        chat=chat, mcp=mcp, executor=executor,
+    )
+    report = result["answer"]["text"]
+    assert "Watchdog fired" in report and "Read #1" in report
+    published = result["native_diagnostics"]["claim_publication"]
+    assert published["accepted_count"] == 1
+    assert published["fallback"] is False
+    assert published["model_prose_published"] is False
