@@ -25,7 +25,7 @@ _CANCELLED = re.compile(
 _CONTROL_LEAD = re.compile(
     r"(?i)^\s*(?:please\s+)?(?:turn|switch|power|toggle|set|dim|"
     r"change|block|unblock|allow|enable|disable|restrict)\b"
-    r"(?=\\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\\b)"
+    r"(?=\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\b)"
 )
 _INTERROGATIVE_CONTROL = re.compile(r"\?|[;]|\n")
 _EXPLANATORY_TARGET = re.compile(
@@ -50,7 +50,7 @@ _SEMANTIC_CONTROL_LEAD = re.compile(
     r"(?:turn|switch|power|toggle|set|dim|change|brighten|"
     r"increase|decrease|raise|lower|reduce|adjust|make|"
     r"boost|heat|cool)\b"
-    r"(?=\\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\\b)"
+    r"(?=\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\b)"
 )
 _EXPLICIT_READ_ONLY = re.compile(
     r"(?i)\b(?:read[\s-]*only|do\s+not\s+(?:modify|change|"
@@ -71,7 +71,7 @@ _INDEPENDENT_ACTION = re.compile(
     # A word boundary also occurs before hyphenated *nouns*, e.g.
     # `, switch-state events`. Require a clause delimiter after a
     # command verb, while retaining hyphenated actions like `switch-off`.
-    r"(?=\\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\\b)"
+    r"(?=\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\b)"
 )
 _NEGATED_OBJECT = re.compile(
     r"(?i)^\s*(?:nothing\b|none\b|neither\b|no\s+)"
