@@ -61,7 +61,7 @@ def test_source_verified_event_chronology_survives_missing_device_snapshot():
         "lastSeen", "switch", "healthStatus"]
     answer = temporal_lead_short_answer(lead)
     assert "Most likely explanation" in answer
-    assert "socket was physically disconnected" in answer
+    assert "someone physically disconnected power" in answer
     assert "Cause not confirmed" in answer
     assert "App 3950 caused" not in answer
 
@@ -193,7 +193,7 @@ async def test_live_shaped_question_recovers_scope_and_read_only_timeline():
     assert diagnostics["concise_answer_source"] == (
         "source_verified_temporal_lead")
     assert "Cause not confirmed" in result["answer"]["text"]
-    assert "whether the automation cut power, the socket was physically disconnected" in result["answer"]["text"]
+    assert "someone physically disconnected power" in result["answer"]["text"]
     assert "was physically disconnected by the user" not in result["answer"]["text"]
     assert "No independently verifiable source claim" not in (
         result["answer"]["text"])
