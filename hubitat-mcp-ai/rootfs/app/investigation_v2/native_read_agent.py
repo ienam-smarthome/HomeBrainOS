@@ -52,6 +52,8 @@ from .native_history_recovery import (
     requested_history_bounds, normalize_selected_history_read)
 from .native_incident_relevance import (
     dated_incident_evidence, natural_incident_gap_answer)
+from .native_reasoned_assessment import (
+    candidate_prompt, verify_natural_hypothesis)
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -609,6 +611,7 @@ async def run_native_read_agent(
     max_seconds: float = 165.0, model_timeout: float = 28.0,
     per_read_timeout: float = 20.0,
     enable_verified_narrative: bool = False,
+    enable_model_reasoned_assessment: bool = False,
 ) -> dict[str, Any]:
     """Execute bounded, sequential model-chosen READ calls with an evidence trail."""
     if executor.mcp is not mcp:
@@ -669,6 +672,7 @@ async def run_native_read_agent(
     synthesis_elapsed_ms = 0
     answer_text = ""
     model_claim_proposal: Any = None
+    model_reasoned_proposal: Any = None
     # Harvest drafts from the existing reasoning/tool loop. This avoids
     # paying for a separate tools-free model request when the model has
     # already authored a suitable answer.
@@ -1547,9 +1551,17 @@ async def run_native_read_agent(
                  or sum(failed_scoped_reads.values()) >= 2
                  or redundant_evidence_reads >= 2)):
         final_synthesis_skipped_reason = "source_evidence_at_investigation_limit"
+    reasoned_incident_eligible = (
+        enable_model_reasoned_assessment
+        and incident_relevance is not None
+        and incident_relevance["material_event_count"] >= 2
+        and len(focus_ids) == 1)
+    # A general factual-catalog shortcut must not suppress model reasoning
+    # on a dated incident when there is actual material source evidence.
     if (witnesses and not answer_text
             and final_synthesis_skipped_reason is None
-            and readiness["host_factual_brief_ready"]):
+            and readiness["host_factual_brief_ready"]
+            and not reasoned_incident_eligible):
         final_synthesis_skipped_reason = "multi_source_factual_brief_ready"
     if (witnesses and not answer_text and final_synthesis_skipped_reason is None
             and deadline - time.monotonic() > 2):
@@ -1566,6 +1578,7 @@ async def run_native_read_agent(
             response = await asyncio.wait_for(
                 chat([
                     {"role": "system", "content":
+                     candidate_prompt() if reasoned_incident_eligible else
                      "Answer the user's question using only verified source "
                      "observations provided. Reference read IDs. Distinguish "
                      "WARN and ERROR from INFO, source reporting from physical "
@@ -1581,6 +1594,8 @@ async def run_native_read_agent(
                     {"role": "user", "content": json.dumps({
                         "question": question,
                         "source_evidence": final_witnesses,
+                        "incident_evidence": incident_relevance
+                        if reasoned_incident_eligible else None,
                         "failed_or_rejected_reads": failures[-12:],
                         "source_complete": False,
                         "source_claim_catalog": [
@@ -1595,7 +1610,10 @@ async def run_native_read_agent(
             if isinstance(response, dict) and not response.get("tool_calls"):
                 candidate = response.get("content")
                 if isinstance(candidate, str) and candidate.strip():
-                    model_claim_proposal = candidate
+                    if reasoned_incident_eligible:
+                        model_reasoned_proposal = candidate
+                    else:
+                        model_claim_proposal = candidate
                     answer_text = _answer_text(candidate, 4500)
                     synthesis_status = "completed"
                 else:
@@ -1796,7 +1814,18 @@ async def run_native_read_agent(
     temporal_lead = (
         verified_temporal_lead(witnesses, sorted(focus_ids))
         if not source_bound_incident and relevance_blocker is None else None)
+    model_reasoned_result = (
+        verify_natural_hypothesis(
+            model_reasoned_proposal, coverage=incident_relevance,
+            observed_source_names=[question])
+        if (reasoned_incident_eligible and not source_bound_incident
+            and relevance_blocker is None and incident_gap is None)
+        else {"accepted": False, "reason": "not_eligible",
+              "model_prose_published": False})
     concise_answer = (
+        model_reasoned_result["text"]
+        if model_reasoned_result.get("accepted") is True
+        else
         verified_narrative["text"]
         if verified_narrative.get("accepted") is True
         else grouped_answer["text"] if grouped_answer is not None
@@ -1995,16 +2024,21 @@ async def run_native_read_agent(
         and relevance_blocker is None
         and verified_narrative.get("accepted") is not True
     )
+    model_reasoning_published = model_reasoned_result.get("accepted") is True
     host_incident_gap_published = (
         incident_gap is not None and relevance_blocker is None)
     host_temporal_lead_published = (
         temporal_lead is not None
+        and not model_reasoning_published
         and not host_group_published
         and relevance_blocker is None
         and verified_narrative.get("accepted") is not True
     )
     validation_issues = (
-        ["requested_incident_evidence_missing"]
+        ["model_reasoning_cited_source_events",
+         "semantic_causation_not_independently_verified"]
+        if model_reasoning_published
+        else ["requested_incident_evidence_missing"]
         if host_incident_gap_published
         else ["source_verified_room_and_device_readings"]
         if host_group_published and grouped_answer["room_membership_verified"]
@@ -2097,7 +2131,7 @@ async def run_native_read_agent(
             "claim_publication": {
                 "used_for_display_answer": not (
                     host_group_published or host_temporal_lead_published
-                    or host_incident_gap_published),
+                    or host_incident_gap_published or model_reasoning_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
                     else "validated_model_selection"),
@@ -2107,7 +2141,7 @@ async def run_native_read_agent(
                 "fallback": publication["fallback"],
                 "published_fact_ids": [
                     c["fact_ids"] for c in publication["published_claims"]],
-                "model_prose_published": False,
+                "model_prose_published": model_reasoning_published,
                 "limits": publication["limits"],
             },
             "model_narrative_withheld_for_unattributed_incident": source_bound_incident,
@@ -2120,14 +2154,17 @@ async def run_native_read_agent(
             ],
             "final_synthesis_skipped_reason": final_synthesis_skipped_reason,
             "general_evidence_readiness": readiness,
+            "model_reasoned_assessment": model_reasoned_result,
             "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
                 not source_bound_incident
                 and not host_incident_gap_published
+                and not model_reasoning_published
                 and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
-                "requested_incident_evidence_gap" if host_incident_gap_published
+                "model_cited_incident_assessment" if model_reasoning_published
+                else "requested_incident_evidence_gap" if host_incident_gap_published
                 else "unresolved_named_subject_evidence" if relevance_blocker
                 else "model_authored_independently_checked" if
                 verified_narrative.get("accepted") is True
