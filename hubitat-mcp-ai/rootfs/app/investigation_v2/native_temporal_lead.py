@@ -321,8 +321,8 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
             f" The current driver reports healthStatus="
             f"{lead['health_status']}.")
     if lead.get("mqtt_status") == "connected":
-        header += (" MQTT connected is the driver's broker connection, "
-                   "not proof that the plug itself is communicating.")
+        header += (" MQTT connected describes the driver's broker session "
+                   "and does not independently confirm device connectivity.")
     if lead.get("later_on_commands"):
         count = lead["later_on_commands"]
         header += (f" {count} later `on` command"
