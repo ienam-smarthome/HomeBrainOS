@@ -38,7 +38,8 @@ from .native_source_followup import source_path_followup
 from .native_focus_anchor import verified_device_focus
 from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
-from .native_read_contracts import read_contract_feedback
+from .native_read_contracts import (read_contract_feedback,
+                                    advertised_operation_contracts)
 from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_runtime_stats import (
     project_log_runtime_stats, verified_caller_app_ids)
@@ -110,6 +111,9 @@ _SYSTEM = (
     "Do not repeat a broad log request solely with a bigger limit when "
     "an earlier identical scope returned fewer rows than requested; "
     "instead use a grounded since/until, cursor, or targeted filter. "
+    "For hub_get_device, ALWAYS pass args.deviceId as a verified ID, "
+    "including configuration reads. Gateway tool and args are separate "
+    "fields; put deviceId INSIDE args, never at the gateway top level. "
     "For hub_get_app_config, supply args.appId from an independently "
     "verified caller. For hub_get_source, the required args are type='app' "
     "and id=<verified appId>, or type='driver' and id=<separately attested "
@@ -375,9 +379,19 @@ def _model_tools(manifest: Mapping[str, MCPTool]) -> list[dict[str, Any]]:
             if isinstance(entry, dict) and isinstance(entry.get("enum"), list):
                 entry["enum"] = [op for op in entry["enum"]
                                  if isinstance(op, str) and op.startswith(_READ_PREFIXES)]
+        # The live gateway often exposes an unconstrained nested args object.
+        # Supply only contract notes for *enumerated, live-offered* read
+        # operations, so the model knows which required args to generate.
+        # These are documentation, never a schema/permission change.
+        allowed_ops = schema.get("properties", {}).get("tool", {}).get("enum")
+        contract_hint = (advertised_operation_contracts(allowed_ops)
+                         if isinstance(allowed_ops, list) else "")
+        description = _text(tool.description or tool.name, 350)
+        if contract_hint:
+            description += " | Nested READ contracts: " + contract_hint
         result.append({"type": "function", "function": {
             "name": tool.name,
-            "description": _text(tool.description or tool.name, 350),
+            "description": description,
             "parameters": schema,
         }})
     return result
@@ -836,7 +850,7 @@ async def run_native_read_agent(
                              "relevant read operation; the host will not "
                              "insert it or execute the rejected proposal.")
                 contract = (read_contract_feedback(
-                    name, args, verified_typed)
+                    name, args, verified_typed, focus_ids=sorted(focus_ids))
                     if issue in ("missing_required_operation_fields",
                                  "target_device_history_scope_missing")
                     else None)
@@ -1072,6 +1086,28 @@ async def run_native_read_agent(
                         "source_complete": False,
                     })
             if focus_ids and op == "hub_list_device_events":
+                if str(inner.get("deviceId")) in focus_ids:
+                    # Make the already observed bounded source window explicit
+                    # before a model asks for a narrower overlapping read.
+                    # The model may still select a legitimate distinct read.
+                    view["event_read_frontier"] = {
+                        "deviceId": str(inner["deviceId"]),
+                        "read_id": attempted,
+                        "source_returned_rows": summary.get("count"),
+                        "projected_rows": summary.get("returned_event_rows"),
+                        "oldest_returned": summary.get("oldest_returned"),
+                        "newest_returned": summary.get("newest_returned"),
+                        "history_complete": False,
+                        "advice": (
+                            "These individual source events have already "
+                            "been observed. A narrower interval with the "
+                            "same returned rows is not independent evidence. "
+                            "If investigating a distinct historical period, "
+                            "choose a read scope capable of reaching that "
+                            "period, or select a different verified app, "
+                            "device, performance or source read. Do not "
+                            "treat bounded events as complete history."),
+                    }
                 packet = incident_attribution_packet(
                     witnesses, sorted(focus_ids))
                 if packet is not None:
@@ -1389,9 +1425,10 @@ async def run_native_read_agent(
                 "different zones, and a source window is not guaranteed complete.",
                 "",
             ])
+    driver_blocker_lines = []
     if (source_readiness is not None and source_readiness.get("status")
             == "driver_source_unavailable_no_attested_id"):
-        lines.extend([
+        driver_blocker_lines = [
             "**Verified driver-source blocker**",
             "The target's configuration (Read #"
             + str(source_readiness.get("evidence_read"))
@@ -1399,7 +1436,7 @@ async def run_native_read_agent(
             "independently attested driver code ID. The internal "
             "implementation was not inspected; no method or CPU cause "
             "can be derived from source code in this investigation.", "",
-        ])
+        ]
     if projections_empty:
         lines.extend([
             "**Uninterpreted source fields**",
@@ -1410,8 +1447,12 @@ async def run_native_read_agent(
         ("**Incident assessment — source-bound evidence**"
          if source_bound_incident
          else "**Independent claim validation — source-bound evidence**"),
-        answer_text, "", "**Verified read coverage**"
+        answer_text, "",
     ])
+    # The supported answer comes first; a source-code blocker is a limit
+    # on deeper attribution, not the primary answer to the question.
+    lines.extend(driver_blocker_lines)
+    lines.append("**Verified read coverage**")
     for witness in witnesses[:12]:
         op = _text(witness["operation"], 64)
         details = witness["source_data"]
