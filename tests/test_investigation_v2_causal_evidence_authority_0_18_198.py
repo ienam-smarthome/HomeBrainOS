@@ -83,6 +83,21 @@ def test_missing_command_history_does_not_prove_no_callers():
     assert ledger[2]["status"]=="not_checked"
     assert ledger[1]["status"]=="not_established"
 
+def test_named_slow_method_warn_prevents_generic_template_from_hiding_it():
+    log={"log_summary":{"warning_error_groups":[
+        {"source_id":"7934","message":"method runQ ran for 147429ms",
+         "oldest_returned":"2026-10-28 17:04:48.106",
+         "newest_returned":"2026-10-28 17:04:48.106"},
+        {"source_id":"7934","message":"Device 7934 generates excessive hub load",
+         "oldest_returned":"2026-10-28 19:55:19.194",
+         "newest_returned":"2026-10-28 19:55:19.399"},
+    ]}}
+    p=incident_attribution_packet([witness("hub_get_logs",log)],["7934"])
+    assert p["separate_diagnostic_method_warnings_present"] is True
+    assert p["separate_diagnostic_method_warning_count"]==1
+    assert source_bound_incident_required(p) is False
+
+
 def test_non_load_warning_preserves_model_authority():
     log={"log_summary":{"warning_error_groups":[{
         "source_id":"7934","message":"Device unavailable for 10 minutes",
