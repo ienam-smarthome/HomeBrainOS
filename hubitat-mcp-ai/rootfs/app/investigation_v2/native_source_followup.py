@@ -12,6 +12,7 @@ def source_path_followup(
     witnesses: Sequence[Mapping[str, Any]],
     focus_ids: Sequence[str],
     driver_ids: set[str],
+    *, failures: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any] | None:
     """Suggest one discriminating model-chosen next step for a source gap."""
     focus = {str(x) for x in focus_ids}
@@ -94,6 +95,32 @@ def source_path_followup(
                 "substitute the device ID or an issuing-app ID."
             ),
         }
+    # A failed model-chosen configuration read IS an attempted inspection.
+    # Do not present it as "not yet inspected" or suggest the exact failed
+    # call again. A successful default device read is not a configuration
+    # inspection; require the documented mode and verified subject in the
+    # failure receipt before attributing this specific blocker.
+    for failed in reversed(failures):
+        if not isinstance(failed, Mapping) or failed.get("operation") != "hub_get_device":
+            continue
+        filters = failed.get("read_filters")
+        if (isinstance(filters, Mapping)
+                and str(filters.get("deviceId")) == device_id
+                and filters.get("mode") == "configuration"
+                and failed.get("code") in (
+                    "mcp_tool_reported_error", "read_timeout",
+                    "response_too_large", "repeated_target_read_error")):
+            return {
+                "status": "driver_configuration_read_failed",
+                "failed_operation": "hub_get_device",
+                "failed_device_id": device_id,
+                "failure_code": failed["code"],
+                "limits": (
+                    "A verified-device configuration read was attempted "
+                    "but did not return usable configuration. The driver "
+                    "ID/source are unverified; do not claim they were "
+                    "inspected or repeat the same failed scope."),
+            }
     return {
         "status": "driver_identity_not_yet_inspected",
         "model_chosen_read": {
