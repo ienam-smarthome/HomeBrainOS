@@ -8,6 +8,8 @@ CHANGELOG-<version>.md
 
 ## Current release
 
+- [0.18.219](CHANGELOG-0.18.219.md)
+
 - [0.18.218](CHANGELOG-0.18.218.md)
 
 - [0.18.217](CHANGELOG-0.18.217.md)
