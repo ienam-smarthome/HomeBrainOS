@@ -108,7 +108,9 @@ def test_unverified_driver_id_never_authorises_source_read():
 
 def test_metadata_only_source_is_not_repeated():
     source = {"read": 4, "operation": "hub_get_source",
-              "source_data": {"source_complete": False}}
+              "source_data": {"source_complete": False,
+                              "requested_source_type": "driver",
+                              "requested_source_id": "55"}}
     hint = source_path_followup(
         [warning(), config("55"), source], ["7934"], {"55"})
     assert hint["status"] == "source_read_already_attempted_without_complete_code"
@@ -118,3 +120,13 @@ def test_metadata_only_source_is_not_repeated():
 def test_no_warning_or_ambiguous_target_does_not_force_source():
     assert source_path_followup([events()], ["7934"], set()) is None
     assert source_path_followup([warning()], ["7934", "7103"], set()) is None
+
+def test_app_source_does_not_mask_missing_driver_source():
+    unrelated_app = {"read": 4, "operation": "hub_get_source", "source_data": {
+        "source_complete": True, "requested_source_type": "app",
+        "requested_source_id": "1679",
+    }}
+    hint = source_path_followup(
+        [warning(), config("55"), unrelated_app], ["7934"], {"55"})
+    assert hint["status"] == "verified_driver_identity_available"
+    assert hint["model_chosen_read"]["args"] == {"type": "driver", "id": "55"}
