@@ -101,8 +101,15 @@ def _validate_explanation(text: Any, case: Mapping[str, Any]) -> str | None:
             return None
     # Never take unqualified "is offline" as physical proof: source status
     # words must remain attached to exact source-reported field names.
-    if re.search(r"(?i)\b(?:is|was|are|went|stayed)\s+offline\b", prose):
+    if re.search(
+            r"(?i)\b(?:is|was|are|went|stayed)\s+"
+            r"(?:online|offline|stale|connected|disconnected)\b", prose):
         return None
+    levels = {str(level).upper()
+              for level in case.get("warning_levels", [])}
+    for word in ("WARN", "ERROR"):
+        if re.search(r"\b"+word+r"\b", prose, flags=re.I) and word not in levels:
+            return None
     numbers = set(_NUMBER.findall(prose))
     allowable_numbers = {ident, str(case.get("warning_rows_in_returned_sample") or "")}
     allowable_numbers.update(_NUMBER.findall(name))
