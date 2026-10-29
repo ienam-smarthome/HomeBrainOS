@@ -107,13 +107,19 @@ async def test_model_can_propose_draft_together_with_a_read_tool_call():
                 "tool_calls":[_call(
                     "hub_read_devices","hub_get_device",deviceId="9001")],
             }
-        raise AssertionError("The model loop reached its budget, no extra call")
+        if count==3:
+            # The pre-existing independent claims-only pass can still
+            # run after a small source catalogue; no *narrative rewrite*
+            # should occur after an already proposed narrative.
+            assert tools==[]
+            return {"content":'{"claims":[]}'}
+        raise AssertionError("No second narrative-generation pass permitted")
     result=await run_native_read_agent(
         question="Assess significant device warnings.",chat=model,
         mcp=mcp,executor=executor,max_rounds=2,max_reads=4,
         enable_verified_narrative=True)
     d=result["native_diagnostics"]
-    assert count==2
+    assert count==3
     assert d["verified_narrative_accepted"] is True
     assert d["verified_narrative_result"]=="verified_from_read_loop"
     assert d["verified_narrative_ms"]==0
