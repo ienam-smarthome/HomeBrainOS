@@ -57,6 +57,11 @@ def incident_attribution_packet(
              str(v[2].get("message","")).casefold()]
     if not generic:
         return None
+    distinct_slow_methods=[
+        v for v in incidents
+        if re.search(r"\bmethod\s+[A-Za-z_]\w*\b",
+                     str(v[2].get("message","")),re.I)
+    ]
     start,end,warn=sorted(generic,key=lambda v:(
         (v[1]-v[0]).total_seconds(),-v[1].timestamp()))[0]
     app_commands=[]
@@ -131,6 +136,8 @@ def incident_attribution_packet(
     bursts.sort(key=lambda b:(-b[4],b[2]))
     return {
         "incident_type":"generic_device_warning",
+        "separate_diagnostic_method_warnings_present":bool(distinct_slow_methods),
+        "separate_diagnostic_method_warning_count":len(distinct_slow_methods),
         "warning_period":{
             "oldest":str(warn.get("oldest_returned")),
             "newest":str(warn.get("newest_returned")),
@@ -313,6 +320,7 @@ def source_bound_incident_required(packet: Mapping[str,Any]|None) -> bool:
     return bool(
         packet and packet.get("incident_type")=="generic_device_warning"
         and packet.get("causal_conclusion_strength")=="unattributed"
+        and not packet.get("separate_diagnostic_method_warnings_present")
         and packet.get("independent_executed_method_or_cpu_attribution") is False
     )
 
