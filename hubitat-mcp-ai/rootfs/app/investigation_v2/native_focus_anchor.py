@@ -11,7 +11,7 @@ from typing import Any
 
 
 def _normal(value: Any) -> str:
-    return " ".join(re.findall(r"[^\\W_]+", str(value or "").casefold(),
+    return " ".join(re.findall(r"[^\W_]+", str(value or "").casefold(),
                                flags=re.UNICODE))
 
 
