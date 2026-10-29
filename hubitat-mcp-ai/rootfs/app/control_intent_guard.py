@@ -71,7 +71,7 @@ _INDEPENDENT_ACTION = re.compile(
     # A word boundary also occurs before hyphenated *nouns*, e.g.
     # `, switch-state events`. Require a clause delimiter after a
     # command verb, while retaining hyphenated actions like `switch-off`.
-    r"(?=\s|$|[.!?;:,]|[-‐‑–—](?:on|off)\b)"
+    r"(?=\s|$|[.!?;:,])"
 )
 _NEGATED_OBJECT = re.compile(
     r"(?i)^\s*(?:nothing\b|none\b|neither\b|no\s+)"
