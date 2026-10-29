@@ -1503,6 +1503,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                     question=payload.question, chat=agent.transport.chat,
                     mcp=mcp, executor=agent.executor,
                     enable_verified_narrative=True,
+                    enable_model_reasoned_assessment=True,
                 )
             except asyncio.CancelledError:
                 raise
