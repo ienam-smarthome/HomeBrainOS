@@ -150,7 +150,10 @@ def natural_entity_answer(
     name_lights = [checked[i] for i in name_ids if checked[i]["light"]]
     room_lights = [checked[i] for i in room_ids
                    if i in checked and checked[i]["light"]]
-    room_only = [i for i in room_ids if i not in name_ids]
+    # A room-first investigation has no name-prefix baseline. Every room
+    # member is the primary result, not an "additional" room-only device.
+    room_only = ([i for i in room_ids if i not in name_ids]
+                 if name_ids else [])
     unread_room = [i for i in room_ids if i not in checked]
     lines = []
     main = name_lights or room_lights
@@ -189,17 +192,27 @@ def natural_entity_answer(
                       + (f"Hubitat lists {len(room_ids)} devices."
                          if room["inventory_complete"] else
                          "Hubitat returned a partial or unconfirmed member list.")])
-        extras = [checked[i] for i in room_only if i in checked]
+        # Only a name-based primary list needs a separate room-only section.
+        # Otherwise these checked devices are already printed above.
+        extras = ([checked[i] for i in room_only if i in checked]
+                  if name_ids else [])
         if extras:
-            lines.append("Other devices in this room (regardless of their names):")
+            lines.append("Additional room members not matched by name:")
             for item in extras:
                 lines.append(f"- **{item['label']}:** {_human_state(item)}.")
         if unread_room:
-            names = [room["members"].get(i) or f"device {i}"
-                     for i in unread_room[:10]]
-            lines.append("**Not yet checked:** " + ", ".join(names)
-                         + " — room membership was reported, but current "
-                           "device state was not independently read.")
+            if name_ids:
+                names = [room["members"].get(i) or f"device {i}"
+                         for i in unread_room[:10]]
+                lines.append("**Not yet checked:** " + ", ".join(names)
+                             + " — room membership was reported, but current "
+                               "device state was not independently read.")
+            else:
+                lines.append(
+                    f"**Coverage:** {len(unread_room)} other room "
+                    "member(s) were not individually read. Their capabilities "
+                    "and current states have not been verified; the light "
+                    "status above covers only devices actually checked.")
         if name_ids and room["inventory_complete"]:
             outside = [checked[i]["label"] for i in name_ids if i not in room_ids]
             if outside:
