@@ -1417,24 +1417,32 @@ async def run_native_read_agent(
         details = witness["source_data"]
         if isinstance(details, dict) and "log_summary" in details:
             report = details["log_summary"]
+            groups=report.get("warning_error_groups",[])
+            if focus_ids:
+                groups=[g for g in groups if isinstance(g,dict)
+                        and str(g.get("source_id")) in focus_ids]
             lines.append(
                 f"- Read #{witness['read']}: {op}: "
                 f"{report['returned_rows']} returned log rows; "
-                f"{report['warning_error_group_count']} WARN/ERROR groups; "
-                "full historical coverage unverified."
+                f"{len(groups) if focus_ids else report['warning_error_group_count']} "
+                + ("target " if focus_ids else "")+
+                "WARN/ERROR groups; full historical coverage unverified."
             )
-            lines.append("  - Sample levels: " + str(
+            lines.append("  - Sample levels"
+                         + (" (all sources)" if focus_ids else "")
+                         + ": " + str(
                 report.get("level_counts_in_returned_rows", {})))
             lines.append("  - Returned time range: " + str(
                 report.get("oldest_returned") or "unknown") + " to " + str(
                 report.get("newest_returned") or "unknown")
                 + " (timezone not verified).")
-            if not report["warning_error_groups"]:
+            if not groups:
                 lines.append(
-                    "  - No WARN/ERROR in returned sample; "
-                    "this does NOT establish that hub logs are clear."
+                    "  - No " + ("target " if focus_ids else "")+
+                    "WARN/ERROR in returned sample; this does NOT "
+                    "establish that historical target/hub logs are clear."
                 )
-            for group in report["warning_error_groups"][:5]:
+            for group in groups[:5]:
                 lines.append(
                     f"  - {group['level']} / {group['source_name']}: "
                     f"{group['message']} ({group['count']} rows)"
