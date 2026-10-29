@@ -1238,7 +1238,8 @@ async def run_native_read_agent(
                     "read_only": True,
                     "state_not_covered": "Individually read any relevant room device state",
                 }
-            if focus_ids and op in ("hub_list_device_events", "hub_get_logs"):
+            if focus_ids and op in ("hub_list_device_events", "hub_get_logs",
+                                    "hub_get_app_config"):
                 decision = controller_decision_followup(
                     witnesses, sorted(focus_ids),
                     dated_incident_evidence(question, witnesses, sorted(focus_ids)),
