@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.207**.
+Current add-on version: **0.18.208**.
+
+v0.18.208 preserves a verified device subject across typed target WARN, runtime and event reads, and extracts only source-attested device/app performance statistics from broader tables. [Release notes](CHANGELOG-0.18.208.md).
 
 v0.18.207 recognises Hubitat Logs device/app performance tables as cumulative, source-typed numerical evidence, rather than mistaking them for WARN lines or claiming historic incident-time CPU measurements. [Release notes](CHANGELOG-0.18.207.md).
 
