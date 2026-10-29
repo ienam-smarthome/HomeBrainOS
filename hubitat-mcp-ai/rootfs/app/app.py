@@ -1469,10 +1469,12 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             raise HTTPException(status_code=404, detail="V2 test mode is disabled") from None
         raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
 
-    # The production classifier already distinguishes explicit commands
-    # from causal questions about commands. Use it only as a NEGATIVE V2
-    # boundary: it cannot grant write authority or select a Hubitat tool.
-    # Reject before inventory/AI/MCP work, even with an Advanced ID override.
+    # V2 is a general model-led READ agent. An independent, negative-only
+    # admission gate rejects explicit affirmative Hubitat write requests,
+    # rather than reusing production fast-control routing as a precondition
+    # for all natural-language investigations. The live manifest/executor
+    # also enforce READ effects, regardless of this admission decision.
+    # Reject clear writes before inventory/AI/MCP, including Advanced IDs.
     if incompatible_v2_control_request(payload.question):
         raise HTTPException(
             status_code=409,
