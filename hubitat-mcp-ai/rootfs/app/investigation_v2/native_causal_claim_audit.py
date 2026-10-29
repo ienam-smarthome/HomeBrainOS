@@ -252,6 +252,11 @@ def incident_claim_ledger(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
     event_reads=list(packet.get("event_read_ids",[]))
     exists=bool(packet.get("scoped_event_history_available"))
     state_count=len(packet.get("device_events_within_two_seconds",[]))
+    temporal=packet.get("warning_command_temporal_leads")
+    temporal=temporal if isinstance(temporal,Mapping) else {}
+    clusters=temporal.get("warning_clusters",[])
+    latest=clusters[-1] if isinstance(clusters,list) and clusters else {}
+    latest=latest if isinstance(latest,Mapping) else {}
     return [
         {"id":"warning_observed","status":"verified",
          "evidence_reads":log_reads,
@@ -272,6 +277,18 @@ def incident_claim_ledger(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
          "evidence_reads":event_reads+log_reads,
          "observed_state_events":state_count,
          "clock_alignment_verified":False},
+        {"id":"warning_cluster_app_commands",
+         "status":("bounded_sample_observation" if exists and latest
+                   else "not_checked"),
+         "evidence_reads":sorted(set(event_reads+list(
+             latest.get("warning_read_ids",[]) if latest else []))),
+         "observed_warning_rows":latest.get("warning_rows"),
+         "observed_commands_near_cluster":
+             latest.get("commands_in_window_with_edges"),
+         "app_ids":[str(a.get("app_id")) for a in latest.get(
+             "app_issuers",[]) if isinstance(a,Mapping)],
+         "clock_alignment_verified":False,
+         "runtime_cause_verified":False},
         {"id":"generic_warning_root_cause","status":"unverified",
          "evidence_reads":log_reads+event_reads,
          "reason":"No independent runtime/source method-to-CPU attribution."},
