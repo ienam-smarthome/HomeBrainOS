@@ -155,9 +155,12 @@ def verify_natural_hypothesis(
     # number. Drop that *optional clause*, but retain the correctly
     # source-anchored and verified leading hypothesis. Never accept or
     # publish any unsupported numeric content.
+    if _CONTROL.search(alternative) or _CONFIDENT.search(alternative):
+        # Overconfidence/injection in an alternative is a substantive
+        # explanation-integrity failure, not a removable numeric detail.
+        return reject("unsupported_alternative")
     alternative_withheld = bool(
-        len(alternative) > 175 or _CONTROL.search(alternative)
-        or _CONFIDENT.search(alternative) or _NUMBER.search(alternative))
+        len(alternative) > 175 or _NUMBER.search(alternative))
     if alternative_withheld:
         alternative = ""
     statement = "**Possible explanation:** " + hypothesis
