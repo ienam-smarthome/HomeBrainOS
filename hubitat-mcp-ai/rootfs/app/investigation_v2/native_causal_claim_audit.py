@@ -45,6 +45,16 @@ def incident_attribution_packet(
             hi=_wall_time(group.get("newest_returned"))
             if lo is not None and hi is not None:
                 if lo>hi:lo,hi=hi,lo
+                # A grouped log entry is a collection of source-reported
+                # occurrences, not a continuously running incident.
+                samples=sorted(
+                    t for t in (
+                        _wall_time(stamp)
+                        for stamp in group.get("sample_timestamps",[])[:48]
+                        if isinstance(stamp,str))
+                    if t is not None)
+                if samples:
+                    lo=hi=samples[-1]
                 incidents.append((lo,hi,group))
     if not incidents:
         return None
@@ -63,7 +73,20 @@ def incident_attribution_packet(
                      str(v[2].get("message","")),re.I)
     ]
     start,end,warn=sorted(generic,key=lambda v:(
+        0 if v[2].get("sample_timestamps") else 1,
         (v[1]-v[0]).total_seconds(),-v[1].timestamp()))[0]
+    occurrence=(
+        end.isoformat() if warn.get("sample_timestamps") else None
+    )
+    warning_batch={
+        "sampled_rows":warn.get("count"),
+        "sampled_unique_timestamps":warn.get("sample_unique_timestamp_count"),
+        "oldest_returned":warn.get("oldest_returned"),
+        "newest_returned":warn.get("newest_returned"),
+        "individual_timestamps_capped":bool(
+            warn.get("sample_timestamps_capped")),
+        "not_a_continuous_incident":True,
+    }
     app_commands=[]
     device_events=[]
     app_summaries={}
@@ -139,9 +162,11 @@ def incident_attribution_packet(
         "separate_diagnostic_method_warnings_present":bool(distinct_slow_methods),
         "separate_diagnostic_method_warning_count":len(distinct_slow_methods),
         "warning_period":{
-            "oldest":str(warn.get("oldest_returned")),
-            "newest":str(warn.get("newest_returned")),
+            "oldest":occurrence or str(warn.get("oldest_returned")),
+            "newest":occurrence or str(warn.get("newest_returned")),
             "printed_timezone_alignment_verified":False},
+        "warning_occurrence_selected":occurrence,
+        "warning_group_sample":warning_batch,
         "device_caller_app_ids":sorted(app_summaries),
         "device_caller_names":{
             k:str(app_summaries[k].get("name") or "")[:70]
@@ -258,27 +283,43 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
     ]
     pieces=[
         "**What caused the warning? Not yet established.**",
-        "The hub reported a generic excessive-load warning for the device "
-        "at "+str(warning["oldest"])+" to "+str(warning["newest"])+
-        ". The sampled message does not identify a driver method, "
-        "app, or measured CPU contribution.",
+        ("The hub reported a generic excessive-load warning for the device "
+         + ("at the latest sampled occurrence "
+            if packet.get("warning_occurrence_selected")
+            else "in the sampled group from ")
+         + str(warning["oldest"])
+         + ("" if packet.get("warning_occurrence_selected")
+            else " to "+str(warning["newest"]))
+         + ". The sampled message does not identify a driver method, "
+         "app, or measured CPU contribution."),
     ]
+    grouped=packet.get("warning_group_sample",{})
+    if packet.get("warning_occurrence_selected") and grouped:
+        pieces.append(
+            "This is one observed warning timestamp in a sampled group of "
+            +str(grouped.get("sampled_rows") or "unknown")+
+            " warning rows spanning "+str(grouped.get("oldest_returned"))+
+            " to "+str(grouped.get("newest_returned"))+
+            ". The gap between those rows is not evidence of continuous load.")
     if callers:
         pieces.append("Verified command issuers in the sampled device "
                       "history: "+", ".join(callers)+
                       ". Command issuance is not evidence that any of "
                       "these apps caused the warning.")
     else:
-        pieces.append("No calling app is independently identified from the "
-                      "returned source evidence. This does not establish "
-                      "that the device has no callers.")
+        pieces.append("No calling app is independently identified in this "
+                      "bounded device-event sample. This does not establish "
+                      "that the device has no callers, and does not revoke "
+                      "caller identities attested in separate investigations.")
     if packet.get("scoped_event_history_available"):
         pieces.append(
             "The bounded device-event sample contains "+
             str(packet.get("app_commands_within_warning_interval",0))+
-            " app-issued commands within the printed warning window and "+
+            (" app-issued commands at the selected warning timestamp and "
+             if packet.get("warning_occurrence_selected") else
+             " app-issued commands within the printed warning window and ")+
             str(packet.get("app_commands_within_five_minutes",0))+
-            " within five minutes by source wall-clock time. "
+            " within five minutes of that timestamp by source wall-clock time. "
             "The event sample may omit records and the log/event "
             "clock alignment is not independently verified.")
     else:

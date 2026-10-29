@@ -85,8 +85,10 @@ def test_generic_warning_distinguishes_verified_callers_from_incident_source():
     assert gap["device_command_issuers_verified"] is True
     assert gap["incident_window_issuer_verified"] is False
     assert gap["observed_calling_app_ids"]==["1679","4080"]
-    assert gap["warning_window"]["oldest"]=="2026-10-28 19:55:19.194"
-    assert gap["warning_window"]["newest"]=="2026-10-28 19:55:19.399"
+    # Current occurrence is the latest source-reported WARN timestamp, not
+    # the continuous min-max span of multiple grouped warnings.
+    assert gap["warning_window"]["oldest"]=="2026-10-28T19:55:19.399000"
+    assert gap["warning_window"]["newest"]=="2026-10-28T19:55:19.399000"
     assert gap["candidate_read"]=="hub_get_logs"
     assert "command-runQ" not in str(gap)
     assert "target_warning_command_issuer_unverified" not in str(gap)

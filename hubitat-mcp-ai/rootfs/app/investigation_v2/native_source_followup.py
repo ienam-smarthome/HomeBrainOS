@@ -73,10 +73,26 @@ def source_path_followup(
                           "content coverage must be checked after the READ.",
             }
     if config_reads:
+        latest = config_reads[-1]
+        metadata = latest.get("source_data", {}).get(
+            "driver_source_metadata", {})
+        metadata = metadata if isinstance(metadata, Mapping) else {}
+        unavailable = str(metadata.get("status") or "").lower() in (
+            "unavailable", "unsupported", "missing", "not_found",
+        )
         return {
-            "status": "driver_identity_missing_from_configuration",
-            "limits": "No independently attested driver code ID; do not guess or "
-                      "substitute the device ID or an issuing-app ID.",
+            "status": ("driver_source_unavailable_no_attested_id"
+                       if unavailable else
+                       "driver_identity_missing_from_configuration"),
+            "evidence_read": latest.get("read"),
+            "limits": (
+                "Device configuration reports driver source unavailable "
+                "and supplies no independently attested driver code ID. "
+                "Do not guess an ID or claim driver implementation was inspected."
+                if unavailable else
+                "No independently attested driver code ID; do not guess or "
+                "substitute the device ID or an issuing-app ID."
+            ),
         }
     return {
         "status": "driver_identity_not_yet_inspected",
