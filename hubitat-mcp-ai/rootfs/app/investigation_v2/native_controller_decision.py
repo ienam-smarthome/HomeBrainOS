@@ -127,4 +127,82 @@ def scoped_app_execution_lines(data: Any, app_id: str) -> list[dict[str,Any]]:
     return lines[:16]
 
 
-__all__=["controller_decision_followup","scoped_app_execution_lines"]
+def controller_decision_evidence(
+    witnesses: Sequence[Mapping[str,Any]],
+    focus_ids: Sequence[str],
+    incident: Mapping[str,Any] | None,
+) -> list[dict[str,Any]]:
+    """Connect per-app INFO log messages to attested target command history.
+
+    Separate source facts, not independently confirmed causal mechanisms.
+    Hub log clocks can be naive; compare UTC and UTC+1 *only* for bounded
+    proximity, retaining the explicit unverified clock flag.
+    """
+    if incident is None or len(set(focus_ids)) != 1:
+        return []
+    focus=str(focus_ids[0])
+    refs: dict[str,list[datetime]]={}
+    for witness in witnesses[:20]:
+        if (witness.get("operation")!="hub_list_device_events"
+                or str(witness.get("read_filters",{}).get("deviceId"))!=focus):
+            continue
+        for event in witness.get("source_data",{}).get("events",[])[:90]:
+            if not isinstance(event,Mapping) or not str(event.get("name","")).startswith("command-"):
+                continue
+            issuer=event.get("producedBy")
+            if not isinstance(issuer,Mapping):
+                continue
+            app=str(issuer.get("appId") or "")
+            dt=_time(event.get("date"))
+            if app.isdecimal() and dt:
+                refs.setdefault(app,[]).append(dt)
+    result: list[dict[str,Any]]=[]
+    seen=set()
+    for witness in witnesses[:20]:
+        if witness.get("operation")!="hub_get_logs":
+            continue
+        read=witness.get("read")
+        if type(read) is not int:
+            continue
+        app=str(witness.get("read_filters",{}).get("appId") or "")
+        if app not in refs:
+            continue
+        for row in witness.get("source_data",{}).get("app_execution_lines",[])[:16]:
+            if not isinstance(row,Mapping) or str(row.get("source_app_id"))!=app:
+                continue
+            raw_date=row.get("date")
+            if not isinstance(raw_date,str) or len(raw_date)>65:
+                continue
+            try:
+                stamp=datetime.fromisoformat(raw_date.replace("Z","+00:00"))
+            except ValueError:
+                continue
+            if stamp.tzinfo is None:
+                candidates=[stamp.replace(tzinfo=timezone.utc)-timedelta(hours=h)
+                            for h in (0,1)]
+            else:
+                candidates=[stamp.astimezone(timezone.utc)]
+            if not any(abs((candidate-other).total_seconds())<=1800
+                       for candidate in candidates for other in refs[app]):
+                continue
+            message=row.get("message")
+            if not isinstance(message,str) or not message:
+                continue
+            key=(read,raw_date,message)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append({
+                "read":read,"name":"app_log","date":raw_date,
+                "value":message[:230],
+                "source_name":safe_string(row.get("source_name"),80),
+                "source_kind":"issuing_app",
+                "source_clock_verified":False,
+            })
+            if len(result)>=12:
+                return result
+    return result
+
+
+__all__=["controller_decision_followup","scoped_app_execution_lines",
+         "controller_decision_evidence"]
