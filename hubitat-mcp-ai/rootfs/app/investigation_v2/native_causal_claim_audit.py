@@ -12,6 +12,7 @@ import re
 from typing import Any, Mapping, Sequence
 from .native_evidence_coverage import _wall_time
 from .native_incident_cooccurrence import incident_state_cooccurrences
+from .native_incident_command_temporal import incident_command_temporal_leads
 
 # Claim-strength cues are assessed *after* the model answers, not for
 # interpreting the user's request or selecting a tool. They identify
@@ -170,6 +171,8 @@ def incident_attribution_packet(
         "warning_group_sample":warning_batch,
         "warning_state_correlations":incident_state_cooccurrences(
             witnesses, sorted(focus)),
+        "warning_command_temporal_leads":incident_command_temporal_leads(
+            witnesses, sorted(focus)),
         "device_caller_app_ids":sorted(app_summaries),
         "device_caller_names":{
             k:str(app_summaries[k].get("name") or "")[:70]
@@ -249,6 +252,11 @@ def incident_claim_ledger(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
     event_reads=list(packet.get("event_read_ids",[]))
     exists=bool(packet.get("scoped_event_history_available"))
     state_count=len(packet.get("device_events_within_two_seconds",[]))
+    temporal=packet.get("warning_command_temporal_leads")
+    temporal=temporal if isinstance(temporal,Mapping) else {}
+    clusters=temporal.get("warning_clusters",[])
+    latest=clusters[-1] if isinstance(clusters,list) and clusters else {}
+    latest=latest if isinstance(latest,Mapping) else {}
     return [
         {"id":"warning_observed","status":"verified",
          "evidence_reads":log_reads,
@@ -269,6 +277,18 @@ def incident_claim_ledger(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
          "evidence_reads":event_reads+log_reads,
          "observed_state_events":state_count,
          "clock_alignment_verified":False},
+        {"id":"warning_cluster_app_commands",
+         "status":("bounded_sample_observation" if exists and latest
+                   else "not_checked"),
+         "evidence_reads":sorted(set(event_reads+list(
+             latest.get("warning_read_ids",[]) if latest else []))),
+         "observed_warning_rows":latest.get("warning_rows"),
+         "observed_commands_near_cluster":
+             latest.get("commands_in_window_with_edges"),
+         "app_ids":[str(a.get("app_id")) for a in latest.get(
+             "app_issuers",[]) if isinstance(a,Mapping)],
+         "clock_alignment_verified":False,
+         "runtime_cause_verified":False},
         {"id":"generic_warning_root_cause","status":"unverified",
          "evidence_reads":log_reads+event_reads,
          "reason":"No independent runtime/source method-to-CPU attribution."},
@@ -337,8 +357,64 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
     else:
         pieces.append("No device-scoped event history was recovered, so "
                       "commands around the incident have not been checked.")
+    # Source-grounded incident relevance: a fresh nearby command sequence
+    # takes precedence over an unrelated high-count burst many hours away.
+    # App-issued commands, device states and WARN logs remain distinct.
+    temporal=packet.get("warning_command_temporal_leads")
+    latest_cluster=None
+    if isinstance(temporal,Mapping):
+        clusters=temporal.get("warning_clusters")
+        if isinstance(clusters,list) and clusters:
+            latest_cluster=clusters[-1]
+    near_commands=(
+        latest_cluster.get("commands_in_window_with_edges",0)
+        if isinstance(latest_cluster,Mapping) else 0)
+    if isinstance(latest_cluster,Mapping) and near_commands:
+        issue_rows=latest_cluster.get("warning_rows")
+        pieces.append(
+            "**Most relevant source-timed activity lead:** "+
+            str(issue_rows)+" sampled warning rows occurred from "+
+            str(latest_cluster.get("first_warning_timestamp"))+" to "+
+            str(latest_cluster.get("last_warning_timestamp"))+
+            " ("+str(latest_cluster.get("span_ms"))+
+            " ms of reported timestamps). These are a short cluster of "
+            "warning records, not independently proven separate CPU overload "
+            "episodes. In that window (including "+
+            str(latest_cluster.get("command_edge_tolerance_ms",2000))+
+            " ms at each edge), "+str(near_commands)+
+            " app-issued commands were observed in the returned device history.")
+        for actor in latest_cluster.get("app_issuers",[])[:4]:
+            if not isinstance(actor,Mapping):
+                continue
+            app_id=str(actor.get("app_id") or "")
+            name=str(names.get(app_id) or "")
+            label=(name+" (app "+app_id+")") if name else "App "+app_id
+            command_types=actor.get("command_counts")
+            command_types=command_types if isinstance(command_types,Mapping) else {}
+            pieces.append(
+                label+" issued "+str(actor.get("observed_commands"))+
+                " commands: "+", ".join(
+                    str(k)+" ×"+str(v)
+                    for k,v in list(command_types.items())[:6])+".")
+        close=latest_cluster.get("sample_commands",[])
+        if isinstance(close,list):
+            closest=sorted((cmd for cmd in close if isinstance(cmd,Mapping)),
+                           key=lambda cmd:cmd.get("nearest_warning_gap_ms",float("inf")))
+            for cmd in closest[:3]:
+                pieces.append(
+                    "Source-timed command observation: app "+
+                    str(cmd.get("app_id"))+" "+str(cmd.get("command"))+
+                    " at "+str(cmd.get("timestamp"))+
+                    " was recorded "+str(cmd.get("nearest_warning_gap_ms"))+
+                    " ms "+str(cmd.get("command_relative_to_warning"))+
+                    " its nearest sampled warning.")
+        pieces.append(
+            "The near-warning app commands are a stronger *investigation lead* "
+            "than distant historical activity, but timestamp order and "
+            "coincidence alone do not verify which callback, if any, "
+            "caused the load warning.")
     bursts=packet.get("observed_command_bursts",[])
-    if bursts:
+    if bursts and not near_commands:
         b=bursts[0]
         gap=b.get("gap_from_warning_end_seconds")
         timing=((" (approximately "+str(round(gap/60,1))+
