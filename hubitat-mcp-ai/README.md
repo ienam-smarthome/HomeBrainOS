@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.221**.
+Current add-on version: **0.18.222**.
+
+v0.18.222 independently validates V2 fact selections and narrative findings: an unsupported explanatory segment no longer discards separate verified conclusions. This release remains V2-test-only and does not modify production Hubitat control. [Release notes](CHANGELOG-0.18.222.md).
 
 v0.18.221 adds source-verified room-member discovery and readable natural-language answers in experimental V2; actual member states still require individual Hubitat reads and the detailed evidence report remains separate. [Release notes](CHANGELOG-0.18.221.md).
 
