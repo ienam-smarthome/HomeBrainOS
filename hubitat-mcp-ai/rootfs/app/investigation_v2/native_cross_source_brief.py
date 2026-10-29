@@ -110,7 +110,9 @@ def verified_source_cases(
                         continue
                     observed[field] = status
                 elif field == "lastSeen":
-                    if isinstance(value, str) and len(value) <= 65:
+                    if (isinstance(value, str) and len(value) <= 65
+                            and not any(token in value.casefold() for token in
+                                        ("http", "token", "secret", "key=", "password"))):
                         observed[field] = safe_string(value, 65)
                 elif field == "dataAgeSeconds":
                     if type(value) in (float, int) and 0 <= value < 10**9:
