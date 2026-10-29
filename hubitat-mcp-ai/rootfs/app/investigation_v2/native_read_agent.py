@@ -1881,14 +1881,34 @@ async def run_native_read_agent(
                   "reported state is not independent physical confirmation. "
                   "No Hubitat writes were performed."])
     text = "\n".join(lines)
-    validation_issues = [
-        "structured_claims_validated" if publication["validation"]["accepted"]
-        else "unstructured_or_unsupported_claims_withheld"
-    ]
-    if publication["validation"]["rejected"]:
+    # The model's optional fact-selection protocol is NOT the authority for
+    # a separately proof-joined room/device answer. Report the authority of
+    # the ACTUAL displayed answer, while retaining model claim-validation
+    # failures independently in the detailed diagnostic trace.
+    host_group_published = (
+        grouped_answer is not None
+        and relevance_blocker is None
+        and verified_narrative.get("accepted") is not True
+    )
+    validation_issues = (
+        ["source_verified_room_and_device_readings"]
+        if host_group_published and grouped_answer["room_membership_verified"]
+        else ["source_verified_device_readings"]
+        if host_group_published
+        else [
+            "structured_claims_validated" if publication["validation"]["accepted"]
+            else "unstructured_or_unsupported_claims_withheld"
+        ]
+    )
+    if publication["validation"]["rejected"] and not host_group_published:
         validation_issues.append("model_claims_withheld")
     if not witnesses:
         validation_issues.append("no_verified_reads")
+    elif host_group_published:
+        if grouped_answer["room_unread_count"]:
+            validation_issues.append("some_room_member_states_unread")
+        if not grouped_answer["room_inventory_complete"]:
+            validation_issues.append("room_membership_completeness_unverified")
     else:
         validation_issues.append("historical_coverage_unverified")
     if info_only_logs:
@@ -1954,6 +1974,7 @@ async def run_native_read_agent(
             "factual_evidence_ledger": factual_ledger,
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
+                "used_for_display_answer": not host_group_published,
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
                     else "validated_model_selection"),
