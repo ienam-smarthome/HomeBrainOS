@@ -610,6 +610,12 @@ async def run_native_read_agent(
     synthesis_elapsed_ms = 0
     answer_text = ""
     model_claim_proposal: Any = None
+    # Harvest drafts from the existing reasoning/tool loop. This avoids
+    # paying for a separate tools-free model request when the model has
+    # already authored a suitable answer.
+    candidate_narrative: Any = None
+    planning_model_ms = 0
+    planning_model_calls = 0
     reason = "round_budget_reached"
     for round_no in range(max_rounds + 1):
         if round_no >= max_rounds:
@@ -670,6 +676,8 @@ async def run_native_read_agent(
         if left <= 1:
             reason = "deadline_reached"
             break
+        start_planning = time.monotonic()
+        planning_model_calls += 1
         try:
             reply = await asyncio.wait_for(
                 chat(messages, offered),
@@ -680,9 +688,24 @@ async def run_native_read_agent(
         except Exception:
             reason = "model_unavailable"
             break
+        finally:
+            planning_model_ms += round(
+                (time.monotonic() - start_planning) * 1000)
         if not isinstance(reply, dict):
             reason = "invalid_model_reply"
             break
+        # This is a *proposal*, never answer authority. The entire draft
+        # still goes through the independent final evidence/source verifier.
+        # Tool replies may carry a candidate without extra inference calls.
+        content = reply.get("content")
+        if enable_verified_narrative and isinstance(content, str):
+            try:
+                proposed = json.loads(content) if len(content) <= 7500 else None
+            except (ValueError, TypeError):
+                proposed = None
+            if isinstance(proposed, dict) and isinstance(
+                    proposed.get("findings"), list):
+                candidate_narrative = {"findings": proposed["findings"]}
         calls = reply.get("tool_calls")
         if not isinstance(calls, list) or not calls:
             # General evidence-coverage critique, not question-word routing.
@@ -720,7 +743,19 @@ async def run_native_read_agent(
                                  "discriminating MCP read or explicitly state "
                                  "this limitation."})
                 continue
-            model_claim_proposal = reply.get("content")
+            # The claim selector has an independent strict top-level
+            # contract; strip a separately validated explanatory draft so
+            # the presence of findings cannot invalidate genuine claim IDs.
+            selected = reply.get("content")
+            if isinstance(selected, str):
+                try:
+                    full = json.loads(selected) if len(selected) <= 7500 else None
+                except (ValueError, TypeError):
+                    full = None
+                if isinstance(full, dict) and isinstance(
+                        full.get("claims"), list):
+                    selected = json.dumps({"claims": full["claims"]})
+            model_claim_proposal = selected
             answer_text = _answer_text(reply.get("content"), 4500)
             reason = "model_finished"
             break
