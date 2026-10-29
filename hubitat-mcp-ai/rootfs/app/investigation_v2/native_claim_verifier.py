@@ -252,10 +252,13 @@ def validate_claims(
                 used.add(key)
         elif kind in ("greater_than", "less_than", "equal_to"):
             left_id, right_id = item.get("left_id"), item.get("right_id")
-            a, b = by_id.get(left_id), by_id.get(right_id)
             if not isinstance(left_id, str) or not isinstance(right_id, str):
                 rejected.append("invalid_comparison_ref")
                 continue
+            if not _ID.fullmatch(left_id) or not _ID.fullmatch(right_id):
+                rejected.append("invalid_comparison_ref")
+                continue
+            a, b = by_id.get(left_id), by_id.get(right_id)
             if (not a or not b or a["id"] == b["id"]
                     or a.get("numeric") is None or b.get("numeric") is None
                     or a.get("metric") != b.get("metric")
