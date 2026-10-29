@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.225**.
+Current add-on version: **0.18.226**.
+
+v0.18.226 upgrades verified temporal leads to join actual device-produced `lastSeen`, `switch`, and subsequent `healthStatus` event timestamps without asserting physical action or causation; it also recognises app metadata already read. [Release notes](CHANGELOG-0.18.226.md).
 
 v0.18.225 adds a generic, timezone-aware chronological lead for source-verified device contact metadata and individually scoped app-command events, with explicit checks for causal uncertainty and evidence limits in read-only V2. [Release notes](CHANGELOG-0.18.225.md).
 
