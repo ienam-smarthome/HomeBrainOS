@@ -290,25 +290,36 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
          + str(warning["oldest"])
          + ("" if packet.get("warning_occurrence_selected")
             else " to "+str(warning["newest"]))
-         + ". The sampled message does not identify a driver method, ")
-        "app, or measured CPU contribution.",
+         + ". The sampled message does not identify a driver method, "
+         "app, or measured CPU contribution."),
     ]
+    grouped=packet.get("warning_group_sample",{})
+    if packet.get("warning_occurrence_selected") and grouped:
+        pieces.append(
+            "This is one observed warning timestamp in a sampled group of "
+            +str(grouped.get("sampled_rows") or "unknown")+
+            " warning rows spanning "+str(grouped.get("oldest_returned"))+
+            " to "+str(grouped.get("newest_returned"))+
+            ". The gap between those rows is not evidence of continuous load.")
     if callers:
         pieces.append("Verified command issuers in the sampled device "
                       "history: "+", ".join(callers)+
                       ". Command issuance is not evidence that any of "
                       "these apps caused the warning.")
     else:
-        pieces.append("No calling app is independently identified from the "
-                      "returned source evidence. This does not establish "
-                      "that the device has no callers.")
+        pieces.append("No calling app is independently identified in this "
+                      "bounded device-event sample. This does not establish "
+                      "that the device has no callers, and does not revoke "
+                      "caller identities attested in separate investigations.")
     if packet.get("scoped_event_history_available"):
         pieces.append(
             "The bounded device-event sample contains "+
             str(packet.get("app_commands_within_warning_interval",0))+
-            " app-issued commands within the printed warning window and "+
+            (" app-issued commands at the selected warning timestamp and "
+             if packet.get("warning_occurrence_selected") else
+             " app-issued commands within the printed warning window and ")+
             str(packet.get("app_commands_within_five_minutes",0))+
-            " within five minutes by source wall-clock time. "
+            " within five minutes of that timestamp by source wall-clock time. "
             "The event sample may omit records and the log/event "
             "clock alignment is not independently verified.")
     else:
