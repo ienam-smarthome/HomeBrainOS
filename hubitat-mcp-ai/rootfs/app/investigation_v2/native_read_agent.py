@@ -112,8 +112,8 @@ _SYSTEM = (
     "to a later generic warning. Do not name a 'most material offender' or "
     "a 'most likely driver' for an incident until discriminating causal "
     "evidence exists. Keep playTrack totals spanning several days distinct "
-    "from refresh commands in a 10-second burst. Follow the most "
-    "material offender, compare sources, ask another read if uncertain. "
+    "from refresh commands in a 10-second burst. Compare competing "
+    "hypotheses with independent source evidence before ranking a cause. "
     "Use returned source IDs only after the host verifies them. Maximum "
     "two sequential tool calls each round. Stop once the evidence is enough "
     "or no useful tool remains. Never assert an error-free log when the "
@@ -858,9 +858,43 @@ async def run_native_read_agent(
                         in verified_typed[requested_type]):
                     # The actual response must still be independently
                     # checked for a matching ID and full source coverage.
+                    # Prior source-backed named-method WARNs provide
+                    # lexical focus only; no execution is inferred. An app
+                    # source may only use warnings from that app, and a
+                    # driver read may use the currently verified device's
+                    # method warnings. Never synthesize a command.
+                    named_methods = []
+                    for prior_read in witnesses:
+                        if prior_read.get("operation") != "hub_get_logs":
+                            continue
+                        groups = prior_read.get("source_data", {}).get(
+                            "log_summary", {}).get("warning_error_groups", [])
+                        for group in groups:
+                            if not isinstance(group, dict):
+                                continue
+                            observed_id = str(group.get("source_id") or "")
+                            kind = str(group.get("source_type") or "")
+                            eligible = (
+                                requested_type == "app"
+                                and kind == "app" and observed_id == requested_id
+                            ) or (
+                                requested_type == "driver"
+                                and kind in ("dev", "device")
+                                and observed_id in focus_ids
+                            )
+                            if not eligible:
+                                continue
+                            for match in re.finditer(
+                                r"\bmethod\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+                                str(group.get("message") or ""), re.I,
+                            ):
+                                method = match.group(1)
+                                if method not in named_methods:
+                                    named_methods.append(method)
                     summary = source_read_summary(
                         result.data, requested_type=requested_type,
-                        requested_id=requested_id)
+                        requested_id=requested_id,
+                        focus_methods=named_methods[:12])
             if op == "hub_get_app_config" and isinstance(inner, dict):
                 arg_id = str(inner.get("appId") or "")
                 if arg_id in verified_typed["app"]:
