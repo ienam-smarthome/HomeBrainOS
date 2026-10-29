@@ -42,6 +42,7 @@ from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_cross_source_brief import verified_source_cases, source_connected_brief
 from .native_subject_relevance import subject_relevance_limit
 from .native_room_evidence import natural_entity_answer, verified_room_inventory
+from .native_room_catalog import source_room_catalog, question_room_matches
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -320,6 +321,11 @@ def _payload(result: Any, operation: str) -> dict[str, Any]:
             projected["projection_empty"] = True
     if operation == "hub_get_device":
         projected.update(device_mode_evidence(data))
+    elif operation == "hub_list_rooms":
+        # The source lists room NAMES, not verified members or device states.
+        catalog = source_room_catalog(data)
+        if catalog is not None:
+            projected = catalog
     elif operation == "hub_list_device_events":
         event_evidence = event_summary(data)
         if event_evidence is not None:
@@ -621,6 +627,7 @@ async def run_native_read_agent(
     identity_lookup_attempted = False
     named_identity_lookups: list[dict[str, Any]] = []
     room_inventories: list[dict[str, Any]] = []
+    room_name_catalogs: list[dict[str, Any]] = []
     focus_ids: set[str] = set()
     verified_focus_receipts: list[dict[str, Any]] = []
     seen_fingerprints: set[str] = set()
@@ -912,6 +919,17 @@ async def run_native_read_agent(
                             and row.get("candidate_ids")
                             for row in named_identity_lookups)):
                 issue = "bounded_identity_candidates_available"
+            # A returned Hubitat room catalogue can identify a room named in
+            # the original question. With a live-offered targeted room READ,
+            # an unfiltered whole-hub inventory is not a useful substitute.
+            # This is based on independently retrieved room names, not a
+            # keyword-controlled question route or inferred device identity.
+            if (issue is None and op_requested == "hub_list_devices"
+                    and any(question_room_matches(question, row)
+                            for row in room_name_catalogs)
+                    and _verified_gateways_for_operation(
+                        "hub_get_room", {}, manifest, discovered)):
+                issue = "bounded_room_catalog_available"
             if issue is None and isinstance(inner, dict):
                 issue = target_history_scope_problem(
                     str(op_requested), inner, sorted(focus_ids), witnesses)
@@ -936,6 +954,18 @@ async def run_native_read_agent(
                 if issue == "target_device_history_scope_missing":
                     rejected_scope_history_reads += 1
                 hint = guidance_for(issue) or "Choose a different verified read"
+                if issue == "bounded_room_catalog_available":
+                    rooms = list(dict.fromkeys(
+                        name for catalog in room_name_catalogs
+                        for name in question_room_matches(question, catalog)))
+                    hint = (
+                        "The actual Hubitat room catalogue already lists "
+                        + ", ".join(rooms[:5]) + ". The user question names "
+                        "a source-attested room. Prefer a separately authorised "
+                        "hub_get_room read for that exact room, then guarded "
+                        "individual hub_get_device reads for its reported "
+                        "members. Room names do not establish membership "
+                        "or device state. No whole-hub inventory was executed.")
                 if issue == "bounded_identity_candidates_available":
                     groups = [
                         row for row in named_identity_lookups
@@ -1084,6 +1114,9 @@ async def run_native_read_agent(
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
             summary = _payload(result, op)
+            if op == "hub_list_rooms" and isinstance(summary, dict) and isinstance(
+                    summary.get("rooms"), list):
+                room_name_catalogs.append(summary)
             # hub_get_device may precede the optional named-lookup tool.
             # Anchor only after an independently allowed, successful READ
             # returned matching target identity and the user referenced it.
@@ -1221,6 +1254,22 @@ async def run_native_read_agent(
                                 witnesses, focus_ids))),
                         "source_complete": False,
                     })
+            if op == "hub_list_rooms" and room_name_catalogs:
+                catalog = room_name_catalogs[-1]
+                matched = question_room_matches(question, catalog)
+                view["verified_room_name_catalog"] = {
+                    "names": catalog["rooms"],
+                    "returned_room_count": catalog["returned_room_count"],
+                    "name_catalog_complete": catalog["name_catalog_complete"],
+                    "room_membership_verified": False,
+                    "question_matched_rooms": matched,
+                    "next_read": (
+                        "Model may choose a LIVE-advertised hub_get_room "
+                        "with args.room equal to a source-attested name; "
+                        "then individually read source-verified device IDs. "
+                        "Do not use an unbounded hub_list_devices read."
+                        if matched else "Choose only needed targeted reads"),
+                }
             if room_receipt is not None:
                 view["verified_room_inventory"] = {
                     "name": room_receipt["name"],
@@ -1881,6 +1930,12 @@ async def run_native_read_agent(
             "verified_typed_ids": {kind: sorted(ids) for kind, ids in verified_typed.items()},
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "named_identity_lookups": named_identity_lookups,
+            "verified_room_name_catalogs": [
+                {"returned_room_count": row["returned_room_count"],
+                 "reported_room_count": row["reported_room_count"],
+                 "name_catalog_complete": row["name_catalog_complete"],
+                 "question_matched_rooms": question_room_matches(question, row)}
+                for row in room_name_catalogs],
             "verified_room_inventories": [
                 {k: entry[k] for k in ("name", "member_ids", "read",
                                        "reported_count", "inventory_complete")}
