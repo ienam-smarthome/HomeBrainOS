@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.228**.
+Current add-on version: **0.18.229**.
+
+v0.18.229 introduces dated-incident relevance checks, prevents later command counts from qualifying as an answer to an earlier causal question, and returns a short named-device explanation when source evidence for the period is absent. [Release notes](CHANGELOG-0.18.229.md).
 
 v0.18.228 recovers an explicitly requested historical date and uniquely verified device scope for model-chosen read-only event queries, and shows concise likely-cause explanations without implying automation causation from event proximity. [Release notes](CHANGELOG-0.18.228.md).
 

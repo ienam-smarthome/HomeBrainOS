@@ -50,6 +50,8 @@ from .native_temporal_lead import (verified_temporal_lead,
                                    temporal_lead_short_answer)
 from .native_history_recovery import (
     requested_history_bounds, normalize_selected_history_read)
+from .native_incident_relevance import (
+    dated_incident_evidence, natural_incident_gap_answer)
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -1364,6 +1366,13 @@ async def run_native_read_agent(
                             "device, performance or source read. Do not "
                             "treat bounded events as complete history."),
                     }
+                incident_relevance = dated_incident_evidence(
+                    question, witnesses, sorted(focus_ids))
+                if incident_relevance is not None:
+                    # Separate relevant event coverage from a large count
+                    # of events from later, unrelated days. The model,
+                    # not the host, chooses any follow-up READ.
+                    view["user_incident_evidence_coverage"] = incident_relevance
                 packet = incident_attribution_packet(
                     witnesses, sorted(focus_ids))
                 if packet is not None:
@@ -1465,9 +1474,15 @@ async def run_native_read_agent(
     # model-only JSON claim selection is unlikely to add new source facts.
     # Only apply after an explicit READ budget boundary, and only after
     # at least two distinct read operations and two fact classes.
+    incident_relevance = dated_incident_evidence(
+        question, witnesses, sorted(focus_ids))
+    incident_gap = natural_incident_gap_answer(
+        question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
         witnesses, claim_catalog(witnesses, sorted(focus_ids)),
-        stop_reason=reason)
+        stop_reason=reason,
+        incident_evidence_present=(None if incident_relevance is None
+            else incident_relevance["incident_answer_evidence_present"]))
     # A complete, independently ID-joined device group already contains the
     # entire bounded answer vocabulary. Do not spend up to eight seconds
     # requesting a second model-only claim selection which could only select
@@ -1787,6 +1802,11 @@ async def run_native_read_agent(
         else grouped_answer["text"] if grouped_answer is not None
         else temporal_lead_short_answer(temporal_lead) if temporal_lead is not None
         else connected_brief)
+    # A dated why-question cannot be answered by a catalog of unrelated
+    # later command counts. Explain the specific missing incident evidence
+    # in ordinary language and retain the full technical receipts below.
+    if incident_gap is not None and relevance_blocker is None:
+        concise_answer = incident_gap[0]
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
@@ -1975,6 +1995,8 @@ async def run_native_read_agent(
         and relevance_blocker is None
         and verified_narrative.get("accepted") is not True
     )
+    host_incident_gap_published = (
+        incident_gap is not None and relevance_blocker is None)
     host_temporal_lead_published = (
         temporal_lead is not None
         and not host_group_published
@@ -1982,7 +2004,9 @@ async def run_native_read_agent(
         and verified_narrative.get("accepted") is not True
     )
     validation_issues = (
-        ["source_verified_room_and_device_readings"]
+        ["requested_incident_evidence_missing"]
+        if host_incident_gap_published
+        else ["source_verified_room_and_device_readings"]
         if host_group_published and grouped_answer["room_membership_verified"]
         else ["source_verified_device_readings"]
         if host_group_published
@@ -2072,7 +2096,8 @@ async def run_native_read_agent(
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
                 "used_for_display_answer": not (
-                    host_group_published or host_temporal_lead_published),
+                    host_group_published or host_temporal_lead_published
+                    or host_incident_gap_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
                     else "validated_model_selection"),
@@ -2095,12 +2120,15 @@ async def run_native_read_agent(
             ],
             "final_synthesis_skipped_reason": final_synthesis_skipped_reason,
             "general_evidence_readiness": readiness,
+            "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
                 not source_bound_incident
-                and readiness["distinct_verified_fact_kinds"] >= 2
+                and not host_incident_gap_published
+                and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
-                "unresolved_named_subject_evidence" if relevance_blocker
+                "requested_incident_evidence_gap" if host_incident_gap_published
+                else "unresolved_named_subject_evidence" if relevance_blocker
                 else "model_authored_independently_checked" if
                 verified_narrative.get("accepted") is True
                 else "verified_entity_group_comparison" if grouped_answer
