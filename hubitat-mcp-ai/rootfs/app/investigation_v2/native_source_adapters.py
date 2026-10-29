@@ -166,6 +166,15 @@ def compact_logs(data: Any) -> dict[str, Any] | None:
                 stamp, record["oldest_returned"]) if record["oldest_returned"] else stamp
             record["newest_returned"] = max(
                 stamp, record["newest_returned"]) if record["newest_returned"] else stamp
+    # Preserve bounded individual warning instants for incident analysis.
+    # A grouped oldest/newest span is NOT a continuous incident. Individual
+    # timestamps are independently source-reported, not an inferred interval.
+    for key, group in groups.items():
+        observed = sorted(stamps.get(key, set()))
+        group["sample_timestamps"] = observed[-48:]
+        group["sample_timestamps_capped"] = len(observed) > 48
+        group["sample_unique_timestamp_count"] = len(observed)
+        group["incident_time_basis"] = "discrete source timestamps; timezone unverified"
     ordered = sorted(groups.values(), key=lambda g: (
         0 if g["level"] in ("ERROR", "ERR", "FATAL") else 1,
         -g["count"], g["source_name"].casefold(),
