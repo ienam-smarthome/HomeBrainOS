@@ -680,8 +680,30 @@ async def run_native_read_agent(
                 if isinstance(full, dict) and isinstance(
                         full.get("claims"), list):
                     selected = json.dumps({"claims": full["claims"]})
-            model_claim_proposal = selected
-            answer_text = _answer_text(reply.get("content"), 4500)
+            in_loop_incident = (
+                dated_incident_evidence(question, witnesses, sorted(focus_ids))
+                if enable_model_reasoned_assessment else None)
+            if (in_loop_incident is not None
+                    and in_loop_incident["material_event_count"] >= 2):
+                # A reasoning-enabled model may finish using the planning
+                # transcript. Reuse an already structured proposal without
+                # another model call; otherwise request the *separate*
+                # evidence-linked final reasoning contract. Never publish
+                # the raw in-loop natural prose or a claim count instead.
+                try:
+                    parsed_draft = (json.loads(selected)
+                                    if isinstance(selected, str)
+                                    and len(selected) <= 7500 else None)
+                except (ValueError, TypeError):
+                    parsed_draft = None
+                if isinstance(parsed_draft, dict) and parsed_draft.get("hypothesis"):
+                    model_reasoned_proposal = selected
+                    answer_text = _answer_text(selected, 4500)
+                else:
+                    answer_text = ""
+            else:
+                model_claim_proposal = selected
+                answer_text = _answer_text(reply.get("content"), 4500)
             reason = "model_finished"
             break
         # Native assistant calls are written back to the model's transcript
@@ -1284,9 +1306,11 @@ async def run_native_read_agent(
                     failures=failures)
                 if next_source is not None:
                     view["source_path_followup"] = next_source
-            if witnesses:
-                # Offer deterministic, receipt-backed fact IDs. This is a
-                # selection vocabulary, never permission to assert causality.
+            if witnesses and not (enable_model_reasoned_assessment and focus_ids):
+                # The reasoning-model planning phase needs actual source
+                # evidence, not a distracting catalog of command counts.
+                # Preserve the legacy catalog for non-incident/readiness
+                # paths; final publication checks are unchanged.
                 view["source_claim_catalog"] = [
                     {"id": c["id"], "statement": c["statement"],
                      "evidence_reads": c["evidence_reads"]}
@@ -1460,11 +1484,12 @@ async def run_native_read_agent(
                         if reasoned_incident_eligible else None,
                         "failed_or_rejected_reads": failures[-12:],
                         "source_complete": False,
-                        "source_claim_catalog": [
+                        "source_claim_catalog": (
+                            [] if reasoned_incident_eligible else [
                             {"id": c["id"], "statement": c["statement"],
                              "evidence_reads": c["evidence_reads"]}
                             for c in claim_catalog(witnesses, sorted(focus_ids), limit=32)
-                        ],
+                        ]),
                     }, ensure_ascii=True, default=str)[:15000]},
                 ], []),
                 timeout=min(8.0, max(1.0, deadline - time.monotonic())),
