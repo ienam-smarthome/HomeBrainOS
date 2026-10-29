@@ -359,4 +359,48 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
     )
 
 
-__all__ = ["verified_temporal_lead", "temporal_lead_brief"]
+def temporal_lead_short_answer(lead: Mapping[str, Any]) -> str:
+    """Answer a connectivity incident in plain language, preserving uncertainty.
+
+    Historical commands are only one possible explanation. A user unplugging
+    a socket is compatible with the same Hubitat reports, so neither cause
+    can be asserted from the event chronology alone.
+    """
+    device = safe_string(lead["device_name"], 80)
+    issuer = safe_string(lead["app_name"], 88)
+    switch = next((
+        e for e in lead.get("observed_event_sequence", [])
+        if e.get("attribute") == "switch"
+        and e.get("value") == lead.get("command")), None)
+    offline = next((
+        e for e in lead.get("observed_event_sequence", [])
+        if e.get("attribute") in ("healthStatus", "networkStatus", "deviceHealth")
+        and e.get("value") == "offline"), None)
+    if lead.get("health_status") == "offline" or offline:
+        start = (f"**Most likely explanation:** {device} lost its power "
+                 "or network connection.")
+    else:
+        start = (f"**Strongest clue:** {issuer} issued "
+                 f"`{lead['command']}` close to the last reported "
+                 "device contact.")
+    detail = (f" Hubitat recorded an `{lead['command']}` command "
+              f"from {issuer} (app {lead['app_id']}) at "
+              f"{lead['command_text']}, {lead['absolute_gap_seconds']} "
+              "seconds apart from the saved lastSeen/contact timestamp.")
+    if switch:
+        detail += (f" It then recorded `switch={switch['value']}` "
+                   f"at {switch['timestamp']}.")
+    if offline:
+        detail += (f" It reported `{offline['attribute']}=offline` "
+                   f"at {offline['timestamp']}.")
+    end = (
+        " **Cause not confirmed:** Those events do not establish whether "
+        "the automation cut power, the socket was physically disconnected, "
+        "or the network link failed. Check physical power first."
+        if lead.get("command") == "off" else
+        " **Cause not confirmed:** A command and an offline report alone "
+        "do not prove why communication stopped. Check power and network.")
+    return start + detail + end
+
+
+__all__ = ["verified_temporal_lead", "temporal_lead_brief", "temporal_lead_short_answer"]
