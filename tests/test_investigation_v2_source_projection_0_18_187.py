@@ -151,7 +151,7 @@ async def test_two_failed_same_target_reads_stop_more_device_errors_and_skip_syn
     assert diag["final_synthesis_skipped_reason"] == "source_evidence_at_investigation_limit"
     assert diag["final_synthesis"] == "host_evidence_fallback"
     assert "runQ" in result["answer"]["text"]
-    assert "internal cause" in result["answer"]["text"].lower()
+    assert "root cause" in result["answer"]["text"].lower()
     assert result["native_diagnostics"]["claim_publication"]["model_prose_published"] is False
 
 
