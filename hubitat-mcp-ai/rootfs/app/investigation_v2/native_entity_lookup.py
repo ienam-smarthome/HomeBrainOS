@@ -18,8 +18,11 @@ _TOOL_SCHEMA = {
     "function": {
         "name": NAME,
         "description": (
-            "Look up ONE named Hubitat device in authoritative live identity, "
-            "without fetching full device details. Use before hub_get_device "
+            "Resolve a named Hubitat device or a small, source-name-matched "
+            "set of candidate devices in authoritative live identity, "
+            "without fetching full device details. Candidate sets are "
+            "possible names only, not proven room membership or state. "
+            "Use before hub_get_device "
             "when the user named a device but no verified deviceId is known. "
             "This is not Hub Mesh; Hub Mesh means hub-to-hub sharing."
         ),
@@ -95,6 +98,51 @@ def choose_device(name: str, identities: Any) -> dict[str, Any]:
             return {"status": "unique", "matches": unique}
         if unique:
             return {"status": "ambiguous", "matches": unique[:8]}
+    # A user's collective name can denote several independently named
+    # devices (e.g. "kitchen lights" -> "Kitchen Light 1/2"). Return
+    # candidates only when all *leading* source-name tokens agree after
+    # simple plural normalization. This is not confirmation of room
+    # membership or device capabilities. No candidate is auto-selected.
+    # Reject broad single-word category queries such as "lights".
+    words = query.split()
+    if len(words) >= 2 and len(words) <= 6:
+        def singular(token: str) -> str:
+            return token[:-1] if len(token) >= 5 and token.endswith("s") else token
+        expected = [singular(t) for t in words]
+        group = []
+        for raw in identities[:1000]:
+            if not isinstance(raw, dict):
+                continue
+            ident = raw.get("id") if raw.get("id") is not None else raw.get("deviceId")
+            if type(ident) not in (str, int) or not str(ident).isdecimal():
+                continue
+            label = str(raw.get("label") or "")
+            canonical = str(raw.get("name") or "")
+            if any(
+                [singular(t) for t in _normal(v).split()[:len(expected)]]
+                == expected
+                for v in (label, canonical) if v
+            ):
+                group.append({
+                    "id": str(ident), "label": safe_string(label, 100),
+                    "name": safe_string(canonical, 100),
+                })
+        matches = list({item["id"]: item for item in group}.values())
+        if matches and len(matches) <= 8:
+            return {
+                "status": "candidate_group", "matches": matches,
+                "group_membership_verified": False,
+                "limits": "Matching name prefixes only; each candidate must be "
+                          "read separately. No room/capability or device "
+                          "state is established by this lookup.",
+            }
+        if len(matches) > 8:
+            return {
+                "status": "candidate_group_too_large", "matches": [],
+                "count": len(matches),
+                "limits": "Name-prefix group exceeded the safe candidate "
+                          "limit. Refine the requested subject.",
+            }
     return {"status": "not_found", "matches": []}
 
 
