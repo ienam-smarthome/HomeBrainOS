@@ -536,6 +536,7 @@ async def run_native_read_agent(
     synthesis_status = "not_needed"
     coverage_challenge_used = False
     causal_coverage_challenge_used = False
+    upstream_decision_challenge_used = False
     causal_coverage_gap: dict[str, Any] | None = None
     repeated_discovery = 0
     discovery_fingerprints: set[tuple[str, ...]] = set()
@@ -641,6 +642,37 @@ async def run_native_read_agent(
                 candidate_narrative = {"findings": proposed["findings"]}
         calls = reply.get("tool_calls")
         if not isinstance(calls, list) or not calls:
+            # A model may finish after finding which app changed the actuator
+            # without checking why the app made that decision. Ask once for
+            # independent upstream decision evidence when the live READ
+            # manifest can provide it. This NEVER executes a read for the
+            # model, and never grants a new identity or tool permission.
+            pending_decision = controller_decision_followup(
+                witnesses, sorted(focus_ids),
+                dated_incident_evidence(question, witnesses, sorted(focus_ids)),
+                app_logs_offered=bool(_verified_gateways_for_operation(
+                    "hub_get_logs", {}, manifest, discovered)),
+                question=question)
+            if (enable_model_reasoned_assessment
+                    and pending_decision is not None
+                    and not upstream_decision_challenge_used
+                    and round_no + 1 < max_rounds
+                    and attempted < max_reads
+                    and deadline - time.monotonic() > 5):
+                upstream_decision_challenge_used = True
+                messages.append({"role": "assistant",
+                                 "content": _text(reply.get("content"), 450)})
+                messages.append({"role": "user", "content":
+                    "Your current observations establish the actuator's "
+                    "controlling command, not the controller's decision "
+                    "inputs. Before finishing, decide whether an independent "
+                    "READ of this verified issuer's execution history is "
+                    "available and useful. You may choose a live-offered "
+                    "read with source-attested app ID, or explain why it "
+                    "cannot be obtained. Do not repeat configuration "
+                    "metadata as historical execution evidence. Evidence: "
+                    + json.dumps(pending_decision,ensure_ascii=True)[:2200]})
+                continue
             # General evidence-coverage critique, not question-word routing.
             # A model must not call a noisy INFO page a log error audit.
             # One bounded extra model opportunity can request a better read.
@@ -1244,7 +1276,8 @@ async def run_native_read_agent(
                     witnesses, sorted(focus_ids),
                     dated_incident_evidence(question, witnesses, sorted(focus_ids)),
                     app_logs_offered=bool(_verified_gateways_for_operation(
-                        "hub_get_logs", {}, manifest, discovered)))
+                        "hub_get_logs", {}, manifest, discovered)),
+                    question=question)
                 if decision is not None:
                     view["upstream_controller_decision_gap"] = decision
                 if op == "hub_get_logs" and summary.get("app_execution_lines"):
@@ -2063,6 +2096,7 @@ async def run_native_read_agent(
             "verified_focus_receipts": verified_focus_receipts,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
+            "upstream_decision_challenge_used": upstream_decision_challenge_used,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
             "source_path_readiness": source_readiness,
