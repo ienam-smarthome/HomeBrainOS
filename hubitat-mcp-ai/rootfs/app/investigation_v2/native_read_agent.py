@@ -946,6 +946,8 @@ async def run_native_read_agent(
                         "read": attempted,
                         "device_id": anchored["device_id"],
                         "identity_basis": anchored["identity_basis"],
+                        **({"source_kind": anchored["source_kind"]}
+                           if anchored.get("source_kind") else {}),
                     })
             if op == "hub_get_source" and isinstance(inner, dict):
                 requested_type = inner.get("type")
