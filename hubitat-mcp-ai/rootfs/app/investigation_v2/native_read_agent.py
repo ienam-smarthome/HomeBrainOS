@@ -35,6 +35,7 @@ from .native_causal_claim_audit import (
 )
 from .native_source_readiness import source_read_summary, repeated_broad_log_scope
 from .native_source_followup import source_path_followup
+from .native_focus_anchor import verified_device_focus
 from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_read_contracts import read_contract_feedback
@@ -551,6 +552,7 @@ async def run_native_read_agent(
     identity_lookup_attempted = False
     named_identity_lookups: list[dict[str, Any]] = []
     focus_ids: set[str] = set()
+    verified_focus_receipts: list[dict[str, Any]] = []
     seen_fingerprints: set[str] = set()
     redundant_evidence_reads = 0
     redundant_snapshot_reads = 0
@@ -906,6 +908,20 @@ async def run_native_read_agent(
                 for gateway, ops in _observed_operations(result, manifest).items():
                     discovered.setdefault(gateway, set()).update(ops)
             summary = _payload(result, op)
+            # hub_get_device may precede the optional named-lookup tool.
+            # Anchor only after an independently allowed, successful READ
+            # returned matching target identity and the user referenced it.
+            if isinstance(inner, dict) and isinstance(summary, dict):
+                anchored = verified_device_focus(
+                    question, str(op), inner, summary,
+                    verified_typed["device"])
+                if anchored and anchored["device_id"] not in focus_ids:
+                    focus_ids.add(anchored["device_id"])
+                    verified_focus_receipts.append({
+                        "read": attempted,
+                        "device_id": anchored["device_id"],
+                        "identity_basis": anchored["identity_basis"],
+                    })
             if op == "hub_get_source" and isinstance(inner, dict):
                 requested_type = inner.get("type")
                 requested_id = str(inner.get("id") or "")
@@ -1101,6 +1117,16 @@ async def run_native_read_agent(
     )
     source_readiness = source_path_followup(
         witnesses, sorted(focus_ids), verified_typed["driver"])
+    # The source-authoritative generic-warning report supersedes an
+    # unverified model-only synthesis. Skip that costly call only when
+    # the actual WARN and target-scoped device-event evidence both exist.
+    # This does not affect model-controlled read selection or other topics.
+    preliminary_incident = incident_attribution_packet(
+        witnesses, sorted(focus_ids))
+    if (not answer_text and preliminary_incident is not None
+            and source_bound_incident_required(preliminary_incident)
+            and preliminary_incident.get("scoped_event_history_available")):
+        final_synthesis_skipped_reason = "host_authoritative_incident_evidence"
     # If the model exhausted planning after collecting both a subject's
     # current-state read and target-specific warnings, another expensive
     # model-only pass is often futile. Keep the host-attested conclusion
@@ -1137,7 +1163,8 @@ async def run_native_read_agent(
         # partial answer is preferable to waiting on another doomed
         # synthesis call; keep uncertainty and incomplete coverage visible.
         final_synthesis_skipped_reason = "repeated_invalid_reads_with_target_warnings"
-    if (not answer_text and reason in (
+    if (not answer_text and final_synthesis_skipped_reason is None
+            and reason in (
             "round_budget_reached", "no_approved_reads", "no_new_source_evidence",
             "read_budget_reached")
             and _has_independent_target_evidence()
@@ -1431,6 +1458,7 @@ async def run_native_read_agent(
             "verified_typed_ids": {kind: sorted(ids) for kind, ids in verified_typed.items()},
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "named_identity_lookups": named_identity_lookups,
+            "verified_focus_receipts": verified_focus_receipts,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
