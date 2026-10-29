@@ -171,6 +171,24 @@ def claim_catalog(
                 f"In the bounded event sample for device {dev}, {app_label} "
                 f"issued {count_text} recorded commands. This does not show causation.",
                 read, (kind, dev, app), scope=dev)
+        elif kind == "cumulative_runtime_stats":
+            sid, stype = str(fact.get("source_id")), fact.get("source_kind")
+            values = fact.get("metrics")
+            if not isinstance(values, Mapping) or stype not in ("devices", "apps"):
+                continue
+            for field in ("pct", "total", "count"):
+                n = _number(values.get(field))
+                if n is None or n < 0:
+                    continue
+                suffix = "%" if field == "pct" else ""
+                add(
+                    "runtime_stat",
+                    f"Hubitat Logs {stype} source {sid} reported {field}="
+                    f"{_printed(n)}{suffix} in a cumulative performance "
+                    "snapshot; this is not incident-time CPU attribution.",
+                    read, (kind, stype, sid, field, n),
+                    numeric=n, unit=suffix or None, metric=field, scope=sid,
+                )
         elif kind == "verified_static_source_structure":
             sid, stype = str(fact.get("source_id")), fact.get("source_type")
             n = fact.get("recognized_method_count")
