@@ -99,6 +99,10 @@ def verified_temporal_lead(
         return None
 
     commands = []
+    # The projected event page may contain much more than the issuer's
+    # five illustrative command samples. Retain bounded, same-device
+    # state-event receipts so event chronology is not reduced to totals.
+    state_events: list[dict[str, Any]] = []
     for w in witnesses[:16]:
         filters, data = w.get("read_filters"), w.get("source_data")
         if (w.get("operation") != "hub_list_device_events"
@@ -132,6 +136,54 @@ def verified_temporal_lead(
                     "timestamp_text": safe_string(source_time, 70),
                     "read": w["read"],
                 })
+        # The event projection is bounded to 80 real source rows and
+        # pre-redacts free-text command arguments. Only structured producer
+        # identity may attest an app command or device state event.
+        for event in data.get("events", [])[:80]:
+            if not isinstance(event, Mapping):
+                continue
+            actor = event.get("producedBy")
+            event_name = event.get("name")
+            when_text = event.get("date")
+            when = _timestamp(when_text)
+            if (not isinstance(actor, Mapping) or
+                    not isinstance(event_name, str) or when is None):
+                continue
+            app_id = numeric_id(actor.get("appId"))
+            if event_name.startswith("command-") and app_id:
+                verb = event_name[len("command-"):]
+                if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,39}", verb):
+                    commands.append({
+                        "app_id": app_id,
+                        "app_name": safe_string(
+                            actor.get("name") or "app " + app_id, 88),
+                        "command": verb, "timestamp": when,
+                        "timestamp_text": safe_string(when_text, 70),
+                        "read": w["read"],
+                    })
+            if str(actor.get("deviceId") or "") != device_id:
+                continue
+            allowed = {
+                "lastSeen": None, "lastContact": None,
+                "lastMessage": None,
+                "switch": {"on", "off"},
+                "healthStatus": {"online", "offline"},
+                "networkStatus": {"online", "offline"},
+                "deviceHealth": {"online", "offline", "stale", "unknown"},
+            }
+            if event_name not in allowed:
+                continue
+            raw_value = event.get("value")
+            if allowed[event_name] is not None:
+                if not isinstance(raw_value, str) or raw_value not in allowed[event_name]:
+                    continue
+            state_events.append({
+                "attribute": event_name,
+                "value": safe_string(raw_value, 40)
+                if isinstance(raw_value, str) else None,
+                "timestamp": when, "timestamp_text": safe_string(when_text, 70),
+                "read": w["read"],
+            })
     if not commands:
         return None
     # A repeated source page must not multiply apparent command history.
@@ -146,6 +198,64 @@ def verified_temporal_lead(
         return None
     later = [c for c in commands
              if c["timestamp"] > anchor["time"] + timedelta(seconds=3)]
+    # Select independently projected event rows, rather than inferring
+    # execution from a command name or a stored snapshot attribute.
+    # These indicate what HUBITAT recorded, never physical actuation.
+    unique_states = {
+        (e["attribute"], e["value"], e["timestamp"]): e
+        for e in state_events
+    }
+    states = list(unique_states.values())
+
+    def following(attributes: set[str], values: set[str] | None,
+                  before: float, after: float) -> dict[str, Any] | None:
+        eligible = []
+        for event in states:
+            if event["attribute"] not in attributes:
+                continue
+            if values is not None and event["value"] not in values:
+                continue
+            span = (event["timestamp"] - nearest["timestamp"]).total_seconds()
+            if -before <= span <= after:
+                eligible.append((abs(span), span, event))
+        if not eligible:
+            return None
+        _, span, event = min(eligible, key=lambda e: (e[0], e[2]["timestamp"]))
+        return {
+            "attribute": event["attribute"], "value": event["value"],
+            "timestamp": event["timestamp_text"],
+            "seconds_after_command": round(span, 3),
+            "read": event["read"],
+            "source_reported_only": True,
+        }
+
+    observed_sequence = []
+    contact_event = following(set(_ANCHORS), None, 2.0, 3.0)
+    if contact_event:
+        observed_sequence.append(contact_event)
+    switch_event = (
+        following({"switch"}, {nearest["command"].lower()}, 0.0, 5.0)
+        if nearest["command"].lower() in ("off", "on") else None)
+    if switch_event:
+        observed_sequence.append(switch_event)
+    # OFFLINE is a health report after the command, not a validated
+    # transition from online, and not the last real device message.
+    offline_event = following(
+        {"healthStatus", "networkStatus", "deviceHealth"},
+        {"offline"}, 0.0, 600.0)
+    if offline_event:
+        observed_sequence.append(offline_event)
+    observed_sequence.sort(key=lambda event: (
+        _timestamp(event["timestamp"]), event["attribute"]))
+    app_config_receipts = [
+        w["read"] for w in witnesses[:16]
+        if w.get("operation") == "hub_get_app_config"
+        and type(w.get("read")) is int
+        and isinstance(w.get("read_filters"), Mapping)
+        and str(w["read_filters"].get("appId")) == nearest["app_id"]
+        and isinstance(w.get("source_data"), Mapping)
+        and w["source_data"].get("source_app_id_matches_request") is True
+    ]
     return {
         "device_id": device_id, "device_name": anchor["device_name"],
         "anchor_attribute": anchor["attribute"],
@@ -156,6 +266,8 @@ def verified_temporal_lead(
         "command_after_anchor": delta >= 0,
         "later_sampled_commands": len(later),
         "later_on_commands": sum(c["command"].lower() == "on" for c in later),
+        "observed_event_sequence": observed_sequence,
+        "app_config_metadata_reads": sorted(set(app_config_receipts)),
         "health_status": anchor["health"], "mqtt_status": anchor["mqtt"],
         "sample_complete": False, "clock_alignment_verified": False,
         "physical_command_delivery_verified": False,
@@ -164,36 +276,75 @@ def verified_temporal_lead(
 
 
 def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
-    """Return bounded host-authored observations and explicit causal limits."""
+    """Describe exact Hubitat event order, without physical-cause assertions."""
     device = safe_string(lead["device_name"], 80)
     app = safe_string(lead["app_name"], 88)
-    state = lead.get("health_status")
-    header = (f"**Most relevant observed timing clue for {device}:** "
-              f"{app} (app {lead['app_id']}) issued "
-              f"`{lead['command']}` at {lead['command_text']}; "
-              f"the device reports {lead['anchor_attribute']}="
-              f"{lead['anchor_text']}. These timestamps are "
-              f"{lead['absolute_gap_seconds']} seconds apart "
-              f"(Read #{lead['command_read']} and Read #{lead['anchor_read']}).")
-    extra = ""
-    if state:
-        extra += f" The current driver reports healthStatus={state}."
+    header = (
+        f"**Most relevant observed timing sequence for {device}:** "
+        f"{app} (app {lead['app_id']}) issued "
+        f"`{lead['command']}` at {lead['command_text']} "
+        f"(Read #{lead['command_read']}). "
+        f"The device's saved {lead['anchor_attribute']} reading is "
+        f"{lead['anchor_text']}, {lead['absolute_gap_seconds']} seconds "
+        f"from that command (Read #{lead['anchor_read']})."
+    )
+    sequence = lead.get("observed_event_sequence", [])
+    if sequence:
+        details = []
+        for event in sequence[:3]:
+            span = event["seconds_after_command"]
+            time = event["timestamp"]
+            if event["attribute"] in _ANCHORS:
+                details.append(
+                    f"a `{event['attribute']}` event at {time} "
+                    f"({span:.3f}s after the command)")
+            elif event["attribute"] == "switch":
+                details.append(
+                    f"a `switch={event['value']}` event at {time} "
+                    f"({span:.3f}s after the command)")
+            else:
+                minutes = int(span // 60)
+                seconds = span - minutes * 60
+                interval = (f"{minutes}m {seconds:.3f}s"
+                            if minutes else f"{span:.3f}s")
+                details.append(
+                    f"a `{event['attribute']}={event['value']}` event "
+                    f"at {time} ({interval} after the command)")
+        header += (" Hubitat's same-device event history also recorded "
+                   + "; ".join(details) + ".")
+    if lead.get("health_status"):
+        header += (
+            f" The current driver reports healthStatus="
+            f"{lead['health_status']}.")
     if lead.get("mqtt_status") == "connected":
-        extra += (" MQTT connected describes the driver's broker session "
-                  "and does not independently confirm device connectivity.")
+        header += (" MQTT connected is the driver's broker connection, "
+                   "not proof that the plug itself is communicating.")
     if lead.get("later_on_commands"):
-        extra += (f" At least {lead['later_on_commands']} later `on` "
-                  "command(s) also appear in the bounded sample; issuing "
-                  "them does not show successful recovery.")
-    return (header + extra
-            + "\n\n**Assessment:** The timing makes this command a "
-              "specific lead to investigate, **not a verified cause**. "
-              "The command may not have executed on the physical device, "
-              "the status timestamp may not prove actual contact, and "
-              "the available history is incomplete. Check the issuing "
-              "app's read-only configuration and independently verify "
-              "device power/network communication before attributing "
-              "an outage to that app.")
+        count = lead["later_on_commands"]
+        header += (f" {count} later `on` command"
+                   + ("s" if count != 1 else "")
+                   + " were observed in the bounded sample; these "
+                   "do not prove the device recovered.")
+    config = lead.get("app_config_metadata_reads")
+    if config:
+        header += (" App configuration metadata was also retrieved "
+                   f"(Read #{config[0]}), but actual action settings and "
+                   "historical execution were not verified.")
+    next_check = (
+        "Inspect source-attested rule actions and execution logs, then "
+        "independently verify the plug's power and network communication."
+        if config else
+        "Inspect the issuing app's actual rule actions, execution logs "
+        "and the plug's power/network communication.")
+    return (
+        header + "\n\n**Assessment:** This command is a strong "
+        "chronological lead, **not a verified physical cause**. A recorded "
+        "switch-state event strengthens the Hubitat-side sequence but "
+        "does not prove power actually switched at the outlet. Subsequent "
+        "health reports may be driver/watchdog-generated, not fresh "
+        "device traffic; historical coverage is incomplete. "
+        + next_check
+    )
 
 
 __all__ = ["verified_temporal_lead", "temporal_lead_brief"]
