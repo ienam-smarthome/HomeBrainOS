@@ -40,7 +40,8 @@ from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_cross_source_brief import verified_source_cases, source_connected_brief
-from .native_verified_prose import verify_model_explanation
+from .native_verified_prose import (
+    verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
                                     advertised_operation_contracts)
 from .native_metrics_evidence import project_metrics, project_memory_history
@@ -1480,9 +1481,9 @@ async def run_native_read_agent(
     # to finish in the old 6s budget.
     planning_average_ms = (planning_model_ms / planning_model_calls
                            if planning_model_calls else 0)
-    can_afford_extra = (planning_model_calls > 0
-                        and planning_average_ms <= 3000
-                        and deadline - time.monotonic() >= 8.0)
+    can_afford_extra = narrative_followup_eligible(
+        planning_model_ms, planning_model_calls,
+        deadline - time.monotonic())
     if (enable_verified_narrative and cases
             and verified_narrative.get("accepted") is not True
             and can_afford_extra):
