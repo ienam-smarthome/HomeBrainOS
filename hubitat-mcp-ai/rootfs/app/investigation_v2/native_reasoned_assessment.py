@@ -93,7 +93,7 @@ def verify_natural_hypothesis(
     if not isinstance(provided, list) or len(provided) < 2 or len(provided) > 6:
         return reject("missing_independent_event_anchors")
     allowed = {
-        (str(event["read"]), str(event["name"]), str(event["date"]))
+        (str(event["read"]), str(event["name"]), str(event["date"])): event
         for event in coverage.get("material_event_examples", [])
         if isinstance(event, Mapping)
         and type(event.get("read")) is int
@@ -102,13 +102,24 @@ def verify_natural_hypothesis(
     }
     chosen = []
     for event in provided:
-        if not isinstance(event, Mapping) or set(event) != {"read", "name", "date"}:
+        if not isinstance(event, Mapping):
+            return reject("invalid_event_anchor")
+        required = {"read", "name", "date"}
+        optional = {"value", "source_name", "source_kind"}
+        if not required.issubset(event) or not set(event).issubset(required | optional):
             return reject("invalid_event_anchor")
         if type(event["read"]) is not int:
             return reject("invalid_read_id")
         key = (str(event["read"]), str(event["name"]), str(event["date"]))
-        if key not in allowed:
+        original = allowed.get(key)
+        if original is None:
             return reject("event_not_in_verified_incident_window")
+        # Model may quote a whole source event including value/producer;
+        # never let it invent or alter those extra fields. Only exact
+        # canonical projected values are accepted as evidence anchors.
+        if any(k not in original or str(event[k]) != str(original[k])
+               for k in optional if k in event):
+            return reject("event_attribute_not_attested")
         if key not in chosen:
             chosen.append(key)
     if len(chosen) < 2:
