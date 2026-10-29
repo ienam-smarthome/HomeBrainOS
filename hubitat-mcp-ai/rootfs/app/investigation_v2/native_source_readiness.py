@@ -135,7 +135,7 @@ def source_read_summary(
         body, focus_methods=focus_methods)
     out["source_interpretation_limit"] = (
         "Complete static source permits lexical call-path indexing, not "
-        "runtime execution, callback timing, network latency or CPU attribution.")
+        "runtime execution, callback timing, network latency, CPU attribution or cause.")
     return out
 
 
