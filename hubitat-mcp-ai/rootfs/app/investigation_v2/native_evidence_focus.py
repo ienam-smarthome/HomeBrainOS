@@ -381,6 +381,19 @@ def focused_model_view(operation:str,projected:Mapping[str,Any],
         },"source_complete":False}
     summary=projected.get("log_summary")
     if not isinstance(summary,dict):return dict(projected)
+    if isinstance(projected.get("app_execution_lines"),list):
+        # Read-only app-specific INFO decision messages are already
+        # source-ID checked; do not replace them with WARN-only summaries.
+        # These are untrusted source observations, not proof of execution
+        # logic, and the hub-side timezone is still unverified.
+        return {"app_execution_lines":projected["app_execution_lines"][:12],
+                "execution_time_zone_verified":False,
+                "log_summary":{
+                    "returned_rows":summary.get("returned_rows"),
+                    "oldest_returned":summary.get("oldest_returned"),
+                    "newest_returned":summary.get("newest_returned"),
+                    "truncated_or_partial":summary.get("truncated_or_partial"),
+                    "source_complete":False}}
     groups=[g for g in summary.get("warning_error_groups",[])
             if isinstance(g,dict) and str(g.get("source_id")) in focus_ids]
     return {"log_summary":{
