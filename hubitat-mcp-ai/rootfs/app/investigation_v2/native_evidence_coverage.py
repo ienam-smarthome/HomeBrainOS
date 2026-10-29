@@ -236,6 +236,13 @@ def gap_for_target(witnesses: Sequence[Mapping[str, Any]],
                 and str(w["read_filters"].get("deviceId")) in focus
                 and str(w["read_filters"].get("level", "")).lower()
                 in ("warn", "warning")
+                and isinstance(w.get("source_data"), Mapping)
+                and isinstance(w["source_data"].get("log_summary"), Mapping)
+                and any(
+                    isinstance(g, Mapping) and str(g.get("source_id")) in focus
+                    for g in w["source_data"]["log_summary"].get(
+                        "warning_error_groups", [])
+                )
                 for w in witnesses
             )
             return {
