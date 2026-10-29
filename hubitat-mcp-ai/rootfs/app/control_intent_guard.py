@@ -62,7 +62,7 @@ _EXPLICIT_READ_ONLY = re.compile(
 # A shared, permission-only polarity check. This never selects a device,
 # operation or tool; positive writes still need independent host approval.
 _INDEPENDENT_ACTION = re.compile(
-    r"(?i)(?:[.!?;:]\s*|\b(?:and(?:\s+then)?|but|instead)\s+)"
+    r"(?i)(?:[.!?;:,]\s*|\b(?:and(?:\s+then)?|but|instead)\s+)"
     r"(?:(?:also|then|instead|now)\s+)?(?:please\s+)?"
     r"(?P<verb>turn|switch|set|change|create|delete|disable|enable|"
     r"restart|reboot|block|unblock|allow|configure|remove|pause|resume)\b"
