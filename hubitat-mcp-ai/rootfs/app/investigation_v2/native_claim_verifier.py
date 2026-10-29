@@ -221,6 +221,9 @@ def validate_claims(
     if obj is None:
         return {"accepted": [], "rejected": ["non_structured_answer"],
                 "status": "unstructured_withheld"}
+    if set(obj) != {"claims"}:
+        return {"accepted": [], "rejected": ["unrecognised_top_level_fields"],
+                "status": "unverified"}
     raw_claims = obj.get("claims")
     if not isinstance(raw_claims, list) or len(raw_claims) > 50:
         return {"accepted": [], "rejected": ["invalid_claim_list"],
@@ -235,6 +238,11 @@ def validate_claims(
         # Explicitly ignore any untrusted model-supplied statement/justification.
         # A model cannot confer cause authority by claiming confidence.
         kind = item.get("operator", "observed")
+        permitted = ({"fact_id", "operator"} if kind == "observed" else
+                     {"operator", "left_id", "right_id"})
+        if not set(item).issubset(permitted):
+            rejected.append("unvalidated_claim_fields")
+            continue
         if kind == "observed":
             ident = item.get("fact_id")
             if not isinstance(ident, str) or not _ID.fullmatch(ident):
