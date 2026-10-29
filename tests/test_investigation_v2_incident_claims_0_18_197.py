@@ -114,7 +114,7 @@ def test_post_answer_claim_gate_rejects_ranking_but_keeps_observations():
     assert "does not identify" in safe
     assert "app 1679" in safe
     assert "buffering" in safe and "idle" in safe
-    assert "most likely cause" in safe
+    assert "What caused the warning? Not yet established." in safe
     assert "app 4080" not in safe or "4080" in safe
 
 
@@ -205,7 +205,7 @@ async def test_live_shaped_model_conclusion_is_withheld_when_causally_ranked():
     assert "unsupported_causal_ranking_withheld" in result["answer"]["validation_issues"]
     assert result["answer"]["human_review_required"] is True
     assert "The most material offender" not in result["answer"]["text"]
-    assert "Source-grounded causal assessment" in result["answer"]["text"]
+    assert "What caused the warning? Not yet established." in result["answer"]["text"]
     assert "cause remains unverified" in result["answer"]["text"].lower()
     assert len(executor.calls)==2
 
