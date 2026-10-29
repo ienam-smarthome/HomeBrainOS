@@ -973,14 +973,22 @@ async def run_native_read_agent(
                         and row.get("status") == "candidate_group"
                         and row.get("candidate_ids")
                     ]
-                    candidates = groups[-1]["candidate_ids"][:8]
-                    hint = (
-                        "Current authoritative identity already returned "
-                        "candidate device IDs " + ", ".join(candidates)
-                        + ". Request model-selected hub_get_device READs "
-                        "with those exact IDs individually; name-prefix "
-                        "matches do not prove membership or actual state. "
-                        "The unscoped full-device listing is unnecessary.")
+                    if groups:
+                        candidates = groups[-1]["candidate_ids"][:8]
+                        hint = (
+                            "Current authoritative identity already returned "
+                            "candidate device IDs " + ", ".join(candidates)
+                            + ". Request model-selected hub_get_device READs "
+                            "with those exact IDs individually; name-prefix "
+                            "matches do not prove membership or actual state. "
+                            "The unscoped full-device listing is unnecessary.")
+                    elif len(focus_ids) == 1:
+                        hint = (
+                            "The user's dated incident has a fresh, uniquely "
+                            "source-verified device ID " + next(iter(focus_ids))
+                            + ". Request only scoped device/event history for "
+                            "that ID or independent issuer/input reads. No "
+                            "unbounded whole-hub inventory is needed.")
                 if (issue in ("missing_required_operation_fields",
                               "target_device_history_scope_missing")
                         and len(focus_ids) == 1):
