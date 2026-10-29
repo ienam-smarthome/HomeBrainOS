@@ -40,6 +40,7 @@ from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_cross_source_brief import verified_source_cases, source_connected_brief
+from .native_subject_relevance import subject_relevance_limit
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -77,8 +78,14 @@ _SYSTEM = (
     "tools, not device control. You may investigate hub health, log errors, "
     "apps, rules, devices, interactions or historic incidents. DO NOT require "
     "a device name or fetch full inventory unless the evidence needs one. "
-    "For a named device without a verified ID, call homebrain_find_device "
-    "first; do not guess deviceId or search an unrelated Hub Mesh setting. "
+    "For a named device or collective group without verified IDs, call "
+    "homebrain_find_device first; do not guess deviceIds. A candidate_group "
+    "response gives independently sourced name candidates, NOT proved "
+    "membership or state: request targeted reads for each relevant ID, "
+    "not an unbounded whole-hub device listing. If identity or status "
+    "cannot be verified, explain the unresolved subject rather than "
+    "substituting unrelated health findings. " 
+    "Do not search an unrelated Hub Mesh setting. "
     "Hub Mesh is hub-to-hub sharing, not a normal device with Mesh in its label. "
     "For logs, distinguish INFO from WARN/ERROR and request severity-filtered "
     "rows when the returned sample contains only INFO. Do not call an INFO "
@@ -812,10 +819,21 @@ async def run_native_read_agent(
                     verified_ids.add(found["matches"][0]["id"])
                     verified_typed["device"].add(found["matches"][0]["id"])
                     focus_ids.add(found["matches"][0]["id"])
+                if found["status"] == "candidate_group":
+                    # Every candidate was returned by current authoritative
+                    # identity, but no candidate is automatically selected
+                    # or considered a verified room/group member. This only
+                    # permits model-chosen, separately guarded READs.
+                    for item in found["matches"]:
+                        verified_ids.add(item["id"])
+                        verified_typed["device"].add(item["id"])
                 named_identity_lookups.append({
                     "query": _text(args["name"], 100),
                     "status": found["status"],
                     "count": len(found["matches"]),
+                    "candidate_ids": (
+                        [m["id"] for m in found["matches"]]
+                        if found["status"] == "candidate_group" else []),
                 })
                 messages.append({"role": "tool", "content": json.dumps({
                     **found, "authority": "fresh_complete_hubitat_identity",
@@ -1551,13 +1569,28 @@ async def run_native_read_agent(
             "extra_call_skipped_slow_model"
             if planning_model_calls and planning_average_ms > 3000
             else "extra_call_skipped_time_budget")
+    relevance_blocker = subject_relevance_limit(
+        named_identity_lookups, witnesses,
+        focus_ids=sorted(focus_ids), failures=failures)
     concise_answer = (
         verified_narrative["text"]
         if verified_narrative.get("accepted") is True else connected_brief)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
+    if relevance_blocker is not None:
+        # A correct observation about a different device is NOT an answer
+        # about the named subject. Keep all evidence in the technical
+        # report; never publish a general hub-status fallback as the answer.
+        concise_answer = relevance_blocker["text"]
     lines = []
+    if relevance_blocker is not None:
+        lines.extend([
+            "**Requested subject was not verified**",
+            relevance_blocker["text"], "",
+            "The following returned hub evidence is retained for audit "
+            "but does not answer this requested subject.", "",
+        ])
     if info_only_logs:
         lines.extend([
             "**Evidence limitation: hub log severity not verified**",
@@ -1765,6 +1798,9 @@ async def run_native_read_agent(
             "verified_typed_ids": {kind: sorted(ids) for kind, ids in verified_typed.items()},
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "named_identity_lookups": named_identity_lookups,
+            "subject_relevance": (
+                {k: v for k, v in relevance_blocker.items() if k != "text"}
+                if relevance_blocker else {"status": "not_blocked"}),
             "verified_focus_receipts": verified_focus_receipts,
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
@@ -1803,7 +1839,8 @@ async def run_native_read_agent(
                 and readiness["distinct_verified_fact_kinds"] >= 2
                 and validated_catalog),
             "concise_answer_source": (
-                "model_authored_independently_checked" if
+                "unresolved_named_subject_evidence" if relevance_blocker
+                else "model_authored_independently_checked" if
                 verified_narrative.get("accepted") is True
                 else "cross_source_verified_case_graph" if connected_brief
                 else "host_verified_claim_catalog" if concise_answer
