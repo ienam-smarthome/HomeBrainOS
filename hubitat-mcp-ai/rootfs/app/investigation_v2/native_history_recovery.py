@@ -68,19 +68,33 @@ def normalize_selected_history_read(
     if (str(inner.get("deviceId")) not in verified_device_ids
             or str(inner.get("deviceId")) not in focus_ids):
         return original, None
-    if not any(inner.get(field) is not None
-               for field in ("since", "until", "hoursBack", "cursor")):
+    # An explicit absolute interval chosen by the model has priority.
+    # A relative hoursBack is not an absolute interval and might exclude
+    # the user's dated incident, even if it successfully returns many rows.
+    # Preserve hoursBack if it covers the *padded* requested window.
+    if (inner.get("since") is None and inner.get("until") is None
+            and inner.get("cursor") is None):
         bound = requested_history_bounds(question)
         if bound is not None:
-            inner["since"] = bound["since"]
-            inner["until"] = bound["until"]
-            # A small default page is not enough for a multi-day padded
-            # incident range; never weaken user/model higher limits.
-            old_limit = inner.get("limit")
-            if old_limit is None or (type(old_limit) is int
-                                     and 1 <= old_limit < 100):
-                inner["limit"] = 100
-            patch["historical_window"] = bound
+            hours = inner.get("hoursBack")
+            covers = False
+            if type(hours) in (int, float) and 0 < hours <= 168:
+                requested_start = datetime.fromisoformat(bound["since"])
+                lookback_start = datetime.now(requested_start.tzinfo) - timedelta(hours=hours)
+                covers = lookback_start <= requested_start
+            if not covers:
+                inner.pop("hoursBack", None)
+                inner["since"] = bound["since"]
+                inner["until"] = bound["until"]
+                # A small default page is not enough for a multi-day
+                # padded incident range.
+                old_limit = inner.get("limit")
+                if old_limit is None or (type(old_limit) is int
+                                         and 1 <= old_limit < 100):
+                    inner["limit"] = 100
+                patch["historical_window"] = bound
+                if hours is not None:
+                    patch["noncovering_relative_window_replaced"] = True
     if not patch:
         return original, None
     original["args"] = inner
