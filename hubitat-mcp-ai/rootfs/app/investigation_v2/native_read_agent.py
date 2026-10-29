@@ -39,6 +39,7 @@ from .native_focus_anchor import verified_device_focus
 from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_answer_brief import evidence_readiness, evidence_brief
+from .native_cross_source_brief import verified_source_cases, source_connected_brief
 from .native_read_contracts import (read_contract_feedback,
                                     advertised_operation_contracts)
 from .native_metrics_evidence import project_metrics, project_memory_history
@@ -1406,8 +1407,10 @@ async def run_native_read_agent(
     ]
     # Keep the user-facing answer short, while retaining every verified
     # detail, failed read and confidence limit in the technical report.
-    concise_answer = ""
-    if (not source_bound_incident
+    connected_brief = (
+        source_connected_brief(witnesses) if not source_bound_incident else "")
+    concise_answer = connected_brief
+    if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
     lines = []
@@ -1499,7 +1502,7 @@ async def run_native_read_agent(
     # a targeted causal incident assessment with a general template.
     if (not source_bound_incident
             and readiness["distinct_verified_fact_kinds"] >= 2):
-        lead = evidence_brief(validated_catalog)
+        lead = connected_brief or evidence_brief(validated_catalog)
         if lead:
             lines.extend([lead, ""])
     lines.extend([
@@ -1656,8 +1659,13 @@ async def run_native_read_agent(
                 and readiness["distinct_verified_fact_kinds"] >= 2
                 and validated_catalog),
             "concise_answer_source": (
-                "host_verified_claim_catalog" if concise_answer
+                "cross_source_verified_case_graph" if connected_brief
+                else "host_verified_claim_catalog" if concise_answer
                 else "full_source_report"),
+            "cross_source_case_count": len(verified_source_cases(witnesses)),
+            "cross_source_connected_count": sum(
+                1 for c in verified_source_cases(witnesses)
+                if c["source_correlated"]),
             "timed_out_operations": [f"{name}:{operation}"
                                      for name, operation in sorted(timed_out_operations)],
             "source_highlights": (focused_highlights(witnesses, sorted(focus_ids))
