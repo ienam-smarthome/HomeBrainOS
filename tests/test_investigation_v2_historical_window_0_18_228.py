@@ -143,7 +143,7 @@ async def test_live_shaped_question_recovers_scope_and_read_only_timeline():
     assert diagnostics["successful_reads"] == 2
     assert diagnostics["concise_answer_source"] == (
         "source_verified_temporal_lead")
-    assert "not a verified cause" in result["answer"]["text"]
+    assert "Cause not confirmed" in result["answer"]["text"]
     assert "socket was physically disconnected" not in result["answer"]["text"]
     assert "No independently verifiable source claim" not in (
         result["answer"]["text"])
