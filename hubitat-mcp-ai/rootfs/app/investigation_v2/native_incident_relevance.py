@@ -89,9 +89,34 @@ def dated_incident_evidence(
             if not relevant_kind:
                 continue
             if start <= dt <= end:
-                material.append({
-                    "read": read, "name": name, "date": str(event.get("date"))[:64],
-                })
+                # A natural causal explanation needs the *meaning* of an
+                # event, not merely 'switch at T'. Preserve bounded,
+                # source-reported values and issuer labels from verified
+                # target-scoped reads; never import arbitrary log text.
+                record = {
+                    "read": read, "name": name,
+                    "date": str(event.get("date"))[:64],
+                }
+                value = event.get("value")
+                if (type(value) in (str, int, float)
+                        and len(str(value)) <= 40
+                        and all(ch.isalnum() or ch in " .:_-%+"
+                                for ch in str(value))):
+                    record["value"] = str(value)
+                producer = event.get("producedBy")
+                if isinstance(producer, Mapping):
+                    label = producer.get("name")
+                    if (isinstance(label, str) and 1 <= len(label) <= 80
+                            and all(ch.isprintable() and ch not in "<>{}"
+                                    for ch in label)):
+                        record["source_name"] = label
+                    if str(producer.get("deviceId")) == focus:
+                        record["source_kind"] = "target_device"
+                    elif producer.get("appId") is not None:
+                        record["source_kind"] = "issuing_app"
+                    else:
+                        record["source_kind"] = "related_source"
+                material.append(record)
             elif kind in _MATERIAL_COMMANDS:
                 unrelated_command_rows += 1
                 if dt > end:
