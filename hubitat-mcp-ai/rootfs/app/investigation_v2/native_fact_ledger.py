@@ -10,6 +10,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 from .native_runtime_stats import focused_runtime_stat_receipts
+from .native_operational_evidence import operational_evidence_facts
 
 _METHOD = re.compile(r"\bmethod\s+([A-Za-z_][A-Za-z0-9_]*)\b", re.I)
 _DURATION = re.compile(r"\bran for\s+([\d,]+)\s*ms\b", re.I)
@@ -39,6 +40,14 @@ def factual_evidence_ledger(
         op = w.get("operation")
         data = w.get("source_data")
         if type(read) is not int or not isinstance(data, Mapping):
+            continue
+        if op in ("hub_get_device_health", "hub_list_device_dependents"):
+            # One receipt-based framework for cross-device health, stale
+            # activity and app references. Neither staleness nor a dependency
+            # is promoted to current offline/broken-automation causality.
+            for observed in operational_evidence_facts(w, focus_ids):
+                key = observed.pop("stable_key")
+                add(observed, key)
             continue
         if op == "hub_get_logs":
             # Native Logs-page device/app runtime stats use this same READ
