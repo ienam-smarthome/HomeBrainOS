@@ -55,6 +55,8 @@ from .native_incident_relevance import (
 from .native_reasoned_assessment import (
     candidate_prompt, verify_natural_hypothesis)
 from .native_operational_sequence import operational_sequence_brief
+from .native_interval_coverage import (
+    complete_interval_coverage, incomplete_interval_answer)
 from .native_reasoning_policy import planning_system_prompt
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
 from .native_historical_frontier import (
@@ -513,6 +515,7 @@ async def run_native_read_agent(
     prior: set[str] = set()
     timed_out_operations: set[tuple[str, str]] = set()
     failed_scoped_reads: dict[tuple[str, str], int] = {}
+    failed_operation_counts: dict[str, int] = {}
     blocked_repeat_errors = 0
     final_synthesis_skipped_reason: str | None = None
     recovery_rejections = 0
@@ -539,6 +542,7 @@ async def run_native_read_agent(
     coverage_challenge_used = False
     causal_coverage_challenge_used = False
     upstream_decision_challenge_used = False
+    interval_coverage_challenge_used = False
     causal_coverage_gap: dict[str, Any] | None = None
     repeated_discovery = 0
     discovery_fingerprints: set[tuple[str, ...]] = set()
@@ -644,6 +648,31 @@ async def run_native_read_agent(
                 candidate_narrative = {"findings": proposed["findings"]}
         calls = reply.get("tool_calls")
         if not isinstance(calls, list) or not calls:
+            # Source completeness is distinct from read count: let the
+            # model itself choose ONE independent scope if a complete
+            # interval was requested but start/end states are missing.
+            pending_interval = complete_interval_coverage(
+                question, witnesses, sorted(focus_ids))
+            if (pending_interval is not None
+                    and pending_interval["status"] == "complete_interval_not_established"
+                    and not interval_coverage_challenge_used
+                    and round_no + 1 < max_rounds
+                    and attempted < max_reads
+                    and deadline - time.monotonic() > 5):
+                interval_coverage_challenge_used = True
+                messages.append({"role": "assistant",
+                                 "content": _text(reply.get("content"), 450)})
+                messages.append({"role": "user", "content":
+                    "The user requested a COMPLETE operating interval, "
+                    "but this history contains no paired operating-start "
+                    "and later stop states. A scheduled OFF command is "
+                    "not a full operating cycle. Choose a live-offered wider "
+                    "or independent scoped READ if it can establish the "
+                    "missing state transition, or acknowledge that the "
+                    "interval cannot be reconstructed. Do not substitute "
+                    "unrelated battery or command counts. Source evidence: "
+                    + json.dumps(pending_interval, default=str)[:2700]})
+                continue
             # A model may finish after finding which app changed the actuator
             # without checking why the app made that decision. Ask once for
             # independent upstream decision evidence when the live READ
