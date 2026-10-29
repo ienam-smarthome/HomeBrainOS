@@ -284,7 +284,7 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
         f"{app} (app {lead['app_id']}) issued "
         f"`{lead['command']}` at {lead['command_text']} "
         f"(Read #{lead['command_read']}). "
-        f"The device's saved {lead['anchor_attribute']} reading is "
+        f"The device reports {lead['anchor_attribute']}="
         f"{lead['anchor_text']}, {lead['absolute_gap_seconds']} seconds "
         f"from that command (Read #{lead['anchor_read']})."
     )
@@ -338,7 +338,7 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
         "and the plug's power/network communication.")
     return (
         header + "\n\n**Assessment:** This command is a strong "
-        "chronological lead, **not a verified physical cause**. A recorded "
+        "chronological lead, **not a verified cause** of physical power loss. A recorded "
         "switch-state event strengthens the Hubitat-side sequence but "
         "does not prove power actually switched at the outlet. Subsequent "
         "health reports may be driver/watchdog-generated, not fresh "
