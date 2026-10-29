@@ -186,5 +186,7 @@ async def test_native_investigation_publishes_timed_lead_not_unstructured_cause(
     assert "0.743 seconds apart" in answer
     assert "Power saving: Bedroom 3 Mesh off @night" in answer
     assert "definitely broke" not in answer
-    assert "not a verified cause" in answer
-    assert "Read #2" in answer and "Read #1" in answer
+    assert "Cause not confirmed" in answer
+    assert "Read #2" in result["report"]["text"]
+    assert "Read #1" in result["report"]["text"]
+    assert "not a verified cause" in result["report"]["text"]
