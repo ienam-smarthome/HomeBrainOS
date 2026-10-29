@@ -68,7 +68,7 @@ def test_health_and_dependency_are_generically_supported_fact_types():
     cat=claim_catalog(rows)
     statements=[c["statement"] for c in cat]
     assert any("51" in s and "stale" in s for s in statements)
-    assert any("1 devices" in s and "unknown activity" in s for s in statements)
+    assert any("1 device" in s and "unknown activity" in s for s in statements)
     assert any("Motion device" in s and "unknown activity" in s for s in statements)
     assert any("Dashboard" in s and "device 7000" in s for s in statements)
     assert any("Heartbeat" not in s and "switch=off" in s for s in statements)
