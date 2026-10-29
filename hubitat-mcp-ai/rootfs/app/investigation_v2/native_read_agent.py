@@ -41,7 +41,7 @@ from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_cross_source_brief import verified_source_cases, source_connected_brief
 from .native_subject_relevance import subject_relevance_limit
-from .native_entity_group_answer import entity_group_answer
+from .native_room_evidence import natural_entity_answer, verified_room_inventory
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
 from .native_read_contracts import (read_contract_feedback,
@@ -86,6 +86,12 @@ _SYSTEM = (
     "not an unbounded whole-hub device listing. Several distinct "
     "name-prefix matches are a candidate_group, not an ambiguous exact "
     "label collision; inspect the returned name+ID pairs separately. "
+    "If a named room matters to the user's question, consider a "
+    "read-only hub_get_room under hub_read_rooms, if offered by the live "
+    "gateway. Device names are not room membership. A verified room "
+    "inventory can identify devices whose labels do not mention the room; "
+    "read their state individually with host-authorised device IDs. "
+    "Do not claim room membership or current state from the name alone. "
     "If identity or status "
     "cannot be verified, explain the unresolved subject rather than "
     "substituting unrelated health findings. " 
@@ -614,6 +620,7 @@ async def run_native_read_agent(
     rounds = 0
     identity_lookup_attempted = False
     named_identity_lookups: list[dict[str, Any]] = []
+    room_inventories: list[dict[str, Any]] = []
     focus_ids: set[str] = set()
     verified_focus_receipts: list[dict[str, Any]] = []
     seen_fingerprints: set[str] = set()
@@ -1046,6 +1053,18 @@ async def run_native_read_agent(
                 continue
             assert result is not None
             verified_ids.update(attested_source_ids(op, result.data))
+            # A source-verified room response establishes membership only,
+            # not current device state. Authorise its actual member IDs for
+            # individually model-selected, guarded READs.
+            room_receipt = (
+                verified_room_inventory(
+                    result.data, inner.get("room"), read=attempted)
+                if op == "hub_get_room" and isinstance(inner, dict)
+                else None)
+            if room_receipt is not None:
+                room_inventories.append(room_receipt)
+                verified_typed["device"].update(room_receipt["member_ids"])
+                verified_ids.update(room_receipt["member_ids"])
             # The read receipts attest app and driver identities separately.
             # Event issuers become trusted app IDs only for a device-scoped
             # read already approved by the host; no app identifier is guessed.
@@ -1173,7 +1192,7 @@ async def run_native_read_agent(
                     ).items()
                     if k in ("level", "limit", "mode", "deviceId", "appId",
                              "id", "type", "since", "until", "cursor",
-                             "pattern", "attribute", "hoursBack")
+                             "pattern", "attribute", "hoursBack", "room")
                     and type(v) in (str, int) and len(str(v)) < 50
                 },
                 "elapsed_ms": round((time.monotonic()-before)*1000),
@@ -1202,6 +1221,14 @@ async def run_native_read_agent(
                                 witnesses, focus_ids))),
                         "source_complete": False,
                     })
+            if room_receipt is not None:
+                view["verified_room_inventory"] = {
+                    "name": room_receipt["name"],
+                    "members": room_receipt["members"],
+                    "inventory_complete": room_receipt["inventory_complete"],
+                    "read_only": True,
+                    "state_not_covered": "Individually read any relevant room device state",
+                }
             if focus_ids and op == "hub_list_device_events":
                 if str(inner.get("deviceId")) in focus_ids:
                     # Make the already observed bounded source window explicit
@@ -1322,12 +1349,14 @@ async def run_native_read_agent(
     # a subset of source facts or return malformed JSON. The model remains
     # responsible for choosing the names and all READ operations.
     complete_group_evidence = (
-        entity_group_answer(named_identity_lookups, witnesses)
+        natural_entity_answer(named_identity_lookups, witnesses, room_inventories)
         if not focus_ids and
         not (preliminary_incident is not None
              and source_bound_incident_required(preliminary_incident))
         else None)
-    if not answer_text and complete_group_evidence is not None:
+    if (not answer_text and complete_group_evidence is not None
+            and complete_group_evidence.get("room_unread_count", 0) == 0
+            and complete_group_evidence.get("room_inventory_complete", True)):
         final_synthesis_skipped_reason = "complete_verified_entity_group"
     if (not answer_text and preliminary_incident is not None
             and source_bound_incident_required(preliminary_incident)
@@ -1621,7 +1650,7 @@ async def run_native_read_agent(
     # fallback that can omit later devices entirely. Never replace a
     # targeted incident, a warning-based causal report or a blocked subject.
     grouped_answer = (
-        entity_group_answer(named_identity_lookups, witnesses)
+        natural_entity_answer(named_identity_lookups, witnesses, room_inventories)
         if not source_bound_incident and not focus_ids
         and relevance_blocker is None else None)
     concise_answer = (
@@ -1852,6 +1881,10 @@ async def run_native_read_agent(
             "verified_typed_ids": {kind: sorted(ids) for kind, ids in verified_typed.items()},
             "lazy_identity_lookup_attempted": identity_lookup_attempted,
             "named_identity_lookups": named_identity_lookups,
+            "verified_room_inventories": [
+                {k: entry[k] for k in ("name", "member_ids", "read",
+                                       "reported_count", "inventory_complete")}
+                for entry in room_inventories],
             "subject_relevance": (
                 {k: v for k, v in relevance_blocker.items() if k != "text"}
                 if relevance_blocker else {"status": "not_blocked"}),
