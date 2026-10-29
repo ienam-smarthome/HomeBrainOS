@@ -165,6 +165,42 @@ def choose_device(name: str, identities: Any) -> dict[str, Any]:
                 "limits": "Name-prefix group exceeded the safe candidate "
                           "limit. Refine the requested subject.",
             }
+    # Small source-attested acronym groups (e.g. a family of devices with
+    # a shared acronym token) can be offered as *candidates*, not promoted
+    # to a unique focus or treated as room membership. Ordinary generic
+    # substrings like "Mesh" remain rejected.
+    if (name.strip().isupper() and len(name.strip().split()) == 1
+            and 2 <= len(name.strip()) <= 5
+            and name.strip().isalpha()):
+        acronym=_normal(name)
+        group=[]
+        for raw in identities[:1000]:
+            if not isinstance(raw,dict):
+                continue
+            ident=raw.get("id") if raw.get("id") is not None else raw.get("deviceId")
+            if type(ident) not in (int,str) or not str(ident).isdecimal():
+                continue
+            label=str(raw.get("label") or "")
+            canonical=str(raw.get("name") or "")
+            if any(acronym in _normal(v).split()
+                   for v in (label,canonical) if v):
+                group.append({"id":str(ident),"label":safe_string(label,100),
+                              "name":safe_string(canonical,100)})
+        matches=list({m["id"]:m for m in group}.values())
+        if 2 <= len(matches) <= 8:
+            return {
+                "status":"candidate_group","matches":matches,
+                "group_membership_verified":False,
+                "match_basis":"source_name_acronym_token",
+                "limits":"Source-verified named candidates, not proven "
+                         "shared function, room, or state. Read individually.",
+            }
+        if len(matches)>8:
+            return {
+                "status":"candidate_group_too_large","matches":[],
+                "count":len(matches),"limits":"Too many source-attested "
+                "name matches; refine the requested entity.",
+            }
     return {"status": "not_found", "matches": []}
 
 
