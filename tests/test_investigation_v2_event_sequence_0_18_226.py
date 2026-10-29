@@ -84,7 +84,8 @@ def test_command_then_own_device_states_then_offline_is_properly_ordered():
                    "not a verified cause"):
         assert phrase in brief
     assert "switch-state event strengthens" in brief
-    assert "physical power" not in brief
+    assert "does not prove power physically switched" in brief
+    assert "definitely caused" not in brief
 
 
 def test_unrelated_device_cannot_supply_state_confirmation():
