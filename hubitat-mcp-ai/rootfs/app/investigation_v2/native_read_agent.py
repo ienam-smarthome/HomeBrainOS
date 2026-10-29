@@ -1190,10 +1190,11 @@ async def run_native_read_agent(
     # claim-gated, host-authored response, including legacy model prose.
     validated_catalog = claim_catalog(witnesses, sorted(focus_ids))
     publication = publish_verified_claims(model_claim_proposal, validated_catalog)
+    # Model synthesis and publication validation are distinct diagnostic
+    # stages. Preserve the former for replay/latency comparisons while only
+    # the independently checked publication reaches the final report.
     if not source_bound_incident and witnesses:
         answer_text = publication["text"]
-        synthesis_status = ("structured_claims_validated" if not publication["fallback"]
-                            else "structured_claims_source_fallback")
     # Make uncertainty prominent even when the model produces a fluent answer.
     # A recent all-INFO log sample is not a severity-filtered error audit.
     log_audits = [
