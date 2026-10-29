@@ -1407,8 +1407,12 @@ async def run_native_read_agent(
     ]
     # Keep the user-facing answer short, while retaining every verified
     # detail, failed read and confidence limit in the technical report.
+    # A named/independently verified target's detailed incident analysis
+    # is already source-scoped and may contain causally important issuer
+    # receipts. The general cross-source triage must NEVER replace it.
     connected_brief = (
-        source_connected_brief(witnesses) if not source_bound_incident else "")
+        source_connected_brief(witnesses)
+        if not source_bound_incident and not focus_ids else "")
     concise_answer = connected_brief
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
