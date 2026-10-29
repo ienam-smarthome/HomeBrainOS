@@ -156,7 +156,12 @@ def verify_model_explanation(
     *,
     max_findings: int = 3,
 ) -> dict[str, Any]:
-    """Fail closed on any unsupported segment; no partial model prose leaks."""
+    """Verify each model finding independently, without erasing valid peers.
+
+    No untrusted segment reaches the published text. Rejected segments are
+    reported as diagnostic indexes and error codes, never copied as prose.
+    A false or speculative finding cannot suppress a separate verified one.
+    """
     obj = _parsed(proposal)
     if obj is None or set(obj) != {"findings"}:
         return {"accepted": False, "reason": "invalid_proposal"}
@@ -165,41 +170,63 @@ def verify_model_explanation(
         return {"accepted": False, "reason": "invalid_findings"}
     source = {str(c.get("source_id")): c for c in cases
               if isinstance(c, Mapping) and c.get("source_id")}
-    assembled = []
-    seen = set()
-    ordered_ids = []
-    for row in findings:
+    assembled: list[str] = []
+    rejected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    ordered_ids: list[str] = []
+
+    for index, row in enumerate(findings):
         if not isinstance(row, Mapping) or set(row) != {
             "source_id", "explanation", "next_check"}:
-            return {"accepted": False, "reason": "invalid_segment_shape"}
+            rejected.append({"index": index, "reason": "invalid_segment_shape"})
+            continue
         ident = row.get("source_id")
         if not isinstance(ident, str) or ident not in source or ident in seen:
-            return {"accepted": False, "reason": "unverified_subject"}
+            rejected.append({"index": index, "reason": "unverified_subject"})
+            continue
         case = source[ident]
-        explanation = _validate_explanation(row.get("explanation"), case)
-        next_check = _validate_next_check(row.get("next_check"))
-        if explanation is None or next_check is None:
-            return {"accepted": False, "reason": "unsupported_language"}
-        seen.add(ident)
-        ordered_ids.append(ident)
         evidence = case.get("evidence_reads", [])
         if (not isinstance(evidence, list) or not evidence
                 or any(type(n) is not int for n in evidence)):
-            return {"accepted": False, "reason": "unverified_read_references"}
+            rejected.append({"index": index, "reason": "unverified_read_references"})
+            continue
+        explanation = _validate_explanation(row.get("explanation"), case)
+        next_check = _validate_next_check(row.get("next_check"))
+        if explanation is None or next_check is None:
+            rejected.append({"index": index, "reason": "unsupported_language"})
+            continue
+
+        seen.add(ident)
+        ordered_ids.append(ident)
         refs = ", ".join("#" + str(n) for n in evidence)
         assembled.append(
             f"{len(assembled)+1}. {explanation} (Read {refs})\n"
             f"   **Next check:** {next_check}"
         )
+
+    if not assembled:
+        return {
+            "accepted": False,
+            "reason": rejected[0]["reason"] if len(rejected) == 1
+                      else "no_verified_findings",
+            "rejected_segments": rejected,
+        }
+    text = ("**Evidence-checked explanation**\n\n"
+            + "\n\n".join(assembled)
+            + "\n\n**Limits:** This is an evidence-based triage, not "
+              "verification of physical connectivity, execution or a "
+              "root cause. The returned log window may be incomplete.")
+    if rejected:
+        text += ("\n\n" + str(len(rejected))
+                 + " additional proposed finding(s) were withheld because "
+                   "their evidence or wording could not be verified.")
     return {
         "accepted": True,
-        "reason": "source_scoped_factual_validation",
-        "text": "**Evidence-checked explanation**\n\n"
-                + "\n\n".join(assembled)
-                + "\n\n**Limits:** This is an evidence-based triage, not "
-                  "verification of physical connectivity, execution or a "
-                  "root cause. The returned log window may be incomplete.",
+        "reason": ("partially_verified" if rejected else
+                   "source_scoped_factual_validation"),
+        "text": text,
         "verified_subject_ids": ordered_ids,
+        "rejected_segments": rejected,
     }
 
 

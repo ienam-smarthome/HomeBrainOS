@@ -73,8 +73,17 @@ def test_unsupported_assertions_and_action_recommendations_are_withheld(field,va
     proposal=_proposal()
     proposal["findings"][0][field]=value
     result=verify_model_explanation(proposal,verified_source_cases(_case_rows()))
-    assert result["accepted"] is False
-    assert "text" not in result
+    # Each proposal finding has its own source/wording validation. The
+    # corrupted first finding is withheld, while the other two verified
+    # independent observations survive.
+    assert result["accepted"] is True
+    assert result["reason"] == "partially_verified"
+    assert result["verified_subject_ids"] == ["9002", "9003"]
+    assert result["rejected_segments"][0]["index"] == 0
+    assert len(result["rejected_segments"]) == 1
+    assert "Mesh outlet has 28 WARN rows" not in result["text"]
+    assert "Matter bridge has 10 WARN rows" in result["text"]
+    assert "MQTT app has 37 WARN rows" in result["text"]
 
 
 def test_empty_unstructured_and_extra_fields_denied():

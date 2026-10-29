@@ -290,7 +290,11 @@ def validate_claims(
     if obj is None:
         return {"accepted": [], "rejected": ["non_structured_answer"],
                 "status": "unstructured_withheld"}
-    if set(obj) != {"claims"}:
+    # The native model contract permits optional narrative findings alongside
+    # factual claims. They have a SEPARATE, independent validator; their
+    # presence (or rejection) must never erase valid source-backed fact IDs.
+    # Conversely, no narrative text is published from this fact-only path.
+    if "claims" not in obj or set(obj) - {"claims", "findings"}:
         return {"accepted": [], "rejected": ["unrecognised_top_level_fields"],
                 "status": "unverified"}
     raw_claims = obj.get("claims")
