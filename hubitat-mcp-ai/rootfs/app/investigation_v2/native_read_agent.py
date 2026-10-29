@@ -1532,13 +1532,21 @@ async def run_native_read_agent(
     # at least two distinct read operations and two fact classes.
     incident_relevance = dated_incident_evidence(
         question, witnesses, sorted(focus_ids))
+    requested_interval_coverage = complete_interval_coverage(
+        question, witnesses, sorted(focus_ids))
+    interval_unverified = (
+        requested_interval_coverage is not None
+        and requested_interval_coverage["status"] ==
+        "complete_interval_not_established")
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
         witnesses, claim_catalog(witnesses, sorted(focus_ids)),
         stop_reason=reason,
-        incident_evidence_present=(None if incident_relevance is None
-            else incident_relevance["incident_answer_evidence_present"]))
+        incident_evidence_present=(
+            False if interval_unverified else
+            None if incident_relevance is None else
+            incident_relevance["incident_answer_evidence_present"]))
     # A complete, independently ID-joined device group already contains the
     # entire bounded answer vocabulary. Do not spend up to eight seconds
     # requesting a second model-only claim selection which could only select
@@ -1550,6 +1558,8 @@ async def run_native_read_agent(
         not (preliminary_incident is not None
              and source_bound_incident_required(preliminary_incident))
         else None)
+    if (not answer_text and interval_unverified):
+        final_synthesis_skipped_reason = "explicit_complete_cycle_not_established"
     if (not answer_text and complete_group_evidence is not None
             and complete_group_evidence.get("room_unread_count", 0) == 0
             and complete_group_evidence.get("room_inventory_complete", True)):
@@ -1931,6 +1941,8 @@ async def run_native_read_agent(
     # in ordinary language and retain the full technical receipts below.
     if incident_gap is not None and relevance_blocker is None:
         concise_answer = incident_gap[0]
+    if interval_unverified and relevance_blocker is None:
+        concise_answer = incomplete_interval_answer(requested_interval_coverage)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
@@ -2217,6 +2229,9 @@ async def run_native_read_agent(
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
             "upstream_decision_challenge_used": upstream_decision_challenge_used,
+            "requested_complete_interval_coverage": requested_interval_coverage,
+            "interval_coverage_challenge_used": interval_coverage_challenge_used,
+            "failed_operation_counts": failed_operation_counts,
             "historical_controller_source_frontier": historical_frontier,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
@@ -2256,7 +2271,7 @@ async def run_native_read_agent(
             "verified_operating_sequence": verified_operating_sequence,
             "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
-                not source_bound_incident
+                not interval_unverified and not source_bound_incident
                 and not host_incident_gap_published
                 and not model_reasoning_published
                 and not host_sequence_published
@@ -2264,6 +2279,7 @@ async def run_native_read_agent(
                 and validated_catalog),
             "concise_answer_source": (
                 "model_cited_incident_assessment" if model_reasoning_published
+                else "requested_complete_interval_gap" if interval_unverified
                 else "source_attested_operating_sequence" if host_sequence_published
                 else "requested_incident_evidence_gap" if host_incident_gap_published
                 else "unresolved_named_subject_evidence" if relevance_blocker
