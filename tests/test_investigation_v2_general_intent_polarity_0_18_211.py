@@ -47,6 +47,7 @@ READ_QUESTIONS=[
     "Summarise historical commands and create a timeline, read only.",
     "How do I turn the bedroom light off using HomeBrain?",
     "Why did the dimmer turn on and change brightness?",
+    "Why did the dimmer turn on, and change brightness?",
     "How many devices are offline across the hub?",
     "Audit energy consumption by appliance; without making changes.",
     "Read-only: determine why the Internet blocker disabled a device.",
@@ -79,6 +80,8 @@ WRITE_REQUESTS=[
     "Read-only verification; please change the device settings.",
     "Read-only inspection; also create a rule to power down the socket.",
     "Review the rule. Instead disable it.",
+    "Investigate the fan, then disable its app.",
+    "Check the lights, now turn them off.",
     "Why did the motion light turn on? Then turn it off.",
     "Investigate whether the gateway is offline, and reboot it.",
 ]
