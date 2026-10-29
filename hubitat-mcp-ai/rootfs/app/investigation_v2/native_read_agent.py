@@ -40,6 +40,7 @@ from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_answer_brief import evidence_readiness, evidence_brief
 from .native_cross_source_brief import verified_source_cases, source_connected_brief
+from .native_verified_prose import verify_model_explanation
 from .native_read_contracts import (read_contract_feedback,
                                     advertised_operation_contracts)
 from .native_metrics_evidence import project_metrics, project_memory_history
@@ -555,6 +556,7 @@ async def run_native_read_agent(
     executor: ToolExecutor, max_rounds: int = 6, max_reads: int = _LIMIT,
     max_seconds: float = 165.0, model_timeout: float = 28.0,
     per_read_timeout: float = 20.0,
+    enable_verified_narrative: bool = False,
 ) -> dict[str, Any]:
     """Execute bounded, sequential model-chosen READ calls with an evidence trail."""
     if executor.mcp is not mcp:
@@ -1413,7 +1415,69 @@ async def run_native_read_agent(
     connected_brief = (
         source_connected_brief(witnesses)
         if not source_bound_incident and not focus_ids else "")
-    concise_answer = connected_brief
+    # One bounded optional model-authored explanation pass. Only a narrowly
+    # source-verifiable subset of language can replace the existing host
+    # summary. The model never receives a tool, grant or write permission.
+    verified_narrative = {"accepted": False, "reason": "not_attempted"}
+    narrative_synthesis_ms = 0
+    if (enable_verified_narrative and connected_brief
+            and not source_bound_incident and not focus_ids
+            and deadline - time.monotonic() >= 7.5):
+        cases = verified_source_cases(witnesses)[:3]
+        start_narrative = time.monotonic()
+        try:
+            request = {
+                "question": question,
+                "cases": [{
+                    "source_id": c["source_id"], "name": c["name"],
+                    "warning_rows": c["warning_rows_in_returned_sample"],
+                    "warning_levels": c["warning_levels"],
+                    "status": c["status"],
+                    "reads": c["evidence_reads"],
+                } for c in cases],
+            }
+            response = await asyncio.wait_for(
+                chat([
+                    {"role": "system", "content":
+                     "Write a brief natural-language Hubitat explanation "
+                     "using only the exact independently returned facts. "
+                     "Return ONLY JSON: {\"findings\":[{\"source_id\":"
+                     "\"<exact provided ID>\",\"explanation\":\"...\","
+                     "\"next_check\":\"...\"}]}. "
+                     "For each item, mention its exact source name, "
+                     "an exact number of WARN/ERROR log rows and/or a "
+                     "literal returned status such as healthStatus=offline. "
+                     "For example: 'Mesh outlet has 29 WARN rows and "
+                     "healthStatus=offline in the reported readings; this "
+                     "is worth checking.' Use ONLY simple neutral words. "
+                     "For each next_check begin with Check/Verify/Inspect/"
+                     "Confirm/Review/Compare/Test/Investigate/Examine. "
+                     "No commands, changes or factual assumptions. "
+                     "Never assert physical connectivity, faults, driver "
+                     "execution, causality, unsupported timestamps, "
+                     "fixes or any source values not supplied. "
+                     "No code, source instructions or extra fields."},
+                    {"role": "user", "content":
+                     json.dumps(request, ensure_ascii=True)[:5500]},
+                ], []),
+                timeout=min(6.0, max(1.0,
+                                     deadline - time.monotonic() - 1)),
+            )
+            candidate = (response.get("content")
+                         if isinstance(response, dict)
+                         and not response.get("tool_calls") else None)
+            verified_narrative = verify_model_explanation(candidate, cases)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            verified_narrative = {
+                "accepted": False, "reason": "model_unavailable"}
+        finally:
+            narrative_synthesis_ms = round(
+                (time.monotonic() - start_narrative) * 1000)
+    concise_answer = (
+        verified_narrative["text"]
+        if verified_narrative.get("accepted") is True else connected_brief)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
@@ -1663,13 +1727,19 @@ async def run_native_read_agent(
                 and readiness["distinct_verified_fact_kinds"] >= 2
                 and validated_catalog),
             "concise_answer_source": (
-                "cross_source_verified_case_graph" if connected_brief
+                "model_authored_independently_checked" if
+                verified_narrative.get("accepted") is True
+                else "cross_source_verified_case_graph" if connected_brief
                 else "host_verified_claim_catalog" if concise_answer
                 else "full_source_report"),
             "cross_source_case_count": len(verified_source_cases(witnesses)),
             "cross_source_connected_count": sum(
                 1 for c in verified_source_cases(witnesses)
                 if c["source_correlated"]),
+            "verified_narrative_accepted": (
+                verified_narrative.get("accepted") is True),
+            "verified_narrative_result": verified_narrative.get("reason"),
+            "verified_narrative_ms": narrative_synthesis_ms,
             "timed_out_operations": [f"{name}:{operation}"
                                      for name, operation in sorted(timed_out_operations)],
             "source_highlights": (focused_highlights(witnesses, sorted(focus_ids))
