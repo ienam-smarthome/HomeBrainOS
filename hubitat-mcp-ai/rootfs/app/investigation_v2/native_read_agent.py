@@ -688,6 +688,10 @@ async def run_native_read_agent(
                 and w["source_data"]["log_summary"].get(
                     "warning_error_group_count") == 0
                 and w.get("read_filters", {}).get("level") is None
+                # An app-specific INFO decision trace is not a request for
+                # whole-hub WARN/ERROR auditing. Its absence of warnings
+                # must not trigger an irrelevant severity-read challenge.
+                and w.get("read_filters", {}).get("appId") is None
                 and w["source_data"]["log_summary"].get(
                     "level_counts_in_returned_rows", {}).get("INFO", 0) > 0
                 for w in witnesses
