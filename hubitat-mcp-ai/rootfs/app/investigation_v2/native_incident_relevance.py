@@ -18,7 +18,7 @@ from .temporal_scope import explicit_incident_window
 # stayed on during a different period. These are generic observation kinds.
 _MATERIAL_EVENTS = frozenset({
     "switch", "level", "motion", "presence", "occupancy",
-    "illuminance", "contact", "power", "healthStatus", "networkStatus",
+    "illuminance", "contact", "power",
 })
 _MATERIAL_COMMANDS = frozenset({
     "on", "off", "setlevel", "toggle", "dim", "startlevelchange",
@@ -137,16 +137,16 @@ def natural_incident_gap_answer(
             break
     answer = (
         f"**I couldn't determine why {name} behaved that way during "
-        "the period you asked about.** The returned history for that "
-        "period did not contain the relevant on/off, dimmer or motion "
-        "events needed to explain it.")
+        "the period you asked about.** The returned history did not "
+        "include relevant state changes or commands from that period. "
+        "I can't reliably tell which control or sensor kept it active.")
     if coverage["later_command_rows"]:
         answer += (
             " The command counts shown in the technical results include "
             "activity from later dates, which does not explain this incident.")
     answer += (
-        " The next useful evidence is the controlling automation's "
-        "execution history and relevant sensor events from that period.")
+        " The next useful check is the controlling automation's "
+        "execution history alongside the relevant sensor events.")
     return answer, coverage
 
 
