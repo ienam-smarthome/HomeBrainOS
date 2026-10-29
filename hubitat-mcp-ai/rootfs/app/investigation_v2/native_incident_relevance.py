@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
 from .temporal_scope import explicit_incident_window
+from .native_event_relevance import select_incident_examples
 
 # Narrow user-relevant event types. An IP refresh, driver watchdog status,
 # app configuration or unrelated later command doesn't tell us why a light
@@ -25,7 +26,9 @@ _MATERIAL_EVENTS = frozenset({
 })
 _MATERIAL_COMMANDS = frozenset({
     "on", "off", "setlevel", "toggle", "dim", "startlevelchange",
-    "stoplevelchange",
+    "stoplevelchange", "setheatingsetpoint", "setthermostatsetpoint",
+    "setcoolingsetpoint", "setthermostatmode", "settemperature",
+    "setvalve", "setposition", "setfanmode",
 })
 
 
@@ -126,18 +129,24 @@ def dated_incident_evidence(
                     later_command_rows += 1
     if not scoped_reads:
         return None
-    # Avoid leaking hundreds of rows into model context.
+    # Do not present the newest six high-frequency temperature samples as
+    # if they explained an earlier thermostat state transition. Select the
+    # most relevant incident-time events, including command and state kinds.
+    period = {
+        "start_utc_interpreted": incident.start_utc,
+        "end_utc_interpreted": incident.end_utc,
+        "clock_tolerance_hours": 2,
+        "hub_timezone_verified": False,
+    }
+    examples, selection = select_incident_examples(
+        material, question, period)
     return {
         "target_device_id": focus,
-        "incident_period": {
-            "start_utc_interpreted": incident.start_utc,
-            "end_utc_interpreted": incident.end_utc,
-            "clock_tolerance_hours": 2,
-            "hub_timezone_verified": False,
-        },
+        "incident_period": period,
         "scoped_event_reads": scoped_reads[:8],
         "material_event_count": len(material),
-        "material_event_examples": material[:6],
+        "material_event_examples": examples,
+        "material_event_selection": selection,
         "outside_incident_command_rows": unrelated_command_rows,
         "later_command_rows": later_command_rows,
         "incident_answer_evidence_present": bool(material),

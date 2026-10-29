@@ -54,6 +54,7 @@ from .native_incident_relevance import (
     dated_incident_evidence, natural_incident_gap_answer)
 from .native_reasoned_assessment import (
     candidate_prompt, verify_natural_hypothesis)
+from .native_operational_sequence import operational_sequence_brief
 from .native_reasoning_policy import planning_system_prompt
 from .native_verified_prose import (
     verify_model_explanation, narrative_followup_eligible)
@@ -1326,6 +1327,13 @@ async def run_native_read_agent(
             if "source_claim_catalog" in view:
                 view = {"source_claim_catalog": view.pop("source_claim_catalog"),
                         **view}
+            if "user_incident_evidence_coverage" in view:
+                # When tool JSON is bounded, the event sequence nearest
+                # the question's own time is more useful than recent
+                # telemetry or general fact catalogs. Preserve raw receipt
+                # in diagnostics, but show this summary first to the AI.
+                view = {"user_incident_evidence_coverage":
+                        view.pop("user_incident_evidence_coverage"), **view}
             messages.append({"role": "tool", "content":
                              json.dumps(view, ensure_ascii=True)[:12000]})
         if redundant_snapshot_reads >= 2 and focus_ids:
@@ -1492,7 +1500,7 @@ async def run_native_read_agent(
                         ]),
                     }, ensure_ascii=True, default=str)[:15000]},
                 ], []),
-                timeout=min(8.0, max(1.0, deadline - time.monotonic())),
+                timeout=min(14.0, max(1.0, deadline - time.monotonic())),
             )
             if isinstance(response, dict) and not response.get("tool_calls"):
                 candidate = response.get("content")
@@ -1709,9 +1717,33 @@ async def run_native_read_agent(
             and relevance_blocker is None and incident_gap is None)
         else {"accepted": False, "reason": "not_eligible",
               "model_prose_published": False})
+    # Fallback to an actual verified control->state chronology when the
+    # reasoning model produces plain text, invalid JSON or times out. Do
+    # not replace a valid model explanation and do not claim that a
+    # correlated thermostat event proves which TRV made the decision.
+    focused_name = next((str(w["source_data"].get("label") or
+                             w["source_data"].get("name") or "")
+                         for w in witnesses
+                         if w.get("operation") == "hub_get_device"
+                         and str(w.get("source_data", {}).get("id")) in focus_ids
+                         and isinstance(w.get("source_data"), dict)), "")
+    if not focused_name:
+        focused_name = next((str(row["query"])
+                             for row in named_identity_lookups
+                             if row.get("status") == "unique"
+                             and row.get("query")), "the device")
+    verified_operating_sequence = (
+        operational_sequence_brief(incident_relevance, focused_name)
+        if not source_bound_incident and relevance_blocker is None
+        else None)
+    host_sequence_published = (
+        verified_operating_sequence is not None
+        and model_reasoned_result.get("accepted") is not True
+        and verified_narrative.get("accepted") is not True)
     concise_answer = (
         model_reasoned_result["text"]
         if model_reasoned_result.get("accepted") is True
+        else verified_operating_sequence["text"] if host_sequence_published
         else
         verified_narrative["text"]
         if verified_narrative.get("accepted") is True
@@ -2018,7 +2050,8 @@ async def run_native_read_agent(
             "claim_publication": {
                 "used_for_display_answer": not (
                     host_group_published or host_temporal_lead_published
-                    or host_incident_gap_published or model_reasoning_published),
+                    or host_incident_gap_published or model_reasoning_published
+                    or host_sequence_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
                     else "validated_model_selection"),
@@ -2042,15 +2075,18 @@ async def run_native_read_agent(
             "final_synthesis_skipped_reason": final_synthesis_skipped_reason,
             "general_evidence_readiness": readiness,
             "model_reasoned_assessment": model_reasoned_result,
+            "verified_operating_sequence": verified_operating_sequence,
             "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
                 not source_bound_incident
                 and not host_incident_gap_published
                 and not model_reasoning_published
+                and not host_sequence_published
                 and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
                 "model_cited_incident_assessment" if model_reasoning_published
+                else "source_attested_operating_sequence" if host_sequence_published
                 else "requested_incident_evidence_gap" if host_incident_gap_published
                 else "unresolved_named_subject_evidence" if relevance_blocker
                 else "model_authored_independently_checked" if
