@@ -1247,6 +1247,13 @@ async def run_native_read_agent(
                         "hub_get_logs", {}, manifest, discovered)))
                 if decision is not None:
                     view["upstream_controller_decision_gap"] = decision
+                if op == "hub_get_logs" and summary.get("app_execution_lines"):
+                    # Bring the independently matched source-log anchors back
+                    # into the planning context, not merely the final report.
+                    linked = dated_incident_evidence(
+                        question, witnesses, sorted(focus_ids))
+                    if linked is not None:
+                        view["user_incident_evidence_coverage"] = linked
             if focus_ids and op == "hub_list_device_events":
                 if str(inner.get("deviceId")) in focus_ids:
                     # Make the already observed bounded source window explicit
