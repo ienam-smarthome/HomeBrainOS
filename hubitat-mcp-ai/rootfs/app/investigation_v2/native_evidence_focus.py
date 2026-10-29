@@ -9,6 +9,8 @@ import json
 from typing import Any, Mapping, Sequence
 from .native_source_adapters import safe_string
 from .native_provenance import correlated_command_warnings
+from .native_runtime_stats import (
+    focused_runtime_stat_receipts, verified_caller_app_ids)
 
 _CORE=("healthStatus","deviceHealth","networkStatus","mqttStatus",
        "lastSeen","lastMessage","lastContact","dataAgeSeconds",
@@ -34,6 +36,7 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
                        focus_ids: Sequence[str], *, max_chars:int=4500)->list[str]:
     focus={str(v) for v in focus_ids if str(v).isdecimal()}
     if not focus:return []
+    runtime_receipts=focused_runtime_stat_receipts(witnesses,focus)
     primary=[]
     secondary=[]
     seen=set()
@@ -114,30 +117,20 @@ def focused_highlights(witnesses: Sequence[Mapping[str,Any]],
         elif op=="hub_get_logs":
             stats=data.get("runtime_stats")
             if isinstance(stats,dict):
-                mode=stats.get("mode")
-                filters=w.get("read_filters",{})
-                filters=filters if isinstance(filters,dict) else {}
-                callers={
-                    str(a.get("appId")) for receipt in witnesses[:16]
-                    if receipt.get("operation")=="hub_list_device_events"
-                    and str(receipt.get("read_filters",{}).get("deviceId")) in focus
-                    for a in receipt.get("source_data",{}).get("issuer_apps",[])
-                    if isinstance(a,dict)}
-                permitted=(focus if mode=="devices" else
-                           callers if mode=="apps" else set())
-                scoped=str(filters.get("deviceId" if mode=="devices"
-                                        else "appId")) in permitted
-                for item in stats.get("rows",[])[:8]:
-                    if not isinstance(item,dict):continue
-                    ident=str(item.get("id") or "")
-                    if not scoped or ident not in permitted:continue
+                for item in runtime_receipts:
+                    if item.get("read") != w.get("read"):
+                        continue
+                    mode=item.get("kind")
+                    ident=item.get("id")
                     pieces=[str(k)+"="+safe_string(item[k],35)
                             for k in ("pct","total","count","stateSize")
                             if k in item]
                     add(f"{ref}: Hubitat Logs {mode} cumulative stats for "
                         f"{safe_string(item.get('name'),70)} (ID {ident}): "+
-                        ", ".join(pieces)+". Snapshot returned at read time, "
-                        "NOT incident-time CPU measurement.")
+                        ", ".join(pieces)+". Source-reported percentage "
+                        "within its own device/app runtime table, not "
+                        "historical whole-hub CPU. Device and app "
+                        "percentages have different denominators.")
                 continue
             # A targeted WARN subset already contained in an earlier sampled
             # group adds no new source facts. Keep its complete receipt in
@@ -355,7 +348,8 @@ def focused_fallback(witnesses:Sequence[Mapping[str,Any]],
     return "\n".join(lines)
 
 def focused_model_view(operation:str,projected:Mapping[str,Any],
-                       focus_ids:Sequence[str])->dict[str,Any]:
+                       focus_ids:Sequence[str],
+                       *, caller_app_ids:Sequence[str]=())->dict[str,Any]:
     if operation=="hub_list_device_events" and focus_ids:
         events=projected.get("events")
         events=events if isinstance(events,list) else []
@@ -370,6 +364,21 @@ def focused_model_view(operation:str,projected:Mapping[str,Any],
                 "events":commands[:20]+states[:5],
                 "source_complete":False}
     if operation!="hub_get_logs" or not focus_ids:return dict(projected)
+    stats=projected.get("runtime_stats")
+    if isinstance(stats,dict):
+        mode=stats.get("mode")
+        allowed=({str(v) for v in focus_ids}
+                 if mode=="devices" else {str(v) for v in caller_app_ids}
+                 if mode=="apps" else set())
+        return {"runtime_stats":{
+            "mode":mode,
+            "rows":[row for row in stats.get("rows",[])[:40]
+                    if isinstance(row,dict) and str(row.get("id")) in allowed],
+            "returned_rows":stats.get("returned_rows"),
+            "source_complete":False,
+            "limited_to_verified_device_or_callers":True,
+            "interpretation_limit":stats.get("interpretation_limit"),
+        },"source_complete":False}
     summary=projected.get("log_summary")
     if not isinstance(summary,dict):return dict(projected)
     groups=[g for g in summary.get("warning_error_groups",[])
