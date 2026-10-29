@@ -191,6 +191,7 @@ def incident_state_cooccurrences(
         "returned_scoped_event_rows": returned_event_rows,
         "group_times_missing": group_missing_timestamps,
         "sample_incomplete": bool(source_truncation or event_history_partial
+                                  or not event_reads
                                   or len(ordered_warns) > _MAX_WARNINGS),
         "timezone_alignment_verified": False,
         "runtime_cause_verified": False,
