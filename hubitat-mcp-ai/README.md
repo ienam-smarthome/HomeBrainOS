@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.205**.
+Current add-on version: **0.18.206**.
+
+v0.18.206 groups returned generic excessive-load warning timestamps into bounded observation clusters and prioritises independently source-attested, incident-time app command leads over remote historical command bursts, without claiming CPU causality. [Release notes](CHANGELOG-0.18.206.md).
 
 v0.18.205 aligns causal coverage hints with previously completed target WARN reads, distinguishes host-authoritative incident publication from model-claim rejection, and corrects single-row warning wording. [Release notes](CHANGELOG-0.18.205.md).
 
