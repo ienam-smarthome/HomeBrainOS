@@ -69,10 +69,10 @@ async def test_complete_six_device_group_skips_eight_second_claim_pass():
     assert d["concise_answer_source"]=="verified_entity_group_comparison"
     assert d["entity_group_summary"]["matched_light_count"]==2
     displayed=result["answer"]["text"]
-    assert displayed.count("switch=off")==2
+    assert "Bathroom Light 1 and Bathroom Light 2 are both off" in displayed
     assert "Bathroom Light 1" in displayed
     assert "Bathroom Light 2" in displayed
-    assert "last reported level=60%" in displayed
+    assert "saved dimmer level 60%" in displayed
     assert len(executor.calls)==6
 
 
