@@ -1024,6 +1024,12 @@ async def run_native_read_agent(
                 view["discovery_advice"] = (
                     "This search repeats a previously seen tool set. "
                     "Prefer a targeted evidence read instead.")
+            # Put the claim IDs before large event summaries so the
+            # bounded tool transcript does not truncate the only useful
+            # selection vocabulary. Never trust model-supplied claim text.
+            if "source_claim_catalog" in view:
+                view = {"source_claim_catalog": view.pop("source_claim_catalog"),
+                        **view}
             messages.append({"role": "tool", "content":
                              json.dumps(view, ensure_ascii=True)[:12000]})
         if redundant_snapshot_reads >= 2 and focus_ids:
@@ -1184,7 +1190,7 @@ async def run_native_read_agent(
     # claim-gated, host-authored response, including legacy model prose.
     validated_catalog = claim_catalog(witnesses, sorted(focus_ids))
     publication = publish_verified_claims(model_claim_proposal, validated_catalog)
-    if not source_bound_incident:
+    if not source_bound_incident and witnesses:
         answer_text = publication["text"]
         synthesis_status = ("structured_claims_validated" if not publication["fallback"]
                             else "structured_claims_source_fallback")
