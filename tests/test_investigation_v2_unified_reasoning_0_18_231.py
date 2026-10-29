@@ -70,8 +70,8 @@ def test_heating_and_ventilation_evidence_use_same_reasoning_contract():
     ], device="3970")]
     c = dated_incident_evidence(question, rows, ["3970"])
     assert c is not None and c["material_event_count"] == 2
-    assert c["material_event_examples"][0]["value"] == "19"
-    assert c["material_event_examples"][1]["value"] == "22"
+    assert c["material_event_examples"][0]["value"] == "19.0"
+    assert c["material_event_examples"][1]["value"] == "22.0"
 
 
 def test_alternative_is_explicitly_possible_not_asserted_as_cause():
