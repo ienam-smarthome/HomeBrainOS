@@ -155,8 +155,8 @@ def claim_catalog(
             if type(duration) is int:
                 detail += f" (source-reported {duration} ms)"
             label = display_name or ("Source " + str(src or "unknown"))
-            add("warning", f"{label} (source {src or 'unknown'}): "
-                f"{severity} {detail}; sampled period {period}. "
+            add("warning", f"{label} {detail} (source {src or 'unknown'}, "
+                f"severity {severity}); sampled period {period}. "
                 "Historical coverage is incomplete.",
                 read, (kind, src, severity, period, method, duration),
                 scope=str(src) if src else None)
