@@ -40,7 +40,8 @@ from .native_fact_ledger import factual_evidence_ledger
 from .native_claim_verifier import claim_catalog, publish_verified_claims
 from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
-from .native_runtime_stats import project_log_runtime_stats
+from .native_runtime_stats import (
+    project_log_runtime_stats, verified_caller_app_ids)
 from .native_evidence_coverage import (
     gap_for_target, gateway_offers_operation,
     useful_discovery_fingerprint, repeated_log_evidence, repeated_event_evidence,
@@ -1064,7 +1065,10 @@ async def run_native_read_agent(
                               "Choose an independent discriminator or finish.")}
                     if repeated_evidence else {
                         "read_id": attempted, "operation": op,
-                        "source_data": focused_model_view(op, summary, sorted(focus_ids)),
+                        "source_data": focused_model_view(
+                            op, summary, sorted(focus_ids),
+                            caller_app_ids=sorted(verified_caller_app_ids(
+                                witnesses, focus_ids))),
                         "source_complete": False,
                     })
             if focus_ids and op == "hub_list_device_events":
