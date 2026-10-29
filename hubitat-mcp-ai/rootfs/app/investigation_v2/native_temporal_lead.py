@@ -285,8 +285,9 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
         f"`{lead['command']}` at {lead['command_text']} "
         f"(Read #{lead['command_read']}). "
         f"The device reports {lead['anchor_attribute']}="
-        f"{lead['anchor_text']}, {lead['absolute_gap_seconds']} seconds "
-        f"from that command (Read #{lead['anchor_read']})."
+        f"{lead['anchor_text']}; that stored timestamp and the command "
+        f"are {lead['absolute_gap_seconds']} seconds apart "
+        f"(Read #{lead['anchor_read']})."
     )
     sequence = lead.get("observed_event_sequence", [])
     if sequence:
