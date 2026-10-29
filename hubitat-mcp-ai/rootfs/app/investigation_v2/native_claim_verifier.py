@@ -136,7 +136,16 @@ def claim_catalog(
             continue
         read = reads[0]
         kind = fact["kind"]
-        if kind == "source_reported_warning":
+        if kind in ("health_sample_summary", "health_stale_entry",
+                    "health_unknown_entry", "app_dependency_reference"):
+            statement = fact.get("statement")
+            if not isinstance(statement, str) or not statement:
+                continue
+            scope = str(fact.get("source_id") or "") or None
+            add(kind, statement, read,
+                ("operational_receipt", kind, read, scope, statement[:240]),
+                scope=scope)
+        elif kind == "source_reported_warning":
             src = fact.get("source_id")
             severity = fact.get("severity")
             period = (str(fact.get("oldest_returned") or "unknown")[:35] +
@@ -369,11 +378,45 @@ def publish_verified_claims(
     verdict = validate_claims(proposed, catalog)
     chosen = verdict["accepted"]
     fallback = not chosen
+    # A model may select only a marginal source fact (or produce an invalid
+    # shape), leaving all independently verified operational health and
+    # dependency evidence unpublished. Retain one representative per
+    # returned evidence KIND before adding other verified observations.
+    # This is source-type coverage, not question-keyword routing; no model
+    # narrative or unsupported inference is added.
+    mandatory_kinds = {"health_sample_summary", "app_dependency_reference"}
+    chosen_ids = {fid for claim in chosen for fid in claim["fact_ids"]}
+    if any(c.get("kind") in mandatory_kinds for c in catalog):
+        for fact in catalog:
+            if (fact.get("kind") not in mandatory_kinds
+                    or fact["id"] in chosen_ids
+                    or len(chosen) >= max(12, max_fallback)):
+                continue
+            chosen.append({
+                "text": fact["statement"],
+                "evidence_reads": fact["evidence_reads"],
+                "fact_ids": [fact["id"]],
+                "predicate": "observed",
+            })
+            chosen_ids.add(fact["id"])
     if fallback:
-        chosen = [{
-            "text": fact["statement"], "evidence_reads": fact["evidence_reads"],
-            "fact_ids": [fact["id"]], "predicate": "observed",
-        } for fact in catalog[:max_fallback]]
+        # Start with one observation of each verified kind, then fill the
+        # remaining available budget with actual source facts. Do not
+        # mistake a model's invalid claim selection for an empty read.
+        representative = []
+        kinds = set()
+        for fact in catalog:
+            if fact.get("kind") not in kinds:
+                representative.append(fact)
+                kinds.add(fact.get("kind"))
+        ordered = representative + [c for c in catalog if c not in representative]
+        chosen = []
+        for fact in ordered[:max_fallback]:
+            chosen.append({
+                "text": fact["statement"],
+                "evidence_reads": fact["evidence_reads"],
+                "fact_ids": [fact["id"]], "predicate": "observed",
+            })
     lines = ["**Source-verified findings**"]
     if not chosen:
         lines.append("No independently verifiable source claim was recovered.")
