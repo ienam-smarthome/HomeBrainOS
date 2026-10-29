@@ -15,9 +15,15 @@ def read_contract_feedback(
     if not gateway.startswith("hub_read_"):
         return None
     op = arguments.get("tool")
-    if op not in ("hub_get_source", "hub_get_app_config", "hub_get_device"):
+    if op not in ("hub_get_source", "hub_get_app_config",
+                  "hub_get_device", "hub_list_device_events"):
         return None
     fields = missing_required_read_fields(gateway, dict(arguments))
+    if op == "hub_list_device_events":
+        inner = arguments.get("args", {})
+        if not isinstance(inner, Mapping) or (
+                inner.get("deviceId") is None and inner.get("appId") is None):
+            fields = ["deviceId|appId"]
     if not fields:
         return None
     allowed = {kind: sorted(str(x) for x in verified_typed.get(kind, set())
@@ -45,6 +51,14 @@ def read_contract_feedback(
             "type='driver' and a separately attested driver ID. "
             "App IDs cannot authorise driver-source reads. "
             "Never guess or reuse a deviceId as a source id.")
+    elif op == "hub_list_device_events":
+        details["required_shape"] = {
+            "tool": op, "args": {"deviceId": "verified device ID"}}
+        details["verified_id_choices"] = {"device": allowed["device"]}
+        details["guidance"] = (
+            "For the independently verified target device, explicitly "
+            "include deviceId; this is only an example, not an executed "
+            "operation. Unscoped events cover a different source.")
     elif op == "hub_get_app_config":
         details["required_shape"] = {
             "tool": op, "args": {"appId": "source-attested app ID"}}
