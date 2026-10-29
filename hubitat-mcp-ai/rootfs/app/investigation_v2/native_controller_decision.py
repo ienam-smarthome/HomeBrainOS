@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
 from .native_source_adapters import log_rows, log_source, safe_string
+from .native_event_relevance import clock_candidates
 
 def _time(value: Any) -> datetime | None:
     try:
@@ -26,6 +27,7 @@ def controller_decision_followup(
     incident: Mapping[str,Any] | None,
     *,
     app_logs_offered: bool,
+    question: str = "",
 ) -> dict[str,Any] | None:
     """Expose an evidence obligation, never a fabricated tool permission.
 
@@ -67,9 +69,24 @@ def controller_decision_followup(
             candidates.append((stamp,ident,label,read))
     if not candidates:
         return None
-    # Model may pick a different attested app; this guidance only proposes
-    # the latest relevant command issuer (near the actual source incident).
-    stamp,app_id,label,read = max(candidates,key=lambda x:x[0])
+    # For an explicit user incident clock, choosing the last command of the
+    # *whole date* can identify a completely different controller. Rank
+    # against the incident clock (UTC and BST candidates are ranking only),
+    # and require proximity. Never recommend an unrelated later command.
+    anchors = clock_candidates(question, bounds)
+    if anchors:
+        nearest = sorted(candidates, key=lambda row:
+                         min(abs((row[0]-anchor).total_seconds())
+                             for anchor in anchors))
+        stamp,app_id,label,read = nearest[0]
+        if min(abs((stamp-anchor).total_seconds()) for anchor in anchors)>1800:
+            return None
+        selection = "user_incident_clock_nearest_command"
+    else:
+        # Without a clock, there is no verified exact incident moment.
+        # Return bounded source candidate only; the model still chooses.
+        stamp,app_id,label,read = max(candidates,key=lambda x:x[0])
+        selection = "latest_source_command_no_incident_clock"
     for w in witnesses:
         if w.get("operation") != "hub_get_logs":
             continue
@@ -83,6 +100,7 @@ def controller_decision_followup(
     until=(stamp+timedelta(minutes=12)).isoformat()
     return {
         "status":"upstream_decision_unverified",
+        "issuer_selection_basis":selection,
         "observed_issuer_app_id":app_id,
         "observed_issuer_label":label,
         "command_source_read":read,
