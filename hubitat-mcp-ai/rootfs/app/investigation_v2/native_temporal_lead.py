@@ -294,14 +294,17 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
         for event in sequence[:3]:
             span = event["seconds_after_command"]
             time = event["timestamp"]
+            relative = (f"{abs(span):.3f}s "
+                        + ("before" if span < 0 else "after")
+                        + " the command")
             if event["attribute"] in _ANCHORS:
                 details.append(
                     f"a `{event['attribute']}` event at {time} "
-                    f"({span:.3f}s after the command)")
+                    f"({relative})"
             elif event["attribute"] == "switch":
                 details.append(
                     f"a `switch={event['value']}` event at {time} "
-                    f"({span:.3f}s after the command)")
+                    f"({relative})"
             else:
                 minutes = int(span // 60)
                 seconds = span - minutes * 60
