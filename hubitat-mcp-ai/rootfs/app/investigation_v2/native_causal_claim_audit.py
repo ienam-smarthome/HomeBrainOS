@@ -11,6 +11,7 @@ from datetime import datetime
 import re
 from typing import Any, Mapping, Sequence
 from .native_evidence_coverage import _wall_time
+from .native_incident_cooccurrence import incident_state_cooccurrences
 
 # Claim-strength cues are assessed *after* the model answers, not for
 # interpreting the user's request or selecting a tool. They identify
@@ -167,6 +168,8 @@ def incident_attribution_packet(
             "printed_timezone_alignment_verified":False},
         "warning_occurrence_selected":occurrence,
         "warning_group_sample":warning_batch,
+        "warning_state_correlations":incident_state_cooccurrences(
+            witnesses, sorted(focus)),
         "device_caller_app_ids":sorted(app_summaries),
         "device_caller_names":{
             k:str(app_summaries[k].get("name") or "")[:70]
@@ -347,6 +350,31 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
                                 for x in states[:5])+
                       ". These are time-associated observations, not proof "
                       "of the initiating callback or network activity.")
+    correlation=packet.get("warning_state_correlations")
+    if isinstance(correlation, Mapping):
+        matched=correlation.get("warnings_with_nearby_state_in_returned_sample", 0)
+        analyzed=correlation.get("analyzed_warning_occurrences", 0)
+        occurrences=correlation.get("instances", [])
+        if isinstance(occurrences, list) and analyzed:
+            pieces.append(
+                "**Across individually observed warning occurrences:** "
+                +str(matched)+" of "+str(analyzed)+
+                " sampled warnings had a device-state event within "
+                +str(correlation.get("window_tolerance_ms", 2000))+
+                " ms by the printed source clocks. Repeated READs of the "
+                "same warning are counted once. A same-time device state is "
+                "not an app command, and does not prove a driver callback "
+                "caused the load.")
+            latest=occurrences[0] if occurrences else {}
+            states=latest.get("coincident_states",[]) if isinstance(latest,dict) else []
+            if states:
+                source_state=states[0]
+                pieces.append(
+                    "At the latest warning, "+str(source_state.get("name"))+
+                    "="+str(source_state.get("value"))+
+                    " was reported "+str(source_state.get("reported_absolute_gap_ms"))+
+                    " ms from the warning timestamp; source-clock "
+                    "alignment and the initiating mechanism remain unverified.")
     pieces.append(
         "**Remaining evidence gap:** The internal driver/app execution path, "
         "the source of the status changes, and measured hub CPU impact "
