@@ -174,7 +174,7 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
               f"the device reports {lead['anchor_attribute']}="
               f"{lead['anchor_text']}. These timestamps are "
               f"{lead['absolute_gap_seconds']} seconds apart "
-              f"(Read #{lead['command_read']} and #{lead['anchor_read']}).")
+              f"(Read #{lead['command_read']} and Read #{lead['anchor_read']}).")
     extra = ""
     if state:
         extra += f" The current driver reports healthStatus={state}."
