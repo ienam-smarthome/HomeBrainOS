@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.223**.
+Current add-on version: **0.18.224**.
+
+v0.18.224 refines source-verified, room-first device answers: no repeated lights, explicit unread-member scope, and separate displayed-answer validation from the model's unused fact-selection diagnostics. [Release notes](CHANGELOG-0.18.224.md).
 
 v0.18.223 preserves authoritative room names returned by `hub_list_rooms` instead of discarding the list, makes source-attested room lookup available to the V2 planning model, and rejects costly full-device enumeration once the original question has a verified room-name match and a live targeted room read is available. [Release notes](CHANGELOG-0.18.223.md).
 
