@@ -21,6 +21,16 @@ def factual_evidence_ledger(
 ) -> list[dict[str, Any]]:
     """Host-attested, finite factual claims with original read numbers."""
     focus = {str(x) for x in focus_ids}
+    callers = {
+        str(app.get("appId"))
+        for receipt in witnesses[:16]
+        if receipt.get("operation") == "hub_list_device_events"
+        and isinstance(receipt.get("read_filters"), Mapping)
+        and str(receipt["read_filters"].get("deviceId")) in focus
+        and isinstance(receipt.get("source_data"), Mapping)
+        for app in receipt["source_data"].get("issuer_apps", [])
+        if isinstance(app, Mapping) and str(app.get("appId")).isdecimal()
+    }
     facts: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
     bound = max(1, min(80, max_facts))
@@ -50,8 +60,9 @@ def factual_evidence_ledger(
                 key_field = ("deviceId" if mode == "devices" else
                              "appId" if mode == "apps" else None)
                 requested = str(filters.get(key_field) or "") if key_field else ""
-                if not requested.isdecimal() or (focus and mode == "devices"
-                                                 and requested not in focus):
+                if (not requested.isdecimal()
+                        or focus and mode == "devices" and requested not in focus
+                        or focus and mode == "apps" and requested not in callers):
                     continue
                 for row in stats.get("rows", [])[:30]:
                     if not isinstance(row, Mapping) or str(row.get("id")) != requested:
