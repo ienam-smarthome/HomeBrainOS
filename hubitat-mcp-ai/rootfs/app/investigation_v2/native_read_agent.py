@@ -1481,9 +1481,14 @@ async def run_native_read_agent(
     # to finish in the old 6s budget.
     planning_average_ms = (planning_model_ms / planning_model_calls
                            if planning_model_calls else 0)
-    can_afford_extra = narrative_followup_eligible(
-        planning_model_ms, planning_model_calls,
-        deadline - time.monotonic())
+    # Once a proposed explanation has been independently checked, do not
+    # ask the same model to rewrite rejected prose. Preserve the trusted
+    # source-backed answer instead of adding another inference request.
+    can_afford_extra = (
+        candidate_narrative is None
+        and narrative_followup_eligible(
+            planning_model_ms, planning_model_calls,
+            deadline - time.monotonic()))
     if (enable_verified_narrative and cases
             and verified_narrative.get("accepted") is not True
             and can_afford_extra):
@@ -1541,7 +1546,7 @@ async def run_native_read_agent(
                 (time.monotonic() - start_narrative) * 1000)
     if (enable_verified_narrative and cases
             and verified_narrative.get("accepted") is not True
-            and not can_afford_extra):
+            and not can_afford_extra and candidate_narrative is None):
         verified_narrative["reason"] = (
             "extra_call_skipped_slow_model"
             if planning_model_calls and planning_average_ms > 3000
