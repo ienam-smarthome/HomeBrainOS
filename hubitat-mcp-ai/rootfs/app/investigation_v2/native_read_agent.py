@@ -34,6 +34,8 @@ from .native_causal_claim_audit import (
     source_bound_incident_required,
 )
 from .native_source_readiness import source_read_summary, repeated_broad_log_scope
+from .native_source_followup import source_path_followup
+from .native_fact_ledger import factual_evidence_ledger
 from .native_read_contracts import read_contract_feedback
 from .native_metrics_evidence import project_metrics, project_memory_history
 from .native_evidence_coverage import (
@@ -991,6 +993,16 @@ async def run_native_read_agent(
                             "limitation",
                         ) if k in gap
                     }
+            if focus_ids and op in (
+                "hub_list_device_events", "hub_get_device", "hub_get_source",
+            ):
+                # Evidence-derived next action only. The model is free to
+                # choose another READ; all proposed operations are checked by
+                # the same host safety/identity contracts before execution.
+                next_source = source_path_followup(
+                    witnesses, sorted(focus_ids), verified_typed["driver"])
+                if next_source is not None:
+                    view["source_path_followup"] = next_source
             if name == "hub_search_tools" and repeated_discovery > 0:
                 view["discovery_advice"] = (
                     "This search repeats a previously seen tool set. "
@@ -1136,6 +1148,7 @@ async def run_native_read_agent(
     source_bound_incident = source_bound_incident_required(causal_packet)
     claim_ledger = (incident_claim_ledger(causal_packet)
                     if source_bound_incident and causal_packet else [])
+    factual_ledger = factual_evidence_ledger(witnesses, sorted(focus_ids))
     if source_bound_incident and causal_packet is not None:
         answer_text = evidence_safe_incident_explanation(causal_packet)
         synthesis_status = "source_bound_unattributed_incident"
@@ -1319,6 +1332,7 @@ async def run_native_read_agent(
             "causal_coverage_gap": causal_coverage_gap,
             "incident_attribution_evidence": causal_packet,
             "incident_claim_ledger": claim_ledger,
+            "factual_evidence_ledger": factual_ledger,
             "model_narrative_withheld_for_unattributed_incident": source_bound_incident,
             "unsupported_causal_ranking_withheld": rejected_causal_ranking,
             "repeated_discovery": repeated_discovery,
