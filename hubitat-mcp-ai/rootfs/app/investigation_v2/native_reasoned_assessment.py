@@ -42,7 +42,9 @@ def candidate_prompt() -> str:
         "A historical command followed by a brightness adjustment does "
         "not prove a light stayed on or that a motion timer failed. "
         "Select at least two DISTINCT attested events listed in "
-        "incident_evidence.material_event_examples and copy each exact "
+        "incident_evidence.material_event_examples or the independently "
+        "scoped incident_evidence.controller_decision_log_examples; "
+        "copy each exact "
         "read/name/date. Do not cite a tool result that merely mentions "
         "an app name or lists commands from a later date. "
         "The answer may rank a hypothesis as possible, not assert any "
@@ -94,7 +96,8 @@ def verify_natural_hypothesis(
         return reject("missing_independent_event_anchors")
     allowed = {
         (str(event["read"]), str(event["name"]), str(event["date"])): event
-        for event in coverage.get("material_event_examples", [])
+        for event in (list(coverage.get("material_event_examples", []))
+                      + list(coverage.get("controller_decision_log_examples", [])))
         if isinstance(event, Mapping)
         and type(event.get("read")) is int
         and isinstance(event.get("name"), str)
@@ -105,7 +108,8 @@ def verify_natural_hypothesis(
         if not isinstance(event, Mapping):
             return reject("invalid_event_anchor")
         required = {"read", "name", "date"}
-        optional = {"value", "source_name", "source_kind"}
+        optional = {"value", "source_name", "source_kind",
+                    "source_clock_verified"}
         if not required.issubset(event) or not set(event).issubset(required | optional):
             return reject("invalid_event_anchor")
         if type(event["read"]) is not int:
@@ -129,6 +133,7 @@ def verify_natural_hypothesis(
     # question, source anchors or independently observed source names.
     reference_text = " ".join(
         [" ".join(map(str, row)) for row in allowed]
+        + [str(allowed[key].get("value") or "") for key in chosen]
         + [str(name) for name in observed_source_names]
     )
     if any(num not in reference_text for num in _NUMBER.findall(hypothesis)):
