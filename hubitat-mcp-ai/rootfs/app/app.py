@@ -1469,13 +1469,14 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
             raise HTTPException(status_code=404, detail="V2 test mode is disabled") from None
         raise HTTPException(status_code=403, detail="V2 test authorization failed") from None
 
-    # V2 is a general model-led READ agent. An independent, negative-only
-    # admission gate rejects explicit affirmative Hubitat write requests,
-    # rather than reusing production fast-control routing as a precondition
-    # for all natural-language investigations. The live manifest/executor
-    # also enforce READ effects, regardless of this admission decision.
-    # Reject clear writes before inventory/AI/MCP, including Advanced IDs.
-    if incompatible_v2_control_request(payload.question):
+    # Native V2 no longer runs any word-based intent admission before AI.
+    # Every question reaches its model's ordinary read-tool planning pass,
+    # which can choose the navigation-only control handoff. Host READ-only
+    # manifest/effect/argument guards remain mandatory; the model cannot
+    # issue commands even if it misinterprets the user. Legacy comparison V2
+    # retains its established explicit-write preflight for compatibility.
+    if (payload.agent_mode != "native_reads"
+            and incompatible_v2_control_request(payload.question)):
         raise HTTPException(
             status_code=409,
             detail={
@@ -1991,11 +1992,25 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
         return result
 
     # Separate coordinator key: never cancel or reuse a production chat.
-    return await request_coordinator.run(
+    result = await request_coordinator.run(
         "investigation-v2-test-exclusive", experiment(),
         connection=connection, request_id=uuid.uuid4().hex,
         deadline_seconds=240,
     )
+    if isinstance(result, dict) and result.get("answer_mode") == "v2_control_handoff":
+        # Model-chosen intent interpretation. No write authority, no
+        # regex-derived device command, and no question rewrite.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "v2_control_not_supported",
+                "message": result["answer"]["text"],
+                "interpretation": "model_selected_control_handoff",
+                "reads_executed": result.get("native_diagnostics", {}).get(
+                    "reads_executed", 0),
+            },
+        )
+    return result
 
 
 @app.post("/api/chat")
