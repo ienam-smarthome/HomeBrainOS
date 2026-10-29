@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.226**.
+Current add-on version: **0.18.227**.
+
+v0.18.227 removes the pre-AI keyword-based rejection gate for Native Investigation V2. AI interprets every question in the normal model planning pass, with a local navigation-only handoff tool for real control requests. The server still enforces READ-only MCP execution regardless of AI intent. [Release notes](CHANGELOG-0.18.227.md).
 
 v0.18.226 upgrades verified temporal leads to join actual device-produced `lastSeen`, `switch`, and subsequent `healthStatus` event timestamps without asserting physical action or causation; it also recognises app metadata already read. [Release notes](CHANGELOG-0.18.226.md).
 
