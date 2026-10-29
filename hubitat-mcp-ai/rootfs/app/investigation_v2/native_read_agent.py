@@ -2123,7 +2123,8 @@ async def run_native_read_agent(
             "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
                 not source_bound_incident
-                and readiness["distinct_verified_fact_kinds"] >= 2
+                and not host_incident_gap_published
+                and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
                 "requested_incident_evidence_gap" if host_incident_gap_published
