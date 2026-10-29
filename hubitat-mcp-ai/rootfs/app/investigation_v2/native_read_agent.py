@@ -1316,6 +1316,19 @@ async def run_native_read_agent(
     readiness = evidence_readiness(
         witnesses, claim_catalog(witnesses, sorted(focus_ids)),
         stop_reason=reason)
+    # A complete, independently ID-joined device group already contains the
+    # entire bounded answer vocabulary. Do not spend up to eight seconds
+    # requesting a second model-only claim selection which could only select
+    # a subset of source facts or return malformed JSON. The model remains
+    # responsible for choosing the names and all READ operations.
+    complete_group_evidence = (
+        entity_group_answer(named_identity_lookups, witnesses)
+        if not focus_ids and
+        not (preliminary_incident is not None
+             and source_bound_incident_required(preliminary_incident))
+        else None)
+    if not answer_text and complete_group_evidence is not None:
+        final_synthesis_skipped_reason = "complete_verified_entity_group"
     if (not answer_text and preliminary_incident is not None
             and source_bound_incident_required(preliminary_incident)
             and preliminary_incident.get("scoped_event_history_available")):
