@@ -336,13 +336,21 @@ def temporal_lead_brief(lead: Mapping[str, Any]) -> str:
         if config else
         "Inspect the issuing app's actual rule actions, execution logs "
         "and the plug's power/network communication.")
+    switch_confirmed_in_hub = any(
+        item.get("attribute") == "switch" for item in sequence)
+    switch_limit = (
+        "Hubitat's recorded switch-state event strengthens the observed "
+        "sequence, but does not prove power physically switched at the outlet. "
+        if switch_confirmed_in_hub else
+        "No independently sourced switch-state event was matched to the "
+        "command in the returned history; a command alone is not actuation proof. "
+    )
     return (
         header + "\n\n**Assessment:** This command is a strong "
-        "chronological lead, **not a verified cause** of physical power loss. A recorded "
-        "switch-state event strengthens the Hubitat-side sequence but "
-        "does not prove power actually switched at the outlet. Subsequent "
-        "health reports may be driver/watchdog-generated, not fresh "
-        "device traffic; historical coverage is incomplete. "
+        "chronological lead, **not a verified cause** of physical power loss. "
+        + switch_limit
+        + "Subsequent health reports may be driver/watchdog-generated, "
+        "not fresh device traffic; historical coverage is incomplete. "
         + next_check
     )
 
