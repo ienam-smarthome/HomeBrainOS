@@ -40,6 +40,35 @@ def factual_evidence_ledger(
         if type(read) is not int or not isinstance(data, Mapping):
             continue
         if op == "hub_get_logs":
+            # Native Logs-page device/app runtime stats use this same READ
+            # operation; do not discard them as malformed severity log rows.
+            stats = data.get("runtime_stats")
+            filters = w.get("read_filters")
+            filters = filters if isinstance(filters, Mapping) else {}
+            if isinstance(stats, Mapping):
+                mode = stats.get("mode")
+                key_field = ("deviceId" if mode == "devices" else
+                             "appId" if mode == "apps" else None)
+                requested = str(filters.get(key_field) or "") if key_field else ""
+                if not requested.isdecimal() or (focus and mode == "devices"
+                                                 and requested not in focus):
+                    continue
+                for row in stats.get("rows", [])[:30]:
+                    if not isinstance(row, Mapping) or str(row.get("id")) != requested:
+                        continue
+                    values = {k: row[k] for k in ("pct", "total", "count")
+                              if type(row.get(k)) in (int, float)}
+                    if values:
+                        add({
+                            "kind": "cumulative_runtime_stats",
+                            "evidence_reads": [read],
+                            "source_kind": mode, "source_id": requested,
+                            "metrics": values,
+                            "limits": (
+                                "Logs-page performance snapshot, not the "
+                                "device/app's measured CPU at any past warning."),
+                        }, (op, mode, requested, tuple(sorted(values.items()))))
+                continue
             summary = data.get("log_summary")
             if not isinstance(summary, Mapping):
                 continue
