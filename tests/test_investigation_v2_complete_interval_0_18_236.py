@@ -86,7 +86,7 @@ def test_cannot_treat_evening_mode_off_as_a_completed_heating_cycle():
     text=incomplete_interval_answer(c)
     assert "Unable to verify a complete cycle" in text
     assert "battery" not in text
-    assert "22:30" not in text  # Mention generic mode; never infer an event time.
+    assert "22:30" in text  # This is a returned history boundary, not the cycle cause.
     assert complete_interval_coverage("Is the battery healthy?",
                                       witnessed(incomplete_events()),["4382"]) is None
     assert requires_complete_interval(QUESTION)
