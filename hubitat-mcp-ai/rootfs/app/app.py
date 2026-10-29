@@ -1501,6 +1501,7 @@ async def v2_test(payload: V2TestRequest, connection: Request) -> dict[str, Any]
                 result = await run_native_read_agent(
                     question=payload.question, chat=agent.transport.chat,
                     mcp=mcp, executor=agent.executor,
+                    enable_verified_narrative=True,
                 )
             except asyncio.CancelledError:
                 raise
