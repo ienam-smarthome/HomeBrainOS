@@ -36,7 +36,7 @@ _CLASSES = {
 def evidence_readiness(
     witnesses: Sequence[Mapping[str, Any]],
     catalog: Sequence[Mapping[str, Any]],
-    *, stop_reason: str,
+    *, stop_reason: str, incident_evidence_present: bool | None = None,
 ) -> dict[str, Any]:
     """Report a coverage proxy, NOT a semantic-accuracy or completeness score.
 
@@ -60,6 +60,7 @@ def evidence_readiness(
         and len(source_ops) >= 2
         and len(catalog) >= 3
         and len(fact_kinds) >= 2
+        and incident_evidence_present is not False
     )
     return {
         "host_factual_brief_ready": ready,
@@ -67,6 +68,7 @@ def evidence_readiness(
         "distinct_verified_fact_kinds": len(fact_kinds),
         "verified_catalog_facts": len(catalog),
         "accuracy_or_v1_superiority_measured": False,
+        "dated_incident_evidence_present": incident_evidence_present,
         "limitations": (
             "These are evidence-coverage and completion proxies, not "
             "answer relevance, reasoning correctness or proof of "
