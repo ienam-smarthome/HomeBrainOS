@@ -186,7 +186,8 @@ async def test_model_one_extra_round_after_wrong_event_window_gets_app_issuer():
     assert d["causal_coverage_gap"] is None
     assert d["redundant_log_subsets"]==1
     assert d["verified_typed_ids"]["app"]==["4080"]
-    assert "model_claims_not_atomically_verified" in result["answer"]["validation_issues"]
+    assert "unstructured_or_unsupported_claims_withheld" in result["answer"]["validation_issues"]
+    assert result["native_diagnostics"]["claim_publication"]["model_prose_published"] is False
     assert "historical_coverage_unverified" in result["answer"]["validation_issues"]
     # The simulated diagnostics read deliberately lacks some typed metrics
     # structure, and that separate uncertainty must remain visible.
