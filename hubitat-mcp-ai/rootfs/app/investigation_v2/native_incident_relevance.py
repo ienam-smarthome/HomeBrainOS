@@ -18,7 +18,10 @@ from .temporal_scope import explicit_incident_window
 # stayed on during a different period. These are generic observation kinds.
 _MATERIAL_EVENTS = frozenset({
     "switch", "level", "motion", "presence", "occupancy",
-    "illuminance", "contact", "power",
+    "illuminance", "contact", "power", "temperature", "humidity",
+    "heatingSetpoint", "coolingSetpoint", "thermostatSetpoint",
+    "thermostatMode", "thermostatOperatingState", "fanMode",
+    "valve", "position", "energy", "battery",
 })
 _MATERIAL_COMMANDS = frozenset({
     "on", "off", "setlevel", "toggle", "dim", "startlevelchange",
