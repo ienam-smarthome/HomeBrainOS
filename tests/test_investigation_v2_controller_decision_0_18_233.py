@@ -92,7 +92,14 @@ async def test_model_selects_verified_app_logs_after_device_history():
             return {"tool_calls":[native("hub_read_diagnostics",{"tool":"hub_get_logs","args":{"appId":"3970","mode":"past","since":"2026-10-29T14:42:00+00:00","until":"2026-10-29T15:06:00+00:00"}})]}
         assert step==4
         assert "controller_decision_log_examples" in messages[-1]["content"]
-        return {"content":"The scheduler recorded that radiator demand was satisfied."}
+        return {"content":json.dumps({
+            "hypothesis":"The scheduler reports radiator demand satisfied at 22.0°C before heating stopped.",
+            "confidence":"possible",
+            "supporting_events":[
+                {"read":1,"name":"thermostatOperatingState","date":"2026-10-29T14:54:36.587+00:00"},
+                {"read":2,"name":"app_log","date":"2026-10-29 14:54:18.073"}],
+            "alternative":"Other automation inputs may have influenced demand.",
+            "next_check":"Verify the radiator reading independently."})}
     out=await run_native_read_agent(question=QUESTION,chat=model,mcp=mcp,
                  executor=executor,max_rounds=4,max_reads=3,enable_model_reasoned_assessment=True)
     assert step==4 and len(executor.calls)==2
