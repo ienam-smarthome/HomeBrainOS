@@ -102,7 +102,14 @@ def test_attested_off_command_near_reported_last_seen_is_lead_not_cause():
     lambda rs: rs[0]["read_filters"].update({"deviceId": "9999"}),
     lambda rs: rs[0]["source_data"]["attributes"][0].update(
         {"value": "unknown"}),
-    lambda rs: rs[1]["source_data"].update({"issuer_apps": []}),
+    # A source-projected direct event can now verify a command even
+    # when the five-sample issuer summary is empty. Remove BOTH real
+    # source paths when testing an absent command.
+    lambda rs: rs[1]["source_data"].update({
+        "issuer_apps": [],
+        "events": [event for event in rs[1]["source_data"]["events"]
+                   if not event["name"].startswith("command-")],
+    }),
 ])
 def test_unmatched_or_missing_source_identity_cannot_create_timing_lead(mutation):
     rs = receipts()
@@ -115,6 +122,12 @@ def test_unrelated_and_unverifiable_timestamps_cannot_create_timing_lead():
     for issuer in rs[1]["source_data"]["issuer_apps"]:
         for sample in issuer["samples"]:
             sample["date"] = "2026-10-10T08:00:00+0000"
+    # The complete projected event page is a second independent source
+    # path. Move the command timestamps there too for this no-nearby-
+    # command test; otherwise the new interpreter correctly finds them.
+    for event in rs[1]["source_data"]["events"]:
+        if event["name"].startswith("command-"):
+            event["date"] = "2026-10-10T08:00:00+0000"
     assert verified_temporal_lead(rs, ["7103"]) is None
     rs = receipts()
     assert verified_temporal_lead(rs, ["7103", "8000"]) is None
