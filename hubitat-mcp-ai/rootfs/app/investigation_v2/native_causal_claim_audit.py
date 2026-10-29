@@ -298,12 +298,21 @@ def evidence_safe_incident_explanation(packet: Mapping[str,Any]) -> str:
     ]
     grouped=packet.get("warning_group_sample",{})
     if packet.get("warning_occurrence_selected") and grouped:
-        pieces.append(
-            "This is one observed warning timestamp in a sampled group of "
-            +str(grouped.get("sampled_rows") or "unknown")+
-            " warning rows spanning "+str(grouped.get("oldest_returned"))+
-            " to "+str(grouped.get("newest_returned"))+
-            ". The gap between those rows is not evidence of continuous load.")
+        count=grouped.get("sampled_rows")
+        if type(count) is int and count == 1:
+            pieces.append(
+                "Only one warning row appears in the returned sample at "
+                +str(grouped.get("oldest_returned"))+
+                ". A single sampled warning cannot establish whether "
+                "the load continued before or afterwards.")
+        else:
+            pieces.append(
+                "This is one observed warning timestamp in a sampled group of "
+                +str(count or "unknown")+
+                " warning rows spanning "+str(grouped.get("oldest_returned"))+
+                " to "+str(grouped.get("newest_returned"))+
+                ". Gaps between sampled warnings are not evidence of "
+                "continuous load.")
     if callers:
         pieces.append("Verified command issuers in the sampled device "
                       "history: "+", ".join(callers)+
