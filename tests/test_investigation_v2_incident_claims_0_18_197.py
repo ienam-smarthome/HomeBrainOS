@@ -206,7 +206,7 @@ async def test_live_shaped_model_conclusion_is_withheld_when_causally_ranked():
     assert result["answer"]["human_review_required"] is True
     assert "The most material offender" not in result["answer"]["text"]
     assert "What caused the warning? Not yet established." in result["answer"]["text"]
-    assert "cause remains unverified" in result["answer"]["text"].lower()
+    assert "Remaining evidence gap:" in result["answer"]["text"]
     assert len(executor.calls)==2
 
 
