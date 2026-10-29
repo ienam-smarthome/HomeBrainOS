@@ -50,6 +50,16 @@ def _warning_ranges(witnesses: Sequence[Mapping[str, Any]],
                 continue
             if newest < oldest:
                 oldest, newest = newest, oldest
+            # For a grouped WARN, correlate only an observed occurrence.
+            # The full oldest-newest range could contain hours of quiet time.
+            discrete = [
+                _wall_time(v) for v in item.get("sample_timestamps", [])[:48]
+                if isinstance(v, str)
+            ]
+            discrete = sorted(t for t in discrete if t is not None)
+            selected = discrete[-1] if discrete else None
+            if selected is not None:
+                oldest = newest = selected
             message = item.get("message", "")
             match = _METHOD.search(str(message))
             method = match.group(1) if match else None
@@ -60,8 +70,16 @@ def _warning_ranges(witnesses: Sequence[Mapping[str, Any]],
             groups.append({
                 "start": oldest, "end": newest,
                 "method": method, "read": w.get("read"),
-                "start_text": item.get("oldest_returned"),
-                "end_text": item.get("newest_returned"),
+                "start_text": (
+                    selected.isoformat() if selected is not None
+                    else item.get("oldest_returned")),
+                "end_text": (
+                    selected.isoformat() if selected is not None
+                    else item.get("newest_returned")),
+                "warning_group_oldest": item.get("oldest_returned"),
+                "warning_group_newest": item.get("newest_returned"),
+                "warning_group_count": item.get("count"),
+                "single_observed_occurrence": selected is not None,
             })
     # Narrow, explicitly named method warnings are the best source-grounded
     # discriminator. Generic load warnings should not crowd them out.
