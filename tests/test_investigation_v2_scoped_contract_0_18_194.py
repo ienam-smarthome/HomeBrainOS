@@ -60,8 +60,10 @@ def test_unscoped_device_history_is_not_substituted_for_verified_device():
     assert target_history_scope_problem(
         "hub_list_device_events",{"mode":"hub","limit":100},
         ["7934"],WARN_RECEIPT) is None
+    # Once a unique device target is resolved, even a pre-WARN unscoped
+    # event read would return unrelated hub history, not its device events.
     assert target_history_scope_problem(
-        "hub_list_device_events",{"limit":100},["7934"],[]) is None
+        "hub_list_device_events",{"limit":100},["7934"],[]) == "target_device_history_scope_missing"
     assert target_history_scope_problem(
         "hub_list_device_events",{"limit":100},[],WARN_RECEIPT) is None
     assert target_history_scope_problem(
