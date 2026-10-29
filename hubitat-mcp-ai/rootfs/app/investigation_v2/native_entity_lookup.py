@@ -96,8 +96,27 @@ def choose_device(name: str, identities: Any) -> dict[str, Any]:
         unique = list({item["id"]: item for item in prefixes}.values())
         if len(unique) == 1:
             return {"status": "unique", "matches": unique}
-        if unique:
-            return {"status": "ambiguous", "matches": unique[:8]}
+        # Several distinct labels with an identical requested leading
+        # prefix represent independently sourced *candidate devices*, not
+        # conflicting exact identities. Keep an exact-name collision above
+        # as ambiguous; never silently choose a member of either set.
+        if 1 < len(unique) <= 8:
+            return {
+                "status": "candidate_group", "matches": unique,
+                "group_membership_verified": False,
+                "match_basis": "source_name_prefix",
+                "limits": "All candidates have individually attested IDs "
+                          "and a matching leading name prefix, but their "
+                          "room membership, capability and actual state "
+                          "remain unverified until separately read.",
+            }
+        if len(unique) > 8:
+            return {
+                "status": "candidate_group_too_large", "matches": [],
+                "count": len(unique),
+                "limits": "Too many independently named prefix candidates; "
+                          "refine the subject instead of loading all devices.",
+            }
     # A user's collective name can denote several independently named
     # devices (e.g. "kitchen lights" -> "Kitchen Light 1/2"). Return
     # candidates only when all *leading* source-name tokens agree after
