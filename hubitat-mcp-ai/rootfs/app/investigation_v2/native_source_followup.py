@@ -30,21 +30,6 @@ def source_path_followup(
     )
     if not warning:
         return None
-    source_reads = [
-        w for w in witnesses if w.get("operation") == "hub_get_source"
-    ]
-    if any(w.get("source_data", {}).get("source_complete") is True
-           for w in source_reads):
-        return {
-            "status": "complete_source_structure_available",
-            "limits": "Static code does not establish callback execution or hub CPU contribution.",
-        }
-    if source_reads:
-        return {
-            "status": "source_read_already_attempted_without_complete_code",
-            "limits": "Do not repeat the same metadata-only source read. A different "
-                      "source endpoint, complete page or runtime profile is required.",
-        }
     config_reads = [
         w for w in witnesses
         if w.get("operation") == "hub_get_device"
@@ -55,6 +40,28 @@ def source_path_followup(
         identity = w.get("source_data", {}).get("device_identity", {})
         driver_id = str(identity.get("driverId") or "")
         if driver_id and driver_id in driver_ids:
+            # Only source for this specific device's independently identified
+            # driver qualifies. An app source, or a driver used by another
+            # device, cannot close the device-driver execution-path gap.
+            matching_reads = [
+                item for item in witnesses
+                if item.get("operation") == "hub_get_source"
+                and item.get("source_data", {}).get("requested_source_type") == "driver"
+                and str(item.get("source_data", {}).get("requested_source_id")) == driver_id
+            ]
+            if any(item.get("source_data", {}).get("source_complete") is True
+                   for item in matching_reads):
+                return {
+                    "status": "complete_source_structure_available",
+                    "limits": "Static code does not establish callback execution "
+                              "or hub CPU contribution.",
+                }
+            if matching_reads:
+                return {
+                    "status": "source_read_already_attempted_without_complete_code",
+                    "limits": "Do not repeat the same metadata-only driver read. "
+                              "A complete page or runtime profile is required.",
+                }
             return {
                 "status": "verified_driver_identity_available",
                 "evidence_read": w.get("read"),
