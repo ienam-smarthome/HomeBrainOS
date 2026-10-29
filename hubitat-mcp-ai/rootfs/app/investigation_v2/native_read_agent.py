@@ -1262,7 +1262,24 @@ async def run_native_read_agent(
     # source-bound report; every other investigation receives a general
     # claim-gated, host-authored response, including legacy model prose.
     validated_catalog = claim_catalog(witnesses, sorted(focus_ids))
-    publication = publish_verified_claims(model_claim_proposal, validated_catalog)
+    if source_bound_incident:
+        # No model selection is necessary or used for the source-authoritative
+        # incident assessment. A skipped model synthesis is NOT a failed
+        # structured-claim response and must not be reported as one.
+        publication = {
+            "validation": {
+                "status": "host_authoritative_incident",
+                "accepted": [], "rejected": [],
+            },
+            "fallback": False, "published_claims": [],
+            "limits": (
+                "Host-authored generic incident report uses independently "
+                "verified source receipts; no model claims are published."
+            ),
+        }
+    else:
+        publication = publish_verified_claims(
+            model_claim_proposal, validated_catalog)
     # Model synthesis and publication validation are distinct diagnostic
     # stages. Preserve the former for replay/latency comparisons while only
     # the independently checked publication reaches the final report.
@@ -1430,7 +1447,10 @@ async def run_native_read_agent(
     if rejected_causal_ranking:
         validation_issues.append("unsupported_causal_ranking_withheld")
     if source_bound_incident:
-        validation_issues.append("unattributed_incident_model_narrative_withheld")
+        validation_issues.append(
+            "unattributed_incident_model_narrative_withheld"
+            if model_claim_proposal is not None
+            else "source_authoritative_unattributed_incident")
     if causal_coverage_gap is not None:
         gap_kind = causal_coverage_gap.get("kind")
         validation_issues.append(
@@ -1469,6 +1489,9 @@ async def run_native_read_agent(
             "factual_evidence_ledger": factual_ledger,
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
+                "authority": (
+                    "host_incident_receipts" if source_bound_incident
+                    else "validated_model_selection"),
                 "status": publication["validation"]["status"],
                 "accepted_count": len(publication["validation"]["accepted"]),
                 "rejected_reasons": publication["validation"]["rejected"][:20],
