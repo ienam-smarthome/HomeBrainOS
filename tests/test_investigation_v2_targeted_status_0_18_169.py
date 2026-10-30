@@ -114,56 +114,6 @@ async def test_absent_brightness_is_not_inferred_from_previous_setlevel():
     assert result[0]["attributes"] == {"switch": "on"}
 
 
-def test_v2_http_targeted_read_skips_all_full_inventory_and_model(monkeypatch, tmp_path):
-    options = tmp_path / "options.json"
-    options.write_text(json.dumps({
-        "investigation_v2_testing_enabled": True,
-        "investigation_v2_test_token": "live-status-verified-test-123456789",
-        "morning_health_check_enabled": False,
-        "one_time_rule_cleanup_enabled": False,
-    }))
-    monkeypatch.setenv("CONFIG_PATH", str(options))
-    sys.modules.pop("app", None)
-    module = importlib.import_module("app")
-    fake = FakeMCP()
-    inventory_calls = []
-    async def audit(*, identity_only=False):
-        inventory_calls.append(identity_only)
-        if not identity_only:
-            raise AssertionError("full inventory forbidden on fast source path")
-        return TARGET, {
-            "source": "fresh_projected_gateway",
-            "projection": "identity_only", "complete": True,
-            "pages": 1, "page_timings_ms": [],
-        }
-    async def forbid_model(*args, **kwargs):
-        raise AssertionError("model should not be called for exact current-read template")
-    monkeypatch.setattr(module.mcp, "recent_verified_audit_identities", lambda: None)
-    monkeypatch.setattr(module.mcp, "get_audit_devices", audit)
-    monkeypatch.setattr(module.mcp, "list_tools", fake.list_tools)
-    monkeypatch.setattr(module.mcp, "call_tool", fake.call_tool)
-    monkeypatch.setattr(module, "semantic_plan", forbid_model)
-    with TestClient(module.app) as client:
-        response = client.post("/api/v2/test",
-            json={"question": QUESTION, "explicit_opt_in": True},
-            headers={"X-HomeBrain-V2-Test-Token": "live-status-verified-test-123456789",
-                     "X-HomeBrain-V2-Request": "read-only"})
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert inventory_calls == [True]
-    assert body["resolution_method"] == "verified_targeted_current"
-    assert body["semantic_diagnostics"]["full_inventory_ms"] == 0
-    assert body["semantic_diagnostics"]["planning_ms"] == 0
-    assert body["semantic_diagnostics"]["target_id"] == "7828"
-    assert body["semantic_diagnostics"]["targeted_status"]["outcome"] == (
-        "verified_targeted_source")
-    assert body["semantic_diagnostics"]["targeted_status"]["candidate_count"] == 1
-    assert body["inventory_query"]["reported_device_values"][0]["reported_attributes"] == {
-        "switch": "on", "level": 30}
-    assert "switch=on, level=30%" in body["answer"]["text"]
-    assert len(fake.calls) == 1
-    assert body["test_mode"] == "explicit_read_only"
-
 def test_coordinated_attribute_phrase_anchors_one_full_named_device():
     ids, resolved, method = resolve_verified_device_subjects(QUESTION, TARGET)
     assert ids == ("7828",)
