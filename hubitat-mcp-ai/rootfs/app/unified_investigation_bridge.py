@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any, Mapping, Sequence
 
 from investigation_v2.native_event_narrative import event_narrative_evidence
@@ -24,6 +25,24 @@ def _time(value: Any) -> datetime | None:
         return dt.astimezone(timezone.utc) if dt.tzinfo is not None else None
     except (TypeError, ValueError, OverflowError):
         return None
+
+
+_EXPLICIT_CLOCK_RANGE = re.compile(
+    r"\\b(?:between|from)\\s+(\\d{1,2}):(\\d{2})\\s*"
+    r"(?:and|to|[-–])\\s*(\\d{1,2}):(\\d{2})\\b", re.I)
+
+
+def _in_user_period(when: datetime, question: str, incident: Any) -> bool:
+    if incident is not None and not incident.contains(when.isoformat()):
+        return False
+    found = _EXPLICIT_CLOCK_RANGE.search(question)
+    if found:
+        h1, m1, h2, m2 = map(int, found.groups())
+        start, end = h1 * 60 + m1, h2 * 60 + m2
+        if h1 < 24 and h2 < 24 and m1 < 60 and m2 < 60 and end > start:
+            minute = when.hour * 60 + when.minute
+            return start <= minute <= end
+    return True
 
 
 def _args(receipt: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -111,7 +130,7 @@ def collect_unified_evidence(
             })
             for e in projected["events"]:
                 when = _time(e.get("date"))
-                if when is None or (incident and not incident.contains(e["date"])):
+                if when is None or not _in_user_period(when, question, incident):
                     continue
                 all_events.append({**e, "device_id": device_id,
                                    "read": index, "when": when})
@@ -119,7 +138,7 @@ def collect_unified_evidence(
             for e in rows:
                 when = _time(e.get("date"))
                 if (e.get("name") == "mode" and when is not None
-                        and (incident is None or incident.contains(e["date"]))):
+                        and _in_user_period(when, question, incident)):
                     modes.append({"read": index, "date": e["date"],
                                   "value": str(e.get("value") or "")[:55]})
             witnessed.append({
