@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.266**.
+Current add-on version: **0.18.267**.
+
+**V3 collector-reception integrity:** When independently source-verified light state has a matching collector copy, the historical investigation now compares sensor and light *reception times on the same collector* without fabricating a sensor source time. The digest identifies complete one-to-one reception patterns, separates full archive retrieval counts from compact receipt samples, and never sums overlapping per-query gap counts as distinct outages. No changes to tool permissions, publication boundary, or control actions. [Release notes](CHANGELOG-0.18.267.md).
 
 **V3 final-synthesis witness handoff:** A qualifying journal-backed multi-target investigation now receives the versioned shadow claim format request directly after its final synthesis instructions. Privacy-safe counters distinguish first-draft claim emission from later repair and terminal publication. Legacy digest fallback and attribution safeguards are unchanged. [Release notes](CHANGELOG-0.18.266.md).
 
