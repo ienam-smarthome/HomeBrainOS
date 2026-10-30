@@ -3562,6 +3562,11 @@ class UnifiedMCPAgent:
         if checkpoint is None:
             return False
         messages.append({"role": "user", "content": checkpoint})
+        # Count only an actual model-visible recovered-journal offer; a
+        # missing claim envelope means something different if no pilot was
+        # ever shown to the model. Do not store witness IDs or prompt text.
+        if "HOST OPTIONAL SHADOW CLAIM ATTESTATION" in checkpoint:
+            increment_active_metric("v3_claim_pilot_recovery_offered")
         increment_active_metric("causal_journal_discovery_checkpoint")
         return True
 
