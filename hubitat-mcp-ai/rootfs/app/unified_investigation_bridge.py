@@ -394,10 +394,10 @@ def verified_group_timeline(
 
 
 _TIMELINE_HEADING = re.compile(
-    r"(?im)^#{2,5}\\s*\\**(?:chronological (?:timeline|events)|"
+    r"(?im)^#{2,5}\s*\**(?:chronological (?:timeline|events)|"
     r"event timeline|timeline of events|verified device-transition timeline)"
-    r"\\**[^\\n]*$")
-_NEXT_HEADING = re.compile(r"(?m)^#{2,5}\\s+.*$")
+    r"\**[^\n]*$")
+_NEXT_HEADING = re.compile(r"(?m)^#{2,5}\s+.*$")
 
 
 def _strip_model_timeline(message: str) -> str:
@@ -449,7 +449,7 @@ def reconcile_unified_investigation_answer(
         # survive beside a source-attested correction that contradicts it.
         # Keep any remaining model findings and app-log limitations, but
         # replace the unsafe causal section with a precise interpretation.
-        causal = re.search(r"(?im)^#{2,4}\\s*\\**Causal Analysis\\**[^\\n]*$", text)
+        causal = re.search(r"(?im)^#{2,4}\s*\**Causal Analysis\**[^\n]*$", text)
         if causal:
             next_section = _NEXT_HEADING.search(text, causal.end())
             text = (text[:causal.start()].rstrip()
