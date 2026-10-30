@@ -117,8 +117,9 @@ def complete_interval_coverage(
     found.sort(key=lambda row:row["end"]["date"],reverse=True)
     complete=bool(found)
     return {
-        "status":"complete_source_reported_interval_observed"
-                 if complete else "complete_interval_not_established",
+        "status":("complete_source_reported_interval_observed"
+                  if complete else "complete_interval_not_established"
+                  if reads else "target_history_not_read"),
         "explicit_interval_requirement":True,
         "target_device_id":focus,
         "complete_interval_count":len(found),
@@ -141,9 +142,31 @@ def complete_interval_coverage(
     }
 
 
-def incomplete_interval_answer(coverage: Mapping[str,Any] | None) -> str | None:
-    if coverage is None or coverage.get("status")!="complete_interval_not_established":
+def incomplete_interval_answer(
+    coverage: Mapping[str,Any] | None,
+    *,
+    read_failures: Sequence[Mapping[str,Any]] = (),
+) -> str | None:
+    if coverage is None or coverage.get("status") not in (
+            "complete_interval_not_established","target_history_not_read"):
         return None
+    if coverage["status"]=="target_history_not_read":
+        timeouts=sum(1 for f in read_failures
+                     if f.get("code")=="read_timeout")
+        leading=(
+            "**Unable to investigate: MCP reads timed out.** "
+            if timeouts else
+            "**Unable to investigate: no device history retrieved.** "
+        )
+        return (
+            leading+"No source-reported start/stop history was successfully "
+            "retrieved for the target device. This is a tool-access or "
+            "investigation-coverage failure, **not evidence that no complete "
+            "cycle occurred**. I cannot identify the most recent cycle, "
+            "the initiating sensor, or why it stopped. Check the read-only "
+            "MCP connection and retrieve device-event history before "
+            "attempting a causal conclusion."
+        )
     windows=coverage.get("source_windows") or []
     row=windows[-1] if windows else {}
     oldest=row.get("oldest_returned")
