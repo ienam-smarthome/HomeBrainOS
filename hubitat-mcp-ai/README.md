@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.265**.
+Current add-on version: **0.18.266**.
+
+**V3 final-synthesis witness handoff:** A qualifying journal-backed multi-target investigation now receives the versioned shadow claim format request directly after its final synthesis instructions. Privacy-safe counters distinguish first-draft claim emission from later repair and terminal publication. Legacy digest fallback and attribution safeguards are unchanged. [Release notes](CHANGELOG-0.18.266.md).
 
 **V3 claim pilot recovery handoff:** The optional source-witness attestation prompt is now shared between initial synthesis evidence and later recovered-journal checkpoints, with a diagnostic counter distinguishing whether the recovery offer was actually delivered. Publication safety remains unchanged. [Release notes](CHANGELOG-0.18.265.md).
 
