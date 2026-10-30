@@ -108,7 +108,7 @@ def event_narrative_evidence(
         if (str(ident) in scoped_ids and isinstance(label, str)
                 and label.strip()):
             device_names[str(ident)] = re.sub(
-                r"[\\x00-\\x1f\\x7f<>]", "", label)[:90]
+                r"[\x00-\x1f\x7f<>]", "", label)[:90]
     for w in witnesses:
         if w.get("operation") != "hub_get_device":
             continue
