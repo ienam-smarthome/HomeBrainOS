@@ -34,6 +34,21 @@ def journal(tmp_path, **kw):
     return j
 
 
+def recently_attested():
+    # Synthetic recent page: old October events must not be treated as
+    # fresh activity. Only newly anchored, independent receipts qualify.
+    rows = actual_partial_receipts()
+    end = datetime.now(timezone.utc) - timedelta(minutes=2)
+    index = 0
+    for r in rows:
+        if r.get("sub_tool") != "hub_list_device_events":
+            continue
+        for event in r.get("details", {}).get("observedEvents", []):
+            index += 1
+            event["date"] = (end - timedelta(minutes=index)).isoformat()
+    return rows
+
+
 def app_packet(app_id, msg, level="debug"):
     return {"type": "app", "id": str(app_id), "name": "App " + str(app_id),
             "level": level, "time": "13:02:05", "msg": msg}
@@ -155,7 +170,7 @@ class Recorder:
 
 @pytest.mark.asyncio
 async def test_group_incident_uses_bounded_verified_app_issuers_not_question_invention():
-    receipts = actual_partial_receipts()
+    receipts = recently_attested()
     j, rec = LocalDecisionJournal(), Recorder()
     prompt = QUESTION.replace(
         "between 02:00 and 07:30 on 30 October 2026",
