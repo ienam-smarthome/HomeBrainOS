@@ -176,7 +176,6 @@ def extract_claim_envelope(draft: str, *, max_bytes: int = 8192) -> Any:
     A missing fence is None; a malformed one is an explicit invalid object.
     """
     text = str(draft or "")
-    start = "'''homebrain-claims"  # replaced with protocol delimiter below
     start = "\x60\x60\x60homebrain-claims"
     pos = text.find(start)
     if pos < 0:
