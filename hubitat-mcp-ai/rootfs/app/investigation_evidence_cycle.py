@@ -13,6 +13,7 @@ import json
 from typing import Any, Mapping, Sequence
 
 from unified_investigation_bridge import collect_unified_evidence
+from causal_source_feasibility import build_source_feasibility_choices
 
 
 def cross_source_discovery_checkpoint(
@@ -23,6 +24,7 @@ def cross_source_discovery_checkpoint(
     if not facts or not (facts.get("journal_source_observations")
                          or facts.get("archived_input_source_observations")):
         return None
+    source_choices = build_source_feasibility_choices(facts, receipts)
     checked_inputs = facts.get("independently_read_input_ids") or []
     coverage = facts.get("target_coverage") or []
     recovered = [
@@ -59,6 +61,7 @@ def cross_source_discovery_checkpoint(
             facts.get("additional_event_reads_without_usable_rows", [])[:12],
         "sourceContinuityEstablished": False,
         "upstreamInitiatorEstablished": False,
+        "sourceFeasibility": source_choices,
     }
     if not checked_inputs:
         discriminator = (
@@ -86,9 +89,16 @@ def cross_source_discovery_checkpoint(
         + "\nThe user asked WHY, not just for a switch-event list. "
         + discriminator
         + " Choose only available, authorized READ tools through the "
-          "current model tool catalog. Do not invent sensor IDs, assume "
-          "external initiation, assert complete history, or modify devices. "
-          "If a useful read is impossible, state the exact evidence gap."
+          "current model tool catalog. "
+          "Use the sourceFeasibility packet to avoid checked/duplicated "
+          "reads and select only a concrete new source that could answer an "
+          "open discriminator. Candidate leaf tools are ADVISORY: verify "
+          "against your currently authorized READ tool catalog before "
+          "calling anything. A checked-empty history is not evidence that "
+          "no historic command existed. If no meaningful source is available, "
+          "stop with the exact missing upstream execution evidence. "
+          "Do not invent sensor IDs, external initiation or a new tool name, "
+          "assert complete history or modify devices."
     )
 
 
