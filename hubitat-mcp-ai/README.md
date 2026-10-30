@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.249**.
+Current add-on version: **0.18.250**.
+
+**General provenance reasoning:** A typed reporter/listener versus initiating-command contract now guides the original model-directed investigation checkpoint and final synthesis across device classes, with a multi-device causal overclaim guard. [Release notes](CHANGELOG-0.18.250.md).
 
 **Native/journal evidence reconciliation:** Preserves independently verified native switch observations before recent-edge fallback claims; native observations are no longer erased by journal-only output. [Release notes](CHANGELOG-0.18.249.md).
 
