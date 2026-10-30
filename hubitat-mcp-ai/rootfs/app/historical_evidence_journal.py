@@ -92,7 +92,7 @@ class HistoricalEvidenceJournal:
         self.log_max_rows = max(1000, min(500000, int(log_max_rows)))
         self.log_app_ids = frozenset(
             part.strip() for part in str(log_app_ids).split(",")
-            if part.strip().isdigit()
+            if part.strip().isdigit() or part.strip() == "*"
         )
         self.base_url = ""
         self.error: str | None = None
