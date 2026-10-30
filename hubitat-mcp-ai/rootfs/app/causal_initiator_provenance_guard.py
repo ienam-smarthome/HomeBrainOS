@@ -161,7 +161,8 @@ def render_state_report_provenance(evidence: list[dict[str, Any]]) -> str | None
           "requested the actions. producedBy(device) identifies the reporting "
           "device/bridge; triggered[] identifies downstream event subscribers. "
           "Event type physical is not standalone proof of a physical press "
-          "or of an external origin. If a causal initiator remains unverified, "
+          "or of an external origin. Source-role edges are associations, "
+          "not a causal ownership graph. If a causal initiator remains unverified, "
           "choose a bounded read-only command/app-decision/input-history "
           "check while tools are available. At final synthesis, distinguish "
           "reporting provenance from initiating control; do not treat a "
@@ -188,7 +189,10 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"there\s+(?:is|was)\s+no\s+record\s+of\s+a\s+"
     r"hubitat[- ]issued\s+command|"
     r"no\s+hubitat[- ]initiated\s+commands?\s+preceded|"
-    r"no\s+internal\s+hubitat\s+commands?\s+preceded)\b",
+    r"no\s+internal\s+hubitat\s+commands?\s+preceded|"
+    r"(?:there\s+were\s+)?no\s+hubitat[- ]issued\s+commands?|"
+    r"hubitat\s+(?:only|never)\s+(?:acted|observed)\s+"
+    r"(?:passively|in\s+a\s+reactionary\s+capacity))\b",
     re.I,
 )
 _UNPROVEN_LISTENER_EXCLUSION = re.compile(
@@ -260,6 +264,26 @@ def guard_unverified_initiator_claims(
         )
         absence_as_proof = bool(_STRONG_NO_HUB_COMMAND.search(stripped))
         listener_excluded = bool(_UNPROVEN_LISTENER_EXCLUSION.search(stripped))
+        # A heading is also a causal assertion when it labels source
+        # ownership as external, even when the following prose is qualified.
+        heading_external = bool(
+            not external_verified
+            and re.search(
+                r"(?i)\\b(?:external|hue[- ]native|bridge[- ]native)\\s+"
+                r"(?:control|controller|origin|automation)\\b",
+                stripped,
+            )
+            and not _SCOPE_QUALIFIER.search(stripped)
+            and (stripped.startswith("#") or stripped.startswith("**"))
+        )
+        if heading_external:
+            line = re.sub(
+                r"(?i)\\b(?:external|hue[- ]native|bridge[- ]native)\\s+"
+                r"(?:control|controller|origin|automation)\\b",
+                "Initiator unverified", line,
+            )
+            stripped = line.strip()
+            changed = True
         if line.lstrip().startswith("|") and line.rstrip().endswith("|"):
             output.append(raw)
             continue
