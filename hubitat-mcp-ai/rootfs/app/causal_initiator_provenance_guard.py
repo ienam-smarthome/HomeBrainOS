@@ -19,53 +19,106 @@ from causal_fail_closed_summary import _focal_sensor_correlations
 
 
 def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, Any]:
-    """Typed, request-local reporting provenance, not attribution of cause.
+    """Source-role graph from successful device-scoped event-history reads.
 
-    Existing Hubitat device-history receipts report state transitions. A
-    reporting bridge/device and triggered[] listener relationships are NOT
-    upstream actors. Count source observations without treating missing
-    command rows in an attribute='switch' page as a negative command search.
+    Native gateway receipts and deterministic history wrappers are *two views*
+    of the same source. A bridge-produced state report is not an upstream
+    command and triggered[] apps are listeners, not its original issuers.
+    IDs are read only from verified device-scoped tool arguments; an unscoped
+    hub history is never promoted to a device report.
     """
-    events: set[tuple[str, str, str, str]] = set()
+    observations: set[tuple[str, str, str, str]] = set()
+    command_observations: set[tuple[str, str, str, str]] = set()
     reporters: set[str] = set()
-    listener_ids: set[str] = set()
-    for receipt in evidence:
+    listeners: set[str] = set()
+    command_apps: set[str] = set()
+    reported_devices: set[str] = set()
+    command_devices: set[str] = set()
+    # Every edge has a specific meaning, not a generic "caused" association.
+    edges: set[tuple[str, str, str]] = set()
+    truncated = False
+    for receipt in evidence[:160]:
         if (not isinstance(receipt, dict) or receipt.get("success") is not True
-                or receipt.get("mutates") is True):
+                or receipt.get("mutates") is True
+                or receipt.get("effect") not in (None, "read")
+                or receipt.get("supports_live_claim") is False):
             continue
-        if receipt.get("tool") != "homebrain_device_history":
+        tool = str(receipt.get("tool") or "")
+        sub = str(receipt.get("sub_tool") or "")
+        native = sub == "hub_list_device_events"
+        deterministic = tool == "homebrain_device_history"
+        if not native and not deterministic:
             continue
         details = receipt.get("details")
         if not isinstance(details, dict):
             continue
-        label = str(details.get("label") or "")
-        for row in (details.get("observedEvents") or
-                    details.get("boundaryEvents") or [])[:150]:
+        arguments = receipt.get("arguments")
+        if not isinstance(arguments, dict):
+            arguments = {}
+        args = arguments.get("args")
+        if isinstance(args, dict):
+            arguments = args
+        device_id = str(arguments.get("deviceId") or "")
+        if not device_id.isdecimal() or int(device_id) <= 0:
+            # The label-only wrapper is not a sound cross-receipt identity
+            # for causal attribution; safe fallback is not to assert a role.
+            continue
+        rows = details.get("observedEvents") or details.get("boundaryEvents") or []
+        if not isinstance(rows, list):
+            continue
+        truncated = truncated or details.get("observedEventsTruncated") is True
+        for row in rows[:150]:
             if not isinstance(row, dict):
                 continue
             attribute = str(row.get("name") or "").strip()
-            value = row.get("value")
-            # State observations include thermostats, health, connectivity,
-            # metering, contact and other device attributes. A driver command
-            # method is not a state observation.
-            if (not attribute or attribute.startswith("command-")
-                    or value is None or not isinstance(row.get("date"), str)):
+            date = row.get("date")
+            if not attribute or not isinstance(date, str):
                 continue
-            events.add((label, row["date"], attribute, str(value)[:80]))
-            reporter = row.get("producedBy")
-            if isinstance(reporter, dict) and str(reporter.get("type") or "").casefold() == "device":
-                name = str(reporter.get("label") or reporter.get("name") or "").strip()
-                if name:
-                    reporters.add(name[:90])
+            producer = row.get("producedBy")
+            producer = producer if isinstance(producer, dict) else {}
+            if attribute.startswith("command-"):
+                app_id = str(producer.get("appId") or "")
+                if app_id.isdecimal():
+                    command_apps.add(app_id)
+                    command_devices.add(device_id)
+                    command_observations.add((device_id, date, attribute, app_id))
+                    edges.add(("app:" + app_id, "device:" + device_id,
+                               "issued-command"))
+                continue
+            value = row.get("value")
+            if value is None:
+                continue
+            observations.add((device_id, date, attribute, str(value)[:80]))
+            reported_devices.add(device_id)
+            reporter_id = str(producer.get("deviceId") or "")
+            if reporter_id.isdecimal():
+                edges.add(("device:" + reporter_id, "device:" + device_id,
+                           "reported-state"))
+                label = str(producer.get("name") or producer.get("label") or "").strip()
+                if label:
+                    reporters.add(label[:90])
             for listener in (row.get("triggered") or [])[:40]:
-                if isinstance(listener, dict):
-                    identity = str(listener.get("appId") or listener.get("id") or "").strip()
-                    if identity.isdecimal():
-                        listener_ids.add(identity)
+                if not isinstance(listener, dict):
+                    continue
+                app_id = str(listener.get("appId") or "")
+                if app_id.isdecimal():
+                    listeners.add(app_id)
+                    edges.add(("device:" + device_id, "app:" + app_id,
+                               "notified-listener"))
     return {
-        "state_report_count": len(events),
+        "state_report_count": len(observations),
+        "reported_device_ids": sorted(reported_devices, key=int)[:24],
         "reporting_devices": sorted(reporters)[:12],
-        "downstream_listener_app_ids": sorted(listener_ids)[:24],
+        "downstream_listener_app_ids": sorted(listeners, key=int)[:24],
+        "direct_command_count": len(command_observations),
+        "direct_command_app_ids": sorted(command_apps, key=int)[:24],
+        "direct_command_target_ids": sorted(command_devices, key=int)[:24],
+        "source_role_edges": [
+            {"from": src, "to": dst, "role": role}
+            for src, dst, role in sorted(edges)[:40]
+        ],
+        "returned_history_truncated": truncated,
+        "source_history_completeness_verified": False,
         "upstream_initiator_established": False,
         "absence_of_matching_command_is_not_external_proof": True,
         "physical_event_does_not_prove_manual_operation": True,
