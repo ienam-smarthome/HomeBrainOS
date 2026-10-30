@@ -137,7 +137,23 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
     if len({r["device_id"] for r in source}) < 2:
         return None
     source, unmatched, paired = _dedupe_archive(source, collector)
-    groups = _group_states(source)
+    # Journal recovery is deliberately selective: it queries only targets whose
+    # native window was missing switch states. Reconcile its source-timestamped
+    # rows with independently observed *native* switch rows for OTHER targets.
+    # The old journal-only digest silently omitted a perfectly verified Shower
+    # Light ON -> app off() -> OFF sequence when two Bathroom lights were
+    # recovered from the journal.
+    archived_ids = {str(row["device_id"]) for row in source}
+    native_switch = [
+        row for row in live
+        if row.get("event_class") in ("reported_switch_on", "reported_switch_off")
+        and str(row["device_id"]) not in archived_ids
+    ]
+    merged_states = sorted(
+        [*source, *native_switch],
+        key=lambda row: (_when(row), str(row.get("device_id") or "")),
+    )
+    groups = _group_states(merged_states)
     target_ids = {str(x) for x in facts.get("target_device_ids") or []}
     offs = [r for r in live if r["event_class"] == "issued_off"]
     levels = [r for r in live if r["event_class"] == "issued_setlevel"]
@@ -172,6 +188,9 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
                 )
             else:
                 reason = "Reported ON; upstream initiator not identified"
+        if any(row.get("event_class") in (
+                "reported_switch_on", "reported_switch_off") for row in group):
+            reason += " (direct Hubitat device-event history)"
         lines.append("| " + at + " | " + label + " | " + state + " | " + reason + " |")
 
     # Unpaired collector observations have reception timestamps only; do not
@@ -200,7 +219,7 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
     ]
     source_n = len(source)
     collector_n = len(collector)
-    covered_ids = {r["device_id"] for r in source}
+    covered_ids = {str(r["device_id"]) for r in merged_states}
     missing_source = [
         c["device_name"] for c in facts.get("target_coverage", [])
         if c.get("device_id") not in covered_ids
@@ -216,11 +235,13 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
     if offs:
         app_ids = _dedupe_values(offs, "app_id")
         explanation.append(
-            "**Confirmed Hubitat OFF requests:** Apps "
+            ("**Confirmed Hubitat OFF request:** App "
+             if len(offs) == 1 else "**Confirmed Hubitat OFF requests:** Apps ")
             + ", ".join(app_ids)
-            + " issued off() commands. Where an OFF report followed within "
-              "two seconds, the command is a credible immediate source "
-              "of that OFF. The originating button press or upstream "
+            + (" issued an off() command. " if len(offs) == 1
+               else " issued off() commands. ")
+            + "Where an OFF report followed within two seconds, the command "
+              "is a credible immediate source of that OFF. The upstream "
               "decision needs its own execution evidence."
         )
     level_after_on = []
@@ -233,6 +254,17 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
                 _clock(group[0]) + " " + _name(group, target_ids)
                 + " (app " + ", ".join(_dedupe_values(matches, "app_id")) + ")"
             )
+    if native_switch:
+        native_names = sorted({str(row.get("device_name") or row["device_id"])
+                               for row in native_switch})
+        explanation.append(
+            "**Direct Hubitat switch history retained:** "
+            + ", ".join(native_names)
+            + " had " + str(len(native_switch))
+            + " source-timestamped switch reports not present in the recovered "
+              "Journal rows. These are included in the merged event sequence; "
+              "their reporting bridge is not proof of upstream initiation."
+        )
     if level_after_on:
         explanation.append(
             "**Brightness commands followed ON observations:** "
@@ -297,6 +329,9 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
 
     timeline = (
         "### Reconstructed source-timed sequence\n\n"
+        "Source-time switch reports from the Historical Journal and, where "
+        "not journal-recovered, scoped live Hubitat device histories. "
+        "Collection timestamps and missing histories are not inferred.\n\n"
         "| UTC | Light | Change | What the evidence establishes |\n"
         "|---|---|---|---|\n" + "\n".join(lines)
     )
