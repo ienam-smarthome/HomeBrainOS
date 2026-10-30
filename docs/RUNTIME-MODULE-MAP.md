@@ -40,6 +40,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_history_coverage.py` | Detects unavailable focal sensor prehistory in returned newest-N pages and prevents causal exclusion from history gaps. |
 | `focal_evidence_reconciliation.py` | Reconciles verified bounded MCP history, private-message-free archived app-log coverage, and ON button-causality claims before synthesis without treating partial archives as command evidence. |
 | `motion_lockout_investigation.py` | Performs bounded read-only light-OFF, button and motion event-sequence prefetch; checks current configuration and scoped execution logs; permits one-pass synthesis only when manual provenance and required evidence reads are verified, without claiming historical enforcement from silence. |
+| `target_history_scope.py` | Verifies exact targeted historical source reads for independently resolved device identities; prompts model-selected scoped reads and blocks unsupported zero-event verdicts. |
 | `targeted_lockout_config.py` | Resolves named app lockout configuration questions through the read-only, permission-gated apps gateway without model-selected tool names; reports stored setting vs intended duration and no historical proof. |
 | `focal_history_lookback.py` | Derives longer bounded native history reads from explicitly dated source-zone event clocks. |
 | `archived_app_decision_evidence.py` | Scoped privacy-safe reads of opt-in archived Hubitat app-log messages, preserving collector clock and execution-proof boundaries. |
