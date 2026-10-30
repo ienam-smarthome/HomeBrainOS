@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.242**.
+Current add-on version: **0.18.243**.
+
+**Incident evidence/causality validation:** The original HomeBrain MCP agent now preserves verified OFF, setLevel and brightness records even when a target's historical switch-state reports are absent. It distinguishes command receipt from physical transition, asks the model to recover missing switch-only evidence, and replaces contradictory final explanations rather than appending a correct timeline beneath false claims. See [v0.18.243 release notes](CHANGELOG-0.18.243.md).
 
 **Live-verified group chronology:** The original HomeBrain agent now reconciles its final explanation against every independently returned requested-device switch transition, including early finalization paths. A model-authored timeline that omits Bathroom Light 1/2 events is replaced with a chronological source-verified table; unsupported initiating-app certainty is qualified. The separate experimental Investigation V2 browser test, routes and add-on test-token options have been removed. V2 evidence utilities and offline regressions remain available internally. [Details](CHANGELOG-0.18.242.md).
 
