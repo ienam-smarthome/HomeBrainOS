@@ -142,7 +142,7 @@ def source_first_explanation(facts: Mapping[str, Any]) -> str:
             + " returned commands and levels but no switch ON/OFF "
               "transition records in this retrieval. An independently "
               "scoped switch-only read or retained incident-time logs "
-              "are required to establish those cycles.")
+              "are required to establish those cycles and the initiating controller.")
     passages.append(
         "**Cause is not fully verified:** Current automation source code "
         "shows possible behaviour, not historical execution. Motion events "
