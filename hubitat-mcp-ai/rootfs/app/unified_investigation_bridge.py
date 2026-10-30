@@ -371,6 +371,14 @@ def collect_unified_evidence(
             "status": str(d.get("status") or "")[:72],
             "log_rows": d.get("returnedRows"),
             "decision_declarations": d.get("decisionDeclarations"),
+            "reported_decisions": [
+                {
+                    "stage": str(e.get("stage") or "")[:48],
+                    "collector_received_at_utc": str(e.get("collectorReceivedAtUtc") or "")[:35],
+                    "original_event_time_verified": False,
+                } for e in (d.get("reportedDecisionRows") or [])[:6]
+                if isinstance(e, Mapping)
+            ],
             "gap_count": d.get("gapCount"),
             "historical_execution_verified": False,
             "timestamp_basis": "collector-received",
