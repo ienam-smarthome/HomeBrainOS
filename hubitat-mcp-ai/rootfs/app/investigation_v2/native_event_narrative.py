@@ -29,7 +29,7 @@ _CERTAINTY = re.compile(
     r"(?i)\b(?:definitely|certainly|guaranteed|proved|proven|"
     r"root cause is|must have been|physically confirmed)\b")
 _UNSUPPORTED_CAUSE = re.compile(
-    r"(?i)\b(?:caused by|triggered by|because the sensor|"
+    r"(?i)\b(?:caused|triggered|because the sensor|"
     r"sensor caused|sensor triggered|controller failed to|"
     r"automation malfunctioned)\b")
 # These states are observations, unlike command-* events.
