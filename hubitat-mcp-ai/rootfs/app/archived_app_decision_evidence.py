@@ -68,7 +68,8 @@ async def archived_app_decision_evidence(
         return result
     configured = (
         bool(getattr(journal, "capture_logs", False))
-        and str(app_id) in getattr(journal, "log_app_ids", frozenset())
+        and (str(app_id) in getattr(journal, "log_app_ids", frozenset())
+             or "*" in getattr(journal, "log_app_ids", frozenset()))
     )
     result["configuredToCaptureApp"] = configured
     connected = getattr(journal, "_connected", {})
