@@ -46,6 +46,10 @@ def cross_source_discovery_checkpoint(
         "archivedInputReceptionOnlyReports":
             facts.get("archived_input_collector_observations", 0),
         "archivedInputJournalGaps": facts.get("archived_input_gap_count", 0),
+        "receptionOnlyInputCooccurrence":
+            facts.get("archived_input_reception_patterns", [])[:6],
+        "archivedInputTruncatedIds":
+            facts.get("archived_input_truncated_ids", []),
         "independentInputHistoryIdsChecked": checked_inputs[:12],
         "independentInputObservations": facts.get("independent_input_observations", [])[:12],
         "inputAppRelationships": facts.get("input_app_relationships", [])[:10],

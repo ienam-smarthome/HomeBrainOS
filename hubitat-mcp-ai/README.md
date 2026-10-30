@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.259**.
+Current add-on version: **0.18.260**.
+
+**Reception-only historical input patterns:** Repeated sensor reception times can now be compared as tentative cross-clock co-occurrence with source-timed device transitions, while explicitly rejecting original-event order or causal attribution. Full-page pattern counts are computed before the evidence receipt's safe 20-row array limit. [Release notes](CHANGELOG-0.18.260.md).
 
 **Archived input evidence:** Independently scoped motion, occupancy and presence histories that return no usable native events now receive a bounded Historical Journal fallback. Source timestamps, collector-only reception, and coverage gaps remain separate in the original model reasoning and final explanation. [Release notes](CHANGELOG-0.18.259.md).
 
