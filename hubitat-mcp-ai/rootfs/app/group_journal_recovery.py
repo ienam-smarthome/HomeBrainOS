@@ -173,6 +173,9 @@ async def recover_group_journal(
                 effect="read", mutates=False,
                 details={
                     "deviceId": ident, "observations": observations,
+                    "returnedObservationCount": len(observations),
+                    "evidenceReceiptSampleLimit": 20,
+                    "receptionPatternSummary": reception_pattern,
                     "window": {"since": since, "until": until, "zone": zone_name},
                     "gapCount": gap_count,
                     "truncated": bool(response.get("truncated") or response.get("has_more")),
@@ -191,6 +194,76 @@ async def recover_group_journal(
                          "reason": type(error).__name__},
             )
     return report
+
+
+def _reception_pattern_summary(
+    observations: Sequence[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bounded cross-clock co-occurrence, never precise source chronology.
+
+    Compute over the complete retrieved page *before* the request evidence
+    recorder redacts arrays to 20 rows for safe API presentation.
+    """
+    ids = facts.get("target_device_ids") or []
+    if not ids:
+        return {}
+    target_id = str(ids[0])
+    bounds = []
+    for row in (facts.get("incident_ledger") or [])[:180]:
+        if (row.get("device_id") != target_id
+                or row.get("event_class") not in (
+                    "journal_source_switch_on", "journal_source_switch_off")):
+            continue
+        try:
+            t = datetime.fromisoformat(str(row["date"]).replace("Z", "+00:00"))
+            if t.tzinfo is not None:
+                bounds.append((t.astimezone(timezone.utc),
+                               "on" if row["event_class"].endswith("_on") else "off"))
+        except (ValueError, TypeError):
+            continue
+    if not bounds:
+        return {}
+    input_receptions = []
+    for event in observations[:200]:
+        if (event.get("timestamp_basis") != "collector-received"
+                or event.get("attribute") not in ("motion", "occupancy", "presence")):
+            continue
+        try:
+            t = datetime.fromisoformat(str(event["date"]).replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                continue
+        except (ValueError, TypeError):
+            continue
+        input_receptions.append((t.astimezone(timezone.utc),
+                                 str(event.get("value") or "").casefold()))
+    on_matches = []
+    off_matches = []
+    for when, state in bounds:
+        near = []
+        for received, value in input_receptions:
+            signed = (received - when).total_seconds()
+            if (state == "on" and value in (
+                    "active", "present", "occupied", "on", "true")
+                    and abs(signed) <= 3.0):
+                near.append(signed)
+            elif (state == "off" and value in (
+                    "inactive", "not present", "unoccupied", "off", "false")
+                    and -20.0 <= signed <= 0):
+                near.append(signed)
+        if near:
+            (on_matches if state == "on" else off_matches).append(
+                round(min(near, key=abs), 3))
+    return {
+        "targetSourceOnCount": sum(state == "on" for _, state in bounds),
+        "targetSourceOffCount": sum(state == "off" for _, state in bounds),
+        "onNearActiveReceptions": len(on_matches),
+        "offAfterInactiveReceptions": len(off_matches),
+        "onSignedReceptionDeltasSeconds": on_matches[:8],
+        "offSignedReceptionDeltasSeconds": off_matches[:8],
+        "crossClockOrderVerified": False,
+        "causalInitiatorVerified": False,
+    }
 
 
 async def recover_input_journal(
@@ -284,6 +357,10 @@ async def recover_input_journal(
                     report["collector_observations"] += 1
             gap_count = len(response.get("gaps") or [])
             report["journal_gaps"] += gap_count
+            # The recorder bounds public observation arrays at 20. Preserve
+            # deterministic counts calculated over the full returned page,
+            # so a noisy input cannot hide most of its own correlations.
+            reception_pattern = _reception_pattern_summary(observations, facts)
             recorder.record(
                 "homebrain_evidence_journal", request, success=True,
                 elapsed_ms=round((asyncio.get_running_loop().time() - started)*1000),
