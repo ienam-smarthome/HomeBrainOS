@@ -663,6 +663,61 @@ def collect_unified_evidence(
             "cross_clock_order_verified": False,
             "causal_initiator_verified": False,
         })
+    # Prefer compact provenance-aware summaries calculated from the full
+    # archive page before the evidence recorder safely limits exposed arrays
+    # to 20 observations. They may contain more evidence than the receipt
+    # sample, but never certify source-event ordering or a controller.
+    archive_sample_sizes: list[dict[str, Any]] = []
+    for receipt in receipts[:120]:
+        if (receipt.get("evidence_kind") != "group_archived_input_history"
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True):
+            continue
+        d = receipt.get("details")
+        if not isinstance(d, Mapping):
+            continue
+        ident = str(d.get("deviceId") or "")
+        if (not ident.isdecimal()
+                or not any(str(_args(r).get("deviceId") or "") == ident
+                           and r.get("success") is True
+                           and r.get("sub_tool") == "hub_list_device_events"
+                           for r in receipts[:120])):
+            continue
+        total = d.get("returnedObservationCount")
+        sample = d.get("observations")
+        if type(total) is int and isinstance(sample, list):
+            archive_sample_sizes.append({
+                "device_id": ident, "retrieved_observations": total,
+                "retained_receipt_observations": len(sample),
+                "query_truncated": d.get("truncated") is True,
+            })
+        summary = d.get("receptionPatternSummary")
+        if not isinstance(summary, Mapping):
+            continue
+        # The archive gives a bounded co-occurrence calculation, NOT a
+        # source timestamp or trusted controller command.
+        record = next((r for r in reception_input_patterns
+                       if r["device_id"] == ident), None)
+        if record is None:
+            continue
+        if (type(summary.get("targetSourceOnCount")) is not int
+                or type(summary.get("targetSourceOffCount")) is not int):
+            continue
+        record.update({
+            "target_source_on_count": summary["targetSourceOnCount"],
+            "target_source_off_count": summary["targetSourceOffCount"],
+            "on_near_active_receptions": int(
+                summary.get("onNearActiveReceptions") or 0),
+            "off_after_inactive_receptions": int(
+                summary.get("offAfterInactiveReceptions") or 0),
+            "on_reception_delta_samples":
+                (summary.get("onSignedReceptionDeltasSeconds") or [])[:6],
+            "off_reception_delta_samples":
+                (summary.get("offSignedReceptionDeltasSeconds") or [])[:6],
+            "cross_clock_order_verified": False,
+            "causal_initiator_verified": False,
+            "full_returned_page_analyzed": True,
+        })
     checked_input_ids = sorted(input_history_ids)
     archived_app_checks: list[dict[str, Any]] = []
     for receipt in receipts[:120]:
@@ -733,6 +788,7 @@ def collect_unified_evidence(
         "archived_input_reads": archived_input_reads,
         "archived_input_reception_patterns": reception_input_patterns[:8],
         "archived_input_truncated_ids": sorted(archived_input_truncated_ids, key=int),
+        "archived_input_sample_coverage": archive_sample_sizes[:8],
         "input_app_relationships": input_app_relationships[:16],
         "target_observed_command_app_ids": sorted(target_command_apps, key=int)[:16],
         "target_observed_notified_app_ids": sorted(target_notified_apps, key=int)[:16],
@@ -791,6 +847,7 @@ def unified_investigation_instruction(
         "archived_input_reception_patterns":
             evidence["archived_input_reception_patterns"][:6],
         "archived_input_truncated_ids": evidence["archived_input_truncated_ids"],
+        "archived_input_sample_coverage": evidence["archived_input_sample_coverage"],
         "input_app_relationships": evidence["input_app_relationships"][:10],
         "target_observed_command_app_ids": evidence["target_observed_command_app_ids"],
         "additional_event_reads_without_usable_rows":
