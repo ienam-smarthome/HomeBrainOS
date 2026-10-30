@@ -141,13 +141,15 @@ def collect_unified_evidence(
     # independently read histories may supply correlated sensor observations.
     by_id: dict[str, list[dict[str, Any]]] = {}
     sensor_events: list[dict[str, Any]] = []
+    input_history_ids: set[str] = set()
     for e in all_events:
         by_id.setdefault(e["device_id"], []).append(e)
         if (e["device_id"] not in targets
-                and e["name"] in ("motion", "occupancy", "presence")
-                and str(e.get("value") or "").casefold() in
-                ("active", "present", "occupied", "on", "true")):
-            sensor_events.append(e)
+                and e["name"] in ("motion", "occupancy", "presence")):
+            input_history_ids.add(e["device_id"])
+            if str(e.get("value") or "").casefold() in (
+                    "active", "present", "occupied", "on", "true"):
+                sensor_events.append(e)
     state_links: list[dict[str, Any]] = []
     for ident in sorted(targets):
         rows = sorted(by_id.get(ident, []), key=lambda r: r["when"])
@@ -200,7 +202,7 @@ def collect_unified_evidence(
             })
     if not state_links:
         return None
-    checked_input_ids = sorted({e["device_id"] for e in sensor_events})
+    checked_input_ids = sorted(input_history_ids)
     log_receipts = [
         r for r in receipts if r.get("success") is True
         and r.get("sub_tool") == "hub_get_logs"
@@ -215,6 +217,7 @@ def collect_unified_evidence(
         "transition_relationships": state_links[:24],
         "hub_mode_observations": modes[:12],
         "independently_read_input_ids": checked_input_ids,
+        "missing_independent_input_history": not bool(checked_input_ids),
         "log_query_count": len(log_receipts),
         "incident_log_coverage_verified": False,
         "limitations": (
@@ -255,4 +258,39 @@ def unified_investigation_instruction(
     )
 
 
-__all__ = ["collect_unified_evidence", "unified_investigation_instruction"]
+def unified_investigation_followup(
+    receipts: Sequence[Mapping[str, Any]], question: str,
+) -> str | None:
+    """One advisory read-choice prompt; no operation or ID authorization."""
+    facts = collect_unified_evidence(receipts, question)
+    if facts is None or not facts["missing_independent_input_history"]:
+        return None
+    if not any(
+        event["reported_state"] == "on"
+        and not event["preceding_hubitat_command_in_sample"]
+        for event in facts["transition_relationships"]
+    ):
+        return None
+    examples = [{
+        "device": e["device_name"], "time": e["time"],
+        "prior_command_in_returned_sample": False,
+    } for e in facts["transition_relationships"]
+        if e["reported_state"] == "on"
+        and not e["preceding_hubitat_command_in_sample"]][:5]
+    return (
+        "HOST INCOMPLETE UPSTREAM INVESTIGATION (advisory, read-only). "
+        "The original task asks WHY multiple source-reported light ON events "
+        "occurred. Device histories were checked, but no independent input "
+        "motion/occupancy event history for the incident was retrieved. "
+        "Examples: " + json.dumps(examples, ensure_ascii=True)[:1700]
+        + ". Choose a live-advertised read of a source-verified room/input "
+          "sensor history, or explain why the available tools cannot do it. "
+          "Do not invent a sensor ID, request a write, infer Home Assistant "
+          "as a proven controller, or reread the same light history. "
+          "Once the relevant input and controller evidence is collected, "
+          "finish with a cause-first natural-language explanation."
+    )
+
+
+__all__ = ["collect_unified_evidence", "unified_investigation_instruction",
+           "unified_investigation_followup"]
