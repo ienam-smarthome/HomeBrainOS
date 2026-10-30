@@ -219,9 +219,59 @@ def collect_unified_evidence(
                      "source_read": s["read"]}
                     for s in preceding_sensors],
             })
-    if not state_links:
-        return None
+    # Do not discard a verified target merely because its Hubitat history
+    # page contains only command-off / command-setLevel / level observations.
+    # Those are material evidence and, crucially, prove that switch history
+    # has NOT been reconstructed. This was the live 0.18.242 failure.
     state_links.sort(key=lambda e: (_time(e["time"]), e["device_name"]))
+    incident_rows: list[dict[str, Any]] = []
+    target_coverage: list[dict[str, Any]] = []
+    for ident in sorted(targets):
+        rows = sorted(by_id.get(ident, []), key=lambda row: row["when"])
+        counts = {"reported_switch_on": 0, "reported_switch_off": 0,
+                  "issued_off": 0, "issued_on": 0, "issued_setlevel": 0,
+                  "reported_level": 0}
+        for e in rows:
+            name = str(e.get("name") or "")
+            value = str(e.get("value") or "")
+            kind = (
+                "reported_switch_on" if name == "switch" and value.lower() == "on"
+                else "reported_switch_off" if name == "switch" and value.lower() == "off"
+                else "issued_off" if name == "command-off"
+                else "issued_on" if name == "command-on"
+                else "issued_setlevel" if name == "command-setLevel"
+                else "reported_level" if name == "level"
+                else ""
+            )
+            if not kind:
+                continue
+            counts[kind] += 1
+            producer = e.get("producedBy")
+            producer = producer if isinstance(producer, Mapping) else {}
+            incident_rows.append({
+                "device_id": ident, "device_name": verified_names[ident],
+                "date": e["date"], "time": e["when"],
+                "event_class": kind,
+                "value": value[:30],
+                "app_id": str(producer.get("appId") or ""),
+                "source_read": e["read"],
+            })
+        switch_count = counts["reported_switch_on"] + counts["reported_switch_off"]
+        commands = sum(counts[k] for k in ("issued_off", "issued_on", "issued_setlevel"))
+        target_coverage.append({
+            "device_id": ident, "device_name": verified_names[ident],
+            **counts,
+            "switch_event_count": switch_count,
+            "command_count": commands,
+            "switch_state_missing_despite_commands":
+                switch_count == 0 and commands > 0,
+            "complete_on_off_cycle_verified": (
+                counts["reported_switch_on"] > 0
+                and counts["reported_switch_off"] > 0),
+        })
+    if not incident_rows:
+        return None
+    incident_rows.sort(key=lambda e: (e["time"], e["device_name"]))
     checked_input_ids = sorted(input_history_ids)
     log_receipts = [
         r for r in receipts if r.get("success") is True
@@ -237,6 +287,13 @@ def collect_unified_evidence(
         "transition_relationships": state_links[:100],
         "transition_count": len(state_links),
         "transition_rows_omitted": max(0, len(state_links) - 100),
+        "incident_ledger": [{k: v for k, v in e.items() if k != "time"}
+                            for e in incident_rows[:180]],
+        "incident_ledger_total": len(incident_rows),
+        "target_coverage": target_coverage,
+        "missing_switch_history_for_targets": [
+            c["device_name"] for c in target_coverage
+            if c["switch_state_missing_despite_commands"]],
         "hub_mode_observations": modes[:12],
         "independently_read_input_ids": checked_input_ids,
         "missing_independent_input_history": not bool(checked_input_ids),
@@ -267,6 +324,10 @@ def unified_investigation_instruction(
         "target_names": evidence["user_target_names"],
         "target_read_ids": evidence["target_device_ids"],
         "transition_relationships": evidence["transition_relationships"][:40],
+        "target_coverage": evidence["target_coverage"],
+        "incident_ledger": evidence["incident_ledger"][:40],
+        "missing_switch_history_for_targets":
+            evidence["missing_switch_history_for_targets"],
         "transition_count": evidence["transition_count"],
         "transition_rows_omitted": evidence["transition_rows_omitted"],
         "hub_mode_observations": evidence["hub_mode_observations"],
@@ -287,6 +348,9 @@ def unified_investigation_instruction(
           "Distinguish verified immediate command issuers, source-reported "
           "transitions, subsequent brightness adjustments, temporal sensor "
           "correlations and unverified external initiating controller. "
+          "A missing target switch history even with confirmed OFF/level "
+          "commands is an unresolved source gap. Do not claim no OFF commands "
+          "or complete ON/OFF cycles from command-only records. "
           "An actuator's reported ON that precedes setLevel cannot be "
           "attributed to that later brightness command. Do not convert an "
           "unverified correlation into a confirmed automation trigger. "
@@ -304,7 +368,28 @@ def unified_investigation_followup(
 ) -> str | None:
     """One advisory read-choice prompt; no operation or ID authorization."""
     facts = collect_unified_evidence(receipts, question)
-    if facts is None or not facts["missing_independent_input_history"]:
+    if facts is None:
+        return None
+    missing_switch = facts["missing_switch_history_for_targets"]
+    if missing_switch:
+        return (
+            "HOST INCIDENT COVERAGE DEFECT (read-only, source-attested). "
+            "Independently verified named actuator histories returned "
+            "OFF/brightness commands but NO reported switch ON/OFF states "
+            "for: " + ", ".join(missing_switch[:6])
+            + ". Therefore no complete ON/OFF cycle or initiating automation "
+              "can be established for those targets. Before ending, choose "
+              "a permitted independently scoped switch-only historical "
+              "read (for example homebrain_device_history with "
+              "attribute=switch, or a verified deviceId event read with "
+              "a supported attribute filter), or incident-time logs if "
+              "actually retained. Check live tool schemas and existing "
+              "verified IDs; never invent operation arguments or perform "
+              "a write. Do not treat setLevel after a reported ON as "
+              "that ON's cause. If additional evidence is unavailable, "
+              "say so clearly and retain the OFF command evidence."
+        )
+    if not facts["missing_independent_input_history"]:
         return None
     if not any(
         event["reported_state"] == "on"
