@@ -410,8 +410,8 @@ function journalBrowseParameters(){
   const day=document.getElementById('journalBrowseDay').value;
   const from=document.getElementById('journalBrowseStart').value;
   const to=document.getElementById('journalBrowseEnd').value;
-  if(!/^\\d{1,12}$/.test(id)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(day)
-      ||!/^\\d{2}:\\d{2}$/.test(from)||!/^\\d{2}:\\d{2}$/.test(to)){
+  if(!/^\d{1,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(day)
+      ||!/^\d{2}:\d{2}$/.test(from)||!/^\d{2}:\d{2}$/.test(to)){
     throw new Error('Enter a numeric device ID, date and valid From/To times.');
   }
   // Clock inputs are interpreted in the browser's local timezone.
