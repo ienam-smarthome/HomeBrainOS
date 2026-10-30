@@ -192,6 +192,7 @@ from investigation_checkpoint import (
 )
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
+from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
 from history_result_enrichment import inferred_state_retry_arguments
@@ -3900,6 +3901,17 @@ class UnifiedMCPAgent:
                 if edge_answer is not None:
                     message = edge_answer
                     increment_active_metric("unified_recent_edge_reconciled")
+            # The previous phase may append or replace model text with a
+            # source-derived group timeline. Reapply the SAME typed proof
+            # contract to the completed answer, including specialized early
+            # exits, rather than trusting a previous model-only validation.
+            if (not self._mutation_requested_by_user.get()
+                    and not self._mutation_call_seen.get()
+                    and is_causal_investigation(user_prompt)):
+                message, claim_calibrated = guard_unverified_initiator_claims(
+                    message, evidence, user_prompt)
+                if claim_calibrated:
+                    increment_active_metric("evidence_claim_calibrations")
             # This boundary covers every model/fallback path, including a
             # no-more-tool round. Never present an unscoped hub-wide query as
             # proof that named targets had no historic activity.
