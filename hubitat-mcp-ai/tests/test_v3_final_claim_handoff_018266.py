@@ -63,8 +63,12 @@ def test_final_offer_counter_is_allowlisted_and_private():
     token = metrics.begin()
     try:
         metrics.increment("v3_claim_pilot_final_offered")
+        metrics.increment("v3_claim_first_draft_present")
+        metrics.increment("v3_claim_first_draft_missing")
         snapshot = metrics.snapshot()["counters"]
         assert snapshot["v3_claim_pilot_final_offered"] == 1
+        assert snapshot["v3_claim_first_draft_present"] == 1
+        assert snapshot["v3_claim_first_draft_missing"] == 1
         assert "device_id" not in str(snapshot)
         assert "w_" not in str(snapshot)
     finally:
