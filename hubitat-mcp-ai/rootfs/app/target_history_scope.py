@@ -37,9 +37,12 @@ def inspect_target_history_scope(
     the user's named subjects. An unscoped query can supply positive evidence
     but NOT certify a zero-event answer for one of these devices.
     """
-    from investigation_policy import is_history_investigation, is_causal_investigation
+    # Reuse the production investigation-intent predicate (which includes
+    # event-history questions without an explicit "why"). This is eligibility
+    # for evidence-scope integrity, not a keyword-to-tool router.
+    from investigation_checkpoint import is_investigative_question
 
-    if not (is_history_investigation(question) or is_causal_investigation(question)):
+    if not is_investigative_question(question):
         return None
     targets: dict[str, str] = {}
     requested = str(question or "").casefold()
