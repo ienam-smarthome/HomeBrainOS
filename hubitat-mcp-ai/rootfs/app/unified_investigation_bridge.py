@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from unified_incident_synthesis import reconcile_ledger_if_needed
 from causal_witness_ledger import build_witness_coverage_ledger
+from causal_source_feasibility import build_source_feasibility_choices
 from investigation_v2.native_event_narrative import event_narrative_evidence
 from investigation_v2.native_provenance import event_summary
 from investigation_v2.temporal_scope import explicit_incident_window
@@ -833,6 +834,8 @@ def unified_investigation_instruction(
         "target_read_ids": evidence["target_device_ids"],
         "transition_relationships": evidence["transition_relationships"][:40],
         "target_coverage": evidence["target_coverage"],
+        "v3_source_feasibility": build_source_feasibility_choices(
+            evidence, receipts),
         "journal_source_observations": evidence["journal_source_observations"],
         "journal_collector_observations": evidence["journal_collector_observations"],
         "journal_gap_count": evidence["journal_gap_count"],
@@ -940,6 +943,13 @@ def unified_investigation_followup(
     if not unresolved_ons and not journal_ons:
         return None
     if not facts["missing_independent_input_history"]:
+        feasibility = build_source_feasibility_choices(facts, receipts)
+        addendum = (
+            "\nSOURCE FEASIBILITY (advisory, current catalog remains "
+            "authoritative): "
+            + json.dumps(feasibility, ensure_ascii=True)[:3200]
+            if feasibility else ""
+        )
         return (
             "HOST CAUSAL CHAIN INCOMPLETE (read-only follow-up). "
             "Independent input histories have been checked for IDs: "
@@ -955,6 +965,7 @@ def unified_investigation_followup(
               "of alternative command paths. Do not repeat already checked "
               "input histories. If relevant sources are unavailable, "
               "state the specific missing evidence and stop."
+            + addendum
         )
     examples = [{
         "device": e["device_name"], "time": e["time"],
