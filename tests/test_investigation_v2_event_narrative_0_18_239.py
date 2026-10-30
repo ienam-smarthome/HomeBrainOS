@@ -17,12 +17,12 @@ APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
 from investigation_v2.native_entity_lookup import NAME
-from investigation_v2.native_event_narrative import event_narrative_evidence
+from investigation_v2.native_event_narrative import event_narrative_evidence, event_timeline_fallback
 from investigation_v2.native_read_agent import run_native_read_agent
 from test_investigation_v2_native_read_agent_0_18_181 import FakeExecutor, FakeMCP
 from test_investigation_v2_native_entity_lookup_0_18_184 import native
 from test_investigation_v2_complete_interval_0_18_236 import READ as EVENT_TOOL
-from test_investigation_v2_event_narrative_0_18_238 import histories, witnessed, candidate
+from test_investigation_v2_event_narrative_0_18_238 import histories, witnessed, candidate, ev
 
 
 IDS = ("7818", "7821", "7807")
@@ -145,3 +145,81 @@ async def test_one_named_device_history_still_uses_existing_focused_path():
     assert diag["event_narrative_eligible"] is False
     assert "fewer_than_two_device_event_reads" in diag["event_narrative_blockers"]
     assert len(executor.calls) == 1
+
+
+def test_real_30_oct_window_preserves_button_off_and_bridge_state_pairs():
+    """Full-style mixed-day events should not displace the requested timeline."""
+    case = [
+        {"read": 2, "operation": "hub_list_device_events",
+         "read_filters": {"deviceId": "7818"},
+         "source_data": {"events": [
+             ev("switch", "2026-10-29T23:55:00.000+0000", "off", device="7790"),
+             ev("switch", "2026-10-30T02:52:44.099+0000", "on", device="7790"),
+             ev("command-off", "2026-10-30T03:04:16.978+0000", app="1568"),
+             ev("switch", "2026-10-30T03:04:18.218+0000", "off", device="7790"),
+             ev("switch", "2026-10-30T03:40:21.668+0000", "on", device="7790"),
+             ev("command-off", "2026-10-30T03:46:05.251+0000", app="1569"),
+             ev("switch", "2026-10-30T03:46:05.928+0000", "off", device="7790"),
+             ev("switch", "2026-10-30T07:12:33.514+0000", "on", device="7790"),
+             ev("command-setLevel", "2026-10-30T07:12:33.560+0000", app="4013"),
+             ev("level", "2026-10-30T07:12:34.528+0000", "30", device="7790"),
+             ev("command-setLevel", "2026-10-30T07:15:02.678+0000", app="4013"),
+             ev("level", "2026-10-30T07:15:03.071+0000", "50", device="7790"),
+             ev("command-off", "2026-10-30T07:44:16.182+0000", app="1569"),
+         ]}},
+        {"read": 3, "operation": "hub_list_device_events",
+         "read_filters": {"deviceId": "7821"},
+         "source_data": {"events": [
+             ev("switch", "2026-10-30T02:52:45.141+0000", "on", device="7790"),
+             ev("command-off", "2026-10-30T03:04:16.993+0000", app="1568"),
+             ev("switch", "2026-10-30T03:04:18.278+0000", "off", device="7790"),
+             ev("switch", "2026-10-30T03:40:22.678+0000", "on", device="7790"),
+             ev("command-off", "2026-10-30T03:46:05.313+0000", app="1569"),
+             ev("switch", "2026-10-30T03:46:06.059+0000", "off", device="7790"),
+             ev("switch", "2026-10-30T07:12:34.589+0000", "on", device="7790"),
+             ev("command-setLevel", "2026-10-30T07:12:34.622+0000", app="4013"),
+             ev("level", "2026-10-30T07:12:35.546+0000", "30", device="7790"),
+             ev("command-off", "2026-10-30T07:44:16.196+0000", app="1569"),
+         ]}},
+        {"read": 4, "operation": "hub_list_device_events",
+         "read_filters": {"deviceId": "7807"},
+         "source_data": {"events": [
+             ev("switch", "2026-10-30T02:13:30.399+0000", "on", device="7790"),
+             ev("command-setLevel", "2026-10-30T02:13:30.481+0000", app="4014"),
+             ev("command-setLevel", "2026-10-30T02:13:30.699+0000", app="4014"),
+             ev("level", "2026-10-30T02:13:31.416+0000", "40", device="7790"),
+             ev("switch", "2026-10-30T02:15:13.073+0000", "off", device="7790"),
+             ev("switch", "2026-10-30T03:03:31.727+0000", "on", device="7790"),
+             ev("command-off", "2026-10-30T03:04:17.010+0000", app="1568"),
+             ev("switch", "2026-10-30T03:04:17.212+0000", "off", device="7790"),
+             ev("command-off", "2026-10-30T03:46:05.333+0000", app="1569"),
+             ev("switch", "2026-10-30T07:27:48.079+0000", "on", device="7790"),
+             ev("command-setLevel", "2026-10-30T07:27:48.148+0000", app="4014"),
+             ev("level", "2026-10-30T07:27:49.070+0000", "70", device="7790"),
+             ev("command-off", "2026-10-30T07:44:16.213+0000", app="1569"),
+         ]}},
+    ]
+    packet = event_narrative_evidence(case, IDS, question=QUESTION)
+    assert packet is not None
+    assert packet["explicit_calendar_scope_applied"] is True
+    assert packet["explicit_clock_scope_applied"] is True
+    events = packet["event_examples"]
+    assert set(packet["device_read_ids"]) == set(IDS)
+    assert all(e["date"].startswith("2026-10-30T") for e in events)
+    assert all("07:44:" not in e["date"] for e in events)
+    assert len(events) <= 36
+    for ident in IDS:
+        assert any(e["device_id"] == ident and e["name"] == "command-off"
+                   and "T03:04:" in e["date"] for e in events)
+        assert any(e["device_id"] == ident and e["name"] == "switch"
+                   and e.get("value") == "off"
+                   and "T03:04:" in e["date"] for e in events)
+    assert any(e["device_id"] == "7818" and e.get("value") == "30"
+               and "T07:12:" in e["date"] for e in events)
+    assert any(e["device_id"] == "7807" and e.get("value") == "40"
+               and "T02:13:" in e["date"] for e in events)
+    fallback = event_timeline_fallback(packet)
+    assert "03:04:" in fallback
+    assert "07:12:" in fallback
+    assert "07:44:" not in fallback
+    assert "issued 9 recorded commands" not in fallback
