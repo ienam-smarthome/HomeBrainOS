@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.260**.
+Current add-on version: **0.18.261**.
+
+**Causal V3 Stage A: shadow publication telemetry.** Evidence-grounded model drafts are now measured against the existing deterministic finalization boundary using privacy-safe request counters. Published answer behaviour is unchanged while we quantify when the fallback hides valid reasoning. [Release notes](CHANGELOG-0.18.261.md).
 
 **Reception-only historical input patterns:** Repeated sensor reception times can now be compared as tentative cross-clock co-occurrence with source-timed device transitions, while explicitly rejecting original-event order or causal attribution. Full-page pattern counts are computed before the evidence receipt's safe 20-row array limit. [Release notes](CHANGELOG-0.18.260.md).
 
