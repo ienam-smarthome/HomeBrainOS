@@ -13,6 +13,9 @@ import re
 from typing import Any, Mapping
 
 from unified_incident_digest import source_incident_digest
+from causal_claim_attestation import (
+    extract_claim_envelope, validate_claim_envelope,
+)
 
 
 def _clock(value: Any) -> str | None:
@@ -250,6 +253,25 @@ def _record_publication_shadow(
             "v3_witness_targets_without_on_issuer",
             max(0, int(ledger.get("target_count") or 0)
                 - int(ledger.get("issuer_verified_target_count") or 0)))
+    # Shadow attestations never approve arbitrary prose and do not affect
+    # the existing digest/ledger publication choice.
+    if isinstance(ledger, Mapping):
+        attestation = extract_claim_envelope(draft)
+        if attestation is None:
+            increment_active_metric("v3_claim_envelope_missing")
+        else:
+            result = validate_claim_envelope(attestation, ledger)
+            increment_active_metric("v3_claim_envelope_present")
+            if result["valid"]:
+                increment_active_metric("v3_claim_envelope_valid")
+            else:
+                increment_active_metric("v3_claim_envelope_invalid")
+            if result["supported"]:
+                increment_active_metric(
+                    "v3_claim_supported", min(32, result["supported"]))
+            if result["rejected"]:
+                increment_active_metric(
+                    "v3_claim_rejected", min(32, result["rejected"]))
     if analysis["native_history_gap"]:
         increment_active_metric("v3_shadow_history_gap")
     if analysis["source_contradiction_flag_count"]:
