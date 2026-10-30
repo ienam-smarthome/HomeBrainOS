@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.247**.
+Current add-on version: **0.18.248**.
+
+**Source-attested dependency leads:** Adds a bounded evidence-only graph for verified app/device associations and distinct command/state observations. The component is not yet integrated with the original agent's live planning or publication path. [Release notes](CHANGELOG-0.18.248.md).
 
 **Recent-window context:** When independently verified device histories all return zero switch events for a relative `last two hours` investigation, the original agent performs a bounded Historical Journal check covering that window and up to 15 minutes immediately before it. It labels the pre-window cycle separately and never promotes collector reception or proximity to a confirmed initiator. [Release notes](CHANGELOG-0.18.247.md).
 
