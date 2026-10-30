@@ -126,8 +126,8 @@ def test_journal_recovers_when_rolling_events_are_newer():
     assert "independent input" in unified_investigation_followup(recorder.rows, Q)
     digest = source_incident_digest(facts)
     assert digest is not None
-    assert "| 15:28:13 | Zone Alpha Light | ON |" in digest
-    assert "| 15:29:15 | Zone Beta Light | OFF |" in digest
+    assert "| 15:28:13 | Zone Alpha Light, Zone Beta Light | ON |" in digest
+    assert "| 15:29:15 | Zone Alpha Light, Zone Beta Light | OFF |" in digest
 
 
 def test_recovery_idempotent_and_collector_not_promoted_to_event():
