@@ -86,7 +86,6 @@ def render_page(title: str, version: str) -> str:
 <button class="secondary" data-q="Check the hub health status">🧠 Hub health</button>
 <button class="secondary" data-q="Is there a firmware update available for the hub?">🛠️ Firmware</button>
 <button class="secondary" id="refresh">🧰 Refresh MCP</button>
-<a class="quick-link" href="v2-test">🧪 Investigation V2 Test</a>
 <a class="quick-link" href="http://192.168.1.239/hub2/createFullLocalBackup" target="_blank" rel="noopener noreferrer">💾 Local backup</a>
 </section>
 <section class="card">
