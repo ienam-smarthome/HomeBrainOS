@@ -238,9 +238,12 @@ class HistoricalEvidenceJournal:
                 # Frames without one can represent repeated real events, so
                 # keep collector-receive time in their signatures.
                 identity = dict(row)
-                if row["source_time"]:
+                # Hubitat logsocket often provides only HH:MM:SS, not an
+                # independently verified full source timestamp. Never
+                # deduplicate repeated app decisions merely because they
+                # have the same short clock and message in one second.
+                if row["timestamp_basis"] == "source" and row["source_time"]:
                     identity.pop("received_at", None)
-                    identity.pop("observed_at", None) if row["timestamp_basis"] == "collector-received" else None
                 stable = json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
                 signature = hashlib.sha256(stable.encode("utf-8")).hexdigest()
                 cursor = db.execute("""INSERT OR IGNORE INTO journal_events
@@ -563,6 +566,13 @@ class HistoricalEvidenceJournal:
             raise ValueError("Journal offset is out of bounds")
         clauses = ["observed_at>=?", "observed_at<=?"]
         params: list[Any] = [start, end]
+        if app_id:
+            # Enforce the 48-hour TTL at read time even if the next
+            # asynchronous writer/prune cycle has not run yet.
+            cutoff = (datetime.now(timezone.utc) -
+                      timedelta(hours=self.log_retention_hours)).isoformat(timespec="microseconds")
+            clauses.extend(["stream='logs'", "received_at>=?"])
+            params.append(cutoff)
         for col, val in (("device_id", device_id), ("app_id", app_id), ("attribute", attribute)):
             if val:
                 clauses.append(col + "=?")
