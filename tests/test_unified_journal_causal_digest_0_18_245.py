@@ -152,7 +152,7 @@ def test_real_17_source_23_collector_live_replay():
     assert "| 07:27:48 | Shower Light | ON |" in fixed
     assert "ON reported before app 4013 adjusted brightness" in fixed
     assert "ON reported before app 4014 adjusted brightness" in fixed
-    assert "School Run" not in fixed  # no source mode observation in fixture
+    assert "School Run at 07:15:01" in fixed  # source mode event was retrieved
     assert "02:10:01" in fixed and "collector-only" in fixed
     assert "The initiating ON controller is unverified" in fixed
     assert "no OFF commands" not in fixed
