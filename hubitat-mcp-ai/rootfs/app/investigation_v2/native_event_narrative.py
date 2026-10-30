@@ -231,7 +231,8 @@ def event_narrative_evidence(
     selected = []
     for group in by_target.values():
         commands = [e for e in group if e["observation_kind"] == "command_issued"]
-        states = [e for e in group if e["observation_kind"] == "state_reported"]
+        states = [e for e in group if e["observation_kind"] in (
+            "state_reported", "hub_context_reported")]
         per_device = min(16, max(4, max_events // len(by_target)))
         chosen_commands = commands[-(per_device // 2):]
         state_quota = per_device - len(chosen_commands)
