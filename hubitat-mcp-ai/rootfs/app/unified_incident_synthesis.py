@@ -165,7 +165,8 @@ def source_first_explanation(facts: Mapping[str, Any]) -> str:
               "transition records in the *live Hubitat pages*. "
               "A journal observation is independently reported, but does "
               "not make the incomplete live history complete. The exact "
-              "initiating controller remains unverified; incident-time "
+              "initiating controller remains unverified; the initiating controller "
+              "cannot be conclusively identified without incident-time "
               "app logs or external automation traces may be required.")
     passages.append(
         "**Cause is not fully verified:** Current automation source code "
