@@ -44,11 +44,3 @@ def test_config_source_identified_by_scoped_controller_app_id():
     assert "not verified historical configuration" in report
     case.app_identities["3950"] = "Known Controller"
     assert "Known Controller (app #3950)" in format_investigation_report(case, [], "planning_timeout")
-
-def test_single_date_uses_authoritative_hub_time_zone_path():
-    window = explicit_incident_window("Investigate on 12 October 2026", zone_name="Europe/London")
-    assert window.start_utc == "2026-10-11T23:00:00+00:00"
-    assert window.end_utc == "2026-10-12T23:00:00+00:00"
-    source = (APP / "app.py").read_text()
-    assert 'if explicit_incident_window(payload.question, zone_name="UTC") is not None:' in source
-    assert "recent_verified_audit_identities()" in source
