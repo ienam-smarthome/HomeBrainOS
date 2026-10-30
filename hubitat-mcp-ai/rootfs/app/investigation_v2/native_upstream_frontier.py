@@ -67,12 +67,16 @@ def upstream_evidence_frontier(
         events = source.get("events")
         if not isinstance(events, list):
             continue
+        if ident.isdecimal() and any(
+                isinstance(e, Mapping) and e.get("name") in _INPUTS
+                and _timestamp(e.get("date")) is not None
+                for e in events[:100]):
+            # A supporting sensor may itself have been resolved by a
+            # subsequent unique-name lookup and placed in focus_ids.
+            # Its source event class, not this mutable focus set, identifies
+            # independent input evidence.
+            inputs[ident] = read
         if ident not in focus:
-            if ident.isdecimal() and any(
-                    isinstance(e, Mapping) and e.get("name") in _INPUTS
-                    and _timestamp(e.get("date")) is not None
-                    for e in events[:100]):
-                inputs[ident] = read
             continue
         observed = [e for e in events[:100] if isinstance(e, Mapping)
                     and _timestamp(e.get("date")) is not None
