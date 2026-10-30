@@ -107,6 +107,7 @@ from causal_transition_provenance import (
     scoped_off_history_receipt,
 )
 from group_journal_recovery import recover_group_journal
+from group_app_decision_recovery import recover_group_app_decisions
 from unified_investigation_bridge import (
     unified_investigation_followup, reconcile_unified_investigation_answer,
 )
@@ -3858,6 +3859,14 @@ class UnifiedMCPAgent:
                 )
                 if journal_recovery["attempted"]:
                     increment_active_metric("unified_group_journal_recovery")
+                    evidence = self.evidence.receipts()
+                app_decisions = await recover_group_app_decisions(
+                    journal=getattr(self, "historical_journal", None),
+                    recorder=self.evidence, question=user_prompt,
+                    receipts=evidence,
+                )
+                if app_decisions["app_queries"]:
+                    increment_active_metric("unified_group_app_log_checks")
                     evidence = self.evidence.receipts()
             # Enforce multi-device source coverage after every original
             # HomeBrain answer path, including early no-tools model exits.
