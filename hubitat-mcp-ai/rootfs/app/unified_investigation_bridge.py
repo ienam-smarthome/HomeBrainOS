@@ -114,6 +114,27 @@ def _attested_targets(receipts: Sequence[Mapping[str, Any]],
     return names
 
 
+def _verified_lookup_identities(
+    receipts: Sequence[Mapping[str, Any]],
+) -> dict[str, list[str]]:
+    """Independently resolved device IDs, including input sensors not named in question."""
+    identities: dict[str, set[str]] = {}
+    for receipt in receipts:
+        if (receipt.get("success") is not True or receipt.get("mutates") is True
+                or receipt.get("evidence_kind") != "targeted_device_lookup"):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        state = details.get("reportedDeviceState")
+        if not isinstance(state, Mapping):
+            continue
+        ident = str(state.get("deviceId") or "")
+        label = state.get("label")
+        if ident.isdecimal() and isinstance(label, str) and label.strip():
+            identities.setdefault(label.strip().casefold(), set()).add(ident)
+    return {label: sorted(ids) for label, ids in identities.items()}
+
 def collect_unified_evidence(
     receipts: Sequence[Mapping[str, Any]], question: str,
 ) -> dict[str, Any] | None:
@@ -129,21 +150,62 @@ def collect_unified_evidence(
     source_ids: set[str] = set()
     modes: list[dict[str, Any]] = []
     incident = explicit_incident_window(question, zone_name="UTC")
-    for index, receipt in enumerate(receipts[:80], 1):
-        if receipt.get("sub_tool") != "hub_list_device_events":
+    # Native event reads sometimes retain only a receipt summary, while the
+    # deterministic device-history wrapper holds the source's typed event rows.
+    # Reconcile both successful read surfaces. Identity for a wrapped history
+    # MUST already be independently attested by a targeted device lookup.
+    verified_label_ids = _verified_lookup_identities(receipts)
+    for ident, label in verified_names.items():
+        ids = verified_label_ids.setdefault(label.casefold(), [])
+        if ident not in ids:
+            ids.append(ident)
+    observed_keys: set[tuple[str, str, str, str, str]] = set()
+    for index, receipt in enumerate(receipts[:100], 1):
+        tool = str(receipt.get("tool") or "")
+        leaf = str(receipt.get("sub_tool") or "")
+        is_native = leaf == "hub_list_device_events"
+        is_derived = tool == "homebrain_device_history"
+        if not (is_native or is_derived):
             continue
         rows = _valid_source_rows(receipt)
         if not rows:
             continue
         args = _args(receipt)
-        device_id = str(args.get("deviceId") or "")
+        if is_native:
+            device_id = str(args.get("deviceId") or "")
+        else:
+            details = receipt.get("details") or {}
+            label = str(details.get("label") or "").strip().casefold()
+            matches = verified_label_ids.get(label) or []
+            # A history name is not an independently verified device ID.
+            # Ambiguous/unresolved identities must never enter the causal graph.
+            device_id = matches[0] if len(matches) == 1 else ""
         if device_id.isdecimal():
             source_ids.add(device_id)
-            projected = event_summary({"events": rows})
+            # Deduplicate the same native row exposed through both gateway
+            # receipts and deterministic history. Retain distinct commands.
+            unique_rows: list[dict[str, Any]] = []
+            for row in rows:
+                actor = row.get("producedBy") or {}
+                actor_id = str(actor.get("appId") or actor.get("deviceId")
+                               or actor.get("id") or "") if isinstance(actor, Mapping) else ""
+                key = (device_id, str(row.get("date") or ""),
+                       str(row.get("name") or ""), str(row.get("value") or ""),
+                       actor_id)
+                if key in observed_keys:
+                    continue
+                observed_keys.add(key)
+                unique_rows.append(row)
+            if not unique_rows:
+                continue
+            projected = event_summary({"events": unique_rows})
             if projected is None:
                 continue
             witnessed.append({
                 "read": index, "operation": "hub_list_device_events",
+                "source_surface": (
+                    "homebrain_device_history" if is_derived
+                    else "native_gateway_receipt"),
                 "read_filters": {"deviceId": device_id},
                 "source_data": projected,
             })
@@ -153,7 +215,7 @@ def collect_unified_evidence(
                     continue
                 all_events.append({**e, "device_id": device_id,
                                    "read": index, "when": when})
-        else:
+        elif is_native:
             for e in rows:
                 when = _time(e.get("date"))
                 if (e.get("name") == "mode" and when is not None
@@ -514,14 +576,29 @@ def unified_investigation_followup(
               "that ON's cause. If additional evidence is unavailable, "
               "say so clearly and retain the OFF command evidence."
         )
+    unresolved_ons = [
+        e for e in facts["transition_relationships"]
+        if e["reported_state"] == "on" and not e["preceding_hubitat_command_in_sample"]
+    ]
+    if not unresolved_ons:
+        return None
     if not facts["missing_independent_input_history"]:
-        return None
-    if not any(
-        event["reported_state"] == "on"
-        and not event["preceding_hubitat_command_in_sample"]
-        for event in facts["transition_relationships"]
-    ):
-        return None
+        return (
+            "HOST CAUSAL CHAIN INCOMPLETE (read-only follow-up). "
+            "Independent input histories have been checked for IDs: "
+            + ", ".join(facts["independently_read_input_ids"][:12])
+            + ". Some actuator ON transitions still have no preceding command "
+              "in returned bounded samples. Choose a NEW safe source read "
+              "to distinguish controller dependencies, upstream initiators, "
+              "historical app decisions or command provenance, using only "
+              "live available MCP schemas and verified identities. "
+              "A physical bridge report or absence of command rows is not "
+              "proof of external control. A current app configuration or "
+              "device-dependents lookup cannot establish historical absence "
+              "of alternative command paths. Do not repeat already checked "
+              "input histories. If relevant sources are unavailable, "
+              "state the specific missing evidence and stop."
+        )
     examples = [{
         "device": e["device_name"], "time": e["time"],
         "prior_command_in_returned_sample": False,

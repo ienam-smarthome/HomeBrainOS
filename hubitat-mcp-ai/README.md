@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.250**.
+Current add-on version: **0.18.251**.
+
+**Unified investigation event intake:** the original model-directed causal bridge now reconciles typed deterministic device history with native event receipts, recognizes independently resolved input sensors and can request an additional evidence-driven controller read. [Details](CHANGELOG-0.18.251.md).
 
 **General provenance reasoning:** A typed reporter/listener versus initiating-command contract now guides the original model-directed investigation checkpoint and final synthesis across device classes, with a multi-device causal overclaim guard. [Release notes](CHANGELOG-0.18.250.md).
 
