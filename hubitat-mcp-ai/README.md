@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.253**.
+Current add-on version: **0.18.254**.
+
+**Cross-source incident reconciliation:** Historical Journal switch observations are combined with independently sourced native Hubitat switch reports for missing targets, preserving complete multi-device timelines and truthful per-target coverage. [Release notes](CHANGELOG-0.18.254.md).
 
 **Unified native evidence graph:** Device-scoped MCP event receipts now feed source-role edges (reporter, notified listener and verified command issuer) into the existing investigation checkpoint and final-answer validator. This closes an evidence-intake gap responsible for unsupported external-controller verdicts. [Release notes](CHANGELOG-0.18.253.md).
 
