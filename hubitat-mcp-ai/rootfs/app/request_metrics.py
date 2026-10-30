@@ -69,6 +69,7 @@ class RequestMetrics:
         "v3_witness_total", "v3_witness_source_inputs",
         "v3_witness_immediate_command_matches",
         "v3_witness_targets_without_on_issuer",
+        "v3_claim_pilot_recovery_offered",
         "v3_claim_envelope_missing",
         "v3_claim_envelope_present",
         "v3_claim_envelope_valid",

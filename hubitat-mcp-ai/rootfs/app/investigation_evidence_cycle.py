@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from unified_investigation_bridge import collect_unified_evidence
 from causal_source_feasibility import build_source_feasibility_choices
+from causal_claim_pilot import render_shadow_claim_pilot
 
 
 def cross_source_discovery_checkpoint(
@@ -25,6 +26,7 @@ def cross_source_discovery_checkpoint(
                          or facts.get("archived_input_source_observations")):
         return None
     source_choices = build_source_feasibility_choices(facts, receipts)
+    claim_pilot = render_shadow_claim_pilot(facts)
     checked_inputs = facts.get("independently_read_input_ids") or []
     coverage = facts.get("target_coverage") or []
     recovered = [
@@ -99,6 +101,7 @@ def cross_source_discovery_checkpoint(
           "stop with the exact missing upstream execution evidence. "
           "Do not invent sensor IDs, external initiation or a new tool name, "
           "assert complete history or modify devices."
+        + claim_pilot
     )
 
 

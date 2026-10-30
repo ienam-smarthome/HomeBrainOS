@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from unified_incident_synthesis import reconcile_ledger_if_needed
 from causal_witness_ledger import build_witness_coverage_ledger
+from causal_claim_pilot import render_shadow_claim_pilot
 from causal_source_feasibility import build_source_feasibility_choices
 from investigation_v2.native_event_narrative import event_narrative_evidence
 from investigation_v2.native_provenance import event_summary
@@ -832,43 +833,7 @@ def unified_investigation_instruction(
     # Only run the optional shadow pilot when the CURRENT safety finalizer
     # will necessarily publish the source-attested two-target journal digest.
     # No claim block can leak into an otherwise model-led response.
-    witness_ledger = evidence.get("v3_witness_ledger") or {}
-    journal_target_ids = {
-        str(w.get("entity") or "") for w in
-        (witness_ledger.get("witnesses") or [])
-        if w.get("event_class") in (
-            "journal_source_switch_on", "journal_source_switch_off")
-    }
-    pilot = ""
-    if (evidence.get("missing_switch_history_for_targets")
-            and len(journal_target_ids) >= 2):
-        examples = [
-            {
-                "id": w["witness_id"], "device_id": w["entity"],
-                "event_class": w["event_class"], "role": w["role"],
-                "clock_basis": w["clock_basis"],
-            }
-            for w in (witness_ledger.get("witnesses") or [])
-            if w.get("role") in ("state-report", "issued-command", "input-report")
-        ][:18]
-        pilot = (
-            "\nOPTIONAL V3 SHADOW CLAIM ATTESTATION (diagnostics only; the "
-            "normal evidence safety finalizer still controls publication). "
-            "After the natural-language explanation, optionally append one "
-            "fenced homebrain-claims JSON object with schema "
-            "homebrain-claims.v1 and a claims array (max 8). Claim kinds: "
-            "reported_switch_state with device_id, state=on/off and exactly "
-            "one source state witness_id; hubitat_issued_command with "
-            "device_id, command=on/off/setlevel, app_id and one command "
-            "witness_id; matched_hubitat_on_command only with an "
-            "already-verified command/state witness pair; "
-            "upstream_cause_unverified with device_id and no witnesses. "
-            "Do NOT assert a command issuer from a later setLevel, notified "
-            "app, bridge producer or sensor correlation. Do not call tools "
-            "to fill this optional annotation; leave it out if uncertain. "
-            "Source-witness catalog: "
-            + json.dumps(examples, ensure_ascii=True, separators=(",", ":"))[:2450]
-        )
+    pilot = render_shadow_claim_pilot(evidence)
     compact = {
         "target_names": evidence["user_target_names"],
         "target_read_ids": evidence["target_device_ids"],
