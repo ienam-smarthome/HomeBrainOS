@@ -12,6 +12,7 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
+from unified_incident_synthesis import reconcile_ledger_if_needed
 from investigation_v2.native_event_narrative import event_narrative_evidence
 from investigation_v2.native_provenance import event_summary
 from investigation_v2.temporal_scope import explicit_incident_window
@@ -516,6 +517,12 @@ def reconcile_unified_investigation_answer(
     facts = collect_unified_evidence(receipts, question)
     if facts is None:
         return message, False
+    # Evidence-first correction for incomplete target switch histories and
+    # contradictions such as 'no OFF' when observed OFF commands are present.
+    # Never leave a false likely-cause paragraph above a correct appendix.
+    ledger_answer, ledger_corrected = reconcile_ledger_if_needed(message, facts)
+    if ledger_corrected:
+        return ledger_answer, True
     timeline = verified_group_timeline(receipts, question)
     if not timeline:
         return message, False
