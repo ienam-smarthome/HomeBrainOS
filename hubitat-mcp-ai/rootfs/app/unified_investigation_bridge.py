@@ -309,6 +309,8 @@ def collect_unified_evidence(
     archived_input_collector_count = 0
     archived_input_gap_count = 0
     archived_input_reads = 0
+    archived_input_reception_rows: list[dict[str, Any]] = []
+    archived_input_truncated_ids: set[str] = set()
     for receipt in receipts[:120]:
         if (receipt.get("tool") != "homebrain_evidence_journal"
                 or receipt.get("evidence_kind") != "group_archived_input_history"
@@ -335,6 +337,8 @@ def collect_unified_evidence(
         if not native_checked:
             continue
         archived_input_reads += 1
+        if d.get("truncated") is True:
+            archived_input_truncated_ids.add(ident)
         gaps = d.get("gapCount")
         if type(gaps) is int and gaps >= 0:
             archived_input_gap_count += gaps
@@ -356,6 +360,12 @@ def collect_unified_evidence(
                 continue
             if basis == "collector-received":
                 archived_input_collector_count += 1
+                if len(archived_input_reception_rows) < 96:
+                    archived_input_reception_rows.append({
+                        "device_id": ident, "received_at": when.isoformat(),
+                        "attribute": str(event["attribute"]), "value": value,
+                        "timestamp_basis": "collector-received",
+                    })
                 continue
             archived_input_source_count += 1
             key = (ident, when.isoformat(), str(event["attribute"]), value)
@@ -589,6 +599,70 @@ def collect_unified_evidence(
                 "timestamp_basis": basis, "source": "Historical Journal",
             })
     incident_rows.sort(key=lambda e: (e["time"], e["device_name"]))
+    # Reception-only sensor reports can form *co-occurrence patterns*, not
+    # source-event chronology. Compare against source-timed switch boundaries
+    # with a loose clock window; report separately and explicitly forbid
+    # claiming which side acted first or which app sent a command. A single
+    # independently named target avoids counting two nearly synchronous
+    # lights as two independent replications.
+    source_boundaries = [
+        row for row in incident_rows
+        if row["device_id"] == sorted(targets)[0]
+        and row["event_class"] in ("journal_source_switch_on",
+                                   "journal_source_switch_off")
+    ]
+    reception_input_patterns: list[dict[str, Any]] = []
+    for ident in sorted({r["device_id"] for r in archived_input_reception_rows},
+                        key=int):
+        samples = [r for r in archived_input_reception_rows
+                   if r["device_id"] == ident]
+        on_matches: list[dict[str, Any]] = []
+        off_matches: list[dict[str, Any]] = []
+        for boundary in source_boundaries:
+            when = boundary["time"]
+            switch_value = boundary["value"]
+            candidates: list[tuple[float, float, dict[str, Any]]] = []
+            for sample in samples:
+                if sample["attribute"] not in ("motion", "occupancy", "presence"):
+                    continue
+                reception = _time(sample["received_at"])
+                if reception is None:
+                    continue
+                signed = (reception - when).total_seconds()
+                if (switch_value == "on"
+                        and sample["value"] in ("active", "occupied",
+                                               "present", "on", "true")
+                        and abs(signed) <= 3.0):
+                    candidates.append((abs(signed), signed, sample))
+                elif (switch_value == "off"
+                      and sample["value"] in ("inactive", "unoccupied",
+                                              "not present", "off", "false")
+                      and -20.0 <= signed <= 0):
+                    candidates.append((abs(signed), signed, sample))
+            if candidates:
+                _, signed, sample = min(candidates, key=lambda item: item[0])
+                match = {
+                    "target_source_time": boundary["date"],
+                    "input_received_at": sample["received_at"],
+                    "input_state": sample["value"],
+                    "signed_reception_vs_source_seconds": round(signed, 3),
+                }
+                (on_matches if switch_value == "on" else off_matches).append(match)
+        reception_input_patterns.append({
+            "device_id": ident,
+            "target_source_on_count": sum(
+                row["value"] == "on" for row in source_boundaries),
+            "target_source_off_count": sum(
+                row["value"] == "off" for row in source_boundaries),
+            "on_near_active_receptions": len(on_matches),
+            "off_after_inactive_receptions": len(off_matches),
+            "on_examples": on_matches[:3],
+            "off_examples": off_matches[:3],
+            "input_reception_sample_size": len(samples),
+            "input_sample_truncated": ident in archived_input_truncated_ids,
+            "cross_clock_order_verified": False,
+            "causal_initiator_verified": False,
+        })
     checked_input_ids = sorted(input_history_ids)
     archived_app_checks: list[dict[str, Any]] = []
     for receipt in receipts[:120]:
@@ -657,6 +731,8 @@ def collect_unified_evidence(
         "archived_input_collector_observations": archived_input_collector_count,
         "archived_input_gap_count": archived_input_gap_count,
         "archived_input_reads": archived_input_reads,
+        "archived_input_reception_patterns": reception_input_patterns[:8],
+        "archived_input_truncated_ids": sorted(archived_input_truncated_ids, key=int),
         "input_app_relationships": input_app_relationships[:16],
         "target_observed_command_app_ids": sorted(target_command_apps, key=int)[:16],
         "target_observed_notified_app_ids": sorted(target_notified_apps, key=int)[:16],
@@ -712,6 +788,9 @@ def unified_investigation_instruction(
         "archived_input_collector_observations":
             evidence["archived_input_collector_observations"],
         "archived_input_gap_count": evidence["archived_input_gap_count"],
+        "archived_input_reception_patterns":
+            evidence["archived_input_reception_patterns"][:6],
+        "archived_input_truncated_ids": evidence["archived_input_truncated_ids"],
         "input_app_relationships": evidence["input_app_relationships"][:10],
         "target_observed_command_app_ids": evidence["target_observed_command_app_ids"],
         "additional_event_reads_without_usable_rows":
