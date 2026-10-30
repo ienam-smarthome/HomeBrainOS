@@ -103,3 +103,12 @@ def test_failures_and_mutations_cannot_establish_reporter_provenance():
     mutation["mutates"] = True
     context = build_state_report_provenance([failed, mutation])
     assert context["state_report_count"] == 0
+
+def test_non_lighting_state_reports_use_same_general_contract():
+    heating = _history("Thermostat", "heating")
+    heating["details"]["observedEvents"][0]["name"] = "thermostatOperatingState"
+    network = _history("Network Plug", "offline")
+    network["details"]["observedEvents"][0]["name"] = "healthStatus"
+    context = build_state_report_provenance([heating, network])
+    assert context["state_report_count"] == 2
+    assert context["upstream_initiator_established"] is False
