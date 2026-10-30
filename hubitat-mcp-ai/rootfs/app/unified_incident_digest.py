@@ -261,6 +261,32 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
         else:
             mode_line += " This does not establish that the mode changed switch state."
         explanation.append(mode_line)
+    app_checks = facts.get("archived_app_checks") or []
+    if app_checks:
+        rows = [str(x.get("app_id")) + ": " + str(x.get("log_rows"))
+                + " archived message(s)" for x in app_checks
+                if type(x.get("log_rows")) is int]
+        absent = [str(x.get("app_id")) for x in app_checks
+                  if x.get("status") == "app-log-capture-not-enabled-for-app"]
+        if rows:
+            descriptors = sorted({
+                str(mark.get("stage") or "")
+                for item in app_checks
+                for mark in item.get("reported_decisions", [])
+                if isinstance(mark, Mapping) and mark.get("stage")
+            })
+            explanation.append(
+                "**Archived Hubitat app logs checked:** " + "; ".join(rows[:8])
+                + (". App-reported decision categories: "
+                   + ", ".join(descriptors[:6]) if descriptors else "")
+                + ". These are collector-received textual reports; they do "
+                  "not independently establish which app initiated a prior ON."
+            )
+        if absent:
+            explanation.append(
+                "**App log capture unavailable for:** " + ", ".join(absent[:8])
+                + ". Enabling it will capture future activity only."
+            )
     if missing_source:
         explanation.append(
             "**Remaining switch-history gaps:** No independent "

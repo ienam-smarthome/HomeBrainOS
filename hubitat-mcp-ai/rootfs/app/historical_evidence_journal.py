@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from websockets.asyncio.client import connect
+from skill_secret_guard import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -80,15 +81,18 @@ class HistoricalEvidenceJournal:
         path: Path | str = "/data/homebrain-evidence-journal.sqlite3",
         retention_days: int = 30, max_rows: int = 100000,
         capture_logs: bool = False, log_app_ids: str = "",
+        log_retention_hours: int = 48, log_max_rows: int = 100000,
     ) -> None:
         self.enabled = bool(enabled)
         self.path = Path(path)
         self.retention_days = max(1, min(365, int(retention_days)))
         self.max_rows = max(1000, min(500000, int(max_rows)))
         self.capture_logs = bool(capture_logs)
+        self.log_retention_hours = max(1, min(720, int(log_retention_hours)))
+        self.log_max_rows = max(1000, min(500000, int(log_max_rows)))
         self.log_app_ids = frozenset(
             part.strip() for part in str(log_app_ids).split(",")
-            if part.strip().isdigit()
+            if part.strip().isdigit() or part.strip() == "*"
         )
         self.base_url = ""
         self.error: str | None = None
@@ -149,9 +153,17 @@ class HistoricalEvidenceJournal:
         cutoff = (datetime.now(timezone.utc) -
                   timedelta(days=self.retention_days)).isoformat(timespec="microseconds")
         db.execute("DELETE FROM journal_events WHERE received_at < ?", (cutoff,))
-        db.execute("""DELETE FROM journal_events WHERE id IN (
-            SELECT id FROM journal_events ORDER BY received_at DESC
-            LIMIT -1 OFFSET ?)""", (self.max_rows,))
+        log_cutoff = (datetime.now(timezone.utc) -
+                      timedelta(hours=self.log_retention_hours)).isoformat(timespec="microseconds")
+        # Independent time and row caps: noisy app logs cannot evict device
+        # switch history. Prune old log rows even if log capture is disabled
+        # after an upgrade or setting change.
+        db.execute("DELETE FROM journal_events WHERE stream='logs' AND received_at < ?",
+                   (log_cutoff,))
+        for stream, limit in (("events", self.max_rows), ("logs", self.log_max_rows)):
+            db.execute("""DELETE FROM journal_events WHERE id IN (
+                SELECT id FROM journal_events WHERE stream=? ORDER BY received_at DESC
+                LIMIT -1 OFFSET ?)""", (stream, limit))
         db.execute("DELETE FROM journal_gaps WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,))
 
     def _mark_disconnected(self, stream: str, reason: str) -> None:
@@ -200,9 +212,12 @@ class HistoricalEvidenceJournal:
             if _limited(packet.get("type"), 12).lower() != "app":
                 return None
             app_id = _limited(packet.get("id"), 40)
-            if not app_id or app_id not in app_ids:
+            if not app_id.isdecimal() or ("*" not in app_ids and app_id not in app_ids):
                 return None
-            message = SENSITIVE.sub(lambda match: match.group(1) + "=REDACTED", _limited(packet.get("msg"), 512))
+            # Redact *before storage*, including JSON keys, query parameters,
+            # bearer tokens and ordinary key=value sequences.
+            message = redact_secrets(_limited(packet.get("msg"), 512))
+            message = SENSITIVE.sub(lambda match: match.group(1) + "=REDACTED", message)
             return {
                 "stream": stream, "device_id": "", "app_id": app_id,
                 "attribute": _limited(packet.get("level"), 24).lower(),
@@ -223,9 +238,12 @@ class HistoricalEvidenceJournal:
                 # Frames without one can represent repeated real events, so
                 # keep collector-receive time in their signatures.
                 identity = dict(row)
-                if row["source_time"]:
+                # Hubitat logsocket often provides only HH:MM:SS, not an
+                # independently verified full source timestamp. Never
+                # deduplicate repeated app decisions merely because they
+                # have the same short clock and message in one second.
+                if row["timestamp_basis"] == "source" and row["source_time"]:
                     identity.pop("received_at", None)
-                    identity.pop("observed_at", None) if row["timestamp_basis"] == "collector-received" else None
                 stable = json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
                 signature = hashlib.sha256(stable.encode("utf-8")).hexdigest()
                 cursor = db.execute("""INSERT OR IGNORE INTO journal_events
@@ -448,6 +466,9 @@ class HistoricalEvidenceJournal:
             "queued": self._queue.qsize(), "recorded_this_run": self._recorded,
             "dropped_this_run": self._dropped,
             "retention_days": self.retention_days, "max_rows": self.max_rows,
+            "log_retention_hours": self.log_retention_hours,
+            "log_max_rows": self.log_max_rows,
+            "capture_all_app_logs": self.capture_logs and "*" in self.log_app_ids,
             "capture_logs": self.capture_logs and bool(self.log_app_ids),
             "tracked_app_ids": sorted(self.log_app_ids) if self.capture_logs else [],
             "coverage_complete": False, "error": self.error,
@@ -489,10 +510,12 @@ class HistoricalEvidenceJournal:
                     event_rows=int(counts.get("events", 0)),
                     app_log_rows=int(counts.get("logs", 0)),
                     last_persisted_device_event=last_event_received,
-                    captured_app_log_counts={
-                        app_id: int(app_counts.get(app_id, 0))
-                        for app_id in sorted(self.log_app_ids)
-                    } if self.capture_logs else {},
+                    captured_app_log_counts=(
+                        {"*": sum(app_counts.values())}
+                        if "*" in self.log_app_ids
+                        else {app_id: int(app_counts.get(app_id, 0))
+                              for app_id in sorted(self.log_app_ids)}
+                    ) if self.capture_logs else {},
                     db_bytes=bytes_used, gaps=gaps, open_gaps=open_gaps,
                     recent_gaps=[
                         dict(zip(("stream", "started_at", "ended_at", "reason"), row))
@@ -543,6 +566,13 @@ class HistoricalEvidenceJournal:
             raise ValueError("Journal offset is out of bounds")
         clauses = ["observed_at>=?", "observed_at<=?"]
         params: list[Any] = [start, end]
+        if app_id:
+            # Enforce the 48-hour TTL at read time even if the next
+            # asynchronous writer/prune cycle has not run yet.
+            cutoff = (datetime.now(timezone.utc) -
+                      timedelta(hours=self.log_retention_hours)).isoformat(timespec="microseconds")
+            clauses.extend(["stream='logs'", "received_at>=?"])
+            params.append(cutoff)
         for col, val in (("device_id", device_id), ("app_id", app_id), ("attribute", attribute)):
             if val:
                 clauses.append(col + "=?")

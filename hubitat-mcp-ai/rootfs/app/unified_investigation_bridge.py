@@ -7,7 +7,7 @@ read source facts and exact temporal relationships.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import re
 from typing import Any, Mapping, Sequence
@@ -28,14 +28,32 @@ def _time(value: Any) -> datetime | None:
         return None
 
 
+_RECENT = re.compile(
+    r"\b(?:last|past)\s+(\d{1,2}|one|two|three|four|six|twelve|twenty-four)"
+    r"\s+(minutes?|hours?)\b", re.I)
+_RECENT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4,
+                 "six": 6, "twelve": 12, "twenty-four": 24}
+
+
 _EXPLICIT_CLOCK_RANGE = re.compile(
     r"\b(?:between|from)\s+(\d{1,2}):(\d{2})\s*"
     r"(?:and|to|[-–])\s*(\d{1,2}):(\d{2})\b", re.I)
 
 
 def _in_user_period(when: datetime, question: str, incident: Any) -> bool:
-    if incident is not None and not incident.contains(when.isoformat()):
-        return False
+    if incident is not None:
+        if not incident.contains(when.isoformat()):
+            return False
+    else:
+        recent = _RECENT.search(question)
+        if recent:
+            amount = _RECENT_WORDS.get(recent.group(1).casefold())
+            amount = int(recent.group(1)) if amount is None else amount
+            seconds = amount * (3600 if recent.group(2).lower().startswith("hour") else 60)
+            if not 60 <= seconds <= 48 * 3600:
+                return False
+            if not datetime.now(timezone.utc) - timedelta(seconds=seconds) <= when <= datetime.now(timezone.utc):
+                return False
     found = _EXPLICIT_CLOCK_RANGE.search(question)
     if found:
         h1, m1, h2, m2 = map(int, found.groups())
@@ -336,6 +354,35 @@ def collect_unified_evidence(
             })
     incident_rows.sort(key=lambda e: (e["time"], e["device_name"]))
     checked_input_ids = sorted(input_history_ids)
+    archived_app_checks: list[dict[str, Any]] = []
+    for receipt in receipts[:120]:
+        if (receipt.get("evidence_kind") != "group_archived_app_decisions"
+                or receipt.get("tool") != "homebrain_evidence_journal"
+                or receipt.get("mutates") is True):
+            continue
+        d = receipt.get("details")
+        if not isinstance(d, Mapping):
+            continue
+        ident = str(d.get("appId") or "")
+        if not ident.isdecimal():
+            continue
+        archived_app_checks.append({
+            "app_id": ident,
+            "status": str(d.get("status") or "")[:72],
+            "log_rows": d.get("returnedRows"),
+            "decision_declarations": d.get("decisionDeclarations"),
+            "reported_decisions": [
+                {
+                    "stage": str(e.get("stage") or "")[:48],
+                    "collector_received_at_utc": str(e.get("collectorReceivedAtUtc") or "")[:35],
+                    "original_event_time_verified": False,
+                } for e in (d.get("reportedDecisionRows") or [])[:6]
+                if isinstance(e, Mapping)
+            ],
+            "gap_count": d.get("gapCount"),
+            "historical_execution_verified": False,
+            "timestamp_basis": "collector-received",
+        })
     log_receipts = [
         r for r in receipts if r.get("success") is True
         and r.get("sub_tool") == "hub_get_logs"
@@ -366,6 +413,7 @@ def collect_unified_evidence(
         "independently_read_input_ids": checked_input_ids,
         "missing_independent_input_history": not bool(checked_input_ids),
         "log_query_count": len(log_receipts),
+        "archived_app_checks": archived_app_checks,
         "incident_log_coverage_verified": False,
         "limitations": (
             "State is source-reported, not an independent physical ACK. "
@@ -409,6 +457,7 @@ def unified_investigation_instruction(
         "independently_read_input_ids": evidence["independently_read_input_ids"],
         "missing_independent_input_history": evidence["missing_independent_input_history"],
         "log_query_count": evidence["log_query_count"],
+        "archived_app_checks": evidence["archived_app_checks"],
         "incident_log_coverage_verified": evidence["incident_log_coverage_verified"],
         "event_source_count": source.get("event_count_in_returned_samples"),
         "source_event_examples": source.get("event_examples", [])[:8],

@@ -26,6 +26,29 @@ _ACTION = re.compile(
     r"start|engag|activat|enable|block|ignor|skip|cancel|clear|expir|end|"
     r"prevent|suppress|set|inhibit", re.I,
 )
+_BUTTON_DECLARATION = re.compile(r"\bbutton\b.{0,65}\b(?:push(?:ed)?|press(?:ed)?|held|released)\b", re.I)
+_OFF_DECLARATION = re.compile(r"(?<!\w)(?:off\(\)|turn(?:ing)?\s+off|switch(?:ed)?\s+off|request(?:ed)?\s+off)(?!\w)", re.I)
+_ON_DECLARATION = re.compile(r"(?<!\w)(?:on\(\)|turn(?:ing)?\s+on|switch(?:ed)?\s+on|request(?:ed)?\s+on)(?!\w)", re.I)
+_LEVEL_DECLARATION = re.compile(r"\b(?:setLevel\(|brightness|dimmer\s+level)\b", re.I)
+_MODE_DECLARATION = re.compile(r"\b(?:mode\s+change|mode\s+(?:set|became|changed)|school run)\b", re.I)
+
+
+def _decision_stage(message: str) -> str | None:
+    if _BUTTON_DECLARATION.search(message):
+        return "reported-button-action"
+    if _OFF_DECLARATION.search(message):
+        return "reported-off-request"
+    if _ON_DECLARATION.search(message):
+        return "reported-on-request"
+    if _LEVEL_DECLARATION.search(message):
+        return "reported-brightness-handling"
+    if _LOCKOUT.search(message) and _ACTION.search(message):
+        return "reported-lockout-handling"
+    if _MOTION.search(message) and (_ACTION.search(message) or re.search(r"\b(?:active|inactive|detected)\b", message, re.I)):
+        return "reported-motion-handling"
+    if _MODE_DECLARATION.search(message):
+        return "reported-mode-handling"
+    return None
 
 
 def _aware(value: Any) -> datetime | None:
@@ -68,7 +91,8 @@ async def archived_app_decision_evidence(
         return result
     configured = (
         bool(getattr(journal, "capture_logs", False))
-        and str(app_id) in getattr(journal, "log_app_ids", frozenset())
+        and (str(app_id) in getattr(journal, "log_app_ids", frozenset())
+             or "*" in getattr(journal, "log_app_ids", frozenset()))
     )
     result["configuredToCaptureApp"] = configured
     connected = getattr(journal, "_connected", {})
@@ -132,14 +156,9 @@ async def archived_app_decision_evidence(
             "message": message,
         }
         packaged.append(packed)
-        if not (_ACTION.search(message) and
-                (_LOCKOUT.search(message) or _MOTION.search(message))):
+        stage = _decision_stage(message)
+        if stage is None:
             continue
-        stage = (
-            "reported-lockout-handling"
-            if _LOCKOUT.search(message) else
-            "reported-motion-handling"
-        )
         safe_candidates.append({
             "rowId": f"journal-log-{index+1}",
             "stage": stage,
