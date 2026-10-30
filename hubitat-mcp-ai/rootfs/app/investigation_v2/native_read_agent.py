@@ -59,6 +59,7 @@ from .native_interval_coverage import (
     complete_interval_coverage, incomplete_interval_answer,
     interval_reasoning_evidence)
 from .native_reasoning_policy import planning_system_prompt
+from .native_read_health import ReadHealth, read_timeout_cap
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
 from .native_historical_frontier import (
     historical_controller_frontier, reject_redundant_controller_logs)
@@ -515,6 +516,7 @@ async def run_native_read_agent(
     discovered: dict[str, set[str]] = {}
     prior: set[str] = set()
     timed_out_operations: set[tuple[str, str]] = set()
+    read_health = ReadHealth()
     failed_scoped_reads: dict[tuple[str, str], int] = {}
     failed_operation_counts: dict[str, int] = {}
     blocked_repeat_errors = 0
@@ -1097,8 +1099,9 @@ async def run_native_read_agent(
                 execution = await asyncio.wait_for(
                     executor.execute(name, args, tool=manifest[name],
                                      record_evidence=False),
-                    timeout=min(max(1.0, per_read_timeout),
-                                max(0.1, deadline - time.monotonic())),
+                    timeout=read_timeout_cap(
+                        str(op), per_read_timeout,
+                        deadline - time.monotonic()),
                 )
                 error = classify_execution(execution, name)
                 if (execution.effect is not ToolEffect.READ
@@ -1115,6 +1118,7 @@ async def run_native_read_agent(
             except Exception as exc:
                 error = classify_exception(exc)
             if error:
+                read_health.completed(str(op), error)
                 if target:
                     failed_scoped_reads[scoped_key] = (
                         failed_scoped_reads.get(scoped_key, 0) + 1
@@ -1148,7 +1152,11 @@ async def run_native_read_agent(
                     **({"hint": guidance_for(safe_error)}
                        if guidance_for(safe_error) else {}),
                 })})
+                if read_health.stopped:
+                    reason = "mcp_read_transport_degraded"
+                    break
                 continue
+            read_health.completed(str(op), None)
             assert result is not None
             verified_ids.update(attested_source_ids(op, result.data))
             # A source-verified room response establishes membership only,
@@ -1499,6 +1507,9 @@ async def run_native_read_agent(
                         view.pop("user_incident_evidence_coverage"), **view}
             messages.append({"role": "tool", "content":
                              json.dumps(view, ensure_ascii=True)[:12000]})
+        if read_health.stopped:
+            reason = "mcp_read_transport_degraded"
+            break
         if redundant_snapshot_reads >= 2 and focus_ids:
             reason = "no_new_source_evidence"
             break
@@ -2240,6 +2251,7 @@ async def run_native_read_agent(
             "requested_complete_interval_coverage": requested_interval_coverage,
             "interval_coverage_challenge_used": interval_coverage_challenge_used,
             "failed_operation_counts": failed_operation_counts,
+            "read_transport_health": read_health.snapshot(),
             "historical_controller_source_frontier": historical_frontier,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
