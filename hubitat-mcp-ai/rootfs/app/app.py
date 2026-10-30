@@ -162,7 +162,10 @@ def load_options() -> dict[str, Any]:
         "historical_journal_retention_days": 30,
         "historical_journal_max_rows": 100000,
         "historical_journal_capture_logs": False,
+        "historical_journal_capture_all_app_logs": True,
         "historical_journal_log_app_ids": "",
+        "historical_journal_log_retention_hours": 48,
+        "historical_journal_log_max_rows": 100000,
         "causal_deterministic_final_enabled": True,
         "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
         "general_task_engine_enabled": False,
@@ -214,8 +217,16 @@ historical_journal = HistoricalEvidenceJournal(
     path=Path(os.getenv("HISTORICAL_JOURNAL_PATH", "/data/homebrain-evidence-journal.sqlite3")),
     retention_days=int(OPTIONS.get("historical_journal_retention_days") or 30),
     max_rows=int(OPTIONS.get("historical_journal_max_rows") or 100000),
-    capture_logs=_bool(OPTIONS.get("historical_journal_capture_logs")),
-    log_app_ids=str(OPTIONS.get("historical_journal_log_app_ids") or ""),
+    capture_logs=(
+        _bool(OPTIONS.get("historical_journal_capture_all_app_logs"))
+        or _bool(OPTIONS.get("historical_journal_capture_logs"))
+    ),
+    log_app_ids=(
+        "*" if _bool(OPTIONS.get("historical_journal_capture_all_app_logs"))
+        else str(OPTIONS.get("historical_journal_log_app_ids") or "")
+    ),
+    log_retention_hours=int(OPTIONS.get("historical_journal_log_retention_hours") or 48),
+    log_max_rows=int(OPTIONS.get("historical_journal_log_max_rows") or 100000),
 )
 mcp = HubitatMCPClient(
     endpoint_url=str(OPTIONS.get("hubitat_mcp_url") or ""),
