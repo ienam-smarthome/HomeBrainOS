@@ -10,7 +10,9 @@ The regression was a contradictory eligibility condition: v0.18.238 required `no
 
 - Eligibility now depends on **two separately attested device-event READs** and at least three usable, exact source events, not whether device focus IDs happen to be populated. The event packet accepts only independently resolved IDs or returned room membership.
 - The host retains stricter priority for explicitly requested complete-cycle gaps, missing incident-time evidence and unattributed generic warnings. Single-device focused investigations remain on their specialised path.
-- When the event evidence is sufficient, an additional no-tools model reasoning stage receives a bounded packet of exact source timestamps, values, actor IDs and READ receipts. It must return citeable structured JSON and cannot assert an unverified sensor cause.
+- When the event evidence is sufficient, an additional no-tools model reasoning stage receives a bounded packet of exact source timestamps, values, actor IDs, verified device labels and READ receipts. It must return citable structured JSON and cannot assert an unverified sensor cause.
+- An explicitly dated and clock-bounded question narrows only the final event-evidence packet (not the MCP READ permissions) so later events cannot displace earlier incident observations. Nearby issued commands and independently source-reported state transitions are both preserved for comparison; the hub timezone remains unverified when this selection uses UTC.
+- If the model's explanation is unusable, the chronological fallback samples across the relevant event period instead of reporting only the last burst.
 - If the final model does not produce validated event-linked prose, publish the chronological source-backed event fallback—not a claim-count catalog—and report its actual publication authority in diagnostics.
 - `event_narrative_blockers` now explains which evidence/safety condition prevented the new stage. `source_grounded_brief_published` and `claim_publication.used_for_display_answer` distinguish a displayed timeline from the unused legacy claim-catalog audit.
 
