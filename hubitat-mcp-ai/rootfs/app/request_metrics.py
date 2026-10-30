@@ -55,6 +55,7 @@ class RequestMetrics:
         "rule_schedule_fastpath", "rule_schedule_gateway_missing",
         "task_evidence_retry", "task_evidence_incomplete",
         "unified_investigation_input_followup",
+        "target_history_scope_retry", "unscoped_history_claim_rejected",
         "unified_investigation_evidence_bridge",
         "unified_group_timeline_reconciled",
         "unified_group_journal_recovery",

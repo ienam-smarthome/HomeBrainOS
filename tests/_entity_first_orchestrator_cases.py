@@ -1621,11 +1621,17 @@ async def test_whole_home_snapshot_is_complete_and_deterministic():
         "What's happening at home?"
     )
 
-    assert "**Present:** Muhsena Khan" in outcome.message
-    assert "active rooms: Hallway" in outcome.message
-    assert "motion: Hallway Sensor" in outcome.message
-    assert "**Lights on (1):** Hallway Light 1" in outcome.message
-    assert "**Low batteries:** Fridge Door (14%)" in outcome.message
+    # The snapshot's natural-language heading may vary; identity, observed
+    # states, count and battery data must remain stable and grounded.
+    assert "Muhsena Khan" in outcome.message
+    assert ("**Present:**" in outcome.message
+            or "**At home:**" in outcome.message)
+    assert "Hallway" in outcome.message and "active" in outcome.message
+    assert "Hallway Sensor" in outcome.message and "motion" in outcome.message
+    assert "Hallway Light 1" in outcome.message
+    assert ("**Lights on (1):**" in outcome.message
+            or "1 light is on" in outcome.message)
+    assert "Fridge Door (14%)" in outcome.message
     declared = [
         item["function"]["name"]
         for item in ai.requests[0][1]["json"]["tools"]

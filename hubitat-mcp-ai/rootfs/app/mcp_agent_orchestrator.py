@@ -171,6 +171,11 @@ from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
 from evidence_source_scope import source_app_scope_error
+from target_history_scope import (
+    render_target_scope_followup,
+    inspect_target_history_scope,
+    guard_unscoped_target_history_denial,
+)
 from final_answer_coordinator import FinalAnswerCoordinator, _original_user_request
 from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
@@ -3895,6 +3900,15 @@ class UnifiedMCPAgent:
                 if edge_answer is not None:
                     message = edge_answer
                     increment_active_metric("unified_recent_edge_reconciled")
+            # This boundary covers every model/fallback path, including a
+            # no-more-tool round. Never present an unscoped hub-wide query as
+            # proof that named targets had no historic activity.
+            if (not self._mutation_requested_by_user.get()
+                    and not self._mutation_call_seen.get()):
+                message, invalid_absence = guard_unscoped_target_history_denial(
+                    message, user_prompt, evidence)
+                if invalid_absence:
+                    increment_active_metric("unscoped_history_claim_rejected")
             if is_new_rule_design_review_request(user_prompt):
                 message = calibrate_rule_design_review(
                     message, evidence, request=user_prompt,
@@ -3924,6 +3938,15 @@ class UnifiedMCPAgent:
                 message = calibrate_existing_rule_verification(
                     message, evidence, coverage, request=user_prompt,
                 )
+            if request_class == "live-read":
+                target_scope = inspect_target_history_scope(user_prompt, evidence)
+                if target_scope and target_scope["missing_target_read_ids"]:
+                    coverage = {
+                        **(coverage or {}),
+                        "targetHistoryScope": target_scope,
+                        "sourceScopeComplete": False,
+                        "questionResolved": False,
+                    }
             candidates = self._investigation_hypotheses.get()
             if candidates and request_class == "live-read":
                 checkpoint = build_evidence_checkpoint(
@@ -5038,6 +5061,7 @@ class UnifiedMCPAgent:
         configuration_semantics_retry_used = False
         inventory_only_retry_used = False
         unified_source_followup_used = False
+        target_history_scope_retry_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -5076,6 +5100,31 @@ class UnifiedMCPAgent:
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                # Source scope is a precondition for any historical zero-event
+                # conclusion. A successful hub-wide read cannot answer a
+                # question about independently resolved device IDs. The LLM
+                # retains tool choice; the host provides a bounded read-only
+                # completion opportunity instead of assuming no events.
+                if (investigative_request
+                        and not target_history_scope_retry_used
+                        and not self._mutation_requested_by_user.get()
+                        and round_index + 1 < active_round_budget):
+                    scoped_followup = render_target_scope_followup(
+                        user_prompt, self.evidence.receipts())
+                    if scoped_followup:
+                        target_history_scope_retry_used = True
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit)
+                        catalog.expose_read_gateways(
+                            ("hub_read_devices", SEARCH_TOOL),
+                            max_declared=self.tool_limit,
+                        )
+                        messages.extend([
+                            assistant, {"role": "user", "content": scoped_followup},
+                        ])
+                        tools = catalog.schemas()
+                        increment_active_metric("target_history_scope_retry")
+                        continue
                 # One source-driven recovery chance for the original HomeBrain
                 # investigator, never a second V2 planner or a keyword router.
                 # Model chooses the input READ from the existing permissions;

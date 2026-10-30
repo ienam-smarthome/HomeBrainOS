@@ -14,6 +14,7 @@ from typing import Any
 from investigation_policy import is_causal_investigation, is_history_investigation
 from investigation_intelligence import plan_investigation
 from causal_initiator_provenance_guard import build_state_report_provenance
+from target_history_scope import inspect_target_history_scope
 from general_evidence_completion import assess_task_source_coverage, EVIDENCE_KINDS
 from skill_secret_guard import redact_secrets
 
@@ -165,6 +166,10 @@ def build_evidence_checkpoint(
             "discriminator_verified": False,
             "hypothesis_verdict": "unverified",
         })
+    target_scope = inspect_target_history_scope(objective, receipts)
+    if target_scope and target_scope["missing_target_read_ids"]:
+        gaps.insert(0, "Target-specific historical reads are missing: an "
+                       "unscoped event query cannot prove device inactivity")
     provenance = build_state_report_provenance(receipts)
     state_reported = provenance["state_report_count"] > 0
     # A source-reported state and its bridge/listeners are evidence-discovery
@@ -180,12 +185,16 @@ def build_evidence_checkpoint(
     return {
         "schema": "homebrain-evidence-checkpoint/v1",
         "state_report_provenance": provenance if state_reported else None,
+        "target_history_scope": target_scope,
         "objective": str(objective or "")[:400],
         "sources": evidence[-max(1, min(30, max_receipts)):],
         "open_questions": list(dict.fromkeys(gaps))[:8],
         "competing_hypothesis_checks": comparisons,
         "next_unchecked_discriminators": (
-            provenance_discriminators + [
+            (["Which read-only event-history tool can retrieve source events "
+              "for each verified target deviceId in the requested time window?"]
+             if target_scope and target_scope["missing_target_read_ids"] else [])
+            + provenance_discriminators + [
                 row["discriminating_question"] for row in comparisons
                 if (row["source_state"] == "source-class-not-checked"
                     or row["required_origin"] in ("upstream", "physical"))
