@@ -210,7 +210,7 @@ async def recover_input_journal(
         "collector_observations": 0, "journal_gaps": 0,
     }
     facts = collect_unified_evidence(receipts, question)
-    if not facts or not facts.get("journal_source_observations"):
+    if not facts:
         return report
     candidates = [
         str(i) for i in facts.get("additional_event_reads_without_usable_rows", [])
