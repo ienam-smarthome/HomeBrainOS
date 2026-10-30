@@ -114,6 +114,27 @@ def _attested_targets(receipts: Sequence[Mapping[str, Any]],
     return names
 
 
+def _verified_lookup_identities(
+    receipts: Sequence[Mapping[str, Any]],
+) -> dict[str, list[str]]:
+    """Independently resolved device IDs, including input sensors not named in question."""
+    identities: dict[str, set[str]] = {}
+    for receipt in receipts:
+        if (receipt.get("success") is not True or receipt.get("mutates") is True
+                or receipt.get("evidence_kind") != "targeted_device_lookup"):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        state = details.get("reportedDeviceState")
+        if not isinstance(state, Mapping):
+            continue
+        ident = str(state.get("deviceId") or "")
+        label = state.get("label")
+        if ident.isdecimal() and isinstance(label, str) and label.strip():
+            identities.setdefault(label.strip().casefold(), set()).add(ident)
+    return {label: sorted(ids) for label, ids in identities.items()}
+
 def collect_unified_evidence(
     receipts: Sequence[Mapping[str, Any]], question: str,
 ) -> dict[str, Any] | None:
@@ -133,9 +154,11 @@ def collect_unified_evidence(
     # deterministic device-history wrapper holds the source's typed event rows.
     # Reconcile both successful read surfaces. Identity for a wrapped history
     # MUST already be independently attested by a targeted device lookup.
-    verified_label_ids: dict[str, list[str]] = {}
+    verified_label_ids = _verified_lookup_identities(receipts)
     for ident, label in verified_names.items():
-        verified_label_ids.setdefault(label.casefold(), []).append(ident)
+        ids = verified_label_ids.setdefault(label.casefold(), [])
+        if ident not in ids:
+            ids.append(ident)
     observed_keys: set[tuple[str, str, str, str, str]] = set()
     for index, receipt in enumerate(receipts[:100], 1):
         tool = str(receipt.get("tool") or "")
