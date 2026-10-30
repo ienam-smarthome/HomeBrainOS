@@ -193,6 +193,6 @@ async def test_original_agent_final_boundary_context_is_read_only(monkeypatch):
     assert "Immediately before the window" in outcome.message
     assert "Bathroom Light 1" in outcome.message
     assert "Shower Light" in outcome.message
-    assert "not activity inside" in outcome.message
+    assert "**not** activity inside" in outcome.message
     assert not any(x.get("mutates") for x in outcome.evidence)
     assert outcome.confirmation_required is False
