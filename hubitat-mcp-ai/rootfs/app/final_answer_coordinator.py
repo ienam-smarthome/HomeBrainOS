@@ -13,6 +13,7 @@ from causal_native_logs import (
 )
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
+from causal_initiator_provenance_guard import render_state_report_provenance
 from causal_answer_plan import render_causal_answer_plan
 from motion_lockout_investigation import is_motion_lockout_investigation
 from unified_investigation_bridge import unified_investigation_instruction
@@ -642,6 +643,12 @@ class FinalAnswerCoordinator:
                        "No historical sequence evidence receipt was available.")
                 ),
             })
+        if causal and evidence_scoped:
+            # Source-role invariants apply to single and multi-target causal
+            # requests before the model authors its final explanation.
+            provenance_brief = render_state_report_provenance(evidence)
+            if provenance_brief:
+                final_messages.append({"role": "user", "content": provenance_brief})
         if causal_answer_plan:
             # Highest-priority causal synthesis guidance: typed precomputed
             # relationships before the model authors its one final answer.
