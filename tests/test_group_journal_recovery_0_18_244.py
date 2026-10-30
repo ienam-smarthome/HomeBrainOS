@@ -201,7 +201,7 @@ def test_journal_browser_copies_actual_host_url_and_accepts_time_window():
         'id="journalBrowseStart"', 'id="journalBrowseEnd"',
         'id="journalBrowseCopy"', "function journalBrowseParameters()",
         "new URL(apiPath('api/evidence-journal/events?'+params.toString()),location.href)",
-        "id="journalBrowseDevice"",
+        'id="journalBrowseDevice"',
     ):
         assert marker in page
     assert "const begin=new Date(day+'T'+from+':00');" in page
