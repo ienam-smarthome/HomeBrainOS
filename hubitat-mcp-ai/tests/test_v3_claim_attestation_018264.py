@@ -25,6 +25,7 @@ def _facts():
     rows = [
         _event(101, "issued_on", "15:00:00.100", "3001"),
         _event(101, "reported_switch_on", "15:00:00.450"),
+        _event(101, "journal_source_switch_on", "15:00:00.450"),
         _event(101, "journal_received_switch_on", "15:00:01.600"),
         _event(101, "issued_setlevel", "15:00:01.200", "3001"),
         _event(102, "journal_source_switch_on", "15:00:00.950"),
@@ -37,7 +38,7 @@ def _facts():
             {"device_id": "102", "device_name": "Another Test Light"},
         ],
         "incident_ledger": rows,
-        "journal_source_observations": 2,
+        "journal_source_observations": 3,
         "missing_switch_history_for_targets": [
             "Generic Test Light", "Another Test Light",
         ],
