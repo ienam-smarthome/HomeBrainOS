@@ -43,6 +43,9 @@ def cross_source_discovery_checkpoint(
         "journalGapCount": facts["journal_gap_count"],
         "independentInputHistoryIdsChecked": checked_inputs[:12],
         "independentInputObservations": facts.get("independent_input_observations", [])[:12],
+        "inputAppRelationships": facts.get("input_app_relationships", [])[:10],
+        "targetObservedCommandAppIds":
+            facts.get("target_observed_command_app_ids", [])[:12],
         "eventReadsWithoutUsableRows":
             facts.get("additional_event_reads_without_usable_rows", [])[:12],
         "sourceContinuityEstablished": False,

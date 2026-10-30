@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.257**.
+Current add-on version: **0.18.258**.
+
+**Source-linked input relevance:** Device event notification metadata is preserved as typed app relationships: app-issued target commands versus notified sensor/target listeners. The original model and final Historical Journal synthesis distinguish shared app leads, different observed app associations and unverifiable links without claiming historical causation. [Release notes](CHANGELOG-0.18.258.md).
 
 **Cross-source sensor reasoning:** When the original agent reconciles a Historical Journal incident, the verified motion/occupancy events already read by MCP now survive into the model evidence packet and final causal explanation. Source gaps remain explicit; correlation never becomes a proven trigger. [Release notes](CHANGELOG-0.18.257.md).
 
