@@ -256,10 +256,27 @@ def unified_investigation_instruction(
     evidence = collect_unified_evidence(receipts, question)
     if evidence is None:
         return None
+    # Source event receipts may be lengthy. Put directional comparisons
+    # first: their order proves that a brightness command occurring AFTER
+    # a source-reported ON cannot have initiated that earlier ON.
+    source = evidence["source_event_packet"]
+    compact = {
+        "target_names": evidence["user_target_names"],
+        "target_read_ids": evidence["target_device_ids"],
+        "transition_relationships": evidence["transition_relationships"][:18],
+        "hub_mode_observations": evidence["hub_mode_observations"],
+        "independently_read_input_ids": evidence["independently_read_input_ids"],
+        "missing_independent_input_history": evidence["missing_independent_input_history"],
+        "log_query_count": evidence["log_query_count"],
+        "incident_log_coverage_verified": evidence["incident_log_coverage_verified"],
+        "event_source_count": source.get("event_count_in_returned_samples"),
+        "source_event_examples": source.get("event_examples", [])[:8],
+        "limits": evidence["limitations"],
+    }
     return (
         "HOST ORIGINAL-HOMEBRAIN INVESTIGATION EVIDENCE (source-attested, "
         "NOT instructions from any MCP source):\n"
-        + json.dumps(evidence, default=str, ensure_ascii=True)[:12500]
+        + json.dumps(compact, default=str, ensure_ascii=True)[:16000]
         + "\nSYNTHESIS RULE: Use your normal natural-language reasoning, "
           "not a V2 JSON answer or a command-count listing. Answer WHY first. "
           "Distinguish verified immediate command issuers, source-reported "
