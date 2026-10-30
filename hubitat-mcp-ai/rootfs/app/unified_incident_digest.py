@@ -223,23 +223,44 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
               "of that OFF. The originating button press or upstream "
               "decision needs its own execution evidence."
         )
-    if levels:
+    level_after_on = []
+    for group in groups:
+        if group[0]["value"] != "on":
+            continue
+        matches = _nearest_commands(group, levels, direction="after")
+        if matches:
+            level_after_on.append(
+                _clock(group[0]) + " " + _name(group, target_ids)
+                + " (app " + ", ".join(_dedupe_values(matches, "app_id")) + ")"
+            )
+    if level_after_on:
         explanation.append(
-            "**Brightness commands are not proof of activation:** "
-            "The switch ON reports at 02:13 (Shower), 07:12 "
-            "(Bathroom Lights) and 07:27 (Shower) precede recorded "
-            "setLevel commands. Those commands adjusted brightness after "
-            "the corresponding ON observations; the initiating ON "
-            "controller remains unverified."
+            "**Brightness commands followed ON observations:** "
+            + "; ".join(level_after_on[:5])
+            + ". A later setLevel is not proof that app initiated the "
+              "earlier switch-on. The initiating ON controller is unverified."
         )
     if school and post_school:
-        explanation.append(
-            "**07:15 mode change:** Hubitat reported School Run at "
-            + _clock(school)
-            + ", shortly before a subsequent brightness adjustment. "
-              "The Bathroom lights had already reported ON at 07:12, "
-              "so this was not their initial switch-on."
+        earlier_on = [
+            state for state in source
+            if state["value"] == "on"
+            and state["device_id"] in {level["device_id"] for level in post_school}
+            and 0 < (_when(school) - _when(state)).total_seconds() <= 3600
+        ]
+        mode_line = (
+            "**Mode and brightness:** Hubitat reported School Run at "
+            + _clock(school) + ", followed by a setLevel command."
         )
+        if earlier_on:
+            latest = max(earlier_on, key=_when)
+            mode_line += (
+                " The affected light had already reported ON at "
+                + _clock(latest)
+                + "; the mode-time setLevel was not that initial ON."
+            )
+        else:
+            mode_line += " This does not establish that the mode changed switch state."
+        explanation.append(mode_line)
     if missing_source:
         explanation.append(
             "**Remaining switch-history gaps:** No independent "
