@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.237**.
+Current add-on version: **0.18.238**.
+
+v0.18.238 introduces an evidence-linked natural-language explanation stage for source-verified multi-device histories. It keeps read-only MCP guards, verifies exact event citations, and preserves a chronological fallback instead of command-count catalogs. [Release notes](CHANGELOG-0.18.238.md).
 
 v0.18.232 selects the actual event chain around the user's incident time instead of newest telemetry, includes setpoint/operating-state changes and offers a natural evidence-verified timeline when model reasoning cannot produce cited JSON. [Release notes](CHANGELOG-0.18.232.md).
 
