@@ -179,6 +179,70 @@ def source_first_explanation(facts: Mapping[str, Any]) -> str:
     return "\n\n".join(passages)
 
 
+
+def publication_shadow_assessment(
+    draft: str, facts: Mapping[str, Any],
+) -> dict[str, int | bool]:
+    """Measure draft coverage; never approve claims or publish raw draft text.
+
+    A timestamp token is NOT a witness citation. This diagnostic only
+    compares aggregate source-clock tokens and counts contradiction flags.
+    No names, event timestamps, app logs or model text enter telemetry.
+    """
+    source_times: set[str] = set()
+    for row in (facts.get("incident_ledger") or [])[:200]:
+        if (not isinstance(row, Mapping)
+                or str(row.get("event_class") or "") not in (
+                    "journal_source_switch_on", "journal_source_switch_off",
+                    "reported_switch_on", "reported_switch_off")):
+            continue
+        clock = _clock(row.get("date"))
+        if clock:
+            source_times.add(clock)
+    text = str(draft or "")
+    matches = sum(
+        1 for clock in source_times
+        if re.search(r"(?<!\d)" + re.escape(clock) + r"(?!\d)", text)
+    )
+    return {
+        "source_time_tokens_available": min(len(source_times), 200),
+        "source_time_tokens_mentioned": matches,
+        "draft_mentions_source_time": bool(matches),
+        "source_contradiction_flag_count": len(
+            source_contradiction_flags(text, facts)),
+        "native_history_gap": bool(
+            facts.get("missing_switch_history_for_targets")),
+        "journal_switch_source_available": bool(
+            facts.get("journal_source_observations")),
+    }
+
+
+def _record_publication_shadow(
+    draft: str, facts: Mapping[str, Any], action: str,
+) -> None:
+    """Record only allowlisted request counters. No model text retained."""
+    from request_metrics import increment_active_metric
+
+    analysis = publication_shadow_assessment(draft, facts)
+    increment_active_metric("v3_shadow_publications_seen")
+    actions = {
+        "digest": "v3_shadow_legacy_digest_replaced",
+        "ledger": "v3_shadow_legacy_ledger_replaced",
+        "preserved": "v3_shadow_legacy_draft_preserved",
+    }
+    increment_active_metric(actions[action])
+    if analysis["native_history_gap"]:
+        increment_active_metric("v3_shadow_history_gap")
+    if analysis["source_contradiction_flag_count"]:
+        increment_active_metric("v3_shadow_draft_contradiction")
+    if analysis["draft_mentions_source_time"]:
+        increment_active_metric("v3_shadow_draft_mentions_source_time")
+    if analysis["source_time_tokens_mentioned"]:
+        increment_active_metric(
+            "v3_shadow_source_time_token_matches",
+            int(analysis["source_time_tokens_mentioned"]),
+        )
+
 def reconcile_ledger_if_needed(
     original: str, facts: Mapping[str, Any],
 ) -> tuple[str, bool]:
@@ -192,16 +256,21 @@ def reconcile_ledger_if_needed(
     if gaps and int(facts.get("journal_source_observations") or 0) > 0:
         digest = source_incident_digest(facts)
         if digest:
+            _record_publication_shadow(original, facts, "digest")
             return digest, True
     if not gaps and not flags:
+        _record_publication_shadow(original, facts, "preserved")
         return original, False
     timeline = verified_incident_ledger(facts)
     if not timeline:
+        _record_publication_shadow(original, facts, "preserved")
         return original, False
+    _record_publication_shadow(original, facts, "ledger")
     return source_first_explanation(facts) + "\n\n" + timeline, True
 
 
 __all__ = [
     "source_contradiction_flags", "verified_incident_ledger",
     "source_first_explanation", "reconcile_ledger_if_needed",
+    "publication_shadow_assessment",
 ]
