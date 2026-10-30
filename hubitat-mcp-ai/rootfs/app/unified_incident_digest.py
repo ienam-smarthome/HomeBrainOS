@@ -269,8 +269,16 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
         absent = [str(x.get("app_id")) for x in app_checks
                   if x.get("status") == "app-log-capture-not-enabled-for-app"]
         if rows:
+            descriptors = sorted({
+                str(mark.get("stage") or "")
+                for item in app_checks
+                for mark in item.get("reported_decisions", [])
+                if isinstance(mark, Mapping) and mark.get("stage")
+            })
             explanation.append(
                 "**Archived Hubitat app logs checked:** " + "; ".join(rows[:8])
+                + (". App-reported decision categories: "
+                   + ", ".join(descriptors[:6]) if descriptors else "")
                 + ". These are collector-received textual reports; they do "
                   "not independently establish which app initiated a prior ON."
             )
