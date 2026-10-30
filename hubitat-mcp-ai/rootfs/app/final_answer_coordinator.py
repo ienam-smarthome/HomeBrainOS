@@ -15,6 +15,7 @@ from causal_timeline import render_causal_timeline, explicitly_focused_event_row
 from evidence_ledger import build_current_turn_evidence_ledger
 from causal_answer_plan import render_causal_answer_plan
 from motion_lockout_investigation import is_motion_lockout_investigation
+from unified_investigation_bridge import unified_investigation_instruction
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     render_causal_evidence_graph,
@@ -602,6 +603,17 @@ class FinalAnswerCoordinator:
             final_messages.append({"role": "user", "content": causal_timeline})
         if causal_graph_brief:
             final_messages.append({"role": "user", "content": causal_graph_brief})
+        # Consolidated path: original agent authors an unrestricted natural
+        # explanation using independently attested source relationships from
+        # V2's reusable projection primitives. No second V2 planner, forced
+        # final JSON, claims catalog or host-executed source reads.
+        unified_brief = (
+            unified_investigation_instruction(evidence, original_user)
+            if evidence_scoped and not objective.is_source else None
+        )
+        if unified_brief:
+            final_messages.append({"role": "user", "content": unified_brief})
+            increment_active_metric("unified_investigation_evidence_bridge")
         if lockout_request:
             lockout_rows = [
                 row.get("details") or {}

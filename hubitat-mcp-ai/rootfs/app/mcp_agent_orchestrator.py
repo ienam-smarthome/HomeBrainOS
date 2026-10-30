@@ -106,6 +106,7 @@ from causal_transition_provenance import (
     positive_off_command_already_recorded,
     scoped_off_history_receipt,
 )
+from unified_investigation_bridge import unified_investigation_followup
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     needs_mode_history,
@@ -4981,6 +4982,7 @@ class UnifiedMCPAgent:
         incident_evidence_checkpoint_used = False
         configuration_semantics_retry_used = False
         inventory_only_retry_used = False
+        unified_source_followup_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
         # Bound further model-directed exploration, then use the existing
@@ -5019,6 +5021,32 @@ class UnifiedMCPAgent:
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                # One source-driven recovery chance for the original HomeBrain
+                # investigator, never a second V2 planner or a keyword router.
+                # Model chooses the input READ from the existing permissions;
+                # the host neither grants a target identity nor executes it.
+                if (investigative_request
+                        and not self._mutation_requested_by_user.get()
+                        and not unified_source_followup_used
+                        and round_index + 1 < active_round_budget):
+                    followup = unified_investigation_followup(
+                        self.evidence.receipts(), user_prompt)
+                    if followup:
+                        unified_source_followup_used = True
+                        catalog.activate_investigation_read_view(
+                            max_declared=self.tool_limit)
+                        catalog.expose_read_gateways(
+                            ("hub_read_devices", "hub_read_apps_code",
+                             "hub_read_diagnostics", "hub_read_rules",
+                             SEARCH_TOOL),
+                            max_declared=self.tool_limit)
+                        messages.extend([
+                            assistant, {"role": "user", "content": followup},
+                        ])
+                        tools = catalog.schemas()
+                        increment_active_metric(
+                            "unified_investigation_input_followup")
+                        continue
                 # Primary diagnostic objective has not been met if all the
                 # reads so far are room/identity listings. Give the model ONE
                 # further evidence-source choice instead of shipping the
