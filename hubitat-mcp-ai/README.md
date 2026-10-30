@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.255**.
+Current add-on version: **0.18.256**.
+
+**Historical gap recovery:** Independently verified target histories now retain an explicit historical coverage gap even if all surviving native events are newer than the requested period, allowing bounded Historical Journal recovery and model-directed follow-up. [Release notes](CHANGELOG-0.18.256.md).
 
 **Evidence-driven investigation cycle:** Source-timed Historical Journal observations can inform the original model's remaining read-only investigation rounds, guiding discovery of missing input/controller evidence instead of appearing only after the final answer. Unverified causal conclusions remain explicitly unresolved. [Release notes](CHANGELOG-0.18.255.md).
 
