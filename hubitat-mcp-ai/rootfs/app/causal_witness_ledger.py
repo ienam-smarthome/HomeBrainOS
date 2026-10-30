@@ -105,6 +105,30 @@ def build_witness_coverage_ledger(
         }
         point["witness_id"] = _witness_id(point)
         seen[point["witness_id"]] = point
+    # Independent source-timed motion/occupancy reports have their own
+    # witnessed role. A journal collector-reception input remains excluded
+    # even if it repeatedly coincides with an actuator state.
+    for row in (facts.get("independent_input_observations") or [])[:48]:
+        if not isinstance(row, Mapping):
+            continue
+        ident = _id(row.get("device_id"))
+        attr = str(row.get("attribute") or "")
+        basis = str(row.get("timestamp_basis") or "")
+        instant = _when(row.get("time"))
+        if (not ident or attr not in ("motion", "occupancy", "presence")
+                or basis not in ("source", "source-reported")
+                or instant is None):
+            continue
+        point = {
+            "entity": ident, "role": "input-report",
+            "event_class": attr,
+            "value": str(row.get("value") or "")[:30],
+            "time": instant.isoformat(), "clock_basis": basis,
+            "app_issuer": None,
+            "source_class": str(row.get("source_read") or "verified-input")[:50],
+        }
+        point["witness_id"] = _witness_id(point)
+        seen[point["witness_id"]] = point
     witnesses = sorted(
         seen.values(),
         key=lambda x: (x["time"], int(x["entity"]), x["role"], x["event_class"]),
@@ -115,11 +139,6 @@ def build_witness_coverage_ledger(
         _id(row.get("device_id")): row
         for row in facts.get("target_coverage") or []
         if isinstance(row, Mapping) and _id(row.get("device_id")) in ids
-    }
-    state_roles = {
-        "issued_on": "on", "issued_off": "off",
-        "journal_source_switch_on": "on", "journal_source_switch_off": "off",
-        "reported_switch_on": "on", "reported_switch_off": "off",
     }
     # Match from the entire bounded source ledger, not the presentation cap.
     verified: list[dict[str, Any]] = []
@@ -226,6 +245,8 @@ def build_witness_coverage_ledger(
         "target_source_coverage": coverage,
         "immediate_hubitat_on_command_matches": verified[:24],
         "observed_input_app_relationships": relationships,
+        "source_timed_input_witness_count": sum(
+            w["role"] == "input-report" for w in seen.values()),
         "reception_only_pattern_count": len(
             facts.get("archived_input_reception_patterns") or []),
         "issuer_verified_target_count": len({
