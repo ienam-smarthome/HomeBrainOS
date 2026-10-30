@@ -57,7 +57,7 @@ SOURCE = {
 }
 
 
-def test_source_event_grouping_is_compact_causal_and_no_collector_duplicates():
+def fixture_receipts():
     source_receipts = actual_partial_receipts()
     # Original live invocation returned app commands, but no in-window
     # source-reported switch rows in any of the three device pages.
@@ -128,7 +128,7 @@ def test_source_event_grouping_is_compact_causal_and_no_collector_duplicates():
 
 
 def test_real_17_source_23_collector_live_replay():
-    rows = test_source_event_grouping_is_compact_causal_and_no_collector_duplicates()
+    rows = fixture_receipts()
     facts = collect_unified_evidence(rows, EXPLICIT)
     assert facts["journal_source_observations"] == 17
     assert facts["journal_collector_observations"] == 23
@@ -161,7 +161,7 @@ def test_real_17_source_23_collector_live_replay():
 
 
 def test_collector_only_is_not_promoted_to_precise_source_history():
-    rows = test_source_event_grouping_is_compact_causal_and_no_collector_duplicates()
+    rows = fixture_receipts()
     for rec in rows:
         if rec.get("evidence_kind") == "group_archived_switch_history":
             rec["details"]["observations"] = [
@@ -175,8 +175,8 @@ def test_collector_only_is_not_promoted_to_precise_source_history():
     assert "### Verified incident ledger" in result
 
 
-def test_source_only_one_device_preserves 기존_raw_fallback():
-    rows = test_source_event_grouping_is_compact_causal_and_no_collector_duplicates()
+def test_source_only_one_device_preserves_raw_fallback():
+    rows = fixture_receipts()
     for rec in rows:
         if rec.get("evidence_kind") == "group_archived_switch_history":
             if rec.get("arguments", {}).get("device_id") != "7807":
@@ -185,11 +185,11 @@ def test_source_only_one_device_preserves 기존_raw_fallback():
     assert source_incident_digest(facts) is None
 
 
-def test_no_static_october_dates_in_generic_derived_causal_text():
-    rows = test_source_event_grouping_is_compact_causal_and_no_collector_duplicates()
+def test_school_run_mode_reapplies_brightness_after_source_reported_on():
+    rows = fixture_receipts()
     facts = collect_unified_evidence(rows, EXPLICIT)
     response = source_incident_digest(facts)
     assert response
-    assert "mode changed at 07:15" not in response
-    assert "reported ON at 07:12" not in response  # no mode evidence
-    assert "07:15" not in response  # level-only events kept in diagnostics when no mode
+    assert "School Run at 07:15:01" in response
+    assert "already reported ON at 07:12:33" in response
+    assert "mode-time setLevel was not that initial ON" in response
