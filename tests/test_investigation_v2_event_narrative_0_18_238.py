@@ -21,7 +21,8 @@ from investigation_v2.native_event_narrative import (
 )
 from investigation_v2.native_read_agent import run_native_read_agent
 from test_investigation_v2_native_read_agent_0_18_181 import FakeMCP, FakeExecutor
-from test_investigation_v2_native_entity_lookup_0_18_184 import DEVICE, native
+from test_investigation_v2_native_entity_lookup_0_18_184 import native
+from test_investigation_v2_complete_interval_0_18_236 import READ as EVENT_TOOL
 from test_investigation_v2_room_source_frontier_0_18_223 import ROOM_TOOL
 
 
@@ -121,7 +122,7 @@ def test_multi_device_narrative_is_model_authored_and_cites_exact_events():
     packet = event_narrative_evidence(witnessed(), [])
     result = verify_event_narrative(candidate(packet), packet=packet,
                                     question="Investigate Bathroom lights")
-    assert result["accepted"] is True
+    assert result["accepted"] is True, result
     assert result["model_prose_published"] is True
     assert result["supporting_event_count"] == 3
     assert "Bathroom Lights 1 and 2 reported ON" in result["text"]
@@ -180,7 +181,7 @@ def test_when_ai_invalid_fallback_is_chronology_not_command_counts():
 
 @pytest.mark.asyncio
 async def test_native_room_history_invokes_model_final_reasons_not_claim_catalog():
-    mcp = FakeMCP([ROOM_TOOL, DEVICE])
+    mcp = FakeMCP([ROOM_TOOL, EVENT_TOOL])
     executor = FakeExecutor(mcp, [
         {"count": 1, "rooms": [{"name": "Bathroom"}]},
         room(), *histories()])
@@ -216,7 +217,7 @@ async def test_native_room_history_invokes_model_final_reasons_not_claim_catalog
         max_rounds=7, max_reads=6,
         enable_model_reasoned_assessment=True)
     d = result["native_diagnostics"]
-    assert turns == 7
+    assert turns == 7, d
     assert d["successful_reads"] == 5
     assert d["event_narrative_eligible"] is True
     assert d["model_event_narrative"]["accepted"] is True
