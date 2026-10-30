@@ -65,16 +65,20 @@ def event_narrative_evidence(
         source = w.get("source_data")
         if not isinstance(source, Mapping):
             continue
-        for device in source.get("devices", [])[:100]:
+        members = source.get("devices")
+        if not isinstance(members, list):
+            continue
+        for device in members[:100]:
             if not isinstance(device, Mapping):
                 continue
             ident = str(device.get("id") or "")
             if not ident.isdecimal():
                 continue
             scoped_ids.add(ident)
-            device_names[ident] = str(
-                device.get("label") or device.get("name") or
-                "Device " + ident)[:90]
+            device_names[ident] = re.sub(
+                r"[\x00-\x1f\x7f<>]", "", str(
+                    device.get("label") or device.get("name") or
+                    "Device " + ident))[:90]
     for w in witnesses:
         if w.get("operation") != "hub_get_device":
             continue
@@ -83,9 +87,10 @@ def event_narrative_evidence(
             continue
         ident = str(source.get("id") or "")
         if ident in scoped_ids and ident not in device_names:
-            device_names[ident] = str(
-                source.get("label") or source.get("name") or
-                "Device " + ident)[:90]
+            device_names[ident] = re.sub(
+                r"[\x00-\x1f\x7f<>]", "", str(
+                    source.get("label") or source.get("name") or
+                    "Device " + ident))[:90]
     if not scoped_ids:
         return None
     events = []
@@ -105,7 +110,10 @@ def event_narrative_evidence(
         if type(read) is not int or not isinstance(source, Mapping):
             continue
         device_reads[device_id].add(read)
-        for e in source.get("events", [])[:200]:
+        source_events = source.get("events")
+        if not isinstance(source_events, list):
+            continue
+        for e in source_events[:200]:
             if not isinstance(e, Mapping):
                 continue
             name, date = e.get("name"), e.get("date")
@@ -120,7 +128,7 @@ def event_narrative_evidence(
             seen.add(key)
             producer = e.get("producedBy")
             producer = producer if isinstance(producer, Mapping) else {}
-            actor = str(producer.get("name") or "")[:90]
+            actor = re.sub(r"[\x00-\x1f\x7f<>]", "", str(producer.get("name") or ""))[:90]
             kind = "command_issued" if name.startswith("command-") else "state_reported"
             item = {
                 "read": read, "device_id": device_id,
@@ -207,6 +215,20 @@ def _safe_text(value: Any, max_len: int, min_len: int = 10) -> str | None:
     return s
 
 
+def _stated_switch_supported(text: str,
+                             events: Sequence[Mapping[str, Any]]) -> bool:
+    # Explicit source-reported switch states must match the cited device
+    # observation, not just a conveniently nearby command-OFF.
+    stated = re.findall(
+        r"\breported\s+(?:switch\s*=\s*)?(on|off)\b", text, re.I)
+    actual = {
+        str(e.get("value") or "").lower() for e in events
+        if e.get("name") == "switch"
+        and e.get("observation_kind") == "state_reported"
+    }
+    return all(v.lower() in actual for v in stated)
+
+
 def _numbers_supported(text: str, events: Sequence[Mapping[str, Any]],
                        question: str) -> bool:
     evidence_text = " ".join(
@@ -283,6 +305,8 @@ def verify_event_narrative(
                 return reject("event_not_in_attested_scoped_history")
             used[key] = original
             cited.append(original)
+        if not _stated_switch_supported(description, cited):
+            return reject("contradicted_reported_switch_state")
         if not _numbers_supported(description, cited, question):
             return reject("unsupported_breakdown_detail")
         ids = sorted({e["read"] for e in cited})
@@ -290,6 +314,8 @@ def verify_event_narrative(
                      " (" + ", ".join("Read #" + str(n) for n in ids) + ")")
     if len(used) < 2:
         return reject("requires_two_distinct_attested_events")
+    if not _stated_switch_supported(answer, list(used.values())):
+        return reject("contradicted_reported_switch_state")
     if not _numbers_supported(answer, list(used.values()), question):
         return reject("unsupported_answer_detail")
     if not _numbers_supported(uncertainty, list(used.values()), question):
