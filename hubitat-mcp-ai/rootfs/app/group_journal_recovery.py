@@ -193,4 +193,127 @@ async def recover_group_journal(
     return report
 
 
-__all__ = ["journal_incident_bounds", "recover_group_journal"]
+async def recover_input_journal(
+    *, journal: Any, recorder: Any,
+    question: str, receipts: Sequence[Mapping[str, Any]],
+    max_devices: int = 3,
+) -> dict[str, Any]:
+    """Recover previously queried but empty input histories from the Journal.
+
+    Only device IDs whose individual, read-only Hubitat event history was
+    independently queried and returned no usable incident-time rows are
+    eligible. This is a source-recovery operation, NOT sensor discovery:
+    without a real source observation, an ID is never called a sensor.
+    """
+    report: dict[str, Any] = {
+        "status": "not-needed", "attempted": 0, "source_observations": 0,
+        "collector_observations": 0, "journal_gaps": 0,
+    }
+    facts = collect_unified_evidence(receipts, question)
+    if not facts or not facts.get("journal_source_observations"):
+        return report
+    candidates = [
+        str(i) for i in facts.get("additional_event_reads_without_usable_rows", [])
+        if str(i).isdecimal() and int(i) > 0
+    ]
+    if not candidates:
+        return report
+    if journal is None or not getattr(journal, "enabled", False) or not getattr(journal, "_started", False):
+        report["status"] = "journal-unavailable"
+        return report
+    scope = journal_incident_bounds(question, receipts)
+    if scope is None:
+        report["status"] = "incident-timezone-or-date-unverified"
+        return report
+    since, until, zone_name = scope
+    previously_checked = {
+        str((r.get("arguments") or {}).get("device_id") or "")
+        for r in receipts if r.get("evidence_kind") == "group_archived_input_history"
+    }
+    report["status"] = "checked"
+    # Query all attributes on each *independently scoped device ID*. The
+    # existing journal captures motion, occupancy and presence under different
+    # names; do not guess an attribute or use an unscoped room-wide read.
+    for ident in candidates[:max(1, min(3, int(max_devices)))]:
+        if ident in previously_checked:
+            continue
+        request = {
+            "device_id": ident, "since": since, "until": until,
+            "limit": 160,
+        }
+        started = asyncio.get_running_loop().time()
+        report["attempted"] += 1
+        try:
+            response = await asyncio.to_thread(journal.query, **request)
+            observations = []
+            for row in (response.get("events") or [])[:160]:
+                if (not isinstance(row, Mapping)
+                        or row.get("stream") != "events"
+                        or str(row.get("device_id") or "") != ident):
+                    continue
+                attribute = str(row.get("attribute") or "").casefold()
+                value = str(row.get("value") or "").casefold()
+                if (attribute not in ("motion", "occupancy", "presence")
+                        or value not in (
+                            "active", "inactive", "present", "not present",
+                            "occupied", "unoccupied", "on", "off",
+                            "true", "false")):
+                    continue
+                basis = str(row.get("timestamp_basis") or "")
+                when = row.get("observed_at")
+                if basis not in ("source", "collector-received") or not isinstance(when, str):
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(when.replace("Z", "+00:00"))
+                    if stamp.tzinfo is None:
+                        continue
+                    stamp = stamp.astimezone(timezone.utc)
+                    if not (datetime.fromisoformat(since) <= stamp <= datetime.fromisoformat(until)):
+                        continue
+                except (ValueError, OverflowError):
+                    continue
+                observations.append({
+                    "device_id": ident, "attribute": attribute,
+                    "value": value, "date": stamp.isoformat(),
+                    "timestamp_basis": basis,
+                    "source": str(row.get("source") or "")[:60],
+                })
+                if basis == "source":
+                    report["source_observations"] += 1
+                else:
+                    report["collector_observations"] += 1
+            gap_count = len(response.get("gaps") or [])
+            report["journal_gaps"] += gap_count
+            recorder.record(
+                "homebrain_evidence_journal", request, success=True,
+                elapsed_ms=round((asyncio.get_running_loop().time() - started)*1000),
+                summary=(
+                    f"Archive input device {ident}: {len(observations)} "
+                    f"observations; {gap_count} recorded gaps"
+                ),
+                supports_live_claim=bool(observations),
+                evidence_kind="group_archived_input_history",
+                effect="read", mutates=False,
+                details={
+                    "deviceId": ident, "observations": observations,
+                    "window": {"since": since, "until": until, "zone": zone_name},
+                    "gapCount": gap_count,
+                    "truncated": bool(response.get("truncated") or response.get("has_more")),
+                    "coverageComplete": False, "emptyProvesNoActivity": False,
+                },
+            )
+        except (ValueError, OSError, RuntimeError, TypeError) as error:
+            report["errors"] = report.get("errors", 0) + 1
+            recorder.record(
+                "homebrain_evidence_journal", request, success=False,
+                elapsed_ms=round((asyncio.get_running_loop().time() - started)*1000),
+                summary="Bounded archived input read unavailable: " + type(error).__name__,
+                supports_live_claim=False,
+                evidence_kind="group_archived_input_history",
+                effect="read", mutates=False,
+                details={"deviceId": ident, "coverageComplete": False,
+                         "reason": type(error).__name__},
+            )
+    return report
+
+__all__ = ["journal_incident_bounds", "recover_group_journal", "recover_input_journal"]
