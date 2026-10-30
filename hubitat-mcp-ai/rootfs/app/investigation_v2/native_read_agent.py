@@ -1567,7 +1567,7 @@ async def run_native_read_agent(
             requested_interval_coverage, witnesses)
     # Historical source events: independent device reads and room membership.
     event_narrative_packet = event_narrative_evidence(
-        witnesses, sorted(focus_ids))
+        witnesses, sorted(focus_ids), question=question)
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
