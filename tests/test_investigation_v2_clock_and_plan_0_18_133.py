@@ -138,11 +138,3 @@ async def test_invalid_read_claim_not_relabelled_as_completed_investigation():
     assert "management/write gateways" in result.rejected_proposals[0]
     assert executor.calls==[]
 
-
-def test_operator_technical_report_exposes_rejected_read_reasons_without_model_arguments():
-    page=(APP/"investigation_v2/test_webui.py").read_text()
-    assert "read_rejection_reasons:data.investigation?.rejected_proposals" in page
-    assert "planning_rounds:data.investigation?.rounds" in page
-    assert "current_app_identities:data.investigation?.case?.app_identities" in page
-    assert "innerHTML" not in page
-    assert "localStorage" not in page

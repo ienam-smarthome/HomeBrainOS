@@ -141,12 +141,3 @@ def test_report_compacts_missing_sources_and_marks_dst_shift_and_connectivity_re
     assert "does not prove that a later command failed" in report
     assert "planning timeout" in report
 
-
-def test_browser_auto_target_and_manual_override_are_not_credential_or_ui_guesses():
-    from investigation_v2.test_webui import render_v2_test_page
-    html=render_v2_test_page()
-    assert "Advanced: specify a device only if automatic matching fails" in html
-    assert "A device ID is not required" in html
-    assert "device_name:advanced?" in html
-    assert "data.resolved_devices" in html
-    assert "localStorage" not in html

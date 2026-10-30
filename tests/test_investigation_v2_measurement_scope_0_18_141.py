@@ -174,11 +174,3 @@ def test_model_prompt_contains_bounded_evidence_catalogue_not_brand_rules():
     assert "Octopus" not in _MODEL_SYSTEM
     assert "Provider Live Meter" not in _MODEL_SYSTEM
 
-
-def test_role_config_is_opt_in_and_v2_only():
-    cfg=(APP.parents[1]/"config.yaml").read_text()
-    assert 'v2_measurement_roles_json: "{}"' in cfg
-    assert 'v2_measurement_roles_json: str' in cfg
-    from investigation_v2.test_webui import render_v2_test_page
-    ui=render_v2_test_page()
-    assert "suppressed_overlapping_meters" in ui

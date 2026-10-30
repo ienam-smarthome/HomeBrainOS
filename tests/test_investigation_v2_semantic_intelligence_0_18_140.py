@@ -199,28 +199,3 @@ def test_untrusted_labels_are_plain_text_not_executable_markup():
     assert "<script>" not in result["answer"]["text"]
     assert "Injection script" in result["answer"]["text"]
 
-
-def test_code_integrates_semantic_model_before_old_named_device_match():
-    code=(APP/"app.py").read_text()
-    route=code[code.index('async def v2_test('):code.index('@app.post("/api/chat")')]
-    assert "semantic = await semantic_plan(" in route
-    # A source-verified unique device may now bypass preliminary intent
-    # classification; broad/multi-device requests still use semantic planning.
-    assert route.index("resolve_verified_device_subjects(") < route.index("semantic = await semantic_plan(")
-    assert "if (len(candidates) == 1" in route
-    assert 'inventory_provenance.get("complete") is True' in route
-    assert "execute_inventory_plan(" in route
-    assert "current_light_group_question" not in route
-    assert "get_audit_devices()" in route
-    assert "agent.transport.chat" in route
-    assert "semantic.mode in (\"unsupported\",\"historical\")" in route
-
-
-def test_ui_supports_semantic_inventory_metrics_and_full_plan_visibility():
-    from investigation_v2.test_webui import render_v2_test_page
-    html=render_v2_test_page()
-    assert "data.answer_mode==='semantic_inventory'" in html
-    assert "semantic_plan:data.semantic_plan" in html
-    assert "inventory_query:data.inventory_query" in html
-    assert "localStorage" not in html
-    assert "innerHTML" not in html

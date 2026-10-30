@@ -56,6 +56,7 @@ class RequestMetrics:
         "task_evidence_retry", "task_evidence_incomplete",
         "unified_investigation_input_followup",
         "unified_investigation_evidence_bridge",
+        "unified_group_timeline_reconciled",
         "shared_completion_checked", "shared_completion_partial",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",

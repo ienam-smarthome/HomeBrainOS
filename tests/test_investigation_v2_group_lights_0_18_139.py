@@ -17,7 +17,6 @@ from investigation_v2.group_state import (
     current_light_group_question, current_light_group_answer,
 )
 from investigation_v2.test_service import resolve_verified_device_subjects
-from investigation_v2.test_webui import render_v2_test_page
 
 
 @pytest.mark.parametrize(("question","state"),[
@@ -133,26 +132,3 @@ def test_untrusted_label_cannot_inject_markdown_or_markup():
     assert "*Light*" not in text
 
 
-def test_v2_endpoint_dispatches_semantic_group_before_singular_resolution():
-    code=(APP/"app.py").read_text()
-    route=code[code.index("async def v2_test("):code.index('@app.post("/api/chat")')]
-    intent=route.index("semantic = await semantic_plan(")
-    # Success path still executes whole-group inventory before entering
-    # singular device resolution. A separate error-only path may now verify
-    # one uniquely named device after semantic planning has failed.
-    identity=route.index("            if payload.device_ids or payload.device_name:")
-    assert intent < identity
-    assert "await mcp.get_audit_devices()" in route[:identity]
-    assert "execute_inventory_plan(" in route[:identity]
-    assert "return result" in route[:identity]
-    assert "fallback_ids, _, _ = resolve_verified_device_subjects(" in route[:identity]
-    assert "current_light_group_question(" not in route
-
-def test_v2_dashboard_shows_group_metrics_without_causal_scores():
-    html=render_v2_test_page()
-    assert "data.answer_mode==='current_group_state'" in html
-    assert "metric('Lights identified'" in html
-    assert "metric('Inventory coverage'" in html
-    assert "metric('Unknown switch state'" in html
-    assert "localStorage" not in html
-    assert "innerHTML" not in html

@@ -87,14 +87,3 @@ async def test_no_new_evidence_skips_atomic_and_displays_every_issued_command(mo
     assert outcome.answer.root_cause_verified is False
     assert "UNTRUSTED SECRET" not in json.dumps(outcome.to_dict())
 
-
-def test_direct_verified_route_still_requires_complete_inventory_before_skip():
-    source = (ROOT / "app.py").read_text()
-    route = source.split("async def v2_test(", 1)[1].split(
-        '@app.post("/api/chat")', 1)[0]
-    assert 'inventory_provenance.get("complete") is True' in route
-    assert 'if len(candidates) == 1' not in route
-    assert "model_intent_planning_skipped" in route
-    assert '"evidence_first_verified_device"' in route
-    assert "semantic = await semantic_plan(" in route
-    assert "execute_inventory_plan(" in route

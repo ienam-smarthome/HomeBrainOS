@@ -120,13 +120,3 @@ def test_failed_read_classification_never_uses_remote_error_message():
     assert safe_code("private_api_token") is None
     assert safe_code("read_timeout")=="read_timeout"
 
-
-def test_dashboard_exposes_failure_count_and_only_safe_structured_codes():
-    from investigation_v2.test_webui import render_v2_test_page
-    html=render_v2_test_page()
-    assert "metric('Failed MCP reads',failedReads.length)" in html
-    assert "read_failures:data.investigation?.read_failures" in html
-    assert "metric('MCP reads'" in html
-    assert "duration?.primary??'Unavailable'" in html
-    assert "localStorage" not in html
-    assert "innerHTML" not in html

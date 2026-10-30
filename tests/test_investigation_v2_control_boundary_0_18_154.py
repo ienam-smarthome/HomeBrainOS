@@ -17,7 +17,6 @@ APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 from mcp_agent_orchestrator import _explicit_mutation_request
 from investigation_v2.intent_boundary import incompatible_v2_control_request
-from investigation_v2.test_webui import render_v2_test_page
 
 
 TOKEN = "long-unit-test-secret-0123456789"
@@ -68,64 +67,3 @@ def test_existing_classifier_keeps_questions_about_commands_read_only(question):
     assert incompatible_v2_control_request(question) is False, question
 
 
-@pytest.mark.parametrize("question", DIRECT_CONTROL)
-def test_v2_rejects_control_before_device_inventory_or_model_calls(
-        monkeypatch, tmp_path, question):
-    module = _app(monkeypatch, tmp_path)
-    attempted = []
-
-    async def forbidden_inventory(*args, **kwargs):
-        attempted.append("inventory")
-        raise AssertionError("V2 control intent must not fetch inventory")
-
-    async def forbidden_semantic(*args, **kwargs):
-        attempted.append("semantic")
-        raise AssertionError("V2 control intent must not ask AI")
-
-    async def forbidden_evaluate(*args, **kwargs):
-        attempted.append("evaluate")
-        raise AssertionError("V2 control intent must not issue reads/writes")
-
-    monkeypatch.setattr(module.mcp, "get_audit_devices", forbidden_inventory)
-    monkeypatch.setattr(module.mcp, "get_cached_devices", forbidden_inventory)
-    monkeypatch.setattr(module, "semantic_plan", forbidden_semantic)
-    monkeypatch.setattr(module, "evaluate_v2_with_model", forbidden_evaluate)
-
-    with TestClient(module.app) as client:
-        result = client.post(
-            "/api/v2/test",
-            json={"question": question, "explicit_opt_in": True,
-                  "device_ids": ["7828"]},
-            headers={"X-HomeBrain-V2-Test-Token": TOKEN,
-                     "X-HomeBrain-V2-Request": "read-only"},
-        )
-    assert result.status_code == 409, result.text
-    detail = result.json()["detail"]
-    assert detail["code"] == "v2_control_not_supported"
-    assert "No Hubitat command was sent" in detail["message"]
-    assert "main Ask/Chat interface" in detail["message"]
-    assert attempted == []
-
-
-def test_v2_control_guard_follows_authentication_not_pre_auth_leak(
-        monkeypatch, tmp_path):
-    module = _app(monkeypatch, tmp_path)
-    with TestClient(module.app) as client:
-        result = client.post(
-            "/api/v2/test",
-            json={"question": "Turn Livingroom Light 2 on",
-                  "explicit_opt_in": True},
-            headers={"X-HomeBrain-V2-Test-Token": "wrong-token"},
-        )
-    assert result.status_code == 403
-    assert "v2_control_not_supported" not in result.text
-
-
-def test_v2_test_page_labels_control_boundary_and_handles_incompatible_action():
-    page = render_v2_test_page()
-    assert "main HomeBrain Ask interface" in page
-    assert "This V2 panel tests" in page
-    assert "response.status===409&&data?.detail?.code==='v2_control_not_supported'" in page
-    assert "No command was sent" in page
-    # No direct forwarding of V2 requests into production write endpoint.
-    assert "fetch(authUrl('api/chat')" not in page

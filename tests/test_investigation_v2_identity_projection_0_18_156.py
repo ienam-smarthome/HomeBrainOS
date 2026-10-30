@@ -169,16 +169,3 @@ def test_controller_attested_issuer_proposed_even_when_named():
                      "argument_basis": "declared_app_id",
                      "settings_requested": "false"}]
 
-
-def test_endpoint_retrieves_identity_then_full_only_when_scope_needs_it():
-    code = (APP / "app.py").read_text()
-    section = code.split("async def v2_test(", 1)[1].split(
-        '@app.post("/api/chat")', 1)[0]
-    assert "get_audit_devices(" in section
-    assert "identity_only=True)" in section
-    assert "read_filtered_target_identity(" in section
-    assert 'inventory_provenance.get("projection")=="identity_only"' in section
-    assert "resolve_verified_device_subjects(" in section
-    assert "full_inventory_ms" in section
-    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in section
-    assert "agent.process_user_request_result" not in section

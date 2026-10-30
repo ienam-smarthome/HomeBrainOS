@@ -106,7 +106,9 @@ from causal_transition_provenance import (
     positive_off_command_already_recorded,
     scoped_off_history_receipt,
 )
-from unified_investigation_bridge import unified_investigation_followup
+from unified_investigation_bridge import (
+    unified_investigation_followup, reconcile_unified_investigation_answer,
+)
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     needs_mode_history,
@@ -3840,6 +3842,21 @@ class UnifiedMCPAgent:
                     and inventory_answer(message)):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
                 message = honest_partial_answer(user_prompt, evidence)
+            # Enforce multi-device source coverage after every original
+            # HomeBrain answer path, including early no-tools model exits.
+            # The model still owns interpretation; the host checks that all
+            # independently returned target switch transitions are reported.
+            if (not self._mutation_requested_by_user.get()
+                    and not self._mutation_call_seen.get()
+                    and is_history_investigation(user_prompt)):
+                # This boundary is evidence-triggered, not dependent on the
+                # narrower routing-only investigating() predicate. A model-led
+                # request classified as general history must still retain
+                # every attested source event after an early answer exit.
+                message, corrected_group = reconcile_unified_investigation_answer(
+                    message, evidence, user_prompt)
+                if corrected_group:
+                    increment_active_metric("unified_group_timeline_reconciled")
             if is_new_rule_design_review_request(user_prompt):
                 message = calibrate_rule_design_review(
                     message, evidence, request=user_prompt,

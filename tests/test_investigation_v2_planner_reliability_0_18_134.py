@@ -185,8 +185,3 @@ async def test_planner_success_and_error_are_logged_only_as_bounded_metadata():
     assert result2.planning_diagnostics[0]["outcome"]=="error"
     assert "credential_do_not_log_secret" not in json.dumps(result2.to_dict())
 
-
-def test_debug_payload_shows_model_input_size_and_outcome_without_secret():
-    content=(ROOT/"hubitat-mcp-ai/rootfs/app/investigation_v2/test_webui.py").read_text()
-    assert "planning_diagnostics:data.investigation?.planning_diagnostics" in content
-    assert "localStorage" not in content

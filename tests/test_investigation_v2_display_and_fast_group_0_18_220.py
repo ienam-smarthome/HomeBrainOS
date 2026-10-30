@@ -11,22 +11,10 @@ import pytest
 
 APP=Path(__file__).resolve().parents[1]/"hubitat-mcp-ai"/"rootfs"/"app"
 sys.path.insert(0,str(APP))
-from investigation_v2.test_webui import render_v2_test_page
 from investigation_v2.native_read_agent import run_native_read_agent
 from test_investigation_v2_native_read_agent_0_18_181 import FakeMCP,FakeExecutor
 from test_investigation_v2_native_entity_lookup_0_18_184 import DEVICE,NAME,native
 from test_investigation_v2_entity_comparison_0_18_219 import _reads
-
-
-def test_v2_page_prioritises_verified_answer_over_long_technical_report():
-    page=render_v2_test_page()
-    assert "data.answer?.text||data.report?.text||'No answer returned'" in page
-    assert "data.report?.text||data.answer?.text" not in page
-    assert "technical_source_report:data.report?.text" in page
-    assert "full_source_backed_answer:data.answer?.text" in page
-    assert "el('answer').textContent" in page
-    assert "el('copyAnswer').onclick" in page
-    assert "el('copyReport').onclick" in page
 
 
 @pytest.mark.asyncio

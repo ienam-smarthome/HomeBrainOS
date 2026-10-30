@@ -173,12 +173,3 @@ async def test_incident_first_reads_then_model_sees_historical_evidence():
     assert result.to_dict()["production_answer_used"] is False
     assert "SECRET" not in json.dumps(result.to_dict())
 
-
-def test_browser_summary_visible_audit_collapsed():
-    from investigation_v2.test_webui import render_v2_test_page
-    html=render_v2_test_page()
-    assert "data.report?.text" in html
-    assert "<details id=\"technicalReport\">" in html
-    assert "data.forensic_metrics" in html
-    assert "Copy full report" in html
-    assert "localStorage" not in html

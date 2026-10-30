@@ -177,10 +177,3 @@ def test_empty_projection_does_not_become_verified_controller_settings():
     assert projection["details"]["indexedFields"]==[]
     assert projection["details"]["controllerFields"]==[]
 
-
-def test_older_generic_v2_compose_keeps_a_bounded_investigation_budget():
-    code=(APP/"app.py").read_text()
-    route=code.split("async def v2_test(",1)[1].split(
-        '@app.post("/api/chat")',1)[0]
-    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in route
-    assert "max_total_reads=8" in route

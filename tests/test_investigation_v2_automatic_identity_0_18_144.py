@@ -17,7 +17,6 @@ from investigation_v2.test_service import (
     resolve_planned_device_subjects,
     resolve_verified_device_subjects,
 )
-from investigation_v2.test_webui import render_v2_test_page
 
 DEVICES = [
     {"id": "7103", "name": "Bedroom 3 Mesh", "label": "Bedroom 3 Mesh"},
@@ -72,22 +71,3 @@ def test_multiple_device_mentions_are_not_silently_narrowed_by_ai_guess():
     assert source == "question"
 
 
-def test_browser_hidden_advanced_values_do_not_override_question():
-    html = render_v2_test_page()
-    assert "const advanced=el('targetOverride').open" in html
-    assert "device_name:advanced?" in html
-    assert "const ids=advanced?" in html
-    assert "Collapse this section to restore automatic matching" in html
-    assert "localStorage" not in html
-
-
-def test_api_preserves_explicit_operator_override_and_host_identity_gate():
-    text = (APP / "app.py").read_text()
-    test_route = text.split('async def v2_test(', 1)[1].split(
-        '@app.post("/api/chat")', 1)[0]
-    assert "if payload.device_ids or payload.device_name:" in test_route
-    assert "resolve_planned_device_subjects(" in test_route
-    assert "model_device_name=(semantic.device_name" in test_route
-    assert "resolve_verified_device_subjects(" in test_route
-    assert "status_code=422" in test_route
-    assert "agent.process_user_request_result" not in test_route

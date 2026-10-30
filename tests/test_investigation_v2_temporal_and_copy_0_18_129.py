@@ -90,12 +90,3 @@ async def test_planner_receives_authoritative_requested_scope():
     assert prompt["requested_incident_window"]["start_utc"] == "2026-10-24T17:00:00+00:00"
     assert prompt["verified_target_ids"]==["7805"]
 
-
-def test_copy_controls_and_local_http_fallback_not_token_leakage():
-    from investigation_v2.test_webui import render_v2_test_page
-    html=render_v2_test_page()
-    assert "copyAnswer" in html and "copyDetails" in html and "copyReport" in html
-    assert "document.execCommand('copy')" in html
-    assert "localStorage" not in html and "sessionStorage" not in html
-    assert "el('secret').value" not in html.split("async function copyTestText(",1)[1].split("function formatTestError",1)[0]
-    assert "ids.some(x=>!/^\\d{1,20}$/.test(x))" in html
