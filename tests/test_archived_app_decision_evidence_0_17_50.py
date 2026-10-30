@@ -156,7 +156,8 @@ async def test_real_sqlite_journal_app_id_filtering_and_retention(tmp_path):
     archive._initialize()
     archive._started = True
     archive._connected["logs"] = True
-    recv = "2026-10-13T20:00:34.238412+00:00"
+    now = datetime.now(timezone.utc)
+    recv = now.isoformat(timespec="microseconds")
     good = archive._row("logs", {
         "type": "app", "id": 4019, "name": "Room lighting",
         "level": "debug", "time": "21:00:30",
@@ -169,7 +170,9 @@ async def test_real_sqlite_journal_app_id_filtering_and_retention(tmp_path):
     assert good is not None and wrong is None
     archive._write_batch([good])
     answer = await archived_app_decision_evidence(
-        archive, app_id="4019", since=START, until=END,
+        archive, app_id="4019",
+        since=(now - timedelta(minutes=5)).isoformat(),
+        until=(now + timedelta(minutes=5)).isoformat(),
     )
     assert answer["returnedRows"] == 1
     assert answer["reportedHistoricalLockoutStatement"] is True
