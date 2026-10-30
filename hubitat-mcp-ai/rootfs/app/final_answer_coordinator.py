@@ -16,7 +16,10 @@ from evidence_ledger import build_current_turn_evidence_ledger
 from causal_initiator_provenance_guard import render_state_report_provenance
 from causal_answer_plan import render_causal_answer_plan
 from motion_lockout_investigation import is_motion_lockout_investigation
-from unified_investigation_bridge import unified_investigation_instruction
+from unified_investigation_bridge import (
+    collect_unified_evidence, unified_investigation_instruction,
+)
+from causal_claim_pilot import render_shadow_claim_pilot
 from causal_evidence_graph import (
     build_causal_evidence_graph,
     render_causal_evidence_graph,
@@ -789,6 +792,22 @@ class FinalAnswerCoordinator:
                 original_user, focused_event=focused_event
             ),
         })
+
+        # V3 shadow-only: final synthesis is the last opportunity for the
+        # model to return witness-backed claims. In-loop recovery offers are
+        # advisory and may be displaced by later tool-selection instructions.
+        # A qualifying two-target journal witness packet is required; no
+        # extra MCP reads, write privileges or publication changes result.
+        if unified_brief:
+            final_claim_facts = collect_unified_evidence(evidence, original_user)
+            final_claim_prompt = render_shadow_claim_pilot(
+                final_claim_facts, final_synthesis=True,
+            )
+            if final_claim_prompt:
+                final_messages.append({
+                    "role": "user", "content": final_claim_prompt,
+                })
+                increment_active_metric("v3_claim_pilot_final_offered")
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
