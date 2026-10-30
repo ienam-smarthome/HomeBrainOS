@@ -160,6 +160,11 @@ def collect_unified_evidence(
         if ident not in ids:
             ids.append(ident)
     observed_keys: set[tuple[str, str, str, str, str]] = set()
+    # Source roles stay distinct: command issuer != event-notified listener.
+    # event_summary intentionally strips triggered[] from model-visible rows;
+    # preserve only typed app IDs from the independently scoped raw receipt.
+    command_apps_by_device: dict[str, set[str]] = {}
+    notified_apps_by_device: dict[str, set[str]] = {}
     for index, receipt in enumerate(receipts[:100], 1):
         tool = str(receipt.get("tool") or "")
         leaf = str(receipt.get("sub_tool") or "")
@@ -198,6 +203,26 @@ def collect_unified_evidence(
                 unique_rows.append(row)
             if not unique_rows:
                 continue
+            for row in unique_rows:
+                event_time = _time(row.get("date"))
+                if event_time is None or not _in_user_period(
+                        event_time, question, incident):
+                    continue
+                producer = row.get("producedBy")
+                if str(row.get("name") or "").startswith("command-") and isinstance(producer, Mapping):
+                    app_id = str(producer.get("appId") or "")
+                    if app_id.isdecimal() and int(app_id) > 0:
+                        command_apps_by_device.setdefault(device_id, set()).add(app_id)
+                if (str(row.get("name") or "") in (
+                        "switch", "level", "motion", "occupancy", "presence")):
+                    notifications = row.get("triggered")
+                    if isinstance(notifications, list):
+                        for notified in notifications[:36]:
+                            if not isinstance(notified, Mapping):
+                                continue
+                            app_id = str(notified.get("appId") or "")
+                            if app_id.isdecimal() and int(app_id) > 0:
+                                notified_apps_by_device.setdefault(device_id, set()).add(app_id)
             projected = event_summary({"events": unique_rows})
             if projected is None:
                 continue
@@ -267,6 +292,34 @@ def collect_unified_evidence(
                 sensor_events.append(e)
     independent_input_events.sort(key=lambda row: (
         _time(row["time"]), row["device_id"]))
+    target_command_apps = set().union(
+        *(command_apps_by_device.get(ident, set()) for ident in targets))
+    target_notified_apps = set().union(
+        *(notified_apps_by_device.get(ident, set()) for ident in targets))
+    # This is source-relationship classification, NOT an inverse dependency
+    # proof or a claim that an app historically caused a particular switch.
+    # An empty/disjoint snapshot cannot exclude missing command paths.
+    input_app_relationships: list[dict[str, Any]] = []
+    for ident in sorted(input_history_ids, key=int):
+        notified = notified_apps_by_device.get(ident, set())
+        shared_command = notified & target_command_apps
+        shared_listener = notified & target_notified_apps
+        if shared_command:
+            status = "shared-observed-target-command-app"
+        elif shared_listener:
+            status = "shared-observed-target-notified-app"
+        elif notified and (target_command_apps or target_notified_apps):
+            status = "different-observed-app-associations"
+        else:
+            status = "relationship-not-established-from-records"
+        input_app_relationships.append({
+            "input_device_id": ident,
+            "input_notified_app_ids": sorted(notified, key=int)[:12],
+            "shared_target_command_app_ids": sorted(shared_command, key=int)[:12],
+            "shared_target_listener_app_ids": sorted(shared_listener, key=int)[:12],
+            "relationship": status,
+            "historical_causation_verified": False,
+        })
     # Device IDs queried in the incident period but returning no usable
     # source events are evidence *coverage gaps*, not inactive sensors.
     empty_non_target_reads: set[str] = set()
@@ -518,6 +571,9 @@ def collect_unified_evidence(
         "independently_read_input_ids": checked_input_ids,
         "independent_input_observations": independent_input_events[:24],
         "independent_input_observation_total": len(independent_input_events),
+        "input_app_relationships": input_app_relationships[:16],
+        "target_observed_command_app_ids": sorted(target_command_apps, key=int)[:16],
+        "target_observed_notified_app_ids": sorted(target_notified_apps, key=int)[:16],
         "additional_event_reads_without_usable_rows": sorted(
             empty_non_target_reads, key=int)[:16],
         "missing_independent_input_history": not bool(checked_input_ids),
@@ -565,6 +621,8 @@ def unified_investigation_instruction(
         "hub_mode_observations": evidence["hub_mode_observations"],
         "independently_read_input_ids": evidence["independently_read_input_ids"],
         "independent_input_observations": evidence["independent_input_observations"][:16],
+        "input_app_relationships": evidence["input_app_relationships"][:10],
+        "target_observed_command_app_ids": evidence["target_observed_command_app_ids"],
         "additional_event_reads_without_usable_rows":
             evidence["additional_event_reads_without_usable_rows"],
         "missing_independent_input_history": evidence["missing_independent_input_history"],
