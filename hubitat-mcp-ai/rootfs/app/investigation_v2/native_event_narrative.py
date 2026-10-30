@@ -57,6 +57,7 @@ def event_narrative_evidence(
     *,
     max_events: int = 36,
     question: str | None = None,
+    verified_labels: Mapping[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Build a citable event ledger from independently completed scoped reads.
 
@@ -101,6 +102,13 @@ def event_narrative_evidence(
                 r"[\x00-\x1f\x7f<>]", "", str(
                     device.get("label") or device.get("name") or
                     "Device " + ident))[:90]
+    # These labels must originate from fresh, uniquely verified identity
+    # results in the host, not from untrusted model prose or user-supplied IDs.
+    for ident, label in (verified_labels or {}).items():
+        if (str(ident) in scoped_ids and isinstance(label, str)
+                and label.strip()):
+            device_names[str(ident)] = re.sub(
+                r"[\\x00-\\x1f\\x7f<>]", "", label)[:90]
     for w in witnesses:
         if w.get("operation") != "hub_get_device":
             continue
