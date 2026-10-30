@@ -7,7 +7,7 @@ read source facts and exact temporal relationships.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import re
 from typing import Any, Mapping, Sequence
@@ -28,14 +28,32 @@ def _time(value: Any) -> datetime | None:
         return None
 
 
+_RECENT = re.compile(
+    r"\\b(?:last|past)\\s+(\\d{1,2}|one|two|three|four|six|twelve|twenty-four)"
+    r"\\s+(minutes?|hours?)\\b", re.I)
+_RECENT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4,
+                 "six": 6, "twelve": 12, "twenty-four": 24}
+
+
 _EXPLICIT_CLOCK_RANGE = re.compile(
     r"\b(?:between|from)\s+(\d{1,2}):(\d{2})\s*"
     r"(?:and|to|[-–])\s*(\d{1,2}):(\d{2})\b", re.I)
 
 
 def _in_user_period(when: datetime, question: str, incident: Any) -> bool:
-    if incident is not None and not incident.contains(when.isoformat()):
-        return False
+    if incident is not None:
+        if not incident.contains(when.isoformat()):
+            return False
+    else:
+        recent = _RECENT.search(question)
+        if recent:
+            amount = _RECENT_WORDS.get(recent.group(1).casefold())
+            amount = int(recent.group(1)) if amount is None else amount
+            seconds = amount * (3600 if recent.group(2).lower().startswith("hour") else 60)
+            if not 60 <= seconds <= 48 * 3600:
+                return False
+            if not datetime.now(timezone.utc) - timedelta(seconds=seconds) <= when <= datetime.now(timezone.utc):
+                return False
     found = _EXPLICIT_CLOCK_RANGE.search(question)
     if found:
         h1, m1, h2, m2 = map(int, found.groups())
