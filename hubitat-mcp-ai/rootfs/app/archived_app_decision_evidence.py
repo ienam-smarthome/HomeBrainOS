@@ -26,11 +26,11 @@ _ACTION = re.compile(
     r"start|engag|activat|enable|block|ignor|skip|cancel|clear|expir|end|"
     r"prevent|suppress|set|inhibit", re.I,
 )
-_BUTTON_DECLARATION = re.compile(r"\\bbutton\\b.{0,65}\\b(?:push(?:ed)?|press(?:ed)?|held|released)\\b", re.I)
-_OFF_DECLARATION = re.compile(r"(?<!\\w)(?:off\\(\\)|turn(?:ing)?\\s+off|switch(?:ed)?\\s+off|request(?:ed)?\\s+off)(?!\\w)", re.I)
-_ON_DECLARATION = re.compile(r"(?<!\\w)(?:on\\(\\)|turn(?:ing)?\\s+on|switch(?:ed)?\\s+on|request(?:ed)?\\s+on)(?!\\w)", re.I)
-_LEVEL_DECLARATION = re.compile(r"\\b(?:setLevel\\(|brightness|dimmer\\s+level)\\b", re.I)
-_MODE_DECLARATION = re.compile(r"\\b(?:mode\\s+change|mode\\s+(?:set|became|changed)|school run)\\b", re.I)
+_BUTTON_DECLARATION = re.compile(r"\bbutton\b.{0,65}\b(?:push(?:ed)?|press(?:ed)?|held|released)\b", re.I)
+_OFF_DECLARATION = re.compile(r"(?<!\w)(?:off\(\)|turn(?:ing)?\s+off|switch(?:ed)?\s+off|request(?:ed)?\s+off)(?!\w)", re.I)
+_ON_DECLARATION = re.compile(r"(?<!\w)(?:on\(\)|turn(?:ing)?\s+on|switch(?:ed)?\s+on|request(?:ed)?\s+on)(?!\w)", re.I)
+_LEVEL_DECLARATION = re.compile(r"\b(?:setLevel\(|brightness|dimmer\s+level)\b", re.I)
+_MODE_DECLARATION = re.compile(r"\b(?:mode\s+change|mode\s+(?:set|became|changed)|school run)\b", re.I)
 
 
 def _decision_stage(message: str) -> str | None:
@@ -44,7 +44,7 @@ def _decision_stage(message: str) -> str | None:
         return "reported-brightness-handling"
     if _LOCKOUT.search(message) and _ACTION.search(message):
         return "reported-lockout-handling"
-    if _MOTION.search(message) and (_ACTION.search(message) or re.search(r"\\b(?:active|inactive|detected)\\b", message, re.I)):
+    if _MOTION.search(message) and (_ACTION.search(message) or re.search(r"\b(?:active|inactive|detected)\b", message, re.I)):
         return "reported-motion-handling"
     if _MODE_DECLARATION.search(message):
         return "reported-mode-handling"
