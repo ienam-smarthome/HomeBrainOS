@@ -167,7 +167,9 @@ def test_when_ai_invalid_fallback_is_chronology_not_command_counts():
 @pytest.mark.asyncio
 async def test_native_room_history_invokes_model_final_reasons_not_claim_catalog():
     mcp = FakeMCP([ROOM_TOOL, DEVICE])
-    executor = FakeExecutor(mcp, [room(), *histories()])
+    executor = FakeExecutor(mcp, [
+        {"count": 1, "rooms": [{"name": "Bathroom"}]},
+        room(), *histories()])
     turns = 0
 
     async def model(messages, tools):
@@ -175,14 +177,17 @@ async def test_native_room_history_invokes_model_final_reasons_not_claim_catalog
         turns += 1
         if turns == 1:
             return {"tool_calls": [native("hub_read_rooms", {
+                "tool": "hub_list_rooms", "args": {}})]}
+        if turns == 2:
+            return {"tool_calls": [native("hub_read_rooms", {
                 "tool": "hub_get_room", "args": {"room": "Bathroom"}})]}
-        if 2 <= turns <= 4:
-            ident = ("7818", "7821", "7807")[turns - 2]
+        if 3 <= turns <= 5:
+            ident = ("7818", "7821", "7807")[turns - 3]
             return {"tool_calls": [native("hub_read_devices", {
                 "tool": "hub_list_device_events", "args": {"deviceId": ident}})]}
-        if turns == 5:
-            return {"content": "The controller issued brightness commands but the trigger is not known."}
         if turns == 6:
+            return {"content": "The controller issued brightness commands but the trigger is not known."}
+        if turns == 7:
             assert tools == []
             assert "final reasoning stage" in messages[0]["content"]
             context = json.loads(messages[-1]["content"])
@@ -194,11 +199,11 @@ async def test_native_room_history_invokes_model_final_reasons_not_claim_catalog
     result = await run_native_read_agent(
         question="Investigate the Bathroom lighting behaviour this morning.",
         chat=model, mcp=mcp, executor=executor,
-        max_rounds=6, max_reads=6,
+        max_rounds=7, max_reads=6,
         enable_model_reasoned_assessment=True)
     d = result["native_diagnostics"]
-    assert turns == 6
-    assert d["successful_reads"] == 4
+    assert turns == 7
+    assert d["successful_reads"] == 5
     assert d["event_narrative_eligible"] is True
     assert d["model_event_narrative"]["accepted"] is True
     assert d["claim_publication"]["used_for_display_answer"] is False
@@ -206,4 +211,4 @@ async def test_native_room_history_invokes_model_final_reasons_not_claim_catalog
     assert d["concise_answer_source"] == "model_scoped_event_narrative"
     assert "Evidence and timeline" in result["answer"]["text"]
     assert "Source-verified findings" not in result["answer"]["text"]
-    assert len(executor.calls) == 4
+    assert len(executor.calls) == 5
