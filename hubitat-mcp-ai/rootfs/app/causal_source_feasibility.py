@@ -38,7 +38,7 @@ def _signature(receipt: Mapping[str, Any]) -> str:
     for key in ("deviceId", "appId", "since", "until",
                 "attribute", "includeSettings", "offset", "length"):
         val = args.get(key)
-        if isinstance(val, (str, int, bool)) and not isinstance(val, str) or isinstance(val, str):
+        if isinstance(val, (str, int, bool)):
             allowed[key] = str(val)[:80]
     return _leaf(receipt) + ":" + json.dumps(allowed, sort_keys=True)
 
@@ -117,7 +117,10 @@ def build_source_feasibility_choices(
     # The absence of a dedicated command-origin tool in observed receipts
     # does NOT show it doesn't exist; one model-led catalog discovery is
     # reasonable if not performed. Never fabricate a leaf name here.
-    discovery_checked = any(
+    # A tool search about Groovy source is not evidence that an original
+    # command-history provider was searched. Do not infer absence from any
+    # unrelated successful discovery attempt.
+    discovery_attempted = any(
         r.get("tool") == "hub_search_tools" and r.get("success") is True
         for r in receipts[:160]
     )
@@ -136,9 +139,9 @@ def build_source_feasibility_choices(
             "required": "original-ON-command-issuer",
             "status": "not-witnessed-in-retained-sources",
             "discovery": (
-                "one catalog discovery may be useful if model determines a read-only source is available"
-                if not discovery_checked
-                else "catalog discovery already attempted; do not repeat without a new question"
+                "No prior catalog discovery in these receipts; the model may check the live read-only catalog"
+                if not discovery_attempted
+                else "A catalog search occurred, but its topic may differ; only current authorized tools can confirm command-origin access"
             ),
             "not_equivalent_to": [
                 "source-timed switch state", "later setLevel command",
