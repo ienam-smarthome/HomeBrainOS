@@ -153,6 +153,6 @@ def test_truncated_or_collector_only_missing_light_pair_cannot_certify():
             row["details"]["observations"] = [
                 x for x in row["details"]["observations"]
                 if x["timestamp_basis"] == "source"]
-    facts = collect_unified_evidence(rows, Q)
+    facts = collect_unified_evidence(rows, QUESTION)
     assert facts
     assert facts["same_receiver_evidence"]["candidates"] == []
