@@ -269,8 +269,8 @@ def guard_unverified_initiator_claims(
         heading_external = bool(
             not external_verified
             and re.search(
-                r"(?i)\\b(?:external|hue[- ]native|bridge[- ]native)\\s+"
-                r"(?:control|controller|origin|automation)\\b",
+                r"(?i)\b(?:external|hue[- ]native|bridge[- ]native)\s+"
+                r"(?:control|controller|origin|automation)\b",
                 stripped,
             )
             and not _SCOPE_QUALIFIER.search(stripped)
@@ -278,8 +278,8 @@ def guard_unverified_initiator_claims(
         )
         if heading_external:
             line = re.sub(
-                r"(?i)\\b(?:external|hue[- ]native|bridge[- ]native)\\s+"
-                r"(?:control|controller|origin|automation)\\b",
+                r"(?i)\b(?:external|hue[- ]native|bridge[- ]native)\s+"
+                r"(?:control|controller|origin|automation)\b",
                 "Initiator unverified", line,
             )
             stripped = line.strip()
