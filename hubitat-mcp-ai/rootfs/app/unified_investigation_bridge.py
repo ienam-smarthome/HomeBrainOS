@@ -336,6 +336,27 @@ def collect_unified_evidence(
             })
     incident_rows.sort(key=lambda e: (e["time"], e["device_name"]))
     checked_input_ids = sorted(input_history_ids)
+    archived_app_checks: list[dict[str, Any]] = []
+    for receipt in receipts[:120]:
+        if (receipt.get("evidence_kind") != "group_archived_app_decisions"
+                or receipt.get("tool") != "homebrain_evidence_journal"
+                or receipt.get("mutates") is True):
+            continue
+        d = receipt.get("details")
+        if not isinstance(d, Mapping):
+            continue
+        ident = str(d.get("appId") or "")
+        if not ident.isdecimal():
+            continue
+        archived_app_checks.append({
+            "app_id": ident,
+            "status": str(d.get("status") or "")[:72],
+            "log_rows": d.get("returnedRows"),
+            "decision_declarations": d.get("decisionDeclarations"),
+            "gap_count": d.get("gapCount"),
+            "historical_execution_verified": False,
+            "timestamp_basis": "collector-received",
+        })
     log_receipts = [
         r for r in receipts if r.get("success") is True
         and r.get("sub_tool") == "hub_get_logs"
@@ -366,6 +387,7 @@ def collect_unified_evidence(
         "independently_read_input_ids": checked_input_ids,
         "missing_independent_input_history": not bool(checked_input_ids),
         "log_query_count": len(log_receipts),
+        "archived_app_checks": archived_app_checks,
         "incident_log_coverage_verified": False,
         "limitations": (
             "State is source-reported, not an independent physical ACK. "
@@ -409,6 +431,7 @@ def unified_investigation_instruction(
         "independently_read_input_ids": evidence["independently_read_input_ids"],
         "missing_independent_input_history": evidence["missing_independent_input_history"],
         "log_query_count": evidence["log_query_count"],
+        "archived_app_checks": evidence["archived_app_checks"],
         "incident_log_coverage_verified": evidence["incident_log_coverage_verified"],
         "event_source_count": source.get("event_count_in_returned_samples"),
         "source_event_examples": source.get("event_examples", [])[:8],
