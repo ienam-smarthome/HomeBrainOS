@@ -19,7 +19,7 @@
 
 ## Tests
 - Positive immediate Hubitat issuer fixture; original cause correctly stays unverified.
-- Birthday independent light sequence? No: the generic negative fixture uses a source-timed light ON followed by app level change, ensuring no claimed initiator.
+- Negative fixture: a source-timed light ON followed by an app brightness change must not claim an ON initiator.
 - Same-target timing/order and verified app ID required.
 - Journal collector reception excluded from verification; native/archived incomplete coverage not treated as complete.
 - Source-only motion retained as an input witness, but correlation remains noncausal.
