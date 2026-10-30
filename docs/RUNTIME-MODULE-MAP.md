@@ -54,6 +54,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_incident_depth.py` | Bounded read-only post-baseline root-cause checkpoint for offline/MQTT single-device investigations; model still selects live driver/automation/upstream evidence tools. |
 | `investigation_objective.py` | Defines a single read-only primary objective for source, rule, and general investigations, shared by routing, synthesis and evidence completion; never authorises writes or certifies source reasoning. |
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
+| `causal_reception_evidence.py` | Same-collector receipt-clock associations and per-light source stagger from source-qualified journal rows; incomplete sensor pages cannot form one-to-one evidence and causal origin remains unverified. |
 | `causal_claim_attestation.py` | V3 optional versioned model claim envelope and strict witness-role/source-clock validator; Stage D1 shadow only. |
 | `causal_source_feasibility.py` | V3 advisory source choices from verified read receipts and witnessed IDs; tracks repeated reads and unconfirmed original command sources without a second agent or permissions. |
 | `causal_witness_ledger.py` | Read-only, bounded V3 Stage B witness/source coverage projection with positive Hubitat ON-issuer matches; no second planner or publication changes. |

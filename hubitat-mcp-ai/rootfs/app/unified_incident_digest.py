@@ -232,6 +232,49 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
         + str(collector_n) + " reception-only observations. "
         "These establish switch changes, not who initiated them."
     ]
+    # A matched *receiver-clock* stream is evidence of structured sequencing,
+    # not a source-timestamped sensor input or proof of a command origin.
+    receiver = facts.get("same_receiver_evidence") or {}
+    signal = next((
+        row for row in receiver.get("candidates", [])
+        if row.get("one_to_one_within_windows") is True
+        and row.get("receiver_clock_only") is True
+        and row.get("sensor_source_order_verified") is False
+        and row.get("initiator_verified") is False
+    ), None)
+    if signal:
+        on = signal["on_receiver_delay_seconds"]
+        off = signal["off_receiver_delay_seconds"]
+        explanation.insert(0,
+            "**Strongest observed pattern:** Input device "
+            + str(signal["input_id"]) + " had "
+            + str(signal["matched_on"]) + "/"
+            + str(signal["target_on_rows"]) + " paired active→ON and "
+            + str(signal["matched_off"]) + "/"
+            + str(signal["target_off_rows"]) + " inactive→OFF *collector "
+              "receptions* against target device "
+            + str(signal["target_id"]) + ". The input was received "
+            + f"{on['min']:.3f}–{on['max']:.3f}s before each matching ON "
+              "reception and "
+            + f"{off['min']:.3f}–{off['max']:.3f}s before each matching OFF "
+              "reception. This fits motion-correlated lighting with an "
+              "approximately ten-second inactivity delay if the observed "
+              "OFF interval is near ten seconds. It does not establish "
+              "original sensor event order, the command issuer, or that "
+              "the same delivery latency applies to different streams."
+        )
+    light_pair = receiver.get("light_pair")
+    if isinstance(light_pair, Mapping):
+        stagger = light_pair.get("source_event_stagger_seconds")
+        if stagger:
+            explanation.append(
+                "**Per-light sequencing:** Source-timed switch reports for "
+                + str(light_pair["first_id"]) + " preceded "
+                + str(light_pair["second_id"]) + " across "
+                + str(light_pair["paired_transitions"]) + " paired transitions "
+                + f"by {stagger['min']:.3f}–{stagger['max']:.3f} seconds. "
+                  "This establishes staggered reports, not a common issuer."
+            )
     if offs:
         app_ids = _dedupe_values(offs, "app_id")
         explanation.append(
@@ -264,6 +307,36 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
             + " source-timestamped switch reports not present in the recovered "
               "Journal rows. These are included in the merged event sequence; "
               "their reporting bridge is not proof of upstream initiation."
+        )
+    # Quantify only source-time ON → command relationships from the same
+    # recorded Hubitat device history; do not infer earlier ON triggers.
+    precise_later_levels = []
+    for target in sorted(target_ids):
+        target_ons = [
+            row for row in source
+            if str(row.get("device_id")) == target and row.get("value") == "on"
+        ]
+        if not target_ons:
+            continue
+        first = min(target_ons, key=_when)
+        after = [
+            ( (_when(row) - _when(first)).total_seconds(), row)
+            for row in levels if str(row.get("device_id")) == target
+            and _when(row) is not None and
+            0 <= (_when(row) - _when(first)).total_seconds() <= 2
+        ]
+        if after:
+            delta, command = min(after, key=lambda p: p[0])
+            precise_later_levels.append(
+                str(first.get("device_name") or target)
+                + f": setLevel after ON by {round(delta * 1000)} ms"
+            )
+    if precise_later_levels:
+        explanation.append(
+            "**Verified command ordering:** "
+            + "; ".join(precise_later_levels[:6])
+            + ". These later brightness requests cannot have initiated "
+              "the already-reported ON transition."
         )
     if level_after_on:
         explanation.append(
@@ -370,16 +443,33 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
                   "cannot be excluded."
             )
     if facts.get("archived_input_reads"):
+        # Per-query gapCount is not globally unique: the *same* recorded
+        # collector interruptions are included in multiple device queries.
+        # Do not present a sum as distinct outages without gap identities.
+        gap_queries = facts.get("archived_input_gap_queries") or []
+        gap_values = [str(q["gap_count"]) for q in gap_queries
+                      if type(q.get("gap_count")) is int]
+        gap_text = (
+            "; ".join("device " + str(q["device_id"]) + ": "
+                      + str(q["gap_count"]) + " gap interval(s) reported"
+                      for q in gap_queries[:6])
+            if gap_values else "gap identity unavailable"
+        )
+        total_returned = facts.get("archived_input_returned_observations")
+        received_sampled = int(facts.get("archived_input_collector_observations") or 0)
         explanation.append(
             "**Archived input history coverage:** "
             + str(facts.get("archived_input_source_observations", 0))
-            + " source-timestamped input observation(s); "
-            + str(facts.get("archived_input_collector_observations", 0))
-            + " reception-only observation(s); "
-            + str(facts.get("archived_input_gap_count", 0))
-            + " recorded connection gap(s). Only the source-timestamped "
-              "observations are used for event-time comparisons, and "
-              "the archive cannot establish complete historical coverage."
+            + " source-timestamped input observation(s) in retained receipts; "
+            + str(received_sampled)
+            + " reception-only observation(s) in retained receipt samples"
+            + (("; " + str(total_returned)
+                + " input rows returned across archive queries")
+               if type(total_returned) is int else "")
+            + ". Gap reports by query: " + gap_text
+            + ". These reports cannot be summed as distinct collector outages. "
+              "Truncated archive pages and connection gaps prevent claiming "
+              "complete historical coverage."
         )
     patterns = facts.get("archived_input_reception_patterns") or []
     if patterns:
@@ -409,7 +499,8 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
                 "**Reception-only pattern (tentative):** "
                 + "; ".join(phrases)
                 + ". Reception timestamps are NOT the original sensor event "
-                  "times; unknown transport delays prevent proving event "
+                  "times. The same collector can compare receipt ordering; "
+                  "different transport paths prevent proving original event "
                   "order or which controller issued a command. Repeated "
                   "co-occurrence makes these input histories useful follow-up "
                   "leads, not verified causes."
