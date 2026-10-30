@@ -127,7 +127,9 @@ def test_empty_native_sensor_history_recovers_source_timed_journal_events():
     assert "device 201: 15:28:13 active, 15:29:05 inactive" in digest
     assert "**Archived input history coverage:** 2 source-timestamped" in digest
     assert "1 reception-only observation(s)" in digest
-    assert "2 recorded connection gap(s)" in digest
+    assert "device 201: 1 gap interval(s) reported" in digest
+    assert "device 202: 1 gap interval(s) reported" in digest
+    assert "cannot be summed as distinct collector outages" in digest
     assert "device 202" in digest
     assert "not proof that any of these sensors commanded" in digest
 
