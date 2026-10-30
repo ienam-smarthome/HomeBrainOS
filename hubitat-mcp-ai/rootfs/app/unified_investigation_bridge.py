@@ -15,6 +15,7 @@ from typing import Any, Mapping, Sequence
 from unified_incident_synthesis import reconcile_ledger_if_needed
 from causal_witness_ledger import build_witness_coverage_ledger
 from causal_claim_pilot import render_shadow_claim_pilot
+from causal_reception_evidence import analyse_collector_reception
 from causal_source_feasibility import build_source_feasibility_choices
 from investigation_v2.native_event_narrative import event_narrative_evidence
 from investigation_v2.native_provenance import event_summary
@@ -312,6 +313,7 @@ def collect_unified_evidence(
     archived_input_collector_count = 0
     archived_input_gap_count = 0
     archived_input_reads = 0
+    archived_input_gap_queries: list[dict[str, Any]] = []
     archived_input_reception_rows: list[dict[str, Any]] = []
     archived_input_truncated_ids: set[str] = set()
     for receipt in receipts[:120]:
@@ -344,7 +346,8 @@ def collect_unified_evidence(
             archived_input_truncated_ids.add(ident)
         gaps = d.get("gapCount")
         if type(gaps) is int and gaps >= 0:
-            archived_input_gap_count += gaps
+            archived_input_gap_count += gaps  # query receipts, NOT distinct outages
+            archived_input_gap_queries.append({"device_id": ident, "gap_count": gaps})
         for event in (d.get("observations") or [])[:160]:
             if not isinstance(event, Mapping):
                 continue
@@ -721,6 +724,15 @@ def collect_unified_evidence(
             "causal_initiator_verified": False,
             "full_returned_page_analyzed": True,
         })
+    returned_counts = {
+        row["device_id"]: row["retrieved_observations"]
+        for row in archive_sample_sizes
+    }
+    receiver_evidence = analyse_collector_reception(
+        incident_rows, archived_input_reception_rows,
+        truncated_inputs=sorted(archived_input_truncated_ids),
+        input_returned_counts=returned_counts,
+    )
     checked_input_ids = sorted(input_history_ids)
     archived_app_checks: list[dict[str, Any]] = []
     for receipt in receipts[:120]:
@@ -787,7 +799,11 @@ def collect_unified_evidence(
         "independent_input_observation_total": len(independent_input_events),
         "archived_input_source_observations": archived_input_source_count,
         "archived_input_collector_observations": archived_input_collector_count,
+        "archived_input_returned_observations": sum(
+            row["retrieved_observations"] for row in archive_sample_sizes),
         "archived_input_gap_count": archived_input_gap_count,
+        "archived_input_gap_queries": archived_input_gap_queries,
+        "same_receiver_evidence": receiver_evidence,
         "archived_input_reads": archived_input_reads,
         "archived_input_reception_patterns": reception_input_patterns[:8],
         "archived_input_truncated_ids": sorted(archived_input_truncated_ids, key=int),
@@ -858,6 +874,10 @@ def unified_investigation_instruction(
         "archived_input_collector_observations":
             evidence["archived_input_collector_observations"],
         "archived_input_gap_count": evidence["archived_input_gap_count"],
+        "archived_input_returned_observations":
+            evidence["archived_input_returned_observations"],
+        "archived_input_gap_queries": evidence["archived_input_gap_queries"],
+        "same_receiver_evidence": evidence["same_receiver_evidence"],
         "archived_input_reception_patterns":
             evidence["archived_input_reception_patterns"][:6],
         "archived_input_truncated_ids": evidence["archived_input_truncated_ids"],
