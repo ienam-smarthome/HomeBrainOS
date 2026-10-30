@@ -15,6 +15,8 @@ from unified_investigation_bridge import collect_unified_evidence
 from unified_incident_digest import source_incident_digest
 from test_reception_pattern_018260 import Q, ON, OFF, ACTIVE, INACTIVE, native, lookup
 
+QUESTION = Q.replace("Zone Alpha Light", "North Lamp").replace("Zone Beta Light", "South Lamp")
+
 
 def iso(value, delta=0):
     d = datetime.fromisoformat("2026-10-30T" + value + "+00:00")
@@ -83,7 +85,7 @@ def replay(ids=(101, 102, 201, 202, 203)):
 
 
 def test_motion_candidate_same_receiver_clock_and_stagger():
-    f = collect_unified_evidence(replay(), Q)
+    f = collect_unified_evidence(replay(), QUESTION)
     assert f is not None
     assert f["archived_input_collector_observations"] == 30
     assert f["archived_input_returned_observations"] == 170
@@ -107,7 +109,7 @@ def test_motion_candidate_same_receiver_clock_and_stagger():
 
 
 def test_digest_shows_full_returned_counts_and_not_duplicate_gaps():
-    f = collect_unified_evidence(replay(), Q)
+    f = collect_unified_evidence(replay(), QUESTION)
     ans = source_incident_digest(f)
     assert ans
     assert "**Strongest observed pattern:** Input device 201" in ans
@@ -123,8 +125,7 @@ def test_digest_shows_full_returned_counts_and_not_duplicate_gaps():
 
 def test_ids_and_labels_change_without_changing_evidence_relationship():
     renamed = (701, 702, 803, 804, 805)
-    facts = collect_unified_evidence(replay(renamed), Q.replace(
-        "Zone Alpha Light", "North Lamp").replace("Zone Beta Light", "South Lamp"))
+    facts = collect_unified_evidence(replay(renamed), QUESTION)
     # Lookup verifies names independently of the question; this check is
     # about the relative timing independent of the chosen positive IDs.
     assert facts
@@ -137,7 +138,7 @@ def test_ids_and_labels_change_without_changing_evidence_relationship():
 
 def test_truncated_or_collector_only_missing_light_pair_cannot_certify():
     rows = replay()
-    f = collect_unified_evidence(rows, Q)
+    f = collect_unified_evidence(rows, QUESTION)
     assert f
     inputs = [{"device_id": "201", "received_at": x["date"],
                "value": x["value"]} for x in input_rows(201)]
