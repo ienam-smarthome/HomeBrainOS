@@ -407,7 +407,13 @@ def event_timeline_fallback(packet: Mapping[str, Any] | None) -> str | None:
               or e["name"].startswith("command-")]
     if not chosen:
         chosen = events
-    chosen = chosen[-12:]
+    # The last 12 events can all belong to one late burst, concealing an
+    # earlier command/state sequence within the user's actual time window.
+    # Spread the fallback trace through the source-attested packet instead.
+    if len(chosen) > 18:
+        indexes = sorted({round(i * (len(chosen) - 1) / 17)
+                          for i in range(18)})
+        chosen = [chosen[i] for i in indexes]
     lines = []
     for e in chosen:
         dt = _instant(e["date"])
