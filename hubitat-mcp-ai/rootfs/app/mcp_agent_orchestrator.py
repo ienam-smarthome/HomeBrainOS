@@ -3848,7 +3848,11 @@ class UnifiedMCPAgent:
             # independently returned target switch transitions are reported.
             if (not self._mutation_requested_by_user.get()
                     and not self._mutation_call_seen.get()
-                    and investigating(user_prompt)):
+                    and is_history_investigation(user_prompt)):
+                # This boundary is evidence-triggered, not dependent on the
+                # narrower routing-only investigating() predicate. A model-led
+                # request classified as general history must still retain
+                # every attested source event after an early answer exit.
                 message, corrected_group = reconcile_unified_investigation_answer(
                     message, evidence, user_prompt)
                 if corrected_group:
