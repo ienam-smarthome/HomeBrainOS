@@ -386,7 +386,7 @@ def verified_group_timeline(
         "### Verified device-transition timeline\n\n"
         "Source-reported ON/OFF changes from the returned device histories; "
         "not proof of complete Hubitat Logs or an external initiating system.\n\n"
-        "| GMT | Light | Reported | Source evidence |\n"
+        "| UTC | Light | Reported | Source evidence |\n"
         "|---|---|---|---|\n" + "\n".join(rows)
         + ("\n\n" + str(limit) + " additional state transitions were "
            "omitted due to the display limit." if limit else "")
