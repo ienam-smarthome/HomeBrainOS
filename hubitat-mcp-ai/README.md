@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.240**.
+Current add-on version: **0.18.241**.
+
+**Unified HomeBrain investigation:** The original MCP agent remains the main read-only investigator and writes natural-language explanations. It now reuses source-attested event projections and temporal relationship evidence from the V2 library without its second planner, rigid JSON-answer publisher or command-count timeline fallback. V2 remains an experimental regression harness; no new V2-specific releases are planned. Historical upstream cause requires independently scoped sensor/automation evidence, not command counts or a successful log query. [Release notes](CHANGELOG-0.18.241.md).
 
 v0.18.240 addresses the remaining Claude comparison gap in Investigation V2 by identifying missing independently scoped input-sensor histories and incident-time execution logs, giving the model a guarded opportunity to fetch discriminating evidence before finishing, expanding source-verified identity lookup capacity, and allowing a longer final natural-language synthesis. All MCP permissions remain read-only and root-cause assertions remain source-limited. [Release notes](CHANGELOG-0.18.240.md).
 
