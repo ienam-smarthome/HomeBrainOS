@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.261**.
+Current add-on version: **0.18.262**.
+
+**Causal Investigator V3 Stage B:** Witness-backed, source/clock-typed coverage ledger tracks read-only historical evidence and distinguishes recorded Hubitat ON commands from unverified upstream causes. Shadow-only: no tool routing, model prompt or final answer change. [Release notes](CHANGELOG-0.18.262.md).
 
 **Causal V3 Stage A: shadow publication telemetry.** Evidence-grounded model drafts are now measured against the existing deterministic finalization boundary using privacy-safe request counters. Published answer behaviour is unchanged while we quantify when the fallback hides valid reasoning. [Release notes](CHANGELOG-0.18.261.md).
 

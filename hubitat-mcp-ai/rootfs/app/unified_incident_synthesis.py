@@ -231,6 +231,25 @@ def _record_publication_shadow(
         "preserved": "v3_shadow_legacy_draft_preserved",
     }
     increment_active_metric(actions[action])
+    # The witness ledger is shadow-only. Expose aggregate source-role
+    # coverage while preserving the exact legacy final-answer decision.
+    # observe_counter_max keeps the counters stable if multiple candidate
+    # explanations pass through the finalization boundary.
+    ledger = facts.get("v3_witness_ledger")
+    if isinstance(ledger, Mapping):
+        from request_metrics import observe_active_metric_max
+        observe_active_metric_max(
+            "v3_witness_total", int(ledger.get("witness_total") or 0))
+        observe_active_metric_max(
+            "v3_witness_source_inputs",
+            int(ledger.get("source_timed_input_witness_count") or 0))
+        observe_active_metric_max(
+            "v3_witness_immediate_command_matches",
+            len(ledger.get("immediate_hubitat_on_command_matches") or []))
+        observe_active_metric_max(
+            "v3_witness_targets_without_on_issuer",
+            max(0, int(ledger.get("target_count") or 0)
+                - int(ledger.get("issuer_verified_target_count") or 0)))
     if analysis["native_history_gap"]:
         increment_active_metric("v3_shadow_history_gap")
     if analysis["source_contradiction_flag_count"]:
