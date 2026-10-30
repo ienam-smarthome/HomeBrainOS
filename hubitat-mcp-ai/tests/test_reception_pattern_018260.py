@@ -63,6 +63,7 @@ class Recorder:
         if info and isinstance(info.get("observations"),list):
             info=dict(info)
             info["observations"]=info["observations"][:20]
+            kw["details"]=info
         self.rows.append({"tool":tool,"arguments":arguments,**kw})
 
 def run():
