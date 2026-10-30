@@ -584,8 +584,9 @@ def unified_investigation_followup(
         return (
             "HOST INCIDENT COVERAGE DEFECT (read-only, source-attested). "
             "Independently verified named actuator history queries returned "
-            "NO incident-time switch ON/OFF states (they may contain newer "
-            "events, commands, or an incomplete rolling-history sample) "
+            "NO reported switch ON/OFF states within the incident "
+            "(they may contain newer events, commands, or an incomplete "
+            "rolling-history sample) "
             "for: " + ", ".join(missing_switch[:6])
             + ". Therefore no complete ON/OFF cycle or initiating automation "
               "can be established for those targets. Before ending, choose "
