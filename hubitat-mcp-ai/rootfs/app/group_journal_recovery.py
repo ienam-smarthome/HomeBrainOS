@@ -9,7 +9,7 @@ No writes, external service access, invented IDs or claims of full coverage.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone, time
+from datetime import datetime, timezone, time, timedelta
 import re
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
@@ -22,6 +22,14 @@ _CLOCK = re.compile(
     r"(?:and|to|[-–])\s*(\d{1,2}):(\d{2})\b", re.I
 )
 _HUB_ZONE = re.compile(r"\b(?:timezone|time zone)\s+([A-Za-z_]+/[A-Za-z_]+)\b", re.I)
+_RECENT = re.compile(
+    r"\b(?:during|in|over|within|for)?\s*(?:the\s+)?"
+    r"(?:last|past)\s+(\d{1,2}|one|two|three|four|six|twelve|twenty-four)"
+    r"\s+(minutes?|hours?)\b", re.I
+)
+_WORD_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4,
+                 "six": 6, "twelve": 12, "twenty-four": 24}
+
 
 
 def _verified_zone(receipts: Sequence[Mapping[str, Any]], question: str) -> str | None:
@@ -45,6 +53,17 @@ def journal_incident_bounds(
     question: str, receipts: Sequence[Mapping[str, Any]]
 ) -> tuple[str, str, str] | None:
     """Require explicit date + verified UTC or hub timezone, never guess."""
+    recent = _RECENT.search(question)
+    if recent:
+        count = _WORD_NUMBERS.get(recent.group(1).casefold())
+        if count is None:
+            count = int(recent.group(1))
+        seconds = count * (3600 if recent.group(2).lower().startswith("hour") else 60)
+        if not 60 <= seconds <= 48 * 3600:
+            return None
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(seconds=seconds)
+        return start.isoformat(), end.isoformat(), "UTC"
     zone_name = _verified_zone(receipts, question)
     if not zone_name:
         return None
