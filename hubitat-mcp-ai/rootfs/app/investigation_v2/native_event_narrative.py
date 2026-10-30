@@ -183,6 +183,42 @@ def event_narrative_evidence(
             if actor_id is not None and str(actor_id).isdecimal():
                 item["actor_id"] = str(actor_id)
             events.append(item)
+    # An independently READ, unscoped Hubitat event source can provide
+    # useful hub-mode context. It is NOT evidence that a mode change caused
+    # a device transition, and supplies no device/app authority. Keep exact
+    # read/time/value so the same source-anchor verifier can check it.
+    for w in witnesses[:24]:
+        if w.get("operation") != "hub_list_device_events":
+            continue
+        filters = w.get("read_filters")
+        if not isinstance(filters, Mapping) or filters.get("deviceId"):
+            continue
+        source = w.get("source_data")
+        read = w.get("read")
+        if type(read) is not int or not isinstance(source, Mapping):
+            continue
+        for observation in source.get("events", [])[:100]:
+            if not isinstance(observation, Mapping):
+                continue
+            date = observation.get("date")
+            if observation.get("name") != "mode" or _instant(date) is None:
+                continue
+            if calendar is not None and not calendar.contains(date):
+                continue
+            if clock_bounds is not None:
+                dt = _instant(date).astimezone(timezone.utc)
+                if not clock_bounds[0] <= dt.hour * 60 + dt.minute <= clock_bounds[1]:
+                    continue
+            value = observation.get("value")
+            if not isinstance(value, str) or not (1 <= len(value) <= 60):
+                continue
+            events.append({
+                "read": read, "device_id": "hub_mode",
+                "device_name": "Hubitat mode",
+                "name": "mode", "date": date,
+                "value": re.sub(r"[\x00-\x1f\x7f<>]", "", value),
+                "observation_kind": "hub_context_reported",
+            })
     if len(events) < 2:
         return None
     events.sort(key=lambda e: _instant(e["date"]))
