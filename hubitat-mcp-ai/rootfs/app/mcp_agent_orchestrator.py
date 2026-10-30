@@ -107,6 +107,7 @@ from causal_transition_provenance import (
     scoped_off_history_receipt,
 )
 from group_journal_recovery import recover_group_journal
+from recent_edge_context import recover_recent_edge, render_recent_edge
 from group_app_decision_recovery import recover_group_app_decisions
 from unified_investigation_bridge import (
     unified_investigation_followup, reconcile_unified_investigation_answer,
@@ -3868,6 +3869,13 @@ class UnifiedMCPAgent:
                 if app_decisions["app_queries"]:
                     increment_active_metric("unified_group_app_log_checks")
                     evidence = self.evidence.receipts()
+                boundary = await recover_recent_edge(
+                    journal=getattr(self, "historical_journal", None),
+                    recorder=self.evidence, receipts=evidence, question=user_prompt,
+                )
+                if boundary["attempted"]:
+                    increment_active_metric("unified_recent_edge_checked")
+                    evidence = self.evidence.receipts()
             # Enforce multi-device source coverage after every original
             # HomeBrain answer path, including early no-tools model exits.
             # The model still owns interpretation; the host checks that all
@@ -3883,6 +3891,10 @@ class UnifiedMCPAgent:
                     message, evidence, user_prompt)
                 if corrected_group:
                     increment_active_metric("unified_group_timeline_reconciled")
+                edge_answer = render_recent_edge(evidence, user_prompt)
+                if edge_answer is not None:
+                    message = edge_answer
+                    increment_active_metric("unified_recent_edge_reconciled")
             if is_new_rule_design_review_request(user_prompt):
                 message = calibrate_rule_design_review(
                     message, evidence, request=user_prompt,
