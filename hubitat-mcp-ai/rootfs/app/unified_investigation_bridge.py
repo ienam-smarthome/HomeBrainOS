@@ -151,11 +151,11 @@ def collect_unified_evidence(
     targets = set(verified_names).intersection(source_ids)
     if len(targets) < 2:
         return None
+    # V2's sampled narrative packet is advisory only. A failure to select
+    # examples must never discard the independently read full target events.
     packet = event_narrative_evidence(
         witnessed, sorted(source_ids), question=question,
         verified_labels=verified_names, max_events=48)
-    if packet is None:
-        return None
     # This ledger includes only target lights for relationships. Other
     # independently read histories may supply correlated sensor observations.
     by_id: dict[str, list[dict[str, Any]]] = {}
@@ -221,6 +221,7 @@ def collect_unified_evidence(
             })
     if not state_links:
         return None
+    state_links.sort(key=lambda e: (_time(e["time"]), e["device_name"]))
     checked_input_ids = sorted(input_history_ids)
     log_receipts = [
         r for r in receipts if r.get("success") is True
@@ -232,8 +233,10 @@ def collect_unified_evidence(
         "source_attested": True,
         "user_target_names": [verified_names[i] for i in sorted(targets)],
         "target_device_ids": sorted(targets),
-        "source_event_packet": packet,
-        "transition_relationships": state_links[:24],
+        "source_event_packet": packet or {},
+        "transition_relationships": state_links[:100],
+        "transition_count": len(state_links),
+        "transition_rows_omitted": max(0, len(state_links) - 100),
         "hub_mode_observations": modes[:12],
         "independently_read_input_ids": checked_input_ids,
         "missing_independent_input_history": not bool(checked_input_ids),
@@ -263,7 +266,9 @@ def unified_investigation_instruction(
     compact = {
         "target_names": evidence["user_target_names"],
         "target_read_ids": evidence["target_device_ids"],
-        "transition_relationships": evidence["transition_relationships"][:18],
+        "transition_relationships": evidence["transition_relationships"][:40],
+        "transition_count": evidence["transition_count"],
+        "transition_rows_omitted": evidence["transition_rows_omitted"],
         "hub_mode_observations": evidence["hub_mode_observations"],
         "independently_read_input_ids": evidence["independently_read_input_ids"],
         "missing_independent_input_history": evidence["missing_independent_input_history"],
@@ -328,5 +333,141 @@ def unified_investigation_followup(
     )
 
 
+
+def _timeline_row(fact: Mapping[str, Any]) -> str:
+    instant = _time(fact.get("time"))
+    if instant is None:
+        return ""
+    when = instant.strftime("%H:%M:%S")
+    name = str(fact["device_name"]).replace("|", "/")[:90]
+    state = str(fact["reported_state"]).upper()
+    matched = fact.get("preceding_hubitat_command_in_sample") or []
+    levels = fact.get("subsequent_level_commands") or []
+    sensors = fact.get("preceding_input_correlations") or []
+    if matched:
+        cmd = matched[-1]
+        finding = ("App " + cmd["app_id"] + " issued "
+                   + cmd["command"].replace("command-", "") + "() "
+                   + str(cmd["lead_ms"]) + " ms before the reported state")
+    elif levels and state == "ON":
+        lvl = levels[0]
+        finding = ("ON reported before app " + lvl["app_id"]
+                   + "'s setLevel adjustment ("
+                   + str(lvl["lag_ms"]) + " ms later)")
+    else:
+        finding = "State reported; no matching earlier issuer command in returned sample"
+    if sensors and state == "ON":
+        edge = sensors[0]
+        finding += ("; input " + edge["device_id"] + " was active "
+                    + str(edge["lead_ms"]) + " ms before (correlation only)")
+    return "| " + when + " | " + name + " | " + state + " | " + finding + " |"
+
+
+def verified_group_timeline(
+    receipts: Sequence[Mapping[str, Any]], question: str,
+) -> str | None:
+    """Every returned target switch boundary, ordered globally by source time.
+
+    Unlike a model's optional timeline and V2's example sampler, this table
+    cannot silently favor Shower Light over Bathroom Light 1 or 2.
+    """
+    evidence = collect_unified_evidence(receipts, question)
+    if evidence is None:
+        return None
+    facts = evidence["transition_relationships"]
+    if not facts:
+        return None
+    rows = [_timeline_row(e) for e in facts[:60]]
+    rows = [r for r in rows if r]
+    if not rows:
+        return None
+    limit = max(0, evidence["transition_count"] - len(rows))
+    return (
+        "### Verified device-transition timeline\n\n"
+        "Source-reported ON/OFF changes from the returned device histories; "
+        "not proof of complete Hubitat Logs or an external initiating system.\n\n"
+        "| GMT | Light | Reported | Source evidence |\n"
+        "|---|---|---|---|\n" + "\n".join(rows)
+        + ("\n\n" + str(limit) + " additional state transitions were "
+           "omitted due to the display limit." if limit else "")
+    )
+
+
+_TIMELINE_HEADING = re.compile(
+    r"(?im)^#{2,5}\\s*\\**(?:chronological (?:timeline|events)|"
+    r"event timeline|timeline of events|verified device-transition timeline)"
+    r"\\**[^\\n]*$")
+_NEXT_HEADING = re.compile(r"(?m)^#{2,5}\\s+.*$")
+
+
+def _strip_model_timeline(message: str) -> str:
+    match = _TIMELINE_HEADING.search(message)
+    if not match:
+        return message
+    after = _NEXT_HEADING.search(message, match.end())
+    return (message[:match.start()].rstrip()
+            + ("\n\n" + message[after.start():].lstrip()
+               if after else "")).strip()
+
+
+def _group_has_unpaired_on(facts: Mapping[str, Any]) -> bool:
+    return any(
+        e.get("reported_state") == "on"
+        and not e.get("preceding_hubitat_command_in_sample")
+        for e in facts.get("transition_relationships", []))
+
+
+def reconcile_unified_investigation_answer(
+    message: str, receipts: Sequence[Mapping[str, Any]], question: str,
+) -> tuple[str, bool]:
+    """Terminal source coverage correction for original HomeBrain routes.
+
+    The language model still authors the explanation. This additive guard
+    replaces a potentially incomplete model *timeline*, and for a clearly
+    contradicted activation narrative inserts an explicit evidence-based
+    correction rather than silently endorsing a later brightness command.
+    No new tool is executed and no unsourced event is invented.
+    """
+    facts = collect_unified_evidence(receipts, question)
+    if facts is None:
+        return message, False
+    timeline = verified_group_timeline(receipts, question)
+    if not timeline:
+        return message, False
+    text = _strip_model_timeline(str(message or ""))
+    has_unpaired = _group_has_unpaired_on(facts)
+    misleading = bool(has_unpaired and re.search(
+        r"(?i)(?:this confirms (?:the )?lights? (?:were|was) controlled by "
+        r"hub automations|\b(?:triggered|activated|turned on|switched on) by "
+        r"(?:the )?(?:shower|bathroom) (?:app|automation)|"
+        r"\bBathroom Light 1.{0,45}\b(?:ON|switched on|activated)\b"
+        r".{0,35}\b07:15)",
+        text,
+    ))
+    if misleading:
+        # An unsupported general-automation paragraph is not allowed to
+        # survive beside a source-attested correction that contradicts it.
+        # Keep any remaining model findings and app-log limitations, but
+        # replace the unsafe causal section with a precise interpretation.
+        causal = re.search(r"(?im)^#{2,4}\\s*\\**Causal Analysis\\**[^\\n]*$", text)
+        if causal:
+            next_section = _NEXT_HEADING.search(text, causal.end())
+            text = (text[:causal.start()].rstrip()
+                    + ("\n\n" + text[next_section.start():].lstrip()
+                       if next_section else "")).strip()
+        explanation = (
+            "**Source-verified interpretation:** The returned histories "
+            "show several ON reports before the relevant Hubitat setLevel "
+            "commands. Those later commands adjusted brightness, and do not "
+            "establish the upstream ON initiator. Matching app-issued OFF "
+            "commands before subsequent OFF reports provide stronger "
+            "immediate command provenance. Nearby sensor edges are "
+            "correlations, not proof of the initiating automation. "
+            "The external controller remains unverified.")
+        text = explanation + ("\n\n" + text if text else "")
+    return (text.rstrip() + "\n\n" + timeline), True
+
+
 __all__ = ["collect_unified_evidence", "unified_investigation_instruction",
-           "unified_investigation_followup"]
+           "unified_investigation_followup", "verified_group_timeline",
+           "reconcile_unified_investigation_answer"]
