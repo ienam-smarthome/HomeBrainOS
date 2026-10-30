@@ -242,14 +242,43 @@ def collect_unified_evidence(
     by_id: dict[str, list[dict[str, Any]]] = {}
     sensor_events: list[dict[str, Any]] = []
     input_history_ids: set[str] = set()
+    independent_input_events: list[dict[str, Any]] = []
+    input_keys: set[tuple[str, str, str, str]] = set()
     for e in all_events:
         by_id.setdefault(e["device_id"], []).append(e)
         if (e["device_id"] not in targets
                 and e["name"] in ("motion", "occupancy", "presence")):
             input_history_ids.add(e["device_id"])
-            if str(e.get("value") or "").casefold() in (
-                    "active", "present", "occupied", "on", "true"):
+            value = str(e.get("value") or "").casefold()
+            key = (e["device_id"], e["date"], e["name"], value)
+            if key not in input_keys and value in (
+                "active", "inactive", "present", "not present",
+                "occupied", "unoccupied", "on", "off", "true", "false"):
+                input_keys.add(key)
+                independent_input_events.append({
+                    "device_id": e["device_id"],
+                    "time": e["date"],
+                    "attribute": e["name"],
+                    "value": value,
+                    "source_read": e["read"],
+                    "timestamp_basis": "source-reported",
+                })
+            if value in ("active", "present", "occupied", "on", "true"):
                 sensor_events.append(e)
+    independent_input_events.sort(key=lambda row: (
+        _time(row["time"]), row["device_id"]))
+    # Device IDs queried in the incident period but returning no usable
+    # source events are evidence *coverage gaps*, not inactive sensors.
+    empty_non_target_reads: set[str] = set()
+    for receipt in receipts[:120]:
+        if (receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("sub_tool") != "hub_list_device_events"):
+            continue
+        ident = str(_args(receipt).get("deviceId") or "")
+        if (ident.isdecimal() and ident not in targets
+                and not any(e["device_id"] == ident for e in all_events)):
+            empty_non_target_reads.add(ident)
     state_links: list[dict[str, Any]] = []
     for ident in sorted(targets):
         rows = sorted(by_id.get(ident, []), key=lambda r: r["when"])
@@ -487,6 +516,10 @@ def collect_unified_evidence(
         "native_target_source_complete_for_incident": False,
         "hub_mode_observations": modes[:12],
         "independently_read_input_ids": checked_input_ids,
+        "independent_input_observations": independent_input_events[:24],
+        "independent_input_observation_total": len(independent_input_events),
+        "additional_event_reads_without_usable_rows": sorted(
+            empty_non_target_reads, key=int)[:16],
         "missing_independent_input_history": not bool(checked_input_ids),
         "log_query_count": len(log_receipts),
         "archived_app_checks": archived_app_checks,
@@ -531,6 +564,9 @@ def unified_investigation_instruction(
         "transition_rows_omitted": evidence["transition_rows_omitted"],
         "hub_mode_observations": evidence["hub_mode_observations"],
         "independently_read_input_ids": evidence["independently_read_input_ids"],
+        "independent_input_observations": evidence["independent_input_observations"][:16],
+        "additional_event_reads_without_usable_rows":
+            evidence["additional_event_reads_without_usable_rows"],
         "missing_independent_input_history": evidence["missing_independent_input_history"],
         "log_query_count": evidence["log_query_count"],
         "archived_app_checks": evidence["archived_app_checks"],
