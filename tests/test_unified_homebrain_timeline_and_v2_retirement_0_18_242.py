@@ -127,10 +127,9 @@ async def test_actual_original_agent_early_return_still_corrects_three_light_tim
             agent.evidence.record(
                 receipt["tool"], receipt["arguments"],
                 success=True, mutates=False, effect="read", elapsed_ms=1,
-                supports_live_claim=True,
+                summary="source-reported events", supports_live_claim=True,
                 evidence_kind="tool_result",
                 details=receipt["details"],
-                sub_tool=receipt["sub_tool"],
             )
         return LIVE_WRONG
     monkeypatch.setattr(agent, "_process_user_request", wrong_model)
