@@ -28,8 +28,8 @@ def _time(value: Any) -> datetime | None:
 
 
 _EXPLICIT_CLOCK_RANGE = re.compile(
-    r"\\b(?:between|from)\\s+(\\d{1,2}):(\\d{2})\\s*"
-    r"(?:and|to|[-–])\\s*(\\d{1,2}):(\\d{2})\\b", re.I)
+    r"\b(?:between|from)\s+(\d{1,2}):(\d{2})\s*"
+    r"(?:and|to|[-–])\s*(\d{1,2}):(\d{2})\b", re.I)
 
 
 def _in_user_period(when: datetime, question: str, incident: Any) -> bool:
