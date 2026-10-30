@@ -13,6 +13,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from unified_incident_synthesis import reconcile_ledger_if_needed
+from causal_witness_ledger import build_witness_coverage_ledger
 from investigation_v2.native_event_narrative import event_narrative_evidence
 from investigation_v2.native_provenance import event_summary
 from investigation_v2.temporal_scope import explicit_incident_window
@@ -754,7 +755,7 @@ def collect_unified_evidence(
     ]
     # A successful log query does not prove coverage of the user period.
     # Only exact source-timestamped rows could support that stronger claim.
-    return {
+    facts = {
         "source_attested": True,
         "user_target_names": [verified_names[i] for i in sorted(targets)],
         "target_device_ids": sorted(targets),
@@ -810,6 +811,11 @@ def collect_unified_evidence(
           "source event time and journal gaps or empty queries cannot "
           "establish continuous historical coverage."),
     }
+    # V3 Stage B is shadow-only: this immutable source/coverage view is
+    # computed from existing receipts and facts. Do not alter model prompts,
+    # tool selection or deterministic finalization until separately tested.
+    facts["v3_witness_ledger"] = build_witness_coverage_ledger(facts, receipts)
+    return facts
 
 
 def unified_investigation_instruction(
