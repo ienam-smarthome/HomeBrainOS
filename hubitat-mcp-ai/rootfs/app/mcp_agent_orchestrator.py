@@ -106,6 +106,7 @@ from causal_transition_provenance import (
     positive_off_command_already_recorded,
     scoped_off_history_receipt,
 )
+from group_journal_recovery import recover_group_journal
 from unified_investigation_bridge import (
     unified_investigation_followup, reconcile_unified_investigation_answer,
 )
@@ -3842,6 +3843,22 @@ class UnifiedMCPAgent:
                     and inventory_answer(message)):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
                 message = honest_partial_answer(user_prompt, evidence)
+            # Historical Journal is a separate, weaker and optional source.
+            # This one bounded read-only opportunity applies to original
+            # multi-device history requests even if the model ended early.
+            # It never turns collector-reception timestamps into original
+            # event times, grants no new target IDs or write permission.
+            if (not self._mutation_requested_by_user.get()
+                    and not self._mutation_call_seen.get()
+                    and is_history_investigation(user_prompt)):
+                journal_recovery = await recover_group_journal(
+                    journal=getattr(self, "historical_journal", None),
+                    recorder=self.evidence, question=user_prompt,
+                    receipts=evidence,
+                )
+                if journal_recovery["attempted"]:
+                    increment_active_metric("unified_group_journal_recovery")
+                    evidence = self.evidence.receipts()
             # Enforce multi-device source coverage after every original
             # HomeBrain answer path, including early no-tools model exits.
             # The model still owns interpretation; the host checks that all
