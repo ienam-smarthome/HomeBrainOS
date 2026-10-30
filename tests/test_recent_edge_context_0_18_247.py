@@ -185,13 +185,14 @@ async def test_original_agent_final_boundary_context_is_read_only(monkeypatch):
                 effect="read", mutates=False, elapsed_ms=0,
                 summary="device history with no switch state changes",
                 supports_live_claim=True,
-                sub_tool=entry["sub_tool"] if False else None,
                 details=entry["details"],
             )
         return "No ON/OFF activity happened in the last two hours, so all lights were inactive."
-    # Existing recorder stores the tool subtype via tool arguments, not a
-    # sub_tool parameter; native subtool receipt fixture is tested above.
     monkeypatch.setattr(agent, "_process_user_request", erroneous_empty)
-    # The original agent needs subtype annotations to recognise native rows;
-    # this explicit scenario is exercised at the lower-level tests above.
-    assert not any(x.get("mutates") for x in agent.evidence.receipts())
+    outcome = await agent.process_user_request_result(QUESTION)
+    assert "Immediately before the window" in outcome.message
+    assert "Bathroom Light 1" in outcome.message
+    assert "Shower Light" in outcome.message
+    assert "not activity inside" in outcome.message
+    assert not any(x.get("mutates") for x in outcome.evidence)
+    assert outcome.confirmation_required is False
