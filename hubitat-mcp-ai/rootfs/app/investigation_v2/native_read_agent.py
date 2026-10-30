@@ -65,6 +65,7 @@ from .native_event_narrative import (
 from .native_reasoning_policy import planning_system_prompt
 from .native_read_health import ReadHealth, read_timeout_cap
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
+from .native_upstream_frontier import upstream_evidence_frontier
 from .native_historical_frontier import (
     historical_controller_frontier, reject_redundant_controller_logs)
 from .native_verified_prose import (
@@ -487,7 +488,7 @@ def _guard(name: str, args: dict[str, Any],
 
 async def run_native_read_agent(
     *, question: str, chat: Chat, mcp: HubitatMCPClient,
-    executor: ToolExecutor, max_rounds: int = 6, max_reads: int = _LIMIT,
+    executor: ToolExecutor, max_rounds: int = 8, max_reads: int = _LIMIT,
     max_seconds: float = 165.0, model_timeout: float = 28.0,
     per_read_timeout: float = 20.0,
     enable_verified_narrative: bool = False,
@@ -498,7 +499,7 @@ async def run_native_read_agent(
         raise ValueError("MCP/executor mismatch")
     if not isinstance(question, str) or not question.strip():
         raise ValueError("Question required")
-    max_rounds = max(1, min(8, int(max_rounds)))
+    max_rounds = max(1, min(10, int(max_rounds)))
     max_reads = max(1, min(16, int(max_reads)))
     started = time.monotonic()
     deadline = started + max(10, min(180.0, float(max_seconds)))
@@ -550,6 +551,7 @@ async def run_native_read_agent(
     coverage_challenge_used = False
     causal_coverage_challenge_used = False
     upstream_decision_challenge_used = False
+    upstream_evidence_challenge_used = False
     interval_coverage_challenge_used = False
     causal_coverage_gap: dict[str, Any] | None = None
     repeated_discovery = 0
@@ -570,56 +572,74 @@ async def run_native_read_agent(
         if round_no >= max_rounds:
             # One model-chosen follow-up chance when warning evidence lacks
             # source-attested command actor provenance.
-            causal_coverage_gap = gap_for_target(
-                witnesses, sorted(focus_ids),
-                can_read_events=gateway_offers_operation(
-                    manifest, discovered, "hub_list_device_events"),
-            )
-            if (causal_coverage_challenge_used or causal_coverage_gap is None
-                    or attempted >= max_reads
-                    or deadline - time.monotonic() <= 4):
-                break
-            causal_coverage_challenge_used = True
-            if causal_coverage_gap.get("kind") == "target_generic_warning_origin_unverified":
-                if causal_coverage_gap.get("candidate_read") is None:
+            pending_upstream_budget = upstream_evidence_frontier(
+                witnesses, sorted(focus_ids), question)
+            if (pending_upstream_budget is not None
+                    and not upstream_evidence_challenge_used
+                    and attempted < max_reads
+                    and deadline - time.monotonic() > 15):
+                # One extra model-chosen READ opportunity only. Preserve the
+                # existing hard READ/time budget; never execute a suggested
+                # operation on the host's behalf.
+                upstream_evidence_challenge_used = True
+                messages.append({"role": "user", "content":
+                    "The planned rounds ended with missing independent input "
+                    "and/or execution evidence. Choose one live-advertised "
+                    "discriminating READ now, or explicitly finish; do not "
+                    "repeat app metadata or assume an external controller. "
+                    "Evidence: " + json.dumps(
+                        pending_upstream_budget, ensure_ascii=True)[:3100]})
+            else:
+                causal_coverage_gap = gap_for_target(
+                    witnesses, sorted(focus_ids),
+                    can_read_events=gateway_offers_operation(
+                        manifest, discovered, "hub_list_device_events"),
+                )
+                if (causal_coverage_challenge_used or causal_coverage_gap is None
+                        or attempted >= max_reads
+                        or deadline - time.monotonic() <= 4):
+                    break
+                causal_coverage_challenge_used = True
+                if causal_coverage_gap.get("kind") == "target_generic_warning_origin_unverified":
+                    if causal_coverage_gap.get("candidate_read") is None:
+                        instruction = (
+                            "The target-specific WARN log has already been sampled "
+                            "and app callers were independently observed at other "
+                            "times. The generic warning remains causally "
+                            "unattributed. Do not retry the same WARN scope with "
+                            "a larger limit. Choose only independently grounded "
+                            "new evidence (a distinct supported historical window, "
+                            "attested source, or runtime data), or finish with the "
+                            "verified limits. No read is required to justify an "
+                            "unknown root cause.")
+                    else:
+                        instruction = (
+                            "The device's app command issuers are already verified, "
+                            "but no command in the bounded sample is linked to this "
+                            "separate generic load-warning interval. Do not claim "
+                            "the device's callers are unknown. A target-specific "
+                            "WARN read or independent source/performance evidence "
+                            "could discriminate mechanisms, without proving them.")
+                elif causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
                     instruction = (
-                        "The target-specific WARN log has already been sampled "
-                        "and app callers were independently observed at other "
-                        "times. The generic warning remains causally "
-                        "unattributed. Do not retry the same WARN scope with "
-                        "a larger limit. Choose only independently grounded "
-                        "new evidence (a distinct supported historical window, "
-                        "attested source, or runtime data), or finish with the "
-                        "verified limits. No read is required to justify an "
-                        "unknown root cause.")
+                        "The device event history ALREADY attests calling apps "
+                        "in the warning period. Do NOT claim the caller is unknown "
+                        "or invent command-<internal driver method> as an event "
+                        "filter. The driver callback mechanism is unverified. "
+                        "Consider a permitted source-attested app configuration "
+                        "read for one known caller before searching the entire "
+                        "driver catalogue. Do not assert causal proof.")
                 else:
                     instruction = (
-                        "The device's app command issuers are already verified, "
-                        "but no command in the bounded sample is linked to this "
-                        "separate generic load-warning interval. Do not claim "
-                        "the device's callers are unknown. A target-specific "
-                        "WARN read or independent source/performance evidence "
-                        "could discriminate mechanisms, without proving them.")
-            elif causal_coverage_gap.get("kind") == "target_driver_execution_mechanism_unverified":
-                instruction = (
-                    "The device event history ALREADY attests calling apps "
-                    "in the warning period. Do NOT claim the caller is unknown "
-                    "or invent command-<internal driver method> as an event "
-                    "filter. The driver callback mechanism is unverified. "
-                    "Consider a permitted source-attested app configuration "
-                    "read for one known caller before searching the entire "
-                    "driver catalogue. Do not assert causal proof.")
-            else:
-                instruction = (
-                    "A scoped device event read is insufficient if its "
-                    "returned timestamps miss the warning window or do not "
-                    "establish a relevant issuer. If material, choose a bounded "
-                    "history read with supported hoursBack/attribute filters. "
-                    "No command history is complete merely because a read succeeded.")
-            messages.append({"role": "user", "content":
-                "Evidence coverage assessment from typed source observations. "
-                + instruction + " Candidate evidence: "
-                + json.dumps(causal_coverage_gap, default=str)[:2500]})
+                        "A scoped device event read is insufficient if its "
+                        "returned timestamps miss the warning window or do not "
+                        "establish a relevant issuer. If material, choose a bounded "
+                        "history read with supported hoursBack/attribute filters. "
+                        "No command history is complete merely because a read succeeded.")
+                messages.append({"role": "user", "content":
+                    "Evidence coverage assessment from typed source observations. "
+                    + instruction + " Candidate evidence: "
+                    + json.dumps(causal_coverage_gap, default=str)[:2500]})
         rounds += 1
         left = deadline - time.monotonic()
         if left <= 1:
@@ -687,6 +707,28 @@ async def run_native_read_agent(
             # independent upstream decision evidence when the live READ
             # manifest can provide it. This NEVER executes a read for the
             # model, and never grants a new identity or tool permission.
+            pending_upstream = upstream_evidence_frontier(
+                witnesses, sorted(focus_ids), question)
+            if (pending_upstream is not None
+                    and not upstream_evidence_challenge_used
+                    and round_no + 1 < max_rounds
+                    and attempted < max_reads
+                    and deadline - time.monotonic() > 12):
+                # Source-backed evidence gap, not a question-keyword route:
+                # let the model select any independently permitted READ.
+                upstream_evidence_challenge_used = True
+                messages.append({"role": "assistant",
+                                 "content": _text(reply.get("content"), 450)})
+                messages.append({"role": "user", "content":
+                    "Before closing this investigation, determine whether "
+                    "independent input-sensor histories and relevant execution "
+                    "logs distinguish the causes of these source-reported "
+                    "transitions. Prefer independent evidence over repeated "
+                    "current configuration metadata. You choose the READ; "
+                    "no target IDs are granted by this hint. Source-backed "
+                    "coverage gap: " + json.dumps(
+                        pending_upstream, ensure_ascii=True)[:3100]})
+                continue
             pending_decision = controller_decision_followup(
                 witnesses, sorted(focus_ids),
                 dated_incident_evidence(question, witnesses, sorted(focus_ids)),
@@ -834,7 +876,7 @@ async def run_native_read_agent(
                     messages.append({"role": "tool", "content": json.dumps({
                         "status": "invalid_identity_query", "matches": []})})
                     continue
-                if key in prior or len(named_identity_lookups) >= 3:
+                if key in prior or len(named_identity_lookups) >= 8:
                     failures.append({"tool": name, "code": "duplicate_or_excess_identity_lookup"})
                     messages.append({"role": "tool", "content": json.dumps({
                         "status": "lookup_budget_exhausted", "matches": []})})
@@ -1403,6 +1445,12 @@ async def run_native_read_agent(
                         question, witnesses, sorted(focus_ids))
                     if linked is not None:
                         view["user_incident_evidence_coverage"] = linked
+            if focus_ids and op in ("hub_list_device_events", "hub_get_app_config",
+                                    "hub_get_logs"):
+                source_gap = upstream_evidence_frontier(
+                    witnesses, sorted(focus_ids), question)
+                if source_gap is not None:
+                    view["upstream_evidence_frontier"] = source_gap
             if focus_ids and op == "hub_list_device_events":
                 interval_coverage = complete_interval_coverage(
                     question, witnesses, sorted(focus_ids))
@@ -1506,6 +1554,9 @@ async def run_native_read_agent(
             if "source_claim_catalog" in view:
                 view = {"source_claim_catalog": view.pop("source_claim_catalog"),
                         **view}
+            if "upstream_evidence_frontier" in view:
+                view = {"upstream_evidence_frontier":
+                        view.pop("upstream_evidence_frontier"), **view}
             if "historical_controller_source_frontier" in view:
                 view = {"historical_controller_source_frontier":
                         view.pop("historical_controller_source_frontier"), **view}
@@ -1575,6 +1626,8 @@ async def run_native_read_agent(
     event_narrative_packet = event_narrative_evidence(
         witnesses, sorted(focus_ids), question=question,
         verified_labels=resolved_device_labels)
+    final_upstream_frontier = upstream_evidence_frontier(
+        witnesses, sorted(focus_ids), question)
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
@@ -1724,6 +1777,7 @@ async def run_native_read_agent(
                         "question": question,
                         "event_evidence": (event_narrative_packet
                             if event_narrative_eligible else None),
+                        "upstream_evidence_frontier": final_upstream_frontier,
                         "source_evidence": ([] if event_narrative_eligible
                                             else final_witnesses),
                         "incident_evidence": incident_relevance
@@ -1738,7 +1792,8 @@ async def run_native_read_agent(
                         ]),
                     }, ensure_ascii=True, default=str)[:15000]},
                 ], []),
-                timeout=min(14.0, max(1.0, deadline - time.monotonic())),
+                timeout=min(max(14.0, model_timeout), 28.0,
+                            max(1.0, deadline - time.monotonic())),
             )
             if isinstance(response, dict) and not response.get("tool_calls"):
                 candidate = response.get("content")
@@ -2323,6 +2378,8 @@ async def run_native_read_agent(
             "lazy_identity_lookup_ms": identity_lookup_ms,
             "coverage_challenge_used": coverage_challenge_used,
             "upstream_decision_challenge_used": upstream_decision_challenge_used,
+            "upstream_evidence_challenge_used": upstream_evidence_challenge_used,
+            "upstream_evidence_frontier": final_upstream_frontier,
             "requested_complete_interval_coverage": requested_interval_coverage,
             "interval_coverage_challenge_used": interval_coverage_challenge_used,
             "failed_operation_counts": failed_operation_counts,
