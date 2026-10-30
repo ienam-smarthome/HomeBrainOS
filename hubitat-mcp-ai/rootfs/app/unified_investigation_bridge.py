@@ -681,7 +681,7 @@ def verified_group_timeline(
 
 
 _TIMELINE_HEADING = re.compile(
-    r"(?im)^#{2,5}\s*\**(?:chronological (?:timeline|events)|"
+    r"(?im)^#{2,5}\s*\**(?:evidence timeline(?:\s*\([^)]*\))?|chronological (?:timeline|events)|"
     r"event timeline|timeline of events|verified device-transition timeline)"
     r"\**[^\n]*$")
 _NEXT_HEADING = re.compile(r"(?m)^#{2,5}\s+.*$")

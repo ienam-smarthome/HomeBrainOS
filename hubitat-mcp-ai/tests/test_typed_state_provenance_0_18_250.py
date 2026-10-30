@@ -15,6 +15,11 @@ def _history(name="Zone A Light", state="on", app="3001"):
     return {
         "success": True, "mutates": False,
         "tool": "homebrain_device_history",
+        "arguments": {"deviceId": str({
+            "Zone A Light": 101, "Zone B Light": 102,
+            "Heating Relay": 103, "Boiler Switch": 104,
+            "Thermostat": 105, "Network Plug": 106,
+        }.get(name, 999))},
         "evidence_kind": "deterministic_device_event_history",
         "details": {
             "label": name, "observedEvents": [{

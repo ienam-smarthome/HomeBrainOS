@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.252**.
+Current add-on version: **0.18.253**.
+
+**Unified native evidence graph:** Device-scoped MCP event receipts now feed source-role edges (reporter, notified listener and verified command issuer) into the existing investigation checkpoint and final-answer validator. This closes an evidence-intake gap responsible for unsupported external-controller verdicts. [Release notes](CHANGELOG-0.18.253.md).
 
 **Target-scoped history integrity:** Device-specific historical investigations no longer treat an unscoped hub event query as proof of zero events for named targets. The original agent receives one safe, model-directed scope-completion read opportunity, and final answers preserve uncertainty when target histories remain unread. [Release notes](CHANGELOG-0.18.252.md).
 
