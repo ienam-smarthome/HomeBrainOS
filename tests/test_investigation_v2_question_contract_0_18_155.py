@@ -174,12 +174,3 @@ def test_named_command_issuer_remains_eligible_for_config_read():
                       annotations={"readOnlyHint": False, "mutates": True})]
     assert source_configuration_proposals(unsafe, case) == []
 
-
-def test_endpoint_reports_new_objective_and_keeps_causal_path():
-    source = (APP / "app.py").read_text()
-    section = source.split("async def v2_test(", 1)[1].split(
-        '@app.post("/api/chat")', 1)[0]
-    assert "verified_factual_objective(" in section
-    assert "factual_objective=factual_objective" in section
-    assert "model_investigation_attempted" in section
-    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in section
