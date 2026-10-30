@@ -326,6 +326,49 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
                   "A controller dependency and execution trace are needed "
                   "to establish that relationship."
             )
+    # These typed relations come from original native event records. An app
+    # notified by an input event is not automatically the target's issuer.
+    # Missing/shared notifications are associations, never execution proof.
+    links = facts.get("input_app_relationships") or []
+    if inputs and links:
+        labels: list[str] = []
+        for link in links[:8]:
+            if not isinstance(link, Mapping):
+                continue
+            device = str(link.get("input_device_id") or "")
+            if not device.isdecimal():
+                continue
+            status = str(link.get("relationship") or "")
+            notified = [str(x) for x in link.get("input_notified_app_ids", [])[:8]]
+            if status == "different-observed-app-associations":
+                labels.append(
+                    "device " + device + " notified app(s) "
+                    + ", ".join(notified)
+                    + "; none appears among the observed target command/"
+                      "listener apps"
+                )
+            elif status in ("shared-observed-target-command-app",
+                            "shared-observed-target-notified-app"):
+                shared = link.get("shared_target_command_app_ids") or (
+                    link.get("shared_target_listener_app_ids") or [])
+                labels.append(
+                    "device " + device + " shares app(s) "
+                    + ", ".join(str(x) for x in shared[:8])
+                    + " with the target's observed app relationships"
+                )
+            else:
+                labels.append(
+                    "device " + device
+                    + " has insufficient source-reported app relationships"
+                )
+        if labels:
+            explanation.append(
+                "**Observed app relationships (not proof of cause):** "
+                + "; ".join(labels)
+                + ". Only source-observed notifications and commands were "
+                  "compared. Unobserved or alternative control paths "
+                  "cannot be excluded."
+            )
     no_rows = facts.get("additional_event_reads_without_usable_rows") or []
     if no_rows:
         explanation.append(
