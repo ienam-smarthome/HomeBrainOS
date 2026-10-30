@@ -1621,7 +1621,7 @@ async def test_whole_home_snapshot_is_complete_and_deterministic():
         "What's happening at home?"
     )
 
-    assert "**Present:** Muhsena Khan" in outcome.message
+    assert "**Present:** Muhsena Khan" in outcome.message, repr(outcome.message)
     assert "active rooms: Hallway" in outcome.message
     assert "motion: Hallway Sensor" in outcome.message
     assert "**Lights on (1):** Hallway Light 1" in outcome.message
