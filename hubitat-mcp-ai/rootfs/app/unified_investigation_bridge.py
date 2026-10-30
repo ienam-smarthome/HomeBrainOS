@@ -172,6 +172,17 @@ def collect_unified_evidence(
         is_derived = tool == "homebrain_device_history"
         if not (is_native or is_derived):
             continue
+        # Empty, successful, device-scoped source reads independently attest
+        # WHICH requested history was queried, not that any event occurred or
+        # that the returned window is complete. Retaining these verified
+        # scopes is essential to recover entirely evicted target histories.
+        if (is_native and receipt.get("success") is True
+                and receipt.get("mutates") is not True
+                and receipt.get("effect") in (None, "read")
+                and receipt.get("supports_live_claim") is not False):
+            scoped_id = str(_args(receipt).get("deviceId") or "")
+            if scoped_id.isdecimal() and scoped_id in verified_names:
+                source_ids.add(scoped_id)
         rows = _valid_source_rows(receipt)
         if not rows:
             continue
