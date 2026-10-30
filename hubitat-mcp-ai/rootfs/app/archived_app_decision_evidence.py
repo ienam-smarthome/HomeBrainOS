@@ -27,8 +27,8 @@ _ACTION = re.compile(
     r"prevent|suppress|set|inhibit", re.I,
 )
 _BUTTON_DECLARATION = re.compile(r"\\bbutton\\b.{0,65}\\b(?:push(?:ed)?|press(?:ed)?|held|released)\\b", re.I)
-_OFF_DECLARATION = re.compile(r"\\b(?:off\\(\\)|turn(?:ing)?\\s+off|switch(?:ed)?\\s+off|request(?:ed)?\\s+off)\\b", re.I)
-_ON_DECLARATION = re.compile(r"\\b(?:on\\(\\)|turn(?:ing)?\\s+on|switch(?:ed)?\\s+on|request(?:ed)?\\s+on)\\b", re.I)
+_OFF_DECLARATION = re.compile(r"(?<!\\w)(?:off\\(\\)|turn(?:ing)?\\s+off|switch(?:ed)?\\s+off|request(?:ed)?\\s+off)(?!\\w)", re.I)
+_ON_DECLARATION = re.compile(r"(?<!\\w)(?:on\\(\\)|turn(?:ing)?\\s+on|switch(?:ed)?\\s+on|request(?:ed)?\\s+on)(?!\\w)", re.I)
 _LEVEL_DECLARATION = re.compile(r"\\b(?:setLevel\\(|brightness|dimmer\\s+level)\\b", re.I)
 _MODE_DECLARATION = re.compile(r"\\b(?:mode\\s+change|mode\\s+(?:set|became|changed)|school run)\\b", re.I)
 
