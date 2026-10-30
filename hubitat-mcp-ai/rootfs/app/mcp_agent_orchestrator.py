@@ -107,10 +107,12 @@ from causal_transition_provenance import (
     scoped_off_history_receipt,
 )
 from group_journal_recovery import recover_group_journal
+from investigation_evidence_cycle import cross_source_discovery_checkpoint
 from recent_edge_context import recover_recent_edge, render_recent_edge
 from group_app_decision_recovery import recover_group_app_decisions
 from unified_investigation_bridge import (
     unified_investigation_followup, reconcile_unified_investigation_answer,
+    collect_unified_evidence,
 )
 from causal_evidence_graph import (
     build_causal_evidence_graph,
@@ -3523,6 +3525,36 @@ class UnifiedMCPAgent:
             )
             increment_active_metric("skills_focal_read_failed")
 
+    async def _recover_journal_into_discovery(
+        self, question: str, messages: list[dict[str, Any]],
+    ) -> bool:
+        """Read a bounded archive *before* the model selects its next evidence.
+
+        The publication boundary still independently enforces factual source
+        union. This cycle hook does not choose tools, add privileges, infer
+        sensor IDs or promote collector reception to source time.
+        Idempotence is enforced by recover_group_journal's existing receipts.
+        """
+        if (not is_history_investigation(question)
+                or self._mutation_requested_by_user.get()
+                or self._mutation_call_seen.get()):
+            return False
+        report = await recover_group_journal(
+            journal=getattr(self, "historical_journal", None),
+            recorder=self.evidence, question=question,
+            receipts=self.evidence.receipts(),
+        )
+        if not report.get("attempted"):
+            return False
+        increment_active_metric("unified_group_journal_recovery")
+        checkpoint = cross_source_discovery_checkpoint(
+            self.evidence.receipts(), question)
+        if checkpoint is None:
+            return False
+        messages.append({"role": "user", "content": checkpoint})
+        increment_active_metric("causal_journal_discovery_checkpoint")
+        return True
+
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         # Complete mandatory read-only source classes BEFORE the final model
         # synthesis. Post-answer coverage warnings alone cannot investigate.
@@ -3959,6 +3991,40 @@ class UnifiedMCPAgent:
                         "sourceScopeComplete": False,
                         "questionResolved": False,
                     }
+            # Reading all requested source classes is not the same as
+            # establishing a causal initiator. A verified source-timed ON
+            # without a matching direct issuer in the returned samples
+            # remains an unresolved causal question even when its timeline
+            # and event coverage are excellent.
+            if (request_class == "live-read"
+                    and is_causal_investigation(user_prompt)):
+                chain = collect_unified_evidence(evidence, user_prompt)
+                if chain is not None:
+                    unissued_ons = any(
+                        row.get("reported_state") == "on"
+                        and not row.get("preceding_hubitat_command_in_sample")
+                        for row in chain["transition_relationships"]
+                    )
+                    archived_ons = any(
+                        row.get("journal_source_on", 0) > 0
+                        for row in chain["target_coverage"]
+                    )
+                    if unissued_ons or archived_ons:
+                        coverage = {
+                            **(coverage or {}),
+                            "status": "partial-evidence",
+                            "evidenceComplete": False,
+                            "rootCauseVerified": False,
+                            "causalInitiatorVerified": False,
+                            "questionResolved": False,
+                            "completionNote": (
+                                "The incident timeline can be reconstructed "
+                                "without establishing the original initiator. "
+                                "Source-class checks and reception counts "
+                                "are not causal verification."
+                            ),
+                        }
+                        increment_active_metric("causal_initiator_unresolved")
             candidates = self._investigation_hypotheses.get()
             if candidates and request_class == "live-read":
                 checkpoint = build_evidence_checkpoint(
@@ -5112,6 +5178,24 @@ class UnifiedMCPAgent:
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                # A model's voluntary stop is a source-choice checkpoint.
+                # Recover independently timestamped archive events while the
+                # existing model still has a bounded read-only tool round.
+                # Never delay publication merely to chase an unreachable log.
+                if (investigative_request
+                        and round_index + 1 < active_round_budget
+                        and await self._recover_journal_into_discovery(
+                            user_prompt, messages)):
+                    messages.insert(len(messages) - 1, assistant)
+                    catalog.activate_investigation_read_view(
+                        max_declared=self.tool_limit)
+                    catalog.expose_read_gateways(
+                        ("hub_read_devices", "hub_read_apps_code",
+                         "hub_read_rules", "hub_read_diagnostics", SEARCH_TOOL),
+                        max_declared=self.tool_limit,
+                    )
+                    tools = catalog.schemas()
+                    continue
                 # Source scope is a precondition for any historical zero-event
                 # conclusion. A successful hub-wide read cannot answer a
                 # question about independently resolved device IDs. The LLM
@@ -6379,6 +6463,12 @@ class UnifiedMCPAgent:
                                 "gateway needed to finish the original task."
                             ),
                         })
+            # Feed newly recovered journal evidence into the SAME model
+            # investigation, rather than first discovering it after answer
+            # generation. Following rounds retain the model's own read choice.
+            if investigative_request and round_actions:
+                await self._recover_journal_into_discovery(
+                    user_prompt, messages)
             # Source-led device investigation: once real contiguous code,
             # device configuration, scoped history and logs are collected,
             # stop model-driven duplicate page reads and synthesize once.

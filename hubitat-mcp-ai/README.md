@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.254**.
+Current add-on version: **0.18.255**.
+
+**Evidence-driven investigation cycle:** Source-timed Historical Journal observations can inform the original model's remaining read-only investigation rounds, guiding discovery of missing input/controller evidence instead of appearing only after the final answer. Unverified causal conclusions remain explicitly unresolved. [Release notes](CHANGELOG-0.18.255.md).
 
 **Cross-source incident reconciliation:** Historical Journal switch observations are combined with independently sourced native Hubitat switch reports for missing targets, preserving complete multi-device timelines and truthful per-target coverage. [Release notes](CHANGELOG-0.18.254.md).
 

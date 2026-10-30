@@ -59,6 +59,7 @@ class RequestMetrics:
         "unified_investigation_evidence_bridge",
         "unified_group_timeline_reconciled",
         "unified_group_journal_recovery",
+        "causal_journal_discovery_checkpoint", "causal_initiator_unresolved",
         "unified_recent_edge_checked",
         "unified_recent_edge_reconciled",
         "unified_group_app_log_checks",

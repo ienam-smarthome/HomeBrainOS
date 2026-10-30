@@ -557,7 +557,15 @@ def unified_investigation_followup(
     facts = collect_unified_evidence(receipts, question)
     if facts is None:
         return None
-    missing_switch = facts["missing_switch_history_for_targets"]
+    # A journal source-time switch observation is an independent positive
+    # event even when the rolling native history no longer retains a switch.
+    # Keep the native retention gap in the final coverage report, but don't
+    # spend the next model-directed read repeating that same target history.
+    missing_switch = [
+        row["device_name"] for row in facts["target_coverage"]
+        if row["switch_state_missing_despite_commands"]
+        and not (row.get("journal_source_on") or row.get("journal_source_off"))
+    ]
     if missing_switch:
         return (
             "HOST INCIDENT COVERAGE DEFECT (read-only, source-attested). "
@@ -580,7 +588,13 @@ def unified_investigation_followup(
         e for e in facts["transition_relationships"]
         if e["reported_state"] == "on" and not e["preceding_hubitat_command_in_sample"]
     ]
-    if not unresolved_ons:
+    # Native device-event history may have rolled over even though the
+    # independent journal retained genuine source-timed ON transitions.
+    # Those transitions are evidence of unanswered input/issuer questions
+    # and must not disappear from the model's follow-up decision.
+    journal_ons = any(row.get("journal_source_on", 0)
+                      for row in facts["target_coverage"])
+    if not unresolved_ons and not journal_ons:
         return None
     if not facts["missing_independent_input_history"]:
         return (
@@ -607,8 +621,9 @@ def unified_investigation_followup(
         and not e["preceding_hubitat_command_in_sample"]][:5]
     return (
         "HOST INCOMPLETE UPSTREAM INVESTIGATION (advisory, read-only). "
-        "The original task asks WHY multiple source-reported light ON events "
-        "occurred. Device histories were checked, but no independent input "
+        "The original task asks WHY independently source-timed actuator ON "
+        "observations occurred. Native or recovered journal histories were "
+        "checked, but no independent input "
         "motion/occupancy event history for the incident was retrieved. "
         "Examples: " + json.dumps(examples, ensure_ascii=True)[:1700]
         + ". Choose a live-advertised read of a source-verified room/input "
