@@ -1984,6 +1984,7 @@ async def run_native_read_agent(
     host_sequence_published = (
         verified_operating_sequence is not None
         and model_reasoned_result.get("accepted") is not True
+        and model_event_result.get("accepted") is not True
         and verified_narrative.get("accepted") is not True)
     event_fallback = (
         event_timeline_fallback(event_narrative_packet)
@@ -2232,6 +2233,7 @@ async def run_native_read_agent(
         ]
     )
     if (publication["validation"]["rejected"]
+            and not model_reasoning_published
             and not host_group_published and not host_temporal_lead_published):
         validation_issues.append("model_claims_withheld")
     if not witnesses:
@@ -2357,7 +2359,8 @@ async def run_native_read_agent(
                 and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
-                "model_cited_incident_assessment" if model_reasoning_published
+                "model_scoped_event_narrative" if model_event_result.get("accepted") is True
+                else "model_cited_incident_assessment" if model_reasoned_result.get("accepted") is True
                 else ("requested_complete_interval_source_unavailable"
                       if requested_interval_coverage is not None and
                       requested_interval_coverage["status"]=="target_history_not_read"
