@@ -20,6 +20,50 @@ def _iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+def _native_switch_evidence(
+    receipts: Sequence[Mapping[str, Any]], targets: Mapping[str, str],
+    since: datetime, until: datetime,
+) -> set[str]:
+    """Cross-check native history and independently derived interval receipts.
+
+    A missing low-level row projection cannot erase a confirmed native
+    interval. Accept only scoped, successful, non-mutating observations.
+    """
+    observed: set[str] = set()
+    for receipt in receipts:
+        if receipt.get("success") is not True or receipt.get("mutates") is True:
+            continue
+        args = _args(receipt)
+        details = receipt.get("details")
+        if receipt.get("sub_tool") == "hub_list_device_events":
+            ident = str(args.get("deviceId") or "")
+            if ident not in targets:
+                continue
+            for event in _valid_source_rows(receipt):
+                when = _time(event.get("date"))
+                if (when is not None and since <= when <= until
+                        and event.get("name") == "switch"
+                        and str(event.get("value") or "").lower() in ("on", "off")):
+                    observed.add(ident)
+        if receipt.get("evidence_kind") != "deterministic_device_event_history":
+            continue
+        if not isinstance(details, Mapping):
+            continue
+        name = details.get("label")
+        ids = [ident for ident, label in targets.items() if label == name]
+        temporal = details.get("temporalAnalysis")
+        if len(ids) != 1 or not isinstance(temporal, Mapping):
+            continue
+        for interval in (temporal.get("observedIntervals") or [])[:100]:
+            if not isinstance(interval, Mapping):
+                continue
+            for key in ("start", "end"):
+                when = _time(interval.get(key))
+                if when is not None and since <= when <= until:
+                    observed.add(ids[0])
+    return observed
+
+
 def _all_native_histories_empty(
     receipts: Sequence[Mapping[str, Any]], targets: Mapping[str, str],
     since: datetime, until: datetime,
@@ -30,6 +74,8 @@ def _all_native_histories_empty(
     inactivity. Even a source read returning 0 events proves only that a
     particular query returned no observations.
     """
+    if _native_switch_evidence(receipts, targets, since, until):
+        return False
     seen: set[str] = set()
     for receipt in receipts:
         if (receipt.get("tool") != "hub_read_devices"
@@ -216,13 +262,26 @@ def render_recent_edge(
                      + " | " + names + " | " + group[0]["value"].upper()
                      + " | " + ("Before requested window" if group[0]["position"] == "before-window"
                                else "Inside requested window") + " |")
+    strict_scope = journal_incident_bounds(question, receipts)
+    native = set()
+    if strict_scope is not None:
+        native = _native_switch_evidence(receipts, targets,
+                                         _iso(strict_scope[0]), _iso(strict_scope[1]))
     header = (
-        "**Requested period:** The device-history queries returned no "
-        "switch transitions. The Historical Journal check "
-        + ("found switch observations within that period, so a blanket "
-           "claim of no activity is not supported." if inside
-           else "found no independently source-timestamped switches within "
-                "that period. An empty result does not prove uninterrupted inactivity.")
+        "**Requested period:** "
+        + ("Native device histories already contain switch observations for "
+           + ", ".join(targets[i] for i in sorted(native))
+           + ". The Historical Journal provides additional context, not the "
+             "sole evidence of activity."
+           if native else
+           "The native switch-history reads did not establish source-timed "
+           "switch transitions for the verified target set. The journal "
+           "provides separate observations; absence in one source does not "
+           "prove inactivity.")
+        + (" Source-timed journal switch events were found inside the "
+           "requested period." if inside else
+           " No source-timed journal switch events were found inside the "
+           "requested period.")
     )
     prior_note = (
         "\n\n**Immediately before the window:** Independently "
