@@ -105,7 +105,9 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"no\s+(?:hubitat(?:[- ]side|[- ]issued)?\s+)?"
     r"command(?:\s+producer)?\s+(?:was\s+)?(?:issued|sent|executed)|"
     r"there\s+(?:is|was)\s+no\s+record\s+of\s+a\s+"
-    r"hubitat[- ]issued\s+command|"\n    r"no\s+hubitat[- ]initiated\s+commands?\s+preceded|"\n    r"no\s+internal\s+hubitat\s+commands?\s+preceded)\b",
+    r"hubitat[- ]issued\s+command|"
+    r"no\s+hubitat[- ]initiated\s+commands?\s+preceded|"
+    r"no\s+internal\s+hubitat\s+commands?\s+preceded)\b",
     re.I,
 )
 _UNPROVEN_LISTENER_EXCLUSION = re.compile(
@@ -172,7 +174,7 @@ def guard_unverified_initiator_claims(
             and not bool(_SCOPE_QUALIFIER.search(stripped))
             and bool(re.search(r"\b(?:caus\w*|initiator|initiating|"
                                r"trigger\w*|command\w*|logic|"
-                               r"automatio\w*|controlled|responsible)\b",
+                               r"automatio\w*|controlled|toggled|operated|switched|responsible|interaction)\b",
                                stripped, re.I))
         )
         absence_as_proof = bool(_STRONG_NO_HUB_COMMAND.search(stripped))
