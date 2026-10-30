@@ -293,6 +293,46 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
         else:
             mode_line += " This does not establish that the mode changed switch state."
         explanation.append(mode_line)
+    # The original incident model has already paid for these read-only
+    # motion/occupancy histories. Do not discard them when replacing a
+    # partial model answer with the independently reconciled Journal digest.
+    # These observations establish *sensor state*, not automation triggers.
+    inputs = facts.get("independent_input_observations") or []
+    if inputs:
+        by_sensor: dict[str, list[str]] = {}
+        for row in inputs[:24]:
+            if not isinstance(row, Mapping):
+                continue
+            ident = str(row.get("device_id") or "")
+            when = _clock({"date": row.get("time")})
+            state = str(row.get("value") or "").lower()
+            attribute = str(row.get("attribute") or "")
+            if not ident.isdecimal() or not when or attribute not in (
+                "motion", "occupancy", "presence"):
+                continue
+            by_sensor.setdefault(ident, []).append(
+                when + " " + state)
+        if by_sensor:
+            evidence_parts = [
+                "device " + ident + ": " + ", ".join(rows[:6])
+                + (" (+more)" if len(rows) > 6 else "")
+                for ident, rows in sorted(by_sensor.items(), key=lambda pair: int(pair[0]))[:5]
+            ]
+            explanation.append(
+                "**Independent sensor histories examined:** "
+                + "; ".join(evidence_parts)
+                + ". These are source-timestamped input reports, not proof "
+                  "that any of these sensors commanded the requested lights. "
+                  "A controller dependency and execution trace are needed "
+                  "to establish that relationship."
+            )
+    no_rows = facts.get("additional_event_reads_without_usable_rows") or []
+    if no_rows:
+        explanation.append(
+            "**Additional history reads without usable source events:** "
+            + ", ".join("device " + str(ident) for ident in no_rows[:8])
+            + ". This is a visibility gap, not proof these devices were inactive."
+        )
     app_checks = facts.get("archived_app_checks") or []
     if app_checks:
         rows = [str(x.get("app_id")) + ": " + str(x.get("log_rows"))
@@ -345,8 +385,13 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
         "**What remains uncertain:** The retrieved journal/device histories "
         "do not independently identify which Home Assistant, SmartThings, "
         "Hue, Aqara or other controller requested the ON events. "
-        "Sensor timing and historical app execution logs would be required "
-        "to distinguish them. Archived records do not establish "
+        + ("The independently checked sensor observations establish their "
+           "own timing, but not a verified controller-to-light action. "
+           "Historical execution or upstream command traces are still needed. "
+           if inputs else
+           "Sensor timing and historical app execution logs would be required "
+           "to distinguish them. ")
+        + "Archived records do not establish "
         "uninterrupted coverage"
         + ("; connection gaps were reported" if facts.get("journal_gap_count") else "")
         + "."
