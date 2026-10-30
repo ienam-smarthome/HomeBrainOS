@@ -37,6 +37,20 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
     # Every edge has a specific meaning, not a generic "caused" association.
     edges: set[tuple[str, str, str]] = set()
     truncated = False
+    verified_labels: dict[str, set[str]] = {}
+    for receipt in evidence[:160]:
+        if (not isinstance(receipt, dict) or receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("evidence_kind") != "targeted_device_lookup"):
+            continue
+        details = receipt.get("details")
+        state = details.get("reportedDeviceState") if isinstance(details, dict) else None
+        if not isinstance(state, dict):
+            continue
+        ident = str(state.get("deviceId") or "")
+        label = str(state.get("label") or "").strip().casefold()
+        if ident.isdecimal() and int(ident) > 0 and label:
+            verified_labels.setdefault(label, set()).add(ident)
     for receipt in evidence[:160]:
         if (not isinstance(receipt, dict) or receipt.get("success") is not True
                 or receipt.get("mutates") is True
@@ -59,9 +73,14 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
         if isinstance(args, dict):
             arguments = args
         device_id = str(arguments.get("deviceId") or "")
+        if deterministic and not device_id:
+            label = str(details.get("label") or "").strip().casefold()
+            attested = verified_labels.get(label) or set()
+            if len(attested) == 1:
+                device_id = next(iter(attested))
         if not device_id.isdecimal() or int(device_id) <= 0:
-            # The label-only wrapper is not a sound cross-receipt identity
-            # for causal attribution; safe fallback is not to assert a role.
+            # A label-only wrapper without an independently verified unique
+            # identity is not a sound cross-receipt causal source.
             continue
         rows = details.get("observedEvents") or details.get("boundaryEvents") or []
         if not isinstance(rows, list):
@@ -90,7 +109,10 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
                 continue
             observations.add((device_id, date, attribute, str(value)[:80]))
             reported_devices.add(device_id)
-            reporter_id = str(producer.get("deviceId") or "")
+            reporter_id = str(producer.get("deviceId") or
+                              (producer.get("id") if
+                               str(producer.get("type") or "").casefold() == "device"
+                               else "") or "")
             if reporter_id.isdecimal():
                 edges.add(("device:" + reporter_id, "device:" + device_id,
                            "reported-state"))
