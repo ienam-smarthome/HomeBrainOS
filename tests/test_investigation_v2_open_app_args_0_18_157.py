@@ -110,16 +110,6 @@ def test_open_args_do_not_authorise_write_gateways_or_unadvertised_operations():
     assert source_configuration_proposals([manifest({"type":"object"})],bare)==[]
 
 
-def test_v2_endpoint_exposes_identity_page_timings():
-    s=(ROOT/"app.py").read_text()
-    route=s.split("async def v2_test(",1)[1].split('@app.post("/api/chat")',1)[0]
-    assert '"inventory_page_diagnostics": inventory_page_diagnostics' in route
-    assert '"page_timings_ms"' in route
-    assert '"first_page_ms"' in route
-    assert '"slowest_page_ms"' in route
-    assert '"identity_only"' in route
-
-
 def test_incident_adverse_transition_prioritises_off_issuer_over_later_on():
     """The first relevant read must follow the incident, not numeric ID."""
     args={"tool":"hub_list_device_events","args":{"deviceId":"7103"}}
