@@ -13,6 +13,7 @@ from typing import Any
 
 from investigation_policy import is_causal_investigation, is_history_investigation
 from investigation_intelligence import plan_investigation
+from causal_initiator_provenance_guard import build_state_report_provenance
 from general_evidence_completion import assess_task_source_coverage, EVIDENCE_KINDS
 from skill_secret_guard import redact_secrets
 
@@ -164,19 +165,32 @@ def build_evidence_checkpoint(
             "discriminator_verified": False,
             "hypothesis_verdict": "unverified",
         })
+    provenance = build_state_report_provenance(receipts)
+    state_reported = provenance["state_report_count"] > 0
+    # A source-reported state and its bridge/listeners are evidence-discovery
+    # leads, not proof of the command origin. Keep missing causal links as
+    # model-selectable investigative questions rather than a fixed tool route.
+    provenance_discriminators = (
+        ["For the observed state transitions, which independently logged "
+         "command (including timestamp and issuer) preceded each transition?",
+         "Which source-attested controller/input dependencies and execution "
+         "decisions can distinguish the remaining candidate initiators?"]
+        if state_reported else []
+    )
     return {
         "schema": "homebrain-evidence-checkpoint/v1",
+        "state_report_provenance": provenance if state_reported else None,
         "objective": str(objective or "")[:400],
         "sources": evidence[-max(1, min(30, max_receipts)):],
         "open_questions": list(dict.fromkeys(gaps))[:8],
         "competing_hypothesis_checks": comparisons,
-        "next_unchecked_discriminators": [
-            row["discriminating_question"] for row in comparisons
-            if (
-                row["source_state"] == "source-class-not-checked"
-                or row["required_origin"] in ("upstream", "physical")
-            )
-        ][:3],
+        "next_unchecked_discriminators": (
+            provenance_discriminators + [
+                row["discriminating_question"] for row in comparisons
+                if (row["source_state"] == "source-class-not-checked"
+                    or row["required_origin"] in ("upstream", "physical"))
+            ]
+        )[:4],
         "declared_read_tools": list(available_read_tools)[:24],
         "source_success_is_not_causal_proof": True,
         "no_source_is_proof_of_inactivity": False,
