@@ -67,6 +67,10 @@ def verified_incident_ledger(facts: Mapping[str, Any]) -> str:
         "issued_off": ("Issued command", "off()"),
         "issued_setlevel": ("Issued command", "setLevel(...)"),
         "reported_level": ("Reported level", "level"),
+        "journal_source_switch_on": ("Journal source-timed switch", "ON"),
+        "journal_source_switch_off": ("Journal source-timed switch", "OFF"),
+        "journal_received_switch_on": ("Journal collector-received switch", "ON"),
+        "journal_received_switch_off": ("Journal collector-received switch", "OFF"),
     }
     entries = facts.get("incident_ledger") or []
     rendered = []
@@ -83,8 +87,13 @@ def verified_incident_ledger(facts: Mapping[str, Any]) -> str:
         if kind == "reported_level":
             change = "level " + str(record.get("value") or "")[:20]
         name = str(record.get("device_name") or "Target").replace("|", "/")[:70]
-        actor = ("App " + str(record["app_id"])
-                 if record.get("app_id") else "Device report; initiating source unverified")
+        actor = ("Historical Journal (" + (
+            "source timestamp" if record.get("timestamp_basis") == "source"
+            else "collector reception only") + "; initiator unverified)"
+            if kind.startswith("journal_") else
+            ("App " + str(record["app_id"])
+             if record.get("app_id") else
+             "Device report; initiating source unverified"))
         rendered.append("| " + time + " | " + name + " | " + label
                         + " | " + change + " | " + actor + " |")
     if not rendered:
@@ -101,7 +110,9 @@ def verified_incident_ledger(facts: Mapping[str, Any]) -> str:
     return (
         "### Verified incident ledger\n\n"
         "These are individually source-attested, time-ordered records in UTC; "
-        "issued commands are not physical state confirmations.\n\n"
+        "issued commands are not physical state confirmations. Journal "
+        "collector-reception timestamps do not establish exact physical "
+        "event order or original-source timestamps.\n\n"
         "| UTC | Light | Evidence type | Event | Provenance |\n"
         "|---|---|---|---|---|\n" + "\n".join(rendered)
         + caveat
@@ -136,13 +147,27 @@ def source_first_explanation(facts: Mapping[str, Any]) -> str:
             "**ON switch reports were recorded** for " + ", ".join(on_states)
             + ". A later setLevel changes or reapplies brightness; it "
               "cannot have initiated an already-reported ON.")
+    archive_source = int(facts.get("journal_source_observations") or 0)
+    archive_received = int(facts.get("journal_collector_observations") or 0)
+    if archive_source or archive_received:
+        passages.append(
+            "**Historical Journal fallback checked:** "
+            + (str(archive_source) + " source-timestamped switch observation(s); ")
+            + (str(archive_received) + " collector-received switch observation(s). ")
+            + "Collector-received events cannot be used as exact historical "
+              "switch times or proof of who initiated a change. "
+              "The journal may have recorded connection gaps."
+        )
     if gap:
         passages.append(
             "**Missing historical evidence:** " + ", ".join(gap)
             + " returned commands and levels but no switch ON/OFF "
-              "transition records in this retrieval. An independently "
-              "scoped switch-only read or retained incident-time logs "
-              "are required to establish those cycles and the initiating controller.")
+              "transition records in the *live Hubitat pages*. "
+              "A journal observation is independently reported, but does "
+              "not make the incomplete live history complete. The exact "
+              "initiating controller remains unverified; the initiating controller "
+              "cannot be conclusively identified without incident-time "
+              "app logs or external automation traces may be required.")
     passages.append(
         "**Cause is not fully verified:** Current automation source code "
         "shows possible behaviour, not historical execution. Motion events "

@@ -147,9 +147,11 @@ def render_page(title: str, version: str) -> str:
 <div class="journal-browser-controls">
 <label>Device ID<input id="journalBrowseDevice" type="text" inputmode="numeric" placeholder="e.g. 7805" maxlength="12"></label>
 <label>Day (local time)<input id="journalBrowseDay" type="date"></label>
+<label>From<input id="journalBrowseStart" type="time" value="00:00"></label>
+<label>To<input id="journalBrowseEnd" type="time" value="23:59"></label>
 <label>Event type<select id="journalBrowseAttribute"><option value="">All recorded attributes</option><option value="switch">Switch</option><option value="command-on">ON command</option><option value="command-off">OFF command</option><option value="command-setLevel">Set level command</option><option value="motion">Motion</option><option value="presence">Presence</option><option value="occupancy">Occupancy</option><option value="pushed">Button pushed</option></select></label>
 </div>
-<div class="journal-actions"><button id="journalBrowseSearch" type="button">Search records</button><button class="secondary" id="journalBrowsePrev" type="button" disabled>Previous</button><button class="secondary" id="journalBrowseNext" type="button" disabled>Next</button></div>
+<div class="journal-actions"><button id="journalBrowseSearch" type="button">Search records</button><button class="secondary" id="journalBrowseCopy" type="button">Copy API URL</button><button class="secondary" id="journalBrowsePrev" type="button" disabled>Previous</button><button class="secondary" id="journalBrowseNext" type="button" disabled>Next</button></div>
 <div class="journal-small" id="journalBrowseStatus" role="status">Search by an exact device ID and local day. Results are archived observations, not proof of uninterrupted recording.</div>
 <div class="journal-browser-table-wrap"><table class="journal-browser-table"><thead><tr><th>Recorded time</th><th>Event</th><th>Value</th><th>Source</th><th>Timestamp basis</th></tr></thead><tbody id="journalBrowseRows"></tbody></table></div>
 <div class="journal-small">Up to 50 records per page, oldest first. Connected streams, timestamps and an empty result do not prove complete coverage. App-log message bodies are not displayed here.</div>
@@ -403,27 +405,44 @@ let activeRecognition=null;function startVoice(){stopAudio();if(activeRecognitio
 document.getElementById('speak').onclick=startVoice;document.getElementById('micFab').onclick=startVoice;
 
 let journalBrowseOffset=0;
-async function browseJournal(reset=false){
+function journalBrowseParameters(){
   const id=document.getElementById('journalBrowseDevice').value.trim();
   const day=document.getElementById('journalBrowseDay').value;
-  const status=document.getElementById('journalBrowseStatus');
-  const body=document.getElementById('journalBrowseRows');
-  if(!/^\d{1,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(day)){
-    status.textContent='Enter a numeric device ID and select a valid date.';return;
+  const from=document.getElementById('journalBrowseStart').value;
+  const to=document.getElementById('journalBrowseEnd').value;
+  if(!/^\d{1,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(day)
+      ||!/^\d{2}:\d{2}$/.test(from)||!/^\d{2}:\d{2}$/.test(to)){
+    throw new Error('Enter a numeric device ID, date and valid From/To times.');
   }
-  const begin=new Date(day+'T00:00:00');
-  if(Number.isNaN(begin.getTime())){status.textContent='Invalid local date.';return}
-  const end=new Date(begin);end.setDate(end.getDate()+1);end.setMilliseconds(end.getMilliseconds()-1);
-  if(reset)journalBrowseOffset=0;
-  const params=new URLSearchParams({device_id:id,since:begin.toISOString(),until:end.toISOString(),limit:'50',offset:String(journalBrowseOffset)});
+  // Clock inputs are interpreted in the browser's local timezone.
+  const begin=new Date(day+'T'+from+':00');
+  const end=new Date(day+'T'+to+':00');
+  if(Number.isNaN(begin.getTime())||Number.isNaN(end.getTime())||end<begin){
+    throw new Error('The end time must not precede the start time.');
+  }
+  // An inclusive minute should include event milliseconds at 07:30:59.
+  end.setMinutes(end.getMinutes()+1);
+  end.setMilliseconds(end.getMilliseconds()-1);
+  const params=new URLSearchParams({
+    device_id:id,since:begin.toISOString(),until:end.toISOString(),
+    limit:'50',offset:String(journalBrowseOffset)
+  });
   const attribute=document.getElementById('journalBrowseAttribute').value;
   if(attribute)params.set('attribute',attribute);
+  return params;
+}
+async function browseJournal(reset=false){
+  const status=document.getElementById('journalBrowseStatus');
+  const body=document.getElementById('journalBrowseRows');
+  if(reset)journalBrowseOffset=0;
+  let params;
+  try{params=journalBrowseParameters()}catch(error){status.textContent=error.message;return}
   const previous=document.getElementById('journalBrowsePrev'),next=document.getElementById('journalBrowseNext'),search=document.getElementById('journalBrowseSearch');
   previous.disabled=next.disabled=search.disabled=true;status.textContent='Reading archived records…';
   try{
     const response=await fetch(apiPath('api/evidence-journal/events?'+params.toString()));
     const data=await jsonResponse(response);
-    if(!response.ok)throw new Error(data.detail||'Journal query unavailable');
+    if(!response.ok)throw new Error(data.detail||'Journal query unavailable (HTTP '+response.status+')');
     const records=Array.isArray(data.events)?data.events:[];
     body.replaceChildren();
     for(const record of records){
@@ -444,7 +463,7 @@ async function browseJournal(reset=false){
     const gapCount=Array.isArray(data.gaps)?data.gaps.length:0;
     status.textContent='Records '+(records.length?journalBrowseOffset+1:0)+'–'+(journalBrowseOffset+records.length)
       +' · '+(hasMore?'More pages available':'No further matching records')
-      +' · '+gapCount+' recorded gap(s) overlap this day. Historical coverage is never verified as complete.';
+      +' · '+gapCount+' recorded gap(s) overlap this window. Historical coverage is never verified as complete.';
     if(!records.length)status.textContent+=' No records does not mean no activity.';
   }catch(error){body.replaceChildren();status.textContent='Query failed: '+error.message;previous.disabled=next.disabled=true}
   finally{search.disabled=false}
@@ -453,6 +472,16 @@ const journalToday=new Date();document.getElementById('journalBrowseDay').value=
 document.getElementById('journalBrowseSearch').onclick=()=>void browseJournal(true);
 document.getElementById('journalBrowsePrev').onclick=()=>{journalBrowseOffset=Math.max(0,journalBrowseOffset-50);void browseJournal()};
 document.getElementById('journalBrowseNext').onclick=()=>{journalBrowseOffset+=50;void browseJournal()};
+document.getElementById('journalBrowseCopy').onclick=async()=>{
+  const button=document.getElementById('journalBrowseCopy');
+  const status=document.getElementById('journalBrowseStatus');
+  try{
+    const params=journalBrowseParameters();
+    const url=new URL(apiPath('api/evidence-journal/events?'+params.toString()),location.href);
+    // Do not invent a hostname or strip a Home Assistant ingress prefix.
+    await copyText(url.href,button,'Copy API URL');
+  }catch(error){status.textContent='Cannot build API URL: '+error.message}
+};
 
 document.getElementById('journalDetails').addEventListener('toggle',event=>{if(event.target.open)void loadJournalRecent()});
 document.getElementById('journalRefresh').onclick=async()=>{const b=document.getElementById('journalRefresh');b.disabled=true;try{await loadJournal();await loadJournalRecent()}finally{b.disabled=false}};
