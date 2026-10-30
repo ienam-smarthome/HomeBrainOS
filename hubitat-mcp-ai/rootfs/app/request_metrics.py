@@ -54,6 +54,8 @@ class RequestMetrics:
         "rule_create_timeout_unknown",
         "rule_schedule_fastpath", "rule_schedule_gateway_missing",
         "task_evidence_retry", "task_evidence_incomplete",
+        "unified_investigation_input_followup",
+        "unified_investigation_evidence_bridge",
         "shared_completion_checked", "shared_completion_partial",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
