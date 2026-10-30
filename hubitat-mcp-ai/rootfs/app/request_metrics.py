@@ -58,6 +58,7 @@ class RequestMetrics:
         "unified_investigation_evidence_bridge",
         "unified_group_timeline_reconciled",
         "unified_group_journal_recovery",
+        "unified_group_app_log_checks",
         "shared_completion_checked", "shared_completion_partial",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
