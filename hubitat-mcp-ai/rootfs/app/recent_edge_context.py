@@ -274,14 +274,17 @@ def render_recent_edge(
            + ". The Historical Journal provides additional context, not the "
              "sole evidence of activity."
            if native else
-           "The native switch-history reads did not establish source-timed "
-           "switch transitions for the verified target set. The journal "
-           "provides separate observations; absence in one source does not "
-           "prove inactivity.")
-        + (" Source-timed journal switch events were found inside the "
-           "requested period." if inside else
-           " No source-timed journal switch events were found inside the "
-           "requested period.")
+           "The device-history queries returned no switch transitions. "
+           "The Historical Journal check ")
+        + ("found switch observations within that period, so a blanket "
+           "claim of no activity is not supported." if inside and not native
+           else "found no independently source-timestamped switches within "
+                "that period. An empty result does not prove uninterrupted inactivity."
+                if not native else
+                " Source-timed journal switch events were found inside the "
+                "requested period." if inside else
+                " No source-timed journal switch events were found inside the "
+                "requested period.")
     )
     prior_note = (
         "\n\n**Immediately before the window:** Independently "
