@@ -173,9 +173,6 @@ async def recover_group_journal(
                 effect="read", mutates=False,
                 details={
                     "deviceId": ident, "observations": observations,
-                    "returnedObservationCount": len(observations),
-                    "evidenceReceiptSampleLimit": 20,
-                    "receptionPatternSummary": reception_pattern,
                     "window": {"since": since, "until": until, "zone": zone_name},
                     "gapCount": gap_count,
                     "truncated": bool(response.get("truncated") or response.get("has_more")),
@@ -373,6 +370,9 @@ async def recover_input_journal(
                 effect="read", mutates=False,
                 details={
                     "deviceId": ident, "observations": observations,
+                    "returnedObservationCount": len(observations),
+                    "evidenceReceiptSampleLimit": 20,
+                    "receptionPatternSummary": reception_pattern,
                     "window": {"since": since, "until": until, "zone": zone_name},
                     "gapCount": gap_count,
                     "truncated": bool(response.get("truncated") or response.get("has_more")),
