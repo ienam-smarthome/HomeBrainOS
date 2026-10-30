@@ -101,8 +101,6 @@ options:
   ha_tts_enabled: true
   ha_tts_notify_service: ""
   ha_tts_media_stream: ""
-  investigation_v2_testing_enabled: false
-  investigation_v2_test_token: ""
   v2_measurement_roles_json: "{}"
   chatgpt_mcp_enabled: false
   chatgpt_mcp_require_bearer_auth: true
@@ -186,8 +184,6 @@ schema:
   ha_tts_enabled: bool
   ha_tts_notify_service: str
   ha_tts_media_stream: str
-  investigation_v2_testing_enabled: bool
-  investigation_v2_test_token: password
   v2_measurement_roles_json: str
   chatgpt_mcp_enabled: bool
   chatgpt_mcp_require_bearer_auth: bool
