@@ -232,8 +232,11 @@ def _stated_switch_supported(text: str,
 def _numbers_supported(text: str, events: Sequence[Mapping[str, Any]],
                        question: str) -> bool:
     evidence_text = " ".join(
-        " ".join(str(e.get(k) or "") for k in (
-            "date", "value", "device_name", "device_id", "actor_name", "actor_id"))
+        " ".join(
+            str(e.get(k) or "").replace("T", " ") if k == "date"
+            else str(e.get(k) or "")
+            for k in ("date", "value", "device_name", "device_id",
+                      "actor_name", "actor_id"))
         for e in events
     ) + " " + question
     observed = {int(float(n)) if n.isdigit() else n
