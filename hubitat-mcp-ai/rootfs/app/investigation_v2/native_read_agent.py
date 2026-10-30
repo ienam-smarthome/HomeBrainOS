@@ -1648,6 +1648,11 @@ async def run_native_read_agent(
         final_synthesis_skipped_reason = "source_evidence_at_investigation_limit"
     event_narrative_eligible = (
         event_narrative_packet is not None
+        # Preserve existing focused incident synthesis/decision semantics.
+        # Generalise to source-verified multi-device event histories first;
+        # device names and question words never control this eligibility.
+        and not focus_ids
+        and len(event_narrative_packet["device_read_ids"]) >= 2
         and len(event_narrative_packet["event_examples"]) >= 3
         and not interval_unverified
         and incident_gap is None
