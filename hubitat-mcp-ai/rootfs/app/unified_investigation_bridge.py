@@ -129,21 +129,59 @@ def collect_unified_evidence(
     source_ids: set[str] = set()
     modes: list[dict[str, Any]] = []
     incident = explicit_incident_window(question, zone_name="UTC")
-    for index, receipt in enumerate(receipts[:80], 1):
-        if receipt.get("sub_tool") != "hub_list_device_events":
+    # Native event reads sometimes retain only a receipt summary, while the
+    # deterministic device-history wrapper holds the source's typed event rows.
+    # Reconcile both successful read surfaces. Identity for a wrapped history
+    # MUST already be independently attested by a targeted device lookup.
+    verified_label_ids: dict[str, list[str]] = {}
+    for ident, label in verified_names.items():
+        verified_label_ids.setdefault(label.casefold(), []).append(ident)
+    observed_keys: set[tuple[str, str, str, str, str]] = set()
+    for index, receipt in enumerate(receipts[:100], 1):
+        tool = str(receipt.get("tool") or "")
+        leaf = str(receipt.get("sub_tool") or "")
+        is_native = leaf == "hub_list_device_events"
+        is_derived = tool == "homebrain_device_history"
+        if not (is_native or is_derived):
             continue
         rows = _valid_source_rows(receipt)
         if not rows:
             continue
         args = _args(receipt)
-        device_id = str(args.get("deviceId") or "")
+        if is_native:
+            device_id = str(args.get("deviceId") or "")
+        else:
+            details = receipt.get("details") or {}
+            label = str(details.get("label") or "").strip().casefold()
+            matches = verified_label_ids.get(label) or []
+            # A history name is not an independently verified device ID.
+            # Ambiguous/unresolved identities must never enter the causal graph.
+            device_id = matches[0] if len(matches) == 1 else ""
         if device_id.isdecimal():
             source_ids.add(device_id)
-            projected = event_summary({"events": rows})
+            # Deduplicate the same native row exposed through both gateway
+            # receipts and deterministic history. Retain distinct commands.
+            unique_rows: list[dict[str, Any]] = []
+            for row in rows:
+                actor = row.get("producedBy") or {}
+                actor_id = str(actor.get("appId") or actor.get("deviceId")
+                               or actor.get("id") or "") if isinstance(actor, Mapping) else ""
+                key = (device_id, str(row.get("date") or ""),
+                       str(row.get("name") or ""), str(row.get("value") or ""),
+                       actor_id)
+                if key in observed_keys:
+                    continue
+                observed_keys.add(key)
+                unique_rows.append(row)
+            if not unique_rows:
+                continue
+            projected = event_summary({"events": unique_rows})
             if projected is None:
                 continue
             witnessed.append({
-                "read": index, "operation": "hub_list_device_events",
+                "read": index, "operation": (
+                    "homebrain_device_history" if is_derived
+                    else "hub_list_device_events"),
                 "read_filters": {"deviceId": device_id},
                 "source_data": projected,
             })
@@ -153,7 +191,7 @@ def collect_unified_evidence(
                     continue
                 all_events.append({**e, "device_id": device_id,
                                    "read": index, "when": when})
-        else:
+        elif is_native:
             for e in rows:
                 when = _time(e.get("date"))
                 if (e.get("name") == "mode" and when is not None
