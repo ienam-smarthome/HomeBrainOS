@@ -3991,6 +3991,40 @@ class UnifiedMCPAgent:
                         "sourceScopeComplete": False,
                         "questionResolved": False,
                     }
+            # Reading all requested source classes is not the same as
+            # establishing a causal initiator. A verified source-timed ON
+            # without a matching direct issuer in the returned samples
+            # remains an unresolved causal question even when its timeline
+            # and event coverage are excellent.
+            if (request_class == "live-read"
+                    and is_causal_investigation(user_prompt)):
+                chain = collect_unified_evidence(evidence, user_prompt)
+                if chain is not None:
+                    unissued_ons = any(
+                        row.get("reported_state") == "on"
+                        and not row.get("preceding_hubitat_command_in_sample")
+                        for row in chain["transition_relationships"]
+                    )
+                    archived_ons = any(
+                        row.get("journal_source_on", 0) > 0
+                        for row in chain["target_coverage"]
+                    )
+                    if unissued_ons or archived_ons:
+                        coverage = {
+                            **(coverage or {}),
+                            "status": "partial-evidence",
+                            "evidenceComplete": False,
+                            "rootCauseVerified": False,
+                            "causalInitiatorVerified": False,
+                            "questionResolved": False,
+                            "completionNote": (
+                                "The incident timeline can be reconstructed "
+                                "without establishing the original initiator. "
+                                "Source-class checks and reception counts "
+                                "are not causal verification."
+                            ),
+                        }
+                        increment_active_metric("causal_initiator_unresolved")
             candidates = self._investigation_hypotheses.get()
             if candidates and request_class == "live-read":
                 checkpoint = build_evidence_checkpoint(
