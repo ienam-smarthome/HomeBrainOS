@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.238**.
+Current add-on version: **0.18.239**.
+
+v0.18.239 fixes the live three-name Bathroom investigation regression: independently verified device focus IDs no longer disable the event narrative. Adds real name-lookup regression replay, clear eligibility blockers and correct timeline-fallback publication diagnostics, while preserving single-target incident safeguards. [Release notes](CHANGELOG-0.18.239.md).
 
 v0.18.238 introduces an evidence-linked natural-language explanation stage for source-verified multi-device histories. It keeps read-only MCP guards, verifies exact event citations, and preserves a chronological fallback instead of command-count catalogs. [Release notes](CHANGELOG-0.18.238.md).
 

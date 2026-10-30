@@ -12,13 +12,18 @@ membership or establish physical causation from a command alone.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import re
 from typing import Any, Mapping, Sequence
 
+from .temporal_scope import explicit_incident_window
+
 _NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?!\d)")
 _CLOCK = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
+_CLOCK_RANGE = re.compile(
+    r"\b(?:between|from)\s+(\d{1,2}):(\d{2})\s*(?:and|to|[-–])\s*"
+    r"(\d{1,2}):(\d{2})\b", re.I)
 _CONTROL = re.compile(r"[\x00-\x1f\x7f<>]")
 _CERTAINTY = re.compile(
     r"(?i)\b(?:definitely|certainly|guaranteed|proved|proven|"
@@ -51,12 +56,30 @@ def event_narrative_evidence(
     focus_ids: Sequence[str],
     *,
     max_events: int = 36,
+    question: str | None = None,
+    verified_labels: Mapping[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Build a citable event ledger from independently completed scoped reads.
 
     A source-attested room device listing may establish scope. Arbitrary IDs
     in the user's question and producer IDs in event text cannot establish it.
     """
+    # Narrow only the evidence packet, never MCP READ permissions, to the
+    # requested calendar period. This is temporal evidence selection, not
+    # a fixed-word router deciding which Hubitat tools to use.
+    calendar = (explicit_incident_window(question, zone_name="UTC")
+                if question else None)
+    clock_bounds = None
+    if calendar and question:
+        match = _CLOCK_RANGE.search(question)
+        if match:
+            h1, m1, h2, m2 = map(int, match.groups())
+            start = datetime.fromisoformat(calendar.start_utc)
+            end = datetime.fromisoformat(calendar.end_utc)
+            if (h1 < 24 and h2 < 24 and m1 < 60 and m2 < 60
+                    and 0 < (h2 * 60 + m2 - h1 * 60 - m1)
+                    and (end - start).total_seconds() <= 26 * 3600):
+                clock_bounds = (h1 * 60 + m1, h2 * 60 + m2)
     device_names: dict[str, str] = {}
     scoped_ids = set(str(x) for x in focus_ids)
     for w in witnesses:
@@ -79,6 +102,13 @@ def event_narrative_evidence(
                 r"[\x00-\x1f\x7f<>]", "", str(
                     device.get("label") or device.get("name") or
                     "Device " + ident))[:90]
+    # These labels must originate from fresh, uniquely verified identity
+    # results in the host, not from untrusted model prose or user-supplied IDs.
+    for ident, label in (verified_labels or {}).items():
+        if (str(ident) in scoped_ids and isinstance(label, str)
+                and label.strip()):
+            device_names[str(ident)] = re.sub(
+                r"[\x00-\x1f\x7f<>]", "", label)[:90]
     for w in witnesses:
         if w.get("operation") != "hub_get_device":
             continue
@@ -117,11 +147,19 @@ def event_narrative_evidence(
             if not isinstance(e, Mapping):
                 continue
             name, date = e.get("name"), e.get("date")
+            dt = _instant(date)
             if (not isinstance(name, str)
                     or (not name.startswith("command-") and
                         name not in _STATE_NAMES)
-                    or not _instant(date)):
+                    or dt is None):
                 continue
+            if calendar is not None and not calendar.contains(date):
+                continue
+            if clock_bounds is not None:
+                utc = dt.astimezone(timezone.utc)
+                minute_of_day = utc.hour * 60 + utc.minute
+                if not clock_bounds[0] <= minute_of_day <= clock_bounds[1]:
+                    continue
             key = (read, device_id, name, date)
             if key in seen:
                 continue
@@ -148,8 +186,9 @@ def event_narrative_evidence(
     if len(events) < 2:
         return None
     events.sort(key=lambda e: _instant(e["date"]))
-    # Cap while retaining a diverse per-target timeline rather than keeping
-    # only the newest telemetry flood. Each actual returned event is immutable.
+    # Keep issued commands with their independently reported nearby states;
+    # latest-state-only sampling discarded the OFF reports following button
+    # commands in the live multi-light incident. Proximity does not prove cause.
     by_target: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in events:
         by_target[item["device_id"]].append(item)
@@ -158,7 +197,32 @@ def event_narrative_evidence(
         commands = [e for e in group if e["observation_kind"] == "command_issued"]
         states = [e for e in group if e["observation_kind"] == "state_reported"]
         per_device = min(16, max(4, max_events // len(by_target)))
-        chosen = (commands[-per_device // 2:] + states[-per_device // 2:])
+        chosen_commands = commands[-(per_device // 2):]
+        state_quota = per_device - len(chosen_commands)
+        chosen_states = []
+        used_states = set()
+        for command in chosen_commands:
+            command_time = _instant(command["date"])
+            closest = sorted(
+                (e for e in states if (e["read"], e["date"], e["name"])
+                 not in used_states),
+                key=lambda e: abs((_instant(e["date"]) - command_time)
+                                  .total_seconds()))
+            if closest and abs((_instant(closest[0]["date"]) - command_time)
+                               .total_seconds()) <= 2:
+                linked = closest[0]
+                chosen_states.append(linked)
+                used_states.add((linked["read"], linked["date"], linked["name"]))
+            if len(chosen_states) >= state_quota:
+                break
+        for state in reversed(states):
+            if len(chosen_states) >= state_quota:
+                break
+            key = (state["read"], state["date"], state["name"])
+            if key not in used_states:
+                chosen_states.append(state)
+                used_states.add(key)
+        chosen = chosen_commands + chosen_states
         unique = {(e["read"], e["device_id"], e["name"], e["date"]): e
                   for e in chosen}
         selected.extend(unique.values())
@@ -172,6 +236,9 @@ def event_narrative_evidence(
         "device_read_ids": {k: sorted(v) for k, v in device_reads.items()},
         "returned_samples_not_complete_history": True,
         "physical_state_independently_verified": False,
+        "explicit_calendar_scope_applied": calendar is not None,
+        "explicit_clock_scope_applied": clock_bounds is not None,
+        "event_time_zone_assumption": "UTC; hub timezone unverified",
     }
 
 
@@ -348,7 +415,13 @@ def event_timeline_fallback(packet: Mapping[str, Any] | None) -> str | None:
               or e["name"].startswith("command-")]
     if not chosen:
         chosen = events
-    chosen = chosen[-12:]
+    # The last 12 events can all belong to one late burst, concealing an
+    # earlier command/state sequence within the user's actual time window.
+    # Spread the fallback trace through the source-attested packet instead.
+    if len(chosen) > 18:
+        indexes = sorted({round(i * (len(chosen) - 1) / 17)
+                          for i in range(18)})
+        chosen = [chosen[i] for i in indexes]
     lines = []
     for e in chosen:
         dt = _instant(e["date"])

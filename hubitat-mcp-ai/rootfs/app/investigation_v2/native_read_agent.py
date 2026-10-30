@@ -538,6 +538,7 @@ async def run_native_read_agent(
     room_inventories: list[dict[str, Any]] = []
     room_name_catalogs: list[dict[str, Any]] = []
     focus_ids: set[str] = set()
+    resolved_device_labels: dict[str, str] = {}
     verified_focus_receipts: list[dict[str, Any]] = []
     seen_fingerprints: set[str] = set()
     redundant_evidence_reads = 0
@@ -852,6 +853,11 @@ async def run_native_read_agent(
                     verified_ids.add(found["matches"][0]["id"])
                     verified_typed["device"].add(found["matches"][0]["id"])
                     focus_ids.add(found["matches"][0]["id"])
+                    source_name = str(
+                        found["matches"][0].get("label") or
+                        found["matches"][0].get("name") or "")
+                    if source_name:
+                        resolved_device_labels[found["matches"][0]["id"]] = source_name
                 if found["status"] == "candidate_group":
                     # Every candidate was returned by current authoritative
                     # identity, but no candidate is automatically selected
@@ -1567,7 +1573,8 @@ async def run_native_read_agent(
             requested_interval_coverage, witnesses)
     # Historical source events: independent device reads and room membership.
     event_narrative_packet = event_narrative_evidence(
-        witnesses, sorted(focus_ids))
+        witnesses, sorted(focus_ids), question=question,
+        verified_labels=resolved_device_labels)
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
@@ -1646,19 +1653,27 @@ async def run_native_read_agent(
                  or sum(failed_scoped_reads.values()) >= 2
                  or redundant_evidence_reads >= 2)):
         final_synthesis_skipped_reason = "source_evidence_at_investigation_limit"
-    event_narrative_eligible = (
-        event_narrative_packet is not None
-        # Preserve existing focused incident synthesis/decision semantics.
-        # Generalise to source-verified multi-device event histories first;
-        # device names and question words never control this eligibility.
-        and not focus_ids
-        and len(event_narrative_packet["device_read_ids"]) >= 2
-        and len(event_narrative_packet["event_examples"]) >= 3
-        and not interval_unverified
-        and incident_gap is None
-        and not (preliminary_incident is not None
-                 and source_bound_incident_required(preliminary_incident))
-    )
+    # Scope may be established either by a verified room lookup or by
+    # individually resolved, source-attested device identities. A populated
+    # focus_ids set does NOT mean this is a single-device investigation.
+    # Require >=2 separate device history READs to preserve focused incident
+    # semantics and prevent group assertions from an unrelated device list.
+    event_narrative_blockers: list[str] = []
+    if event_narrative_packet is None:
+        event_narrative_blockers.append("no_scoped_device_event_evidence")
+    else:
+        if len(event_narrative_packet["device_read_ids"]) < 2:
+            event_narrative_blockers.append("fewer_than_two_device_event_reads")
+        if len(event_narrative_packet["event_examples"]) < 3:
+            event_narrative_blockers.append("fewer_than_three_attested_events")
+    if interval_unverified:
+        event_narrative_blockers.append("explicit_complete_interval_unverified")
+    if incident_gap is not None:
+        event_narrative_blockers.append("requested_incident_evidence_missing")
+    if (preliminary_incident is not None
+            and source_bound_incident_required(preliminary_incident)):
+        event_narrative_blockers.append("unattributed_incident_source_boundary")
+    event_narrative_eligible = not event_narrative_blockers
     # Planning prose must not silently become a claim catalog: let the AI
     # provide an independently anchored interpretation.
     if event_narrative_eligible and reason == "model_finished":
@@ -2325,11 +2340,13 @@ async def run_native_read_agent(
                     interval_unverified
                     or host_group_published or host_temporal_lead_published
                     or host_incident_gap_published or model_reasoning_published
-                    or host_sequence_published),
+                    or host_sequence_published or event_fallback is not None),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
                     else "model_scoped_event_narrative"
                     if model_event_result.get("accepted") is True
+                    else "source_attested_event_timeline"
+                    if event_fallback is not None
                     else "source_access_evidence_boundary" if interval_unverified
                     else "validated_model_selection"),
                 "status": publication["validation"]["status"],
@@ -2354,6 +2371,7 @@ async def run_native_read_agent(
             "model_reasoned_assessment": model_reasoned_result,
             "model_event_narrative": model_event_result,
             "event_narrative_eligible": event_narrative_eligible,
+            "event_narrative_blockers": event_narrative_blockers,
             "verified_operating_sequence": verified_operating_sequence,
             "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
@@ -2361,10 +2379,13 @@ async def run_native_read_agent(
                 and not host_incident_gap_published
                 and not model_reasoning_published
                 and not host_sequence_published
+                and event_fallback is None
                 and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
                 "model_scoped_event_narrative" if model_event_result.get("accepted") is True
+                else "source_attested_event_timeline_fallback"
+                if event_fallback is not None
                 else "model_cited_incident_assessment" if model_reasoned_result.get("accepted") is True
                 else ("requested_complete_interval_source_unavailable"
                       if requested_interval_coverage is not None and
