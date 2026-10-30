@@ -1552,8 +1552,8 @@ async def run_native_read_agent(
         question, witnesses, sorted(focus_ids))
     interval_unverified = (
         requested_interval_coverage is not None
-        and requested_interval_coverage["status"] ==
-        "complete_interval_not_established")
+        and requested_interval_coverage["status"] !=
+        "complete_source_reported_interval_observed")
     if incident_relevance is None and requested_interval_coverage is not None:
         incident_relevance = interval_reasoning_evidence(
             requested_interval_coverage, witnesses)
@@ -1578,7 +1578,10 @@ async def run_native_read_agent(
              and source_bound_incident_required(preliminary_incident))
         else None)
     if interval_unverified:
-        final_synthesis_skipped_reason = "explicit_complete_cycle_not_established"
+        final_synthesis_skipped_reason = (
+            "explicit_complete_cycle_source_unavailable"
+            if requested_interval_coverage["status"] == "target_history_not_read"
+            else "explicit_complete_cycle_not_established")
     if (not answer_text and complete_group_evidence is not None
             and complete_group_evidence.get("room_unread_count", 0) == 0
             and complete_group_evidence.get("room_inventory_complete", True)):
@@ -1961,7 +1964,8 @@ async def run_native_read_agent(
     if incident_gap is not None and relevance_blocker is None:
         concise_answer = incident_gap[0]
     if interval_unverified and relevance_blocker is None:
-        concise_answer = incomplete_interval_answer(requested_interval_coverage)
+        concise_answer = incomplete_interval_answer(
+            requested_interval_coverage, read_failures=failures)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
@@ -2262,11 +2266,13 @@ async def run_native_read_agent(
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
                 "used_for_display_answer": not (
-                    host_group_published or host_temporal_lead_published
+                    interval_unverified
+                    or host_group_published or host_temporal_lead_published
                     or host_incident_gap_published or model_reasoning_published
                     or host_sequence_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
+                    else "source_access_evidence_boundary" if interval_unverified
                     else "validated_model_selection"),
                 "status": publication["validation"]["status"],
                 "accepted_count": len(publication["validation"]["accepted"]),
@@ -2299,7 +2305,10 @@ async def run_native_read_agent(
                 and validated_catalog),
             "concise_answer_source": (
                 "model_cited_incident_assessment" if model_reasoning_published
-                else "requested_complete_interval_gap" if interval_unverified
+                else ("requested_complete_interval_source_unavailable"
+                      if requested_interval_coverage is not None and
+                      requested_interval_coverage["status"]=="target_history_not_read"
+                      else "requested_complete_interval_gap") if interval_unverified
                 else "source_attested_operating_sequence" if host_sequence_published
                 else "requested_incident_evidence_gap" if host_incident_gap_published
                 else "unresolved_named_subject_evidence" if relevance_blocker
