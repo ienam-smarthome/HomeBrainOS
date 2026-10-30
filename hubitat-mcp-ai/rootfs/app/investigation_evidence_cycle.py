@@ -20,7 +20,8 @@ def cross_source_discovery_checkpoint(
 ) -> str | None:
     """Describe one unchecked, discriminating source after journal recovery."""
     facts = collect_unified_evidence(receipts, question)
-    if not facts or not facts.get("journal_source_observations"):
+    if not facts or not (facts.get("journal_source_observations")
+                         or facts.get("archived_input_source_observations")):
         return None
     checked_inputs = facts.get("independently_read_input_ids") or []
     coverage = facts.get("target_coverage") or []
@@ -41,6 +42,10 @@ def cross_source_discovery_checkpoint(
         "historicalJournalSourceTimeReports": facts["journal_source_observations"],
         "historicalJournalReceptionOnlyReports": facts["journal_collector_observations"],
         "journalGapCount": facts["journal_gap_count"],
+        "archivedInputSourceReports": facts.get("archived_input_source_observations", 0),
+        "archivedInputReceptionOnlyReports":
+            facts.get("archived_input_collector_observations", 0),
+        "archivedInputJournalGaps": facts.get("archived_input_gap_count", 0),
         "independentInputHistoryIdsChecked": checked_inputs[:12],
         "independentInputObservations": facts.get("independent_input_observations", [])[:12],
         "inputAppRelationships": facts.get("input_app_relationships", [])[:10],

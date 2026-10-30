@@ -58,7 +58,7 @@ class RequestMetrics:
         "target_history_scope_retry", "unscoped_history_claim_rejected",
         "unified_investigation_evidence_bridge",
         "unified_group_timeline_reconciled",
-        "unified_group_journal_recovery",
+        "unified_group_journal_recovery", "unified_input_journal_recovery",
         "causal_journal_discovery_checkpoint", "causal_initiator_unresolved",
         "unified_recent_edge_checked",
         "unified_recent_edge_reconciled",

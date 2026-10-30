@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.258**.
+Current add-on version: **0.18.259**.
+
+**Archived input evidence:** Independently scoped motion, occupancy and presence histories that return no usable native events now receive a bounded Historical Journal fallback. Source timestamps, collector-only reception, and coverage gaps remain separate in the original model reasoning and final explanation. [Release notes](CHANGELOG-0.18.259.md).
 
 **Source-linked input relevance:** Device event notification metadata is preserved as typed app relationships: app-issued target commands versus notified sensor/target listeners. The original model and final Historical Journal synthesis distinguish shared app leads, different observed app associations and unverifiable links without claiming historical causation. [Release notes](CHANGELOG-0.18.258.md).
 

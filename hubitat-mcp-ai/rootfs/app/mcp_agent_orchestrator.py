@@ -106,7 +106,7 @@ from causal_transition_provenance import (
     positive_off_command_already_recorded,
     scoped_off_history_receipt,
 )
-from group_journal_recovery import recover_group_journal
+from group_journal_recovery import recover_group_journal, recover_input_journal
 from investigation_evidence_cycle import cross_source_discovery_checkpoint
 from recent_edge_context import recover_recent_edge, render_recent_edge
 from group_app_decision_recovery import recover_group_app_decisions
@@ -3539,14 +3539,24 @@ class UnifiedMCPAgent:
                 or self._mutation_requested_by_user.get()
                 or self._mutation_call_seen.get()):
             return False
+        journal = getattr(self, "historical_journal", None)
         report = await recover_group_journal(
-            journal=getattr(self, "historical_journal", None),
-            recorder=self.evidence, question=question,
+            journal=journal, recorder=self.evidence, question=question,
             receipts=self.evidence.receipts(),
         )
-        if not report.get("attempted"):
+        # The original model may have asked for a relevant input history but
+        # received no incident-time rows. Use that model-selected, scoped ID
+        # for a bounded historical input recovery, without guessing devices.
+        input_report = await recover_input_journal(
+            journal=journal, recorder=self.evidence, question=question,
+            receipts=self.evidence.receipts(),
+        )
+        if not (report.get("attempted") or input_report.get("attempted")):
             return False
-        increment_active_metric("unified_group_journal_recovery")
+        if report.get("attempted"):
+            increment_active_metric("unified_group_journal_recovery")
+        if input_report.get("attempted"):
+            increment_active_metric("unified_input_journal_recovery")
         checkpoint = cross_source_discovery_checkpoint(
             self.evidence.receipts(), question)
         if checkpoint is None:
