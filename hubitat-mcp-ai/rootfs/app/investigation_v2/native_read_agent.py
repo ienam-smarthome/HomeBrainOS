@@ -59,6 +59,7 @@ from .native_interval_coverage import (
     complete_interval_coverage, incomplete_interval_answer,
     interval_reasoning_evidence)
 from .native_reasoning_policy import planning_system_prompt
+from .native_read_health import ReadHealth, read_timeout_cap
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
 from .native_historical_frontier import (
     historical_controller_frontier, reject_redundant_controller_logs)
@@ -515,6 +516,7 @@ async def run_native_read_agent(
     discovered: dict[str, set[str]] = {}
     prior: set[str] = set()
     timed_out_operations: set[tuple[str, str]] = set()
+    read_health = ReadHealth()
     failed_scoped_reads: dict[tuple[str, str], int] = {}
     failed_operation_counts: dict[str, int] = {}
     blocked_repeat_errors = 0
@@ -1097,8 +1099,9 @@ async def run_native_read_agent(
                 execution = await asyncio.wait_for(
                     executor.execute(name, args, tool=manifest[name],
                                      record_evidence=False),
-                    timeout=min(max(1.0, per_read_timeout),
-                                max(0.1, deadline - time.monotonic())),
+                    timeout=read_timeout_cap(
+                        str(op), per_read_timeout,
+                        deadline - time.monotonic()),
                 )
                 error = classify_execution(execution, name)
                 if (execution.effect is not ToolEffect.READ
@@ -1115,6 +1118,7 @@ async def run_native_read_agent(
             except Exception as exc:
                 error = classify_exception(exc)
             if error:
+                read_health.completed(str(op), error)
                 if target:
                     failed_scoped_reads[scoped_key] = (
                         failed_scoped_reads.get(scoped_key, 0) + 1
@@ -1148,7 +1152,11 @@ async def run_native_read_agent(
                     **({"hint": guidance_for(safe_error)}
                        if guidance_for(safe_error) else {}),
                 })})
+                if read_health.stopped:
+                    reason = "mcp_read_transport_degraded"
+                    break
                 continue
+            read_health.completed(str(op), None)
             assert result is not None
             verified_ids.update(attested_source_ids(op, result.data))
             # A source-verified room response establishes membership only,
@@ -1499,6 +1507,9 @@ async def run_native_read_agent(
                         view.pop("user_incident_evidence_coverage"), **view}
             messages.append({"role": "tool", "content":
                              json.dumps(view, ensure_ascii=True)[:12000]})
+        if read_health.stopped:
+            reason = "mcp_read_transport_degraded"
+            break
         if redundant_snapshot_reads >= 2 and focus_ids:
             reason = "no_new_source_evidence"
             break
@@ -1541,8 +1552,8 @@ async def run_native_read_agent(
         question, witnesses, sorted(focus_ids))
     interval_unverified = (
         requested_interval_coverage is not None
-        and requested_interval_coverage["status"] ==
-        "complete_interval_not_established")
+        and requested_interval_coverage["status"] !=
+        "complete_source_reported_interval_observed")
     if incident_relevance is None and requested_interval_coverage is not None:
         incident_relevance = interval_reasoning_evidence(
             requested_interval_coverage, witnesses)
@@ -1567,7 +1578,10 @@ async def run_native_read_agent(
              and source_bound_incident_required(preliminary_incident))
         else None)
     if interval_unverified:
-        final_synthesis_skipped_reason = "explicit_complete_cycle_not_established"
+        final_synthesis_skipped_reason = (
+            "explicit_complete_cycle_source_unavailable"
+            if requested_interval_coverage["status"] == "target_history_not_read"
+            else "explicit_complete_cycle_not_established")
     if (not answer_text and complete_group_evidence is not None
             and complete_group_evidence.get("room_unread_count", 0) == 0
             and complete_group_evidence.get("room_inventory_complete", True)):
@@ -1950,7 +1964,8 @@ async def run_native_read_agent(
     if incident_gap is not None and relevance_blocker is None:
         concise_answer = incident_gap[0]
     if interval_unverified and relevance_blocker is None:
-        concise_answer = incomplete_interval_answer(requested_interval_coverage)
+        concise_answer = incomplete_interval_answer(
+            requested_interval_coverage, read_failures=failures)
     if (not concise_answer and not source_bound_incident
             and readiness["host_factual_brief_ready"]):
         concise_answer = evidence_brief(validated_catalog)
@@ -2240,6 +2255,7 @@ async def run_native_read_agent(
             "requested_complete_interval_coverage": requested_interval_coverage,
             "interval_coverage_challenge_used": interval_coverage_challenge_used,
             "failed_operation_counts": failed_operation_counts,
+            "read_transport_health": read_health.snapshot(),
             "historical_controller_source_frontier": historical_frontier,
             "causal_coverage_challenge_used": causal_coverage_challenge_used,
             "causal_coverage_gap": causal_coverage_gap,
@@ -2250,11 +2266,13 @@ async def run_native_read_agent(
             "structured_claim_catalog": validated_catalog,
             "claim_publication": {
                 "used_for_display_answer": not (
-                    host_group_published or host_temporal_lead_published
+                    interval_unverified
+                    or host_group_published or host_temporal_lead_published
                     or host_incident_gap_published or model_reasoning_published
                     or host_sequence_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
+                    else "source_access_evidence_boundary" if interval_unverified
                     else "validated_model_selection"),
                 "status": publication["validation"]["status"],
                 "accepted_count": len(publication["validation"]["accepted"]),
@@ -2287,7 +2305,10 @@ async def run_native_read_agent(
                 and validated_catalog),
             "concise_answer_source": (
                 "model_cited_incident_assessment" if model_reasoning_published
-                else "requested_complete_interval_gap" if interval_unverified
+                else ("requested_complete_interval_source_unavailable"
+                      if requested_interval_coverage is not None and
+                      requested_interval_coverage["status"]=="target_history_not_read"
+                      else "requested_complete_interval_gap") if interval_unverified
                 else "source_attested_operating_sequence" if host_sequence_published
                 else "requested_incident_evidence_gap" if host_incident_gap_published
                 else "unresolved_named_subject_evidence" if relevance_blocker
