@@ -346,11 +346,21 @@ def collect_unified_evidence(
             "command_count": commands,
             "switch_state_missing_despite_commands":
                 switch_count == 0 and commands > 0,
+            # A successful device-scoped history query may return only
+            # newer state events because its rolling retention has moved
+            # past the requested incident window. This is still a
+            # historical source gap, even if no command survived either.
+            "incident_switch_history_missing": switch_count == 0,
             "complete_on_off_cycle_verified": (
                 counts["reported_switch_on"] > 0
                 and counts["reported_switch_off"] > 0),
         })
-    if not incident_rows:
+    # Absence of *in-window* rows does not invalidate independently
+    # resolved targets and their scoped history reads. Otherwise archive
+    # recovery can never run precisely when rolling native history has
+    # evicted every incident-time event. Only an explicitly bounded
+    # historical request qualifies for this source-gap packet.
+    if not incident_rows and incident is None:
         return None
     # Independent Historical Journal receipts supply separate observations.
     # Collector-received rows are NEVER promoted to Hubitat source-event
@@ -470,7 +480,11 @@ def collect_unified_evidence(
         "journal_truncated": journal_truncated,
         "missing_switch_history_for_targets": [
             c["device_name"] for c in target_coverage
-            if c["switch_state_missing_despite_commands"]],
+            if c["incident_switch_history_missing"]],
+        "incident_window_without_native_events": not any(
+            c["switch_event_count"] or c["command_count"]
+            for c in target_coverage),
+        "native_target_source_complete_for_incident": False,
         "hub_mode_observations": modes[:12],
         "independently_read_input_ids": checked_input_ids,
         "missing_independent_input_history": not bool(checked_input_ids),
@@ -563,14 +577,15 @@ def unified_investigation_followup(
     # spend the next model-directed read repeating that same target history.
     missing_switch = [
         row["device_name"] for row in facts["target_coverage"]
-        if row["switch_state_missing_despite_commands"]
+        if row["incident_switch_history_missing"]
         and not (row.get("journal_source_on") or row.get("journal_source_off"))
     ]
     if missing_switch:
         return (
             "HOST INCIDENT COVERAGE DEFECT (read-only, source-attested). "
-            "Independently verified named actuator histories returned "
-            "OFF/brightness commands but NO reported switch ON/OFF states "
+            "Independently verified named actuator history queries returned "
+            "NO incident-time switch ON/OFF states (they may contain newer "
+            "events, commands, or an incomplete rolling-history sample) "
             "for: " + ", ".join(missing_switch[:6])
             + ". Therefore no complete ON/OFF cycle or initiating automation "
               "can be established for those targets. Before ending, choose "
