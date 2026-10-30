@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.246**.
+Current add-on version: **0.18.247**.
+
+**Recent-window context:** When independently verified device histories all return zero switch events for a relative `last two hours` investigation, the original agent performs a bounded Historical Journal check covering that window and up to 15 minutes immediately before it. It labels the pre-window cycle separately and never promotes collector reception or proximity to a confirmed initiator. [Release notes](CHANGELOG-0.18.247.md).
 
 **All-app decision journal:** When the Historical Journal is enabled, Hubitat app-log collection now defaults to all app IDs, with a separate 48-hour app-log retention and row cap so noisy logs do not displace device-event history. Archived app-decision metadata is checked automatically for source-verified command issuer apps in multi-device investigations; exact source emission and upstream ON attribution are still not asserted. Recent-time windows such as `last two hours` are supported for bounded journal reads. [Release notes](CHANGELOG-0.18.246.md).
 
