@@ -26,7 +26,7 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
     upstream actors. Count source observations without treating missing
     command rows in an attribute='switch' page as a negative command search.
     """
-    events: set[tuple[str, str, str]] = set()
+    events: set[tuple[str, str, str, str]] = set()
     reporters: set[str] = set()
     listener_ids: set[str] = set()
     for receipt in evidence:
@@ -41,11 +41,17 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
         label = str(details.get("label") or "")
         for row in (details.get("observedEvents") or
                     details.get("boundaryEvents") or [])[:150]:
-            if (not isinstance(row, dict) or row.get("name") != "switch"
-                    or str(row.get("value") or "").casefold() not in ("on", "off")
-                    or not isinstance(row.get("date"), str)):
+            if not isinstance(row, dict):
                 continue
-            events.add((label, row["date"], str(row["value"]).casefold()))
+            attribute = str(row.get("name") or "").strip()
+            value = row.get("value")
+            # State observations include thermostats, health, connectivity,
+            # metering, contact and other device attributes. A driver command
+            # method is not a state observation.
+            if (not attribute or attribute.startswith("command-")
+                    or value is None or not isinstance(row.get("date"), str)):
+                continue
+            events.add((label, row["date"], attribute, str(value)[:80]))
             reporter = row.get("producedBy")
             if isinstance(reporter, dict) and str(reporter.get("type") or "").casefold() == "device":
                 name = str(reporter.get("label") or reporter.get("name") or "").strip()
@@ -84,7 +90,7 @@ def render_state_report_provenance(evidence: list[dict[str, Any]]) -> str | None
           "choose a bounded read-only command/app-decision/input-history "
           "check while tools are available. At final synthesis, distinguish "
           "reporting provenance from initiating control; do not treat a "
-          "switch-filtered history as a command-history search."
+          "attribute-filtered state history as a command-history search."
     )
 
 
