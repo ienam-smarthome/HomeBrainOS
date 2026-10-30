@@ -39,6 +39,13 @@ def _all_native_histories_empty(
             continue
         ident = str(_args(receipt).get("deviceId") or "")
         if ident not in targets:
+            # A device history read without an independently resolved
+            # identity could be another requested target. Do not silently
+            # treat the surviving two identities as a complete three-light
+            # investigation. Sensor/other unverified histories remain in
+            # original model evidence but do not justify this shortcut.
+            if ident.isdecimal():
+                return False
             continue
         seen.add(ident)
         for event in _valid_source_rows(receipt):
