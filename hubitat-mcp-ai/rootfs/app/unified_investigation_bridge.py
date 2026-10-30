@@ -272,6 +272,68 @@ def collect_unified_evidence(
         })
     if not incident_rows:
         return None
+    # Independent Historical Journal receipts supply separate observations.
+    # Collector-received rows are NEVER promoted to Hubitat source-event
+    # timestamps or used as precise causal edges.
+    journal_reads = 0
+    journal_gap_count = 0
+    journal_source_count = 0
+    journal_received_count = 0
+    journal_truncated = False
+    cover_by_id = {c["device_id"]: c for c in target_coverage}
+    for c in target_coverage:
+        c.update(journal_source_on=0, journal_source_off=0,
+                 journal_collector_on=0, journal_collector_off=0,
+                 journal_checked=False, journal_gaps=0)
+    for index, receipt in enumerate(receipts[:100], 1):
+        if (receipt.get("tool") != "homebrain_evidence_journal"
+                or receipt.get("evidence_kind") != "group_archived_switch_history"
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True):
+            continue
+        ident = str((receipt.get("arguments") or {}).get("device_id") or "")
+        if ident not in cover_by_id:
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        journal_reads += 1
+        coverage = cover_by_id[ident]
+        coverage["journal_checked"] = True
+        gaps = details.get("gapCount")
+        if type(gaps) is int and gaps >= 0:
+            coverage["journal_gaps"] += gaps
+            journal_gap_count += gaps
+        journal_truncated = journal_truncated or details.get("truncated") is True
+        for event in (details.get("observations") or [])[:100]:
+            if not isinstance(event, Mapping):
+                continue
+            if (str(event.get("device_id") or "") != ident
+                    or event.get("attribute") != "switch"
+                    or event.get("value") not in ("on", "off")):
+                continue
+            when = _time(event.get("date"))
+            basis = event.get("timestamp_basis")
+            if when is None or basis not in ("source", "collector-received"):
+                continue
+            if not _in_user_period(when, question, incident):
+                continue
+            kind = ("journal_source_switch_" if basis == "source"
+                    else "journal_received_switch_") + event["value"]
+            column = ("journal_source_" if basis == "source"
+                      else "journal_collector_") + event["value"]
+            coverage[column] += 1
+            if basis == "source":
+                journal_source_count += 1
+            else:
+                journal_received_count += 1
+            incident_rows.append({
+                "device_id": ident, "device_name": verified_names[ident],
+                "date": event["date"], "time": when,
+                "event_class": kind, "value": event["value"],
+                "app_id": "", "source_read": index,
+                "timestamp_basis": basis, "source": "Historical Journal",
+            })
     incident_rows.sort(key=lambda e: (e["time"], e["device_name"]))
     checked_input_ids = sorted(input_history_ids)
     log_receipts = [
@@ -292,6 +354,11 @@ def collect_unified_evidence(
                             for e in incident_rows[:180]],
         "incident_ledger_total": len(incident_rows),
         "target_coverage": target_coverage,
+        "journal_read_count": journal_reads,
+        "journal_source_observations": journal_source_count,
+        "journal_collector_observations": journal_received_count,
+        "journal_gap_count": journal_gap_count,
+        "journal_truncated": journal_truncated,
         "missing_switch_history_for_targets": [
             c["device_name"] for c in target_coverage
             if c["switch_state_missing_despite_commands"]],
@@ -307,7 +374,10 @@ def collect_unified_evidence(
             "before an ON is correlation only. A subsequent setLevel does NOT "
             "initiate a preceding ON. No returned command is not proof none "
             "was issued. Hubitat and external bridge clocks may differ. "
-            "Current config metadata does not prove historical execution."),
+            "Current config metadata does not prove historical execution. "
+          "Historical Journal collector-reception time is not an exact "
+          "source event time and journal gaps or empty queries cannot "
+          "establish continuous historical coverage."),
     }
 
 
@@ -326,6 +396,10 @@ def unified_investigation_instruction(
         "target_read_ids": evidence["target_device_ids"],
         "transition_relationships": evidence["transition_relationships"][:40],
         "target_coverage": evidence["target_coverage"],
+        "journal_source_observations": evidence["journal_source_observations"],
+        "journal_collector_observations": evidence["journal_collector_observations"],
+        "journal_gap_count": evidence["journal_gap_count"],
+        "journal_truncated": evidence["journal_truncated"],
         "incident_ledger": evidence["incident_ledger"][:40],
         "missing_switch_history_for_targets":
             evidence["missing_switch_history_for_targets"],
