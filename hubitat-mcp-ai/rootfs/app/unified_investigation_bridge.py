@@ -553,14 +553,29 @@ def unified_investigation_followup(
               "that ON's cause. If additional evidence is unavailable, "
               "say so clearly and retain the OFF command evidence."
         )
+    unresolved_ons = [
+        e for e in facts["transition_relationships"]
+        if e["reported_state"] == "on" and not e["preceding_hubitat_command_in_sample"]
+    ]
+    if not unresolved_ons:
+        return None
     if not facts["missing_independent_input_history"]:
-        return None
-    if not any(
-        event["reported_state"] == "on"
-        and not event["preceding_hubitat_command_in_sample"]
-        for event in facts["transition_relationships"]
-    ):
-        return None
+        return (
+            "HOST CAUSAL CHAIN INCOMPLETE (read-only follow-up). "
+            "Independent input histories have been checked for IDs: "
+            + ", ".join(facts["independently_read_input_ids"][:12])
+            + ". Some actuator ON transitions still have no preceding command "
+              "in returned bounded samples. Choose a NEW safe source read "
+              "to distinguish controller dependencies, upstream initiators, "
+              "historical app decisions or command provenance, using only "
+              "live available MCP schemas and verified identities. "
+              "A physical bridge report or absence of command rows is not "
+              "proof of external control. A current app configuration or "
+              "device-dependents lookup cannot establish historical absence "
+              "of alternative command paths. Do not repeat already checked "
+              "input histories. If relevant sources are unavailable, "
+              "state the specific missing evidence and stop."
+        )
     examples = [{
         "device": e["device_name"], "time": e["time"],
         "prior_command_in_returned_sample": False,
