@@ -179,9 +179,10 @@ def collect_unified_evidence(
             if projected is None:
                 continue
             witnessed.append({
-                "read": index, "operation": (
+                "read": index, "operation": "hub_list_device_events",
+                "source_surface": (
                     "homebrain_device_history" if is_derived
-                    else "hub_list_device_events"),
+                    else "native_gateway_receipt"),
                 "read_filters": {"deviceId": device_id},
                 "source_data": projected,
             })
