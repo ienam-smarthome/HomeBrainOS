@@ -217,6 +217,37 @@ async def test_group_incident_uses_bounded_verified_app_issuers_not_question_inv
                for x in facts["archived_app_checks"])
 
 
+@pytest.mark.parametrize(("message", "stage"), [
+    ("button 3 pushed, requesting off()", "reported-button-action"),
+    ("Command called: off()", "reported-off-request"),
+    ("Command called: on()", "reported-on-request"),
+    ("setLevel(50) after a state report", "reported-brightness-handling"),
+    ("motion inactive, turn off scheduled", "reported-off-request"),
+    ("motion detected, occupancy active", "reported-motion-handling"),
+    ("hub mode changed to School Run", "reported-mode-handling"),
+])
+@pytest.mark.asyncio
+async def test_private_message_free_typed_app_decision_markers(message, stage):
+    class J(LocalDecisionJournal):
+        def query(self, **kw):
+            self.calls.append(kw)
+            return {"events":[{
+                "stream":"logs", "app_id": kw["app_id"],
+                "attribute":"debug", "message":message,
+                "received_at":datetime.now(timezone.utc).isoformat(),
+            }], "gaps":[]}
+    j = J()
+    since, until, _ = journal_incident_bounds("last two hours", [])
+    result = await archived_app_decision_evidence(
+        j, app_id="4013", since=since, until=until)
+    assert result["configuredToCaptureApp"]
+    assert result["querySucceeded"]
+    assert result["reportedDecisionRows"][0]["stage"] == stage
+    assert result["reportedDecisionRows"][0]["sourceTimestampBasis"] == "collector-received"
+    assert message not in str(result)
+    assert result["historicalExecutionVerified"] is False
+
+
 @pytest.mark.asyncio
 async def test_missing_attested_devices_does_not_authorize_log_retrieval():
     src = [r for r in actual_partial_receipts()
