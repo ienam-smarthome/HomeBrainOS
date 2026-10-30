@@ -78,6 +78,8 @@ async def test_live_three_named_device_lookup_uses_narrative_not_catalog(model_e
         context = json.loads(messages[-1]["content"])
         packet = context["event_evidence"]
         assert set(packet["device_read_ids"]) == set(IDS)
+        assert {e["device_id"]: e["device_name"]
+                for e in packet["event_examples"]} == dict(zip(IDS, NAMES))
         assert context["source_claim_catalog"] == []
         if model_ending == "budget_unstructured":
             return {"content": "A motion sensor definitely caused the lights."}
