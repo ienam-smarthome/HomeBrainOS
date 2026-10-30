@@ -538,6 +538,7 @@ async def run_native_read_agent(
     room_inventories: list[dict[str, Any]] = []
     room_name_catalogs: list[dict[str, Any]] = []
     focus_ids: set[str] = set()
+    resolved_device_labels: dict[str, str] = {}
     verified_focus_receipts: list[dict[str, Any]] = []
     seen_fingerprints: set[str] = set()
     redundant_evidence_reads = 0
@@ -852,6 +853,11 @@ async def run_native_read_agent(
                     verified_ids.add(found["matches"][0]["id"])
                     verified_typed["device"].add(found["matches"][0]["id"])
                     focus_ids.add(found["matches"][0]["id"])
+                    source_name = str(
+                        found["matches"][0].get("label") or
+                        found["matches"][0].get("name") or "")
+                    if source_name:
+                        resolved_device_labels[found["matches"][0]["id"]] = source_name
                 if found["status"] == "candidate_group":
                     # Every candidate was returned by current authoritative
                     # identity, but no candidate is automatically selected
@@ -1567,7 +1573,8 @@ async def run_native_read_agent(
             requested_interval_coverage, witnesses)
     # Historical source events: independent device reads and room membership.
     event_narrative_packet = event_narrative_evidence(
-        witnesses, sorted(focus_ids), question=question)
+        witnesses, sorted(focus_ids), question=question,
+        verified_labels=resolved_device_labels)
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
