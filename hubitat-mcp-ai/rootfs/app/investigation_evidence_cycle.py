@@ -88,7 +88,9 @@ def cross_source_discovery_checkpoint(
         + json.dumps(summary, ensure_ascii=True, separators=(",", ":"))
         + "\nThe user asked WHY, not just for a switch-event list. "
         + discriminator
-        + " Use the sourceFeasibility packet to avoid checked/duplicated "
+        + " Choose only available, authorized READ tools through the "
+          "current model tool catalog. "
+          "Use the sourceFeasibility packet to avoid checked/duplicated "
           "reads and select only a concrete new source that could answer an "
           "open discriminator. Candidate leaf tools are ADVISORY: verify "
           "against your currently authorized READ tool catalog before "
