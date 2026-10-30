@@ -290,6 +290,75 @@ def collect_unified_evidence(
                 })
             if value in ("active", "present", "occupied", "on", "true"):
                 sensor_events.append(e)
+    # Recover independently source-timestamped *input* observations from
+    # the local Historical Journal after a successful scoped native input read
+    # returned no useful incident-time events. Collector reception is a
+    # separate coverage observation, NEVER the source event clock.
+    archived_input_source_count = 0
+    archived_input_collector_count = 0
+    archived_input_gap_count = 0
+    archived_input_reads = 0
+    for receipt in receipts[:120]:
+        if (receipt.get("tool") != "homebrain_evidence_journal"
+                or receipt.get("evidence_kind") != "group_archived_input_history"
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True):
+            continue
+        d = receipt.get("details")
+        args = receipt.get("arguments")
+        if not isinstance(d, Mapping) or not isinstance(args, Mapping):
+            continue
+        ident = str(args.get("device_id") or "")
+        if (not ident.isdecimal() or ident in targets
+                or str(d.get("deviceId") or "") != ident):
+            continue
+        # The previously scoped native read is the independent identity and
+        # intent authorization. A manually injected archive receipt alone
+        # cannot establish a usable input identity.
+        native_checked = any(
+            r.get("success") is True and r.get("mutates") is not True
+            and r.get("sub_tool") == "hub_list_device_events"
+            and str(_args(r).get("deviceId") or "") == ident
+            for r in receipts[:120]
+        )
+        if not native_checked:
+            continue
+        archived_input_reads += 1
+        gaps = d.get("gapCount")
+        if type(gaps) is int and gaps >= 0:
+            archived_input_gap_count += gaps
+        for event in (d.get("observations") or [])[:160]:
+            if not isinstance(event, Mapping):
+                continue
+            if (str(event.get("device_id") or "") != ident
+                    or str(event.get("attribute") or "") not in (
+                        "motion", "occupancy", "presence")):
+                continue
+            when = _time(event.get("date"))
+            value = str(event.get("value") or "").casefold()
+            basis = event.get("timestamp_basis")
+            if (when is None or not _in_user_period(when, question, incident)
+                    or value not in (
+                        "active", "inactive", "present", "not present",
+                        "occupied", "unoccupied", "on", "off", "true", "false")
+                    or basis not in ("source", "collector-received")):
+                continue
+            if basis == "collector-received":
+                archived_input_collector_count += 1
+                continue
+            archived_input_source_count += 1
+            key = (ident, when.isoformat(), str(event["attribute"]), value)
+            if key in input_keys:
+                continue
+            input_keys.add(key)
+            input_history_ids.add(ident)
+            independent_input_events.append({
+                "device_id": ident, "time": when.isoformat(),
+                "attribute": event["attribute"], "value": value,
+                "source_read": "historical-journal-input",
+                "timestamp_basis": "source",
+                "app_relationship_basis": "unavailable-in-journal",
+            })
     independent_input_events.sort(key=lambda row: (
         _time(row["time"]), row["device_id"]))
     target_command_apps = set().union(
@@ -330,7 +399,9 @@ def collect_unified_evidence(
             continue
         ident = str(_args(receipt).get("deviceId") or "")
         if (ident.isdecimal() and ident not in targets
-                and not any(e["device_id"] == ident for e in all_events)):
+                and not any(e["device_id"] == ident for e in all_events)
+                and not any(x["device_id"] == ident
+                            for x in independent_input_events)):
             empty_non_target_reads.add(ident)
     state_links: list[dict[str, Any]] = []
     for ident in sorted(targets):
@@ -571,6 +642,10 @@ def collect_unified_evidence(
         "independently_read_input_ids": checked_input_ids,
         "independent_input_observations": independent_input_events[:24],
         "independent_input_observation_total": len(independent_input_events),
+        "archived_input_source_observations": archived_input_source_count,
+        "archived_input_collector_observations": archived_input_collector_count,
+        "archived_input_gap_count": archived_input_gap_count,
+        "archived_input_reads": archived_input_reads,
         "input_app_relationships": input_app_relationships[:16],
         "target_observed_command_app_ids": sorted(target_command_apps, key=int)[:16],
         "target_observed_notified_app_ids": sorted(target_notified_apps, key=int)[:16],
@@ -621,6 +696,11 @@ def unified_investigation_instruction(
         "hub_mode_observations": evidence["hub_mode_observations"],
         "independently_read_input_ids": evidence["independently_read_input_ids"],
         "independent_input_observations": evidence["independent_input_observations"][:16],
+        "archived_input_source_observations":
+            evidence["archived_input_source_observations"],
+        "archived_input_collector_observations":
+            evidence["archived_input_collector_observations"],
+        "archived_input_gap_count": evidence["archived_input_gap_count"],
         "input_app_relationships": evidence["input_app_relationships"][:10],
         "target_observed_command_app_ids": evidence["target_observed_command_app_ids"],
         "additional_event_reads_without_usable_rows":
