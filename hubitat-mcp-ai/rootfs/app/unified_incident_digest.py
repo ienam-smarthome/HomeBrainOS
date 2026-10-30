@@ -381,6 +381,39 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
               "observations are used for event-time comparisons, and "
               "the archive cannot establish complete historical coverage."
         )
+    patterns = facts.get("archived_input_reception_patterns") or []
+    if patterns:
+        useful = [
+            row for row in patterns
+            if row.get("on_near_active_receptions")
+            or row.get("off_after_inactive_receptions")
+        ]
+        if useful:
+            phrases = []
+            for row in useful[:5]:
+                ident = str(row.get("device_id") or "")
+                on = row.get("on_near_active_receptions", 0)
+                off = row.get("off_after_inactive_receptions", 0)
+                total_on = row.get("target_source_on_count", 0)
+                total_off = row.get("target_source_off_count", 0)
+                phrases.append(
+                    f"device {ident}: {on}/{total_on} source-time light ON "
+                    f"reports had a nearby active input *reception* (within "
+                    f"3 seconds); {off}/{total_off} source-time light OFF "
+                    f"reports occurred within 20 seconds after an inactive "
+                    f"input *reception*"
+                    + (" (partial archived input sample)" if
+                       row.get("input_sample_truncated") else "")
+                )
+            explanation.append(
+                "**Reception-only pattern (tentative):** "
+                + "; ".join(phrases)
+                + ". Reception timestamps are NOT the original sensor event "
+                  "times; unknown transport delays prevent proving event "
+                  "order or which controller issued a command. Repeated "
+                  "co-occurrence makes these input histories useful follow-up "
+                  "leads, not verified causes."
+            )
     no_rows = facts.get("additional_event_reads_without_usable_rows") or []
     if no_rows:
         explanation.append(
