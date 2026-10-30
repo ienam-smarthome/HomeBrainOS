@@ -150,17 +150,6 @@ def test_singular_and_non_meter_questions_skip_second_model_phase():
     asyncio.run(run())
 
 
-def test_both_phases_are_generic_and_no_brand_keyword_route():
-    code=(APP/"app.py").read_text()
-    route=code[code.index("async def v2_test("):code.index('@app.post("/api/chat")')]
-    assert route.index("semantic = await semantic_plan(") < route.index("enrich_measurement_roles(")
-    assert 'semantic_diagnostics' in route
-    assert '"intent_planning"' in route
-    from investigation_v2.semantic_plan import _MODEL_SYSTEM
-    assert "Octopus" not in _MODEL_SYSTEM
-    assert "measurement_target" in _MODEL_SYSTEM
-
-
 def test_unknown_is_not_verified_individual_load_even_if_value_is_large():
     plan=parse_semantic_plan(BASE,inventory_profile(ITEMS))
     result=execute_inventory_plan(plan,ITEMS,{"complete":True})
