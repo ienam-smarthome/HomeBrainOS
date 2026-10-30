@@ -29,8 +29,8 @@ def _time(value: Any) -> datetime | None:
 
 
 _RECENT = re.compile(
-    r"\\b(?:last|past)\\s+(\\d{1,2}|one|two|three|four|six|twelve|twenty-four)"
-    r"\\s+(minutes?|hours?)\\b", re.I)
+    r"\b(?:last|past)\s+(\d{1,2}|one|two|three|four|six|twelve|twenty-four)"
+    r"\s+(minutes?|hours?)\b", re.I)
 _RECENT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4,
                  "six": 6, "twelve": 12, "twenty-four": 24}
 
