@@ -97,7 +97,7 @@ def cross_source_discovery_checkpoint(
           "calling anything. A checked-empty history is not evidence that "
           "no historic command existed. If no meaningful source is available, "
           "stop with the exact missing upstream execution evidence. "
-          "Do not invent IDs, external initiation or a new tool name, "
+          "Do not invent sensor IDs, external initiation or a new tool name, "
           "assert complete history or modify devices."
     )
 
