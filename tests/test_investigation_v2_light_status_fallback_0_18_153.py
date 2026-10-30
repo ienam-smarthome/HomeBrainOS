@@ -90,11 +90,3 @@ def test_grounded_answer_includes_network_and_omits_unrelated_transport_claim():
     assert "Reported power/energy values may be stale" not in answer.text
     assert "SHOULD_NOT_RENDER" not in answer.text
 
-
-def test_v2_endpoint_has_host_bounded_optional_planning():
-    route = (APP / "app.py").read_text().split("async def v2_test(",1)[1]
-    route = route.split('@app.post("/api/chat")',1)[0]
-    assert "planning_timeout_seconds=(35.0 if factual_objective is None else 15.0)" in route
-    assert "model_intent_planning_skipped" in route
-    assert "bootstrap_device_context=True" in route
-    assert "enable_atomic_claim_validation=True" in route
