@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.256**.
+Current add-on version: **0.18.257**.
+
+**Cross-source sensor reasoning:** When the original agent reconciles a Historical Journal incident, the verified motion/occupancy events already read by MCP now survive into the model evidence packet and final causal explanation. Source gaps remain explicit; correlation never becomes a proven trigger. [Release notes](CHANGELOG-0.18.257.md).
 
 **Historical gap recovery:** Independently verified target histories now retain an explicit historical coverage gap even if all surviving native events are newer than the requested period, allowing bounded Historical Journal recovery and model-directed follow-up. [Release notes](CHANGELOG-0.18.256.md).
 
