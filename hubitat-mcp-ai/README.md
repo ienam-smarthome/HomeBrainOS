@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.243**.
+Current add-on version: **0.18.244**.
+
+**Multi-device Historical Journal recovery:** Original HomeBrain Main Ask now automatically checks independently name-resolved missing switch histories against the configured, running Historical Journal using the verified incident clock window, with separate source-timestamp vs collector-reception and coverage-gap labels. The built-in journal browser now accepts start/end times and copies the full URL with the current HA ingress prefix. No V2 test UI is restored. [v0.18.244 details](CHANGELOG-0.18.244.md).
 
 **Incident evidence/causality validation:** The original HomeBrain MCP agent now preserves verified OFF, setLevel and brightness records even when a target's historical switch-state reports are absent. It distinguishes command receipt from physical transition, asks the model to recover missing switch-only evidence, and replaces contradictory final explanations rather than appending a correct timeline beneath false claims. See [v0.18.243 release notes](CHANGELOG-0.18.243.md).
 
