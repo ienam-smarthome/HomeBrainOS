@@ -15,6 +15,7 @@ APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
 from investigation_v2.native_upstream_frontier import upstream_evidence_frontier
+from investigation_v2.native_event_narrative import event_narrative_evidence, verify_event_narrative
 from investigation_v2.native_read_agent import run_native_read_agent
 from investigation_v2.native_entity_lookup import NAME
 from test_investigation_v2_native_read_agent_0_18_181 import (
@@ -180,3 +181,58 @@ async def test_budget_boundary_allows_model_selected_independent_app_execution_r
     assert diag["concise_answer_source"] == "model_scoped_event_narrative"
     assert len(executor.calls) == 3
     assert all(x[0] != "hub_manage_rules" for x in executor.calls)
+
+
+def test_hub_mode_context_is_citable_but_never_proves_controller_trigger():
+    case = target_witnesses() + [
+        {"read": 3, "operation": "hub_list_device_events",
+         "read_filters": {}, "source_data": {"events": [
+             ev("mode", "2026-10-30T06:30:01.490+0000", "Early morning"),
+             ev("mode", "2026-10-30T07:15:01.259+0000", "School Run"),
+             ev("mode", "2026-10-30T08:30:01.537+0000", "Morning"),
+         ]}},
+    ]
+    packet = event_narrative_evidence(
+        case, ["7818", "7821"], question=(
+            "Investigate the lights between 02:00 and 07:30 "
+            "on 30 October 2026"))
+    context = [e for e in packet["event_examples"] if e["device_id"] == "hub_mode"]
+    assert {e["value"] for e in context} == {"Early morning", "School Run"}
+    assert {e["read"] for e in context} == {3}
+    assert set(packet["device_read_ids"]) == {"7818", "7821"}
+    assert all(e["observation_kind"] == "hub_context_reported" for e in context)
+    # A source-cited mode transition establishes timing, not a cause.
+    assert verify_event_narrative({
+        "answer": "The School Run mode caused Bathroom Light 1 to turn on.",
+        "breakdown": [
+            {"text": "Hubitat reported School Run at 07:15.",
+             "supporting_events": [
+                {k:context[1][k] for k in ("read", "device_id", "name", "date")}]},
+            {"text": "Bathroom Light 1 reported ON at 07:12.",
+             "supporting_events": [next(
+                {k:e[k] for k in ("read", "device_id", "name", "date")}
+                for e in packet["event_examples"]
+                if e["device_id"] == "7818" and e["name"] == "switch"
+                and "T07:12:" in e["date"])]},
+        ],
+        "uncertainty": "The controlling input and rule execution remain unverified.",
+    }, packet=packet, question=QUESTION)["accepted"] is False
+
+
+def test_named_input_lookups_still_do_not_prove_controller_source():
+    case = target_witnesses() + [
+        {"read": 4, "operation": "hub_list_device_events",
+         "read_filters": {"deviceId": "7908"},
+         "source_data": {"events": [
+             ev("motion", "2026-10-30T07:12:33.200+0000", "active", device="7908"),
+         ]}},
+    ]
+    packet = event_narrative_evidence(case, ["7818", "7821", "7908"],
+                                     question=QUESTION,
+                                     verified_labels={"7908": "Shower MS605"})
+    assert any(e["device_id"] == "7908"
+               and e["device_name"] == "Shower MS605"
+               and e["name"] == "motion" for e in packet["event_examples"])
+    assert upstream_evidence_frontier(case, ["7818", "7821", "7908"],
+                                      QUESTION)["missing_evidence_classes"] == [
+                                          "historical_execution_or_hub_logs"]
