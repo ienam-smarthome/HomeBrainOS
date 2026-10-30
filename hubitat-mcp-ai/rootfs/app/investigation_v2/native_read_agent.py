@@ -58,6 +58,10 @@ from .native_operational_sequence import operational_sequence_brief
 from .native_interval_coverage import (
     complete_interval_coverage, incomplete_interval_answer,
     interval_reasoning_evidence)
+from .native_event_narrative import (
+    event_narrative_evidence, narrative_system_prompt,
+    verify_event_narrative, event_timeline_fallback,
+)
 from .native_reasoning_policy import planning_system_prompt
 from .native_read_health import ReadHealth, read_timeout_cap
 from .native_controller_decision import controller_decision_followup, scoped_app_execution_lines
@@ -553,6 +557,7 @@ async def run_native_read_agent(
     answer_text = ""
     model_claim_proposal: Any = None
     model_reasoned_proposal: Any = None
+    model_event_proposal: Any = None
     # Harvest drafts from the existing reasoning/tool loop. This avoids
     # paying for a separate tools-free model request when the model has
     # already authored a suitable answer.
@@ -1472,7 +1477,10 @@ async def run_native_read_agent(
                     failures=failures)
                 if next_source is not None:
                     view["source_path_followup"] = next_source
-            if witnesses and not (enable_model_reasoned_assessment and focus_ids):
+            if (witnesses
+                    and not (enable_model_reasoned_assessment and focus_ids)
+                    and not any(w.get("operation") == "hub_list_device_events"
+                                for w in witnesses)):
                 # The reasoning-model planning phase needs actual source
                 # evidence, not a distracting catalog of command counts.
                 # Preserve the legacy catalog for non-incident/readiness
@@ -1557,6 +1565,9 @@ async def run_native_read_agent(
     if incident_relevance is None and requested_interval_coverage is not None:
         incident_relevance = interval_reasoning_evidence(
             requested_interval_coverage, witnesses)
+    # Historical source events: independent device reads and room membership.
+    event_narrative_packet = event_narrative_evidence(
+        witnesses, sorted(focus_ids))
     incident_gap = natural_incident_gap_answer(
         question, witnesses, named_identity_lookups, sorted(focus_ids))
     readiness = evidence_readiness(
@@ -1635,6 +1646,23 @@ async def run_native_read_agent(
                  or sum(failed_scoped_reads.values()) >= 2
                  or redundant_evidence_reads >= 2)):
         final_synthesis_skipped_reason = "source_evidence_at_investigation_limit"
+    event_narrative_eligible = (
+        event_narrative_packet is not None
+        # Preserve existing focused incident synthesis/decision semantics.
+        # Generalise to source-verified multi-device event histories first;
+        # device names and question words never control this eligibility.
+        and not focus_ids
+        and len(event_narrative_packet["device_read_ids"]) >= 2
+        and len(event_narrative_packet["event_examples"]) >= 3
+        and not interval_unverified
+        and incident_gap is None
+        and not (preliminary_incident is not None
+                 and source_bound_incident_required(preliminary_incident))
+    )
+    # Planning prose must not silently become a claim catalog: let the AI
+    # provide an independently anchored interpretation.
+    if event_narrative_eligible and reason == "model_finished":
+        answer_text = ""
     reasoned_incident_eligible = (
         enable_model_reasoned_assessment
         and incident_relevance is not None
@@ -1645,7 +1673,8 @@ async def run_native_read_agent(
     if (witnesses and not answer_text
             and final_synthesis_skipped_reason is None
             and readiness["host_factual_brief_ready"]
-            and not reasoned_incident_eligible):
+            and not reasoned_incident_eligible
+            and not event_narrative_eligible):
         final_synthesis_skipped_reason = "multi_source_factual_brief_ready"
     if (witnesses and not answer_text and final_synthesis_skipped_reason is None
             and deadline - time.monotonic() > 2):
@@ -1663,6 +1692,7 @@ async def run_native_read_agent(
                 chat([
                     {"role": "system", "content":
                      candidate_prompt() if reasoned_incident_eligible else
+                     narrative_system_prompt() if event_narrative_eligible else
                      "Answer the user's question using only verified source "
                      "observations provided. Reference read IDs. Distinguish "
                      "WARN and ERROR from INFO, source reporting from physical "
@@ -1677,13 +1707,16 @@ async def run_native_read_agent(
                      "omitted. The host renders the resulting statements."},
                     {"role": "user", "content": json.dumps({
                         "question": question,
-                        "source_evidence": final_witnesses,
+                        "event_evidence": (event_narrative_packet
+                            if event_narrative_eligible else None),
+                        "source_evidence": ([] if event_narrative_eligible
+                                            else final_witnesses),
                         "incident_evidence": incident_relevance
                         if reasoned_incident_eligible else None,
                         "failed_or_rejected_reads": failures[-12:],
                         "source_complete": False,
                         "source_claim_catalog": (
-                            [] if reasoned_incident_eligible else [
+                            [] if (reasoned_incident_eligible or event_narrative_eligible) else [
                             {"id": c["id"], "statement": c["statement"],
                              "evidence_reads": c["evidence_reads"]}
                             for c in claim_catalog(witnesses, sorted(focus_ids), limit=32)
@@ -1697,6 +1730,8 @@ async def run_native_read_agent(
                 if isinstance(candidate, str) and candidate.strip():
                     if reasoned_incident_eligible:
                         model_reasoned_proposal = candidate
+                    elif event_narrative_eligible:
+                        model_event_proposal = candidate
                     else:
                         model_claim_proposal = candidate
                     answer_text = _answer_text(candidate, 4500)
@@ -1899,6 +1934,13 @@ async def run_native_read_agent(
     temporal_lead = (
         verified_temporal_lead(witnesses, sorted(focus_ids))
         if not source_bound_incident and relevance_blocker is None else None)
+    model_event_result = verify_event_narrative(
+        model_event_proposal, packet=event_narrative_packet,
+        question=question) if (event_narrative_eligible
+                               and relevance_blocker is None
+                               and not source_bound_incident) else {
+            "accepted": False, "reason": "not_eligible",
+            "model_prose_published": False}
     model_reasoned_result = (
         verify_natural_hypothesis(
             model_reasoned_proposal, coverage=incident_relevance,
@@ -1947,10 +1989,18 @@ async def run_native_read_agent(
     host_sequence_published = (
         verified_operating_sequence is not None
         and model_reasoned_result.get("accepted") is not True
+        and model_event_result.get("accepted") is not True
         and verified_narrative.get("accepted") is not True)
+    event_fallback = (
+        event_timeline_fallback(event_narrative_packet)
+        if event_narrative_eligible and relevance_blocker is None
+        else None)
     concise_answer = (
         model_reasoned_result["text"]
         if model_reasoned_result.get("accepted") is True
+        else model_event_result["text"]
+        if model_event_result.get("accepted") is True
+        else event_fallback if event_fallback is not None
         else verified_operating_sequence["text"] if host_sequence_published
         else
         verified_narrative["text"]
@@ -2154,7 +2204,9 @@ async def run_native_read_agent(
         and relevance_blocker is None
         and verified_narrative.get("accepted") is not True
     )
-    model_reasoning_published = model_reasoned_result.get("accepted") is True
+    model_reasoning_published = (
+        model_reasoned_result.get("accepted") is True
+        or model_event_result.get("accepted") is True)
     host_incident_gap_published = (
         incident_gap is not None and relevance_blocker is None)
     host_temporal_lead_published = (
@@ -2165,7 +2217,10 @@ async def run_native_read_agent(
         and verified_narrative.get("accepted") is not True
     )
     validation_issues = (
-        ["model_reasoning_cited_source_events",
+        ["model_event_narrative_cited_source_events",
+         "semantic_causation_not_independently_verified"]
+        if model_event_result.get("accepted") is True
+        else ["model_reasoning_cited_source_events",
          "semantic_causation_not_independently_verified"]
         if model_reasoning_published
         else ["requested_incident_evidence_missing"]
@@ -2183,6 +2238,7 @@ async def run_native_read_agent(
         ]
     )
     if (publication["validation"]["rejected"]
+            and not model_reasoning_published
             and not host_group_published and not host_temporal_lead_published):
         validation_issues.append("model_claims_withheld")
     if not witnesses:
@@ -2272,6 +2328,8 @@ async def run_native_read_agent(
                     or host_sequence_published),
                 "authority": (
                     "host_incident_receipts" if source_bound_incident
+                    else "model_scoped_event_narrative"
+                    if model_event_result.get("accepted") is True
                     else "source_access_evidence_boundary" if interval_unverified
                     else "validated_model_selection"),
                 "status": publication["validation"]["status"],
@@ -2294,6 +2352,8 @@ async def run_native_read_agent(
             "final_synthesis_skipped_reason": final_synthesis_skipped_reason,
             "general_evidence_readiness": readiness,
             "model_reasoned_assessment": model_reasoned_result,
+            "model_event_narrative": model_event_result,
+            "event_narrative_eligible": event_narrative_eligible,
             "verified_operating_sequence": verified_operating_sequence,
             "requested_incident_evidence_coverage": incident_relevance,
             "source_grounded_brief_published": bool(
@@ -2304,7 +2364,8 @@ async def run_native_read_agent(
                 and readiness["host_factual_brief_ready"]
                 and validated_catalog),
             "concise_answer_source": (
-                "model_cited_incident_assessment" if model_reasoning_published
+                "model_scoped_event_narrative" if model_event_result.get("accepted") is True
+                else "model_cited_incident_assessment" if model_reasoned_result.get("accepted") is True
                 else ("requested_complete_interval_source_unavailable"
                       if requested_interval_coverage is not None and
                       requested_interval_coverage["status"]=="target_history_not_read"
