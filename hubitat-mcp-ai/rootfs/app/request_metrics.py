@@ -71,6 +71,8 @@ class RequestMetrics:
         "v3_witness_targets_without_on_issuer",
         "v3_claim_pilot_recovery_offered",
         "v3_claim_pilot_final_offered",
+        "v3_claim_first_draft_present",
+        "v3_claim_first_draft_missing",
         "v3_claim_envelope_missing",
         "v3_claim_envelope_present",
         "v3_claim_envelope_valid",
