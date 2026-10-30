@@ -141,6 +141,9 @@ def test_multi_device_narrative_is_model_authored_and_cites_exact_events():
      "invalid_narrative_parts"),
     (lambda x: x["breakdown"][0].update({"supporting_events": []}),
      "invalid_breakdown_sources"),
+    (lambda x: x["breakdown"][0].update(
+        {"text": "Bathroom Light 1 reported OFF at 07:12."}),
+     "contradicted_reported_switch_state"),
 ])
 def test_fabricated_refs_values_and_certain_causation_never_publish(mutator, reason):
     packet = event_narrative_evidence(witnessed(), [])
@@ -151,6 +154,17 @@ def test_fabricated_refs_values_and_certain_causation_never_publish(mutator, rea
     assert result["accepted"] is False
     assert result["reason"] == reason
     assert result["model_prose_published"] is False
+
+
+def test_malformed_source_arrays_are_treated_as_unusable_not_truth():
+    case = witnessed()
+    case[0]["source_data"]["devices"] = None
+    assert event_narrative_evidence(case, []) is None
+    case = witnessed()
+    case[1]["source_data"]["events"] = None
+    packet = event_narrative_evidence(case, [])
+    assert packet is not None
+    assert set(packet["device_read_ids"]) == {"7818", "7821", "7807"}
 
 
 def test_when_ai_invalid_fallback_is_chronology_not_command_counts():
