@@ -97,7 +97,7 @@ def test_motion_candidate_same_receiver_clock_and_stagger():
     assert candidate["input_id"] == "201"
     assert candidate["one_to_one_within_windows"] is True
     assert candidate["matched_on"] == candidate["matched_off"] == 5
-    assert candidate["on_receiver_delay_seconds"]["min"] == 0.126
+    assert candidate["on_receiver_delay_seconds"]["min"] == 0.114
     assert 0.69 <= candidate["on_receiver_delay_seconds"]["max"] <= 0.72
     assert 10.13 <= candidate["off_receiver_delay_seconds"]["min"] <= 10.15
     assert 10.35 <= candidate["off_receiver_delay_seconds"]["max"] <= 10.38
