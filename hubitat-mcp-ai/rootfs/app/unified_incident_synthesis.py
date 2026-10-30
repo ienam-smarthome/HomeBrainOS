@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Mapping
 
+from unified_incident_digest import source_incident_digest
+
 
 def _clock(value: Any) -> str | None:
     if not isinstance(value, str):
@@ -183,6 +185,14 @@ def reconcile_ledger_if_needed(
     """Replace contradictory answers; never stack contradicting timelines."""
     gaps = bool(facts.get("missing_switch_history_for_targets"))
     flags = source_contradiction_flags(original, facts)
+    # Earlier versions always printed the raw 60+ row technical journal
+    # ledger after recovering events. Source-attested switch observations
+    # now support a concise, deduplicated, causal-first digest. This is
+    # still the original agent's final safety boundary, not a V2 planner.
+    if gaps and int(facts.get("journal_source_observations") or 0) > 0:
+        digest = source_incident_digest(facts)
+        if digest:
+            return digest, True
     if not gaps and not flags:
         return original, False
     timeline = verified_incident_ledger(facts)
