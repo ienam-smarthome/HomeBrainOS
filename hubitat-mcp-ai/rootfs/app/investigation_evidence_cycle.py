@@ -42,6 +42,9 @@ def cross_source_discovery_checkpoint(
         "historicalJournalReceptionOnlyReports": facts["journal_collector_observations"],
         "journalGapCount": facts["journal_gap_count"],
         "independentInputHistoryIdsChecked": checked_inputs[:12],
+        "independentInputObservations": facts.get("independent_input_observations", [])[:12],
+        "eventReadsWithoutUsableRows":
+            facts.get("additional_event_reads_without_usable_rows", [])[:12],
         "sourceContinuityEstablished": False,
         "upstreamInitiatorEstablished": False,
     }
