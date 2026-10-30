@@ -76,7 +76,7 @@ def render_state_report_provenance(evidence: list[dict[str, Any]]) -> str | None
     return (
         "HOST SOURCE ROLE CONTRACT (not a cause verdict): "
         + json.dumps(context, separators=(",", ":"), ensure_ascii=False)
-        + "\\nThese observations confirm reported device states, not who "
+        + "\nThese observations confirm reported device states, not who "
           "requested the actions. producedBy(device) identifies the reporting "
           "device/bridge; triggered[] identifies downstream event subscribers. "
           "Event type physical is not standalone proof of a physical press "
@@ -89,12 +89,12 @@ def render_state_report_provenance(evidence: list[dict[str, Any]]) -> str | None
 
 
 _EXTERNAL = re.compile(
-    r"\b(?:external|outside\s+(?:of\s+)?hubitat|hue[- ]native|"
+    r"\b(?:external(?:ly)?|outside\s+(?:of\s+)?hubitat|hue[- ]native|"
     r"bridge[- ]native|third[- ]party|not\s+(?:within|inside)\s+hubitat)\b",
     re.I,
 )
 _ASSERTION = re.compile(
-    r"\b(?:most\s+likely|probably|likely|must\s+have|certainly|definitely|"
+    r"\b(?:best[- ]supported\s+explanation|most\s+likely|probably|likely|must\s+have|certainly|definitely|"
     r"(?:was|is)\s+(?:responsible|the\s+cause)|"
     r"(?:initiating\s+logic|cause|command|trigger)\s+"
     r"(?:resid(?:e|es)|originat(?:e|ed|es)|came|comes))\b",
@@ -105,7 +105,7 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"no\s+(?:hubitat(?:[- ]side|[- ]issued)?\s+)?"
     r"command(?:\s+producer)?\s+(?:was\s+)?(?:issued|sent|executed)|"
     r"there\s+(?:is|was)\s+no\s+record\s+of\s+a\s+"
-    r"hubitat[- ]issued\s+command)\b",
+    r"hubitat[- ]issued\s+command|"\n    r"no\s+hubitat[- ]initiated\s+commands?\s+preceded|"\n    r"no\s+internal\s+hubitat\s+commands?\s+preceded)\b",
     re.I,
 )
 _UNPROVEN_LISTENER_EXCLUSION = re.compile(
@@ -115,16 +115,16 @@ _UNPROVEN_LISTENER_EXCLUSION = re.compile(
     re.I,
 )
 _EXTERNAL_VERDICT = re.compile(
-    r"\\b(?:operated|controlled|switched|toggled|initiated|commanded)\\s+"
-    r"(?:\\w+\\s+){0,4}?(?:externally|outside\\s+(?:of\\s+)?hubitat)\\b"
-    r"|\\b(?:physical\\s+interaction|manual\\s+operation|wall[- ]switch\\s+press)"
-    r"\\s+(?:was|is)\\s+(?:the\\s+)?(?:cause|initiator)\\b",
+    r"\b(?:operated|controlled|switched|toggled|initiated|commanded)\s+"
+    r"(?:\w+\s+){0,4}?(?:externally|outside\s+(?:of\s+)?hubitat)\b"
+    r"|\b(?:physical\s+interaction|manual\s+operation|wall[- ]switch\s+press)"
+    r"\s+(?:was|is)\s+(?:the\s+)?(?:cause|initiator)\b",
     re.I,
 )
 _SCOPE_QUALIFIER = re.compile(
-    r"\\b(?:may|might|could|possible|unverified|not\\s+(?:established|verified|"
-    r"proven|confirmed)|cannot\\s+(?:verify|confirm|establish)|"
-    r"no\\s+evidence\\s+(?:to|that))\\b",
+    r"\b(?:may|might|could|possible|unverified|not\s+(?:established|verified|"
+    r"proven|confirmed)|cannot\s+(?:verify|confirm|establish)|"
+    r"no\s+evidence\s+(?:to|that))\b",
     re.I,
 )
 _BULLET = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:\*\*[^*]+\*\*\s*)?)")
