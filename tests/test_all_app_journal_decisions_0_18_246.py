@@ -81,6 +81,29 @@ def test_all_app_capture_includes_unlisted_ids_and_scrubs_secret_before_disk(tmp
     assert j.status()["app_log_rows"] == 3
 
 
+def test_repeated_same_second_app_decisions_not_dropped_and_expired_unpruned_invisible(tmp_path):
+    j = journal(tmp_path)
+    now = datetime.now(timezone.utc)
+    t1 = (now - timedelta(seconds=3)).isoformat(timespec="microseconds")
+    t2 = (now - timedelta(seconds=2)).isoformat(timespec="microseconds")
+    old = (now - timedelta(hours=49)).isoformat(timespec="microseconds")
+    packet = app_packet(4013, "same event reported twice", "debug")
+    rows = [j._row("logs", packet, at, j.log_app_ids) for at in (t1, t2, old)]
+    assert all(rows)
+    assert j._write_batch(rows, prune=False) == 3
+    window = {
+        "app_id": "4013",
+        "since": (now - timedelta(days=3)).isoformat(),
+        "until": (now + timedelta(seconds=5)).isoformat(),
+    }
+    result = j.query(**window)
+    assert result["count"] == 2
+    assert len({row["received_at"] for row in result["events"]}) == 2
+    assert j._write_batch([], prune=True) == 0
+    with j._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM journal_events WHERE stream='logs'").fetchone()[0] == 2
+
+
 def test_app_logs_prune_after_48h_without_deleting_older_device_history(tmp_path):
     j = journal(tmp_path)
     clock = datetime.now(timezone.utc)
