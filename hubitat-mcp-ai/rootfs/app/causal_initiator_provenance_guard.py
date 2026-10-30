@@ -191,6 +191,7 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"no\s+hubitat[- ]initiated\s+commands?\s+preceded|"
     r"no\s+internal\s+hubitat\s+commands?\s+preceded|"
     r"(?:there\s+were\s+)?no\s+hubitat[- ]issued\s+commands?|"
+    r"no\s+hubitat\s+commands?\s+(?:were\s+)?(?:issued|sent|executed)|"
     r"hubitat\s+(?:only|never)\s+(?:acted|observed)\s+"
     r"(?:passively|in\s+a\s+reactionary\s+capacity))\b",
     re.I,
