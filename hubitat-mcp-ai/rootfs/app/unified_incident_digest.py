@@ -369,6 +369,18 @@ def source_incident_digest(facts: Mapping[str, Any]) -> str | None:
                   "compared. Unobserved or alternative control paths "
                   "cannot be excluded."
             )
+    if facts.get("archived_input_reads"):
+        explanation.append(
+            "**Archived input history coverage:** "
+            + str(facts.get("archived_input_source_observations", 0))
+            + " source-timestamped input observation(s); "
+            + str(facts.get("archived_input_collector_observations", 0))
+            + " reception-only observation(s); "
+            + str(facts.get("archived_input_gap_count", 0))
+            + " recorded connection gap(s). Only the source-timestamped "
+              "observations are used for event-time comparisons, and "
+              "the archive cannot establish complete historical coverage."
+        )
     no_rows = facts.get("additional_event_reads_without_usable_rows") or []
     if no_rows:
         explanation.append(
