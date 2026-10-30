@@ -91,6 +91,7 @@ def test_external_verdict_from_actual_multi_device_answer_is_not_accepted():
         "**Zone Alpha Light and Zone Beta Light (External Control)**\n"
         "Both lights were operated entirely outside of Hubitat's command history.\n"
         "There were no Hubitat-issued commands for these transitions.\n"
+        "Because no Hubitat commands were issued, the controller must be external.\n"
         "A sensor was observed active before the lights reported ON.\n"
         "| 15:28 | Zone Alpha Light | ON | Reported by Matter Bridge |\n"
     )
@@ -99,6 +100,7 @@ def test_external_verdict_from_actual_multi_device_answer_is_not_accepted():
     assert changed
     assert "operated externally" not in repaired
     assert "operated entirely outside" not in repaired
+    assert "Because no Hubitat commands were issued" not in repaired
     assert "(External Control)" not in repaired
     assert "(Initiator unverified)" in repaired
     assert "bounded evidence does not identify an initiating" in repaired
