@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.280**.
+Current add-on version: **0.18.281**.
+
+**Stage 4A model-authored natural-language claim contract (offline only):** Introduces a domain-general canonical source-fact packet and a sentence-by-sentence typed witness validator for draft model explanations. Typed claim success does not attest free-text semantics and cannot enable publication. [Release notes](CHANGELOG-0.18.281.md).
 
 **Stage 3F explicitly consented local read capture (default OFF):** Supports short-lived in-memory, pseudonymised observation of actual model-tool decisions only when both constructor observation mode and an explicitly consented capture session are supplied; no add-on setting activates it. [Release notes](CHANGELOG-0.18.280.md).
 
