@@ -216,8 +216,15 @@ def test_source_ids_in_schema_come_from_packet_not_model():
     c = _synthetic_prose_cases()[0]
     schema = _json_schema(c["packet"])
     ids = [x["fact_id"] for x in c["packet"]["facts"]]
-    assert schema["properties"]["atoms"]["items"]["properties"]["fact_ids"][
-        "items"]["enum"] == ids
+    branches = schema["properties"]["atoms"]["items"]["anyOf"]
+    assert {b["properties"]["proposition"]["const"] for b in branches} >= {
+        "recorded_event", "physical_effect", "packet_limit"}
+    assert branches[0]["properties"]["fact_ids"]["items"]["enum"] == ids
+    assert all(b["properties"]["fact_ids"]["minItems"] ==
+               b["properties"]["fact_ids"]["maxItems"] for b in branches)
+    assert next(b for b in branches
+                if b["properties"]["proposition"]["const"] == "packet_limit")[
+        "properties"]["fact_ids"]["maxItems"] == 0
     assert "reference_atoms" not in json.dumps(schema)
     assert "default" not in json.dumps(schema)
 
