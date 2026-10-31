@@ -65,7 +65,7 @@ def test_user_reported_e2_e3_are_value_correct_but_not_independent_telemetry():
     assert result["unsupported_typed_sentence_citations"] == 2
     assert result["high_risk_unsupported_sentences"] == 0
     assert result["premature_stop_missing_relevant_sources"]
-    assert result["missing_expected_finding_types"] == ["command_record", "time_order_conflict", "state_report"]
+    assert result["missing_expected_finding_types"] == ["command_record", "state_report", "time_order_conflict"]
     assert all(not row["typed_source_supported"] and row["source_type_mismatch"]
                for row in result["sentence_citation_checks"])
     assert all(not row["factual_prose_verified"]
