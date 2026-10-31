@@ -116,8 +116,8 @@ def evaluate_stage4j_prose_claim_coverage(
     exact match does not validate arbitrary newly written answers.
     """
     checked = _validate_cases(cases)
-    if model != "qwen2.5:3b" or not callable(invoke):
-        raise ValueError("only bounded offline 3B extractor experiment allowed")
+    if model not in ("qwen2.5:3b", "qwen2.5:7b") or not callable(invoke):
+        raise ValueError("only two approved offline Qwen extractors allowed")
     totals: Counter[str] = Counter()
     for case, oracle in checked:
         facts = _host_packet(case["packet"])
