@@ -56,8 +56,9 @@ def source_based_competing_explanations(facts: Mapping[str, Any] | None) -> str 
         parts.append(
             "Alternative input " + ident + " had " + str(matched) + "/"
             + str(total) + " nearby active receptions in the archive's "
-              "mixed source/collector window, versus the complete 5/5 "
-              "same-collector reception pairing for input " + lead_id
+              "mixed source/collector window, versus the complete "
+            + str(leader["matched_on"]) + "/" + str(leader["target_on_rows"])
+            + " same-collector reception pairing for input " + lead_id
               # No direct probability comparison: asymmetric clocks/windows.
             + ("; its retained sample has " + str(sample)
                + " of " + str(returned)
