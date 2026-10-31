@@ -233,13 +233,33 @@ def claim_guided_incident_answer(
                 + " requested brightness " + str(milliseconds)
                 + " ms *after* its ON report"
             )
+    matched_targets = {
+        str(row.get("device_id")) for row in
+        ledger.get("immediate_hubitat_on_command_matches") or []
+        if isinstance(row, Mapping)
+    } & set(targets)
+    if not matched_targets:
+        command_qualification = (
+            "No immediate Hubitat ON command was verified for either target "
+            "in the retained evidence."
+        )
+    elif len(matched_targets) < len(targets):
+        command_qualification = (
+            "An immediate Hubitat ON command was recorded for one target "
+            "but not both; this does not establish the upstream trigger."
+        )
+    else:
+        command_qualification = (
+            "Immediate Hubitat ON requests were observed for both targets, "
+            "but their upstream triggering decisions remain unverified."
+        )
     limits = (
-        "**What is not established:** No source-attested initiating ON command "
-        "was matched for both targets. The reported motion timing, a current "
-        "app dependency, and any later brightness request cannot identify "
-        "which controller caused the earlier ON. Historical app execution "
-        "or original upstream command records are still needed. Existing "
-        "archive gaps prevent treating missing records as proof of inactivity."
+        "**What is not established:** " + command_qualification + " "
+        "The motion timing, a current app dependency, and any later "
+        "brightness request cannot independently identify the original "
+        "upstream cause. Historical app execution or original upstream "
+        "command records are still needed. Archive gaps prevent treating "
+        "missing records as proof of inactivity."
     )
     if level_notes:
         limits = (
