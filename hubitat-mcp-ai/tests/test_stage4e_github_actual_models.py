@@ -189,7 +189,7 @@ def test_workflow_has_no_secrets_live_endpoints_or_write_permissions():
     assert "pull_request:" in workflow
     assert "timeout-minutes: 40" in workflow
     assert "upload-artifact@" not in workflow
-    assert "\${{ secrets." not in workflow
+    assert "${{ secrets." not in workflow
     assert "pull_request_target" not in workflow
     assert "github.event.pull_request.head.repo.full_name == github.repository" in workflow
     assert "192.168." not in workflow
