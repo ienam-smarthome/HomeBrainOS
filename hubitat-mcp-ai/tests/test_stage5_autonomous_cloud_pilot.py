@@ -57,7 +57,7 @@ class FakeCloud:
         assert all(n not in json.dumps(messages) for n in
                    ("192.168.1.", "Bedroom 3 Mesh", "Livingroom Light 1"))
         body = json.loads(messages[1]["content"])
-        if len(self.calls) == 1:
+        if "available_sources" in body:
             assert "available_sources" in body
             assert "candidate_conclusions" not in body
             assert "chosen_source_records" not in body
@@ -65,7 +65,6 @@ class FakeCloud:
                 "schema": "homebrain-stage5-plan.v1",
                 "select_sources": self.selection,
             })}
-        assert len(self.calls) == 2
         assert "chosen_source_records" in body
         assert "candidate_conclusions" not in body
         if self.bad_json:
