@@ -81,6 +81,15 @@ def render_page(title: str, version: str) -> str:
 .benchmark-check{padding:7px 0;border-bottom:1px solid #37373b}
 .benchmark-check:last-child{border-bottom:0}
 @media(max-width:520px){.benchmark-controls{grid-template-columns:1fr}.benchmark-controls button{width:100%}}
+
+.stage5-note{margin:8px 0;font-size:12px;color:var(--muted);line-height:1.45}
+.stage5-choices{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:8px 0}
+.stage5-choices select{width:100%;min-width:0;background:#303033;border:1px solid #56565c;color:#fff;border-radius:9px;padding:11px}
+.stage5-choices button{width:auto;margin:0;padding:10px 12px}
+.stage5-review{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.stage5-review label{font-size:12px;color:var(--muted)}
+.stage5-review select{width:auto;background:#303033;color:#fff;border:1px solid #56565c;padding:6px;border-radius:7px;margin:0 4px}
+@media(max-width:520px){.stage5-choices{grid-template-columns:1fr}.stage5-choices button{width:100%}}
 </style>
 </head>
 <body><main class="wrap">
@@ -133,6 +142,23 @@ def render_page(title: str, version: str) -> str:
 </div>
 <label class="benchmark-consent"><input id="cloudBenchmarkConsent" type="checkbox">I authorise one synthetic Ollama Cloud request using my existing account allowance.</label>
 <div class="benchmark-report" id="cloudBenchmarkResult" role="status" aria-live="polite">No benchmark run this session.</div>
+</details>
+<details class="card" id="stage5Card">
+<summary><strong>🧠 Stage 5 · Independent AI investigation</strong> <span class="muted">Experimental, current cloud account</span></summary>
+<p id="stage5Availability" class="muted">Checking cloud availability…</p>
+<p class="stage5-note">Gemma chooses which fictional evidence to inspect, then writes its own answer. No suggested conclusions or live-device access. Each run can use <strong>two</strong> Ollama Cloud requests. Scores check source choices and declared citations, <strong>not the full prose</strong>.</p>
+<label class="muted" for="stage5Scenario">Select a fictional incident</label>
+<div class="stage5-choices">
+<select id="stage5Scenario" aria-label="Independent investigation scenario">
+<option value="lighting">Light switched on unexpectedly</option>
+<option value="heating">Heating despite warm room</option>
+<option value="ventilation">Fan boost unexpectedly on</option>
+<option value="connectivity">Mesh plug reported offline</option>
+</select>
+<button type="button" id="runStage5" disabled>Run independent investigation</button>
+</div>
+<label class="benchmark-consent"><input id="stage5Consent" type="checkbox">I authorise up to two synthetic Ollama Cloud requests using my existing account allowance.</label>
+<div id="stage5Report" class="benchmark-report" role="status" aria-live="polite">No independent investigation has run in this session.</div>
 </details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
@@ -574,6 +600,89 @@ document.getElementById('runCloudBenchmark').onclick=async()=>{
   }
 };
 loadCloudBenchmarkStatus();
+
+function stage5RefreshButton(){
+  const b=document.getElementById('runStage5');
+  b.disabled=b.dataset.available!=='yes'||b.dataset.running==='yes'||!document.getElementById('stage5Consent').checked;
+}
+async function loadStage5Status(){
+  const b=document.getElementById('runStage5'),out=document.getElementById('stage5Availability');
+  try{
+    const response=await fetch(apiPath('api/stage5-benchmark/status'));
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error('Unavailable');
+    b.dataset.available=data.available?'yes':'no';
+    out.textContent=data.available?'Ready · '+data.model+' · existing primary account':(data.reason||'Not available');
+  }catch(_error){b.dataset.available='no';out.textContent='Cloud status could not be checked.'}
+  stage5RefreshButton();
+}
+document.getElementById('stage5Consent').onchange=stage5RefreshButton;
+document.getElementById('runStage5').onclick=async()=>{
+  const b=document.getElementById('runStage5'),out=document.getElementById('stage5Report');
+  if(b.disabled||!document.getElementById('stage5Consent').checked)return;
+  b.dataset.running='yes';stage5RefreshButton();out.textContent='Gemma is choosing fictional evidence and writing its own conclusion…';
+  try{
+    const response=await fetch(apiPath('api/stage5-benchmark/run'),{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-HomeBrain-Benchmark':'confirmed'},
+      body:JSON.stringify({case_id:document.getElementById('stage5Scenario').value,confirm_cloud_allowance:true})
+    });
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Independent benchmark failed (HTTP '+response.status+')');
+    out.replaceChildren();
+    const heading=document.createElement('strong');
+    heading.textContent=data.title+' · '+(data.elapsed_ms/1000).toFixed(1)+'s · '+data.cloud_requests_attempted+' cloud requests';
+    out.append(heading);
+    const explanation=document.createElement('p');
+    explanation.textContent='AI explanation (not independently verified): '+data.answer;out.append(explanation);
+    const review=document.createElement('p');review.textContent=
+      'Relevant source discovery: '+data.relevant_source_recall+
+      ' · Irrelevant sources selected: '+data.irrelevant_source_selections+
+      ' · Expected factual findings supported: '+data.required_finding_coverage+
+      ' · Unsupported cited findings: '+data.unsupported_cited_findings+
+      ' (high-risk: '+data.high_risk_unsupported_findings+').';
+    out.append(review);
+    const details=document.createElement('details');
+    const summary=document.createElement('summary');summary.textContent='Source decisions and cited finding checks';details.append(summary);
+    for(const choice of data.source_choices||[]){
+      const row=document.createElement('p');
+      row.textContent=(choice.expected_relevance?'✓ Relevant: ':'✕ Not in reference: ')+choice.source_id;
+      details.append(row);
+    }
+    for(const claim of data.findings||[]){
+      const row=document.createElement('p');
+      row.textContent=(claim.host_source_proven?'✓ Source-backed: ':'✕ Unsupported citation: ')+claim.kind.replace(/_/g,' ')+' · '+claim.source_ids.join(', ');
+      details.append(row);
+    }
+    if(data.uncovered_expected_finding_types?.length){
+      const row=document.createElement('p');
+      row.textContent='Expected finding types not established in cited output: '+data.uncovered_expected_finding_types.join(', ');
+      details.append(row);
+    }
+    out.append(details);
+    const limits=document.createElement('p');limits.textContent='Uncertainties: '+(data.limitations||[]).join(' · ');out.append(limits);
+    const note=document.createElement('p');note.className='stage5-note';
+    note.textContent='Stage 5 is a synthetic source-selection and typed-citation pilot. It cannot certify that the natural-language answer is complete, true or Claude-equivalent. No devices were touched.';
+    out.append(note);
+    const human=document.createElement('div');human.className='stage5-review';
+    const heading2=document.createElement('span');heading2.textContent='Optional personal review (not sent or saved):';human.append(heading2);
+    for(const kind of ['Clarity','Usefulness']){
+      const label=document.createElement('label');label.textContent=kind+' ';
+      const select=document.createElement('select');select.setAttribute('aria-label',kind+' score');
+      for(const [value,name] of [['','Not rated'],['1','1 Poor'],['2','2'],['3','3'],['4','4'],['5','5 Excellent']]){
+        const option=document.createElement('option');option.value=value;option.textContent=name;select.append(option);
+      }
+      label.append(select);human.append(label);
+    }
+    out.append(human);
+  }catch(error){out.textContent='Independent benchmark unavailable: '+error.message}
+  finally{
+    document.getElementById('stage5Consent').checked=false;
+    b.dataset.running='no';stage5RefreshButton();
+  }
+};
+loadStage5Status();
+
 
 status();setInterval(status,30000);
 </script></body></html>"""
