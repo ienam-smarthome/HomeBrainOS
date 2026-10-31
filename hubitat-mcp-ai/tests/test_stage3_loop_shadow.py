@@ -129,3 +129,10 @@ def test_more_than_sixteen_calls_are_bounded_without_claiming_complete_coverage(
     assert r["model_calls_omitted"] == 9
     assert r["verified_new_candidate_count"] == 1
     assert r["no_source_absence_or_causal_proof"] is True
+
+
+def test_unhashable_malformed_suboperation_is_skipped_not_crashed():
+    calls = [call(leaf={"unexpected": "dict"})]
+    report = observe_stage3_model_round([native_command()], calls, [schema()])
+    assert report["verified_new_candidate_count"] == 0
+    assert report["unsupported_gateway_or_operation_calls_skipped"] == 1
