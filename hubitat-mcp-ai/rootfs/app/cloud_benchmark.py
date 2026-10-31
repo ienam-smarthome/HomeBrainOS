@@ -184,7 +184,8 @@ def _parse_response(raw: str, scenario: dict[str, Any]) -> dict[str, Any]:
 class CloudBenchmark:
     """No retries, no persistent report, and no side effects outside cloud inference."""
 
-    def __init__(self):
+    def __init__(self, *, clock=None):
+        self._clock = clock if clock is not None else time.monotonic
         self._lock = asyncio.Lock()
         self._attempts: deque[float] = deque()
 
@@ -198,7 +199,7 @@ class CloudBenchmark:
             raise BenchmarkError(503, "The primary Ollama Cloud connection is not configured for the official endpoint.")
         if self._lock.locked():
             raise BenchmarkError(429, "Another cloud benchmark is already running.")
-        current = time.monotonic()
+        current = self._clock()
         while self._attempts and current - self._attempts[0] >= 3600:
             self._attempts.popleft()
         if len(self._attempts) >= _MAX_PER_HOUR:
@@ -236,7 +237,7 @@ class CloudBenchmark:
                 )},
                 {"role": "user", "content": json.dumps(user, separators=(",", ":"), ensure_ascii=True)},
             ]
-            started = time.monotonic()
+            started = self._clock()
             try:
                 # This is the EXISTING configured ChatTransport, bypassing its
                 # local/paid/failover routes. Exactly one cloud POST, zero MCP
@@ -253,7 +254,7 @@ class CloudBenchmark:
             except Exception:
                 # Never echo a provider error, prompt, credential or raw content.
                 raise BenchmarkError(502, "Cloud test failed or returned an invalid assessment. No retry was attempted.") from None
-            elapsed_ms = round((time.monotonic() - started) * 1000)
+            elapsed_ms = round((self._clock() - started) * 1000)
             return {
                 "success": True,
                 "case_id": case_id,
