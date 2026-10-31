@@ -48,11 +48,13 @@ def test_complete_attestation_yields_natural_facts_but_never_raw_model_prose():
     raw = draft(complete_envelope(f))
     answer, state = claim_guided_incident_answer(raw, f)
     assert state == "published"
-    assert answer and "**Most likely mechanism:**" in answer
-    assert "Input device 201" in answer
-    assert "5/5 active-to-ON and 5/5 inactive-to-OFF" in answer
-    assert "North Lamp had 5 reported ON and 5 reported OFF" in answer
-    assert "South Lamp had 5 ON and 5 OFF" in answer
+    assert answer and "**Likely explanation:**" in answer
+    assert "**Motion sensor (device 201)**" in answer
+    assert "5 recorded ON cycles" in answer
+    assert "North Lamp and South Lamp each reported 5 ON transitions" in answer
+    assert "**Timeline — recorded lighting cycles (UTC)**" in answer
+    assert "| 14:50:37 | 14:51:36 | 58 sec |" in answer
+    assert "| 15:07:14 | 15:11:09 | 3 min 56 sec |" in answer
     assert "source-timestamped state reports" in answer
     assert "DEFINITELY" not in answer
     assert "\x60\x60\x60" not in answer
@@ -73,8 +75,8 @@ def test_bad_issuer_is_rejected_and_original_digest_survives():
     raw = draft(e)
     assert claim_guided_incident_answer(raw, f) == (None, "invalid_envelope")
     published, changed = reconcile_ledger_if_needed(raw, f)
-    assert changed is True and published.startswith("**Most likely mechanism:**")
-    assert "Input device 201" in published
+    assert changed is True and published.startswith("**Likely explanation:**")
+    assert "Motion sensor (device 201)" in published
     assert "### Reconstructed source-timed sequence" not in published
     assert "DEFINITELY" not in published
 
@@ -82,7 +84,7 @@ def test_bad_issuer_is_rejected_and_original_digest_survives():
 def test_invalid_model_claims_still_allow_safe_source_only_short_brief():
     f = facts()
     brief = source_verified_incident_brief(f)
-    assert brief and brief.startswith("**Most likely mechanism:**")
+    assert brief and brief.startswith("**Likely explanation:**")
     raw = "Invented physical confirmation without any claim envelope."
     published, changed = reconcile_ledger_if_needed(raw, f)
     assert changed is True and published == brief
@@ -126,7 +128,7 @@ def test_renamed_ids_have_same_result_and_no_phantom_controller():
     f = facts((701, 702, 803, 804, 805))
     text, state = claim_guided_incident_answer(draft(complete_envelope(f)), f)
     assert state == "published" and text
-    assert "Input device 803" in text
+    assert "Motion sensor (device 803)" in text
     assert "7895" not in text and "4013" not in text
     assert "No immediate Hubitat ON command was verified for either target" in text
 
