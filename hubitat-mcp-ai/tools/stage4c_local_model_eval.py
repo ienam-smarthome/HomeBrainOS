@@ -48,16 +48,64 @@ class _NoRedirect(HTTPRedirectHandler):
         raise ValueError("redirect prohibited")
 
 
+def _stage4e_exact_review_schema(sentences: list) -> dict:
+    """Schema-constrain only the *shape*, not the semantic verdict.
+
+    Stage 4E uses one independently cited sentence at a time; IDs and
+    allowed supporting-fact sets are host-supplied, and the model still
+    chooses entailed / contradicted / insufficient. No generated reviewer
+    verdict is repaired or silently fabricated after inference.
+    """
+    if (not isinstance(sentences, list) or len(sentences) != 1
+            or not isinstance(sentences[0], dict)):
+        raise ValueError("Stage 4E requires one cited sentence")
+    row = sentences[0]
+    sid = row.get("sentence_id")
+    fact_ids = row.get("cited_fact_ids")
+    if (not isinstance(sid, str) or sid != "s001"
+            or not isinstance(fact_ids, list)
+            or not 1 <= len(fact_ids) <= 4
+            or any(not isinstance(fid, str) or not fid.startswith("f")
+                   for fid in fact_ids)
+            or len(set(fact_ids)) != len(fact_ids)):
+        raise ValueError("untrusted or unbounded review IDs")
+    def branch(decision, fact_ids):
+        return {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "sentence_id": {"const": sid},
+                "verdict": decision,
+                "supporting_fact_ids": {"const": fact_ids},
+            },
+            "required": ["sentence_id", "verdict", "supporting_fact_ids"],
+        }
+    return {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "schema": {"const": "homebrain-stage4b-semantic-review.v1"},
+            "assessments": {
+                "type": "array", "minItems": 1, "maxItems": 1,
+                "items": {"anyOf": [
+                    branch({"const": "entailed"}, fact_ids),
+                    branch({"enum": ["contradicted", "insufficient"]}, []),
+                ]},
+            },
+        },
+        "required": ["schema", "assessments"],
+    }
+
+
 class LoopbackOllama:
     """Strict loopback HTTP client. Never logs or exports prompts/outputs."""
 
-    def __init__(self, *, port: int = 11434, timeout_seconds: int = 60):
+    def __init__(self, *, port: int = 11434, timeout_seconds: int = 60, structured_review_schema: bool = False):
         if type(port) is not int or not 1 <= port <= 65535:
             raise ValueError("invalid local port")
         if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 120:
             raise ValueError("invalid local timeout")
         self._url = f"http://127.0.0.1:{port}/api/chat"
         self._timeout = timeout_seconds
+        self._structured_review_schema = structured_review_schema is True
         self._opener = build_opener(ProxyHandler({}), _NoRedirect())
         self.attempted = 0
         self.succeeded = 0
@@ -90,7 +138,10 @@ class LoopbackOllama:
         if len(system) + len(user) > _MAX_PROMPT:
             raise ValueError("local prompt too long")
         body = json.dumps({
-            "model": model, "stream": False, "format": "json",
+            "model": model, "stream": False,
+            "format": (_stage4e_exact_review_schema(job["sentences"])
+                       if self._structured_review_schema and job["task"] == "review"
+                       else "json"),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
