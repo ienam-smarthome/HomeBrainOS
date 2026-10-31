@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.274**.
+Current add-on version: **0.18.275**.
+
+**Stage 3A autonomous read frontier (shadow-only):** Adds evidence-scoped model-proposed READ validation, ranking, exact repeat prevention and no hard-coded five-call stop rule. The new module is not activated in the agent, so actual MCP calls and answers are unchanged. [Release notes](CHANGELOG-0.18.275.md).
 
 **Stage 2.5 offline shadow parity (not activated):** Adds a bounded comparator and compute benchmark for canonical versus V3 witness evidence over retained read receipts. No runtime path imports this module and no AI, tool or publisher behaviour is changed. [Release notes](CHANGELOG-0.18.274.md).
 
