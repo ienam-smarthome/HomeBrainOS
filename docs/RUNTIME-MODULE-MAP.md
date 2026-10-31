@@ -56,6 +56,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
 | `canonical_investigation_evidence.py` | Shadow-only immutable source/clock/identity receipt projection; no runtime calls, commands, model routing or publication. |
 | `cloud_connection_diagnostics.py` | Manually initiated no-inference official Ollama Cloud account status check; reports sanitized HTTP 401/403, no balance or credential body, not a chat availability guarantee. |
+| `stage7_review_packet.py` | Builds bounded post-run synthetic review corpus including all fictional evidence, selected/unselected provenance, model-authored sentences, and an independent human-review rubric; explicitly no semantic certification or publisher control. |
 | `stage66_answer_diagnostics.py` | Stage 6.6 safe final-answer schema failure categories and source-selection progress preserved without raw cloud replies, secrets, or approved prose. |
 | `stage65_question_value.py` | Stage 6.5 model-authored question coverage and source information-gain consistency checking, without host-gold substitution or live-device access. |
 | `stage6_adaptive_benchmark.py` | Synthetic-only four-call adaptive Cloud evidence investigation with competing-event source records, explicit optional STOP, withheld reference scoring and per-sentence citation checks; no production-tool access. |
