@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.297**.
+Current add-on version: **0.18.298**.
+
+**Stage 6.3 investigation completeness:** The synthetic adaptive cloud pilot now asks Gemma to maintain unresolved investigative questions and assess every unread source for material value before stopping. An internally contradictory STOP is rejected, while an apparently coherent but incomplete STOP remains visible against independently withheld evidence labels. This remains an evaluation-only feature; no production publisher, model-routing or live-device changes. [Release notes](CHANGELOG-0.18.298.md).
 
 **Stage 6.2 Ollama Cloud diagnostics:** A manually-triggered, no-inference cloud connection check on the dashboard verifies the existing primary API key via Ollama's account-balance HTTP status only, without showing account balances, secrets or responses. Stage 6 now distinguishes provider HTTP 401 from 403; the Ready status remains configuration-only. No live devices or publisher changes. [Release notes](CHANGELOG-0.18.297.md).
 
