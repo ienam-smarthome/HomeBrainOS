@@ -1,4 +1,4 @@
-"""V3 final-synthesis claim handoff stays source-qualified and shadow-only.
+"""V3 final-synthesis claim handoff stays source-qualified and fail-closed.
 
 Optional discovery checkpoint offers are not a reliable proxy for the final
 model instruction. The final synthesis should receive one explicit claim
@@ -34,7 +34,9 @@ def test_final_handoff_requests_envelope_after_natural_language():
     assert "append exactly one fenced code block" in final
     assert "you MAY append one" not in final
     assert "Natural-language reasoning comes first" in final
-    assert "legacy safety digest will still control publication" in final
+    assert "unsupported or incomplete claim keeps the legacy safety digest" in final
+    assert "source-timed ON and OFF state claim" in final
+    assert "collector-only receptions" in final
     assert '"device_id":"101"' in final
     assert '"device_id":"102"' in final
     assert '"schema":"homebrain-claims.v1"' in final
