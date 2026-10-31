@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.290**.
+Current add-on version: **0.18.291**.
+
+**Stage 4K frozen-answer adjudication (source only):** Binds full authored draft text and re-derived source facts before independent per-sentence reference labelling, then measures omitted claims and exact host-source proof across the answer. No publication or semantic certification. [Release notes](CHANGELOG-0.18.291.md).
 
 **Stage 4J real prose-to-atom coverage evaluation (source only):** Tests whether Qwen2.5 3B extracts all implied factual assertions, including unsupported causes, from constructed natural-language sentences, then independently checks every extracted atomic claim against Stage 4I. Full source coverage does not certify arbitrary prose or enable publication. [Release notes](CHANGELOG-0.18.290.md).
 
