@@ -91,7 +91,9 @@ def observe_stage3_model_round(
             continue
         operation = raw.get("tool")
         args = raw.get("args")
-        if operation not in permitted[gateway] or not isinstance(args, Mapping):
+        if (not isinstance(operation, str)
+                or operation not in permitted[gateway]
+                or not isinstance(args, Mapping)):
             skipped_unsupported += 1
             continue
         seen_calls += 1
