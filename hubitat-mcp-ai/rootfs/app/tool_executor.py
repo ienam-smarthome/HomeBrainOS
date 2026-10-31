@@ -179,6 +179,44 @@ class ToolExecutor:
                             pass
                 return fields
 
+        # V3: retain only typed IDs from *explicitly scoped* read-only
+        # app-dependency responses. Generic object-field summaries previously
+        # discarded appsUsing, so the model-led evidence frontier could not
+        # verify a shared input->app<-target association at the next round.
+        # Do not persist app names, settings, or arbitrary response fields.
+        if (
+            result.name == "hub_read_apps_code"
+            and isinstance(result.arguments, dict)
+            and result.arguments.get("tool") == "hub_list_device_dependents"
+            and isinstance(data, dict)
+        ):
+            args = result.arguments.get("args") or {}
+            requested = str(args.get("deviceId") or "")
+            observed = str(data.get("deviceId") or "")
+            entries = data.get("appsUsing")
+            if (
+                requested.isdecimal() and int(requested) > 0
+                and requested == observed
+                and isinstance(entries, list)
+            ):
+                app_ids: list[str] = []
+                for app in entries[:80]:
+                    raw = (
+                        app.get("appId") or app.get("id")
+                        if isinstance(app, dict) else app
+                    )
+                    if isinstance(raw, (str, int)) and not isinstance(raw, bool):
+                        ident = str(raw)
+                        if ident.isdecimal() and int(ident) > 0 and ident not in app_ids:
+                            app_ids.append(ident)
+                return {
+                    "deviceId": requested,
+                    "appsUsing": [{"appId": ident} for ident in app_ids[:32]],
+                    "appIdsCoverage": (
+                        "partial" if len(entries) > 32 else "bounded"
+                    ),
+                }
+
         history = history_temporal_evidence_details(data)
         if history is not None:
             return history
