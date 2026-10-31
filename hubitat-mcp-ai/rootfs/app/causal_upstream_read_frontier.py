@@ -86,6 +86,8 @@ def rank_upstream_read_frontier(
         if not isinstance(c, Mapping):
             continue
         ident = _id(c.get("input_id"))
+        if _id(c.get("target_id")) not in targets:
+            continue
         count = c.get("input_returned_rows")
         entry = samples.get(ident)
         if (not ident or ident in targets
@@ -181,7 +183,7 @@ def rank_upstream_read_frontier(
             "target_id": _id(lead.get("target_id")),
             "matched_active_to_on": lead["matched_on"],
             "matched_inactive_to_off": lead["matched_off"],
-            "input_reception_rows": count,
+            "input_reception_rows": lead["input_returned_rows"],
             "one_to_one_receiver_pattern": True,
             "source_order_verified": False,
             "command_initiator_verified": False,
