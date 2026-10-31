@@ -88,6 +88,7 @@ from cloud_benchmark import CloudBenchmark, BenchmarkError, benchmark_status
 from cloud_connection_diagnostics import CloudConnectionDiagnostics
 from stage5_autonomous_benchmark import Stage5Benchmark, stage5_status
 from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
+from stage66_answer_diagnostics import Stage6AnswerContractFailure
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -1163,6 +1164,16 @@ async def run_stage6_benchmark(payload: Stage6BenchmarkRequest, request: Request
         return await stage6_benchmark.run_case(
             agent.transport, payload.case_id,
             confirmed=payload.confirm_cloud_allowance is True,
+        )
+    except Stage6AnswerContractFailure as exc:
+        return JSONResponse(
+            status_code=exc.status,
+            content={
+                "detail": exc.detail,
+                "validation_category": exc.category,
+                "partial_investigation": exc.progress,
+            },
+            headers={"Cache-Control": "no-store"},
         )
     except BenchmarkError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
