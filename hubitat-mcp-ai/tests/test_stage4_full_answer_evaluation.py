@@ -48,6 +48,9 @@ class FakeModels:
             assert "oracle" not in json.dumps(job)
             assert len(job["sentences"]) == 1
             row = job["sentences"][0]
+            # Any original s002/s003 author sentence is renumbered for the
+            # isolated Stage 4E reviewer schema without changing source/text.
+            assert row["sentence_id"] == "s001"
             return {
                 "schema": "homebrain-stage4b-semantic-review.v1",
                 "assessments": [{
