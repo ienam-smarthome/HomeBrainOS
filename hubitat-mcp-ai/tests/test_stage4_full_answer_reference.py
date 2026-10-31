@@ -209,7 +209,7 @@ def test_benchmark_oracles_not_sent_to_real_model_adapter():
     for _, task in fake.requests:
         data = json.dumps(task)
         assert "not-entailed" not in data
-        assert "\\"answer_oracle\\"" not in data
+        assert '"answer_oracle"' not in data
         assert "answer_oracle" not in data
         assert "required_fact_ids" not in data
 
