@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import json
+import re
 import time
 from typing import Any
 
 import httpx
 
 from stage4_narrative_contract import build_stage4_evidence_packet
+from chat_transport import EmptyOllamaAssistantMessage
 
 
 class BenchmarkError(Exception):
@@ -130,9 +132,24 @@ def benchmark_status(transport: Any) -> dict[str, Any]:
 
 
 def _parse_response(raw: str, scenario: dict[str, Any]) -> dict[str, Any]:
+    """Accept only one bounded JSON document, optionally in a JSON fence.
+
+    Ollama Cloud does not currently enforce the JSON format. A fenced JSON
+    response is a presentation variation, not permission to guess claims
+    from free text, parse multiple objects, or weaken source-proof checks.
+    """
     if not isinstance(raw, str) or not 1 <= len(raw) <= 12000:
         raise ValueError("invalid model content")
-    result = json.loads(raw)
+    source = raw.strip()
+    if source.startswith("```"):
+        match = re.fullmatch(
+            r"```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```",
+            source, flags=re.I,
+        )
+        if match is None:
+            raise ValueError("invalid JSON fence")
+        source = match.group(1).strip()
+    result = json.loads(source)
     if not isinstance(result, dict) or set(result) != {"schema", "explanation", "assessments"}:
         raise ValueError("invalid result format")
     if result["schema"] != "homebrain-cloud-benchmark.v1":
@@ -246,14 +263,40 @@ class CloudBenchmark:
                     messages, [], base_url=transport.base_url,
                     model_name=transport.model_name, api_key=transport.api_key,
                     timeout=httpx.Timeout(min(90.0, max(10.0, transport.timeout_seconds))),
-                    keep_alive=None,
+                    keep_alive=None, disable_thinking=True,
                 )
                 if answer.get("tool_calls"):
                     raise ValueError("tool calls are forbidden in the benchmark")
                 scored = _parse_response(answer.get("content", ""), spec)
+            except httpx.HTTPStatusError as exc:
+                # Provider error body and URL are untrusted; never show or log
+                # their contents, tokens, headers, prompts or model prose.
+                status_code = exc.response.status_code
+                if status_code in (401, 403):
+                    detail = "Ollama Cloud rejected the configured API credentials or permissions (HTTP 401/403). No retry was attempted."
+                elif status_code == 429:
+                    detail = "Ollama Cloud reported a quota or rate limit (HTTP 429). No retry was attempted."
+                elif status_code == 400:
+                    detail = "Ollama Cloud rejected the benchmark request format or model options (HTTP 400). No retry was attempted."
+                elif status_code == 404:
+                    detail = "Ollama Cloud did not recognise the configured model or endpoint (HTTP 404). No retry was attempted."
+                elif status_code >= 500:
+                    detail = "Ollama Cloud returned a server error (HTTP 5xx). No retry was attempted."
+                else:
+                    detail = "Ollama Cloud rejected the request (HTTP error). No retry was attempted."
+                raise BenchmarkError(502, detail) from None
+            except httpx.TimeoutException:
+                raise BenchmarkError(502, "Ollama Cloud request timed out. It may have consumed allowance; no retry was attempted.") from None
+            except httpx.RequestError:
+                raise BenchmarkError(502, "Could not complete the Ollama Cloud connection. No retry was attempted.") from None
+            except EmptyOllamaAssistantMessage:
+                raise BenchmarkError(502, "Ollama Cloud returned no usable answer text. No retry was attempted.") from None
+            except json.JSONDecodeError:
+                raise BenchmarkError(502, "Ollama Cloud returned text that was not a valid JSON assessment. No retry was attempted.") from None
+            except ValueError:
+                raise BenchmarkError(502, "Ollama Cloud returned JSON, but its assessment fields were incomplete or invalid. No retry was attempted.") from None
             except Exception:
-                # Never echo a provider error, prompt, credential or raw content.
-                raise BenchmarkError(502, "Cloud test failed or returned an invalid assessment. No retry was attempted.") from None
+                raise BenchmarkError(502, "Cloud benchmark encountered an unexpected processing error. No retry was attempted.") from None
             elapsed_ms = round((self._clock() - started) * 1000)
             return {
                 "success": True,
