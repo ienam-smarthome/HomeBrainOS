@@ -34,33 +34,41 @@ def render_shadow_claim_pilot(
     }
     if len(source_ids) < 2:
         return ""
-    # Show paired positive/negative cases for *each* queried target, rather
-    # than 18 chronological rows from only one busy light. An example must
-    # always be a genuine witness in the current request.
+    # Show original-source ON and OFF examples for BOTH verified targets.
+    # A first-three sample biased toward ON can cause valid but incomplete
+    # model envelopes. Emit a copyable four-claim coverage example while
+    # keeping the original model's reasoning and claim selection independent.
     examples: list[dict[str, Any]] = []
+    paired: list[dict[str, Any]] = []
     for target in sorted(source_ids, key=lambda x: int(x) if x.isdecimal() else 0)[:4]:
-        picked = [
+        target_rows = [
             w for w in (ledger.get("witnesses") or [])
             if isinstance(w, Mapping) and str(w.get("entity")) == target
+            and w.get("clock_basis") == "source"
             and w.get("event_class") in (
-                "journal_source_switch_on", "journal_source_switch_off",
-                "issued_on", "issued_off", "issued_setlevel")
+                "journal_source_switch_on", "journal_source_switch_off")
         ]
-        for row in picked[:3]:
+        for state in ("on", "off"):
+            row = next((r for r in target_rows
+                        if r.get("event_class") == "journal_source_switch_" + state), None)
+            if row is None:
+                continue
             examples.append({
                 "id": row["witness_id"], "device_id": row["entity"],
-                "event_class": row["event_class"], "clock_basis":
-                    row["clock_basis"],
+                "event_class": row["event_class"], "clock_basis": row["clock_basis"],
             })
-    if not examples:
+            paired.append({
+                "kind": "reported_switch_state", "device_id": row["entity"],
+                "state": state, "witness_ids": [row["witness_id"]],
+            })
+    if not paired:
         return ""
     sample = {
         "schema": "homebrain-claims.v1",
         "claims": [
-            {"kind": "reported_switch_state",
-             "device_id": examples[0]["device_id"], "state": (
-                 "on" if examples[0]["event_class"].endswith("_on") else "off"),
-             "witness_ids": [examples[0]["id"]]},
+            *paired[:4],
+            {"kind": "upstream_cause_unverified",
+             "device_id": paired[0]["device_id"], "witness_ids": []},
         ],
     }
     # Final synthesis receives the same source-qualified witness IDs as the
@@ -79,11 +87,19 @@ def render_shadow_claim_pilot(
     )
     return (
         preamble
-        + "ONLY, legacy safety digest will still control publication): "
+        + "ONLY; any unsupported or incomplete claim keeps the legacy safety digest): "
         + directive
         + "fenced code block with language homebrain-claims containing JSON "
           "schema homebrain-claims.v1 and at most 8 typed claims. "
           "Use only provided verified witness IDs and exact device IDs. "
+          "Include at least one source-timed ON and OFF state claim for "
+          "EACH target when both witnesses exist, plus one "
+          "upstream_cause_unverified claim with no witnesses. This is "
+          "the minimum coverage for the shorter claim-guided answer; "
+          "when a source witness is missing, include only available "
+          "claims and allow the safe fallback. Never fabricate missing "
+          "events or use collector-only receptions as source witnesses. "
+          "Any invalid extra claim rejects publication. "
           "Supported: reported_switch_state (state on/off, 1 matching source "
           "witness), hubitat_issued_command (command on/off/setlevel, app_id, "
           "1 matching command witness), matched_hubitat_on_command "
@@ -92,8 +108,11 @@ def render_shadow_claim_pilot(
           "Missing history, a later setLevel, a notified app and input "
           "reception cannot prove the original initiator. "
           "Do not perform extra tool calls to fill optional metadata. "
-          "Natural-language reasoning comes first and remains subject to "
-          "the existing safety finalizer. "
+          "Natural-language reasoning comes first, but its free-form "
+          "sentences are not certified by these machine claims. The safe "
+          "publisher can only use validated claim selections to assemble "
+          "natural-language evidence; your unsupported prose is never "
+          "automatically approved. "
           "Witness examples: "
         + json.dumps(examples[:12], ensure_ascii=True,
                      separators=(",", ":"))[:1650]

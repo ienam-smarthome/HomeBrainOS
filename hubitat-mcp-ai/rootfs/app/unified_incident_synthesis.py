@@ -13,6 +13,9 @@ import re
 from typing import Any, Mapping
 
 from unified_incident_digest import source_incident_digest
+from causal_claim_publication import (
+    claim_guided_incident_answer, source_verified_incident_brief,
+)
 from causal_claim_attestation import (
     extract_claim_envelope, validate_claim_envelope,
 )
@@ -229,6 +232,8 @@ def _record_publication_shadow(
     analysis = publication_shadow_assessment(draft, facts)
     increment_active_metric("v3_shadow_publications_seen")
     actions = {
+        "claim_guided": "v3_claim_guided_publications",
+        "verified_brief": "v3_source_brief_publications",
         "digest": "v3_shadow_legacy_digest_replaced",
         "ledger": "v3_shadow_legacy_ledger_replaced",
         "preserved": "v3_shadow_legacy_draft_preserved",
@@ -272,6 +277,18 @@ def _record_publication_shadow(
             if result["rejected"]:
                 increment_active_metric(
                     "v3_claim_rejected", min(32, result["rejected"]))
+            # Telemetry may report allowlisted validation *categories*,
+            # never model text, event IDs, times, or witness identifiers.
+            allowed_reasons = {
+                "malformed_envelope", "unknown_claim_kind", "missing_witness",
+                "wrong_witness_role", "target_mismatch", "state_mismatch",
+                "app_mismatch", "clock_unverified",
+                "command_pair_not_attested", "unknown_target",
+                "unsupported_unverified_claim", "claim_limit_exceeded",
+            }
+            for reason in result.get("reasons") or []:
+                if reason in allowed_reasons:
+                    increment_active_metric("v3_claim_reason_" + reason)
     if analysis["native_history_gap"]:
         increment_active_metric("v3_shadow_history_gap")
     if analysis["source_contradiction_flag_count"]:
@@ -295,6 +312,24 @@ def reconcile_ledger_if_needed(
     # now support a concise, deduplicated, causal-first digest. This is
     # still the original agent's final safety boundary, not a V2 planner.
     if gaps and int(facts.get("journal_source_observations") or 0) > 0:
+        # Publication uses selected *validated* witness claims to choose
+        # evidence-backed natural paragraphs. NEVER publish raw model prose:
+        # witness attestation does not semantically validate free text.
+        natural, status = claim_guided_incident_answer(original, facts)
+        if natural is not None:
+            _record_publication_shadow(original, facts, "claim_guided")
+            return natural, True
+        if status != "not_eligible":
+            from request_metrics import increment_active_metric
+            increment_active_metric("v3_claim_guided_fallback")
+        # A rejected or absent model envelope cannot approve *any* raw
+        # prose. When an independently complete source+reception packet can
+        # stand alone, use a shorter source-only explanation. Otherwise
+        # retain the old fully qualified, longer evidence digest.
+        brief = source_verified_incident_brief(facts)
+        if brief is not None:
+            _record_publication_shadow(original, facts, "verified_brief")
+            return brief, True
         digest = source_incident_digest(facts)
         if digest:
             _record_publication_shadow(original, facts, "digest")
