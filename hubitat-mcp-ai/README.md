@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.298**.
+Current add-on version: **0.18.299**.
+
+**Stage 6.4 independent decision vs ledger validation:** Cloud-plan decoding now validates only the machine-action READ/STOP and bounded known source IDs as mandatory. A missing/inconsistent optional source-value ledger remains visibly incomplete, without falsely certifying plan quality or silently selecting gold evidence. Unsafe actions and contradictory STOP still fail, with safe diagnostic error categories. No retry, additional cloud requests, production publisher or hub changes. [Release notes](CHANGELOG-0.18.299.md).
 
 **Stage 6.3 investigation completeness:** The synthetic adaptive cloud pilot now asks Gemma to maintain unresolved investigative questions and assess every unread source for material value before stopping. An internally contradictory STOP is rejected, while an apparently coherent but incomplete STOP remains visible against independently withheld evidence labels. This remains an evaluation-only feature; no production publisher, model-routing or live-device changes. [Release notes](CHANGELOG-0.18.298.md).
 
