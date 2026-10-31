@@ -224,3 +224,22 @@ def test_input_receipts_unchanged_and_deterministic_scores():
     assert cases == before
     assert first == second
     assert first["total_invalid_or_unauthorized_stage3_offers"] == 0
+
+
+@pytest.mark.parametrize("bad_apps", [42, "not-a-list", {"appId": "9"}, True])
+def test_malformed_dependency_metadata_cannot_crash_or_attest_app(bad_apps):
+    receipts = [named_lookup("721", "Freezer"),
+                {"tool": "hub_read_apps_code",
+                 "sub_tool": "hub_list_device_dependents",
+                 "success": True, "effect": "read",
+                 "arguments": {"args": {"deviceId": "721"}},
+                 "details": {"deviceId": "721", "appsUsing": bad_apps}}]
+    packet = build_stage3_read_frontier(
+        receipts, available_read_tools=CATALOG,
+        model_proposals=[candidate("hub_get_app_config", appId="9"),
+                         candidate("hub_list_device_events", deviceId="721",
+                                   since="2026-10-30T14:00:00Z",
+                                   until="2026-10-30T15:00:00Z")])
+    assert packet["candidate_count"] == 1
+    assert packet["candidate_reads"][0]["leaf"] == "hub_list_device_events"
+    assert packet["rejected_candidate_counts"]["identifier-not-source-attested"] == 1
