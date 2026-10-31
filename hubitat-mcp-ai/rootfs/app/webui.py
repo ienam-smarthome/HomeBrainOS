@@ -737,11 +737,15 @@ document.getElementById('runStage6').onclick=async()=>{
       'Relevant sources examined: '+data.relevant_source_recall+
       ' · Irrelevant sources: '+data.irrelevant_sources_selected+
       ' · Expected finding-type coverage: '+data.expected_finding_type_coverage+
-      ' · Unsupported sentence citations: '+data.unsupported_typed_sentence_citations+
-      ' (high risk: '+data.high_risk_unsupported_sentences+').';out.append(metrics);
+      ' · Source-type mismatches: '+data.source_type_mismatches+
+      ' · Other unsupported source types: '+data.unmatched_source_types_other+
+      ' (high risk: '+data.high_risk_unsupported_sentences+')'+
+      ' · Cited source-value atoms: '+data.source_value_atoms_verified+
+      ' matched / '+data.source_value_atoms_mismatched+' mismatched.';out.append(metrics);
     const stop=document.createElement('p');stop.textContent=
       'Gemma examined '+data.requested_source_reads+' additional records; stopped: '+
-      data.stop_reason.replace(/_/g,' ')+(data.premature_stop_missing_relevant_sources?' · Some reference-relevant evidence was not inspected.':'');
+      data.stop_reason.replace(/_/g,' ')+(data.premature_stop_missing_relevant_sources?' · Some reference-relevant evidence was not inspected.':'')+
+      (data.model_stop_justification?' · Model reason: '+data.model_stop_justification:'');
     out.append(stop);
     const details=document.createElement('details');
     const summary=document.createElement('summary');summary.textContent='Read sequence and sentence-level source checks';details.append(summary);
@@ -752,8 +756,15 @@ document.getElementById('runStage6').onclick=async()=>{
     }
     for(const sent of data.sentence_citation_checks||[]){
       const line=document.createElement('p');
-      line.textContent=(sent.typed_source_supported?'✓ Source type supported: ':'✕ Unsupported type/citation: ')+sent.kind.replace(/_/g,' ')+
-        ' ['+sent.evidence_ids.join(', ')+'] · '+sent.text;details.append(line);
+      const verdict=sent.typed_source_supported?'✓ Source type matches: ':
+        sent.source_type_mismatch?'△ Source label mismatch (not a proven false fact): ':
+        '✕ Citation type unsupported: ';
+      const atoms=(sent.atomic_source_value_checks||[]).map(a=>
+        (a.exact_source_value_match?'✓ ':'✕ ')+a.record_id+'.'+a.field).join(' · ');
+      line.textContent=verdict+sent.kind.replace(/_/g,' ')+
+        ' ['+sent.evidence_ids.join(', ')+'] · '+sent.text+
+        (atoms?' · Exact source-value checks: '+atoms:' · No source-value atoms checked');
+      details.append(line);
     }
     if(data.missing_expected_finding_types?.length){
       const missing=document.createElement('p');
@@ -765,7 +776,7 @@ document.getElementById('runStage6').onclick=async()=>{
     const next=document.createElement('p');
     next.textContent='AI-suggested next evidence (not verified): '+data.recommended_next_evidence;out.append(next);
     const warning=document.createElement('p');warning.className='stage5-note';
-    warning.textContent='These scores validate selected fictional records and model-declared sentence types. Hidden or multiple implications in prose are not certified. Human review remains necessary; this result cannot enable the production publisher.';
+    warning.textContent='A mismatched source type is not automatically a false fact. Exact atom checks compare model-supplied field/value assertions with cited records; they do NOT verify all wording or hidden implications. The model may still omit important evidence. Independent human review is needed; this cannot enable the production publisher.';
     out.append(warning);
   }catch(error){out.textContent='Stage 6 unavailable: '+error.message}
   finally{document.getElementById('stage6Consent').checked=false;b.dataset.running='no';stage6RefreshButton()}
