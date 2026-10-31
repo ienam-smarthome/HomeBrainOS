@@ -75,6 +75,7 @@ class RequestMetrics:
         "stage3_shadow_round_with_new_read",
         "stage3_shadow_round_with_exact_repeat",
         "stage3_shadow_observation_error",
+        "stage3_capture_round_observed", "stage3_capture_observation_error",
         "v3_claim_pilot_recovery_offered",
         "v3_claim_pilot_final_offered",
         "v3_claim_first_draft_present",
