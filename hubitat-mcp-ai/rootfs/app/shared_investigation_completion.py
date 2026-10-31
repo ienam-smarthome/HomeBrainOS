@@ -655,7 +655,23 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
         r"possible causes|different explanations|hypotheses)\b",
         str(request or ""),
     ))
-    if isinstance(proposed, list) and proposed and requested_hypotheses:
+    # When the publication boundary already produced a source-verified
+    # natural incident answer, never append a model-proposed checklist that
+    # marks every hypothesis unverified. Honor an explicit user request
+    # for comparison with a bounded source-derived contrast instead.
+    counters = metrics.get("counters") or {}
+    verified_incident_brief = bool(
+        counters.get("v3_source_brief_publications")
+        or counters.get("v3_claim_guided_publications")
+    )
+    if requested_hypotheses and verified_incident_brief:
+        from unified_investigation_bridge import collect_unified_evidence
+        from causal_source_alternatives import source_based_competing_explanations
+        source_facts = collect_unified_evidence(evidence, request)
+        source_comparison = source_based_competing_explanations(source_facts)
+        if source_comparison:
+            message += "\n\n" + source_comparison
+    elif isinstance(proposed, list) and proposed and requested_hypotheses:
         comparisons: list[str] = []
         for candidate in proposed[:3]:
             if not isinstance(candidate, dict):
