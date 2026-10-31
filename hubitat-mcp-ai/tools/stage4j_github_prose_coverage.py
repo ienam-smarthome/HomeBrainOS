@@ -105,31 +105,63 @@ def _synthetic_prose_cases() -> list[dict]:
 
 
 def _json_schema(packet: dict) -> dict:
-    ids = [f["fact_id"] for f in packet["facts"]]
+    """Constrain ATOMIC SHAPES, never choose which assertions are true.
+
+    Ollama's JSON-schema output avoids malformed role/ref cardinalities
+    observed in the first actual 3B run. Each branch permits both proven
+    and unproven semantic roles. The model still decides the roles.
+    """
+    facts = packet["facts"]
+    ids = [f["fact_id"] for f in facts]
     if not 1 <= len(ids) <= 8 or len(ids) != len(set(ids)):
         raise ValueError("unbounded synthetic IDs")
+    events = [f["fact_id"] for f in facts
+              if f["kind"] in ("issued_command", "reported_state", "input_report")]
+    gaps = [f["fact_id"] for f in facts if f["kind"] == "coverage_limit"]
+    issuer = [f["fact_id"] for f in facts
+              if f["kind"] in ("issued_command", "reported_state", "input_report")
+              and isinstance(f.get("issuer_app_id"), str)
+              and bool(f["issuer_app_id"])]
+    branches = []
+
+    def add(prop: str, count: int, eligible: list[str], *,
+            limits: bool = False) -> None:
+        if count and len(eligible) < count:
+            return
+        branches.append({
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "proposition": {"const": prop},
+                "fact_ids": {
+                    "type": "array", "minItems": count, "maxItems": count,
+                    "uniqueItems": True,
+                    "items": {"type": "string", "enum": eligible or ids},
+                },
+                "limit": (
+                    {"type": "string", "enum": list(_LIMITS)} if limits
+                    else {"type": "null"}
+                ),
+            },
+            "required": ["proposition", "fact_ids", "limit"],
+        })
+
+    add("recorded_event", 1, events)
+    add("recorded_issuer", 1, issuer)
+    add("recorded_clock", 1, events)
+    add("recorded_gap", 1, gaps)
+    add("packet_limit", 0, ids, limits=True)
+    add("upstream_cause", 2, ids)
+    add("physical_effect", 1, events)
+    add("absence_of_event", 1, ids)
+    add("complete_history", 1, ids)
     return {
         "type": "object", "additionalProperties": False,
         "properties": {
             "schema": {"const": "homebrain-stage4j-atom-extraction.v1"},
             "atoms": {
                 "type": "array", "minItems": 0, "maxItems": 5,
-                "items": {
-                    "type": "object", "additionalProperties": False,
-                    "properties": {
-                        "proposition": {"type": "string", "enum": list(_PROPS)},
-                        "fact_ids": {
-                            "type": "array", "minItems": 0, "maxItems": 2,
-                            "uniqueItems": True,
-                            "items": {"type": "string", "enum": ids},
-                        },
-                        "limit": {"anyOf": [
-                            {"type": "string", "enum": list(_LIMITS)},
-                            {"type": "null"},
-                        ]},
-                    },
-                    "required": ["proposition", "fact_ids", "limit"],
-                },
+                "uniqueItems": True,
+                "items": {"anyOf": branches},
             },
         },
         "required": ["schema", "atoms"],
