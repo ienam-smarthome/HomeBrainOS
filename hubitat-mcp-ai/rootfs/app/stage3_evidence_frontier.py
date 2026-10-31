@@ -35,7 +35,10 @@ def _id(value: Any) -> str | None:
     if type(value) not in (str, int):
         return None
     value = str(value)
-    return str(int(value)) if value.isdecimal() and 0 < int(value) else None
+    if not 0 < len(value) <= 16 or not value.isdecimal():
+        return None
+    number = int(value)
+    return str(number) if number > 0 else None
 
 
 def _args(receipt: Mapping[str, Any]) -> Mapping[str, Any]:
