@@ -863,6 +863,91 @@ document.getElementById('runStage6').onclick=async()=>{
     const warning=document.createElement('p');warning.className='stage5-note';
     warning.textContent='A mismatched source type is not automatically a false fact. Exact atom checks compare model-supplied field/value assertions with cited records; they do NOT verify all wording or hidden implications. The model may still omit important evidence. Independent human review is needed; this cannot enable the production publisher.';
     out.append(warning);
+    // Stage 7: independent, *manual* full-prose review, never model-certified.
+    // All source records are constructed fiction and the full corpus is
+    // revealed only AFTER the model has chosen sources and authored its answer.
+    const reviewPacket=data.independent_review_packet;
+    if(reviewPacket?.schema==='homebrain-stage7-review.v1'){
+      const panel=document.createElement('details');
+      const panelTitle=document.createElement('summary');
+      panelTitle.textContent='Stage 7 · Independently review every sentence';
+      panel.append(panelTitle);
+      const notice=document.createElement('p');notice.className='stage5-note';
+      notice.textContent='Read the complete fictional source records, including evidence Gemma skipped. Decide whether EACH sentence is supported and whether the whole explanation omits important facts. These are your judgments, not automatic AI-verification scores. Nothing is saved or uploaded.';
+      panel.append(notice);
+      const sourceDetail=document.createElement('details');
+      const sourceSummary=document.createElement('summary');
+      sourceSummary.textContent='Full source packet (including unread fictional records)';
+      sourceDetail.append(sourceSummary);
+      for(const source of reviewPacket.source_records||[]){
+        const header=document.createElement('p');
+        header.textContent=(source.was_selected_by_model?'Read by Gemma: ':'Not read by Gemma: ')+source.source_id+' · '+source.title;
+        sourceDetail.append(header);
+        const sourceText=document.createElement('pre');
+        sourceText.style.whiteSpace='pre-wrap';sourceText.style.overflowWrap='anywhere';
+        sourceText.textContent=JSON.stringify(source.records,null,2);
+        sourceDetail.append(sourceText);
+      }
+      panel.append(sourceDetail);
+      const ratingControls=[];
+      const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
+        ['partially_supported','Partially supported'],
+        ['unsupported','Unsupported'],['uncertain','Unclear / evidence missing']];
+      for(const sentence of reviewPacket.author_sentences||[]){
+        const group=document.createElement('div');group.className='stage5-review';
+        const sentenceText=document.createElement('p');
+        sentenceText.textContent='Sentence '+sentence.number+': '+sentence.text;
+        group.append(sentenceText);
+        const label=document.createElement('label');label.textContent='Your factual assessment: ';
+        const rating=document.createElement('select');
+        rating.setAttribute('aria-label','Sentence '+sentence.number+' factual review');
+        for(const [v,t] of choices){
+          const opt=document.createElement('option');opt.value=v;opt.textContent=t;rating.append(opt);
+        }
+        label.append(rating);group.append(label);panel.append(group);
+        ratingControls.push({number:sentence.number,element:rating});
+      }
+      const overall=document.createElement('div');overall.className='stage5-review';
+      const fields=[
+        ['Overall completeness', [['not_reviewed','Not reviewed'],['adequate','Adequate'],['important_omissions','Important omissions'],['insufficient_information','Insufficient source coverage']]],
+        ['Causal caution', [['not_reviewed','Not reviewed'],['appropriate','Appropriately cautious'],['overclaims','Overconfident causation'],['uncertain','Uncertain']]],
+      ];
+      const overallControls=[];
+      for(const [name,options] of fields){
+        const label=document.createElement('label');label.textContent=name+': ';
+        const select=document.createElement('select');select.setAttribute('aria-label',name);
+        for(const [value,title] of options){
+          const opt=document.createElement('option');opt.value=value;opt.textContent=title;select.append(opt);
+        }
+        label.append(select);overall.append(label);
+        overallControls.push(select);
+      }
+      panel.append(overall);
+      const copy=document.createElement('button');copy.type='button';
+      copy.className='secondary copy-button';
+      copy.textContent='Copy independent review packet';
+      copy.onclick=()=>{
+        const review={
+          per_sentence:ratingControls.map(item=>({
+            sentence_number:item.number,reviewer_verdict:item.element.value
+          })),
+          overall_completeness:overallControls[0].value,
+          causal_caution:overallControls[1].value,
+          independently_reviewed_by_human:ratingControls.every(item=>
+            item.element.value!=='not_reviewed')&&
+            overallControls.every(item=>item.value!=='not_reviewed'),
+        };
+        const exportText=JSON.stringify({
+          fictional_evidence_and_model_answer:reviewPacket,
+          optional_manual_review:review,
+          automatic_semantic_certification:false,
+          production_publication_approval:false,
+        },null,2);
+        void copyText(exportText,copy,'Copy independent review packet');
+      };
+      panel.append(copy);
+      out.append(panel);
+    }
   }catch(error){out.textContent='Stage 6 unavailable: '+error.message}
   finally{document.getElementById('stage6Consent').checked=false;b.dataset.running='no';stage6RefreshButton()}
 };

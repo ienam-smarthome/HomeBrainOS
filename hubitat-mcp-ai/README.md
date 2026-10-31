@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.301**.
+Current add-on version: **0.18.302**.
+
+**Stage 7 manual independent prose review:** Each successful synthetic Stage 6 investigation now returns a bounded, source-complete fictional review packet, with selected and unselected records plus the model-authored sentences. The phone UI allows per-sentence human factual verdicts and overall completeness/causal-caution ratings, with an explicit copy-only export. No extra cloud inference, external automatic reviewer, production publisher or live device access. The packet is not automatic semantic certification. [Release notes](CHANGELOG-0.18.302.md).
 
 **Stage 6.6 final-answer diagnostics:** If Gemma completes fictional evidence-selection rounds but fails the strict final JSON/citation contract, the dashboard now shows a safe validation category and preserves only the completed synthetic source choices, reference-source recall and planning quality. No rejected AI prose is published and no extra cloud retries occur. [Release notes](CHANGELOG-0.18.301.md).
 
