@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.267**.
+Current add-on version: **0.18.268**.
+
+**V3 evidence-ranked upstream read frontier:** Once the same-collector evidence establishes a complete one-to-one input/actuator pattern, the original AI investigator now receives a model-selectable suggestion to inspect that verified input’s Hubitat app dependents before lower-value repeat reads. An independently attested shared current app can become the next config lead. No new gateway permissions, host-executed reads, forced controller attribution or publication change. [Release notes](CHANGELOG-0.18.268.md).
 
 **V3 collector-reception integrity:** When independently source-verified light state has a matching collector copy, the historical investigation now compares sensor and light *reception times on the same collector* without fabricating a sensor source time. The digest identifies complete one-to-one reception patterns, separates full archive retrieval counts from compact receipt samples, and never sums overlapping per-query gap counts as distinct outages. No changes to tool permissions, publication boundary, or control actions. [Release notes](CHANGELOG-0.18.267.md).
 
