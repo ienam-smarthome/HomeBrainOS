@@ -143,8 +143,12 @@ def _discovered_ids(receipts: Sequence[Mapping[str, Any]]) -> tuple[set[str], se
                 devices.add(ident)
                 # A current dependency is an investigation lead, not an
                 # independently witnessed historical command.
-                for app in (detail.get("appsUsing") or [])[:60]:
-                    app_id = _id(app.get("appId") or app.get("id")) if isinstance(app, Mapping) else _id(app)
+                dependencies = detail.get("appsUsing")
+                if not isinstance(dependencies, list):
+                    dependencies = []
+                for app in dependencies[:60]:
+                    app_id = (_id(app.get("appId") or app.get("id"))
+                              if isinstance(app, Mapping) else _id(app))
                     if app_id:
                         apps.add(app_id)
     return devices, apps, command_apps
