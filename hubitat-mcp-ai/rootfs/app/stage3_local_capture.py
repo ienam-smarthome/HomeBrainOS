@@ -98,7 +98,7 @@ class LocalStage3FCapture:
         result = hmac.new(self._key, (kind + ":" + ident).encode(),
                           hashlib.sha256).digest()
         # Positive, <=16-digit numeric scope, stable ONLY for this session.
-        prefix = 1_000_000_000_000 if kind == "device" else 2_000_000_000_000
+        prefix = 10_000_000_000_000 if kind == "device" else 20_000_000_000_000
         return str(prefix + int.from_bytes(result[:5], "big"))
 
     def _window(self, start: str, end: str) -> tuple[str, str]:
