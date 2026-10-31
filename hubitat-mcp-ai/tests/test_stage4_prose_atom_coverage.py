@@ -120,7 +120,8 @@ def test_wrong_source_type_does_not_become_safe_prose():
         return response
     report = evaluate(cases, wrong)
     assert report["missed_high_risk_atoms"] == 1
-    assert report["extra_atoms"] == 1
+    assert report["invalid_responses"] == 1  # repeated source atom is rejected
+    assert report["extra_atoms"] == 0
     assert report["reference_annotations_externally_authenticated"] is False
 
 
@@ -230,7 +231,7 @@ def test_report_and_summary_never_expose_private_sentence_or_source_values():
     printed = json.dumps(result) + summary_markdown(result)
     for secret in ("SECRET-HOUSEHOLD-CONTENT", "Synthetic Controller",
                    "2026-01-01", '"101"', "f001", "boiler fired",
-                   "raw_sentence_text", "reference_atoms", "case_id", "entity_id"):
+                   "raw_sentence_text", "raw_reference_atom_payload", "case_id", "entity_id"):
         assert secret not in printed
     assert not result["production_publisher_approval"]
 
