@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.282**.
+Current add-on version: **0.18.283**.
+
+**Stage 4C consent-gated local-model evaluation (source only):** Adds an opt-in localhost Ollama CLI that can run real, distinct semantic reviewer models on constructed or privately supplied offline cases, with optional separate model-authored answers. Adjudicated reference scores stay separate from unscored generated drafts; no active publisher change. [Release notes](CHANGELOG-0.18.283.md).
 
 **Stage 4B semantic sufficiency reviews (offline only):** Adds a domain-general two-reviewer sentence-entailment protocol and independently labelled false-acceptance/false-rejection benchmark. Reviewer agreement is not proof of semantic truth; authored prose remains ineligible for active publication. [Release notes](CHANGELOG-0.18.282.md).
 
