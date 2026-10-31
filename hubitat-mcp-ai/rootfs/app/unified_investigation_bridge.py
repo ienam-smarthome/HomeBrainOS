@@ -773,6 +773,19 @@ def collect_unified_evidence(
     # answer view. Device 7895 was correctly investigated but prior receipt
     # projections retained only numeric IDs and current app relationships.
     from causal_incident_narrative import safe_device_label
+    archived_input_ids = {
+        str(row["device_id"]) for row in archive_sample_sizes
+        if int(row.get("retrieved_observations") or 0) > 0
+    }
+    native_input_scopes = {
+        str(_args(r).get("deviceId") or "")
+        for r in receipts[:160]
+        if (r.get("sub_tool") == "hub_list_device_events"
+            and r.get("success") is True
+            and r.get("mutates") is not True
+            and r.get("effect") in (None, "read")
+            and r.get("supports_live_claim") is not False)
+    }
     input_device_labels: dict[str, str] = {}
     for receipt in receipts[:160]:
         if (receipt.get("success") is not True
@@ -785,7 +798,8 @@ def collect_unified_evidence(
             continue
         ident = str(args.get("deviceId") or "")
         if (not ident.isdecimal() or ident in targets
-                or ident not in input_history_ids
+                or ident not in archived_input_ids
+                or ident not in native_input_scopes
                 or ident != str(details.get("deviceId") or "")):
             continue
         raw = details.get("deviceName")
