@@ -91,8 +91,15 @@ def evaluate_question_value_ledger(
     chosen = plan["source_id"]
     # Reject an explicit STOP when ANY safely parsed entry admits the
     # existence of an unread *material* source, including partial ledgers.
-    stop_conflict = action == "stop" and any(
-        value == 2 for value in valid_ranks.values())
+    stop_conflict = action == "stop" and (
+        any(value == 2 for value in valid_ranks.values())
+        or (isinstance(evaluations, list) and any(
+            isinstance(item, dict)
+            and type(item.get("source_id")) is str
+            and item.get("source_id") in remaining
+            and item.get("gain") == "material"
+            for item in evaluations))
+    )
     if stop_conflict:
         issues.add("self_contradictory_stop")
     max_gain = max(valid_ranks.values(), default=None)
