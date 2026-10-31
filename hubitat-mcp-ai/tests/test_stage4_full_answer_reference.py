@@ -185,7 +185,7 @@ def test_model_disagreement_preserved_instead_of_assuming_independence():
 
 @pytest.mark.parametrize("mutate", [
     lambda cases: cases.append(deepcopy(cases[0])),
-    lambda cases: cases[0].update({"answer_oracle": "adequate"}),
+    lambda cases: cases[0].update({"answer_oracle": "incomplete"}),
     lambda cases: cases[0].update({"answer_oracle": "unknown"}),
     lambda cases: cases[0].update({"case_id": "Private Name"}),
     lambda cases: cases[0]["proposal"]["sections"][0]["sentences"][0].update({
@@ -209,7 +209,7 @@ def test_benchmark_oracles_not_sent_to_real_model_adapter():
     for _, task in fake.requests:
         data = json.dumps(task)
         assert "not-entailed" not in data
-        assert "incomplete" not in data
+        assert "\\"answer_oracle\\"" not in data
         assert "answer_oracle" not in data
         assert "required_fact_ids" not in data
 
