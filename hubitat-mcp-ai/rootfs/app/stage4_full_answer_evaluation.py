@@ -206,9 +206,11 @@ def evaluate_stage4g_authored_answers(
             continue
         case_complete = True
         for sentence in request["sentences"]:
-            expected = {
-                sentence["sentence_id"]: frozenset(sentence["cited_fact_ids"])
-            }
+            # A reviewer receives ONE independently scoped sentence. The
+            # Stage 4E schema explicitly permits only s001, so reindex the
+            # isolated review ID; the author text and cited facts stay exact.
+            isolated = {**sentence, "sentence_id": "s001"}
+            expected = {"s001": frozenset(sentence["cited_fact_ids"])}
             votes = []
             for model in reviewer_models:
                 totals["review_calls_attempted"] += 1
@@ -216,7 +218,7 @@ def evaluate_stage4g_authored_answers(
                     reply = invoke(model, {
                         "task": "review",
                         "schema": "homebrain-stage4g-reviewer-request.v1",
-                        "sentences": [sentence],
+                        "sentences": [isolated],
                         "source_facts_may_be_truncated": bool(
                             case["packet"].get("facts_omitted")
                             or case["packet"].get("receipts_omitted")),
