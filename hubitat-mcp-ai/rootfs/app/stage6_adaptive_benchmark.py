@@ -19,6 +19,7 @@ from chat_transport import EmptyOllamaAssistantMessage
 from cloud_benchmark import BenchmarkError, benchmark_status
 from stage5_autonomous_benchmark import _json_object, _safe_cloud_error
 from stage65_question_value import evaluate_question_value_ledger
+from stage7_review_packet import build_review_packet
 from stage66_answer_diagnostics import (
     Stage6AnswerContractFailure, answer_failure_category,
     synthetic_planning_progress,
@@ -818,6 +819,7 @@ class Stage6Benchmark:
                 "uncertainties": answer["uncertainties"],
                 "recommended_next_evidence": answer["next_evidence"],
                 "synthetic_only": True, "no_hub_or_device_calls": True,
+                "independent_review_packet": build_review_packet(case_id, case, selected, answer),
                 **audit,
             }
 
