@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from causal_incident_narrative import verified_input_label
+
 
 def source_based_competing_explanations(facts: Mapping[str, Any] | None) -> str | None:
     if not isinstance(facts, Mapping):
@@ -25,6 +27,7 @@ def source_based_competing_explanations(facts: Mapping[str, Any] | None) -> str 
     if leader is None:
         return None
     lead_id = str(leader.get("input_id") or "")
+    leader_name = verified_input_label(facts, lead_id)
     candidates = [
         p for p in facts.get("archived_input_reception_patterns") or []
         if isinstance(p, Mapping)
@@ -53,28 +56,26 @@ def source_based_competing_explanations(facts: Mapping[str, Any] | None) -> str 
         ), {})
         returned = coverage.get("retrieved_observations")
         truncated = strongest_alt.get("input_sample_truncated") is True
+        alternative_name = verified_input_label(facts, ident)
         parts.append(
-            "Alternative input " + ident + " had " + str(matched) + "/"
-            + str(total) + " nearby active receptions in the archive's "
-              "mixed source/collector window, versus the complete "
-            + str(leader["matched_on"]) + "/" + str(leader["target_on_rows"])
-            + " same-collector reception pairing for input " + lead_id
-              # No direct probability comparison: asymmetric clocks/windows.
-            + ("; its retained sample has " + str(sample)
-               + " of " + str(returned)
-               + " returned rows, so incomplete coverage limits comparison"
+            "**Other sensors:** " + alternative_name
+            + " had activity near " + str(matched) + " of the "
+            + str(total) + " light-on events, compared with "
+            + str(leader["matched_on"]) + " of "
+            + str(leader["target_on_rows"]) + " for "
+            + leader_name + "."
+            + (" Only " + str(sample) + " of " + str(returned)
+               + " archived observations were retained in the comparison, "
+                 "so this alternative's history is incomplete."
                if truncated and type(returned) is int else
-               "; its own source-event order remains unverified")
-            + "."
+               " The timing evidence for this alternative is less complete.")
         )
     parts.append(
-        "An external bridge, manual interaction or hardware reset remains "
-        "an alternative only; no independently matched initiating command "
-        "or physical reset was established for the requested window. "
-        "The sensor correlation is stronger evidence for a motion-related "
-        "sequence, not for a specific issuing app."
+        "A manual switch, another automation or a bridge could still "
+        "explain the original command, but none was verified in the "
+        "available history."
     )
-    return "**Alternatives assessed:** " + " ".join(parts)
+    return "**Other explanations considered:** " + " ".join(parts)
 
 
 __all__ = ["source_based_competing_explanations"]
