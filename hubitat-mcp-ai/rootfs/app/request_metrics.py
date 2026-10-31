@@ -75,6 +75,7 @@ class RequestMetrics:
         "v3_claim_first_draft_present",
         "v3_claim_first_draft_missing",
         "v3_claim_guided_publications",
+        "v3_source_brief_publications",
         "v3_claim_guided_fallback",
         "v3_claim_reason_malformed_envelope",
         "v3_claim_reason_unknown_claim_kind",
