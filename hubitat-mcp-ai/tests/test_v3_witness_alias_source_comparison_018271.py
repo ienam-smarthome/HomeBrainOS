@@ -66,7 +66,7 @@ def test_aliases_are_rederived_after_renaming_and_never_cached_by_identity():
     e = aliased(f)
     assert validate_claim_envelope(e, f["v3_witness_ledger"])["valid"]
     text, status = claim_guided_incident_answer(draft(e), f)
-    assert status == "published" and "Input device 803" in text
+    assert status == "published" and "Motion sensor (device 803)" in text
     assert "7895" not in text
 
 
@@ -84,11 +84,11 @@ def test_verified_sensor_contrast_replaces_generic_hypothesis_checklist():
     f = facts()
     rendered = source_based_competing_explanations(f)
     assert rendered
-    assert rendered.startswith("**Alternatives assessed:**")
-    assert "Alternative input 202" in rendered
-    assert "complete 5/5 same-collector reception pairing" in rendered
-    assert "20 of 160 returned rows" in rendered
-    assert "issuing app" in rendered
+    assert rendered.startswith("**Other explanations considered:**")
+    assert "Motion sensor (device 202)" in rendered
+    assert "5 of 5 for Motion sensor (device 201)" in rendered
+    assert "20 of 160 archived observations" in rendered
+    assert "another automation or a bridge" in rendered
     assert "Competing explanations (provisional" not in rendered
 
 
@@ -118,7 +118,7 @@ def test_shared_completion_respects_explicit_comparison_with_verified_brief():
     )
     updated = apply_shared_investigation_completion(
         outcome, QUESTION + " Compare competing explanations.")
-    assert "**Alternatives assessed:**" in updated.message
+    assert "**Other explanations considered:**" in updated.message
     assert "Generic unverified reset theory" not in updated.message
     assert "**Competing explanations (provisional" not in updated.message
     assert updated.investigation_coverage["questionResolved"] is False
