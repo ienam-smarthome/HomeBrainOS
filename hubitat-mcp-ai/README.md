@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.277**.
+Current add-on version: **0.18.278**.
+
+**Stage 3D controlled offline model-call replay (no live calls):** Adds an independently scored pre-round replay of original model-shaped read proposals versus Stage 3A validated candidates. Uses six-domain constructed fixtures; does not claim observed live model improvements or enable any runtime planner. [Release notes](CHANGELOG-0.18.278.md).
 
 **Stage 3C passive model-loop observer (default OFF):** Adds only an explicit constructor opt-in observation mode with source-scoped, catalog-validated counts of the original model's suggested reads; no add-on switch exposes this mode or changes model/tool/publisher behaviour. [Release notes](CHANGELOG-0.18.277.md).
 
