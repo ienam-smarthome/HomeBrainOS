@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.290**.
+Current add-on version: **0.18.291**.
+
+**Stage 4K actual matched 3B-versus-7B semantic extraction (offline only):** Compares Qwen2.5 3B and 7B on the identical Stage 4J prompt, JSON schema, source packets and withheld reference labels, across twelve baseline and eight held-out synthetic sentences. Reports misses and extra claims separately with no live integration. [Release notes](CHANGELOG-0.18.291.md).
 
 **Stage 4J real prose-to-atom coverage evaluation (source only):** Tests whether Qwen2.5 3B extracts all implied factual assertions, including unsupported causes, from constructed natural-language sentences, then independently checks every extracted atomic claim against Stage 4I. Full source coverage does not certify arbitrary prose or enable publication. [Release notes](CHANGELOG-0.18.290.md).
 
