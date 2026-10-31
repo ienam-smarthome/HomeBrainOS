@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.299**.
+Current add-on version: **0.18.300**.
+
+**Stage 6.5 question-value investigation:** The synthetic cloud planner now links outstanding incident questions to each unread source, ranks its expected information gain and audits whether the chosen source matches the model's own ranking. It continues to separate model-authored rankings from independently withheld relevance scores; no source is silently substituted and no production publisher is enabled. [Release notes](CHANGELOG-0.18.300.md).
 
 **Stage 6.4 independent decision vs ledger validation:** Cloud-plan decoding now validates only the machine-action READ/STOP and bounded known source IDs as mandatory. A missing/inconsistent optional source-value ledger remains visibly incomplete, without falsely certifying plan quality or silently selecting gold evidence. Unsafe actions and contradictory STOP still fail, with safe diagnostic error categories. No retry, additional cloud requests, production publisher or hub changes. [Release notes](CHANGELOG-0.18.299.md).
 

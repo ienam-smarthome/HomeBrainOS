@@ -755,13 +755,20 @@ document.getElementById('runStage6').onclick=async()=>{
        'Model evaluated every unread source against the original question.':
        'Legacy/incomplete source-value ledger; stopping quality NOT established.')+
       ' Open questions after the last plan: '+(data.stop_unresolved_questions||[]).length+
-      '. Assessments are model-authored, not independently proven.';
+      '. Source gain rankings and question status are model-authored, not independently proven.';
     out.append(coverage);
     const planQuality=document.createElement('p');
     planQuality.textContent=data.planning_contract_complete?
       'Planning contract: complete and structurally consistent.':
       'Planning contract: incomplete or unaudited; do not interpret source decisions as fully reviewed. '+(data.planning_contract_issues||[]).join(', ');
     out.append(planQuality);
+    const questionQuality=document.createElement('p');
+    questionQuality.textContent='Question/value audit: '+
+      (data.model_question_value_audit?'Complete model-authored question-linked source appraisal.':
+       'Incomplete or legacy question-linked appraisal; not certified.')+
+      ' Inconsistent source-rank choices: '+data.model_ranking_consistency_failures+
+      '. Ranking accuracy is assessed separately by host-held source relevance.';
+    out.append(questionQuality);
     const sourceLedger=document.createElement('details');
     const sourceLedgerTitle=document.createElement('summary');
     sourceLedgerTitle.textContent='Unanswered questions and per-source value assessments';
@@ -772,12 +779,26 @@ document.getElementById('runStage6').onclick=async()=>{
         ' · '+(review.source_value_coverage_complete?'Every unread title assessed':'Incomplete/legacy source-value audit')+
         (review.planning_contract_issues?.length?' · Audit issues: '+review.planning_contract_issues.join(', '):'');
       sourceLedger.append(step);
-      for(const question of review.open_questions||[]){
-        const q=document.createElement('p');q.textContent='Open question: '+question;sourceLedger.append(q);
+      const questionReview=review.question_value_review||{};
+      for(const question of questionReview.model_questions||[]){
+        const q=document.createElement('p');
+        q.textContent=question.id+' · '+question.status+' · '+question.question;sourceLedger.append(q);
+      }
+      if(!questionReview.model_questions?.length){
+        for(const question of review.open_questions||[]){
+          const q=document.createElement('p');q.textContent='Open question: '+question;sourceLedger.append(q);
+        }
+      }
+      if(questionReview.model_ranking_consistent===false){
+        const risk=document.createElement('p');
+        risk.textContent='Model selected a source that its own information-gain ranking placed below another unread source.';
+        sourceLedger.append(risk);
       }
       for(const item of review.model_assessed_sources||[]){
         const row=document.createElement('p');
-        row.textContent=(item.could_change_answer?'Potentially useful: ':'Assessed low value: ')+
+        row.textContent=(item.information_gain?
+          'Model gain '+item.information_gain+' for '+(item.question_ids||[]).join(', ')+': ':
+          (item.could_change_answer?'Potentially useful: ':'Assessed low value: '))+
           item.source_id+' · '+item.reason;
         sourceLedger.append(row);
       }
