@@ -203,3 +203,67 @@ def test_active_production_modules_do_not_import_stage4e():
                  "causal_claim_publication.py", "final_answer_coordinator.py"):
         source = (ROOT / "rootfs/app" / name).read_text(encoding="utf8")
         assert "stage4e_github_actual_models" not in source
+
+
+
+def test_structured_ollama_schema_requires_complete_source_cited_review():
+    from stage4c_local_model_eval import _stage4e_exact_review_schema
+    schema = _stage4e_exact_review_schema([
+        {"sentence_id": "s001", "cited_fact_ids": ["f003"]}
+    ])
+    choices = schema["properties"]["assessments"]["items"]["anyOf"]
+    assert schema["properties"]["schema"]["const"] == (
+        "homebrain-stage4b-semantic-review.v1")
+    assert choices[0]["properties"]["verdict"]["const"] == "entailed"
+    assert choices[0]["properties"]["supporting_fact_ids"]["const"] == ["f003"]
+    assert choices[1]["properties"]["verdict"]["enum"] == [
+        "contradicted", "insufficient"]
+    assert choices[1]["properties"]["supporting_fact_ids"]["const"] == []
+    assert "model_verdict" not in json.dumps(schema)
+    for bad in ([], [{ "sentence_id": "s099", "cited_fact_ids": ["f003"] }],
+                [{"sentence_id": "s001", "cited_fact_ids": []}]):
+        with pytest.raises(ValueError):
+            _stage4e_exact_review_schema(bad)
+
+
+def test_stage4e_sends_structured_schema_to_real_loopback_protocol():
+    from stage4c_local_model_eval import LoopbackOllama
+    class Response:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return None
+        def read(self, limit):
+            return json.dumps({
+                "message": {"content": json.dumps({
+                    "schema": "homebrain-stage4b-semantic-review.v1",
+                    "assessments": [{"sentence_id": "s001",
+                                     "verdict": "insufficient",
+                                     "supporting_fact_ids": []}]
+                })}
+            }).encode()
+    class Open:
+        def open(self, request, timeout):
+            assert request.full_url == "http://127.0.0.1:11434/api/chat"
+            payload = json.loads(request.data)
+            fmt = payload["format"]
+            assert isinstance(fmt, dict)
+            assert fmt["properties"]["assessments"]["minItems"] == 1
+            assert fmt["properties"]["assessments"]["maxItems"] == 1
+            # The transport only imposes structural grammar. The chosen
+            # verdict still belongs to the actual model, not the caller.
+            assert {choice for choice in (
+                fmt["properties"]["assessments"]["items"]["anyOf"][0]
+                ["properties"]["verdict"]["const"],)} == {"entailed"}
+            return Response()
+    client = LoopbackOllama(structured_review_schema=True)
+    client._opener = Open()
+    reply = client("qwen2.5:0.5b", {
+        "task": "review", "instructions": "Evaluate against cited source only.",
+        "sentences": [{"sentence_id": "s001", "cited_fact_ids": ["f003"],
+                       "text": "The boiler definitely started."}],
+        "source_facts_may_be_truncated": False,
+    })
+    assert reply["assessments"][0]["verdict"] == "insufficient"
+    assert client.attempted == 1 and client.succeeded == 1
