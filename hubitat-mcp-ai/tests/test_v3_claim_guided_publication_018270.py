@@ -7,7 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
 from causal_claim_attestation import validate_claim_envelope
 from causal_claim_pilot import render_shadow_claim_pilot
-from causal_claim_publication import claim_guided_incident_answer
+from causal_claim_publication import (
+    claim_guided_incident_answer, source_verified_incident_brief,
+)
 from unified_incident_synthesis import reconcile_ledger_if_needed
 from unified_investigation_bridge import collect_unified_evidence
 from test_v3_reception_evidence_018267 import replay, QUESTION
@@ -71,8 +73,26 @@ def test_bad_issuer_is_rejected_and_original_digest_survives():
     raw = draft(e)
     assert claim_guided_incident_answer(raw, f) == (None, "invalid_envelope")
     published, changed = reconcile_ledger_if_needed(raw, f)
-    assert changed is True and published.startswith("**Strongest observed pattern:**")
+    assert changed is True and published.startswith("**Most likely mechanism:**")
+    assert "Input device 201" in published
+    assert "### Reconstructed source-timed sequence" not in published
     assert "DEFINITELY" not in published
+
+
+def test_invalid_model_claims_still_allow_safe_source_only_short_brief():
+    f = facts()
+    brief = source_verified_incident_brief(f)
+    assert brief and brief.startswith("**Most likely mechanism:**")
+    raw = "Invented physical confirmation without any claim envelope."
+    published, changed = reconcile_ledger_if_needed(raw, f)
+    assert changed is True and published == brief
+    assert "Invented physical confirmation" not in published
+    no_source = copy.deepcopy(f)
+    no_source["same_receiver_evidence"]["candidates"] = []
+    assert source_verified_incident_brief(no_source) is None
+    published, changed = reconcile_ledger_if_needed(raw, no_source)
+    assert changed is True
+    assert published.startswith("**What happened:**")
 
 
 def test_missing_envelope_and_partial_coverage_fail_closed():
