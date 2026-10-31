@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.276**.
+Current add-on version: **0.18.277**.
+
+**Stage 3C passive model-loop observer (default OFF):** Adds only an explicit constructor opt-in observation mode with source-scoped, catalog-validated counts of the original model's suggested reads; no add-on switch exposes this mode or changes model/tool/publisher behaviour. [Release notes](CHANGELOG-0.18.277.md).
 
 **Stage 3B offline cross-domain planning validation (shadow-only):** Adds independent-oracle scorecards and diverse lighting/heating/fan/power/history/security fixtures to assess Stage 3A's next-read usefulness, duplicate suppression and safety, without any live integration. [Release notes](CHANGELOG-0.18.276.md).
 
