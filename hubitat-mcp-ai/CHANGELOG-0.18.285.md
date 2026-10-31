@@ -7,8 +7,9 @@
   downloaded Qwen2.5 0.5B and Llama 3.2 1B Ollama models.
 - Invokes actual model semantic reviews of **eight constructed source
   scenarios** (16 calls), using Stage 4C's loopback-only adapter.
-  Ollama cloud inference is explicitly disabled and the workflow
-  has repository contents READ permission and no secrets.
+  Ollama cloud inference is explicitly disabled; the Stage 4E-only
+  reviewer uses JSON-schema constrained output (no fabricated verdicts),
+  with repository contents READ permission and no secrets.
 - Adds `tools/stage4e_github_actual_models.py` to enforce explicit
   synthetic-only acknowledgement, GitHub-only environment, output
   bounds and aggregate GitHub Actions summary.
