@@ -19,6 +19,10 @@ from chat_transport import EmptyOllamaAssistantMessage
 from cloud_benchmark import BenchmarkError, benchmark_status
 from stage5_autonomous_benchmark import _json_object, _safe_cloud_error
 from stage65_question_value import evaluate_question_value_ledger
+from stage66_answer_diagnostics import (
+    Stage6AnswerContractFailure, answer_failure_category,
+    synthetic_planning_progress,
+)
 
 _MAX_READS = 3
 _MAX_CLOUD = 4
@@ -762,11 +766,26 @@ class Stage6Benchmark:
                 record for group in gathered for record in group["records"]
             ]
             try:
-                answer = _validate_answer(
-                    await self._call(transport, answer_messages), records)
-                audit = _audit(case, selected, answer)
+                final_raw = await self._call(transport, answer_messages)
             except Exception as exc:
                 raise _safe_stage6_error(exc, "independent explanation") from None
+            try:
+                answer = _validate_answer(final_raw, records)
+            except (ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
+                # The final model reply may be ill-formed, but the previous
+                # (billable) source decisions are already complete and can
+                # be evaluated independently. Do not publish model prose.
+                raise Stage6AnswerContractFailure(
+                    category=answer_failure_category(exc),
+                    progress=synthetic_planning_progress(
+                        case, selected, plan_reviews, planning_contract_issues,
+                        len(self._attempts) - before,
+                    ),
+                ) from None
+            try:
+                audit = _audit(case, selected, answer)
+            except Exception as exc:
+                raise _safe_stage6_error(exc, "independent explanation audit") from None
             return {
                 "success": True, "scenario": case_id, "title": case["title"],
                 "model": meta["model"],
