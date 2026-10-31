@@ -55,6 +55,7 @@ The repository drift test compares this table directly with the live directory. 
 | `investigation_objective.py` | Defines a single read-only primary objective for source, rule, and general investigations, shared by routing, synthesis and evidence completion; never authorises writes or certifies source reasoning. |
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
 | `canonical_investigation_evidence.py` | Shadow-only immutable source/clock/identity receipt projection; no runtime calls, commands, model routing or publication. |
+| `stage5_autonomous_benchmark.py` | Consent-gated synthetic two-round Cloud model evidence discovery, source-bound claim grading and natural explanation pilot; never reads or controls a real device. |
 | `cloud_benchmark.py` | Explicit-consent, synthetic-only, in-app evidence-classification benchmark using the configured primary Ollama Cloud transport; never calls MCP tools, writes devices or certifies authored prose. |
 | `stage4k_frozen_answer_audit.py` | Offline-only source-reconstructed SHA-256 binding of complete authored drafts to withheld human-adjudicated per-sentence Stage 4J/4I atom audits; no provenance authentication or publication. |
 | `stage4_prose_atom_coverage.py` | Offline only: compare model-extracted atomic propositions against separate curated text annotations and Stage 4I exact host witnesses; no exhaustive free-prose semantic certification or publication. |

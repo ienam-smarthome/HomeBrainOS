@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.293**.
+Current add-on version: **0.18.294**.
+
+**Stage 5 autonomous cloud pilot:** With explicit consent, the HomeBrain dashboard now asks the configured Gemma Cloud model to choose up to two fictional evidence sources and write its own source-cited investigation without candidate conclusions. The host separately scores source selection and typed cited claims; free-form prose remains unverified and requires human review. This is a two-cloud-request synthetic pilot, not a production publisher change. [Release notes](CHANGELOG-0.18.294.md).
 
 **Stage 4O cloud benchmark diagnostics:** The existing-account test now categorises Ollama Cloud HTTP errors, timeouts, empty answers and invalid JSON without revealing credentials, accepts a single Markdown-fenced JSON document, and requests a non-thinking final response. No automatic retries or publisher changes. [Release notes](CHANGELOG-0.18.293.md).
 
