@@ -208,8 +208,20 @@ def main(argv=None) -> int:
                   "in one comparison arm.", file=sys.stderr)
             return 3
         return 0
-    except Exception:
-        print("Offline matched model comparison unavailable; raw data withheld.",
+    except Exception as error:
+        # Safe diagnostics: exception class and last internal code line ONLY.
+        # Never emit the exception message, path, source facts or model text.
+        current = error.__traceback__
+        line = 0
+        while current is not None:
+            if current.tb_frame.f_code.co_filename.endswith(
+                    ("stage4k_github_matched_models.py",
+                     "stage4j_github_prose_coverage.py",
+                     "stage4_prose_atom_coverage.py")):
+                line = current.tb_lineno
+            current = current.tb_next
+        print("Offline matched comparison failed; sanitized diagnostic "
+              f"type={type(error).__name__} code_line={line}; raw data withheld.",
               file=sys.stderr)
         return 2
 
