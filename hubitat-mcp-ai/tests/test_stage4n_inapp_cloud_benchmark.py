@@ -160,12 +160,10 @@ def test_response_missing_duplicate_unknown_and_tool_calls_rejected():
             _parse_response(json.dumps(invalid), scenario)
 
 
-def test_hourly_limit_is_in_memory_and_no_automatic_retries(monkeypatch):
-    import cloud_benchmark as mod
+def test_hourly_limit_is_in_memory_and_no_automatic_retries():
     ticks = iter(range(100, 1000, 11))
-    monkeypatch.setattr(mod.time, "monotonic", lambda: next(ticks))
     cloud = FakeCloud()
-    service = CloudBenchmark()
+    service = CloudBenchmark(clock=lambda: next(ticks))
     for _ in range(8):
         run(service.run_case(cloud, "lighting", confirmed=True))
     with pytest.raises(BenchmarkError) as error:
