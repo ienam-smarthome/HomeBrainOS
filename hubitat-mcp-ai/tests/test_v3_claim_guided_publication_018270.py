@@ -128,7 +128,19 @@ def test_renamed_ids_have_same_result_and_no_phantom_controller():
     assert state == "published" and text
     assert "Input device 803" in text
     assert "7895" not in text and "4013" not in text
-    assert "No source-attested initiating ON command" in text
+    assert "No immediate Hubitat ON command was verified for either target" in text
+
+
+def test_partial_immediate_on_witness_does_not_create_all_target_denial():
+    f = facts()
+    f["v3_witness_ledger"]["immediate_hubitat_on_command_matches"] = [
+        {"device_id": f["target_device_ids"][0], "hubitat_app_id": "5000"}
+    ]
+    text, state = claim_guided_incident_answer(
+        draft(complete_envelope(f)), f)
+    assert state == "published"
+    assert "for one target but not both" in text
+    assert "No immediate Hubitat ON command" not in text
 
 
 def test_prompt_offers_both_targets_on_off_and_uncertainty():
