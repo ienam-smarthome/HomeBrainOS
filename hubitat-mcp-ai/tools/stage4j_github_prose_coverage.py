@@ -170,7 +170,7 @@ def _json_schema(packet: dict) -> dict:
 
 class Stage4JLocalExtractor(LoopbackOllama):
     def __call__(self, model: str, request: dict) -> dict:
-        if model != _MODEL or request.get("task") != "extract":
+        if model not in ("qwen2.5:3b", "qwen2.5:7b") or request.get("task") != "extract":
             raise ValueError("unapproved synthetic extractor")
         case_packet = request["packet"]
         prompt = json.dumps({
