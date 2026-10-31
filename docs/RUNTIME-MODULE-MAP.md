@@ -55,6 +55,7 @@ The repository drift test compares this table directly with the live directory. 
 | `investigation_objective.py` | Defines a single read-only primary objective for source, rule, and general investigations, shared by routing, synthesis and evidence completion; never authorises writes or certifies source reasoning. |
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
 | `canonical_investigation_evidence.py` | Shadow-only immutable source/clock/identity receipt projection; no runtime calls, commands, model routing or publication. |
+| `stage3_controlled_replay.py` | Pure offline replay of original model-call-shaped read suggestions versus Stage 3A validated candidates, with independent-oracle utility scoring and no active runtime imports, MCP calls or publication changes. |
 | `stage3_loop_shadow.py` | Explicit opt-in-only metrics observer of actual model-proposed gateway READ calls, anchored to current declared operation enums and prior evidence, with no tool/publisher effects. |
 | `stage3_planning_evaluation.py` | Pure offline fixture-oracle evaluator of Stage 3A read candidates against legacy source-feasibility; no runtime plans, device actions or model answer effects. |
 | `stage3_evidence_frontier.py` | Offline-only advisory integration of existing feasibility frontier with source-attested model-proposed read validation, exact-attempt dedup, and no active MCP call/publisher changes. |
