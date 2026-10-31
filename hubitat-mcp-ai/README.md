@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.291**.
+Current add-on version: **0.18.292**.
+
+**Stage 4N in-app Ollama Cloud benchmark (opt-in):** The HomeBrain dashboard now runs one explicitly consented, fictional evidence-classification test using the already-configured primary Ollama Cloud account. Shows model explanation, response time, independent synthetic claim verdict score and unsupported-conclusion warnings. It never calls MCP, changes devices, or enables the redesigned publisher. No new key or GitHub secret is needed. See [release notes](CHANGELOG-0.18.292.md).
 
 **Stage 4K frozen-answer adjudication (source only):** Binds full authored draft text and re-derived source facts before independent per-sentence reference labelling, then measures omitted claims and exact host-source proof across the answer. No publication or semantic certification. [Release notes](CHANGELOG-0.18.291.md).
 
