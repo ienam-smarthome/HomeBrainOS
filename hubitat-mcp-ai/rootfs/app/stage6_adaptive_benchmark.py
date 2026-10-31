@@ -28,6 +28,16 @@ _TYPES = frozenset({
     "competing_commands", "physical_confirmation", "unique_cause",
     "absence_proven",
 })
+# A model may cite a real state report while misnaming it telemetry. These
+# are separate questions: is the value actually in the cited source, and is
+# the model-supplied provenance label correct? Never convert an observation
+# into independently confirmed device telemetry.
+_ATOM_FIELDS = frozenset({
+    "state", "source_time", "received_at", "clock_basis", "command",
+    "issuer", "level", "at", "reported_at", "driver_connected_to_broker",
+    "independent_device_packet", "physical_acknowledgement",
+})
+_RELATIONS = frozenset({"time_order_conflict", "competing_commands"})
 _HIGH_RISK = frozenset({"physical_confirmation", "unique_cause", "absence_proven"})
 
 
@@ -144,15 +154,19 @@ def _validate_plan(raw: str, remaining: set[str], *, can_read: bool) -> dict:
 def _validate_answer(raw: str, records: list[dict]) -> dict:
     result = _json_object(raw)
     if (set(result) != {"schema", "sentences", "uncertainties", "next_evidence"}
-            or result["schema"] != "homebrain-stage6-answer.v1"):
+            or result["schema"] not in ("homebrain-stage6-answer.v1",
+                                       "homebrain-stage6-answer.v2")):
         raise ValueError("invalid answer structure")
+    v2 = result["schema"] == "homebrain-stage6-answer.v2"
     sentences = result["sentences"]
     if not isinstance(sentences, list) or not 1 <= len(sentences) <= 7:
         raise ValueError("invalid sentence count")
     allowed = {r["id"] for r in records}
     total_chars = 0
     for sent in sentences:
-        if not isinstance(sent, dict) or set(sent) != {"text", "kind", "evidence_ids"}:
+        allowed_keys = ({"text", "kind", "evidence_ids", "atoms"} if v2
+                        else {"text", "kind", "evidence_ids"})
+        if not isinstance(sent, dict) or set(sent) != allowed_keys:
             raise ValueError("sentence/claim alignment required")
         txt = sent["text"]
         if not isinstance(txt, str) or not 6 <= len(txt.strip()) <= 360:
@@ -163,6 +177,27 @@ def _validate_answer(raw: str, records: list[dict]) -> dict:
                 or not 1 <= len(ids) <= 3 or len(ids) != len(set(ids))
                 or any(not isinstance(sid, str) or sid not in allowed for sid in ids)):
             raise ValueError("unsupported or unknown sentence citation")
+        if v2:
+            atoms = sent["atoms"]
+            if (not isinstance(atoms, list) or len(atoms) > 4
+                    or (not atoms and sent["kind"] not in _RELATIONS)):
+                raise ValueError("missing or excessive atomic evidence assertions")
+            seen_atoms = set()
+            for atom in atoms:
+                if (not isinstance(atom, dict)
+                        or set(atom) != {"record_id", "field", "value"}
+                        or not isinstance(atom["record_id"], str)
+                        or atom["record_id"] not in ids
+                        or not isinstance(atom["field"], str)
+                        or atom["field"] not in _ATOM_FIELDS
+                        or type(atom["value"]) not in (str, int, float, bool)
+                        or (isinstance(atom["value"], str)
+                            and len(atom["value"]) > 100)):
+                    raise ValueError("invalid or uncited atomic assertion")
+                signature = (atom["record_id"], atom["field"], str(atom["value"]))
+                if signature in seen_atoms:
+                    raise ValueError("duplicate atomic assertion")
+                seen_atoms.add(signature)
     if total_chars > 2100:
         raise ValueError("response too long")
     limits = result["uncertainties"]
@@ -224,14 +259,40 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
     by_id = {r["id"]: r for r in gathered}
     findings = []
     proven = set()
+    source_type_mismatches = 0
+    atom_matches = 0
+    atom_mismatches = 0
     for sentence in draft["sentences"]:
         witnesses = [by_id[sid] for sid in sentence["evidence_ids"]]
         ok = _host_proof(sentence["kind"], witnesses)
+        # Keep a provenance *mismatch* separate from an unsourced fact.
+        # E2/E3 are device-origin timestamps inside state reports, NOT
+        # independently authenticated physical device telemetry.
+        mismatch = (not ok and sentence["kind"] == "device_telemetry"
+                    and all(w["kind"] == "state_report"
+                            and "source_time" in w for w in witnesses))
+        source_type_mismatches += int(mismatch)
+        atoms = sentence.get("atoms")
+        checks = []
+        if atoms is not None:
+            for atom in atoms:
+                record = by_id[atom["record_id"]]
+                exact = (atom["field"] in record
+                         and type(record[atom["field"]]) is type(atom["value"])
+                         and record[atom["field"]] == atom["value"])
+                atom_matches += int(exact)
+                atom_mismatches += int(not exact)
+                checks.append({"record_id": atom["record_id"],
+                               "field": atom["field"],
+                               "exact_source_value_match": exact})
         findings.append({
             "text": sentence["text"],
             "kind": sentence["kind"],
             "evidence_ids": sentence["evidence_ids"],
             "typed_source_supported": ok,
+            "source_type_mismatch": mismatch,
+            "atomic_source_value_checks": checks,
+            "factual_prose_verified": False,
         })
         if ok:
             proven.add(sentence["kind"])
@@ -251,6 +312,11 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
         "sentence_citation_checks": findings,
         "typed_source_supported_sentences": len(findings) - unsupported,
         "unsupported_typed_sentence_citations": unsupported,
+        "source_type_mismatches": source_type_mismatches,
+        "unmatched_source_types_other": unsupported - source_type_mismatches,
+        "source_value_atoms_verified": atom_matches,
+        "source_value_atoms_mismatched": atom_mismatches,
+        "sentences_with_unverified_free_prose": len(findings),
         "high_risk_unsupported_sentences": sum(
             not row["typed_source_supported"] and row["kind"] in _HIGH_RISK
             for row in findings),
@@ -323,6 +389,7 @@ class Stage6Benchmark:
             selected: list[str] = []
             all_sources = {s["id"]: s for s in case["catalog"]}
             planning_reasons = []
+            stopped_while_critical_titles_remained = False
             started = self._clock()
             before = len(self._attempts)
             stop_reason = "read_budget_exhausted"
@@ -336,9 +403,16 @@ class Stage6Benchmark:
                     {"role": "system", "content": (
                         "You are conducting a wholly FICTIONAL, read-only smart-home "
                         "investigation. Decide whether another source would materially "
-                        "help, using only the source TITLES below. You may stop as soon "
-                        "as additional evidence has low value. Never assert a unique "
-                        "cause from nearby timestamps or confusing broker health. "
+                        "help, using only the source TITLES below. Before STOP, audit "
+                        "whether the QUESTION is answered and whether any UNREAD "
+                        "command history, independently sourced state/timestamp "
+                        "report, execution acknowledgement, or alternative issuer "
+                        "could change the explanation. If one can, READ it when "
+                        "budget permits. Do not stop simply because two plausible "
+                        "records form a timeline. Stop when no remaining source "
+                        "appears materially informative or you can explain what "
+                        "is unresolvable. Never assert a unique cause from nearby "
+                        "timestamps or confusing broker health. "
                         "Return ONLY JSON {schema,action,source_id,reason}: "
                         "schema homebrain-stage6-next.v1; action read or stop. "
                         "Use source_id null when stopping, else exactly one remaining "
@@ -363,6 +437,11 @@ class Stage6Benchmark:
                 planning_reasons.append(plan["reason"])
                 if plan["action"] == "stop":
                     stop_reason = "model_stopped"
+                    # Strictly evaluation-side: do NOT reveal the hidden
+                    # reference source IDs or force a gold source into the
+                    # model's plan. That would inflate discovery scores.
+                    stopped_while_critical_titles_remained = bool(
+                        set(case["gold_sources"]) - set(selected))
                     break
                 selected.append(plan["source_id"])
             gathered = [{"source_id": sid, "records": all_sources[sid]["records"]}
@@ -372,19 +451,31 @@ class Stage6Benchmark:
                     "Write your own concise, natural explanation of this fictional "
                     "incident from the supplied records. No suggested conclusions "
                     "are provided. Keep receipt clock time distinct from source "
-                    "event time. Distinguish competing commands, telemetry, "
-                    "actual physical outcomes, and unproven causes. Provide one "
-                    "typed label and exact source record IDs for each sentence; "
-                    "each sentence may still contain other unlabelled implications. "
-                    "Return ONLY JSON with keys schema, sentences, uncertainties, "
-                    "next_evidence. schema homebrain-stage6-answer.v1; sentences "
-                    "array of 1-7 objects {text,kind,evidence_ids}; kind one of "
+                    "event time. Report observations as REPORTS, not independently "
+                    "confirmed hardware changes. IMPORTANT: a state_report with "
+                    "a device-source timestamp is STILL a state_report; only a "
+                    "record explicitly labelled device_telemetry with "
+                    "independent_device_packet true qualifies as device_telemetry. "
+                    "Distinguish competing commands, physical outcomes, and "
+                    "unproven causes. Use one typed label per sentence and exact "
+                    "source record IDs. Also extract up to four exact SOURCE "
+                    "field/value atoms stated by the sentence; do not invent "
+                    "values. A sentence may carry other unlabelled implications. "
+                    "Return ONLY JSON {schema,sentences,uncertainties,next_evidence}. "
+                    "schema: homebrain-stage6-answer.v2; sentences array 1-7 "
+                    "of {text,kind,evidence_ids,atoms}. kind one of "
                     "state_report,command_record,device_telemetry,broker_session,"
                     "rule_decision,timestamp_basis,time_order_conflict,"
                     "competing_commands,physical_confirmation,unique_cause,"
-                    "absence_proven. evidence_ids array of 1-3 shown record IDs. "
-                    "uncertainties array of 1-4 short strings. next_evidence one "
-                    "specific useful additional check. No extra keys or prose."
+                    "absence_proven. evidence_ids 1-3 shown IDs. atoms array "
+                    "of {record_id,field,value} with field exactly as in source "
+                    "record and value exact JSON primitive; use [] only for "
+                    "time_order_conflict or competing_commands relations. "
+                    "Allowed fields: state,source_time,received_at,clock_basis,"
+                    "command,issuer,level,at,reported_at,driver_connected_to_broker,"
+                    "independent_device_packet,physical_acknowledgement. "
+                    "uncertainties 1-4 short strings; next_evidence a specific "
+                    "useful follow-up. No extra JSON keys or markdown."
                 )},
                 {"role": "user", "content": json.dumps({
                     "question": case["question"],
@@ -409,6 +500,9 @@ class Stage6Benchmark:
                 "cloud_requests_attempted": len(self._attempts) - before,
                 "requested_source_reads": len(selected),
                 "stop_reason": stop_reason,
+                "model_stop_justification": planning_reasons[-1] if stop_reason == "model_stopped" else None,
+                "stop_left_host_reference_sources_unexamined":
+                    stopped_while_critical_titles_remained,
                 "answer": " ".join(s["text"] for s in answer["sentences"]),
                 "uncertainties": answer["uncertainties"],
                 "recommended_next_evidence": answer["next_evidence"],

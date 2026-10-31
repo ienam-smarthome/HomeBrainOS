@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.295**.
+Current add-on version: **0.18.296**.
+
+**Stage 6.1 evidence-semantics contract:** The synthetic adaptive Cloud pilot now distinguishes a valid observation with an incorrect source-type label from a falsified field/value claim. Cloud-authored sentences use a structured v2 cited source-value atom contract; the host checks exact values independently, displays stop justifications, and explicitly highlights unread reference-relevant evidence. Full prose meaning remains unverified; no production publisher or MCP tool changes. [Release notes](CHANGELOG-0.18.296.md).
 
 **Stage 6 adaptive synthetic cloud investigation:** New consent-gated dashboard pilot makes up to three successive fictional evidence-source decisions, optionally stopping early, then produces a sentence-linked, cited natural-language answer. Host independently measures withheld source relevance, typed citation validity and missed expected finding types across contradictory clock, controller and connectivity scenarios. Full prose semantics remain unverified, and no real devices or production publisher are affected. [Release notes](CHANGELOG-0.18.295.md).
 
