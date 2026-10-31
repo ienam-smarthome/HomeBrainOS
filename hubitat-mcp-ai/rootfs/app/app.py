@@ -85,6 +85,7 @@ from performance_host_plan import (
 from provider_rate_limit_policy import describe_ollama_rate_limit
 from chat_transport import PaidModelUnavailable
 from cloud_benchmark import CloudBenchmark, BenchmarkError, benchmark_status
+from stage5_autonomous_benchmark import Stage5Benchmark, stage5_status
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -396,6 +397,7 @@ agent = UnifiedMCPAgent(
     ),
 )
 cloud_benchmark = CloudBenchmark()
+stage5_benchmark = Stage5Benchmark()
 
 agent.performance_synthesis_timeout_seconds = float(
     OPTIONS.get("performance_synthesis_timeout_seconds") or 30
@@ -598,6 +600,11 @@ class ChatRequest(BaseModel):
     @property
     def coordination_key(self) -> str:
         return self.session_id
+
+
+class Stage5BenchmarkRequest(BaseModel):
+    case_id: Literal["lighting", "heating", "ventilation", "connectivity"]
+    confirm_cloud_allowance: bool = False
 
 
 class CloudBenchmarkRequest(BaseModel):
@@ -1061,6 +1068,38 @@ async def run_cloud_benchmark(payload: CloudBenchmarkRequest, request: Request) 
             raise HTTPException(status_code=403, detail="The benchmark requires a same-origin request.")
     try:
         return await cloud_benchmark.run_case(
+            agent.transport, payload.case_id,
+            confirmed=payload.confirm_cloud_allowance is True,
+        )
+    except BenchmarkError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+
+
+@app.get("/api/stage5-benchmark/status")
+async def stage5_benchmark_status() -> dict[str, Any]:
+    meta = stage5_status(agent.transport)
+    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+        meta["available"] = False
+        meta["reason"] = "The add-on has Ollama direct cloud disabled."
+    return meta
+
+
+@app.post("/api/stage5-benchmark/run")
+async def run_stage5_benchmark(payload: Stage5BenchmarkRequest, request: Request) -> dict[str, Any]:
+    """Explicit two-call cap, synthetic-only; isolated from active MCP agent."""
+    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+        raise HTTPException(status_code=503, detail="Ollama direct cloud is disabled.")
+    if (request.headers.get("x-homebrain-benchmark") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(status_code=403, detail="Start the Stage 5 benchmark from the HomeBrain dashboard.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403, detail="The benchmark requires a same-origin request.")
+    try:
+        return await stage5_benchmark.run_case(
             agent.transport, payload.case_id,
             confirmed=payload.confirm_cloud_allowance is True,
         )
