@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.284**.
+Current add-on version: **0.18.285**.
+
+**Stage 4E GitHub-hosted actual small-model evaluation (synthetic only):** Adds a temporary, CPU-only GitHub Actions workflow with locally downloaded Qwen2.5 0.5B and Llama 3.2 1B, no cloud inference, and aggregate-only reviewer accuracy. Production source/publisher remain unchanged. [Release notes](CHANGELOG-0.18.285.md).
 
 **Stage 4D offline paired-answer quality comparison (source-only):** Adds a privacy-safe, bounded evaluation of the existing answer versus a source-cited model-authored candidate. Typed claims, reviewer concordance and separately supplied human quality ratings remain distinct; no source changes to live publication. [Release notes](CHANGELOG-0.18.284.md).
 
