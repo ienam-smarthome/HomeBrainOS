@@ -39,6 +39,7 @@ def evaluate_question_value_ledger(
                     or row["id"] in question_ids
                     or type(row["text"]) is not str
                     or not 10 <= len(row["text"].strip()) <= 180
+                    or type(row["status"]) is not str
                     or row["status"] not in _ALLOWED_STATUSES):
                 issues.add("questions_missing_or_invalid")
                 break
