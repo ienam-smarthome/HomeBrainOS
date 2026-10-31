@@ -12,6 +12,8 @@ from collections import Counter
 import json
 from typing import Any, Mapping, Sequence
 
+from causal_upstream_read_frontier import rank_upstream_read_frontier
+
 
 def _id(x: Any) -> str:
     value = str(x or "")
@@ -91,7 +93,11 @@ def build_source_feasibility_choices(
     # These candidate operations are read-only and demonstrably executed
     # successfully in the request. The original model decides whether/when
     # to call them, with *its* active catalog authorization.
-    choices: list[dict[str, Any]] = []
+    upstream = rank_upstream_read_frontier(facts, receipts)
+    choices: list[dict[str, Any]] = (
+        list(upstream.get("candidate_reads") or [])
+        if isinstance(upstream, Mapping) else []
+    )
     if "hub_list_device_dependents" in available_leaves:
         for ident in targets:
             if ident not in checked_dependents:
@@ -130,6 +136,18 @@ def build_source_feasibility_choices(
         int(ledger.get("issuer_verified_target_count") or 0)
         < int(ledger.get("target_count") or 0)
     )
+    # Prefer the strongest source-qualified upstream discriminator, without
+    # repeating an exact leaf+args suggestion from lower-ranked generic paths.
+    seen_choice: set[tuple[str, str]] = set()
+    unique_choices: list[dict[str, Any]] = []
+    for item in choices:
+        leaf = str(item.get("leaf") or "")
+        args = item.get("args") or {}
+        key = (leaf, json.dumps(args, sort_keys=True))
+        if key not in seen_choice:
+            seen_choice.add(key)
+            unique_choices.append(item)
+    choices = unique_choices
     options = choices[:max_options]
     # It is accurate to state what the inspected *receipts* did not attest,
     # not to assert that a historical command or external source did not exist.
@@ -164,6 +182,9 @@ def build_source_feasibility_choices(
         "already_checked_command_app_configs": sorted(checked_configs - {""}, key=int)[:12],
         "successful_exact_duplicate_read_count": duplicate_success_count,
         "candidate_reads": options,
+        "evidence_ranked_upstream_lead": (
+            upstream if isinstance(upstream, Mapping) else None
+        ),
         "additional_candidates_omitted": max(0, len(choices) - len(options)),
         "unresolved_sources": open_sources[:3],
         "recorded_immediate_command_matches": len(known_issuer_matches),
