@@ -107,7 +107,10 @@ from causal_transition_provenance import (
     scoped_off_history_receipt,
 )
 from group_journal_recovery import recover_group_journal, recover_input_journal
-from investigation_evidence_cycle import cross_source_discovery_checkpoint
+from investigation_evidence_cycle import (
+    cross_source_discovery_checkpoint,
+    ranked_upstream_continuation_checkpoint,
+)
 from recent_edge_context import recover_recent_edge, render_recent_edge
 from group_app_decision_recovery import recover_group_app_decisions
 from unified_investigation_bridge import (
@@ -5154,6 +5157,7 @@ class UnifiedMCPAgent:
         configuration_semantics_retry_used = False
         inventory_only_retry_used = False
         unified_source_followup_used = False
+        ranked_upstream_offer_signatures: set[str] = set()
         target_history_scope_retry_used = False
         # A read-only investigation with an explicit historical causal
         # boundary has already run focused host-side evidence collection.
@@ -6484,6 +6488,30 @@ class UnifiedMCPAgent:
             if investigative_request and round_actions:
                 await self._recover_journal_into_discovery(
                     user_prompt, messages)
+            # The historical-journal hook above only emits when it discovers
+            # NEW journal rows. A dependency READ leaf may first become
+            # feasible later in the same request (as on the 0.18.268 live
+            # Bathroom replay). Re-check its source-qualified read frontier
+            # after each nonmutating tool round and offer a new exact choice
+            # at most once. This uses an existing model round and tool catalog,
+            # never calls the tool itself or grants a new privilege.
+            if (
+                investigative_request and round_actions
+                and not round_has_mutation
+                and not self._mutation_requested_by_user.get()
+                and round_index + 1 < active_round_budget
+            ):
+                ranked_offer = ranked_upstream_continuation_checkpoint(
+                    self.evidence.receipts(), user_prompt)
+                if ranked_offer is not None:
+                    offer_key, offer_content = ranked_offer
+                    if offer_key not in ranked_upstream_offer_signatures:
+                        ranked_upstream_offer_signatures.add(offer_key)
+                        messages.append({
+                            "role": "user", "content": offer_content,
+                        })
+                        increment_active_metric(
+                            "v3_ranked_upstream_round_offer")
             # Source-led device investigation: once real contiguous code,
             # device configuration, scoped history and logs are collected,
             # stop model-driven duplicate page reads and synthesize once.

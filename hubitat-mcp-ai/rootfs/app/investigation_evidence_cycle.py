@@ -117,4 +117,56 @@ def cross_source_discovery_checkpoint(
     )
 
 
-__all__ = ["cross_source_discovery_checkpoint"]
+def ranked_upstream_continuation_checkpoint(
+    receipts: Sequence[Mapping[str, Any]], question: str,
+) -> tuple[str, str] | None:
+    """Offer one *newly feasible* evidence-ranked read in the active tool loop.
+
+    Journal recovery can occur before a single dependency leaf has succeeded.
+    The original recovery checkpoint is intentionally idempotent; the host
+    must separately detect when subsequent model-chosen reads make a higher
+    quality source path feasible. This function never selects or invokes tools.
+    """
+    facts = collect_unified_evidence(receipts, question)
+    if not facts or not facts.get("journal_source_observations"):
+        return None
+    feasibility = build_source_feasibility_choices(facts, receipts)
+    if not isinstance(feasibility, Mapping):
+        return None
+    ranked = next((
+        row for row in feasibility.get("candidate_reads") or []
+        if isinstance(row, Mapping) and row.get("priority") == "evidence-ranked"
+    ), None)
+    if ranked is None:
+        return None
+    # The concrete leaf and arguments were admitted by the source feasibility
+    # module. Never construct another operation or introduce an input ID here.
+    key = json.dumps(
+        [ranked.get("leaf"), ranked.get("args")],
+        ensure_ascii=True, sort_keys=True, separators=(",", ":"),
+    )
+    content = (
+        "HOST RANKED UPSTREAM EVIDENCE CONTINUATION (advisory, READ-only): "
+        + json.dumps({
+            "strongestSourceQualifiedRead": ranked,
+            "evidenceRankedUpstreamLead":
+                feasibility.get("evidence_ranked_upstream_lead"),
+            "verifiedTargetCount": feasibility.get("verified_target_count"),
+            "priorSuccessfulExactDuplicates":
+                feasibility.get("successful_exact_duplicate_read_count"),
+        }, ensure_ascii=True, separators=(",", ":"))[:3600]
+        + "\nThis suggestion is newly feasible after current-turn evidence was "
+          "read. It is a more discriminating source path than rereading the "
+          "target devices or unrelated old log pages. The ORIGINAL model "
+          "decides whether it is useful and verifies the leaf against its "
+          "CURRENT authorized READ catalog before any call. A shared current "
+          "app dependency is not proof of historical app execution, an "
+          "issuing controller, source-clock sensor order or physical cause. "
+          "Do not repeat previously attempted operations, invent IDs or "
+          "modify anything. If the required source is inaccessible, state "
+          "the precise gap and finish the investigation."
+    )
+    return key, content
+
+
+__all__ = ["cross_source_discovery_checkpoint", "ranked_upstream_continuation_checkpoint"]
