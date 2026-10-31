@@ -103,7 +103,7 @@ def test_report_and_summary_never_reveal_source_device_or_prompt():
     transport = FakeTransport(cases)
     report = evaluate(invoke=transport, cases=cases)
     output = json.dumps(report) + summary_markdown(report)
-    for secret in (""101"", "Synthetic Controller", "2026-01-01",
+    for secret in ('\"101\"', "Synthetic Controller", "2026-01-01",
                    "The boiler fired", "hub_read_devices", "case_id",
                    "f001", "evidence packet", "password", "auth_token"):
         assert secret not in output
