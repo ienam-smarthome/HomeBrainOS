@@ -70,6 +70,11 @@ class RequestMetrics:
         "v3_witness_immediate_command_matches",
         "v3_witness_targets_without_on_issuer",
         "v3_ranked_upstream_round_offer",
+        # Stage 3C is an opt-in-only count observer; no raw IDs or payloads.
+        "stage3_shadow_observed_round",
+        "stage3_shadow_round_with_new_read",
+        "stage3_shadow_round_with_exact_repeat",
+        "stage3_shadow_observation_error",
         "v3_claim_pilot_recovery_offered",
         "v3_claim_pilot_final_offered",
         "v3_claim_first_draft_present",
