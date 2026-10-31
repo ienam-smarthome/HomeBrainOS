@@ -209,13 +209,23 @@ class ToolExecutor:
                         ident = str(raw)
                         if ident.isdecimal() and int(ident) > 0 and ident not in app_ids:
                             app_ids.append(ident)
-                return {
+                # A scoped Hubitat dependency read includes its *deviceName*.
+                # Retain only a short safe name: previous receipts preserved
+                # app IDs but discarded the sensor label, leaving users with
+                # unexplained numeric sensor references.
+                from causal_incident_narrative import safe_device_label
+                label = data.get("deviceName")
+                safe = safe_device_label(label, requested, fallback="Motion sensor")
+                details = {
                     "deviceId": requested,
                     "appsUsing": [{"appId": ident} for ident in app_ids[:32]],
                     "appIdsCoverage": (
                         "partial" if len(entries) > 32 else "bounded"
                     ),
                 }
+                if safe == label and isinstance(label, str):
+                    details["deviceName"] = safe
+                return details
 
         history = history_temporal_evidence_details(data)
         if history is not None:

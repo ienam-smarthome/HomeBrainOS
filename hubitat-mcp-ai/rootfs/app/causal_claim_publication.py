@@ -17,6 +17,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from causal_incident_narrative import (
+    source_cycle_timeline, safe_device_label, verified_input_label,
+)
 from causal_claim_attestation import (
     extract_claim_envelope, validate_claim_envelope,
     resolve_source_witness_aliases,
@@ -165,65 +168,44 @@ def claim_guided_incident_answer(
             and isinstance(c.get("off_receiver_delay_seconds"), Mapping)
         ), None)
 
+    first, second = names[targets[0]], names[targets[1]]
     if candidate:
-        on = candidate["on_receiver_delay_seconds"]
+        sensor_name = verified_input_label(facts, candidate["input_id"])
         off = candidate["off_receiver_delay_seconds"]
         lead = (
-            "**Most likely mechanism:** The switching pattern is consistent "
-            "with motion-driven lighting. Input device "
-            + str(candidate["input_id"])
-            + " had " + str(candidate["matched_on"]) + "/"
-            + str(candidate["target_on_rows"]) + " active-to-ON and "
-            + str(candidate["matched_off"]) + "/"
-            + str(candidate["target_off_rows"])
-            + " inactive-to-OFF matches on the *collector reception clock*. "
-            + "Its input receptions preceded matching light receptions by "
-            + f"{on['min']:.3f}–{on['max']:.3f} seconds for ON and "
-            + f"{off['min']:.3f}–{off['max']:.3f} seconds for OFF. "
-            + "The near-ten-second inactive-to-OFF interval suggests an idle "
-              "delay; neither the sensor's original event time nor an issuing "
-              "controller is established by these reception pairs."
+            "**Likely explanation:** The bathroom lights appear to be "
+            "following a motion-related lighting routine. The strongest "
+            "match is **" + sensor_name + "**: its activity reports were "
+            "received just before all "
+            + str(candidate["matched_on"]) + " recorded ON cycles, and its "
+            "inactive reports arrived about "
+            + f"{off['min']:.0f}–{off['max']:.0f} seconds before the lights "
+              "went off. This looks like a short inactivity delay, but "
+              "doesn't prove which system issued the lighting commands."
         )
     else:
         lead = (
-            "**Most likely mechanism:** The independently recorded light "
-            "transitions are consistent with coordinated control, but the "
-            "available evidence does not distinguish a specific triggering "
-            "input or command issuer."
+            "**Likely explanation:** " + first + " and " + second
+            + " show coordinated switching. The recorded evidence does not "
+              "yet distinguish which sensor or system started the sequence."
         )
 
-    first, second = names[targets[0]], names[targets[1]]
+    day = str(start.day) + " " + start.strftime("%B %Y")
     observed = (
-        "**What happened:** " + first + " had "
-        + str(on0) + " reported ON and " + str(off0)
-        + " reported OFF transitions; " + second + " had "
-        + str(sum(r.get("value") == "on" for r in other))
-        + " ON and " + str(sum(r.get("value") == "off" for r in other))
-        + " OFF transitions between "
-        + start.strftime("%H:%M:%S") + " and "
-        + end.strftime("%H:%M:%S") + " UTC. "
-        + "These are source-timestamped state reports, not command-origin proof."
+        "**What happened:** On " + day + ", " + first + " and "
+        + second + " each reported " + str(on0)
+        + " ON transitions and " + str(off0)
+        + " OFF transitions. They followed almost the same sequence, "
+          "with the second light changing roughly a second after the first."
     )
-    pair = receiver.get("light_pair") if isinstance(receiver, Mapping) else None
-    if common and isinstance(pair, Mapping):
-        st = pair.get("source_event_stagger_seconds")
-        if (isinstance(st, Mapping)
-                and str(pair.get("first_id")) in targets
-                and str(pair.get("second_id")) in targets):
-            observed += (
-                " Source-timed reports on " + names[str(pair["first_id"])]
-                + " preceded " + names[str(pair["second_id"])] + " by "
-                + f"{st['min']:.3f}–{st['max']:.3f} seconds across "
-                + str(pair["paired_transitions"]) + " paired transitions."
-            )
-
+    timeline = source_cycle_timeline(source, targets, names)
     level_notes: list[str] = []
     for ident in targets:
         first_on = next((r for r in source[ident] if r.get("value") == "on"), None)
         if first_on is None:
             continue
         at = _time(first_on["date"])
-        candidates = [
+        later_commands = [
             r for r in facts.get("incident_ledger") or []
             if isinstance(r, Mapping)
             and str(r.get("device_id")) == ident
@@ -232,13 +214,14 @@ def claim_guided_incident_answer(
             and _time(r.get("date")) is not None
             and 0 <= (_time(r["date"]) - at).total_seconds() <= 2
         ]
-        if candidates:
-            later = min(candidates, key=lambda r: _time(r["date"]))
-            milliseconds = round((_time(later["date"]) - at).total_seconds() * 1000)
+        if later_commands:
+            row = min(later_commands, key=lambda r: _time(r["date"]))
+            delay_ms = round((_time(row["date"]) - at).total_seconds() * 1000)
+            issuer = safe_device_label(
+                row.get("issuer"), str(row["app_id"]), fallback="App")
             level_notes.append(
-                names[ident] + ": app " + str(later["app_id"])
-                + " requested brightness " + str(milliseconds)
-                + " ms *after* its ON report"
+                names[ident] + " (" + str(delay_ms) + " ms later)"
+                + " via " + issuer
             )
     matched_targets = {
         str(row.get("device_id")) for row in
@@ -261,20 +244,26 @@ def claim_guided_incident_answer(
             "but their upstream triggering decisions remain unverified."
         )
     limits = (
-        "**What is not established:** " + command_qualification + " "
-        "The motion timing, a current app dependency, and any later "
-        "brightness request cannot independently identify the original "
-        "upstream cause. Historical app execution or original upstream "
-        "command records are still needed. Archive gaps prevent treating "
-        "missing records as proof of inactivity."
+        "**What we still cannot confirm:** " + command_qualification
+        + " The motion reports strongly fit the timing, but do not "
+          "prove which automation, bridge, or controller started the "
+          "lights. Some historical records have gaps."
     )
+    note = ""
     if level_notes:
-        limits = (
-            "**Verified command order:** " + "; ".join(level_notes)
-            + ". Those later commands cannot initiate the earlier ON.\n\n"
-            + limits
+        note = (
+            "**What the bathroom app did:** "
+            + "; ".join(level_notes)
+            + ". These brightness adjustments came *after* the lights "
+              "were already reported on, so they were not the first ON."
         )
-    return lead + "\n\n" + observed + "\n\n" + limits, "published"
+    parts = [lead, observed]
+    if timeline:
+        parts.append(timeline)
+    if note:
+        parts.append(note)
+    parts.append(limits)
+    return "\n\n".join(parts), "published"
 
 
 def source_verified_incident_brief(
