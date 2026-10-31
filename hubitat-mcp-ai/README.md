@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.300**.
+Current add-on version: **0.18.301**.
+
+**Stage 6.6 final-answer diagnostics:** If Gemma completes fictional evidence-selection rounds but fails the strict final JSON/citation contract, the dashboard now shows a safe validation category and preserves only the completed synthetic source choices, reference-source recall and planning quality. No rejected AI prose is published and no extra cloud retries occur. [Release notes](CHANGELOG-0.18.301.md).
 
 **Stage 6.5 question-value investigation:** The synthetic cloud planner now links outstanding incident questions to each unread source, ranks its expected information gain and audits whether the chosen source matches the model's own ranking. It continues to separate model-authored rankings from independently withheld relevance scores; no source is silently substituted and no production publisher is enabled. [Release notes](CHANGELOG-0.18.300.md).
 
