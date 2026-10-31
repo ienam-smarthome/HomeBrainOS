@@ -61,7 +61,7 @@ def render_shadow_claim_pilot(
                 "kind": "reported_switch_state", "device_id": row["entity"],
                 "state": state, "witness_ids": [row["witness_id"]],
             })
-    if len(paired) < 4:
+    if not paired:
         return ""
     sample = {
         "schema": "homebrain-claims.v1",
@@ -92,6 +92,14 @@ def render_shadow_claim_pilot(
         + "fenced code block with language homebrain-claims containing JSON "
           "schema homebrain-claims.v1 and at most 8 typed claims. "
           "Use only provided verified witness IDs and exact device IDs. "
+          "Include at least one source-timed ON and OFF state claim for "
+          "EACH target when both witnesses exist, plus one "
+          "upstream_cause_unverified claim with no witnesses. This is "
+          "the minimum coverage for the shorter claim-guided answer; "
+          "when a source witness is missing, include only available "
+          "claims and allow the safe fallback. Never fabricate missing "
+          "events or use collector-only receptions as source witnesses. "
+          "Any invalid extra claim rejects publication. "
           "Supported: reported_switch_state (state on/off, 1 matching source "
           "witness), hubitat_issued_command (command on/off/setlevel, app_id, "
           "1 matching command witness), matched_hubitat_on_command "
