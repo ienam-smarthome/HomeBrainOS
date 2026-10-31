@@ -249,8 +249,7 @@ class CloudBenchmark:
                 digest = freeze_stage4k_answer([receipt], draft)
             except BenchmarkUnavailable:
                 raise
-            except (httpx.HTTPError, ValueError, TypeError, KeyError,
-                    IndexError, AttributeError, json.JSONDecodeError) as exc:
+            except Exception:
                 # Never place provider body, generated prose or credentials in logs.
                 raise BenchmarkUnavailable(
                     "Cloud request or source-citation validation failed; no device action was performed."
