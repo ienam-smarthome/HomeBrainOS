@@ -729,6 +729,34 @@ document.getElementById('runStage6').onclick=async()=>{
       body:JSON.stringify({case_id:document.getElementById('stage6Scenario').value,confirm_cloud_allowance:true})
     });
     const data=await jsonResponse(response);
+    if(!response.ok && data.partial_investigation){
+      const partial=data.partial_investigation;
+      out.replaceChildren();
+      const heading=document.createElement('strong');
+      heading.textContent='Final explanation rejected — source investigation preserved';
+      out.append(heading);
+      const reason=document.createElement('p');
+      reason.textContent=(typeof data.detail==='string'?data.detail:'Stage 6 final answer failed validation.')+
+        ' Validation category: '+(data.validation_category||'unclassified')+'.';
+      out.append(reason);
+      const selection=document.createElement('p');
+      selection.textContent='Previously selected fictional sources: '+
+        ((partial.selected_source_ids||[]).join(', ')||'none')+
+        ' · Reference-relevant: '+partial.relevant_reference_sources_selected+
+        '/'+partial.relevant_reference_sources_available+
+        ' · Irrelevant: '+partial.irrelevant_sources_selected+
+        ' · Cloud attempts: '+partial.attempted_cloud_requests+'.';
+      out.append(selection);
+      const quality=document.createElement('p');
+      quality.textContent='Planning review complete: '+(partial.planning_contract_complete?'yes':'no')+
+        ' · Model-ranking inconsistencies: '+partial.model_ranking_consistency_failures+
+        ' · Planning issues: '+((partial.planning_contract_issue_codes||[]).join(', ')||'none recorded')+'.';
+      out.append(quality);
+      const disclaimer=document.createElement('p');disclaimer.className='stage5-note';
+      disclaimer.textContent='No final AI explanation was published or fact-checked. These are only synthetic source-selection results from completed steps. No cloud retry or live device access occurred.';
+      out.append(disclaimer);
+      return;
+    }
     if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Cloud test failed (HTTP '+response.status+')');
     out.replaceChildren();
     const heading=document.createElement('strong');
