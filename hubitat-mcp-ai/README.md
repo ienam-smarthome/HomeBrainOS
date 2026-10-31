@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.296**.
+Current add-on version: **0.18.297**.
+
+**Stage 6.2 Ollama Cloud diagnostics:** A manually-triggered, no-inference cloud connection check on the dashboard verifies the existing primary API key via Ollama's account-balance HTTP status only, without showing account balances, secrets or responses. Stage 6 now distinguishes provider HTTP 401 from 403; the Ready status remains configuration-only. No live devices or publisher changes. [Release notes](CHANGELOG-0.18.297.md).
 
 **Stage 6.1 evidence-semantics contract:** The synthetic adaptive Cloud pilot now distinguishes a valid observation with an incorrect source-type label from a falsified field/value claim. Cloud-authored sentences use a structured v2 cited source-value atom contract; the host checks exact values independently, displays stop justifications, and explicitly highlights unread reference-relevant evidence. Full prose meaning remains unverified; no production publisher or MCP tool changes. [Release notes](CHANGELOG-0.18.296.md).
 
