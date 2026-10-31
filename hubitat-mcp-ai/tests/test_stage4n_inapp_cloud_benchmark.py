@@ -38,6 +38,9 @@ class FakeCloud:
     def configured(self):
         return bool(self.api_key and self.base_url and self.model_name)
 
+    async def close(self):
+        return None
+
     async def _chat_post(self, messages, tools, **kwargs):
         self.calls.append((messages, tools, kwargs))
         if self.fail:
