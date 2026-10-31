@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.271**.
+Current add-on version: **0.18.272**.
+
+**V3 named natural incident stories and cycle timelines:** A successful scoped dependency read now preserves a verified device name, so the source-backed publisher describes the actual sensor instead of its numeric Hubitat ID. The concise answer leads with a plain-language likely mechanism, displays up to twelve independently source-qualified paired ON/OFF cycles in a compact table, and names the verified brightness-adjustment app without treating it as the original ON issuer. Evidence-limited alternative comparisons use verified sensor labels too. Mispaired event histories cannot produce a false cycle timeline. [Release notes](CHANGELOG-0.18.272.md).
 
 **V3 stable witness aliases and source-grounded alternatives:** The final model can cite short source-bound witness aliases, which are resolved to the current request’s exact source-timed witness IDs before existing role, clock and target validation. Unknown or wrong-target aliases still fail closed. Explicit comparisons after source-verified incident publication now describe supported alternative sensor evidence instead of adding generic, unverified hypothesis checklists. [Release notes](CHANGELOG-0.18.271.md).
 
