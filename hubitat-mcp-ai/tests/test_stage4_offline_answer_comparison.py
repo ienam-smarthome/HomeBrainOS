@@ -166,7 +166,7 @@ def test_all_private_text_ids_and_event_times_are_excluded_from_report():
     report = json.dumps(compare_stage4d_offline_answers([p]))
     for secret in ("SECRET-PATIENT-ROOM", "SECRET-HOME-DEVICE", "8675309",
                    '"101"', "2026-01-01", "Synthetic Controller",
-                   "sentence_id", "source", "baseline_answer",
+                   "sentence_id", "raw_source_event", "baseline_answer",
                    "candidate_draft", "case_id"):
         assert secret not in report
     assert '"private_answer_text_or_source_ids_exported": false' in report
