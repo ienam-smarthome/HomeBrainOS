@@ -18,6 +18,7 @@ import httpx
 from chat_transport import EmptyOllamaAssistantMessage
 from cloud_benchmark import BenchmarkError, benchmark_status
 from stage5_autonomous_benchmark import _json_object, _safe_cloud_error
+from stage65_question_value import evaluate_question_value_ledger
 
 _MAX_READS = 3
 _MAX_CLOUD = 4
@@ -222,6 +223,35 @@ def _decode_plan_control(raw: str, remaining: set[str], *, can_read: bool):
         supplied = _json_object(raw)
     except (ValueError, json.JSONDecodeError):
         raise PlanDecisionError("not_one_json_object") from None
+
+    # Stage 6.5: model-authored unresolved-question coverage and ranked
+    # expected information gain. Every choice is still a model choice, not
+    # a host-selected reference source. Incomplete appraisal is visible.
+    if supplied.get("schema") == "homebrain-stage6-next.v3":
+        if not {"schema", "action", "source_id", "reason"} <= set(supplied):
+            raise PlanDecisionError("missing_decision_fields") from None
+        if not set(supplied) <= {
+            "schema", "action", "source_id", "reason",
+            "questions", "source_evaluations",
+        }:
+            raise PlanDecisionError("unexpected_decision_fields") from None
+        action = supplied["action"]
+        source_id = supplied["source_id"]
+        reason = supplied["reason"]
+        if type(reason) is not str or not 1 <= len(reason.strip()) <= 240:
+            raise PlanDecisionError("invalid_decision_reason") from None
+        if action == "read":
+            if not can_read or type(source_id) is not str or source_id not in remaining:
+                raise PlanDecisionError("invalid_or_unknown_source_choice") from None
+        elif action == "stop":
+            if source_id is not None:
+                raise PlanDecisionError("invalid_stop_source") from None
+        else:
+            raise PlanDecisionError("unknown_decision_action") from None
+        issues, _review = evaluate_question_value_ledger(supplied, remaining)
+        if "self_contradictory_stop" in issues:
+            raise PlanDecisionError("self_contradictory_stop") from None
+        return supplied, issues
 
     # A minimal, explicit machine-action contract is always mandatory.
     if supplied.get("schema") != "homebrain-stage6-next.v2":
@@ -577,30 +607,39 @@ class Stage6Benchmark:
                 plan_messages = [
                     {"role": "system", "content": (
                         "You are conducting a wholly FICTIONAL, read-only smart-home "
-                        "investigation. Base decisions on the ORIGINAL QUESTION, "
-                        "not solely on the latest events you read. Identify up to "
-                        "four outstanding questions needed to explain the incident. "
-                        "Before STOP, evaluate EVERY UNREAD source TITLE separately: "
-                        "could it change the explanation, test an alternative cause, "
-                        "identify a command/issuer, explain an event sequence, or "
-                        "show why an outcome remains unverified? Sources with "
-                        "different types can answer different questions. Do not "
-                        "stop merely because the state timeline is consistent. "
-                        "Do not stop simply because two plausible records form a timeline. "
-                        "Read one material source within the remaining budget; "
-                        "STOP only if no unread source appears capable of changing "
-                        "the answer. Do not assume unread sources prove anything. "
-                        "Never assert a unique cause from nearby timestamps. "
-                        "Return ONLY JSON with exact keys schema, action, source_id, "
-                        "reason, open_questions, source_evaluations. "
-                        "schema=homebrain-stage6-next.v2; action=read or stop; "
-                        "source_id=one unread ID if read, else null. reason <=240 chars; "
-                        "open_questions=0-4 short specific unresolved questions; "
-                        "source_evaluations=one entry for EACH unread source ID with "
-                        "keys source_id,could_change_answer,why; "
-                        "could_change_answer must be boolean, why 8-220 chars. "
-                        "If any unread source could materially change the answer, "
-                        "do not STOP. No extra keys or markdown."
+                        "investigation. First identify what the ORIGINAL QUESTION "
+                        "still requires, even when a plausible timeline is known. "
+                        "Track up to four question IDs (Q1-Q4), each with status "
+                        "unresolved, addressed, or unverifiable. Consider the "
+                        "incremental information gain of EVERY unread source title "
+                        "for those questions. A source can explain event order, "
+                        "an initiating command, competing causes, verification "
+                        "of actual operation, or why evidence is insufficient. "
+                        "Do not confuse relevance to the latest timeline with "
+                        "value for the overall investigation. Distinct source "
+                        "types can answer different unresolved questions. "
+                        "Rate each unread title: none, context, or material. "
+                        "Material means likely to change at least one conclusion "
+                        "or resolve/qualify an unresolved question; context only "
+                        "adds background. Never assume an unread source proves "
+                        "anything from its title. When reading, choose a source "
+                        "with the HIGHEST expected information gain, not a "
+                        "lower-rated convenience source; use your judgment "
+                        "between ties. STOP only when no unread material source "
+                        "remains. A finished event timeline does not itself "
+                        "settle the incident's initiator or physical outcome. "
+                        "Return only one JSON object with keys schema,action,"
+                        "source_id,reason,questions,source_evaluations. "
+                        "schema=homebrain-stage6-next.v3; action=read or stop; "
+                        "source_id is one offered unread ID or null on stop; "
+                        "reason is 1-240 chars. questions=1-4 objects with "
+                        "keys id,text,status; ids Q1-Q4, unique, text 10-180 chars. "
+                        "source_evaluations must have EXACTLY one entry for "
+                        "EACH unread source, keys source_id,question_ids,gain,why; "
+                        "question_ids are the Q ids that source might inform, "
+                        "gain is none/context/material, why is 8-220 chars. "
+                        "If any unread source has gain material, do not STOP. "
+                        "No extra keys or markdown."
                     )},
                     {"role": "user", "content": json.dumps({
                         "question": case["question"],
@@ -620,20 +659,45 @@ class Stage6Benchmark:
                 except Exception as exc:
                     raise _safe_stage6_error(exc, "adaptive evidence selection") from None
                 planning_reasons.append(plan["reason"])
-                assessment = plan.get("source_evaluations", [])
+                if plan["schema"] == "homebrain-stage6-next.v3":
+                    _problems, question_value = evaluate_question_value_ledger(
+                        plan, {s["id"] for s in case["catalog"] if s["id"] not in selected})
+                    reviewed_sources = [
+                        {"source_id": x["source_id"],
+                         "could_change_answer": x["gain"] == "material",
+                         "reason": x["reason"],
+                         "information_gain": x["gain"],
+                         "question_ids": x["question_ids"]}
+                        for x in question_value["model_source_ranks"]
+                    ]
+                    open_questions = [
+                        x["question"] for x in question_value["model_questions"]
+                        if x["status"] == "unresolved"
+                    ]
+                else:
+                    question_value = {
+                        "model_questions": [], "model_source_ranks": [],
+                        "model_ranking_consistent": None,
+                        "source_rankings_model_authored_not_verified": True,
+                        "source_utility_oracle_used_for_control": False,
+                    }
+                    open_questions = plan.get("open_questions", [])
+                    reviewed_sources = [
+                        {"source_id": x["source_id"],
+                         "could_change_answer": x["could_change_answer"],
+                         "reason": x["why"]}
+                        for x in plan.get("source_evaluations", [])
+                    ]
                 plan_reviews.append({
                     "step": step + 1,
                     "action": plan["action"],
                     "schema": plan["schema"],
-                    "open_questions": plan.get("open_questions", []),
-                    "model_assessed_sources": [
-                        {"source_id": x["source_id"],
-                         "could_change_answer": x["could_change_answer"],
-                         "reason": x["why"]}
-                        for x in assessment
-                    ],
+                    "open_questions": open_questions,
+                    "model_assessed_sources": reviewed_sources,
+                    "question_value_review": question_value,
                     "source_value_coverage_complete":
-                        plan["schema"] == "homebrain-stage6-next.v2",
+                        not decision_issues and plan["schema"] in (
+                            "homebrain-stage6-next.v2", "homebrain-stage6-next.v3"),
                     "planning_contract_issues": decision_issues,
                 })
                 if plan["action"] == "stop":
@@ -719,6 +783,13 @@ class Stage6Benchmark:
                     not planning_contract_issues and
                     all(r["source_value_coverage_complete"] for r in plan_reviews),
                 "planning_contract_issues": sorted(set(planning_contract_issues)),
+                "model_question_value_audit": bool(plan_reviews) and all(
+                    x["schema"] == "homebrain-stage6-next.v3"
+                    and x["source_value_coverage_complete"] for x in plan_reviews),
+                "model_ranking_consistency_failures": sum(
+                    x["question_value_review"].get("model_ranking_consistent") is False
+                    for x in plan_reviews),
+                "source_ranking_is_model_authored_not_oracle_proven": True,
                 "stop_left_host_reference_sources_unexamined":
                     stopped_while_critical_titles_remained,
                 "answer": " ".join(s["text"] for s in answer["sentences"]),
