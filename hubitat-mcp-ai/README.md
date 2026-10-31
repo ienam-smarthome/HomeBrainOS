@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.273**.
+Current add-on version: **0.18.274**.
+
+**Stage 2.5 offline shadow parity (not activated):** Adds a bounded comparator and compute benchmark for canonical versus V3 witness evidence over retained read receipts. No runtime path imports this module and no AI, tool or publisher behaviour is changed. [Release notes](CHANGELOG-0.18.274.md).
 
 **Stages 1/2 architectural foundation (shadow-only):** Adds an anonymised five-cycle incident regression baseline and typed immutable identity/evidence/coverage adapters for future investigation design. The adapter is not invoked at runtime; existing investigation, tools and publisher behave exactly as in 0.18.272. No AI answer redesign is active. [Release notes](CHANGELOG-0.18.273.md).
 
