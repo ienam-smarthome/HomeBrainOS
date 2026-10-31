@@ -233,7 +233,7 @@ def evaluate_stage4g_authored_answers(
                     case_complete = False
                     votes.append(None)
                 else:
-                    votes.append(vote[sentence["sentence_id"]])
+                    votes.append(vote[isolated["sentence_id"]])
                     used[model] += 1
             if None not in votes:
                 totals["sentences_with_two_valid_reviews"] += 1
