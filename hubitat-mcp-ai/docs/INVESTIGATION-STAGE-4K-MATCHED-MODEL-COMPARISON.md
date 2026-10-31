@@ -51,6 +51,25 @@ newly model-authored Stage 4G answers or prove completeness on unseen
 free-form prose. A higher 7B recall may come at worse precision,
 so *both* metrics and high-risk misses must be reported.
 
+## Ollama Cloud production distinction
+
+**The owner's HomeBrainOS uses Ollama Cloud online models for AI
+reasoning**, alongside a separately hosted/local Ollama fallback.
+This benchmark is deliberately **NOT** an Ollama Cloud model test:
+it invokes locally installed Qwen2.5 3B and Qwen2.5 7B weights
+on an ephemeral GitHub runner. The local models may differ substantially
+from the live online model and provider-side inference settings.
+
+No cloud account, tokens, paid inference credits or private house
+data are used in Stage 4K. **Passing or failing this test is not
+grounds to select, replace, disable or certify the owner's
+actual cloud model or live HomeBrain routing.** The next stage
+should inspect the currently configured Ollama Cloud model and
+evaluate it with approved synthetic requests under separately
+authorised credentials/connector access, using the same evidence
+reference standards. Do not assume a previously tried model tag
+is still the current live choice.
+
 ## Privacy, cost and operational boundaries
 
 The runner uses public local model weights and **no cloud inference**:
