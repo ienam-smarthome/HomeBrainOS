@@ -681,6 +681,7 @@ class UnifiedMCPAgent:
         causal_subject_prefetch_enabled: bool = True,
         causal_deterministic_final_enabled: bool = True,
         general_task_engine_enabled: bool = False,
+        stage3_shadow_mode: str = "off",
         known_automations: Any | None = None,
         internet_control_aliases: Any | None = None,
         max_tool_result_chars: int = 24000,
@@ -726,6 +727,11 @@ class UnifiedMCPAgent:
         )
         # Opt-in semantic planning; no changes to tool permissions or approval.
         self.general_task_engine_enabled = bool(general_task_engine_enabled)
+        # Source-only Stage 3C: off unless explicitly constructed in observe
+        # mode. No add-on config or live rollout path enables it.
+        self.stage3_shadow_mode = (
+            "observe" if stage3_shadow_mode == "observe" else "off"
+        )
         self.general_task_planner = GeneralTaskPlanner(self._chat)
         self.known_automations = parse_known_automations(known_automations)
         self.confirmation_policy = ConfirmationPolicy(
@@ -5196,6 +5202,27 @@ class UnifiedMCPAgent:
             )
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
+            # Passive Stage 3C metrics only. The model's original calls,
+            # current live tool catalog, duplicate guards, permissions,
+            # messages and final publication remain authoritative.
+            if (
+                self.stage3_shadow_mode == "observe"
+                and investigative_request
+                and isinstance(calls, list) and calls
+                and not self._mutation_requested_by_user.get()
+            ):
+                try:
+                    from stage3_loop_shadow import observe_stage3_model_round
+                    shadow_round = observe_stage3_model_round(
+                        self.evidence.receipts(), calls, tools)
+                    increment_active_metric("stage3_shadow_observed_round")
+                    if shadow_round["verified_new_candidate_count"]:
+                        increment_active_metric("stage3_shadow_round_with_new_read")
+                    if shadow_round["previous_exact_attempts"]:
+                        increment_active_metric("stage3_shadow_round_with_exact_repeat")
+                except Exception:
+                    # A diagnostic must never affect a live investigation.
+                    increment_active_metric("stage3_shadow_observation_error")
             if not calls:
                 # A model's voluntary stop is a source-choice checkpoint.
                 # Recover independently timestamped archive events while the
