@@ -1,0 +1,79 @@
+name: Stage 4M manual Ollama Cloud synthetic microtrial
+
+# Intentionally never runs on pull_request or push. A write-authorised
+# operator must manually select Run workflow on the main branch.
+on:
+  workflow_dispatch:
+    inputs:
+      case_count:
+        description: "Maximum number of constructed cases (one billable model request per case)"
+        required: true
+        type: choice
+        default: "1"
+        options:
+          - "1"
+          - "2"
+          - "4"
+      confirm_billing:
+        description: "Acknowledge API usage may consume Ollama Cloud allowance"
+        required: true
+        type: boolean
+        default: false
+      confirm_synthetic_only:
+        description: "Confirm only hardcoded fictional evidence is authorised"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage4m-manual-cloud
+  cancel-in-progress: false
+
+jobs:
+  synthetic-cloud-only:
+    if: inputs.confirm_billing == true && inputs.confirm_synthetic_only == true
+    runs-on: ubuntu-24.04
+    environment: ollama-cloud-evaluation
+    timeout-minutes: 15
+    env:
+      OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+      CASE_COUNT: ${{ inputs.case_count }}
+    steps:
+      - name: Checkout pinned workflow branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Strict consent and secret preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OLLAMA_API_KEY" || {
+            echo "Missing protected OLLAMA_API_KEY. No cloud request made."
+            exit 1
+          }
+          case "$CASE_COUNT" in
+            1|2|4) ;;
+            *) echo "Invalid fixed case count"; exit 1 ;;
+          esac
+
+      # No artifacts, model prose, prompts, key values or internal IDs in logs.
+      # Even a fully completed run does not certify semantic correctness.
+      - name: Run bounded consented synthetic cloud requests
+        shell: bash
+        working-directory: hubitat-mcp-ai
+        run: |
+          set -euo pipefail
+          python tools/stage4l_ollama_cloud_trial.py \
+            --enable-cloud-inference \
+            --ack-cloud-billing \
+            --ack-constructed-data-only \
+            --case-limit "$CASE_COUNT"
