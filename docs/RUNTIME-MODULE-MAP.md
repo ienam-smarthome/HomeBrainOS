@@ -55,6 +55,7 @@ The repository drift test compares this table directly with the live directory. 
 | `investigation_objective.py` | Defines a single read-only primary objective for source, rule, and general investigations, shared by routing, synthesis and evidence completion; never authorises writes or certifies source reasoning. |
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
 | `canonical_investigation_evidence.py` | Shadow-only immutable source/clock/identity receipt projection; no runtime calls, commands, model routing or publication. |
+| `stage4_narrative_contract.py` | Offline-only, domain-general host-typed fact packet and model-authored sentence/claim citation validation; intentionally never semantically attests or publishes prose and has no active agent/publisher import. |
 | `stage3_local_capture.py` | Double-opt-in, time-boxed in-RAM pseudonymisation of actual model-chosen scoped READs for aggregate-only Stage 3E reporting; no default activation, disk, network or publisher changes. |
 | `stage3_trace_privacy_report.py` | Pure, local-only, aggregate-only privacy boundary over Stage 3D replay with no source IDs, raw tool calls, publisher output or live activation; separate local CLI in tools/. |
 | `stage3_controlled_replay.py` | Pure offline replay of original model-call-shaped read suggestions versus Stage 3A validated candidates, with independent-oracle utility scoring and no active runtime imports, MCP calls or publication changes. |
