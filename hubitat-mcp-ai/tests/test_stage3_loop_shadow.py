@@ -136,3 +136,22 @@ def test_unhashable_malformed_suboperation_is_skipped_not_crashed():
     report = observe_stage3_model_round([native_command()], calls, [schema()])
     assert report["verified_new_candidate_count"] == 0
     assert report["unsupported_gateway_or_operation_calls_skipped"] == 1
+
+
+def test_privacy_safe_observer_metrics_are_pre_registered():
+    from request_metrics import RequestMetrics
+    counters = (
+        "stage3_shadow_observed_round",
+        "stage3_shadow_round_with_new_read",
+        "stage3_shadow_round_with_exact_repeat",
+        "stage3_shadow_observation_error",
+    )
+    assert set(counters).issubset(RequestMetrics.ALLOWED_COUNTERS)
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        for key in counters:
+            metrics.increment(key)
+        assert all(metrics.snapshot()["counters"][key] == 1 for key in counters)
+    finally:
+        metrics.reset(token)
