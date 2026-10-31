@@ -50,7 +50,7 @@ def replay_suite():
             recorded_shape("hub_list_device_dependents", deviceId="999"),
             recorded_shape("hub_list_device_dependents", deviceId="201"),
         ], [candidate("hub_list_device_dependents", deviceId="201")],
-               facts=cases[0]["facts"], origin="anonymised-reconstruction"),
+               facts=cases[0]["facts"], origin="constructed-fixture"),
         sample("heat-source-issuer", "heating", cases[1]["receipts"], [
             recorded_shape("hub_get_app_config", appId="3999"),
             recorded_shape("hub_get_app_config", appId="501"),
