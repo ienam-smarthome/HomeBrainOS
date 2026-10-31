@@ -769,6 +769,30 @@ def collect_unified_evidence(
     ]
     # A successful log query does not prove coverage of the user period.
     # Only exact source-timestamped rows could support that stronger claim.
+    # Carry safe, independently scoped Hubitat input sensor labels into the
+    # answer view. Device 7895 was correctly investigated but prior receipt
+    # projections retained only numeric IDs and current app relationships.
+    from causal_incident_narrative import safe_device_label
+    input_device_labels: dict[str, str] = {}
+    for receipt in receipts[:160]:
+        if (receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("sub_tool") != "hub_list_device_dependents"):
+            continue
+        args = _args(receipt)
+        details = receipt.get("details")
+        if not isinstance(details, Mapping):
+            continue
+        ident = str(args.get("deviceId") or "")
+        if (not ident.isdecimal() or ident in targets
+                or ident not in input_history_ids
+                or ident != str(details.get("deviceId") or "")):
+            continue
+        raw = details.get("deviceName")
+        safe = safe_device_label(raw, ident, fallback="Motion sensor")
+        if isinstance(raw, str) and safe == raw:
+            input_device_labels[ident] = safe
+
     facts = {
         "source_attested": True,
         "user_target_names": [verified_names[i] for i in sorted(targets)],
@@ -795,6 +819,7 @@ def collect_unified_evidence(
         "native_target_source_complete_for_incident": False,
         "hub_mode_observations": modes[:12],
         "independently_read_input_ids": checked_input_ids,
+        "input_device_labels": input_device_labels,
         "independent_input_observations": independent_input_events[:24],
         "independent_input_observation_total": len(independent_input_events),
         "archived_input_source_observations": archived_input_source_count,
