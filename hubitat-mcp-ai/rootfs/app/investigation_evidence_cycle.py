@@ -26,6 +26,13 @@ def cross_source_discovery_checkpoint(
                          or facts.get("archived_input_source_observations")):
         return None
     source_choices = build_source_feasibility_choices(facts, receipts)
+    # Explicitly elevate the strongest independently justified *next READ*
+    # without routing or executing it. The model still checks live schemas.
+    ranked_reads = (
+        [x for x in (source_choices.get("candidate_reads") or [])
+         if x.get("priority") == "evidence-ranked"]
+        if isinstance(source_choices, Mapping) else []
+    )
     claim_pilot = render_shadow_claim_pilot(facts)
     checked_inputs = facts.get("independently_read_input_ids") or []
     coverage = facts.get("target_coverage") or []
@@ -64,6 +71,7 @@ def cross_source_discovery_checkpoint(
         "sourceContinuityEstablished": False,
         "upstreamInitiatorEstablished": False,
         "sourceFeasibility": source_choices,
+        "highestPriorityUpstreamRead": ranked_reads[0] if ranked_reads else None,
     }
     if not checked_inputs:
         discriminator = (
@@ -90,6 +98,10 @@ def cross_source_discovery_checkpoint(
         + json.dumps(summary, ensure_ascii=True, separators=(",", ":"))
         + "\nThe user asked WHY, not just for a switch-event list. "
         + discriminator
+        + (" A source-qualified upstream lead is available: prefer "
+           "highestPriorityUpstreamRead over repeating target histories or "
+           "uncorrelated scans, unless new evidence rules it out. "
+           if ranked_reads else "")
         + " Choose only available, authorized READ tools through the "
           "current model tool catalog. "
           "Use the sourceFeasibility packet to avoid checked/duplicated "
