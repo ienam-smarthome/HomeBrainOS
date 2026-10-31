@@ -77,6 +77,15 @@ class LocalStage3FCapture:
         self._domain = domain
         self._enabled = True
         self._skipped = 0
+        # A consented production-clock session also has a daemon timer:
+        # private RAM is revoked by deadline even if nobody polls status.
+        # Synthetic test clocks use deterministic on-access expiry instead.
+        self._expiry_timer: threading.Timer | None = None
+        if clock is None:
+            timer = threading.Timer(ttl_seconds, self.disable)
+            timer.daemon = True
+            self._expiry_timer = timer
+            timer.start()
 
     def _live(self) -> bool:
         if self._enabled and float(self._clock()) >= self._deadline:
@@ -90,6 +99,10 @@ class LocalStage3FCapture:
             self._rounds.clear()
             self._key = b""
             self._owner = _UNBOUND
+            timer = self._expiry_timer
+            self._expiry_timer = None
+            if timer is not None:
+                timer.cancel()
 
     def _pseudonym(self, kind: str, raw: Any) -> str | None:
         ident = _id(raw)
