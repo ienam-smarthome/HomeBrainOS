@@ -682,6 +682,7 @@ class UnifiedMCPAgent:
         causal_deterministic_final_enabled: bool = True,
         general_task_engine_enabled: bool = False,
         stage3_shadow_mode: str = "off",
+        stage3_capture_session: Any | None = None,
         known_automations: Any | None = None,
         internet_control_aliases: Any | None = None,
         max_tool_result_chars: int = 24000,
@@ -732,6 +733,17 @@ class UnifiedMCPAgent:
         self.stage3_shadow_mode = (
             "observe" if stage3_shadow_mode == "observe" else "off"
         )
+        # Stage 3F is doubly opt-in: explicit observation mode AND a
+        # separately consented, in-memory local capture object. No config
+        # parser, UI or add-on factory provides either argument.
+        self.stage3_capture_session = None
+        if stage3_capture_session is not None:
+            from stage3_local_capture import LocalStage3FCapture
+            if (self.stage3_shadow_mode != "observe"
+                    or not isinstance(stage3_capture_session, LocalStage3FCapture)):
+                raise ValueError(
+                    "Stage 3F requires explicit observe mode and consented local session")
+            self.stage3_capture_session = stage3_capture_session
         self.general_task_planner = GeneralTaskPlanner(self._chat)
         self.known_automations = parse_known_automations(known_automations)
         self.confirmation_policy = ConfirmationPolicy(
@@ -5223,6 +5235,18 @@ class UnifiedMCPAgent:
                 except Exception:
                     # A diagnostic must never affect a live investigation.
                     increment_active_metric("stage3_shadow_observation_error")
+                if self.stage3_capture_session is not None:
+                    try:
+                        from request_metrics import active_request_identity
+                        captured = self.stage3_capture_session.capture_round(
+                            self.evidence.receipts(), calls, tools,
+                            request_identity=active_request_identity())
+                        if captured.get("captured") is True:
+                            increment_active_metric("stage3_capture_round_observed")
+                    except Exception:
+                        # Capture failure cannot affect tool permissions,
+                        # original calls or final answer publication.
+                        increment_active_metric("stage3_capture_observation_error")
             if not calls:
                 # A model's voluntary stop is a source-choice checkpoint.
                 # Recover independently timestamped archive events while the
