@@ -70,6 +70,12 @@ def render_page(title: str, version: str) -> str:
 .journal-browser-table th,.journal-browser-table td{padding:8px;border-bottom:1px solid #39393d;vertical-align:top;text-align:left;overflow-wrap:anywhere}
 .journal-browser-table th{position:sticky;top:0;background:#242428}
 @media(max-width:520px){.journal-browser-controls{grid-template-columns:1fr 1fr}.journal-browser-controls label:first-child{grid-column:span 2}}
+.cloud-benchmark-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+.cloud-benchmark-controls select{background:#303033;color:#fff;border:1px solid #56565c;border-radius:8px;padding:9px;font-size:13px}
+.cloud-benchmark-controls button{width:auto;margin:0;padding:9px 12px}
+.cloud-benchmark-consent{display:flex;gap:9px;align-items:flex-start;font-size:12px;color:var(--muted)}
+.cloud-benchmark-consent input{width:18px;height:18px;flex:none;margin:0}
+.cloud-benchmark-output{margin-top:10px;padding:10px;background:#101012;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5}
 </style>
 </head>
 <body><main class="wrap">
@@ -116,6 +122,18 @@ def render_page(title: str, version: str) -> str:
 </div>
 <div class="health-actions"><button id="runHealthAudit">🩺 Run system check now</button><button class="secondary" id="sendPushoverReport">📲 Send report to Pushover</button></div>
 <details class="health-details" id="healthAuditDetails"><summary>View system check details</summary><div id="healthAuditDetailsBody" class="muted">No audit has run yet.</div></details>
+</section>
+<section class="card" id="cloudBenchmarkCard">
+<div class="health-heading"><strong>☁️ Cloud AI Benchmark</strong><span class="health-status-chip health-neutral" id="cloudBenchReady">Checking</span></div>
+<p class="journal-small">Test your existing Ollama Cloud model on fictional lighting, heating, ventilation or history evidence. No hub reads, commands, or model fallback. One cloud request per run; consumes your existing allowance.</p>
+<div class="cloud-benchmark-controls">
+<label class="journal-small" for="cloudBenchCase">Scenario</label>
+<select id="cloudBenchCase" aria-label="Synthetic benchmark scenario"><option value="lighting">Lighting command</option><option value="heating">Heating demand</option><option value="ventilation">Ventilation fan</option><option value="history">History coverage</option></select>
+<button id="cloudBenchRun" type="button" disabled>Run one cloud test</button>
+</div>
+<label class="cloud-benchmark-consent"><input type="checkbox" id="cloudBenchConsent">I understand this test sends only fictional data to my configured Ollama Cloud model and may use my cloud allowance.</label>
+<div id="cloudBenchMessage" class="journal-small" role="status">The benchmark never runs automatically.</div>
+<div id="cloudBenchOutput" class="cloud-benchmark-output" hidden aria-live="polite"></div>
 </section>
 <section class="card" id="journalCard">
 <div class="health-heading"><strong>Historical Journal</strong><span class="health-status-chip health-neutral" id="journalHealth">Loading</span></div>
@@ -184,6 +202,62 @@ const query=document.getElementById('query'),ask=document.getElementById('ask'),
 const modelTier=document.getElementById('modelTier'),modelTierNote=document.getElementById('modelTierNote');
 function describeModelTier(){const mode=modelTier.value;modelTierNote.textContent=mode==='free'?'Free: use the configured default model; never upgrade this request to paid.':mode==='paid'?'Paid: DeepSeek Pro only. No Gemma fallback or HomeBrain budget; Ollama account credits apply.':mode==='claude'?'Paid: Claude via the Anthropic API. Anthropic bills separately; no Gemma or DeepSeek fallback.':'Auto: opt-in to existing hybrid routing (may use Ollama paid credits).';}
 modelTier.value='free';modelTier.onchange=describeModelTier;describeModelTier();
+const cloudBenchRun=document.getElementById('cloudBenchRun');
+const cloudBenchConsent=document.getElementById('cloudBenchConsent');
+const cloudBenchCase=document.getElementById('cloudBenchCase');
+const cloudBenchReady=document.getElementById('cloudBenchReady');
+const cloudBenchMessage=document.getElementById('cloudBenchMessage');
+const cloudBenchOutput=document.getElementById('cloudBenchOutput');
+let cloudBenchConfigured=false,cloudBenchRunning=false;
+function updateCloudBenchButton(){cloudBenchRun.disabled=!cloudBenchConfigured||!cloudBenchConsent.checked||cloudBenchRunning}
+cloudBenchConsent.onchange=updateCloudBenchButton;
+async function loadCloudBenchmarkStatus(){
+  try{
+    const response=await fetch(apiPath('api/cloud-benchmark/status'),{cache:'no-store'});
+    const data=await jsonResponse(response);
+    cloudBenchConfigured=!!(response.ok&&data.configured);
+    cloudBenchReady.className='health-status-chip '+(cloudBenchConfigured?'health-ok':'health-warn');
+    cloudBenchReady.textContent=cloudBenchConfigured?'Ready':'Not configured';
+    const remaining=Math.max(0,Number(data.retry_after_seconds)||0);
+    if(!cloudBenchRunning)cloudBenchMessage.textContent=cloudBenchConfigured
+      ?'Existing account · '+(data.model||'cloud model')+(remaining?' · '+remaining+'s cooldown':' · Manual only')
+      :'Existing direct Ollama Cloud key/endpoint is unavailable; normal HomeBrain AI still works.';
+  }catch(error){
+    cloudBenchConfigured=false;cloudBenchReady.textContent='Unavailable';
+    if(!cloudBenchRunning)cloudBenchMessage.textContent='Cloud benchmark status unavailable.';
+  }
+  updateCloudBenchButton();
+}
+cloudBenchRun.onclick=async()=>{
+  if(!cloudBenchConsent.checked||!cloudBenchConfigured||cloudBenchRunning)return;
+  cloudBenchRunning=true;updateCloudBenchButton();
+  cloudBenchOutput.hidden=true;cloudBenchOutput.textContent='';
+  cloudBenchMessage.textContent='Running one fictional cloud investigation. No devices are accessed.';
+  try{
+    const response=await fetch(apiPath('api/cloud-benchmark/run'),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({case_id:cloudBenchCase.value,confirm_cloud_usage:true})
+    });
+    const result=await jsonResponse(response);
+    if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Cloud test unavailable (HTTP '+response.status+')');
+    const supported=Number(result.verified_structured_claims)||0;
+    cloudBenchReady.className='health-status-chip health-ok';
+    cloudBenchReady.textContent='Completed';
+    cloudBenchOutput.textContent='Model: '+result.model+' · '+result.elapsed_seconds+'s · '+supported+' structurally grounded claims\n\n'
+      +'MODEL ANSWER (not independently fact-checked):\n'+result.answer+'\n\n'
+      +'EXPECTED SOURCE LIMITATIONS:\n'+result.expected_evidence+'\n\n'
+      +'Review required: correct citation IDs do not certify causal or physical claims. No devices or existing publisher were changed.';
+    cloudBenchOutput.hidden=false;
+    cloudBenchMessage.textContent='One cloud request completed. Review the model answer against the expected evidence.';
+  }catch(error){
+    cloudBenchReady.className='health-status-chip health-warn';
+    cloudBenchReady.textContent='Not completed';
+    cloudBenchMessage.textContent='Cloud test: '+String(error.message||'request failed').slice(0,180)+'. Do not retry without checking allowance.';
+  }finally{
+    cloudBenchRunning=false;cloudBenchConsent.checked=false;await loadCloudBenchmarkStatus();
+  }
+};
+
 query.value='';try{localStorage.removeItem('hmcp_last_query')}catch(error){}
 const apiPath=path=>`${location.pathname.replace(/\/?$/,'/')}${path}`;
 function healthClass(status){return status==='healthy'?'health-ok':status==='critical'?'health-critical':status==='attention'?'health-warn':'health-neutral'}
@@ -284,7 +358,7 @@ document.getElementById('resetContext').onclick=resetConversation;
 function firmwareUpdateAvailable(data,rawMessage){if(data?.update_available===true)return true;const evidence=Array.isArray(data?.evidence)?data.evidence:[];if(evidence.some(item=>item?.update_available===true||item?.data?.update_available===true||item?.result?.update_available===true))return true;return /\bfirmware update is available\b/i.test(rawMessage)||/\bhub firmware\s+\S+\s+is installed and\s+\S+\s+is available\b/i.test(rawMessage)}
 function choicePrompt(question,choice){const original=String(question||'').trim();const directAction=original.match(/^\s*(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||original.match(/^\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||'';if(directAction)return `${directAction} ${choice}`;const attribute=original.match(/\b(temperature|humidity|battery|power)\b/i)?.[1]||'';if(attribute)return `What is the ${choice} ${attribute}?`;return original?`${original} Device clarification: use exactly ${choice}.`:choice}
 function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
-async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadOneTimeCleanup();loadJournal()}
+async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadOneTimeCleanup();loadJournal();loadCloudBenchmarkStatus()}
 const MAX_CHAT_PROMPT_CHARS=12000;
 function askApiErrorMessage(response,data,length){
   if(response.status===422&&Array.isArray(data?.detail)){

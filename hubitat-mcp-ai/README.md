@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.291**.
+Current add-on version: **0.18.292**.
+
+**Stage 4N — in-app Cloud AI Benchmark (manually triggered):** Uses the already-configured primary Ollama Cloud key and model for one synthetic lighting, heating, ventilation or history scenario. Mobile WebUI panel shows the actual model explanation next to the host-defined evidence limits, response time and source-bound structured checks. A citation is NOT semantic proof; no MCP tools, live device reads, publisher switch, account failover or model changes. Each run requires explicit consent and may use provider allowance. [Release notes](CHANGELOG-0.18.292.md).
 
 **Stage 4K frozen-answer adjudication (source only):** Binds full authored draft text and re-derived source facts before independent per-sentence reference labelling, then measures omitted claims and exact host-source proof across the answer. No publication or semantic certification. [Release notes](CHANGELOG-0.18.291.md).
 

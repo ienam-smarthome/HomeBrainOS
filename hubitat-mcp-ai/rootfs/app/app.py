@@ -84,6 +84,8 @@ from performance_host_plan import (
 )
 from provider_rate_limit_policy import describe_ollama_rate_limit
 from chat_transport import PaidModelUnavailable
+from cloud_benchmark_service import CloudBenchmark, BenchmarkUnavailable, BenchmarkBusy
+from urllib.parse import urlsplit
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -553,6 +555,7 @@ app = FastAPI(
     version=VERSION,
     lifespan=lifespan,
 )
+cloud_benchmark = CloudBenchmark(agent.transport)
 
 
 class HistoryItem(BaseModel):
@@ -595,6 +598,11 @@ class ChatRequest(BaseModel):
     @property
     def coordination_key(self) -> str:
         return self.session_id
+
+
+class CloudBenchmarkRequest(BaseModel):
+    case_id: Literal["lighting", "heating", "ventilation", "history"]
+    confirm_cloud_usage: Literal[True]
 
 
 class TTSRequest(BaseModel):
@@ -1024,6 +1032,38 @@ async def health() -> dict[str, Any]:
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     return await health()
+
+
+@app.get("/api/cloud-benchmark/status")
+async def cloud_benchmark_status() -> JSONResponse:
+    """Manual-only synthetic benchmark capabilities; no model calls."""
+    result = cloud_benchmark.status()
+    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+        result["configured"] = False
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/cloud-benchmark/run")
+async def run_cloud_benchmark(payload: CloudBenchmarkRequest, request: Request) -> JSONResponse:
+    """Single billable cloud-only request; no MCP or agent invocation."""
+    # Block drive-by cross-origin browser requests and JSON-free simple forms.
+    origin = urlsplit(request.headers.get("origin") or "")
+    host = str(request.headers.get("host") or "").casefold()
+    fetch_site = str(request.headers.get("sec-fetch-site") or "").casefold()
+    if (origin.scheme not in {"http", "https"}
+            or origin.netloc.casefold() != host
+            or fetch_site not in {"", "same-origin"}
+            or request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json"):
+        raise HTTPException(status_code=403, detail="Benchmark requests require the same-origin HomeBrain page")
+    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+        raise HTTPException(status_code=409, detail="Ollama direct cloud is disabled")
+    try:
+        result = await cloud_benchmark.run(payload.case_id)
+    except BenchmarkBusy as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from None
+    except BenchmarkUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 @app.get("/api/evidence-journal/status")
 async def evidence_journal_status() -> dict[str, Any]:
