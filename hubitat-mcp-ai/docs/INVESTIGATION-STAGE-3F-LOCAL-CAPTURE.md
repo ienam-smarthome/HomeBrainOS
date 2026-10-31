@@ -61,7 +61,9 @@ or end-to-end response speed.
 - Strict explicit consent token at construction; accept only approved
   domain categories.
 - Automatic in-memory expiry within 900 seconds; configurable from 1 to
-  900 seconds. Expiry is checked when capturing, reporting or inspecting.
+  900 seconds. A one-shot local daemon timer clears an idle session at the
+  deadline, and capture/report/status also check expiry. Synthetic-clock
+  tests use deterministic access-time checks.
 - Explicit `disable()` clears retained rounds and drops the secret
   immediately and irreversibly for that object. Python garbage collection
   does not guarantee forensic RAM zeroisation.
