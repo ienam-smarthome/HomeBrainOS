@@ -106,7 +106,7 @@ def evaluate_stage3d_replay(
         if (not isinstance(case_id, str) or not _SAFE_LABEL.fullmatch(case_id)
                 or not isinstance(domain, str) or not _SAFE_LABEL.fullmatch(domain)):
             raise ValueError("case id and domain must be safe identifiers")
-        if origin not in _ORIGINS:
+        if not isinstance(origin, str) or origin not in _ORIGINS:
             raise ValueError("trace_origin must state the input's evidence provenance")
         rounds = case.get("rounds")
         if not isinstance(rounds, (list, tuple)) or not rounds:
