@@ -202,5 +202,5 @@ def test_no_live_devices_or_model_routing_in_new_service():
     assert 'id="cloudBenchConsent"' in ui
     assert 'id="cloudBenchRun"' in ui
     assert "source_bound" not in ui or "independently fact-checked" in ui
-    assert 'apiPath(\\'api/cloud-benchmark/run\\')' in ui
+    assert "apiPath('api/cloud-benchmark/run')" in ui
     assert 'confirm_cloud_usage:true' in ui
