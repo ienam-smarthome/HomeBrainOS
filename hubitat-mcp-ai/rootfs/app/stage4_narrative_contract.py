@@ -96,7 +96,7 @@ def build_stage4_evidence_packet(
     source_items = len({tuple((k, item.get(k)) for k in sorted(item))
                         for item in (
                             [{
-                                "kind": _EVENT_KIN[e.role],
+                                "kind": _EVENT_KINDS[e.role],
                                 "entity_id": e.entity_id,
                                 "attribute": e.attribute,
                                 "value": e.value,
