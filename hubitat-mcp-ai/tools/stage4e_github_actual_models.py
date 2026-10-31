@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
     try:
-        client = LoopbackOllama(timeout_seconds=args.timeout_seconds)
+        client = LoopbackOllama(timeout_seconds=args.timeout_seconds, structured_review_schema=True)
         report = evaluate(invoke=client)
         # Assert the evaluator actually attempted two models for all eight cases.
         if (client.attempted != 16 or report["review_calls_attempted"] != 16
