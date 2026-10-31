@@ -135,11 +135,57 @@ _CASES = {
 
 
 def _validate_plan(raw: str, remaining: set[str], *, can_read: bool) -> dict:
+    """Validate source-value decisions without revealing hidden gold labels.
+
+    V1 is retained for offline/older mock compatibility. The live model
+    is asked for v2, where *every* unread source is evaluated against the
+    user's unresolved questions. A STOP contradicting its own material-source
+    assessment fails closed instead of being silently overwritten by the
+    host's hidden relevance oracle.
+    """
     plan = _json_object(raw)
-    if set(plan) != {"schema", "action", "source_id", "reason"}:
-        raise ValueError("unexpected plan keys")
-    if plan["schema"] != "homebrain-stage6-next.v1":
-        raise ValueError("unexpected plan schema")
+    version = plan.get("schema")
+    if version == "homebrain-stage6-next.v2":
+        if set(plan) != {
+            "schema", "action", "source_id", "reason",
+            "open_questions", "source_evaluations",
+        }:
+            raise ValueError("unexpected v2 plan keys")
+        questions = plan["open_questions"]
+        if (not isinstance(questions, list) or len(questions) > 4
+                or any(not isinstance(q, str) or not 8 <= len(q.strip()) <= 180
+                       for q in questions)
+                or len(set(questions)) != len(questions)):
+            raise ValueError("invalid open question ledger")
+        assessments = plan["source_evaluations"]
+        if (not isinstance(assessments, list) or len(assessments) != len(remaining)):
+            raise ValueError("all unread sources require individual assessment")
+        seen = set()
+        useful = set()
+        for entry in assessments:
+            if (not isinstance(entry, dict)
+                    or set(entry) != {"source_id", "could_change_answer", "why"}
+                    or not isinstance(entry["source_id"], str)
+                    or entry["source_id"] not in remaining
+                    or entry["source_id"] in seen
+                    or type(entry["could_change_answer"]) is not bool
+                    or not isinstance(entry["why"], str)
+                    or not 8 <= len(entry["why"].strip()) <= 220):
+                raise ValueError("invalid, duplicate or incomplete source assessment")
+            seen.add(entry["source_id"])
+            if entry["could_change_answer"]:
+                useful.add(entry["source_id"])
+        if seen != remaining:
+            raise ValueError("missing source assessment")
+        if plan["action"] == "stop" and useful:
+            raise ValueError("cannot stop while self-identified useful sources remain")
+        if plan["action"] == "read" and plan["source_id"] not in useful:
+            raise ValueError("chosen source must be assessed as useful")
+    elif version == "homebrain-stage6-next.v1":
+        if set(plan) != {"schema", "action", "source_id", "reason"}:
+            raise ValueError("unexpected v1 plan keys")
+    else:
+        raise ValueError("unknown plan schema")
     if not isinstance(plan["reason"], str) or not 1 <= len(plan["reason"].strip()) <= 240:
         raise ValueError("invalid investigation rationale")
     if plan["action"] == "stop" and plan["source_id"] is None:
@@ -403,6 +449,7 @@ class Stage6Benchmark:
             selected: list[str] = []
             all_sources = {s["id"]: s for s in case["catalog"]}
             planning_reasons = []
+            plan_reviews = []
             stopped_while_critical_titles_remained = False
             started = self._clock()
             before = len(self._attempts)
@@ -416,21 +463,29 @@ class Stage6Benchmark:
                 plan_messages = [
                     {"role": "system", "content": (
                         "You are conducting a wholly FICTIONAL, read-only smart-home "
-                        "investigation. Decide whether another source would materially "
-                        "help, using only the source TITLES below. Before STOP, audit "
-                        "whether the QUESTION is answered and whether any UNREAD "
-                        "command history, independently sourced state/timestamp "
-                        "report, execution acknowledgement, or alternative issuer "
-                        "could change the explanation. If one can, READ it when "
-                        "budget permits. Do not stop simply because two plausible "
-                        "records form a timeline. Stop when no remaining source "
-                        "appears materially informative or you can explain what "
-                        "is unresolvable. Never assert a unique cause from nearby "
-                        "timestamps or confusing broker health. "
-                        "Return ONLY JSON {schema,action,source_id,reason}: "
-                        "schema homebrain-stage6-next.v1; action read or stop. "
-                        "Use source_id null when stopping, else exactly one remaining "
-                        "source ID. Reason <= 240 characters."
+                        "investigation. Base decisions on the ORIGINAL QUESTION, "
+                        "not solely on the latest events you read. Identify up to "
+                        "four outstanding questions needed to explain the incident. "
+                        "Before STOP, evaluate EVERY unread source TITLE separately: "
+                        "could it change the explanation, test an alternative cause, "
+                        "identify a command/issuer, explain an event sequence, or "
+                        "show why an outcome remains unverified? Sources with "
+                        "different types can answer different questions. Do not "
+                        "stop merely because the state timeline is consistent. "
+                        "Read one material source within the remaining budget; "
+                        "STOP only if no unread source appears capable of changing "
+                        "the answer. Do not assume unread sources prove anything. "
+                        "Never assert a unique cause from nearby timestamps. "
+                        "Return ONLY JSON with exact keys schema, action, source_id, "
+                        "reason, open_questions, source_evaluations. "
+                        "schema=homebrain-stage6-next.v2; action=read or stop; "
+                        "source_id=one unread ID if read, else null. reason <=240 chars; "
+                        "open_questions=0-4 short specific unresolved questions; "
+                        "source_evaluations=one entry for EACH unread source ID with "
+                        "keys source_id,could_change_answer,why; "
+                        "could_change_answer must be boolean, why 8-220 chars. "
+                        "If any unread source could materially change the answer, "
+                        "do not STOP. No extra keys or markdown."
                     )},
                     {"role": "user", "content": json.dumps({
                         "question": case["question"],
@@ -449,6 +504,21 @@ class Stage6Benchmark:
                 except Exception as exc:
                     raise _safe_stage6_error(exc, "adaptive evidence selection") from None
                 planning_reasons.append(plan["reason"])
+                assessment = plan.get("source_evaluations", [])
+                plan_reviews.append({
+                    "step": step + 1,
+                    "action": plan["action"],
+                    "schema": plan["schema"],
+                    "open_questions": plan.get("open_questions", []),
+                    "model_assessed_sources": [
+                        {"source_id": x["source_id"],
+                         "could_change_answer": x["could_change_answer"],
+                         "reason": x["why"]}
+                        for x in assessment
+                    ],
+                    "source_value_coverage_complete":
+                        plan["schema"] == "homebrain-stage6-next.v2",
+                })
                 if plan["action"] == "stop":
                     stop_reason = "model_stopped"
                     # Strictly evaluation-side: do NOT reveal the hidden
@@ -495,6 +565,12 @@ class Stage6Benchmark:
                     "question": case["question"],
                     "initial_observation": case["initial"],
                     "examined_source_records": gathered,
+                    "unexamined_source_titles": [
+                        {"id": src["id"], "title": src["title"]}
+                        for src in case["catalog"] if src["id"] not in selected
+                    ],
+                    "investigation_question_ledger":
+                        plan_reviews[-1]["open_questions"] if plan_reviews else [],
                     "stopped_by": stop_reason,
                 }, separators=(",", ":"), ensure_ascii=True)},
             ]
@@ -515,6 +591,13 @@ class Stage6Benchmark:
                 "requested_source_reads": len(selected),
                 "stop_reason": stop_reason,
                 "model_stop_justification": planning_reasons[-1] if stop_reason == "model_stopped" else None,
+                "source_value_review": plan_reviews,
+                "stop_source_value_review_complete":
+                    bool(plan_reviews) and
+                    plan_reviews[-1]["source_value_coverage_complete"],
+                "stop_unresolved_questions":
+                    plan_reviews[-1]["open_questions"] if plan_reviews else [],
+                "source_utility_model_supplied_not_verified": True,
                 "stop_left_host_reference_sources_unexamined":
                     stopped_while_critical_titles_remained,
                 "answer": " ".join(s["text"] for s in answer["sentences"]),
