@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
+from causal_claim_attestation import source_witness_aliases
+
 
 def render_shadow_claim_pilot(
     facts: Mapping[str, Any] | None, *, final_synthesis: bool = False,
@@ -34,6 +36,11 @@ def render_shadow_claim_pilot(
     }
     if len(source_ids) < 2:
         return ""
+    # Models have repeatedly failed to copy cryptographic-length witness IDs
+    # (5 missing_witness failures in the 0.18.270 live replay). Offer short
+    # immutable aliases bound to the independently constructed source ledger.
+    aliases = source_witness_aliases(ledger)
+    inverse_alias = {v: k for k, v in aliases.items()}
     # Show original-source ON and OFF examples for BOTH verified targets.
     # A first-three sample biased toward ON can cause valid but incomplete
     # model envelopes. Emit a copyable four-claim coverage example while
@@ -54,12 +61,15 @@ def render_shadow_claim_pilot(
             if row is None:
                 continue
             examples.append({
-                "id": row["witness_id"], "device_id": row["entity"],
+                "id": inverse_alias.get(row["witness_id"], row["witness_id"]),
+                "device_id": row["entity"],
                 "event_class": row["event_class"], "clock_basis": row["clock_basis"],
             })
             paired.append({
                 "kind": "reported_switch_state", "device_id": row["entity"],
-                "state": state, "witness_ids": [row["witness_id"]],
+                "state": state, "witness_ids": [
+                    inverse_alias.get(row["witness_id"], row["witness_id"])
+                ],
             })
     if not paired:
         return ""
@@ -91,7 +101,10 @@ def render_shadow_claim_pilot(
         + directive
         + "fenced code block with language homebrain-claims containing JSON "
           "schema homebrain-claims.v1 and at most 8 typed claims. "
-          "Use only provided verified witness IDs and exact device IDs. "
+          "Use only the SHORT witness aliases in the examples, "
+          "such as w_t1_on and w_t2_off; the host resolves them to "
+          "independently verified source records. Do not invent new "
+          "aliases or provide fabricated long hashes. Use exact device IDs. "
           "Include at least one source-timed ON and OFF state claim for "
           "EACH target when both witnesses exist, plus one "
           "upstream_cause_unverified claim with no witnesses. This is "
@@ -113,6 +126,8 @@ def render_shadow_claim_pilot(
           "publisher can only use validated claim selections to assemble "
           "natural-language evidence; your unsupported prose is never "
           "automatically approved. "
+          " The shortest fully verified set contains four ON/OFF "
+          "state claims and one upstream_cause_unverified claim. "
           "Witness examples: "
         + json.dumps(examples[:12], ensure_ascii=True,
                      separators=(",", ":"))[:1650]
