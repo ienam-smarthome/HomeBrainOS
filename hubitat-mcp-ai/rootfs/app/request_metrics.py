@@ -69,6 +69,7 @@ class RequestMetrics:
         "v3_witness_total", "v3_witness_source_inputs",
         "v3_witness_immediate_command_matches",
         "v3_witness_targets_without_on_issuer",
+        "v3_ranked_upstream_round_offer",
         "v3_claim_pilot_recovery_offered",
         "v3_claim_pilot_final_offered",
         "v3_claim_first_draft_present",
