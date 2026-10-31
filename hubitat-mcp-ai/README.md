@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.269**.
+Current add-on version: **0.18.270**.
+
+**V3 claim-guided natural-language publication:** For historical two-target incidents with incomplete native history, a complete and valid source-witness claim envelope can now drive a concise natural-language evidence summary rather than the repetitive legacy digest. Free model prose is never automatically certified by witness IDs; the host renders strictly from verified facts and receiver comparisons. Missing, incomplete or rejected claims retain the safe historical digest. Add allowlisted rejection-reason metrics, balanced ON/OFF witness examples, and regression tests. [Release notes](CHANGELOG-0.18.270.md).
 
 **V3 runtime frontier continuity:** A later model-selected successful dependency leaf now refreshes a verified input-relationship lead within the existing active tool rounds, rather than waiting for new Historical Journal rows. Scoped dependency receipts retain validated app IDs (not names or settings) so an independently verified shared app can become a follow-up. The current read-only model tool catalog and historical attribution safeguards remain authoritative. [Release notes](CHANGELOG-0.18.269.md).
 
