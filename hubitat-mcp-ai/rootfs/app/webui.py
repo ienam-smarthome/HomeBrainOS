@@ -70,6 +70,17 @@ def render_page(title: str, version: str) -> str:
 .journal-browser-table th,.journal-browser-table td{padding:8px;border-bottom:1px solid #39393d;vertical-align:top;text-align:left;overflow-wrap:anywhere}
 .journal-browser-table th{position:sticky;top:0;background:#242428}
 @media(max-width:520px){.journal-browser-controls{grid-template-columns:1fr 1fr}.journal-browser-controls label:first-child{grid-column:span 2}}
+
+.benchmark-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;margin-top:10px}
+.benchmark-controls select{min-width:0;width:100%;background:#303033;color:#fff;border:1px solid #52525b;border-radius:9px;padding:10px}
+.benchmark-controls button{width:auto;margin:0;padding:10px 13px}
+.benchmark-consent{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:13px;line-height:1.5}
+.benchmark-consent input{width:auto;margin:3px 0;flex:none}
+.benchmark-report{white-space:normal;font-size:13px;line-height:1.55;margin-top:10px}
+.benchmark-report p{margin:7px 0}
+.benchmark-check{padding:7px 0;border-bottom:1px solid #37373b}
+.benchmark-check:last-child{border-bottom:0}
+@media(max-width:520px){.benchmark-controls{grid-template-columns:1fr}.benchmark-controls button{width:100%}}
 </style>
 </head>
 <body><main class="wrap">
@@ -106,6 +117,23 @@ def render_page(title: str, version: str) -> str:
 <div class="answer" id="answer" role="status" aria-live="polite">Ready for a question.</div>
 </section>
 <section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
+<details class="card" id="cloudBenchmarkCard">
+<summary><strong>🧪 Ollama Cloud benchmark</strong> <span class="muted">Uses your current account</span></summary>
+<p class="muted" id="cloudBenchmarkAvailability">Checking the configured cloud model…</p>
+<p class="muted">Four fictional smart-home investigations. No live hub or device reads. Each test makes one cloud request and may consume your account allowance. Evidence-check scores do not certify the generated explanation.</p>
+<label class="muted" for="cloudBenchmarkCase">Choose a fictional scenario</label>
+<div class="benchmark-controls">
+<select id="cloudBenchmarkCase" aria-label="Cloud benchmark scenario">
+<option value="lighting">Lighting command and cause</option>
+<option value="heating">Heating and physical operation</option>
+<option value="ventilation">Fan and humidity attribution</option>
+<option value="history">Missing contact history</option>
+</select>
+<button id="runCloudBenchmark" type="button" disabled>Run one cloud test</button>
+</div>
+<label class="benchmark-consent"><input id="cloudBenchmarkConsent" type="checkbox">I authorise one synthetic Ollama Cloud request using my existing account allowance.</label>
+<div class="benchmark-report" id="cloudBenchmarkResult" role="status" aria-live="polite">No benchmark run this session.</div>
+</details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
 <div class="health-grid">
@@ -485,6 +513,68 @@ document.getElementById('journalBrowseCopy').onclick=async()=>{
 
 document.getElementById('journalDetails').addEventListener('toggle',event=>{if(event.target.open)void loadJournalRecent()});
 document.getElementById('journalRefresh').onclick=async()=>{const b=document.getElementById('journalRefresh');b.disabled=true;try{await loadJournal();await loadJournalRecent()}finally{b.disabled=false}};
+async function loadCloudBenchmarkStatus(){
+  const note=document.getElementById('cloudBenchmarkAvailability');
+  try{
+    const response=await fetch(apiPath('api/cloud-benchmark/status'));
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error('Benchmark status unavailable');
+    const model=data.model||'not configured';
+    note.textContent=data.available?'Ready · Ollama Cloud model: '+model+' · Existing primary account.':(data.reason||'Cloud model unavailable.');
+    document.getElementById('runCloudBenchmark').dataset.available=data.available?'yes':'no';
+  }catch(_error){
+    note.textContent='Benchmark status unavailable.';
+    document.getElementById('runCloudBenchmark').dataset.available='no';
+  }
+  updateCloudBenchmarkButton();
+}
+function updateCloudBenchmarkButton(){
+  const run=document.getElementById('runCloudBenchmark');
+  run.disabled=run.dataset.available!=='yes'||!document.getElementById('cloudBenchmarkConsent').checked||run.dataset.running==='yes';
+}
+document.getElementById('cloudBenchmarkConsent').onchange=updateCloudBenchmarkButton;
+document.getElementById('runCloudBenchmark').onclick=async()=>{
+  const button=document.getElementById('runCloudBenchmark');
+  const view=document.getElementById('cloudBenchmarkResult');
+  if(button.disabled||!document.getElementById('cloudBenchmarkConsent').checked)return;
+  button.dataset.running='yes';updateCloudBenchmarkButton();
+  view.textContent='Testing your configured cloud model using fictional evidence…';
+  try{
+    const response=await fetch(apiPath('api/cloud-benchmark/run'),{
+      method:'POST',headers:{'Content-Type':'application/json','X-HomeBrain-Benchmark':'confirmed'},
+      body:JSON.stringify({case_id:document.getElementById('cloudBenchmarkCase').value,confirm_cloud_allowance:true})
+    });
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Cloud test failed (HTTP '+response.status+')');
+    view.replaceChildren();
+    const heading=document.createElement('strong');
+    heading.textContent=data.title+' · '+data.checks_correct+'/'+data.checks_total+' evidence checks correct · '+(data.elapsed_ms/1000).toFixed(1)+'s';
+    view.append(heading);
+    const info=document.createElement('p');
+    info.textContent='Model: '+data.model+' · Unsupported conclusions wrongly accepted: '+data.unsupported_conclusions_wrongly_accepted+'/'+data.unsupported_conclusions_total+'.';
+    view.append(info);
+    const natural=document.createElement('p');
+    natural.textContent='AI explanation (not independently fact-checked): '+data.explanation;
+    view.append(natural);
+    const rows=document.createElement('details');rows.className='technical';
+    const summary=document.createElement('summary');summary.textContent='View independent synthetic claim checks';rows.append(summary);
+    for(const check of data.evidence_checks||[]){
+      const item=document.createElement('div');item.className='benchmark-check';
+      item.textContent=(check.correct?'✓ ':'✕ ')+check.statement+' · AI: '+check.model_verdict.replace('_',' ')+' · Expected: '+check.expected_verdict.replace('_',' ');
+      rows.append(item);
+    }
+    view.append(rows);
+    const limit=document.createElement('p');limit.className='muted';
+    limit.textContent='This scores predefined synthetic evidence classifications only. It does not prove prose accuracy, investigation completeness, or readiness to replace HomeBrain answers. No devices were touched.';
+    view.append(limit);
+  }catch(error){view.textContent='Cloud benchmark unavailable: '+error.message}
+  finally{
+    document.getElementById('cloudBenchmarkConsent').checked=false;
+    button.dataset.running='no';updateCloudBenchmarkButton();
+  }
+};
+loadCloudBenchmarkStatus();
+
 status();setInterval(status,30000);
 </script></body></html>"""
         .replace("__SAFE_TITLE__", safe_title)
