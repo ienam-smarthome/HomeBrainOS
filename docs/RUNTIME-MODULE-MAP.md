@@ -55,6 +55,7 @@ The repository drift test compares this table directly with the live directory. 
 | `investigation_objective.py` | Defines a single read-only primary objective for source, rule, and general investigations, shared by routing, synthesis and evidence completion; never authorises writes or certifies source reasoning. |
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
 | `canonical_investigation_evidence.py` | Shadow-only immutable source/clock/identity receipt projection; no runtime calls, commands, model routing or publication. |
+| `stage4_full_answer_evaluation.py` | Offline-only host source fact projection, bounded authored prose selection, independent expected-ID coverage and diagnostic reviewer requests; no semantic truth or publisher activation. |
 | `stage4_offline_answer_comparison.py` | Pure local, source-only paired answer evaluation: validates typed candidate facts, reviewer concordance and separately labelled quality dimensions, never selects or publishes a winner. |
 | `stage4_offline_model_evaluation.py` | Offline-only, bounded model author/reviewer invocation harness and independent-reference accuracy report; requires explicit caller-provided adapter and never publishes, dispatches MCP calls or integrates with active agent. |
 | `stage4_semantic_sufficiency.py` | Offline-only two-reviewer, source-cited sentence entailment protocol and independent-oracle false-acceptance benchmark; cannot attest semantics or enable publication. |
