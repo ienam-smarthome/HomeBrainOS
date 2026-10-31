@@ -13,7 +13,9 @@ responses via the already merged Stage 4C localhost-only adapter.
 There are **eight constructed, independently labelled test sentences**
 (lighting/heating/ventilation/history, four supported and four unsupported).
 Both models are asked separately to review each sentence, for **16 local
-model invocations**. They receive source evidence and authored text but
+model invocations**. Ollama's supported JSON-schema constrained-output
+mode is used to require the complete review envelope; it does not choose
+the semantic verdict or silently repair malformed model responses. They receive source evidence and authored text but
 **never the reference answer, another reviewer response or any live Home
 Assistant/Hubitat material**. The runner verifies it attempted 16 calls.
 The completed review envelopes are measured with Stage 4B's existing
