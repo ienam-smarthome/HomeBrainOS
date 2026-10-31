@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.268**.
+Current add-on version: **0.18.269**.
+
+**V3 runtime frontier continuity:** A later model-selected successful dependency leaf now refreshes a verified input-relationship lead within the existing active tool rounds, rather than waiting for new Historical Journal rows. Scoped dependency receipts retain validated app IDs (not names or settings) so an independently verified shared app can become a follow-up. The current read-only model tool catalog and historical attribution safeguards remain authoritative. [Release notes](CHANGELOG-0.18.269.md).
 
 **V3 evidence-ranked upstream read frontier:** Once the same-collector evidence establishes a complete one-to-one input/actuator pattern, the original AI investigator now receives a model-selectable suggestion to inspect that verified input’s Hubitat app dependents before lower-value repeat reads. An independently attested shared current app can become the next config lead. No new gateway permissions, host-executed reads, forced controller attribution or publication change. [Release notes](CHANGELOG-0.18.268.md).
 
