@@ -55,6 +55,7 @@ The repository drift test compares this table directly with the live directory. 
 | `investigation_objective.py` | Defines a single read-only primary objective for source, rule, and general investigations, shared by routing, synthesis and evidence completion; never authorises writes or certifies source reasoning. |
 | `causal_claim_pilot.py` | Shared bounded V3 shadow claim prompt for initial and recovered-journal evidence stages; no new tool or publication authority. |
 | `canonical_investigation_evidence.py` | Shadow-only immutable source/clock/identity receipt projection; no runtime calls, commands, model routing or publication. |
+| `cloud_connection_diagnostics.py` | Manually initiated no-inference official Ollama Cloud account status check; reports sanitized HTTP 401/403, no balance or credential body, not a chat availability guarantee. |
 | `stage6_adaptive_benchmark.py` | Synthetic-only four-call adaptive Cloud evidence investigation with competing-event source records, explicit optional STOP, withheld reference scoring and per-sentence citation checks; no production-tool access. |
 | `stage5_autonomous_benchmark.py` | Consent-gated synthetic two-round Cloud model evidence discovery, source-bound claim grading and natural explanation pilot; never reads or controls a real device. |
 | `cloud_benchmark.py` | Explicit-consent, synthetic-only, in-app evidence-classification benchmark using the configured primary Ollama Cloud transport; never calls MCP tools, writes devices or certifies authored prose. |

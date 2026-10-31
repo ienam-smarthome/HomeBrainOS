@@ -163,6 +163,8 @@ def render_page(title: str, version: str) -> str:
 <details class="card" id="stage6Card">
 <summary><strong>🔍 Stage 6 · Conflicting evidence</strong> <span class="muted">Adaptive AI investigation</span></summary>
 <p class="muted" id="stage6Availability">Checking configured cloud model…</p>
+<button type="button" id="checkCloudConnection" class="secondary">Check cloud connection (no AI request)</button>
+<p class="stage5-note" id="cloudConnectionResult" role="status" aria-live="polite">The Ready indicator checks configuration only, not provider authorisation. A connection check sends one account-status request, without model inference or credit usage.</p>
 <p class="stage5-note">Gemma decides which fictional records to inspect, one at a time, and when to stop. Cases include misleading clocks, competing app commands and stale MQTT data. This can use <strong>up to four cloud requests</strong>. No hub or device access. Declared citations are checked, but <strong>not every implication of its prose</strong>.</p>
 <label class="muted" for="stage6Scenario">Choose a harder fictional investigation</label>
 <div class="stage5-choices">
@@ -710,7 +712,7 @@ async function loadStage6Status(){
     const data=await jsonResponse(r);
     if(!r.ok)throw new Error('Unavailable');
     b.dataset.available=data.available?'yes':'no';
-    note.textContent=data.available?'Ready · '+data.model+' · existing cloud account':(data.reason||'Cloud unavailable');
+    note.textContent=data.available?'Configured (not yet authenticated) · '+data.model+' · existing cloud account':(data.reason||'Cloud unavailable');
   }catch(_error){b.dataset.available='no';note.textContent='Cloud status unavailable.'}
   stage6RefreshButton();
 }
@@ -780,6 +782,24 @@ document.getElementById('runStage6').onclick=async()=>{
     out.append(warning);
   }catch(error){out.textContent='Stage 6 unavailable: '+error.message}
   finally{document.getElementById('stage6Consent').checked=false;b.dataset.running='no';stage6RefreshButton()}
+};
+document.getElementById('checkCloudConnection').onclick=async()=>{
+  const button=document.getElementById('checkCloudConnection');
+  const output=document.getElementById('cloudConnectionResult');
+  if(button.disabled)return;
+  button.disabled=true;output.textContent='Checking Ollama account access without running any model…';
+  try{
+    const response=await fetch(apiPath('api/cloud-connection/check'),{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-HomeBrain-Benchmark':'confirmed'},
+      body:'{}'
+    });
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Connection check failed');
+    output.textContent=(data.http_status===null?'Network check: ':'Provider HTTP '+data.http_status+' · ')+
+      data.guidance+' No model inference was requested.';
+  }catch(error){output.textContent='Connection diagnostic unavailable: '+error.message}
+  finally{button.disabled=false}
 };
 loadStage6Status();
 

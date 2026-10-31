@@ -85,6 +85,7 @@ from performance_host_plan import (
 from provider_rate_limit_policy import describe_ollama_rate_limit
 from chat_transport import PaidModelUnavailable
 from cloud_benchmark import CloudBenchmark, BenchmarkError, benchmark_status
+from cloud_connection_diagnostics import CloudConnectionDiagnostics
 from stage5_autonomous_benchmark import Stage5Benchmark, stage5_status
 from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
 from anthropic_transport import describe_anthropic_http_error
@@ -398,6 +399,7 @@ agent = UnifiedMCPAgent(
     ),
 )
 cloud_benchmark = CloudBenchmark()
+cloud_connection_diagnostics = CloudConnectionDiagnostics()
 stage5_benchmark = Stage5Benchmark()
 stage6_benchmark = Stage6Benchmark()
 
@@ -1110,6 +1112,26 @@ async def run_stage5_benchmark(payload: Stage5BenchmarkRequest, request: Request
             agent.transport, payload.case_id,
             confirmed=payload.confirm_cloud_allowance is True,
         )
+    except BenchmarkError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+
+
+@app.post("/api/cloud-connection/check")
+async def check_cloud_connection(request: Request) -> dict[str, Any]:
+    """Manually requested, non-inference account authorization check."""
+    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+        raise HTTPException(status_code=503, detail="Ollama direct cloud is disabled.")
+    if (request.headers.get("x-homebrain-benchmark") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(status_code=403, detail="Use the dashboard connection-check button.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403, detail="This check requires a same-origin request.")
+    try:
+        return await cloud_connection_diagnostics.check(agent.transport)
     except BenchmarkError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
 

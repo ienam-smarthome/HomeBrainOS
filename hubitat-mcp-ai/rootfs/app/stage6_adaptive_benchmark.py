@@ -345,6 +345,20 @@ def stage6_status(transport: Any) -> dict:
 
 
 def _safe_stage6_error(exc: Exception, phase: str) -> BenchmarkError:
+    # Authentication and access controls are not interchangeable. The prior
+    # combined label hid whether the user should inspect the configured key
+    # or investigate a provider-side access policy. Keep raw body/headers out.
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 401:
+            return BenchmarkError(502,
+                f"Stage 6 {phase} was rejected (Ollama HTTP 401: key not accepted). "
+                "No retry was attempted. Use Check cloud connection.")
+        if status == 403:
+            return BenchmarkError(502,
+                f"Stage 6 {phase} was denied (Ollama HTTP 403: provider access denied). "
+                "This does not prove the key is invalid. No retry was attempted. "
+                "Use Check cloud connection.")
     original = _safe_cloud_error(exc, phase)
     return BenchmarkError(original.status, original.detail.replace("Stage 5 ", "Stage 6 ", 1))
 
