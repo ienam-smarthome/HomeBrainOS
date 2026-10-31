@@ -13,7 +13,9 @@ import re
 from typing import Any, Mapping
 
 from unified_incident_digest import source_incident_digest
-from causal_claim_publication import claim_guided_incident_answer
+from causal_claim_publication import (
+    claim_guided_incident_answer, source_verified_incident_brief,
+)
 from causal_claim_attestation import (
     extract_claim_envelope, validate_claim_envelope,
 )
@@ -231,6 +233,7 @@ def _record_publication_shadow(
     increment_active_metric("v3_shadow_publications_seen")
     actions = {
         "claim_guided": "v3_claim_guided_publications",
+        "verified_brief": "v3_source_brief_publications",
         "digest": "v3_shadow_legacy_digest_replaced",
         "ledger": "v3_shadow_legacy_ledger_replaced",
         "preserved": "v3_shadow_legacy_draft_preserved",
@@ -319,6 +322,14 @@ def reconcile_ledger_if_needed(
         if status != "not_eligible":
             from request_metrics import increment_active_metric
             increment_active_metric("v3_claim_guided_fallback")
+        # A rejected or absent model envelope cannot approve *any* raw
+        # prose. When an independently complete source+reception packet can
+        # stand alone, use a shorter source-only explanation. Otherwise
+        # retain the old fully qualified, longer evidence digest.
+        brief = source_verified_incident_brief(facts)
+        if brief is not None:
+            _record_publication_shadow(original, facts, "verified_brief")
+            return brief, True
         digest = source_incident_digest(facts)
         if digest:
             _record_publication_shadow(original, facts, "digest")
