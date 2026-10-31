@@ -160,6 +160,22 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input id="stage5Consent" type="checkbox">I authorise up to two synthetic Ollama Cloud requests using my existing account allowance.</label>
 <div id="stage5Report" class="benchmark-report" role="status" aria-live="polite">No independent investigation has run in this session.</div>
 </details>
+<details class="card" id="stage6Card">
+<summary><strong>🔍 Stage 6 · Conflicting evidence</strong> <span class="muted">Adaptive AI investigation</span></summary>
+<p class="muted" id="stage6Availability">Checking configured cloud model…</p>
+<p class="stage5-note">Gemma decides which fictional records to inspect, one at a time, and when to stop. Cases include misleading clocks, competing app commands and stale MQTT data. This can use <strong>up to four cloud requests</strong>. No hub or device access. Declared citations are checked, but <strong>not every implication of its prose</strong>.</p>
+<label class="muted" for="stage6Scenario">Choose a harder fictional investigation</label>
+<div class="stage5-choices">
+<select id="stage6Scenario" aria-label="Stage 6 scenario">
+<option value="clock_conflict">Delayed OFF report versus device time</option>
+<option value="competing_commands">Two apps issue competing commands</option>
+<option value="stale_connectivity">Mesh plug: connected broker, offline device</option>
+</select>
+<button type="button" id="runStage6" disabled>Run adaptive investigation</button>
+</div>
+<label class="benchmark-consent"><input type="checkbox" id="stage6Consent">I authorise up to four synthetic Ollama Cloud requests using my current allowance.</label>
+<div id="stage6Report" class="benchmark-report" role="status" aria-live="polite">No Stage 6 investigation has run this session.</div>
+</details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
 <div class="health-grid">
@@ -682,6 +698,80 @@ document.getElementById('runStage5').onclick=async()=>{
   }
 };
 loadStage5Status();
+
+function stage6RefreshButton(){
+  const b=document.getElementById('runStage6');
+  b.disabled=b.dataset.available!=='yes'||b.dataset.running==='yes'||!document.getElementById('stage6Consent').checked;
+}
+async function loadStage6Status(){
+  const b=document.getElementById('runStage6'),note=document.getElementById('stage6Availability');
+  try{
+    const r=await fetch(apiPath('api/stage6-benchmark/status'));
+    const data=await jsonResponse(r);
+    if(!r.ok)throw new Error('Unavailable');
+    b.dataset.available=data.available?'yes':'no';
+    note.textContent=data.available?'Ready · '+data.model+' · existing cloud account':(data.reason||'Cloud unavailable');
+  }catch(_error){b.dataset.available='no';note.textContent='Cloud status unavailable.'}
+  stage6RefreshButton();
+}
+document.getElementById('stage6Consent').onchange=stage6RefreshButton;
+document.getElementById('runStage6').onclick=async()=>{
+  const b=document.getElementById('runStage6'),out=document.getElementById('stage6Report');
+  if(b.disabled||!document.getElementById('stage6Consent').checked)return;
+  b.dataset.running='yes';stage6RefreshButton();
+  out.textContent='Gemma is inspecting fictional sources, reconsidering missing evidence and preparing an explanation…';
+  try{
+    const response=await fetch(apiPath('api/stage6-benchmark/run'),{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-HomeBrain-Benchmark':'confirmed'},
+      body:JSON.stringify({case_id:document.getElementById('stage6Scenario').value,confirm_cloud_allowance:true})
+    });
+    const data=await jsonResponse(response);
+    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Cloud test failed (HTTP '+response.status+')');
+    out.replaceChildren();
+    const heading=document.createElement('strong');
+    heading.textContent=data.title+' · '+(data.elapsed_ms/1000).toFixed(1)+'s · '+data.cloud_requests_attempted+' cloud requests';
+    out.append(heading);
+    const answer=document.createElement('p');answer.textContent='Model-authored explanation (not fully fact-checked): '+data.answer;out.append(answer);
+    const metrics=document.createElement('p');metrics.textContent=
+      'Relevant sources examined: '+data.relevant_source_recall+
+      ' · Irrelevant sources: '+data.irrelevant_sources_selected+
+      ' · Expected finding-type coverage: '+data.expected_finding_type_coverage+
+      ' · Unsupported sentence citations: '+data.unsupported_typed_sentence_citations+
+      ' (high risk: '+data.high_risk_unsupported_sentences+').';out.append(metrics);
+    const stop=document.createElement('p');stop.textContent=
+      'Gemma examined '+data.requested_source_reads+' additional records; stopped: '+
+      data.stop_reason.replace(/_/g,' ')+(data.premature_stop_missing_relevant_sources?' · Some reference-relevant evidence was not inspected.':'');
+    out.append(stop);
+    const details=document.createElement('details');
+    const summary=document.createElement('summary');summary.textContent='Read sequence and sentence-level source checks';details.append(summary);
+    for(const item of data.selected_sources||[]){
+      const line=document.createElement('p');
+      line.textContent=(item.relevant_reference_source?'✓ Relevant: ':'✕ Reference-irrelevant: ')+item.id;
+      details.append(line);
+    }
+    for(const sent of data.sentence_citation_checks||[]){
+      const line=document.createElement('p');
+      line.textContent=(sent.typed_source_supported?'✓ Source type supported: ':'✕ Unsupported type/citation: ')+sent.kind.replace(/_/g,' ')+
+        ' ['+sent.evidence_ids.join(', ')+'] · '+sent.text;details.append(line);
+    }
+    if(data.missing_expected_finding_types?.length){
+      const missing=document.createElement('p');
+      missing.textContent='Reference finding types missing: '+data.missing_expected_finding_types.join(', ');details.append(missing);
+    }
+    out.append(details);
+    const uncertainty=document.createElement('p');
+    uncertainty.textContent='Uncertainties: '+(data.uncertainties||[]).join(' · ');out.append(uncertainty);
+    const next=document.createElement('p');
+    next.textContent='AI-suggested next evidence (not verified): '+data.recommended_next_evidence;out.append(next);
+    const warning=document.createElement('p');warning.className='stage5-note';
+    warning.textContent='These scores validate selected fictional records and model-declared sentence types. Hidden or multiple implications in prose are not certified. Human review remains necessary; this result cannot enable the production publisher.';
+    out.append(warning);
+  }catch(error){out.textContent='Stage 6 unavailable: '+error.message}
+  finally{document.getElementById('stage6Consent').checked=false;b.dataset.running='no';stage6RefreshButton()}
+};
+loadStage6Status();
+
 
 
 status();setInterval(status,30000);
