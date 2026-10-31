@@ -228,3 +228,17 @@ def test_two_observation_metrics_registered_in_original_metric_gate():
             assert m.snapshot()["counters"][name] == 1
     finally:
         m.reset(token)
+
+
+def test_real_clock_has_proactive_idle_cleanup_timer():
+    cap = LocalStage3FCapture(consent=CONSENT, ttl_seconds=900)
+    r, c, s = fixture()
+    assert cap.capture_round(r, c, s)["captured"] is True
+    timer = cap._expiry_timer
+    assert timer is not None and timer.daemon is True
+    # Trigger the same callback deterministically without sleeping.
+    timer.function()
+    assert cap.status()["enabled"] is False
+    assert cap._rounds == [] and cap._key == b""
+    assert cap._expiry_timer is None
+    assert cap.private_report()["available"] is False
