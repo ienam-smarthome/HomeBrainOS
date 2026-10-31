@@ -39,6 +39,67 @@ def _reason(value: str) -> str:
     return value if value in _REJECT else "malformed_envelope"
 
 
+
+def source_witness_aliases(
+    ledger: Mapping[str, Any] | None,
+) -> dict[str, str]:
+    """Deterministic short aliases for *existing* source-timed switch witnesses.
+
+    A language model need not transcribe long SHA-derived witness IDs. Aliases
+    are assigned from independently constructed source ledger entries, never
+    from user text or the model's envelope. They do not weaken role/clock
+    checks, and an unknown alias remains an invalid witness.
+    """
+    if not isinstance(ledger, Mapping) or ledger.get("schema") != "causal-witness-ledger.v1":
+        return {}
+    witnesses = ledger.get("witnesses") or []
+    targets = sorted({
+        str(item.get("device_id")) for item in
+        ledger.get("target_source_coverage") or []
+        if isinstance(item, Mapping) and _id(item.get("device_id"))
+    }, key=int)[:16]
+    result: dict[str, str] = {}
+    for i, target in enumerate(targets, start=1):
+        for state in ("on", "off"):
+            eligible = [
+                w for w in witnesses
+                if isinstance(w, Mapping)
+                and str(w.get("entity")) == target
+                and w.get("event_class") == "journal_source_switch_" + state
+                and w.get("clock_basis") == "source"
+                and isinstance(w.get("witness_id"), str)
+            ]
+            if eligible:
+                first = min(eligible, key=lambda row: str(row.get("time") or ""))
+                result[f"w_t{i}_{state}"] = first["witness_id"]
+    return result
+
+
+def resolve_source_witness_aliases(
+    envelope: Any, ledger: Mapping[str, Any] | None,
+) -> Any:
+    """Resolve only known source aliases; leave unrecognised IDs untouched."""
+    if not isinstance(envelope, Mapping) or not isinstance(envelope.get("claims"), list):
+        return envelope
+    aliases = source_witness_aliases(ledger)
+    normalized = dict(envelope)
+    claims: list[Any] = []
+    for claim in envelope["claims"]:
+        if not isinstance(claim, Mapping):
+            claims.append(claim)
+            continue
+        item = dict(claim)
+        keys = item.get("witness_ids")
+        if isinstance(keys, list):
+            item["witness_ids"] = [
+                aliases.get(k, k) if isinstance(k, str) else k
+                for k in keys
+            ]
+        claims.append(item)
+    normalized["claims"] = claims
+    return normalized
+
+
 def _validate_one(
     claim: Mapping[str, Any], witnesses: Mapping[str, Mapping[str, Any]],
     ledger: Mapping[str, Any],
@@ -141,6 +202,7 @@ def validate_claim_envelope(
         return {"present": isinstance(envelope, Mapping), "valid": False,
                 "total": 0, "supported": 0, "rejected": 0,
                 "reasons": ["malformed_envelope"], "prose_verified": False}
+    envelope = resolve_source_witness_aliases(envelope, ledger)
     claims = envelope["claims"]
     max_claims = max(1, min(32, int(max_claims)))
     if not claims or len(claims) > max_claims:
@@ -191,4 +253,7 @@ def extract_claim_envelope(draft: str, *, max_bytes: int = 8192) -> Any:
         return {"schema": "invalid", "claims": []}
 
 
-__all__ = ["validate_claim_envelope", "extract_claim_envelope"]
+__all__ = [
+    "validate_claim_envelope", "extract_claim_envelope",
+    "source_witness_aliases", "resolve_source_witness_aliases",
+]
