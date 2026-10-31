@@ -75,8 +75,8 @@ def test_baseline_existing_source_publisher_unchanged():
     original = source_verified_incident_brief(facts)
     assert original
     assert "5 ON transitions and 5 OFF transitions" in original
-    assert original.count("| 14:") == 3
-    assert original.count("| 15:") == 2
+    assert sum(row.startswith("| 14:") for row in original.splitlines()) == 3
+    assert sum(row.startswith("| 15:") for row in original.splitlines()) == 2
     assert "| 15:07:14 | 15:11:09 | 3 min 56 sec |" in original
     assert "No immediate Hubitat ON command was verified" in original
     assert "which system issued the lighting commands" in original
