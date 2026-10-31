@@ -17,7 +17,10 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from causal_claim_attestation import extract_claim_envelope, validate_claim_envelope
+from causal_claim_attestation import (
+    extract_claim_envelope, validate_claim_envelope,
+    resolve_source_witness_aliases,
+)
 
 
 def _time(value: Any) -> datetime | None:
@@ -69,6 +72,10 @@ def claim_guided_incident_answer(
     envelope = extract_claim_envelope(draft)
     if envelope is None:
         return None, "missing_envelope"
+    # Validate the model's short aliases against the independently built
+    # witness ledger, then carry the SAME resolved real IDs through the
+    # deeper source-witness checks below. An unknown alias still rejects.
+    envelope = resolve_source_witness_aliases(envelope, ledger)
     verdict = validate_claim_envelope(envelope, ledger)
     if not verdict["valid"]:
         return None, "invalid_envelope"
