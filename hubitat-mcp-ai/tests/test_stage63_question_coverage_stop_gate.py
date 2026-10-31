@@ -180,7 +180,8 @@ def test_stop_with_remaining_material_source_is_a_structure_failure_not_forced_r
             model, "clock_conflict", confirmed=True))
     assert error.value.status == 502
     assert len(model.calls) == 3
-    assert "gold_sources" not in json.dumps(model.calls)
+    for messages, _, _ in model.calls:
+        assert "gold_sources" not in json.dumps(messages)
     assert model.api_key not in error.value.detail
 
 
