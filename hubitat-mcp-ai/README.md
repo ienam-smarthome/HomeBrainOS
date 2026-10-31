@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.289**.
+Current add-on version: **0.18.290**.
+
+**Stage 4J real prose-to-atom coverage evaluation (source only):** Tests whether Qwen2.5 3B extracts all implied factual assertions, including unsupported causes, from constructed natural-language sentences, then independently checks every extracted atomic claim against Stage 4I. Full source coverage does not certify arbitrary prose or enable publication. [Release notes](CHANGELOG-0.18.290.md).
 
 **Stage 4I host-grounded atomic proof obligations (source only):** Adds a pure offline validator requiring exact source witnesses for recorded events, issuers, clocks and coverage gaps; source commands alone cannot prove upstream causes, physical effects or absent events. This does not validate free-form prose or activate the publisher. [Release notes](CHANGELOG-0.18.289.md).
 
