@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.281**.
+Current add-on version: **0.18.282**.
+
+**Stage 4B semantic sufficiency reviews (offline only):** Adds a domain-general two-reviewer sentence-entailment protocol and independently labelled false-acceptance/false-rejection benchmark. Reviewer agreement is not proof of semantic truth; authored prose remains ineligible for active publication. [Release notes](CHANGELOG-0.18.282.md).
 
 **Stage 4A model-authored natural-language claim contract (offline only):** Introduces a domain-general canonical source-fact packet and a sentence-by-sentence typed witness validator for draft model explanations. Typed claim success does not attest free-text semantics and cannot enable publication. [Release notes](CHANGELOG-0.18.281.md).
 
