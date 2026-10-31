@@ -278,6 +278,11 @@ def stage6_status(transport: Any) -> dict:
     }
 
 
+def _safe_stage6_error(exc: Exception, phase: str) -> BenchmarkError:
+    original = _safe_cloud_error(exc, phase)
+    return BenchmarkError(original.status, original.detail.replace("Stage 5 ", "Stage 6 ", 1))
+
+
 class Stage6Benchmark:
     def __init__(self, *, clock=None):
         self._clock = clock or time.monotonic
@@ -354,7 +359,7 @@ class Stage6Benchmark:
                         can_read=True,
                     )
                 except Exception as exc:
-                    raise _safe_cloud_error(exc, "adaptive evidence selection") from None
+                    raise _safe_stage6_error(exc, "adaptive evidence selection") from None
                 planning_reasons.append(plan["reason"])
                 if plan["action"] == "stop":
                     stop_reason = "model_stopped"
@@ -396,7 +401,7 @@ class Stage6Benchmark:
                     await self._call(transport, answer_messages), records)
                 audit = _audit(case, selected, answer)
             except Exception as exc:
-                raise _safe_cloud_error(exc, "independent explanation") from None
+                raise _safe_stage6_error(exc, "independent explanation") from None
             return {
                 "success": True, "scenario": case_id, "title": case["title"],
                 "model": meta["model"],
