@@ -197,6 +197,114 @@ def _validate_plan(raw: str, remaining: set[str], *, can_read: bool) -> dict:
     return plan
 
 
+class PlanDecisionError(ValueError):
+    """Static, safe diagnosis of a response; never includes provider prose."""
+
+    def __init__(self, category: str):
+        self.category = category
+        super().__init__(category)
+
+
+def _decode_plan_control(raw: str, remaining: set[str], *, can_read: bool):
+    """Separate permission to READ/STOP from completeness of model commentary.
+
+    No prose parsing, guessing source IDs, retry, gold-label lookups or extra
+    provider calls. Full v2 plans still use the strict, independently tested
+    validator. If v2's *non-control* ledger is malformed, a valid action can
+    be evaluated as explicitly unaudited instead of losing the entire trial.
+    """
+    try:
+        plan = _validate_plan(raw, remaining, can_read=can_read)
+        return plan, []
+    except (ValueError, TypeError, KeyError):
+        pass
+    try:
+        supplied = _json_object(raw)
+    except (ValueError, json.JSONDecodeError):
+        raise PlanDecisionError("not_one_json_object") from None
+
+    # A minimal, explicit machine-action contract is always mandatory.
+    if supplied.get("schema") != "homebrain-stage6-next.v2":
+        raise PlanDecisionError("incorrect_plan_schema") from None
+    if not {"action", "source_id", "reason"} <= set(supplied):
+        raise PlanDecisionError("missing_decision_fields") from None
+    if not set(supplied) <= {
+        "schema", "action", "source_id", "reason",
+        "open_questions", "source_evaluations",
+    }:
+        raise PlanDecisionError("unexpected_decision_fields") from None
+    action = supplied["action"]
+    source_id = supplied["source_id"]
+    reason = supplied["reason"]
+    if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 240:
+        raise PlanDecisionError("invalid_decision_reason") from None
+    if action == "read":
+        if not can_read or type(source_id) is not str or source_id not in remaining:
+            raise PlanDecisionError("invalid_or_unknown_source_choice") from None
+    elif action == "stop":
+        if source_id is not None:
+            raise PlanDecisionError("invalid_stop_source") from None
+    else:
+        raise PlanDecisionError("unknown_decision_action") from None
+
+    # Even in a partial ledger, STOP cannot disregard any *valid*, explicitly
+    # positive self-assessment. A contradictory STOP is still a hard failure.
+    raw_assessments = supplied.get("source_evaluations")
+    if isinstance(raw_assessments, list) and action == "stop":
+        if any(isinstance(item, dict)
+               and item.get("source_id") in remaining
+               and item.get("could_change_answer") is True
+               for item in raw_assessments):
+            raise PlanDecisionError("self_contradictory_stop") from None
+
+    # This is a degraded evaluation outcome, NEVER a silently certified
+    # complete v2 ledger. The hidden gold sources are not consulted here.
+    # The original v2 is not forged into a complete score.
+    issues = []
+    questions = supplied.get("open_questions")
+    if (not isinstance(questions, list) or len(questions) > 4
+            or any(not isinstance(q, str) or not 8 <= len(q.strip()) <= 180
+                   for q in questions)
+            or len(set(questions)) != len(questions)):
+        issues.append("open_questions_invalid_or_missing")
+    if (not isinstance(raw_assessments, list)
+            or len(raw_assessments) != len(remaining)):
+        issues.append("source_assessment_coverage_incomplete")
+    else:
+        seen = set()
+        for item in raw_assessments:
+            if (not isinstance(item, dict)
+                    or set(item) != {"source_id", "could_change_answer", "why"}
+                    or type(item["source_id"]) is not str
+                    or item["source_id"] not in remaining
+                    or item["source_id"] in seen
+                    or type(item["could_change_answer"]) is not bool
+                    or not isinstance(item["why"], str)
+                    or not 8 <= len(item["why"].strip()) <= 220):
+                issues.append("source_assessment_invalid")
+                break
+            seen.add(item["source_id"])
+        if seen != remaining and "source_assessment_invalid" not in issues:
+            issues.append("source_assessment_coverage_incomplete")
+        if (action == "read" and "source_assessment_invalid" not in issues
+                and not any(isinstance(x, dict)
+                            and x.get("source_id") == source_id
+                            and x.get("could_change_answer") is True
+                            for x in raw_assessments)):
+            issues.append("read_disagrees_with_own_utility_assessment")
+    if not issues:
+        # Strict _validate_plan rejected this already; never invent a passing
+        # audit where the strict policy found a conflict.
+        raise PlanDecisionError("inconsistent_full_plan") from None
+    minimal = {
+        "schema": "homebrain-stage6-next.v1",
+        "action": action,
+        "source_id": source_id,
+        "reason": reason,
+    }
+    return minimal, sorted(set(issues))
+
+
 def _validate_answer(raw: str, records: list[dict]) -> dict:
     result = _json_object(raw)
     if (set(result) != {"schema", "sentences", "uncertainties", "next_evidence"}
@@ -391,6 +499,11 @@ def stage6_status(transport: Any) -> dict:
 
 
 def _safe_stage6_error(exc: Exception, phase: str) -> BenchmarkError:
+    if isinstance(exc, PlanDecisionError):
+        return BenchmarkError(
+            502, f"Stage 6 {phase} rejected an unsafe model decision "
+            f"({exc.category}). No retry was attempted."
+        )
     # Authentication and access controls are not interchangeable. The prior
     # combined label hid whether the user should inspect the configured key
     # or investigate a provider-side access policy. Keep raw body/headers out.
@@ -450,6 +563,7 @@ class Stage6Benchmark:
             all_sources = {s["id"]: s for s in case["catalog"]}
             planning_reasons = []
             plan_reviews = []
+            planning_contract_issues = []
             stopped_while_critical_titles_remained = False
             started = self._clock()
             before = len(self._attempts)
@@ -497,11 +611,12 @@ class Stage6Benchmark:
                     }, separators=(",", ":"), ensure_ascii=True)},
                 ]
                 try:
-                    plan = _validate_plan(
+                    plan, decision_issues = _decode_plan_control(
                         await self._call(transport, plan_messages),
                         {s["id"] for s in case["catalog"] if s["id"] not in selected},
                         can_read=True,
                     )
+                    planning_contract_issues.extend(decision_issues)
                 except Exception as exc:
                     raise _safe_stage6_error(exc, "adaptive evidence selection") from None
                 planning_reasons.append(plan["reason"])
@@ -519,6 +634,7 @@ class Stage6Benchmark:
                     ],
                     "source_value_coverage_complete":
                         plan["schema"] == "homebrain-stage6-next.v2",
+                    "planning_contract_issues": decision_issues,
                 })
                 if plan["action"] == "stop":
                     stop_reason = "model_stopped"
@@ -599,6 +715,10 @@ class Stage6Benchmark:
                 "stop_unresolved_questions":
                     plan_reviews[-1]["open_questions"] if plan_reviews else [],
                 "source_utility_model_supplied_not_verified": True,
+                "planning_contract_complete":
+                    not planning_contract_issues and
+                    all(r["source_value_coverage_complete"] for r in plan_reviews),
+                "planning_contract_issues": sorted(set(planning_contract_issues)),
                 "stop_left_host_reference_sources_unexamined":
                     stopped_while_critical_titles_remained,
                 "answer": " ".join(s["text"] for s in answer["sentences"]),
