@@ -13,6 +13,7 @@ existing source-first digest unchanged.
 from __future__ import annotations
 
 from collections import defaultdict
+import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -249,4 +250,67 @@ def claim_guided_incident_answer(
     return lead + "\n\n" + observed + "\n\n" + limits, "published"
 
 
-__all__ = ["claim_guided_incident_answer"]
+def source_verified_incident_brief(
+    facts: Mapping[str, Any] | None,
+) -> str | None:
+    """A shorter *deterministic* fallback when strong source coverage exists.
+
+    This is NOT a model-attested publication. A locally constructed claim
+    selection goes through the identical source-witness validation and prose
+    renderer, only when the same-collector input witness packet contains a
+    complete one-to-one ON/OFF relationship and the source journal covers
+    both targets. Otherwise the existing legacy digest remains authoritative.
+    """
+    if not isinstance(facts, Mapping):
+        return None
+    receiver = facts.get("same_receiver_evidence")
+    if not isinstance(receiver, Mapping) or not any(
+        isinstance(c, Mapping)
+        and c.get("one_to_one_within_windows") is True
+        and c.get("receiver_clock_only") is True
+        and c.get("initiator_verified") is False
+        for c in receiver.get("candidates") or []
+    ):
+        return None
+    ledger = facts.get("v3_witness_ledger")
+    if not isinstance(ledger, Mapping):
+        return None
+    targets = [str(v) for v in facts.get("target_device_ids") or []]
+    if len(targets) != 2 or ledger.get("root_cause_verified") is not False:
+        return None
+    witnessed: list[dict[str, Any]] = []
+    for target in targets:
+        for state in ("on", "off"):
+            witness = next((
+                row for row in ledger.get("witnesses") or []
+                if isinstance(row, Mapping)
+                and str(row.get("entity")) == target
+                and row.get("event_class") == "journal_source_switch_" + state
+                and row.get("clock_basis") == "source"
+            ), None)
+            if witness is None:
+                return None
+            witnessed.append({
+                "kind": "reported_switch_state", "device_id": target,
+                "state": state, "witness_ids": [witness["witness_id"]],
+            })
+    witnessed.append({
+        "kind": "upstream_cause_unverified",
+        "device_id": targets[0], "witness_ids": [],
+    })
+    # The selection above is NOT from the model: it is derived from the
+    # independently retained source ledger and is separately accounted for
+    # as a source-only brief. Never label it as a valid model attestation.
+    fence = "\x60" * 3
+    envelope = json.dumps(
+        {"schema": "homebrain-claims.v1", "claims": witnessed},
+        ensure_ascii=True, separators=(",", ":"),
+    )
+    rendered, status = claim_guided_incident_answer(
+        fence + "homebrain-claims\n" + envelope + "\n" + fence,
+        facts,
+    )
+    return rendered if status == "published" else None
+
+
+__all__ = ["claim_guided_incident_answer", "source_verified_incident_brief"]
