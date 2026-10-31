@@ -749,6 +749,34 @@ document.getElementById('runStage6').onclick=async()=>{
       data.stop_reason.replace(/_/g,' ')+(data.premature_stop_missing_relevant_sources?' · Some reference-relevant evidence was not inspected.':'')+
       (data.model_stop_justification?' · Model reason: '+data.model_stop_justification:'');
     out.append(stop);
+    const coverage=document.createElement('p');
+    coverage.textContent='Evidence-value review: '+
+      (data.stop_source_value_review_complete?
+       'Model evaluated every unread source against the original question.':
+       'Legacy/incomplete source-value ledger; stopping quality NOT established.')+
+      ' Open questions after the last plan: '+(data.stop_unresolved_questions||[]).length+
+      '. Assessments are model-authored, not independently proven.';
+    out.append(coverage);
+    const sourceLedger=document.createElement('details');
+    const sourceLedgerTitle=document.createElement('summary');
+    sourceLedgerTitle.textContent='Unanswered questions and per-source value assessments';
+    sourceLedger.append(sourceLedgerTitle);
+    for(const review of data.source_value_review||[]){
+      const step=document.createElement('p');
+      step.textContent='Decision '+review.step+' · '+review.action+
+        ' · '+(review.source_value_coverage_complete?'Every unread title assessed':'Legacy decision without source-value audit');
+      sourceLedger.append(step);
+      for(const question of review.open_questions||[]){
+        const q=document.createElement('p');q.textContent='Open question: '+question;sourceLedger.append(q);
+      }
+      for(const item of review.model_assessed_sources||[]){
+        const row=document.createElement('p');
+        row.textContent=(item.could_change_answer?'Potentially useful: ':'Assessed low value: ')+
+          item.source_id+' · '+item.reason;
+        sourceLedger.append(row);
+      }
+    }
+    out.append(sourceLedger);
     const details=document.createElement('details');
     const summary=document.createElement('summary');summary.textContent='Read sequence and sentence-level source checks';details.append(summary);
     for(const item of data.selected_sources||[]){
