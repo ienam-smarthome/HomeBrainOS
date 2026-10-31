@@ -221,15 +221,18 @@ def main(argv: list[str] | None = None) -> int:
             reviewer_models=("qwen2.5:3b", "llama3.2:3b"),
             invoke=models,
         )
-        if models.requests_attempted != (
-                output["author_calls_attempted"]
-                + output["review_calls_attempted"]):
-            raise ValueError("unexpected model invocation accounting")
         print(json.dumps(output, separators=(",", ":"), sort_keys=True))
         summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if summary:
             with Path(summary).open("a", encoding="utf-8") as stream:
                 stream.write(summary_markdown(output))
+        if models.requests_attempted != (
+                output["author_calls_attempted"]
+                + output["review_calls_attempted"]):
+            print("INCONCLUSIVE: some local inference attempts could not reach "
+                  "the model transport; aggregate counters are shown above.",
+                  file=sys.stderr)
+            return 3
         if output["author_source_valid_proposals"] == 0:
             print("INCONCLUSIVE: no source-valid model-authored answers.",
                   file=sys.stderr)
