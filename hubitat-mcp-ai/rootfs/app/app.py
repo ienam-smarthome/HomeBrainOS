@@ -90,6 +90,7 @@ from stage5_autonomous_benchmark import Stage5Benchmark, stage5_status
 from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
 from stage66_answer_diagnostics import Stage6AnswerContractFailure
 from live_shadow_preflight import build_live_shadow_preflight, build_verified_detail_shadow
+from live_shadow_journal import project_shadow_history
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -616,6 +617,11 @@ class Stage6BenchmarkRequest(BaseModel):
 class LiveShadowPreflightRequest(BaseModel):
     device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
     confirm_read_only: bool = False
+
+
+class LiveShadowJournalRequest(BaseModel):
+    device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
+    confirm_archive_read: bool = False
 
 
 class Stage5BenchmarkRequest(BaseModel):
@@ -1272,6 +1278,53 @@ async def live_shadow_verified_detail(
         observed_at_utc=datetime.now(timezone.utc).isoformat(),
     )
     return JSONResponse(packet, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/live-shadow/journal-history")
+async def live_shadow_journal_history(
+    payload: LiveShadowJournalRequest, request: Request,
+) -> JSONResponse:
+    """Explicit-consent 30-day local archive read for exactly one device ID.
+
+    No gateway reads, Hubitat tool calls, Cloud inference, history backfill,
+    write route, production publisher or retention-policy modification.
+    """
+    if (payload.confirm_archive_read is not True
+            or request.headers.get("x-homebrain-archive-readonly") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower()
+               != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(status_code=403,
+                            detail="Explicit local journal read consent required.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403, detail="Same-origin request required.")
+    if not historical_journal.enabled or not historical_journal._started:
+        raise HTTPException(status_code=503, detail="Historical journal is not running.")
+    now = datetime.now(timezone.utc)
+    from datetime import timedelta
+    since = (now - timedelta(days=30)).isoformat()
+    until = now.isoformat()
+    try:
+        archive = await asyncio.wait_for(
+            asyncio.to_thread(
+                historical_journal.query,
+                since=since, until=until, device_id=payload.device_id,
+                limit=50, offset=0,
+            ), timeout=20.0,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Local shadow journal read failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Bounded journal read unavailable.") from None
+    result = project_shadow_history(
+        payload.device_id, archive,
+        window_start=since, window_end=until, read_at=now.isoformat(),
+    )
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/evidence-journal/status")
