@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.332**.
+Current add-on version: **0.18.333**.
+
+**Answer Quality Q1 clock provenance:** A single source-clock warning now uses the existing structured assessment instead of duplicating the discrepancy in separate completion layers. Direct renderer fallback and all root-cause/source-integrity limits remain. No measured quality or latency improvement claimed. [Release notes](CHANGELOG-0.18.333.md).
 
 **Answer Quality Q1 telemetry presentation:** Show the status distinction before a timestamp warning, keep source-code offsets and missing-depth bookkeeping under Technical details, and omit empty command sections. The model-led investigation and evidence-validity gates are unchanged; no claim of measured live accuracy, latency or Claude parity. [Release notes](CHANGELOG-0.18.332.md).
 
