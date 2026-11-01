@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any, Mapping
 
-from general_evidence_completion import assess_task_source_coverage
 from skill_source_completion import pending_recent_focal_command_read
 
 
@@ -59,6 +59,8 @@ def recent_command_issuer_sources(
     ident, label = next(iter(verified.items()))
     observed: list[tuple[datetime, str]] = []
     for row in receipts:
+        if not isinstance(row, dict):
+            continue
         if row.get("tool") != "homebrain_device_history" or row.get("success") is not True:
             continue
         details, args = row.get("details"), _args(row)
@@ -75,10 +77,22 @@ def recent_command_issuer_sources(
                 observed.append((at, action))
     if not observed:
         return None
-    when, action = max(observed, key=lambda x: x[0])
+    requested = re.search(
+        r"(?i)\\b(?:turned|went|switched|turn|switch|turning)\\s+(off|on)\\b"
+        r"|\\b(off|on)\\s+commands?\\b|\\bcommands?\\s+(off|on)\\b",
+        request,
+    )
+    if requested is None:
+        return None
+    action = next((group.lower() for group in requested.groups() if group), "")
+    events_for_action = [event for event in observed if event[1] == action]
+    if not events_for_action:
+        return None
+    when, _ = max(events_for_action, key=lambda x: x[0])
     if not pending_recent_focal_command_read(request, receipts) and not any(
         # Read may already have run; only accept causal last-event requests.
-        str(_args(row).get("deviceId") or "") == ident
+        isinstance(row, dict)
+        and str(_args(row).get("deviceId") or "") == ident
         and str(_args(row).get("attribute") or "").lower() == f"command-{action}"
         for row in receipts
     ):
