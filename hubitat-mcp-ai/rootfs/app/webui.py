@@ -777,6 +777,15 @@ document.getElementById('runStage6').onclick=async()=>{
         'INCOMPLETE — '+data.sentences_missing_declared_source_value_atoms+
         ' sentence(s) without model-declared atoms; no source-value proof for those sentences.');
     out.append(metrics);
+    if(data.epistemic_declarations_are_model_authored_not_prose_verified){
+      const stance=document.createElement('p');
+      stance.textContent='Epistemic declarations: '+
+        (data.scoped_unresolved_model_declarations||0)+' scoped unresolved · '+
+        (data.unscoped_unresolved_model_declarations||0)+' unscoped unresolved · '+
+        (data.high_risk_assertion_or_refutation_declarations||0)+
+        ' high-risk affirmative/refutation positions. These are model self-descriptions, NOT independent verification of what its prose means.';
+      out.append(stance);
+    }
     const stop=document.createElement('p');stop.textContent=
       'Gemma examined '+data.requested_source_reads+' additional records; stopped: '+
       data.stop_reason.replace(/_/g,' ')+(data.premature_stop_missing_relevant_sources?' · Some reference-relevant evidence was not inspected.':'')+
@@ -846,12 +855,18 @@ document.getElementById('runStage6').onclick=async()=>{
     }
     for(const sent of data.sentence_citation_checks||[]){
       const line=document.createElement('p');
-      const verdict=sent.typed_source_supported?'✓ Source type matches: ':
+      const stance=sent.epistemic_annotation;
+      const verdict=stance?.epistemic_category==='scoped_unresolved_model_declaration'?
+        '◇ Scoped uncertainty declared (prose not independently checked): ':
+        sent.typed_source_supported?'✓ Source type matches: ':
         sent.source_type_mismatch?'△ Source label mismatch (not a proven false fact): ':
         '✕ Citation type unsupported: ';
       const atoms=(sent.atomic_source_value_checks||[]).map(a=>
         (a.exact_source_value_match?'✓ ':'✕ ')+a.record_id+'.'+a.field).join(' · ');
       line.textContent=verdict+sent.kind.replace(/_/g,' ')+
+        (stance?' · position '+stance.model_declared_position+
+          ' · scope '+stance.model_declared_scope+
+          ' · stance-to-prose match NOT verified':'')+
         ' ['+sent.evidence_ids.join(', ')+'] · '+sent.text+
         (atoms?' · Exact source-value checks: '+atoms:
          ' · Missing declared source-value atoms — NOT independently value-verified');
@@ -984,6 +999,26 @@ document.getElementById('runStage6').onclick=async()=>{
         const sentenceText=document.createElement('p');
         sentenceText.textContent='Sentence '+sentence.number+': '+sentence.text;
         group.append(sentenceText);
+        const modelPosition=sentence.model_supplied_epistemic;
+        let meaningReview=null;
+        if(modelPosition){
+          const declaration=document.createElement('p');declaration.className='stage5-note';
+          declaration.textContent='Model-declared subject: '+sentence.model_supplied_claim_type+
+            ' · position: '+modelPosition.position+' · evidence scope: '+modelPosition.scope+
+            '. This declaration is not proof of what the sentence actually says.';
+          group.append(declaration);
+          const positionLabel=document.createElement('label');
+          positionLabel.textContent='Does sentence meaning match its declared position/scope? ';
+          meaningReview=document.createElement('select');
+          meaningReview.setAttribute('aria-label','Sentence '+sentence.number+' epistemic alignment');
+          for(const [value,name] of [['not_reviewed','Not reviewed'],
+            ['aligned','Aligned'],['contradicts_declaration','Contradicts declaration'],
+            ['unclear','Unclear']]){
+            const option=document.createElement('option');option.value=value;option.textContent=name;
+            meaningReview.append(option);
+          }
+          positionLabel.append(meaningReview);group.append(positionLabel);
+        }
         const label=document.createElement('label');label.textContent='Your factual assessment: ';
         const rating=document.createElement('select');
         rating.setAttribute('aria-label','Sentence '+sentence.number+' factual review');
@@ -1004,7 +1039,7 @@ document.getElementById('runStage6').onclick=async()=>{
         }
         scopeLabel.append(scopeSelect);group.append(scopeLabel);panel.append(group);
         ratingControls.push({number:sentence.number,element:rating,
-          scopeElement:scopeSelect});
+          scopeElement:scopeSelect,meaningReview});
       }
       const overall=document.createElement('div');overall.className='stage5-review';
       const fields=[
@@ -1029,7 +1064,9 @@ document.getElementById('runStage6').onclick=async()=>{
         const review={
           per_sentence:ratingControls.map(item=>({
             sentence_number:item.number,reviewer_verdict:item.element.value,
-            reviewer_negative_scope:item.scopeElement.value
+            reviewer_negative_scope:item.scopeElement.value,
+            reviewer_epistemic_alignment:item.meaningReview?
+              item.meaningReview.value:'not_applicable_legacy'
           })),
           question_coverage:questionControls.map(item=>({
             question_id:item.id,reviewer_verdict:item.element.value
@@ -1041,7 +1078,8 @@ document.getElementById('runStage6').onclick=async()=>{
           causal_caution:overallControls[1].value,
           independently_reviewed_by_human:ratingControls.every(item=>
             item.element.value!=='not_reviewed'&&
-            item.scopeElement.value!=='not_reviewed')&&
+            item.scopeElement.value!=='not_reviewed'&&
+            (!item.meaningReview||item.meaningReview.value!=='not_reviewed'))&&
             questionControls.every(item=>item.element.value!=='not_reviewed')&&
             coverageControls.every(item=>item.element.value!=='not_reviewed')&&
             overallControls.every(item=>item.value!=='not_reviewed'),

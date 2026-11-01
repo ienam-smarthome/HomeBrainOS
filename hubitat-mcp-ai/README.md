@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.305**.
+Current add-on version: **0.18.306**.
+
+**Stage 7.4 epistemic scope pilot:** Experimental Stage 6 answers now declare each claim subject separately from whether it is affirmed, refuted or not established, and limit the claimed evidence scope. The host distinguishes scoped unresolved causality from an affirmative unique-cause claim, without treating the model's self-declaration or natural prose as independently proven. Stage 7 review asks humans to check that the sentence's actual wording matches the declared position. Prior v1/v2 outputs remain parseable; no production publisher, live device controls or additional cloud calls. [Release notes](CHANGELOG-0.18.306.md).
 
 **Stage 7.3 source-value declaration coverage:** If a fictional model explanation provides `atoms=[]` for a non-relational sentence, the benchmark now preserves the explanation for **explicitly unaudited** human review instead of collapsing the whole four-request run, and clearly scores missing model-declared field proofs. Relation claims can still be supported by host structural comparisons without artificial field atoms. Oversized/malformed/duplicate assertions still fail validation; false values remain flagged as mismatched; high-risk physical and absence claims remain unsupported and no production publisher is enabled. [Release notes](CHANGELOG-0.18.305.md).
 

@@ -72,6 +72,10 @@ def build_review_packet(
             "number": index,
             "text": sent["text"],
             "model_supplied_claim_type": sent["kind"],
+            "model_supplied_epistemic": (
+                dict(sent["epistemic"]) if "epistemic" in sent else None
+            ),
+            "epistemic_meaning_agrees_with_prose": "not_reviewed",
             "model_cited_evidence_ids": list(sent["evidence_ids"]),
             "model_supplied_atoms": [
                 {k: a[k] for k in ("record_id", "field", "value")}
@@ -96,6 +100,9 @@ def build_review_packet(
                                      "insufficient_information"],
             "causal_calibration": ["appropriate", "overclaims",
                                    "uncertain"],
+            "epistemic_prose_alignment": [
+                "aligned", "contradicts_declaration", "unclear",
+            ],
             "negative_claim_scope": [
                 "not_a_negative_claim", "scoped_to_examined_records",
                 "overstates_global_absence", "unclear_scope",
