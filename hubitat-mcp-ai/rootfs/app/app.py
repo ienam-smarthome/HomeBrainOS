@@ -89,7 +89,7 @@ from cloud_connection_diagnostics import CloudConnectionDiagnostics
 from stage5_autonomous_benchmark import Stage5Benchmark, stage5_status
 from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
 from stage66_answer_diagnostics import Stage6AnswerContractFailure
-from live_shadow_preflight import build_live_shadow_preflight
+from live_shadow_preflight import build_live_shadow_preflight, build_verified_detail_shadow
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -1223,6 +1223,52 @@ async def live_shadow_preflight(
         ) from None
     packet = build_live_shadow_preflight(
         payload.device_id, context,
+        observed_at_utc=datetime.now(timezone.utc).isoformat(),
+    )
+    return JSONResponse(packet, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/live-shadow/verified-detail")
+async def live_shadow_verified_detail(
+    payload: LiveShadowPreflightRequest, request: Request,
+) -> JSONResponse:
+    """Fresh, verified, paginated READ-ONLY detailed inventory.
+
+    This reads multiple hub device pages, then returns only the selected
+    numeric target's sanitised attributes. No Cloud AI, tool dispatch chosen
+    by the user, device writes or production publisher invocation.
+    """
+    if (payload.confirm_read_only is not True
+            or request.headers.get("x-homebrain-live-readonly") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower()
+               != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(status_code=403,
+                            detail="Explicit live read-only consent required.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403,
+                                detail="Same-origin request required.")
+    if not mcp.configured:
+        raise HTTPException(status_code=503, detail="Hubitat MCP is not configured.")
+    try:
+        # The existing read-only inventory service is the only allowed call.
+        # Its full manifest fallback is explicitly marked incomplete and is
+        # never promoted to verified source evidence.
+        devices, provenance = await asyncio.wait_for(
+            mcp.get_audit_devices(identity_only=False), timeout=50.0
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Verified detailed shadow read unavailable: %s",
+                       type(exc).__name__)
+        raise HTTPException(status_code=503,
+                            detail="Verified detailed read unavailable.") from None
+    packet = build_verified_detail_shadow(
+        payload.device_id, devices, provenance,
         observed_at_utc=datetime.now(timezone.utc).isoformat(),
     )
     return JSONResponse(packet, headers={"Cache-Control": "no-store"})

@@ -187,4 +187,113 @@ def build_live_shadow_preflight(
     return baseline
 
 
-__all__ = ["build_live_shadow_preflight"]
+
+def build_verified_detail_shadow(
+    device_id: str, devices: Any, provenance: Any, *, observed_at_utc: str,
+) -> dict[str, Any]:
+    """Project ONE target from a verified, freshly paginated detailed manifest.
+
+    The caller must obtain the manifest via the existing read-only
+    get_audit_devices(identity_only=False) pathway. Nothing in this function
+    makes a Hubitat command, fetches extra history, or publishes source text.
+    """
+    if (type(device_id) is not str or not device_id.isascii()
+            or not device_id.isdecimal() or not 1 <= len(device_id) <= 12):
+        raise ValueError("invalid target device id")
+    if type(observed_at_utc) is not str or len(observed_at_utc) > 40:
+        raise ValueError("invalid observation time")
+    base = {
+        "schema": "homebrain-live-shadow-detailed.v1",
+        "target_device_id": device_id,
+        "observed_at_utc": observed_at_utc,
+        "read_only": True,
+        "cloud_requests": 0,
+        "device_commands": 0,
+        "publisher_approval": False,
+        "persistent_capture": False,
+        "historical_causation_verified": False,
+        "device_origin_packet_verified": False,
+        "ready_for_historical_investigation": False,
+        "reported_states": {},
+        "verified_inventory_coverage": False,
+        "data_scope": "single_target_projection_from_paginated_detailed_manifest",
+        "limitations": [
+            "This is a fresh detailed hub-report snapshot, not a device-origin packet.",
+            "No past command execution, physical connectivity, clock accuracy, or causal relationship is proven.",
+            "No complete event history was examined; absence of a field is not proof of an absent event.",
+        ],
+    }
+    if (type(provenance) is not dict
+            or provenance.get("complete") is not True
+            or provenance.get("source") != "fresh_projected_gateway"
+            or provenance.get("projection") != "full"):
+        return {**base, "status": "blocked_unverified_detailed_inventory",
+                "reason": "Fresh detailed inventory could not be independently verified."}
+    if (type(devices) is not list or not 1 <= len(devices) <= _MAX_DEVICES
+            or not all(type(item) is dict for item in devices)):
+        return {**base, "status": "blocked_malformed_detailed_inventory",
+                "reason": "Detailed inventory shape is incomplete or oversized."}
+    ids = [str(item.get("id") or item.get("deviceId") or "") for item in devices]
+    if (any(not name or not name.isascii() or not name.isdecimal() for name in ids)
+            or len(set(ids)) != len(ids)):
+        return {**base, "status": "blocked_ambiguous_detailed_inventory",
+                "reason": "Detailed inventory lacks unique numeric identities."}
+    if provenance.get("devices") != len(devices):
+        return {**base, "status": "blocked_detailed_count_conflict",
+                "reason": "Detailed source coverage does not match the returned inventory."}
+    base["verified_inventory_coverage"] = True
+    matches = [item for item, identifier in zip(devices, ids) if identifier == device_id]
+    if len(matches) != 1:
+        return {**base, "status": "target_not_in_verified_detailed_inventory",
+                "reason": "Target device is not in the verified detailed snapshot."}
+    target = matches[0]
+
+    # Both structured detailed attribute lists and summary dictionaries can
+    # be reported by drivers. Only accept a simple, allowlisted value from a
+    # unique occurrence; conflicting duplicate fields are not promoted.
+    projected: dict[str, Any] = {}
+    conflicts: set[str] = set()
+    raw_containers = [target.get("attributes"), target.get("currentStates")]
+    for container in raw_containers:
+        pairs = []
+        if type(container) is dict:
+            pairs = list(container.items())
+        elif type(container) is list and len(container) <= 256:
+            for row in container:
+                if type(row) is not dict:
+                    continue
+                key = row.get("name")
+                if key is None:
+                    key = row.get("attribute")
+                if "currentValue" in row:
+                    value = row["currentValue"]
+                else:
+                    value = row.get("value")
+                pairs.append((key, value))
+        for key, value in pairs:
+            if type(key) is not str or key not in _SAFE_FIELDS:
+                continue
+            cleaned = _safe_state(key, value)
+            if cleaned is None:
+                continue
+            if key in projected and projected[key] != cleaned:
+                conflicts.add(key)
+            else:
+                projected[key] = cleaned
+    for key in conflicts:
+        projected.pop(key, None)
+    base["reported_states"] = dict(sorted(projected.items()))
+    base["status"] = ("verified_identity_with_reported_states" if projected
+                      else "verified_identity_no_allowlisted_state")
+    base["reason"] = (
+        "Detailed source identity coverage was verified. The selected device "
+        "has bounded current hub-reported attributes. Further independently "
+        "sourced history is required for causal investigation."
+        if projected else
+        "Device identity was verified but no suitable allowlisted state fields "
+        "were present. This does not prove the device is physically offline."
+    )
+    return base
+
+
+__all__ = ["build_live_shadow_preflight", "build_verified_detail_shadow"]
