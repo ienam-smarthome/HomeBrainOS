@@ -36,6 +36,7 @@ from reasoning_policy import (
 )
 from request_metrics import add_active_metric_ms, increment_active_metric
 from source_evidence_metadata import source_read_metadata
+from driver_source_identity_guard import verified_driver_configuration_metadata
 from existing_rule_page_evidence import existing_rule_page_metadata
 from tool_registry import ToolEffect, classify_tool_effect
 
@@ -178,6 +179,21 @@ class ToolExecutor:
                         except ValueError:
                             pass
                 return fields
+
+        # A configuration read's raw payload may identify the installed
+        # driver source. Retain only the positively target-linked code ID
+        # to authorize one later read-only Groovy source request.
+        if (
+            result.name == "hub_read_devices"
+            and isinstance(result.arguments, dict)
+            and result.arguments.get("tool") == "hub_get_device"
+            and isinstance(result.arguments.get("args"), dict)
+            and str(result.arguments["args"].get("mode") or "").lower()
+                == "configuration"
+        ):
+            return verified_driver_configuration_metadata(
+                data, str(result.arguments["args"].get("deviceId") or ""),
+            )
 
         # V3: retain only typed IDs from *explicitly scoped* read-only
         # app-dependency responses. Generic object-field summaries previously
