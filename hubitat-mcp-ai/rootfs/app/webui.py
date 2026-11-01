@@ -189,6 +189,10 @@ def render_page(title: str, version: str) -> str:
 <p class="stage5-note">For a stronger current-state check, optionally read the full detailed inventory across verified paginated Hubitat reads. Only your selected device's safe states appear below. This may require multiple Hubitat reads; it does not access device event history or Cloud AI.</p>
 <button type="button" id="runLiveShadowDetail" disabled>Compare verified detailed device states</button>
 <div id="liveShadowDetailedReport" class="benchmark-report" role="status" aria-live="polite">Not run. Requires a fresh read-only consent tick.</div>
+<p class="stage5-note">Historical Shadow · Local Journal. Read up to 50 archived device events from the last 30 days. This reads local journal storage only; absence of events does not prove inactivity, and no cloud requests or Hubitat commands occur.</p>
+<label class="benchmark-consent"><input type="checkbox" id="liveShadowHistoryConsent">I authorise one read-only query of my local Historical Journal for the device ID above.</label>
+<button type="button" id="runLiveShadowHistory" disabled>Inspect archived device events (30 days)</button>
+<div id="liveShadowHistoryReport" class="benchmark-report" role="status" aria-live="polite">Not run. A fresh local-journal consent is required.</div>
 </details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
@@ -713,6 +717,15 @@ document.getElementById('runStage5').onclick=async()=>{
 };
 loadStage5Status();
 
+function liveShadowHistoryRefreshButton(){
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  const button=document.getElementById('runLiveShadowHistory');
+  button.disabled=button.dataset.running==='yes'
+    ||!document.getElementById('liveShadowHistoryConsent').checked
+    ||!/^[0-9]{1,12}$/.test(id);
+}
+document.getElementById('liveShadowHistoryConsent').onchange=liveShadowHistoryRefreshButton;
+
 function liveShadowRefreshButton(){
   const button=document.getElementById('runLiveShadow');
   const detailed=document.getElementById('runLiveShadowDetail');
@@ -724,7 +737,7 @@ function liveShadowRefreshButton(){
   detailed.disabled=blocked;
 }
 document.getElementById('liveShadowConsent').onchange=liveShadowRefreshButton;
-document.getElementById('liveShadowDeviceId').oninput=liveShadowRefreshButton;
+document.getElementById('liveShadowDeviceId').oninput=()=>{liveShadowRefreshButton();liveShadowHistoryRefreshButton();};
 document.getElementById('runLiveShadow').onclick=async()=>{
   const button=document.getElementById('runLiveShadow');
   const report=document.getElementById('liveShadowReport');
@@ -823,6 +836,57 @@ document.getElementById('runLiveShadowDetail').onclick=async()=>{
   }finally{
     document.getElementById('liveShadowConsent').checked=false;
     button.dataset.running='no';liveShadowRefreshButton();
+  }
+};
+
+document.getElementById('runLiveShadowHistory').onclick=async()=>{
+  const button=document.getElementById('runLiveShadowHistory');
+  const report=document.getElementById('liveShadowHistoryReport');
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  if(button.disabled||!/^[0-9]{1,12}$/.test(id))return;
+  button.dataset.running='yes';liveShadowHistoryRefreshButton();
+  report.textContent='Reading previously collected local journal rows. No Hubitat or Cloud request.';
+  try{
+    const response=await fetch(apiPath('api/live-shadow/journal-history'),{
+      method:'POST',cache:'no-store',
+      headers:{'Content-Type':'application/json','x-homebrain-archive-readonly':'confirmed'},
+      body:JSON.stringify({device_id:id,confirm_archive_read:true})
+    });
+    if(!response.ok)throw new Error('Journal read unavailable ('+response.status+').');
+    const data=await jsonResponse(response);
+    if(data.schema!=='homebrain-live-shadow-journal.v1')
+      throw new Error('Unexpected local journal response.');
+    const lines=[
+      'Status: '+data.status,
+      'Device ID: '+data.target_device_id,
+      'Window: '+data.requested_window_start+' to '+data.requested_window_end,
+      'Archive rows returned: '+(data.returned_event_count||0),
+      'Additional archive pages: '+(data.archive_has_more?'yes':'not indicated'),
+      'Collection gaps in window: '+(data.collection_gaps||[]).length,
+      'Complete event history proven: NO',
+      'Physical execution proven: NO',
+      'Causal attribution proven: NO',
+      'Archived device reports (source time is NOT independently authenticated):'
+    ];
+    for(const ev of data.events||[]){
+      lines.push('• '+ev.attribute+'='+String(ev.reported_value)
+        +' | source: '+(ev.source_time_utc||'not available')
+        +' | collector receipt: '+ev.received_at_utc
+        +' | '+ev.timestamp_basis);
+    }
+    if(!(data.events||[]).length)lines.push('• No retained, allowlisted device events returned; this is NOT proof of inactivity.');
+    for(const gap of data.collection_gaps||[])
+      lines.push('• Collection gap from '+gap.started_at_utc+' to '+(gap.ended_at_utc||'still open'));
+    for(const limit of data.limitations||[])lines.push('Limit: '+limit);
+    const pre=document.createElement('pre');
+    pre.style.whiteSpace='pre-wrap';pre.style.overflowWrap='anywhere';
+    pre.textContent=lines.join('\n');
+    report.replaceChildren(pre);
+  }catch(e){
+    report.textContent='Archived read-only history did not complete. '+e.message;
+  }finally{
+    document.getElementById('liveShadowHistoryConsent').checked=false;
+    button.dataset.running='no';liveShadowHistoryRefreshButton();
   }
 };
 
