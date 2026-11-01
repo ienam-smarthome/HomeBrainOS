@@ -170,7 +170,7 @@ def test_phone_manual_scope_controls_require_actual_review_not_default_success()
         "reviewer_negative_scope",
         "question_coverage:questionControls.map",
         "scopeElement.value!=='not_reviewed'",
-        "publisher_approval",
+        "production_publication_approval:false",
     ):
         assert expected in html
 
