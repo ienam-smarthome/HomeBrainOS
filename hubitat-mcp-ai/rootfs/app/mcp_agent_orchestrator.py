@@ -21,6 +21,7 @@ from source_analysis_completion import (
 )
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
+from single_device_read_scope import single_device_broad_read_reason
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from device_incident_depth import (
     device_incident_followup, incident_progress_followup,
@@ -6230,6 +6231,19 @@ class UnifiedMCPAgent:
                     causal_request
                     and _is_broad_device_inventory_call(name, arguments)
                 )
+                # A named target and source-receipted history are enough to
+                # avoid unrequested whole-home scans. This read-admission
+                # policy never blocks target-specific logs, driver code,
+                # network diagnostics or explicit cross-device comparisons.
+                scope_breadth_reason = (
+                    single_device_broad_read_reason(
+                        user_prompt, self.evidence.receipts(),
+                        name, arguments,
+                        domain=contract.domain if contract is not None else None,
+                    )
+                    if investigative_request and not self._mutation_requested_by_user.get()
+                    else None
+                )
                 missing_related_attribute = bool(
                     investigative_request
                     and name == _LOCAL_DEVICE_HISTORY_TOOL
@@ -6256,6 +6270,22 @@ class UnifiedMCPAgent:
                             "completed host-side from the resolved subject metadata. "
                             "Use the gathered controller/provenance evidence and move "
                             "to a different evidence class."
+                        )
+                    })
+                elif scope_breadth_reason is not None:
+                    # A safe no-op (not a failed Hubitat read). Feedback
+                    # sends the model back to the already verified target
+                    # without burning a whole-hub context request. Only a
+                    # fixed reason category is counted; no device names leak.
+                    increment_active_metric("single_device_broad_reads_suppressed")
+                    content = json.dumps({
+                        "note": (
+                            "Skipped unrelated whole-home inventory after "
+                            "single-device identity and history were verified. "
+                            "Use the already retrieved scoped evidence, or "
+                            "continue with source-linked driver methods, "
+                            "targeted device logs and independent network/"
+                            "broker observations. No device control occurred."
                         )
                     })
                 elif broad_causal_inventory:
