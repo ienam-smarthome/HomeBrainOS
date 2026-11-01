@@ -103,6 +103,7 @@ class RequestMetrics:
         "v3_claim_rejected",
         "unified_group_journal_recovery", "unified_input_journal_recovery",
         "causal_journal_discovery_checkpoint", "causal_initiator_unresolved",
+        "causal_coverage_confidence_aligned",
         "unified_recent_edge_checked",
         "unified_recent_edge_reconciled",
         "unified_group_app_log_checks",

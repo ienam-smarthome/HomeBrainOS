@@ -118,6 +118,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_investigation_engine.py` | Ranks cross-integration causal candidates using cached topology, bounded histories, directional timestamps, and stated coverage limits. |
 | `causal_evidence_planner.py` | Derives exact subject-room provenance discovery, one ranked controller history read, and deterministic controller-to-subject boundary alignments (start versus end) for causal investigations without authoring the causal answer. |
 | `causal_completion_policy.py` | Decides whether the ON or OFF causal investigation is source-complete from typed checked evidence, not user wording or verified actor requirements. |
+| `causal_answer_coverage_alignment.py` | Aligns natural-language causal confidence with independently audited hypothesis-verification status at the final API publication boundary. |
 | `causal_certainty_contract.py` | Reconciles narrative and verdict table causal claims with one observed OFF command/trigger certainty graph, without upgrading correlation to external action. |
 | `causal_transition_provenance.py` | Selects the user's exact closed interval and checks OFF commands independently of the ON path, preserving failed and empty bounded event-history reads. |
 | `causal_evidence_graph.py` | Normalizes a single observed event into typed, source-scoped command, sensor, listener, configuration, log, location and OFF-provenance facts; identifies bounded evidence gaps for model-led synthesis without inventing execution links. |
