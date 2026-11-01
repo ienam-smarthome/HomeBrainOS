@@ -19,6 +19,36 @@ def _source_records(case: dict, selected: list[str]) -> list[dict]:
     return records
 
 
+def _command_order(commands: list[dict]) -> tuple[list[dict], str]:
+    """Order *recorded time-of-day* fields, never infer execution or dates.
+
+    Source catalog order is not chronological. Equally, an HH:MM:SSZ value
+    alone does not establish a date, clock accuracy, or midnight rollover.
+    Invalid/mixed clock bases retain source order, explicitly unranked.
+    """
+    if not commands:
+        return [], "no_command_records"
+    values = []
+    bases = set()
+    for record in commands:
+        at = record.get("at")
+        if (type(at) is not str or len(at) != 9
+                or at[2] != ":" or at[5] != ":" or at[-1] != "Z"
+                or not (at[:2] + at[3:5] + at[6:8]).isdigit()
+                or int(at[:2]) > 23 or int(at[3:5]) > 59
+                or int(at[6:8]) > 59):
+            return list(commands), "source_order_not_chronological"
+        values.append(at)
+        bases.add(record.get("clock_basis"))
+    if len(bases) != 1:
+        return list(commands), "mixed_clock_bases_not_comparable"
+    # Lexicographic ordering is safe for canonical HH:MM:SSZ *time-of-day*
+    # strings; this is not a claim that actual physical events occurred so.
+    return sorted(commands, key=lambda row: (row["at"], row["id"])), (
+        "recorded_utc_time_of_day_only_not_cross_day_or_execution_proof"
+    )
+
+
 def _obligation_evidence_status(obligation: dict[str, Any]) -> str:
     """Evidence availability/overlap only; never a prose-adequacy verdict."""
     unseen = obligation["reference_records_not_examined_by_model"]
@@ -91,7 +121,10 @@ def build_stage75_review(
             "independent_semantic_verdict": "not_reviewed",
         })
 
-    commands = [rec for rec in records if rec["kind"] == "command_record"]
+    unordered_commands = [
+        rec for rec in records if rec["kind"] == "command_record"
+    ]
+    commands, command_order_basis = _command_order(unordered_commands)
     reports = [rec["id"] for rec in records if rec["kind"] == "state_report"]
     telemetry = [rec["id"] for rec in records
                  if rec["kind"] == "device_telemetry"
@@ -118,10 +151,30 @@ def build_stage75_review(
         },
         "causal_evidence_ladder": {
             "recorded_command_ids": [rec["id"] for rec in commands],
+            "recorded_command_display_order_basis": command_order_basis,
+            "recorded_command_timeline": [
+                {"record_id": rec["id"], "recorded_at": rec.get("at"),
+                 "clock_basis": rec.get("clock_basis", "not_specified_in_record")}
+                for rec in commands
+            ],
+            "recorded_times_prove_physical_execution": False,
+            "cross_day_chronology_or_clock_accuracy_proven": False,
             "reported_state_record_ids": reports,
             "independent_device_telemetry_ids": telemetry,
             "command_acknowledgement_record_ids": acknowledged,
             "explicit_coverage_gap_ids": gaps,
+            "state_report_clock_receipts": [
+                {"record_id": rec["id"],
+                 "source_time": rec.get("source_time"),
+                 "received_at": rec.get("received_at"),
+                 "clock_basis": rec.get("clock_basis")}
+                for rec in records if rec["kind"] == "state_report"
+            ],
+            "source_timestamp_is_not_independent_telemetry": True,
+            "driver_broker_session_ids": [
+                rec["id"] for rec in records if rec["kind"] == "broker_session"
+            ],
+            "broker_session_alone_proves_device_online": False,
             # A device packet can establish a physical observation without
             # tying the observation to either competing command.
             "telemetry_alone_identifies_command_initiator": False,
