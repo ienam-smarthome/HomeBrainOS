@@ -955,6 +955,24 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
     ];
     for(const [key,value] of Object.entries(data.read_status||{}))
       lines.push('• '+key+': '+value);
+    lines.push('Source page coverage diagnostics (each count is limited to the returned page, not total history):');
+    for(const [key,d] of Object.entries(data.read_diagnostics||{})){
+      lines.push('• '+key+': returned rows '+(d.source_rows===null?'unrecognised':d.source_rows)
+        +' | valid dates '+d.rows_with_valid_dates
+        +' | matching day '+d.matching_day_rows
+        +' | page at 50-record cap '+(d.page_at_limit?'yes':'no'));
+      if(d.earliest_visible_utc)
+        lines.push('  Visible target-row date range: '+d.earliest_visible_utc+' to '+d.latest_visible_utc);
+      lines.push('  Excluded: earlier '+d.dated_before_day
+        +', later '+d.dated_after_day
+        +', wrong type '+d.discarded_wrong_type
+        +', wrong device '+d.discarded_wrong_device
+        +', invalid date '+d.discarded_missing_or_invalid_time
+        +', invalid value '+d.discarded_unrecognised_value);
+      if(d.note)lines.push('  '+d.note);
+    }
+    if(data.zero_match_explanation)
+      lines.push('Why this test returned no evidence: '+data.zero_match_explanation);
     lines.push('Source-reported events (chronological, not physical execution):');
     for(const item of data.events||[]){
       lines.push('• '+item.source_reported_time_utc+' | '
