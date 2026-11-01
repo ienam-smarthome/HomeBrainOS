@@ -334,8 +334,87 @@ def evidence_progress_checkpoint(
     )
 
 
+def substantive_incident_progress_since(
+    evidence: list[dict[str, Any]], checkpoint_receipt_count: int,
+) -> bool:
+    """Did the previous retry produce a NEW source-linked discriminator?
+
+    A cloud model round, a generic hub list, a repeated history/log page,
+    an unlinked driver-source lookup or a failed tool call cannot justify
+    another provider retry. Actual target-scoped dependency/configuration,
+    source-linked driver evidence or independently observed upstream status
+    can make a second investigation step useful. This gate is independent
+    of any particular device label or room and never declares root cause.
+    """
+    if (
+        type(checkpoint_receipt_count) is not int
+        or checkpoint_receipt_count < 0
+        or checkpoint_receipt_count > len(evidence)
+    ):
+        return False
+
+    history_targets = set()
+    linked_driver_ids = set()
+    for row in evidence:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("mutates") is True or row.get("effect") == "write":
+            continue
+        op, args = _leaf(row)
+        if op == "hub_list_device_events":
+            target = str(args.get("deviceId") or "")
+            if target.isdigit():
+                history_targets.add(target)
+        if op == "hub_get_device":
+            detail = row.get("details") or {}
+            if isinstance(detail, dict):
+                code = str(detail.get("verifiedInstalledDriverCodeId") or "")
+                if code.isdigit():
+                    linked_driver_ids.add((str(args.get("deviceId") or ""), code))
+    if len(history_targets) != 1:
+        return False
+    target = next(iter(history_targets))
+
+    for row in evidence[checkpoint_receipt_count:]:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("mutates") is True or row.get("effect") == "write":
+            continue
+        op, args = _leaf(row)
+        detail = row.get("details") or {}
+        detail = detail if isinstance(detail, dict) else {}
+        if op == "hub_get_device" and str(args.get("deviceId") or "") == target:
+            code = str(detail.get("verifiedInstalledDriverCodeId") or "")
+            if code.isdigit():
+                return True
+        if op == "hub_get_source" and str(args.get("type") or "").lower() == "driver":
+            code = str(detail.get("sourceCodeId") or args.get("id") or "")
+            if detail.get("sourceRetrieved") is True and (target, code) in linked_driver_ids:
+                return True
+        if op == "hub_list_device_dependents" and str(args.get("deviceId") or "") == target:
+            # A verified dependency relationship is a real potential path to
+            # inspect; an empty/name-matched app inventory is not.
+            if detail.get("verifiedDeviceTargetLinks") is True:
+                return True
+            for key in ("dependentApps", "dependents"):
+                if isinstance(detail.get(key), list) and detail[key]:
+                    return True
+        if op == "hub_get_app_config" and str(args.get("appId") or "").isdigit():
+            if str(detail.get("verifiedControlsDeviceId") or "") == target:
+                return True
+        if str(detail.get("verifiedForDeviceId") or "") == target and (
+            detail.get("independentObservationVerified") is True
+            or (op == "hub_get_device_health"
+                and isinstance(detail.get("pingResults"), list)
+                and bool(detail["pingResults"]))
+        ):
+            return True
+    return False
+
+
 __all__ = [
     "is_connectivity_root_cause_request", "device_incident_followup",
     "incident_progress_followup", "evidence_progress_checkpoint",
+    "substantive_incident_progress_since",
     "CONNECTIVITY_EVIDENCE_PLAN",
 ]
