@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.325**.
+Current add-on version: **0.18.326**.
+
+**Stage 9.1 mobile copy reports:** Live Shadow now includes a **Copy command results** button after Command Shadow finishes and a **Copy test results** button after the separate Stage 9.1 app-decision follow-up. The latter copies both privacy-filtered visible reports in one paste, including any error/insufficient-evidence status. The clipboard action makes no new Hubitat, Cloud or device calls and does not include raw diagnostic log messages. [Release notes](CHANGELOG-0.18.326.md).
 
 **Stage 9.1 recorded-command issuer follow-up:** After a bounded device history identifies one OFF command with a source-reported app producer, a separate consent enables one **fresh exact-time command recheck** and one **app-ID-scoped four-minute Hubitat diagnostic log read**. Public results contain only safe decision classifications, never app-log messages or a claimed physical cause. The input cannot select an arbitrary app ID. No Cloud or device controls. [Release notes](CHANGELOG-0.18.325.md).
 

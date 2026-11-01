@@ -199,3 +199,28 @@ def test_current_production_publisher_does_not_import_shadow_module():
     for f in ("causal_claim_publication.py","mcp_agent_orchestrator.py",
               "tool_executor.py","final_answer_coordinator.py"):
         assert "live_shadow_app_decision" not in (APP/f).read_text()
+
+
+def test_stage91_copy_buttons_include_both_rendered_reports_and_reset_stale_results():
+    page = render_page("HomeBrainOS", "0.18.326")
+    # No new API call is needed to share results from the mobile Web UI.
+    assert 'id="copyLiveShadowCommandResult" disabled' in page
+    assert 'id="copyLiveShadowAppResult" disabled' in page
+    assert "document.getElementById('copyLiveShadowCommandResult').onclick" in page
+    assert "document.getElementById('copyLiveShadowAppResult').onclick" in page
+    assert "document.getElementById('liveShadowCommandReport').textContent" in page
+    assert "document.getElementById('liveShadowAppReport').textContent" in page
+    assert "'Command Shadow (bounded device history):" in page
+    assert "'\\n\\nApp-decision follow-up (bounded logs):" in page
+    assert "void copyText(combined,button,'Copy test results')" in page
+    assert "void copyText(report,button,'Copy command results')" in page
+    # Prevent copying an old follow-up when a new command comparison is run.
+    assert "document.getElementById('copyLiveShadowAppResult').disabled=true;" in page
+    assert "document.getElementById('liveShadowAppReport').textContent='Not run. Separate consent required.'" in page
+    # Full details are the already privacy-projected on-screen text, not
+    # previously hidden API fields or private raw diagnostic log messages.
+    copy_handler = page.split("document.getElementById('copyLiveShadowAppResult').onclick=()=>{", 1)[1].split(
+        "function liveShadowAppRefreshButton()", 1
+    )[0]
+    assert "JSON.stringify(data)" not in copy_handler
+    assert "fetch(" not in copy_handler
