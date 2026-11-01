@@ -65,12 +65,16 @@ def admit_model_first_telemetry_answer(
     if not isinstance(normalized, Mapping) or not isinstance(coverage, Mapping):
         return None, "missing-typed-evidence"
     state = normalized.get("reportedDeviceState")
+    device_id = str(normalized.get("deviceId") or "")
     if (
-        not isinstance(state, Mapping)
-        or str(state.get("deviceId") or "") != str(normalized.get("deviceId") or "")
+        not device_id.isdecimal()
+        or not isinstance(state, Mapping)
+        or str(state.get("deviceId") or "") != device_id
         or state.get("source") != "targeted-hubitat-device-state"
         or state.get("isPhysicalConnectivityProof") is True
         or coverage.get("rootCauseVerified") is not False
+        or normalized.get("truncated") is True
+        or normalized.get("commandCount") != 0
     ):
         return None, "unverified-source-scope"
     if (
