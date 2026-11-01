@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.320**.
+Current add-on version: **0.18.321**.
+
+**Stage 8.6 bounded source-coverage diagnostics:** Command Shadow independently classifies three successful-but-empty event pages, malformed successful envelopes and filtered date/type/value/device mismatches, with bounded first/last visible times and page-cap flags. It makes the same three read-only Hubitat calls; no inferred historical absence or source completeness. [Release notes](CHANGELOG-0.18.321.md).
 
 **Stage 8.5 command and switch evidence shadow:** A separately consented, UTC-date-scoped comparison reads up to three fixed Hubitat event pages for a selected device (`command-off`, `command-on`, `switch`). It shows source-reported command events, issuing app IDs if source records expose them, and switch reports without promoting coincidence into physical causation. Historical coverage, actual execution, source clocks and production publisher remain unverified. No Cloud AI or device commands. [Release notes](CHANGELOG-0.18.320.md).
 
