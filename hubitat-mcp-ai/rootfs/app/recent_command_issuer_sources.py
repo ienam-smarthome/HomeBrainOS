@@ -78,8 +78,8 @@ def recent_command_issuer_sources(
     if not observed:
         return None
     requested = re.search(
-        r"(?i)\\b(?:turned|went|switched|turn|switch|turning)\\s+(off|on)\\b"
-        r"|\\b(off|on)\\s+commands?\\b|\\bcommands?\\s+(off|on)\\b",
+        r"(?i)\b(?:turned|went|switched|turn|switch|turning)\s+(off|on)\b"
+        r"|\b(off|on)\s+commands?\b|\bcommands?\s+(off|on)\b",
         request,
     )
     if requested is None:
