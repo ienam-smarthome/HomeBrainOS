@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.330**.
+Current add-on version: **0.18.331**.
+
+**Answer Quality Q1 dashboard simplification:** Synthetic Ollama Cloud/Stage 5/Stage 6 experiments and Live Shadow are retained, but nested under a closed **Advanced testing & diagnostics** section. Their existing consent gates and endpoints are unchanged, and System Check remains visible. This release records an ungraded current-build bridge-reporter attribution weakness rather than asserting an accuracy increase. [Release notes](CHANGELOG-0.18.331.md).
 
 **Stage 9.5 cross-source causal evidence:** The investigation pipeline now correlates multiple source-linked motion/presence inactive reports with app-issued OFF commands across bounded episodes, preserving clock/provenance limitations and never interpreting timing as a proven cause. The model receives a concise evidence table before synthesis, and the final result retains a scoped cross-source finding and structured coverage even if the model overlooked it. No additional MCP reads, Cloud rounds or device commands. [Release notes](CHANGELOG-0.18.330.md).
 
