@@ -64,6 +64,12 @@ def test_source_identity_and_targeted_state_required_before_restriction():
     assert decide("homebrain_filter_devices", {
         "attribute": "name", "operator": "contains", "value": "Different driver"
     }) == "unrelated-name-filter-after-target-resolution"
+    # Real v0.18.338 regression: a local filter(deviceHealth=stale)
+    # internally invokes an unscoped 207-device Hubitat list. The outer
+    # filter must be admitted/blocked BEFORE that nested expensive request.
+    assert decide("homebrain_filter_devices", {
+        "attribute": "deviceHealth", "operator": "eq", "value": "stale",
+    }) == "unscoped-attribute-filter-after-target-resolution"
     assert decide("hub_read_devices", {
         "tool": "hub_list_devices", "args": {}
     }) == "unscoped-inventory-after-target-resolution"
@@ -85,6 +91,9 @@ def test_targeted_driver_logs_and_related_device_read_remain_permitted():
     assert decide("homebrain_filter_devices", {
         "attribute": "name", "value": "Relay"
     }) is None
+    assert decide("homebrain_filter_devices", {
+        "attribute": "name", "value": "Relay A",
+    }) is None
 
 
 def test_different_domains_and_explicit_comparisons_do_not_narrow_reads():
@@ -96,6 +105,7 @@ def test_different_domains_and_explicit_comparisons_do_not_narrow_reads():
         "Compare Relay A with other devices' connectivity.",
         "List all devices and identify Relay A.",
         "Why is Relay A offline across the whole hub?",
+        "Compare healthStatus stale across all devices including Relay A.",
     ):
         assert decide("hub_read_devices", {
             "resource": "hubitat://context"
