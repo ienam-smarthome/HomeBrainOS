@@ -872,7 +872,15 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
     const data=await jsonResponse(response);
     if(data.schema!=='homebrain-live-shadow-journal.v1')
       throw new Error('Unexpected local journal response.');
+    const brief=data.case_brief||{};
     const lines=[
+      'Investigation brief · local archive only (no AI, no new reads)',
+      ...(brief.findings||[]).map((finding,i)=>(i+1)+'. '+finding),
+      'Conclusion: '+(brief.conclusion||'No independent causal finding available.'),
+      'Next useful evidence: '+(brief.next_evidence||'An independent command-correlated record, if still available.'),
+      'Archive history complete: NO · physical execution verified: NO · cause established: NO',
+      '',
+      '--- Detailed source and timing audit ---',
       'Status: '+data.status,
       'Device ID: '+data.target_device_id,
       'Window: '+data.requested_window_start+' to '+data.requested_window_end,
