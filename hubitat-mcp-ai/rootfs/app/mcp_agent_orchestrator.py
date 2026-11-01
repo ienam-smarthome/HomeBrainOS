@@ -697,6 +697,7 @@ class UnifiedMCPAgent:
         causal_subject_prefetch_enabled: bool = True,
         causal_deterministic_final_enabled: bool = True,
         general_task_engine_enabled: bool = False,
+        model_first_investigations_enabled: bool = False,
         stage3_shadow_mode: str = "off",
         stage3_capture_session: Any | None = None,
         known_automations: Any | None = None,
@@ -744,6 +745,9 @@ class UnifiedMCPAgent:
         )
         # Opt-in semantic planning; no changes to tool permissions or approval.
         self.general_task_engine_enabled = bool(general_task_engine_enabled)
+        self.model_first_investigations_enabled = bool(
+            model_first_investigations_enabled
+        )
         # Source-only Stage 3C: off unless explicitly constructed in observe
         # mode. No add-on config or live rollout path enables it.
         self.stage3_shadow_mode = (
@@ -815,6 +819,9 @@ class UnifiedMCPAgent:
         self.final_answers = FinalAnswerCoordinator(
             self._chat,
             evidence_supplier=self.evidence.receipts,
+            model_first_investigations_enabled=(
+                self.model_first_investigations_enabled
+            ),
         )
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
