@@ -960,7 +960,19 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
     const data=await jsonResponse(response);
     if(data.schema!=='homebrain-stage85-command-shadow.v1')
       throw new Error('Unexpected command-history response.');
+    const review=data.transition_review||{};
     const lines=[
+      'Recent switching investigation · reported events only',
+      ...(review.findings||[]).map((finding,i)=>(i+1)+'. '+finding),
+      'Conclusion: '+(review.conclusion||'Causal attribution not established.'),
+      'Next useful evidence: '+(review.next_evidence||'Contemporaneous app-decision and command-source evidence.'),
+      'Physical cycle proven: NO · app cause proven: NO',
+      'Reported ON→OFF intervals (not proof of physical runtime):',
+      ...(review.report_intervals||[]).map(item=>
+        '• '+item.on_reported_utc+' to '+item.off_reported_utc
+        +' | '+item.reported_interval_seconds.toFixed(1)+' seconds (reported clocks)'),
+      '',
+      '--- Detailed bounded Hubitat history audit ---',
       'Status: '+data.status,
       'Device ID: '+data.device_id,
       'UTC incident date: '+data.requested_utc_date,
