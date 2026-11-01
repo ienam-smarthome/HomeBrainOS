@@ -37,7 +37,7 @@ def summary(rows, gaps=None):
 
 def test_six_delayed_native_state_rows_have_direct_no_cause_summary():
     p, brief = summary([archive_row() for _ in range(6)])
-    assert p["archived_native_state_readthrough_count"] == 6
+    assert p["archived_state_readthrough_count"] == 6
     assert p["archived_native_command_count"] == 0
     assert brief["status"] == "bounded_evidence_summary"
     output = " ".join(brief["findings"])
