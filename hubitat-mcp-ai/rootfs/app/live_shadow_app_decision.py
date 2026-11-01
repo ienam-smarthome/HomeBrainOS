@@ -59,6 +59,7 @@ def _base(plan: dict[str, Any]) -> dict[str, Any]:
         "verified_command_at_utc": None,
         "recorded_issuer_app_id": None,
         "command_record_verified_in_bounded_page": False,
+        "command_row_device_id_explicit": False,
         "app_log_read_attempted": False,
         "app_log_rows_returned": None,
         "classified_decision_rows": [],
@@ -94,13 +95,15 @@ def verified_issuer(plan: dict[str, Any], command_source: Any) -> dict[str, Any]
     rows = DeviceHistoryService._events(command_source.data, limit=50)
     requested = _utc(plan["requested_command_at_utc"])
     issuers = set()
+    explicit_target_id = False
     for row in rows:
         if str(row.get("name") or "").casefold() != "command-off":
             continue
         row_id = row.get("deviceId")
-        if row_id in (None, "") or str(row_id) != plan["device_id"]:
-            # No explicit target ID in row -> do not use it for provenance.
+        if row_id not in (None, "") and str(row_id) != plan["device_id"]:
             continue
+        if row_id not in (None, ""):
+            explicit_target_id = True
         when = _utc(row.get("date"))
         if when != requested:
             continue
@@ -116,11 +119,15 @@ def verified_issuer(plan: dict[str, Any], command_source: Any) -> dict[str, Any]
         return packet
     app_id = next(iter(issuers))
     packet.update({
-        "status": "verified_app_issuer_only",
+        "status": ("verified_app_issuer_only" if explicit_target_id
+                   else "issuer_verified_from_backend_scoped_page"),
         "recorded_issuer_app_id": app_id,
         "verified_command_at_utc": requested.isoformat(),
         "command_record_verified_in_bounded_page": True,
-        "log_scope_basis": "independent_target_command_producer",
+        "command_row_device_id_explicit": explicit_target_id,
+        "log_scope_basis": ("explicit_target_and_app_producer"
+                            if explicit_target_id else
+                            "backend_target_filter_and_app_producer"),
     })
     packet["log_read_arguments"] = {
         "tool": "hub_get_logs",
