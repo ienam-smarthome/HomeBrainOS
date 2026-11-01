@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.314**.
+Current add-on version: **0.18.315**.
+
+**Stage 8: consented read-only live shadow preflight:** The phone dashboard now provides a separate live context preflight for one numeric Hubitat device ID. It fetches a fresh Hubitat context through the existing read-only resource only after per-run user consent, projects only explicitly allowlisted reported state fields, rejects incomplete/ambiguous inventory, and never invokes Ollama, commands, the normal agent, or the production publisher. It cannot yet verify historical causation, physical actuation, source-clock accuracy or answer semantics. [Release notes](CHANGELOG-0.18.315.md).
 
 **Stage 6.11 citation-shape prompt hardening:** The synthetic final-answer prompt now explicitly requires evidence_ids to be a JSON array of 1–3 distinct leaf-record strings, prefers a single record for a simple claim, and supplies one non-case-specific JSON shape example. It retains the exact leaf allowlist from Stage 6.10 and rejects malformed identifiers without repair or retry. Regression tests include malformed list shapes and all three mocked scenarios within the four-call limit. [Release notes](CHANGELOG-0.18.314.md).
 

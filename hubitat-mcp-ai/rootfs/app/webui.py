@@ -178,6 +178,15 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input type="checkbox" id="stage6Consent">I authorise up to four synthetic Ollama Cloud requests using my current allowance.</label>
 <div id="stage6Report" class="benchmark-report" role="status" aria-live="polite">No Stage 6 investigation has run this session.</div>
 </details>
+<details class="card" id="liveShadowCard">
+<summary><strong>Live Shadow · Read-only preflight</strong> <span class="muted">One Hubitat device, no AI or controls</span></summary>
+<p class="stage5-note">Real Hubitat context READ only, after explicit consent. No Ollama Cloud requests, device commands, app/driver source reads, persistent capture or production publisher changes. The result is a current hub report, NOT verified physical history or causation.</p>
+<label class="muted" for="liveShadowDeviceId">Target Hubitat device ID (digits only)</label>
+<input id="liveShadowDeviceId" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="Numeric device ID" autocomplete="off">
+<label class="benchmark-consent"><input type="checkbox" id="liveShadowConsent">I authorise a single read-only live Hubitat context inspection for the device ID entered. No Cloud AI inference.</label>
+<button type="button" id="runLiveShadow" disabled>Check live read-only readiness</button>
+<div id="liveShadowReport" class="benchmark-report" role="status" aria-live="polite">Not run. Enter a device ID and approve the single live read to begin.</div>
+</details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
 <div class="health-grid">
@@ -700,6 +709,61 @@ document.getElementById('runStage5').onclick=async()=>{
   }
 };
 loadStage5Status();
+
+function liveShadowRefreshButton(){
+  const button=document.getElementById('runLiveShadow');
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  button.disabled=button.dataset.running==='yes'||
+    !document.getElementById('liveShadowConsent').checked||
+    !/^[0-9]{1,12}$/.test(id);
+}
+document.getElementById('liveShadowConsent').onchange=liveShadowRefreshButton;
+document.getElementById('liveShadowDeviceId').oninput=liveShadowRefreshButton;
+document.getElementById('runLiveShadow').onclick=async()=>{
+  const button=document.getElementById('runLiveShadow');
+  const report=document.getElementById('liveShadowReport');
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  if(button.disabled||!/^[0-9]{1,12}$/.test(id))return;
+  button.dataset.running='yes';liveShadowRefreshButton();
+  report.textContent='Reading one Hubitat device from the live context. No AI request.';
+  try{
+    const response=await fetch(apiPath('api/live-shadow/preflight'),{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-homebrain-live-readonly':'confirmed'},
+      body:JSON.stringify({device_id:id,confirm_read_only:true}),
+      cache:'no-store'
+    });
+    if(!response.ok)throw new Error('Read-only context request unavailable ('+response.status+').');
+    const data=await jsonResponse(response);
+    if(data.schema!=='homebrain-live-shadow-preflight.v1')throw new Error('Unexpected read-only response.');
+    report.replaceChildren();
+    const lines=[
+      'Status: '+data.status,
+      'Selected device ID: '+data.target_device_id,
+      'Context complete: '+(data.live_context_complete?'yes':'no'),
+      'Read-only follow-up ready: '+(data.ready_for_read_only_investigation?'yes':'no'),
+      'Causal attribution proven: NO',
+      'Hub context read at: '+data.observed_at_utc,
+      'Reported states (not physical proof):'
+    ];
+    for(const [key,value] of Object.entries(data.device_reported_states||{})){
+      lines.push('• '+key+': '+String(value));
+    }
+    if(!Object.keys(data.device_reported_states||{}).length)lines.push('• No allowlisted state fields');
+    lines.push('Evidence limitation:');
+    for(const item of data.evidence_limitations||[])lines.push('• '+item);
+    lines.push('Next: '+data.reason);
+    const pre=document.createElement('pre');
+    pre.style.whiteSpace='pre-wrap';pre.style.overflowWrap='anywhere';
+    pre.textContent=lines.join('\n');
+    report.append(pre);
+  }catch(e){
+    report.textContent='Live read-only preflight did not complete. '+e.message;
+  }finally{
+    document.getElementById('liveShadowConsent').checked=false;
+    button.dataset.running='no';liveShadowRefreshButton();
+  }
+};
 
 function stage6RefreshButton(){
   const b=document.getElementById('runStage6');
