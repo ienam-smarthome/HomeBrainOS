@@ -36,7 +36,7 @@ def responses():
         ("switch", tool_result([
             record("switch", "off"),
             record("switch", "on", at="2026-10-12T00:25:00Z"),
-            record("switch", "on", deviceId="9999"),
+            {**record("switch", "on"), "deviceId": "9999"},
             record("switch", "<secret>", at="2026-10-12T00:22:00Z"),
             record("switch", "on", at="2026-10-13T00:30:01Z"),
         ])),
