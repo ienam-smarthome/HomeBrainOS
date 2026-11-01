@@ -74,6 +74,8 @@ def test_stage94_checked_sources_alone_never_verify_hypothesis():
     status["hypothesisComparisons"][0]["source_state"] = "source-class-checked-verdict-unverified"
     assert unresolved_causal_hypotheses(status)
     status["hypothesisComparisons"][0]["discriminator_verified"] = True
+    assert unresolved_causal_hypotheses(status)
+    status["hypothesisComparisons"][0]["hypothesis_verdict"] = "verified"
     assert not unresolved_causal_hypotheses(status)
 
 
