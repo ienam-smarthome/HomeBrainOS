@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.322**.
+Current add-on version: **0.18.323**.
+
+**Stage 8.8 evidence-first historical brief:** The consented Historical Shadow response now begins with a source-bounded, natural-language account of retrieved observations, late native-history replay, available issuing-app evidence, and what remains unproven. It stops recommending repeat empty history reads when independent contemporaneous evidence is unavailable. No Cloud call, new Hubitat/journal read or production publisher change. [Release notes](CHANGELOG-0.18.323.md).
 
 **Stage 8.7 archived command provenance:** Historical Shadow now includes source-reported native command-on/off/setLevel records already preserved in the local journal, with numeric issuing-app ID extracted only from known read-through origin markers. It distinguishes retrospective native-history recovery from fresh device-origin contact, without extra upstream reads or Cloud/production publication. [Release notes](CHANGELOG-0.18.322.md).
 
