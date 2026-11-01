@@ -1181,6 +1181,41 @@ document.getElementById('runStage6').onclick=async()=>{
         panel78.append(reminder);
         panel.append(panel78);
       }
+      const proof=reviewPacket.stage79_proof_target_review;
+      if(proof?.schema==='homebrain-stage79-declared-proof-target.v1'){
+        const panel79=document.createElement('details');
+        const title=document.createElement('summary');
+        title.textContent='Stage 7.9 · Does the proposed source support its claimed conclusion?';
+        panel79.append(title);
+        const target=document.createElement('p');
+        target.textContent='Gemma-declared source class: '+
+          (proof.declared_source_class||'not declared')+
+          ' · Declared intended conclusion: '+
+          (proof.declared_proof_target||'not declared')+'.';
+        panel79.append(target);
+        const finding=document.createElement('p');finding.className='stage5-note';
+        const labels={
+          insufficient_source_class_alone:'Source class cannot establish declared target alone; additional independently verified proof needed.',
+          compatible_class_not_proof:'Source class is potentially relevant, NOT proof the evidence is present or correct.',
+          no_valid_proposal_text:'Suggested follow-up was invalid or withheld; no claim-to-source match can be graded.',
+          not_declared:'No structured target given; no automatic grade.',
+          unclassified_requires_human:'Evidence class or target is other; needs human assessment.'
+        };
+        finding.textContent='Structured class-to-target assessment: '+
+          (labels[proof.class_target_status]||'Not independently assessed');
+        panel79.append(finding);
+        if(proof.target_evidence_boundary){
+          const bound=document.createElement('p');bound.className='stage5-note';
+          bound.textContent='Evidence limitation: '+proof.target_evidence_boundary;
+          panel79.append(bound);
+        }
+        const human=document.createElement('p');human.className='stage5-note';
+        human.textContent='Important: the model may declare a weaker target than its own free-text proposal. '+
+          'Read both. Does the actual proposal imply stronger certainty than the source permits? '+
+          'Use the independent Next evidence quality reviewer below; this check does NOT certify prose.';
+        panel79.append(human);
+        panel.append(panel79);
+      }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
         ['partially_supported','Partially supported'],
