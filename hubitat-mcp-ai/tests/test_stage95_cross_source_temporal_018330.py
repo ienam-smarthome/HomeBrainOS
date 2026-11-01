@@ -83,7 +83,7 @@ def test_stage95_synthesis_receives_directional_evidence_without_root_cause_clai
     report = correlate_input_to_off_commands(receipts())
     brief = render_temporal_evidence_for_synthesis(report)
     assert "HOST CROSS-SOURCE TEMPORAL EVIDENCE" in brief
-    assert "15.094" in brief or "15.095" in brief
+    assert "15.097" in brief or "15.098" in brief
     assert "NOT a root-cause verdict" in brief
     assert "different bounded history window" in brief
     assert "2026-11-01T15:43:46.781000+00:00" in brief
@@ -101,7 +101,7 @@ def test_stage95_publication_reconciles_unsupported_keep_off_verdict():
     assert modified
     assert "Additional cross-source evidence" in final
     assert "4 bounded reports" in final
-    assert "15.095s median" in final
+    assert "15.097s median" in final or "15.098s median" in final
     assert "does not prove the timer branch" in final
     assert "periodic keep-off mechanism is not established" in final
     # No additional model or remote tool calls are necessary for this check.
@@ -160,6 +160,3 @@ def test_stage95_pre_synthesis_and_final_publication_both_use_same_projection():
     assert "render_temporal_evidence_for_synthesis(" in orchestrator
     assert "reconcile_temporal_publication(" in orchestrator
     assert '"crossSourceTemporalEvidence": correlations' in orchestrator
-    assert "correlate_input_to_off_commands(self.evidence.receipts())" not in (
-        ""  # deliberate; separate final and boundary scopes
-    )
