@@ -63,7 +63,10 @@ def pending_telemetry_configuration_read(
     normalized = normalize_target_device_history(receipts)
     if not isinstance(normalized, dict) or not _match_request(request, normalized):
         return None
-    if normalized.get("truncated") is True or normalized.get("commandCount") != 0:
+    if (normalized.get("truncated") is True
+            or normalized.get("commandCount") != 0
+            or type(normalized.get("returnedEvents")) is not int
+            or normalized["returnedEvents"] < 1):
         return None
     target = str(normalized["deviceId"])
     targeted_log = False
