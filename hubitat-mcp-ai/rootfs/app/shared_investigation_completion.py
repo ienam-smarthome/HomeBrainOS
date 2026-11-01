@@ -32,6 +32,7 @@ from typed_device_history_evidence import (
 )
 from answer_publication_policy import publish_source_typed_answer
 from publication_boundary_shadow import observe_publication_boundary
+from model_first_draft_provenance import public_boundary_shape
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
     reconcile_telemetry_answer, render_command_only_evidence_answer,
@@ -629,6 +630,15 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             # that raw model prose was available or factually proven.
             coverage["publicationBoundaryShadow"] = observe_publication_boundary(
                 incoming_message, message,
+            )
+            # Real no-tools draft provenance is distinct from the inbound
+            # AgentOutcome: its message may already have been rewritten by
+            # a validator, a guard or a route-specific finalizer. Only the
+            # fixed privacy-safe shape is exposed; raw model text remains
+            # private and never becomes proof of an unsupported claim.
+            coverage["modelFirstDraftBoundary"] = public_boundary_shape(
+                getattr(outcome, "private_model_draft", None),
+                incoming=incoming_message, published=message,
             )
             metrics.setdefault("counters", {})[
                 "typed_device_history_projections"
