@@ -16,7 +16,7 @@ Run `python scripts/answer_quality_scorecard.py` for an honest `not_measured` ba
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.18.333 | Maintained | Capability-grounded semantic smart-home agent with AI intent planning, deterministic verified execution, bounded history, and grounded synthesis |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.18.334 | Maintained | Capability-grounded semantic smart-home agent with AI intent planning, deterministic verified execution, bounded history, and grounded synthesis |
 
 The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
 has been retired and removed from this repository. All assistant development is
