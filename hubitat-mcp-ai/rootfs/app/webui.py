@@ -201,8 +201,10 @@ def render_page(title: str, version: str) -> str:
 <div id="liveShadowCommandReport" class="benchmark-report" role="status" aria-live="polite">Not run. Choose date and give fresh consent.</div>
 <button type="button" class="secondary copy-button" id="copyLiveShadowCommandResult" disabled>Copy command results</button>
 <div id="liveShadowAppFollowup" hidden>
-<p class="stage5-note">Stage 9.1 · Verified issuing-app follow-up. A separate, recent read-only command recheck is required before a bounded app-log read. It will show only safe decision classifications, not raw messages. No Cloud or device controls.</p>
-<div id="liveShadowAppFocal" class="muted">No verified recorded OFF command selected.</div>
+<p class="stage5-note">Stage 9.2 · Select one recorded OFF command (within the last 48 hours). Each selection is independently reverified before the bounded issuing-app log read; a displayed app ID cannot override the server verification. Read-only, no Cloud or device controls.</p>
+<label class="muted" for="liveShadowAppCommandSelect">Recorded OFF command (UTC)</label>
+<select id="liveShadowAppCommandSelect" disabled><option value="">Select an OFF command to investigate</option></select>
+<div id="liveShadowAppFocal" class="muted">No recorded OFF command selected.</div>
 <label class="benchmark-consent"><input type="checkbox" id="liveShadowAppConsent">I authorise one read-only recorded-command recheck and one bounded issuing-app log query for this recent incident.</label>
 <button type="button" id="runLiveShadowAppDecision" disabled>Investigate recorded OFF command's app decisions</button>
 <div id="liveShadowAppReport" class="benchmark-report" role="status" aria-live="polite">Not run. Separate consent required.</div>
@@ -752,6 +754,23 @@ document.getElementById('copyLiveShadowAppResult').onclick=()=>{
   void copyText(combined,button,'Copy test results');
 };
 
+function liveShadowAppSelectCommand(){
+  const select=document.getElementById('liveShadowAppCommandSelect');
+  const option=select.selectedOptions[0];
+  const button=document.getElementById('runLiveShadowAppDecision');
+  button.dataset.commandTime=select.value||'';
+  button.dataset.deviceId=select.value&&option?(option.dataset.deviceId||''):'';
+  document.getElementById('liveShadowAppFocal').textContent=select.value&&option
+    ?'Selected OFF at '+select.value+' by recorded app '+option.dataset.issuerId
+      +' — command time and issuer will be independently verified before reading logs.'
+    :'Select one recorded OFF command to continue. No app decision is proven.';
+  document.getElementById('liveShadowAppConsent').checked=false;
+  document.getElementById('copyLiveShadowAppResult').disabled=true;
+  document.getElementById('liveShadowAppReport').textContent='Not run. Separate consent required.';
+  liveShadowAppRefreshButton();
+}
+document.getElementById('liveShadowAppCommandSelect').onchange=liveShadowAppSelectCommand;
+
 function liveShadowAppRefreshButton(){
   const button=document.getElementById('runLiveShadowAppDecision');
   button.disabled=button.dataset.running==='yes'
@@ -1029,6 +1048,13 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
 document.getElementById('runLiveShadowCommands').onclick=async()=>{
   const followup=document.getElementById('liveShadowAppFollowup');
   followup.hidden=true;
+  const selectedCommand=document.getElementById('liveShadowAppCommandSelect');
+  selectedCommand.disabled=true;
+  selectedCommand.replaceChildren();
+  const prompt=document.createElement('option');
+  prompt.value='';prompt.textContent='Select an OFF command to investigate';
+  selectedCommand.appendChild(prompt);
+  document.getElementById('liveShadowAppFocal').textContent='No recorded OFF command selected.';
   document.getElementById('copyLiveShadowAppResult').disabled=true;
   document.getElementById('liveShadowAppReport').textContent='Not run. Separate consent required.';
   document.getElementById('liveShadowAppConsent').checked=false;
@@ -1058,19 +1084,32 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
       throw new Error('Unexpected command-history response.');
     const recorded=(data.events||[]).filter(item=>
       item.kind==='recorded_command'&&item.command==='off'
-      &&item.recorded_issuer_app_id
-      &&typeof item.source_reported_time_utc==='string');
-    // Select only an unambiguous recorded OFF command. The API rechecks
-    // its time, target and app ID before allowing an app-log read.
-    if(recorded.length===1){
+      &&/^[0-9]{1,12}$/.test(String(item.recorded_issuer_app_id||''))
+      &&typeof item.source_reported_time_utc==='string'
+      &&/^\d{4}-\d{2}-\d{2}T/.test(item.source_reported_time_utc));
+    // Do not display ambiguous duplicate timestamps. A user selects one source-
+    // reported command time; the backend still re-reads its target and producer.
+    const counts=new Map();
+    for(const item of recorded){
+      const time=item.source_reported_time_utc;
+      counts.set(time,(counts.get(time)||0)+1);
+    }
+    const selectable=recorded.filter(item=>counts.get(item.source_reported_time_utc)===1)
+      .sort((a,b)=>b.source_reported_time_utc.localeCompare(a.source_reported_time_utc));
+    if(selectable.length&&/^[0-9]{1,12}$/.test(String(data.device_id||''))){
+      for(const item of selectable){
+        const option=document.createElement('option');
+        option.value=item.source_reported_time_utc;
+        option.dataset.deviceId=String(data.device_id);
+        option.dataset.issuerId=String(item.recorded_issuer_app_id);
+        option.textContent=item.source_reported_time_utc+' — recorded app '+option.dataset.issuerId;
+        selectedCommand.appendChild(option);
+      }
+      selectedCommand.disabled=false;
       followup.hidden=false;
-      followupButton.dataset.commandTime=recorded[0].source_reported_time_utc;
-      followupButton.dataset.deviceId=data.device_id;
-      document.getElementById('liveShadowAppFocal').textContent=
-        'Recorded OFF at '+recorded[0].source_reported_time_utc
-        +' by app '+recorded[0].recorded_issuer_app_id
-        +' — issuer will be reverified before reading logs.';
-      liveShadowAppRefreshButton();
+      // Keep one-command behaviour; multiple candidates require explicit choice.
+      if(selectable.length===1)selectedCommand.value=selectable[0].source_reported_time_utc;
+      liveShadowAppSelectCommand();
     }
     const review=data.transition_review||{};
     const lines=[
