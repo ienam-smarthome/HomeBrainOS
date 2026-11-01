@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.327**.
+Current add-on version: **0.18.328**.
+
+**Stage 9.3 upstream app-log format integration:** Fix the Stage 9.2 verified command follow-up to recognise the MCP Rule Server's real `hub_get_logs(mode='past')` `entries` response, distinguish `in_progress` snapshots, preserve hub-local timestamps without claiming verified UTC, and maintain source-scoped privacy filtering. No new calls or device actions. [Release notes](CHANGELOG-0.18.328.md).
 
 **Stage 9.2 multi-command selection:** Live Shadow can now select an individual recorded OFF command when bounded history contains many. On a phone, choose the UTC timestamp from a list, tick fresh separate app-log consent, then run the same fail-closed exact-time verification and four-minute app diagnostic read. Explicit target-ID provenance is tied to the matching command rather than any other command on the page. No new Cloud or device controls. [Release notes](CHANGELOG-0.18.327.md).
 
