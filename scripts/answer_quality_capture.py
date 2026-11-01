@@ -22,6 +22,40 @@ from typing import Any
 from answer_quality_scorecard import load_catalog, ScorecardInputError
 
 
+# Only fixed generic evidence-family names may appear in a portable capture.
+# Any unknown missing-source description can contain private information.
+SAFE_MISSING_SOURCE_KINDS = frozenset({
+    "command_history", "device_history", "state_history", "sensor_history",
+    "motion_history", "app_logs", "app_decision_history", "rule_history",
+    "automation_history", "historical_journal", "configuration",
+})
+
+
+def _missing_source_summary(coverage: dict[str, Any]) -> dict[str, Any]:
+    """Record source gaps reported by HomeBrain, never infer completeness."""
+    raw = coverage.get("missingSourceKinds")
+    if not isinstance(raw, list):
+        return {
+            "source_gap_reporting": "not_provided",
+            "missing_source_kind_count": None,
+            "recognized_missing_source_kinds": [],
+            "unclassified_missing_source_count": None,
+        }
+    recognized = sorted({
+        kind for kind in raw
+        if isinstance(kind, str) and kind in SAFE_MISSING_SOURCE_KINDS
+    })
+    return {
+        "source_gap_reporting": "provided",
+        "missing_source_kind_count": len(raw),
+        "recognized_missing_source_kinds": recognized,
+        "unclassified_missing_source_count": sum(
+            not isinstance(kind, str) or kind not in SAFE_MISSING_SOURCE_KINDS
+            for kind in raw
+        ),
+    }
+
+
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -139,6 +173,8 @@ def extract_capture(
         "evidence_read_only_observed": bool(evidence_objects) and unknown_effects == 0,
         "read_only_classification_unknown_count": unknown_effects,
         "mutating_receipt_count": read_mutations,
+        **_missing_source_summary(coverage),
+        "source_packet_completeness": "not_independently_verified",
         "hypothesis_checks_reported": len([item for item in comparisons if isinstance(item, dict)]),
         "hypotheses_explicitly_unverified": sum(
             item.get("hypothesis_verdict") == "unverified"
@@ -165,6 +201,7 @@ def extract_capture(
             "No correctness, causal conclusion or first-attempt status is inferred",
             "Model/provider and times are as reported, not independently authenticated",
             "Exact live prompt and real source evidence must be reviewed separately",
+            "Missing-source categories are self-reported and are not proof of complete or absent history",
             "A clean mutating-receipt count is not an independently proven safety audit",
         ],
     }
