@@ -1081,6 +1081,40 @@ document.getElementById('runStage6').onclick=async()=>{
         }
         panel.append(layer);
       }
+      const temporal=reviewPacket.stage77_relationship_review;
+      if(temporal?.schema==='homebrain-stage77-relationship-and-coverage.v1'){
+        const panel77=document.createElement('details');
+        const h=document.createElement('summary');
+        h.textContent='Stage 7.7 · Missing evidence and clock-order comparisons';
+        panel77.append(h);
+        const help=document.createElement('p');help.className='stage5-note';
+        help.textContent='Independent structure checks after Gemma finished. These do not prove clock accuracy, physical execution, or correctness of Gemma\'s prose, and were never used to select sources.';
+        panel77.append(help);
+        for(const inversion of temporal.source_receipt_order_inversions||[]){
+          const p=document.createElement('p');
+          p.textContent='Recorded source-time order: '+inversion.source_time_order_ids.join(' → ')+
+            ' ('+inversion.source_times.join(' → ')+'). Collector receipt order: '+
+            inversion.receipt_time_order_ids.join(' → ')+
+            ' ('+inversion.receipt_times.join(' → ')+'). Orders reversed; physical sequence not proven.';
+          panel77.append(p);
+        }
+        for(const missing of temporal.postrun_critical_reference_gaps||[]){
+          const p=document.createElement('p');p.className='stage5-note';
+          p.textContent='Critical source not examined for '+missing.obligation_id.replace(/_/g,' ')+
+            ': '+missing.missing_record_ids.join(', ')+
+            '. Reference gaps are revealed only after inference and cannot alter model reads.';
+          panel77.append(p);
+        }
+        const status=temporal.transport_and_device_evidence;
+        const p=document.createElement('p');p.className='stage5-note';
+        p.textContent='Broker session: '+(status.broker_session_ids.join(', ')||'not examined')+
+          ' · Watchdog ticks: '+(status.watchdog_tick_ids.join(', ')||'none examined')+
+          ' · Independent device packets: '+(status.independent_device_packet_ids.join(', ')||'none examined')+
+          '. Neither broker connectivity nor a watchdog heartbeat proves device connectivity. '+
+          'A device-origin packet also does not establish its clock was accurately synchronised.';
+        panel77.append(p);
+        panel.append(panel77);
+      }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
         ['partially_supported','Partially supported'],
