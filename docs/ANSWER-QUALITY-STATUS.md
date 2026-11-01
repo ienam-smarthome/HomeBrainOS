@@ -2,7 +2,7 @@
 
 **Charter:** [ANSWER-QUALITY-CHARTER.md](ANSWER-QUALITY-CHARTER.md)  
 **Last baseline assessment:** 2026-11-01; Q0 instrumentation delivered, **zero reviewed production answers**.  
-**Current maintained add-on in main at kickoff:** `0.18.330` (Stage 9.5, PR #1223).  
+**Current maintained add-on on main:** `0.18.331` (Q1 UI simplification, PR #1228, merge `d6d457b41c039ef74c6f78c53403864d19c1e3bd`). The latest observed model answer was from `0.18.330`; **no reasoning code changed** in v0.18.331.  
 **Live Hubitat/HA mutation:** none authorised by this quality programme.
 
 ## Mission status
@@ -10,6 +10,7 @@
 - **Direction fixed:** benchmark-first, generalisable evidence use, natural Claude-quality domain answers, safety and efficient first-attempt resolution. This direction persists between conversations.
 - **Evaluation inventory already existed:** `tests/fixtures/homebrain_golden_tasks_v1.json` has **13** target scenarios with mixed historical replay and `capture_required` statuses. There are also prior synthetic audit-reasoning and model-evaluation scripts; they are **not an independently measured first-attempt production baseline**.
 - **Q0 delivered:** [PR #1224](https://github.com/ienam-smarthome/HomeBrainOS/pull/1224), merged at commit `06592de2a30aaa0e10e84209fbe9c006a242e45a`, all 3 required workflows passed. Thirteen legacy tasks plus **18 curated source packets = 31 defined cases** with reviewer rubrics, scorecard CLI, offline regression suite and dedicated scorecard integrity CI. No factual-success claims.
+- **Dashboard decision complete:** [PR #1228](https://github.com/ienam-smarthome/HomeBrainOS/pull/1228) merged with all 4 CI workflows green. Old Ollama/Stage 5/Stage 6 synthetic experiments and Live Shadow are now nested under closed **Advanced testing & diagnostics**; System Check remains directly visible. Endpoints/consents preserved. This is **UI-only**, not a corrected natural-language root-cause model.
 - **Current-build Q1 diagnostic:** One full v0.18.330 hallway trace plus one answer-only living-room result were reviewed qualitatively, revealing a cross-case confusion between state-report producer and upstream initiator. One reported full-run wall time was **67.065 seconds**, versus a preferred complex-investigation duration under 45 seconds. This is documented in [Q1 live observations](ANSWER-QUALITY-Q1-LIVE-OBSERVATIONS.md) and is **not a frozen-prompt scored baseline**.
 - **Baseline answer quality:** **NOT MEASURED**. Passing thousands of unit tests and release assurance does **not** measure factual accuracy or compare fairly with Claude.
 - **Real evidence motivating this change:** the Hallway Light 1 investigation first overclaimed a 15-second timeout; a later answer inferred unverified periodic keep-off while disregarding four independent source-timed motion-inactive → app OFF command pairs at approximately 15.1s. The **exact original 15:29 OFF trigger remains unverified**.
@@ -31,10 +32,11 @@
 
 1. Verify current GitHub `main` and Q0 merge SHA, then **continue Q1 baseline**, not another stage patch. This programme's targets are fixed in the charter.
 2. Run the scorecard without reviews. Expect `not_measured`, not a success percentage. Follow [the private Q1 capture workflow](ANSWER-QUALITY-EVALUATION.md) and [historical diagnostic findings](ANSWER-QUALITY-Q1-RETROSPECTIVE.md); never equate old differently-prompted incidents with frozen before/after measurements.
-3. **Next user test (single frozen prompt):** `Investigate why Livingroom Light 2 turned OFF most recently. Do not change anything.` on current **v0.18.330**, Free · Gemma. Ask for full natural answer **and technical JSON**, note model/version/latency/receipts, and compare against the registered `causal_light2_off` task. If the user changes words, do not count it as the frozen prompt. Independently grade available source evidence; an empty history is unresolved, not passed. Later test app 4012 and other domains.
-4. Establish first baseline for current main by model and latency without mixing old releases. Track source-grounded conclusion count, unsupported causal claims, first-pass usefulness and token/tool cost. Keep cases with missing evidence as pending.
-5. Make one generalising code change driven by top-scoring failure. Re-run the same frozen cases and compare measured results. If no improvement, revert or simplify.
-6. Continue to 40–50 carefully reviewed diverse cases, not auto-generated filler. Compare more capable models if Gemma plateaus, then evaluate 2–3 cycles per the charter.
+3. **Next user action:** The natural-language answer for the registered Livingroom Light 2 test has been supplied, but its technical JSON has **not** been supplied (the attached full JSON is from the Hallway test). First request the Livingroom technical JSON from the existing result. Only rerun the exact frozen prompt if the old JSON cannot be recovered. Do not treat the differently prompted Hallway output as a scored replacement.
+4. **Registered frozen prompt:** `Investigate why Livingroom Light 2 turned OFF most recently. Do not change anything.` on current **v0.18.330**, Free · Gemma. Ask for full natural answer **and technical JSON**, note model/version/latency/receipts, and compare against the registered `causal_light2_off` task. If the user changes words, do not count it as the frozen prompt. Independently grade available source evidence; an empty history is unresolved, not passed. Later test app 4012 and other domains.
+5. Establish first baseline for current main by model and latency without mixing old releases. Track source-grounded conclusion count, unsupported causal claims, first-pass usefulness and token/tool cost. Keep cases with missing evidence as pending.
+6. Make one generalising code change driven by top-scoring failure. Re-run the same frozen cases and compare measured results. If no improvement, revert or simplify.
+7. Continue to 40–50 carefully reviewed diverse cases, not auto-generated filler. Compare more capable models if Gemma plateaus, then evaluate 2–3 cycles per the charter.
 
 ## Live testing contract
 
