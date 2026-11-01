@@ -193,6 +193,12 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input type="checkbox" id="liveShadowHistoryConsent">I authorise one read-only query of my local Historical Journal for the device ID above.</label>
 <button type="button" id="runLiveShadowHistory" disabled>Inspect archived device events (30 days)</button>
 <div id="liveShadowHistoryReport" class="benchmark-report" role="status" aria-live="polite">Not run. A fresh local-journal consent is required.</div>
+<p class="stage5-note">Command Shadow · Bounded Hubitat read. Select a UTC incident date. On consent, query three read-only pages (switch, command-on, command-off) for one device, up to 50 records per type. Source history may be incomplete; a recorded command is not proof of execution.</p>
+<label class="muted" for="liveShadowIncidentDate">Incident date (UTC)</label>
+<input id="liveShadowIncidentDate" type="date">
+<label class="benchmark-consent"><input type="checkbox" id="liveShadowCommandConsent">I authorise three bounded read-only Hubitat device-event reads, with no AI or device controls.</label>
+<button type="button" id="runLiveShadowCommands" disabled>Compare command and switch events</button>
+<div id="liveShadowCommandReport" class="benchmark-report" role="status" aria-live="polite">Not run. Choose date and give fresh consent.</div>
 </details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
@@ -717,6 +723,16 @@ document.getElementById('runStage5').onclick=async()=>{
 };
 loadStage5Status();
 
+function liveShadowCommandRefreshButton(){
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  const date=document.getElementById('liveShadowIncidentDate').value;
+  const button=document.getElementById('runLiveShadowCommands');
+  button.disabled=button.dataset.running==='yes'
+    ||!/^[0-9]{1,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(date)
+    ||!document.getElementById('liveShadowCommandConsent').checked;
+}
+document.getElementById('liveShadowCommandConsent').onchange=liveShadowCommandRefreshButton;
+document.getElementById('liveShadowIncidentDate').onchange=liveShadowCommandRefreshButton;
 function liveShadowHistoryRefreshButton(){
   const id=document.getElementById('liveShadowDeviceId').value.trim();
   const button=document.getElementById('runLiveShadowHistory');
@@ -737,7 +753,7 @@ function liveShadowRefreshButton(){
   detailed.disabled=blocked;
 }
 document.getElementById('liveShadowConsent').onchange=liveShadowRefreshButton;
-document.getElementById('liveShadowDeviceId').oninput=()=>{liveShadowRefreshButton();liveShadowHistoryRefreshButton();};
+document.getElementById('liveShadowDeviceId').oninput=()=>{liveShadowRefreshButton();liveShadowHistoryRefreshButton();liveShadowCommandRefreshButton();};
 document.getElementById('runLiveShadow').onclick=async()=>{
   const button=document.getElementById('runLiveShadow');
   const report=document.getElementById('liveShadowReport');
@@ -908,6 +924,57 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
   }
 };
 
+document.getElementById('runLiveShadowCommands').onclick=async()=>{
+  const button=document.getElementById('runLiveShadowCommands');
+  const report=document.getElementById('liveShadowCommandReport');
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  const date=document.getElementById('liveShadowIncidentDate').value;
+  if(button.disabled||!/^[0-9]{1,12}$/.test(id))return;
+  button.dataset.running='yes';liveShadowCommandRefreshButton();
+  report.textContent='Reading three source-scoped Hubitat device-event pages. No commands or Cloud AI.';
+  try{
+    const response=await fetch(apiPath('api/live-shadow/command-events'),{
+      method:'POST',cache:'no-store',
+      headers:{'Content-Type':'application/json','x-homebrain-command-readonly':'confirmed'},
+      body:JSON.stringify({device_id:id,incident_utc_date:date,confirm_command_read:true})
+    });
+    if(!response.ok)throw new Error('Read-only command history unavailable ('+response.status+'). Check UTC date within past 30 days.');
+    const data=await jsonResponse(response);
+    if(data.schema!=='homebrain-stage85-command-shadow.v1')
+      throw new Error('Unexpected command-history response.');
+    const lines=[
+      'Status: '+data.status,
+      'Device ID: '+data.device_id,
+      'UTC incident date: '+data.requested_utc_date,
+      'Returned matching events: '+(data.returned_event_count||0),
+      'Source clock authenticated: NO',
+      'Historical completeness proven: NO',
+      'Physical execution proven: NO',
+      'Causal attribution proven: NO',
+      'Upstream read statuses:'
+    ];
+    for(const [key,value] of Object.entries(data.read_status||{}))
+      lines.push('• '+key+': '+value);
+    lines.push('Source-reported events (chronological, not physical execution):');
+    for(const item of data.events||[]){
+      lines.push('• '+item.source_reported_time_utc+' | '
+        +(item.kind==='recorded_command'?'recorded command '+item.command
+          +' | issuer app ID '+(item.recorded_issuer_app_id||'not established')
+          :'reported switch '+item.value));
+    }
+    if(!(data.events||[]).length)
+      lines.push('• No selected-day events in these bounded pages — NOT proof no events occurred.');
+    for(const limit of data.limitations||[])lines.push('Limit: '+limit);
+    const pre=document.createElement('pre');
+    pre.style.whiteSpace='pre-wrap';pre.style.overflowWrap='anywhere';
+    pre.textContent=lines.join('\n');report.replaceChildren(pre);
+  }catch(e){
+    report.textContent='Command Shadow read did not complete. '+e.message;
+  }finally{
+    document.getElementById('liveShadowCommandConsent').checked=false;
+    button.dataset.running='no';liveShadowCommandRefreshButton();
+  }
+};
 function stage6RefreshButton(){
   const b=document.getElementById('runStage6');
   b.disabled=b.dataset.available!=='yes'||b.dataset.running==='yes'||!document.getElementById('stage6Consent').checked;
