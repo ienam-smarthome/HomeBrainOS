@@ -351,14 +351,34 @@ def _validate_answer(raw: str, records: list[dict]) -> dict:
                        "homebrain-stage6-answer.v2",
                        "homebrain-stage6-answer.v3"):
         raise ValueError("invalid answer structure")
-    expected = {"schema", "sentences", "uncertainties", "next_evidence"}
-    # Additive v3-only, optional for compatibility with earlier model runs and
-    # existing offline mock fixtures. Missing declaration is explicitly unaudited.
-    optional = {"next_evidence_assessment"} if version == "homebrain-stage6-answer.v3" else set()
-    if not expected <= set(result) or set(result) - expected - optional:
+    # The factual sentences and their citations are the primary response.
+    # Follow-up advice is supplementary. A bad follow-up must not destroy an
+    # otherwise valid evidence investigation after all four billable requests.
+    # Never extract/rewrite malformed model prose or claim it was verified.
+    primary = {"schema", "sentences", "uncertainties"}
+    followup_keys = {"next_evidence", "next_evidence_assessment"}
+    allowed = (primary | followup_keys) if version == "homebrain-stage6-answer.v3" else (
+        primary | {"next_evidence"})
+    if not primary <= set(result) or set(result) - allowed:
         raise ValueError("invalid answer structure")
-    if "next_evidence_assessment" in result:
-        validate_followup_assessment(result["next_evidence_assessment"])
+    followup_status = {}
+    if version == "homebrain-stage6-answer.v3":
+        proposal = result.get("next_evidence")
+        if type(proposal) is not str or not 5 <= len(proposal.strip()) <= 220:
+            result["next_evidence"] = ""
+            followup_status["next_evidence"] = "invalid_or_missing"
+        assessment = result.get("next_evidence_assessment")
+        if "next_evidence_assessment" in result:
+            try:
+                validate_followup_assessment(assessment)
+            except (ValueError, TypeError, KeyError, AttributeError):
+                result.pop("next_evidence_assessment")
+                followup_status["next_evidence_assessment"] = "invalid"
+        if followup_status:
+            # Host-generated diagnostic, never taken from model-supplied keys.
+            result["_followup_validation"] = followup_status
+    elif "next_evidence" not in result:
+        raise ValueError("invalid answer structure")
     v2 = result["schema"] in (
         "homebrain-stage6-answer.v2", "homebrain-stage6-answer.v3")
     v3 = result["schema"] == "homebrain-stage6-answer.v3"
@@ -422,8 +442,11 @@ def _validate_answer(raw: str, records: list[dict]) -> dict:
                    for s in limits)):
         raise ValueError("uncertainty required")
     next_evidence = result["next_evidence"]
-    if not isinstance(next_evidence, str) or not 5 <= len(next_evidence.strip()) <= 220:
-        raise ValueError("specific useful follow-up required")
+    if version != "homebrain-stage6-answer.v3":
+        if not isinstance(next_evidence, str) or not 5 <= len(next_evidence.strip()) <= 220:
+            raise ValueError("specific useful follow-up required")
+    # v3 invalid follow-up fields are marked, withheld and never published
+    # as model advice; strict primary sentence checks above are unchanged.
     return result
 
 
@@ -887,8 +910,10 @@ class Stage6Benchmark:
                     "Allowed fields: state,source_time,received_at,clock_basis,"
                     "command,issuer,level,at,reported_at,driver_connected_to_broker,"
                     "independent_device_packet,physical_acknowledgement. "
-                    "uncertainties 1-4 short strings; next_evidence a specific "
-                    "useful follow-up. Also provide next_evidence_assessment "
+                    "uncertainties 1-4 short strings. next_evidence must be "
+                    "a single 5-220 character STRING, not a JSON object or list; "
+                    "it can be omitted when no well-supported proposal exists. "
+                    "Also provide next_evidence_assessment when possible "
                     "with EXACT keys proposal_kind,could_establish,cannot_establish,"
                     "additional_proof_needed. Proposal kind must be one of: "
                     "device_telemetry,broker_session,watchdog_history,"
