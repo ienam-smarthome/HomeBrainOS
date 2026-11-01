@@ -195,6 +195,7 @@ from investigation_checkpoint import (
     is_investigative_question, render_investigation_checkpoint,
     requests_explicit_hypothesis_comparison, build_evidence_checkpoint,
 )
+from causal_answer_coverage_alignment import align_causal_answer_with_coverage
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
@@ -4075,6 +4076,14 @@ class UnifiedMCPAgent:
                             "model-proposed-source-checks-not-causal-verdicts"
                         ),
                     }
+            # The hypothesis audit is calculated after model synthesis. Do
+            # not return unsupported cause confidence alongside an explicitly
+            # unverified hypothesis verdict in the same API response.
+            message, confidence_aligned = align_causal_answer_with_coverage(
+                message, coverage,
+            )
+            if confidence_aligned:
+                increment_active_metric("causal_coverage_confidence_aligned")
             return AgentOutcome(
                 message=message,
                 request_class=request_class,
