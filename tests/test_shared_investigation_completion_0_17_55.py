@@ -451,9 +451,9 @@ def test_telemetry_coverage_and_driver_source_do_not_pretend_root_cause_resolved
     assert "Code ID 3686" not in answer["message"]
     assert "source-offset units" not in answer["message"]
     assert "Investigation depth still missing" not in answer["message"]
-    assert answer["investigation_coverage"]["incidentReasoningDepth"][
-        "driverSourceRetrieved"
-    ] is True
+    # A source read without a typed mixed-history packet is not enough
+    # to associate method-depth diagnostics with this target.
+    assert "incidentReasoningDepth" not in coverage
     assert answer["metrics"]["outcome"] == "unresolved"
 
 
@@ -491,6 +491,8 @@ def test_telemetry_answer_keeps_technical_ledger_out_of_prose_for_any_device():
     assert "not verified driver implementation" in message
     assert "Recorded command sources" not in message
     assert "Command outcomes:" not in message
+    assert "No command invocation was returned" in message
+    assert "physical command delivery" in message
     assert "deviceHealth=stale" in message
     assert "History integrity:" in message
     assert "not independently verified" in message
@@ -503,6 +505,7 @@ def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
             "labelFilter": "Anonymised Relay",
         }, details={"reportedDeviceState": {
             "deviceId": "9911", "label": "Anonymised Relay",
+            "source": "targeted-hubitat-device-state",
             "observedAt": "2026-11-01T12:00:05+00:00",
             "reportedAttributes": {
                 "healthStatus": "offline",
@@ -511,7 +514,17 @@ def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
         }}),
         receipt("hub_read_devices", "hub_list_device_events", {
             "deviceId": "9911", "hoursBack": 24,
-        }, details={"historySourceIntegrityVerified": False}),
+        }, details={
+            "historySourceIntegrityVerified": False,
+            "observedEvents": [{
+                "name": "deviceHealth", "value": "stale",
+                "date": "2026-11-01T12:00:00+00:00",
+                "producedBy": {
+                    "type": "device", "label": "Anonymised Relay",
+                    "id": "9911",
+                },
+            }],
+        }),
         receipt("homebrain_device_history", "homebrain_device_history", {
             "name": "Anonymised Relay",
         }, details={
