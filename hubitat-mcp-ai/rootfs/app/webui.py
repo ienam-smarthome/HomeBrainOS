@@ -868,6 +868,24 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
       'Causal attribution proven: NO',
       'Archived device reports (source time is NOT independently authenticated):'
     ];
+    const temporal=data.temporal_integrity||{};
+    lines.push('Temporal integrity — apparent clock difference, NOT proof of network latency:');
+    lines.push('• Source timestamps present: '+(temporal.source_timestamps_present||0));
+    lines.push('• Events apparently more than 24h late: '+(temporal.events_with_source_older_than_receipt_by_over_one_day||0));
+    lines.push('• Receipt-order inversions versus source order: '+(temporal.adjacent_receipt_order_inversions||0));
+    if(temporal.earliest_declared_source_utc)
+      lines.push('• First declared source time: '+temporal.earliest_declared_source_utc);
+    if(temporal.latest_declared_source_utc)
+      lines.push('• Last declared source time: '+temporal.latest_declared_source_utc);
+    if(temporal.earliest_collector_receipt_utc)
+      lines.push('• First collector receipt: '+temporal.earliest_collector_receipt_utc);
+    if(temporal.latest_collector_receipt_utc)
+      lines.push('• Last collector receipt: '+temporal.latest_collector_receipt_utc);
+    if(temporal.minimum_apparent_separation_days!==null&&temporal.minimum_apparent_separation_days!==undefined)
+      lines.push('• Apparent source-to-receipt gap (days): '+temporal.minimum_apparent_separation_days+' to '+temporal.maximum_apparent_separation_days);
+    if(temporal.large_timestamp_discrepancy)
+      lines.push('⚠ Historical timestamps differ from journal arrival by over 24 hours. This could be replay, delayed ingestion or clock error — do not call it fresh device contact.');
+    lines.push('Archived events:');
     for(const ev of data.events||[]){
       lines.push('• '+ev.attribute+'='+String(ev.reported_value)
         +' | source: '+(ev.source_time_utc||'not available')
