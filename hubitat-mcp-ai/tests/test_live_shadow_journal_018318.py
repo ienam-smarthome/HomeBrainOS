@@ -41,9 +41,14 @@ def archive():
         "offset": 0, "has_more": False, "coverage_complete": False,
     }
 
-def project(a=None):
-    return project_shadow_history("7103", archive() if a is None else a,
-                                  window_start=T0, window_end=T1, read_at=T1)
+_DEFAULT_ARCHIVE = object()
+
+
+def project(a=_DEFAULT_ARCHIVE):
+    return project_shadow_history(
+        "7103", archive() if a is _DEFAULT_ARCHIVE else a,
+        window_start=T0, window_end=T1, read_at=T1,
+    )
 
 def test_history_tracks_source_and_receipt_without_physical_proof():
     p = project()
