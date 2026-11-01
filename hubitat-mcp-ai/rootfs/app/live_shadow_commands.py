@@ -12,6 +12,7 @@ from typing import Any
 
 from device_history_service import DeviceHistoryService
 from mcp_client import tool_succeeded
+from live_shadow_report_transitions import summarize_reported_transitions
 
 _MAX_SOURCE_ROWS = 50
 
@@ -218,6 +219,7 @@ def project_command_shadow(plan: dict[str, Any], responses: Any,
             )
     else:
         base["status"] = "bounded_source_evidence"
+    base["transition_review"] = summarize_reported_transitions(base)
     return base
 
 
