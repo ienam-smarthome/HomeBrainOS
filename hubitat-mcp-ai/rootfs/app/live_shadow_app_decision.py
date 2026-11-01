@@ -219,7 +219,7 @@ def project_verified_app_logs(packet: dict[str, Any], log_source: Any) -> dict[s
             # as verified UTC or compute a command-to-log offset.
             raw_local = raw_time or row.get("name")
             if type(raw_local) is not str or not re.fullmatch(
-                r"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?", raw_local
+                r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?", raw_local
             ):
                 excluded_timestamp_rows += 1
                 continue
