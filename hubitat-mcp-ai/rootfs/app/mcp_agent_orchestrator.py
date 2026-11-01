@@ -7,7 +7,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from agent_prompt_policy import (
@@ -22,6 +22,10 @@ from source_analysis_completion import (
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
+from model_first_draft_provenance import (
+    PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
+    record_coordinator_result, record_final_answer, private_snapshot,
+)
 from driver_source_identity_guard import unverified_driver_source_read
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from device_incident_depth import (
@@ -652,6 +656,9 @@ class AgentOutcome:
     route: str = "unified-mcp-agent"
     investigation_coverage: dict[str, Any] | None = None
     interpreted_intent: dict[str, str] | None = None
+    # Never serialize this private request-only model text. API response
+    # serialization explicitly selects public fields, not dataclass fields.
+    private_model_draft: PrivateModelDraft | None = field(default=None, repr=False)
 
 
 class UnifiedMCPAgent:
@@ -3821,6 +3828,7 @@ class UnifiedMCPAgent:
                     "content": correlation_brief[:6500],
                 })
         content = await self.final_answers.answer(messages)
+        record_coordinator_result(content)
         # Terminal safety net. Earlier synthesis may skip causal validation if
         # a classifier or repair path fails; never send an unverified external
         # attribution when the exact event has a preceding internal command.
@@ -3858,7 +3866,9 @@ class UnifiedMCPAgent:
                 "command proves the physical initiator."
             )
             increment_active_metric("investigation_reflection_synthesized")
-        return redact_secrets(self._unverified_mutation_guard(content))
+        final_message = redact_secrets(self._unverified_mutation_guard(content))
+        record_final_answer(final_message)
+        return final_message
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
         return self.confirmations.consume(session_id, prompt)
@@ -3896,6 +3906,7 @@ class UnifiedMCPAgent:
         *,
         session_id: str = "default",
     ) -> AgentOutcome:
+        draft_token = begin_private_model_draft()
         paid_request_token = set_original_paid_request(user_prompt)
         if explicit_paid_request():
             increment_active_metric("paid_model_requested")
@@ -4129,6 +4140,9 @@ class UnifiedMCPAgent:
                 confirmation_required=pending is not None,
                 confirmation_count=len(pending.actions) if pending is not None else 0,
                 investigation_coverage=coverage,
+                private_model_draft=(
+                    private_snapshot() if request_class == "live-read" else None
+                ),
             )
         finally:
             self._investigation_hypotheses.reset(hypothesis_token)
@@ -4143,6 +4157,7 @@ class UnifiedMCPAgent:
             self._groovy_mcp_cache.reset(source_cache_token)
             self._choices.reset(choices_token)
             reset_original_paid_request(paid_request_token)
+            reset_private_model_draft(draft_token)
 
     async def process_user_request(
         self,
