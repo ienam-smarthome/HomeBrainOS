@@ -175,7 +175,7 @@ def telemetry_skill_conclusion(summary: dict[str, Any]) -> str | None:
             "without fresh telemetry from the endpoint. This is a possible "
             "explanation, not verified driver implementation or proof of "
             "the physical cause. The stored 'connected' value alone cannot "
-            "establish current device reachability."
+            "establish current device reachability or receipt of a fresh physical packet."
         )
     return text
 
