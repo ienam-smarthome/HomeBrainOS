@@ -416,8 +416,8 @@ def render_target_device_evidence_answer(
     # never show an empty "Recorded command sources" section.
     if summary.get("commandCount"):
         lines.append(
-            "**Command evidence:** Recorded commands cannot establish "
-            "physical delivery, execution or response."
+            "**Command evidence:** Recorded command invocations do not "
+            "prove command delivery, physical execution or response."
         )
     else:
         lines.append(
