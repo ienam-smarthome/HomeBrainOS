@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from stage79_proof_target_review import PROOF_TARGETS
+
 FOLLOWUP_KINDS = frozenset({
     "device_telemetry", "broker_session", "watchdog_history",
     "command_history", "command_execution_receipt", "clock_correlation",
@@ -54,10 +56,18 @@ _RECEIPTS = {
 
 def validate_followup_assessment(value: Any) -> dict:
     """Strict *structure* check; no truth, source validity, or prose grading."""
+    # The new target is optional for legacy model outputs. An unknown target
+    # rejects only this supplementary declaration (v3 recovery), not facts.
     keys = {"proposal_kind", "could_establish", "cannot_establish",
             "additional_proof_needed"}
-    if type(value) is not dict or set(value) != keys:
+    if type(value) is not dict or not (set(value) == keys
+                                       or set(value) == keys | {"proof_target"}):
         raise ValueError("invalid follow-up assessment fields")
+    if "proof_target" in value and (
+        type(value["proof_target"]) is not str or
+        value["proof_target"] not in PROOF_TARGETS
+    ):
+        raise ValueError("invalid follow-up proof target")
     if type(value["proposal_kind"]) is not str or value["proposal_kind"] not in FOLLOWUP_KINDS:
         raise ValueError("invalid follow-up source class")
     for key in ("could_establish", "cannot_establish", "additional_proof_needed"):
