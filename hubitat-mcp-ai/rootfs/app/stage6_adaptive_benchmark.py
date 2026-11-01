@@ -20,6 +20,9 @@ from cloud_benchmark import BenchmarkError, benchmark_status
 from stage5_autonomous_benchmark import _json_object, _safe_cloud_error
 from stage65_question_value import evaluate_question_value_ledger
 from stage7_review_packet import build_review_packet
+from stage74_epistemic_claims import (
+    validate_epistemic_declaration, assess_epistemic_claim,
+)
 from stage66_answer_diagnostics import (
     Stage6AnswerContractFailure, answer_failure_category,
     synthetic_planning_progress,
@@ -344,23 +347,31 @@ def _validate_answer(raw: str, records: list[dict]) -> dict:
     result = _json_object(raw)
     if (set(result) != {"schema", "sentences", "uncertainties", "next_evidence"}
             or result["schema"] not in ("homebrain-stage6-answer.v1",
-                                       "homebrain-stage6-answer.v2")):
+                                       "homebrain-stage6-answer.v2",
+                                       "homebrain-stage6-answer.v3")):
         raise ValueError("invalid answer structure")
-    v2 = result["schema"] == "homebrain-stage6-answer.v2"
+    v2 = result["schema"] in (
+        "homebrain-stage6-answer.v2", "homebrain-stage6-answer.v3")
+    v3 = result["schema"] == "homebrain-stage6-answer.v3"
     sentences = result["sentences"]
     if not isinstance(sentences, list) or not 1 <= len(sentences) <= 7:
         raise ValueError("invalid sentence count")
     allowed = {r["id"] for r in records}
     total_chars = 0
     for sent in sentences:
-        allowed_keys = ({"text", "kind", "evidence_ids", "atoms"} if v2
-                        else {"text", "kind", "evidence_ids"})
+        allowed_keys = (
+            {"text", "kind", "evidence_ids", "atoms", "epistemic"} if v3
+            else {"text", "kind", "evidence_ids", "atoms"} if v2
+            else {"text", "kind", "evidence_ids"}
+        )
         if not isinstance(sent, dict) or set(sent) != allowed_keys:
             raise ValueError("sentence/claim alignment required")
         txt = sent["text"]
         if not isinstance(txt, str) or not 6 <= len(txt.strip()) <= 360:
             raise ValueError("invalid sentence text")
         total_chars += len(txt)
+        if v3:
+            validate_epistemic_declaration(sent["epistemic"])
         ids = sent["evidence_ids"]
         if (sent["kind"] not in _TYPES or not isinstance(ids, list)
                 or not 1 <= len(ids) <= 3 or len(ids) != len(set(ids))
@@ -461,7 +472,17 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
     atom_missing_sentences = 0
     for sentence in draft["sentences"]:
         witnesses = [by_id[sid] for sid in sentence["evidence_ids"]]
-        ok = _host_proof(sentence["kind"], witnesses)
+        raw_type_support = _host_proof(sentence["kind"], witnesses)
+        epistemic = (
+            assess_epistemic_claim(sentence["kind"], sentence["epistemic"])
+            if draft.get("schema") == "homebrain-stage6-answer.v3" else None
+        )
+        # A model-declared negative or undecidable factual position cannot
+        # inherit proof from a source merely mentioning its subject.
+        ok = raw_type_support and (
+            epistemic is None
+            or epistemic["model_declared_position"] == "affirmed"
+        )
         # Keep a provenance *mismatch* separate from an unsourced fact.
         # E2/E3 are device-origin timestamps inside state reports, NOT
         # independently authenticated physical device telemetry.
@@ -494,6 +515,8 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
             "evidence_ids": sentence["evidence_ids"],
             "typed_source_supported": ok,
             "source_type_mismatch": mismatch,
+            "epistemic_annotation": epistemic,
+            "model_declared_stance_is_not_independent_prose_proof": True,
             "atomic_source_value_checks": checks,
             "source_value_atom_coverage": (
                 "declared_atoms_checked" if has_declared_atoms
@@ -527,13 +550,37 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
         "declared_source_value_coverage_complete": (
             atom_missing_sentences == 0 and
             atom_mismatches == 0 and
-            draft.get("schema") == "homebrain-stage6-answer.v2"
+            draft.get("schema") in (
+                "homebrain-stage6-answer.v2",
+                "homebrain-stage6-answer.v3",
+            )
         ),
         "declared_source_value_coverage_is_not_prose_verification": True,
         "sentences_with_unverified_free_prose": len(findings),
         "high_risk_unsupported_sentences": sum(
             not row["typed_source_supported"] and row["kind"] in _HIGH_RISK
+            and (
+                row["epistemic_annotation"] is None
+                or row["epistemic_annotation"]["epistemic_category"] not in (
+                    "scoped_unresolved_model_declaration",
+                )
+            )
             for row in findings),
+        "scoped_unresolved_model_declarations": sum(
+            bool(row["epistemic_annotation"]) and
+            row["epistemic_annotation"]["epistemic_category"] ==
+                "scoped_unresolved_model_declaration"
+            for row in findings),
+        "unscoped_unresolved_model_declarations": sum(
+            bool(row["epistemic_annotation"]) and
+            row["epistemic_annotation"]["epistemic_category"] ==
+                "unscoped_unresolved_model_declaration"
+            for row in findings),
+        "high_risk_assertion_or_refutation_declarations": sum(
+            bool(row["epistemic_annotation"]) and
+            row["epistemic_annotation"]["high_risk_assertion_or_refutation"]
+            for row in findings),
+        "epistemic_declarations_are_model_authored_not_prose_verified": True,
         "model_sentence_count": len(findings),
         "prose_semantics_fully_verified": False,
         "sentence_labels_are_model_supplied": True,
@@ -778,8 +825,23 @@ class Stage6Benchmark:
                     "do not prove the sentence's causal/negative implications. "
                     "A sentence may carry other unlabelled implications. "
                     "Return ONLY JSON {schema,sentences,uncertainties,next_evidence}. "
-                    "schema: homebrain-stage6-answer.v2; sentences array 1-7 "
-                    "of {text,kind,evidence_ids,atoms}. kind one of "
+                    "schema: homebrain-stage6-answer.v3; sentences array 1-7 "
+                    "of {text,kind,evidence_ids,atoms,epistemic}. "
+                    "epistemic={position,scope}: position is affirmed, refuted, "
+                    "or not_established; scope is examined_records, "
+                    "supplied_records, or universal. Position means the "
+                    "claim ABOUT the kind is being affirmed, categorically "
+                    "refuted, or simply NOT ESTABLISHED by available evidence. "
+                    "Not established is NOT a claim that the cause did not "
+                    "occur. Choose examined_records for insufficient evidence "
+                    "unless the data independently proves a wider scope. "
+                    "Do not use a high-risk affirmative/refutation position "
+                    "for a merely unproven physical outcome, causal link or "
+                    "global absence. Your natural-language sentence MUST "
+                    "match the declared position and scope. Host validation "
+                    "checks only declaration structure and cited records; "
+                    "independent reviewers must check semantic agreement. "
+                    "kind one of "
                     "state_report,command_record,device_telemetry,broker_session,"
                     "rule_decision,timestamp_basis,time_order_conflict,"
                     "competing_commands,physical_confirmation,unique_cause,"
