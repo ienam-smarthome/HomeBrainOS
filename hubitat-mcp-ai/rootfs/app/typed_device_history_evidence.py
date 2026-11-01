@@ -14,6 +14,7 @@ from device_watchdog_evidence import (
 )
 
 from skill_decision_summary import telemetry_skill_conclusion
+from telemetry_clock_consistency import render_telemetry_clock_qualification
 
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -335,6 +336,8 @@ def reported_telemetry_consistency(reported: dict[str, Any]) -> str | None:
 def render_target_device_evidence_answer(
     evidence: list[dict[str, Any]],
     summary: dict[str, Any],
+    *,
+    clock_check: dict[str, Any] | None = None,
 ) -> str:
     """Stable factual projection; do not promote model causal speculation."""
     label = summary.get("deviceLabel") or "Device " + str(summary["deviceId"])
@@ -370,7 +373,15 @@ def render_target_device_evidence_answer(
                     "at the read time, not independently verified physical "
                     "transport or original measurement timestamps."
                 )
-    if isinstance(reported, dict):
+    if isinstance(clock_check, dict):
+        # Shared completion already assessed this clock from the targeted
+        # receipt. Render the one authoritative discrepancy alongside the
+        # reported state; do not calculate/append it a second time.
+        if clock_check.get("sourcesAgree") is False:
+            lines.append(render_telemetry_clock_qualification(clock_check))
+    elif isinstance(reported, dict):
+        # Direct callers without shared coverage retain the pre-existing
+        # source-derived clock warning and fail closed on absent metadata.
         consistency = reported_telemetry_consistency(reported)
         if consistency:
             lines.append("**Telemetry consistency:** " + consistency)
