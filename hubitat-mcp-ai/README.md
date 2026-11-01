@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.345**.
+Current add-on version: **0.18.346**.
+
+**HomeBrain cross-domain source-completeness pilot (v0.18.346):** For a uniquely verified device's **latest ON/OFF causal investigation**, HomeBrain now requests one bounded, read-only matching `command-on`/`command-off` event history when missing, even when the user did not type a numeric device ID or date. This reuses the pre-existing command-history reader and skips retries after an attempted read. A model-visible issuer-source packet and Technical JSON `recentCommandIssuerSource` distinguish actual typed command witnesses from bridge state reporters, downstream listener apps and merely contemporaneous/later app-log completion entries. The model remains responsible for natural explanations; **a reported log completion alone does not identify the cause of an earlier switch transition**. No device/automation writes, and existing model-first mode remains unchanged. Actual first-answer quality improvement is NOT MEASURED. [Release notes](CHANGELOG-0.18.346.md).
 
 **HomeBrain v0.18.345 rollback to v0.18.343 behavior:** At the user's request after the v0.18.344 source-typed fallback made responses too mechanical, this release reverts the v0.18.344 runtime changes and restores the earlier opt-in model-first answer path from v0.18.343. The v0.18.343 source-authority packet and bounded device-configuration lookup remain; the v0.18.344 contradiction-triggered compulsory template replacement and extra driver-source read are removed. `model_first_investigations_enabled` remains off by default and never grants device write permission. Previous natural model answers sometimes overclaimed broker/physical causes; **naturalness is not verified factual accuracy**. Shift evaluation to cross-domain read-only lighting/heating/ventilation questions, not repeated Bedroom 3 Mesh trials. [Release notes](CHANGELOG-0.18.345.md).
 
