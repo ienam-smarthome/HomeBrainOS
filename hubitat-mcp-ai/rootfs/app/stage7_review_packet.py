@@ -15,6 +15,7 @@ from typing import Any
 from stage71_evidence_scope import build_evidence_scope_review
 from stage72_answer_coverage import build_answer_coverage_review
 from stage75_evidence_answer_review import build_stage75_review
+from stage77_relationship_review import build_stage77_review
 
 
 def _bounded_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +104,7 @@ def build_review_packet(
         "evidence_scope_review": scope_review,
         "answer_coverage_review": answer_review,
         "stage75_evidence_answer_review": stage75_review,
+        "stage77_relationship_review": build_stage77_review(case, selected, answer_review),
         "suggested_next_evidence_review": {
             "suggestion": draft["next_evidence"],
             "human_review_verdict": "not_reviewed",
