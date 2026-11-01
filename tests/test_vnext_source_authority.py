@@ -20,6 +20,7 @@ def receipts(device_id="9911", label="Test Relay"):
         {
             "tool": "hub_read_devices", "sub_tool": "hub_list_devices",
             "success": True, "effect": "read", "mutates": False,
+            "summary": "1 targeted device candidates",
             "arguments": {"tool": "hub_list_devices",
                           "args": {"labelFilter": label}},
             "details": {"reportedDeviceState": {
