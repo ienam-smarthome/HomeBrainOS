@@ -186,6 +186,9 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input type="checkbox" id="liveShadowConsent">I authorise a single read-only live Hubitat context inspection for the device ID entered. No Cloud AI inference.</label>
 <button type="button" id="runLiveShadow" disabled>Check live read-only readiness</button>
 <div id="liveShadowReport" class="benchmark-report" role="status" aria-live="polite">Not run. Enter a device ID and approve the single live read to begin.</div>
+<p class="stage5-note">For a stronger current-state check, optionally read the full detailed inventory across verified paginated Hubitat reads. Only your selected device's safe states appear below. This may require multiple Hubitat reads; it does not access device event history or Cloud AI.</p>
+<button type="button" id="runLiveShadowDetail" disabled>Compare verified detailed device states</button>
+<div id="liveShadowDetailedReport" class="benchmark-report" role="status" aria-live="polite">Not run. Requires a fresh read-only consent tick.</div>
 </details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
@@ -712,10 +715,13 @@ loadStage5Status();
 
 function liveShadowRefreshButton(){
   const button=document.getElementById('runLiveShadow');
+  const detailed=document.getElementById('runLiveShadowDetail');
   const id=document.getElementById('liveShadowDeviceId').value.trim();
-  button.disabled=button.dataset.running==='yes'||
-    !document.getElementById('liveShadowConsent').checked||
+  const busy=button.dataset.running==='yes'||detailed.dataset.running==='yes';
+  const blocked=busy||!document.getElementById('liveShadowConsent').checked||
     !/^[0-9]{1,12}$/.test(id);
+  button.disabled=blocked;
+  detailed.disabled=blocked;
 }
 document.getElementById('liveShadowConsent').onchange=liveShadowRefreshButton;
 document.getElementById('liveShadowDeviceId').oninput=liveShadowRefreshButton;
@@ -770,6 +776,50 @@ document.getElementById('runLiveShadow').onclick=async()=>{
     report.append(pre);
   }catch(e){
     report.textContent='Live read-only preflight did not complete. '+e.message;
+  }finally{
+    document.getElementById('liveShadowConsent').checked=false;
+    button.dataset.running='no';liveShadowRefreshButton();
+  }
+};
+
+document.getElementById('runLiveShadowDetail').onclick=async()=>{
+  const button=document.getElementById('runLiveShadowDetail');
+  const report=document.getElementById('liveShadowDetailedReport');
+  const id=document.getElementById('liveShadowDeviceId').value.trim();
+  if(button.disabled||!/^[0-9]{1,12}$/.test(id))return;
+  button.dataset.running='yes';liveShadowRefreshButton();
+  report.textContent='Reading the verified detailed inventory (may require multiple Hubitat pages). No AI calls or device commands.';
+  try{
+    const response=await fetch(apiPath('api/live-shadow/verified-detail'),{
+      method:'POST',cache:'no-store',
+      headers:{'Content-Type':'application/json','x-homebrain-live-readonly':'confirmed'},
+      body:JSON.stringify({device_id:id,confirm_read_only:true})
+    });
+    if(!response.ok)throw new Error('Detailed read unavailable ('+response.status+').');
+    const data=await jsonResponse(response);
+    if(data.schema!=='homebrain-live-shadow-detailed.v1')
+      throw new Error('Unexpected detailed response.');
+    const lines=[
+      'Status: '+data.status,
+      'Selected device ID: '+data.target_device_id,
+      'Detailed inventory coverage verified: '+(data.verified_inventory_coverage?'yes':'no'),
+      'Historical causation proven: NO',
+      'Independent device packet proven: NO',
+      'Read at: '+data.observed_at_utc,
+      'Detailed hub-reported states (not physical proof):'
+    ];
+    for(const [key,value] of Object.entries(data.reported_states||{}))
+      lines.push('• '+key+': '+String(value));
+    if(!Object.keys(data.reported_states||{}).length)
+      lines.push('• No allowlisted detailed states available');
+    for(const limit of data.limitations||[])
+      lines.push('Limit: '+limit);
+    lines.push('Next: '+data.reason);
+    const pre=document.createElement('pre');
+    pre.style.whiteSpace='pre-wrap';pre.style.overflowWrap='anywhere';
+    pre.textContent=lines.join('\n');report.replaceChildren(pre);
+  }catch(e){
+    report.textContent='Detailed read-only check did not complete. '+e.message;
   }finally{
     document.getElementById('liveShadowConsent').checked=false;
     button.dataset.running='no';liveShadowRefreshButton();
