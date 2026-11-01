@@ -126,9 +126,11 @@ def model_claim_prompt(
     mandatory += ["cause_unverified", "next_readonly"]
     example = json.dumps({"schema": SCHEMA, "claim_ids": mandatory}, separators=(",", ":"))
     return (
-        "OPTIONAL SOURCE-ATTESTED ANSWER PLAN. To answer this bounded "
-        "single-device status question with source-verified facts only, "
-        "output ONE JSON object with exactly two keys, e.g. " + example + ". "
+        "REQUIRED FINAL ANSWER FORMAT FOR THIS VERIFIED SOURCE PACKET: "
+        "Output ONLY ONE JSON object (no Markdown fences or prose), with "
+        "exactly two keys, e.g. " + example + ". "
+        "The host will turn your chosen source-backed facts into the "
+        "natural-language user-facing answer. "
         "Select 3-7 distinct claim IDs ONLY from the source-backed facts "
         "below, in the order that best answers the original question. "
         "You MUST include reported_health, cause_unverified and next_readonly; "
