@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.335**.
+Current add-on version: **0.18.336**.
+
+**Answer Quality Q4 incident retry progress gate:** A second single-device connectivity source-depth retry after an earlier evidence checkpoint now requires a newly successful, target-linked diagnostic source, instead of another repeated/irrelevant read. No tool or model calls are added; full root-cause requests can still progress when the first retry finds a genuine lead. [Release notes](CHANGELOG-0.18.336.md).
 
 **Answer Quality Q3 source-typed answer publication:** Ordinary read-only device-telemetry investigations now produce a concise, evidence-grounded explanation by default; event-rich or truncated histories and independently correlated watchdog timing automatically retain the full report, as do explicit full-detail requests. The complete normalized events, clock/source limitations and unresolved physical-cause verdict stay in Technical details. No additional model calls or MCP reads; model prose is not falsely certified by generic synthesis validators. [Release notes](CHANGELOG-0.18.335.md).
 
