@@ -73,6 +73,47 @@ def test_concise_mode_keeps_verified_status_and_bounded_historical_scope():
     assert len(answer.split()) < 230
 
 
+
+def test_command_rich_or_truncated_history_must_keep_issuer_detail():
+    summary = packet()
+    summary["commandCount"] = 15
+    summary["stateEventCount"] = 1
+    summary["returnedEvents"] = 16
+    summary["truncated"] = True
+    summary["commandGroups"] = [
+        {"producer": "Rule App", "count": 15, "command": "command-off"}
+    ]
+    msg, decision = publish("Why was the device offline?", summary)
+    assert decision["mode"] == "evidence-depth-required"
+    assert "Rule App" in msg
+    assert "**Recorded command sources:**" in msg
+    assert "**History integrity:**" in msg
+    assert "truncated" in msg
+
+
+def test_watchdog_timing_correlation_requires_full_source_context():
+    summary = packet()
+    msg, decision = publish_source_typed_answer(
+        "Explain this device status.",
+        concise=lambda: "short",
+        detailed=lambda: "full verified watchdog reference at 19:48:37",
+        normalized=summary,
+        evidence_coverage={"watchdogEventTimingCorrelation": {
+            "referenceTimeLocal": "2026-10-23 19:48:37.001"
+        }},
+    )
+    assert decision["mode"] == "evidence-depth-required"
+    assert "19:48:37" in msg
+
+
+def test_explicit_full_request_takes_precedence_when_evidence_also_requires_detail():
+    summary = packet()
+    summary["truncated"] = True
+    msg, decision = publish("Give the full technical report for this incident.", summary)
+    assert decision["mode"] == "requested-detail"
+    assert "**History integrity:**" in msg
+
+
 def test_explicit_detailed_report_keeps_full_standalone_renderer():
     summary = packet()
     brief, brief_mode = publish("Why does this device report offline?", summary)
