@@ -42,6 +42,7 @@ from synthesis_context import build_tool_evidence_packet
 from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
+from model_first_draft_provenance import record_first_no_tools_draft
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import active_request_interpretation
 from device_incident_depth import is_connectivity_root_cause_request
@@ -813,6 +814,10 @@ class FinalAnswerCoordinator:
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
+        # This value comes directly from the *first* no-tools final-model
+        # completion, before source-focus repairs and synthesis validators.
+        # Never put this private draft in a receipt, API JSON or log.
+        record_first_no_tools_draft(draft)
         # Distinguish model formatting from later synthesis repair. No draft,
         # IDs, evidence values or JSON are retained; only boolean counters.
         if final_claim_prompt:
