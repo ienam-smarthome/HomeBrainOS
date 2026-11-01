@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.317**.
+Current add-on version: **0.18.318**.
+
+**Stage 8.3 opt-in archived history shadow:** A separate phone consent permits a single 30-day local Historical Journal query for one numeric device ID (50-record cap). It reports allowlisted state events, source time versus collector receipt and collection gaps, but no event absence, authenticated packet, command execution, physical state or causation proof. No new Hubitat reads, Cloud calls or production publisher changes. [Release notes](CHANGELOG-0.18.318.md).
 
 **Stage 8.2 verified detailed shadow check:** A second, separately consented live read uses the existing verified paginated detailed-device inventory. The add-on may read multiple Hubitat inventory pages but projects only the selected numeric device's bounded current state fields to the phone. Fallback/stale/unverified source provenance is rejected, missing fields are not absence proof, and no Cloud AI, devices controls, event history or production publisher is used. [Release notes](CHANGELOG-0.18.317.md).
 
