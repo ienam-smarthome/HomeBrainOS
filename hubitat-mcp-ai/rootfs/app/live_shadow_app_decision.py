@@ -136,6 +136,7 @@ def verified_issuer(plan: dict[str, Any], command_source: Any) -> dict[str, Any]
         "tool": "hub_get_logs",
         "args": {
             "appId": app_id,
+            "mode": "past",
             "since": (requested-_LOG_PAD).isoformat().replace("+00:00","Z"),
             "until": (requested+_LOG_PAD).isoformat().replace("+00:00","Z"),
             "limit": plan["log_limit"],
@@ -154,51 +155,94 @@ def project_verified_app_logs(packet: dict[str, Any], log_source: Any) -> dict[s
         result["status"] = "app_log_read_failed"
         return result
     data = log_source.data
-    for _ in range(4):
+    page = None
+    format_name = None
+    for _ in range(5):
         if not isinstance(data, dict):
             break
+        # The upstream MCP server can defer hub log snapshots. This is
+        # neither a completed empty log history nor a failed parse.
+        if data.get("status") == "in_progress":
+            result["status"] = "app_log_source_in_progress"
+            return result
+        if type(data.get("entries")) is list and data.get("mode", "past") == "past":
+            page = data
+            format_name = "hubitat_past_entries"
+            break
+        # Historical synthetic fixtures use logs; keep their contract.
         if type(data.get("logs")) is list:
+            page = data
+            format_name = "legacy_logs"
             break
-        data = next((data[k] for k in ("result","data","output")
-                     if isinstance(data.get(k),dict)), data)
-        if data is log_source.data:
-            break
-    logs = data.get("logs") if isinstance(data,dict) else None
-    if type(logs) is not list:
+        data = next((data[k] for k in ("result", "data", "output")
+                     if isinstance(data.get(k), dict)), None)
+    if page is None:
         result["status"] = "app_log_payload_unusable"
         return result
-    result["app_log_rows_returned"] = min(len(logs),100)
-    result["page_at_100_cap"] = len(logs)>=100
+    logs = page["entries"] if format_name == "hubitat_past_entries" else page["logs"]
+    result["app_log_source_format"] = format_name
+    result["app_log_rows_returned"] = min(len(logs), 100)
+    result["page_at_100_cap"] = len(logs) >= 100
     app_id = packet["recorded_issuer_app_id"]
     begin = _utc(packet["log_read_arguments"]["args"]["since"])
     end = _utc(packet["log_read_arguments"]["args"]["until"])
     rows = []
     rejected_mismatch = 0
     unverified_scope = 0
+    excluded_timestamp_rows = 0
     for row in logs[:100]:
         if type(row) is not dict:
             continue
-        event_at = _utc(row.get("date") or row.get("timestamp") or row.get("time"))
-        if event_at is None or not begin <= event_at <= end:
-            continue
-        row_id = row.get("appId") or row.get("app_id")
-        if row_id not in (None, "") and str(row_id) != app_id:
+        # The current Hubitat Logs page strips sourceId from its published
+        # entries even when it identified the app internally. AppId in a
+        # server-side filter is therefore not explicit per-row identity.
+        explicit_id = row.get("appId") or row.get("app_id")
+        if explicit_id in (None, "") and row.get("id") not in (None, ""):
+            explicit_id = row.get("id")
+        if format_name == "hubitat_past_entries":
+            if row.get("type") not in ("", None, "app"):
+                rejected_mismatch += 1
+                continue
+        if explicit_id not in (None, "") and str(explicit_id) != app_id:
             rejected_mismatch += 1
             continue
-        if row_id in (None, ""):
+        raw_time = row.get("date") or row.get("timestamp") or row.get("time")
+        event_at = _utc(raw_time)
+        local_at = None
+        if event_at is not None:
+            if not begin <= event_at <= end:
+                excluded_timestamp_rows += 1
+                continue
+        elif format_name == "hubitat_past_entries":
+            # Published Logs-page times have no timezone. Respect the
+            # upstream time-window filter but never relabel local wall time
+            # as verified UTC or compute a command-to-log offset.
+            raw_local = raw_time or row.get("name")
+            if type(raw_local) is not str or not re.fullmatch(
+                r"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?", raw_local
+            ):
+                excluded_timestamp_rows += 1
+                continue
+            local_at = raw_local
+        else:
+            excluded_timestamp_rows += 1
+            continue
+        if explicit_id in (None, ""):
             unverified_scope += 1
         message = row.get("message")
         if type(message) is not str:
             continue
-        # Never return message content, app names, devices, arbitrary IDs.
         stage = _decision_stage(message[:1500])
         if stage:
             rows.append({
-                "source_row_index": len(rows)+1,
+                "source_row_index": len(rows) + 1,
                 "classification": stage,
-                "reported_at_utc": event_at.isoformat(),
+                "reported_at_utc": event_at.isoformat() if event_at else None,
+                "reported_hub_local_time": local_at,
+                "source_time_basis": ("source_timezone_aware" if event_at
+                                      else "hub_local_time_zone_unverified"),
                 "app_identity_basis": (
-                    "explicit_app_id" if row_id not in (None,"")
+                    "explicit_app_id" if explicit_id not in (None, "")
                     else "backend_filter_only_unverified"
                 ),
                 "decision_execution_verified": False,
@@ -208,7 +252,17 @@ def project_verified_app_logs(packet: dict[str, Any], log_source: Any) -> dict[s
         "classified_decision_rows": rows[:20],
         "excluded_other_app_rows": rejected_mismatch,
         "rows_without_explicit_app_identity": unverified_scope,
+        "excluded_unusable_or_outside_time_rows": excluded_timestamp_rows,
     })
+    if format_name == "hubitat_past_entries":
+        result["limitations"].append(
+            "Hubitat past-log timestamps may be hub-local without an offset; "
+            "the server applied the time filter, but UTC timing is not independently verified."
+        )
+        result["limitations"].append(
+            "Past-log entries may omit per-row app IDs; a scoped backend filter "
+            "alone does not independently prove each row's producer."
+        )
     return result
 
 
