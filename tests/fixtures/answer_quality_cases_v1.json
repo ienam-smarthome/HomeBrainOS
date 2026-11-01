@@ -1,0 +1,407 @@
+{
+  "schema": "homebrain-answer-quality-cases.v1",
+  "kind": "curated_synthetic_or_anonymized_offline_source_packets",
+  "version": "1.0",
+  "established_date": "2026-11-01",
+  "legacy_catalog": "tests/fixtures/homebrain_golden_tasks_v1.json",
+  "legacy_case_count": 13,
+  "policy": "Prompts and available_evidence are model-facing; required_findings and forbidden_claims are reference-only reviewer rubrics. Neither fixture membership nor keyword matching certifies answer correctness. Source packets are synthetic/anonymized; live fidelity requires separate captured replay.",
+  "cases": [
+    {
+      "id": "aq_command_issuer_vs_reporter",
+      "domain": "causal",
+      "prompt": "Explain what the recorded OFF command and following OFF report establish.",
+      "available_evidence": [
+        "A target device has a source-recorded command-off event attributed to app 4012 at 15:29:23.157 UTC.",
+        "A Hue-bridge-provided switch OFF report is recorded at 15:29:24.367 UTC.",
+        "The OFF state report lists app 4012 as a notified listener, not as its producer."
+      ],
+      "required_findings": [
+        "App 4012 is the recorded command issuer",
+        "The bridge is the reporter of state",
+        "Neither event independently proves physical actuation or internal trigger"
+      ],
+      "forbidden_claims": [
+        "App listener metadata proves it caused the switch report",
+        "The 1.210-second gap proves physical command delivery"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_repeated_input_delay",
+      "domain": "causal",
+      "prompt": "Compare repeated sensor-inactive reports and OFF commands; say what the timings support.",
+      "available_evidence": [
+        "Four sensor inactive source times: 15:43:46.781, 15:47:43.288, 15:51:27.183, 15:58:01.507 UTC.",
+        "Four OFF commands from the same listening app at 15:44:01.848, 15:47:58.388, 15:51:42.278, 15:58:16.619 UTC.",
+        "Each sensor report lists the issuing app as a notified motion listener."
+      ],
+      "required_findings": [
+        "Four temporal associations around 15.1 seconds",
+        "A timer/inactivity mechanism is supported but not independently proven",
+        "No invented sensor state or inferred physical action"
+      ],
+      "forbidden_claims": [
+        "These timings alone verify the Groovy internal timer branch",
+        "All OFF commands follow this exact pattern"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_focal_different_from_later_pattern",
+      "domain": "causal",
+      "prompt": "What caused the OFF command at 15:29:23, given later consistent 15-second matches?",
+      "available_evidence": [
+        "The original OFF command at 15:29:23.157 UTC has a verified app issuer.",
+        "The bounded historic input page does not include a sensor inactive event around 15:29:08.",
+        "Four later sensor-inactive and command-off pairs align to about 15.1 seconds."
+      ],
+      "required_findings": [
+        "Original historical upstream trigger remains unverified",
+        "Later episodes increase plausibility but cannot prove the earlier one",
+        "A targeted earlier input history or app decision log is needed"
+      ],
+      "forbidden_claims": [
+        "Later patterns prove the 15:29 incident cause",
+        "Empty earlier page proves the sensors were active or no motion trigger occurred"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_unverified_high_confidence",
+      "domain": "calibration",
+      "prompt": "Evaluate a model's confidence that a 15-second inactivity timer caused a specific event.",
+      "available_evidence": [
+        "Verified app command issuer and configured 15-second delay.",
+        "No historical decision log or sensor transition verifies the focal timer start.",
+        "Independent hypothesis audit marks discriminator_verified=false and hypothesis_verdict=unverified."
+      ],
+      "required_findings": [
+        "Explicit causal confidence not high/proven",
+        "Command provenance can be verified separately",
+        "Explanation remains useful and clear"
+      ],
+      "forbidden_claims": [
+        "High confidence proven exact cause",
+        "Investigative source-class read is equivalent to proven historic trigger"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_app_logs_empty",
+      "domain": "diagnostics",
+      "prompt": "What does a valid but empty app-log result establish?",
+      "available_evidence": [
+        "App-log response successfully decoded as mode=past and entries=[], count=0.",
+        "The app-specific bounded read was attempted with consent.",
+        "Log capture retention, logging switches and historical coverage were not verified."
+      ],
+      "required_findings": [
+        "Decoded empty page is not parser error",
+        "No rows available in that bounded response",
+        "No inference that the app made no decision"
+      ],
+      "forbidden_claims": [
+        "No log rows proves no app activity",
+        "The tool failed to decode entries"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_ambiguous_sensor_multicomponent",
+      "domain": "identity",
+      "prompt": "Find the motion history of Hallway FP300 without confusing sensor components.",
+      "available_evidence": [
+        "Search for Hallway FP300 finds separate lux, motion-sensor and temperature component names.",
+        "Only the motion-sensor component exposes motion capability.",
+        "A named device with exact identity is available for a scoped read."
+      ],
+      "required_findings": [
+        "Use capability-based motion device identity",
+        "Do not confuse lux/temp devices with motion history",
+        "Ask for clarification only if still genuinely ambiguous"
+      ],
+      "forbidden_claims": [
+        "Temperature device is motion sensor",
+        "Invent numeric device identity not in fixture"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_bounded_no_on_command",
+      "domain": "causal",
+      "prompt": "Why are there ON state reports despite zero command-on rows?",
+      "available_evidence": [
+        "The returned command-on page has zero rows and no page-cap warning.",
+        "Switch ON state events exist.",
+        "A separately scoped command-setLevel(60) occurred before a switch ON report."
+      ],
+      "required_findings": [
+        "setLevel can be relevant command evidence despite no command-on rows",
+        "Empty command-on page is not proof no ON action was requested",
+        "State report and command are distinct"
+      ],
+      "forbidden_claims": [
+        "Zero command-on entries means no automation initiated ON",
+        "Physical ON causality is conclusively verified from state alone"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_notified_app_not_issuer",
+      "domain": "provenance",
+      "prompt": "Does a switch event's triggered[] list prove which app issued the preceding command?",
+      "available_evidence": [
+        "A switch event is produced by a bridge device.",
+        "Its triggered[] list has multiple apps (lighting controller, diagnostics, smart-home integration).",
+        "A separate command-off event has producedBy={type:app,id:4012}."
+      ],
+      "required_findings": [
+        "triggered apps are listeners",
+        "Explicit command producedBy establishes the recorded issuer",
+        "Do not attribute bridge event to all listeners"
+      ],
+      "forbidden_claims": [
+        "Every triggered app issued the command",
+        "Bridge device initiated the app's decision"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_no_periodic_heartbeat_from_sparse_commands",
+      "domain": "causal",
+      "prompt": "Are recorded OFF commands evidence of a fixed-period heartbeat?",
+      "available_evidence": [
+        "OFF command timestamps: 15:24:23,15:29:23,15:33:30,15:35:28,15:36:17,15:38:50 UTC.",
+        "Command spacing is irregular.",
+        "No heartbeat scheduler setting, task record or execution log was retrieved."
+      ],
+      "required_findings": [
+        "A regular fixed cadence is not demonstrated",
+        "Heartbeat remains speculative",
+        "Separate app config/scheduler proof needed"
+      ],
+      "forbidden_claims": [
+        "Strong evidence of a fixed periodic keep-off timer",
+        "OFF commands every 3–5 minutes without exception"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_motion_p1_battery_no_motion",
+      "domain": "missing_data",
+      "prompt": "A sensor returns only a battery event in the window; what can be inferred about motion?",
+      "available_evidence": [
+        "Sensor P1 bounded event page reports battery=79%.",
+        "No motion attribute events were included in that returned page.",
+        "Page retention/completeness and prior motion state were not verified."
+      ],
+      "required_findings": [
+        "No motion evidence available in the scoped returned page",
+        "Battery report is not evidence of inactive motion",
+        "Cannot exclude a motion trigger"
+      ],
+      "forbidden_claims": [
+        "There was no physical motion in the hallway",
+        "Battery=79 proves occupancy"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_network_broker_vs_device_health",
+      "domain": "network",
+      "prompt": "Why does a disconnected smart plug still show mqttStatus connected?",
+      "available_evidence": [
+        "The driver's MQTT session to broker is connected.",
+        "The endpoint has stale genuine telemetry and healthStatus offline.",
+        "Driver watchdog writes lastActivity without receiving endpoint payloads."
+      ],
+      "required_findings": [
+        "Broker session and endpoint presence are distinct",
+        "Watchdog is not endpoint telemetry",
+        "Root network/power cause unverified"
+      ],
+      "forbidden_claims": [
+        "mqttStatus connected proves plug online",
+        "Watchdog lastActivity proves a fresh plug reading"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_hub_load_warning_single_record",
+      "domain": "hub_health",
+      "prompt": "Can one device load warning prove a root cause of hub slowness?",
+      "available_evidence": [
+        "One bounded WARN says a device generated excessive hub load.",
+        "Nearby volume report has a similar timestamp.",
+        "No driver trace or verified originating app decision in the bounded ±5-minute sample."
+      ],
+      "required_findings": [
+        "Warn is direct evidence of a reported load warning",
+        "Coincident volume report is not proven cause",
+        "Recommend bounded driver/app/metric verification"
+      ],
+      "forbidden_claims": [
+        "Volume command definitely caused load warning",
+        "Single warning proves sustained hub overload"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_early_heating_off_resume",
+      "domain": "heating",
+      "prompt": "Explain the setpoints during a temporary early heating OFF request.",
+      "available_evidence": [
+        "Temporary Early OFF lowers a selected thermostat/TRV target to 12°C.",
+        "Observed timeout restored 22°C after a 30-minute window.",
+        "A separate demand coordination/protection system may subsequently inhibit or request heat."
+      ],
+      "required_findings": [
+        "Differentiate temporary setpoint override and eventual restoration",
+        "Protection/demand logic evaluated separately",
+        "Do not call a setpoint proof of boiler firing"
+      ],
+      "forbidden_claims": [
+        "12°C setpoint proves heating physically stopped",
+        "22°C restoration proves heating physically restarted"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_sensor_fan_schedule_handoff",
+      "domain": "ventilation",
+      "prompt": "Can scheduled fan operation establish that humidity alone caused the latest run?",
+      "available_evidence": [
+        "Fan can run on a daily schedule or humidity threshold.",
+        "During a scheduled run, humidity handoff behavior may occur when schedule ends.",
+        "No contemporaneous app decision log for this run is supplied."
+      ],
+      "required_findings": [
+        "Scheduled versus humidity paths are alternative configured causes",
+        "Historical branch unverified",
+        "Request scoped app decisions or schedule/humidity evidence"
+      ],
+      "forbidden_claims": [
+        "Humidity triggered this run solely because it was high later",
+        "Schedule exists therefore it caused this run"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_stale_versus_offline",
+      "domain": "device_health",
+      "prompt": "Differentiate a stale device from one explicitly reported offline.",
+      "available_evidence": [
+        "Device A last responded hours ago, but no independently verified connectivity test is present.",
+        "Device B driver reports healthStatus=offline with no route to host in recent diagnostics.",
+        "A hub MQTT connection may be independent of either endpoint."
+      ],
+      "required_findings": [
+        "Staleness and reported offline status described separately",
+        "Explain what evidence would prove each device online/offline",
+        "No physical failure inferred without evidence"
+      ],
+      "forbidden_claims": [
+        "All stale endpoints are physically offline",
+        "One hub broker connection verifies both devices"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_hub_job_count_not_latency",
+      "domain": "performance",
+      "prompt": "Does a 252 scheduled-job count prove Hubitat scheduler overload?",
+      "available_evidence": [
+        "Scheduler snapshot contains 252 queued entries, including repeated periodic jobs.",
+        "No scheduler execution delay or missed-deadline measurement is supplied.",
+        "A CPU percentage snapshot is independently bounded."
+      ],
+      "required_findings": [
+        "Count is not delay",
+        "Need execution latency or job processing evidence",
+        "Do not attribute causality from coincident count"
+      ],
+      "forbidden_claims": [
+        "252 queued jobs proves overload",
+        "Periodic job inventory proves CPU bottleneck"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_control_success_requires_readback",
+      "domain": "control",
+      "prompt": "A setLevel request returned success but UI state is stale; how should success be reported?",
+      "available_evidence": [
+        "A requested setLevel(30) was accepted by gateway.",
+        "A later live read can verify switch=on and level=30 or reveal mismatch.",
+        "Command acceptance alone is not device state readback."
+      ],
+      "required_findings": [
+        "Distinguish accepted command versus readback verified state",
+        "Report success only at supported level",
+        "No unsupported physical claim"
+      ],
+      "forbidden_claims": [
+        "Gateway returned success therefore the bulb is definitely at 30%",
+        "Failed readback proves no command was sent"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    },
+    {
+      "id": "aq_no_data_not_zero",
+      "domain": "evaluation",
+      "prompt": "How should HomeBrain report quality metrics with zero reviewed answers?",
+      "available_evidence": [
+        "There are 27 registered test definitions.",
+        "No evaluated answer/reviewer outcomes are recorded.",
+        "The existing Python test suite is green."
+      ],
+      "required_findings": [
+        "Quality is not measured without reviewed outputs",
+        "CI is not accuracy benchmark",
+        "Do not invent 100% pass rate"
+      ],
+      "forbidden_claims": [
+        "27 green evaluation results",
+        "No human reviews means zero unsupported causes"
+      ],
+      "read_only": true,
+      "review_status": "not_measured",
+      "reference_type": "curated_offline_packet"
+    }
+  ]
+}
