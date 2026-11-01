@@ -22,6 +22,7 @@ from source_analysis_completion import (
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
+from telemetry_completion_policy import ready_for_bounded_telemetry_answer
 from model_first_draft_provenance import (
     PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
     record_coordinator_result, record_final_answer, private_snapshot,
@@ -5248,12 +5249,26 @@ class UnifiedMCPAgent:
             and has_explicit_focal_clock(user_prompt)
             and not self._mutation_requested_by_user.get()
         )
+        # Root-cause uncertainty in a single-device status problem must not
+        # trigger every independent checkpoint (inventory, logs, incident,
+        # dependency, progress) in sequence. Bound read-tool planning, then
+        # synthesize once from the evidence and clearly disclose gaps.
+        # Deep lighting/heating, multi-device and write paths are unaffected.
+        bounded_device_telemetry = bool(
+            connectivity_incident
+            and contract is not None
+            and contract.domain == "device_telemetry"
+            and not self._mutation_requested_by_user.get()
+        )
         active_round_budget = (
             min(self.max_tool_rounds, 3)
             if self._investigation_reflection_used.get()
             else min(self.max_tool_rounds, 6)
-            if scoped_causal_round_budget else self.max_tool_rounds
+            if scoped_causal_round_budget or bounded_device_telemetry
+            else self.max_tool_rounds
         )
+        if bounded_device_telemetry and active_round_budget < self.max_tool_rounds:
+            increment_active_metric("telemetry_read_round_budget")
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
         for round_index in range(active_round_budget):
@@ -5309,6 +5324,27 @@ class UnifiedMCPAgent:
                         # original calls or final answer publication.
                         increment_active_metric("stage3_capture_observation_error")
             if not calls:
+                # One independently source-backed opportunity to answer is
+                # sufficient after the checked target status/history/logs and
+                # a meaningful discriminator read or the first targeted gap
+                # checkpoint. All other existing retry engines would merely
+                # request extra models to rediscover the same missing cause.
+                # The answer still goes through full no-tools synthesis and
+                # source-safe publication, with root cause unresolved.
+                if (
+                    bounded_device_telemetry
+                    and ready_for_bounded_telemetry_answer(
+                        user_prompt, self.evidence.receipts(),
+                        domain=contract.domain if contract is not None else None,
+                        high_information_checkpoint_offered=(
+                            incident_evidence_checkpoint_used
+                            or device_incident_followup_used
+                        ),
+                    )
+                ):
+                    increment_active_metric("telemetry_sufficiency_stop")
+                    increment_active_metric("investigative_finalization")
+                    return await self._final_answer(messages)
                 # A model's voluntary stop is a source-choice checkpoint.
                 # Recover independently timestamped archive events while the
                 # existing model still has a bounded read-only tool round.
