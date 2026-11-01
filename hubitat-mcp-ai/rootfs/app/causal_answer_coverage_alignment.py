@@ -12,12 +12,12 @@ from typing import Any
 
 
 _CONFIDENCE = re.compile(
-    r"^(\s*(?:[-*+]\s*)?)(?:\*\*)?Confidence(?:\*\*)?\s*:"
+    r"^(\s*(?:[-*+]\s*)?)(?:\*\*)?Confidence\s*:(?:\*\*)?"
     r"\s*(?:\*\*)?\s*(?:very\s+)?(?:high|certain|confirmed|definitive)\b",
     re.I,
 )
 _LEAD = re.compile(
-    r"^(\s*(?:[-*+]\s*)?)(?:\*\*)?Leading Explanation(?:\*\*)?\s*:",
+    r"^(\s*(?:[-*+]\s*)?)(?:\*\*)?Leading Explanation\s*:(?:\*\*)?\s*",
     re.I,
 )
 _COMPLETE = re.compile(
@@ -25,12 +25,6 @@ _COMPLETE = re.compile(
     r".{0,100}?\b(?:is|was)\s+complete\b",
     re.I,
 )
-_HIGH_CAUSAL = re.compile(
-    r"\b(?:high confidence|confirmed root cause|root cause proven)\b",
-    re.I,
-)
-
-
 def unresolved_causal_hypotheses(coverage: Any) -> bool:
     """A checked source class alone is never a verified causal discriminator."""
     if not isinstance(coverage, dict):
