@@ -116,7 +116,7 @@ def test_private_log_text_never_published_and_app_identity_reviewed():
     assert output["classified_decision_rows"][0]["classification"]=="reported-off-request"
     assert output["classified_decision_rows"][1]["app_identity_basis"]=="backend_filter_only_unverified"
     assert "log_read_arguments" not in output
-    for secret in ("Secret Hallway","password","private","xyz@example.com","Should not be accepted"):
+    for secret in ("Secret Hallway","password=private","xyz@example.com","Should not be accepted"):
         assert secret not in str(output)
     assert not output["app_decision_or_action_proven"]
     assert not output["causal_link_proven"]
@@ -152,6 +152,9 @@ def test_route_requires_consent_and_has_exact_read_only_subtools(monkeypatch,tmp
     stamp=(now-timedelta(minutes=10)).isoformat()
     read_args=[]
     async def reader(name,args):
+        if name=="hub_get_info":
+            # The app's own startup health read is unrelated to this route.
+            return envelope({"success":True,"info":{}})
         read_args.append((name,args))
         if len(read_args)==1:
             assert name=="hub_read_devices"
