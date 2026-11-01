@@ -34,7 +34,7 @@ def response():
             ],
         },
         "evidence": [
-            {"tool": "hub_read_devices", "mutates": False,
+            {"tool": "hub_read_devices", "mutates": False, "effect": "read",
              "arguments": {"args": {"password": "SECRET-RAW-SOURCE-TOKEN",
                                     "deviceId": "7829"}},
              "details": {"events": [
@@ -116,6 +116,16 @@ def test_empty_evidence_cannot_pass_even_the_read_only_observed_flag():
     )
     assert packet["evidence_receipt_count"] == 0
     assert packet["evidence_read_only_observed"] is False
+
+
+def test_undocumented_effect_is_not_treated_as_verified_read_only():
+    item = response()
+    del item["evidence"][0]["effect"]
+    packet = extract_capture(
+        item, case_id="status_named_dimmer", actual_question=None, root=ROOT,
+    )
+    assert packet["evidence_read_only_observed"] is False
+    assert packet["read_only_classification_unknown_count"] == 1
 
 
 def test_mutation_in_evidence_is_visible_as_a_number_not_raw_command():
