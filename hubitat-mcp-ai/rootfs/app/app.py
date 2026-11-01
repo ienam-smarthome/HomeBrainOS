@@ -91,6 +91,7 @@ from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
 from stage66_answer_diagnostics import Stage6AnswerContractFailure
 from live_shadow_preflight import build_live_shadow_preflight, build_verified_detail_shadow
 from live_shadow_journal import project_shadow_history
+from live_shadow_case_brief import summarize_bounded_archive
 from live_shadow_commands import read_plan, project_command_shadow
 from mcp_client import tool_succeeded
 from anthropic_transport import describe_anthropic_http_error
@@ -1332,6 +1333,7 @@ async def live_shadow_journal_history(
         payload.device_id, archive,
         window_start=since, window_end=until, read_at=now.isoformat(),
     )
+    result["case_brief"] = summarize_bounded_archive(result)
     return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
