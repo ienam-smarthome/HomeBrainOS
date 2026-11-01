@@ -23,9 +23,7 @@ from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
 from telemetry_completion_policy import ready_for_bounded_telemetry_answer
-from source_authority_packet import (
-    pending_telemetry_configuration_read, pending_verified_driver_source_read,
-)
+from source_authority_packet import pending_telemetry_configuration_read
 from model_first_draft_provenance import (
     PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
     record_coordinator_result, record_final_answer, private_snapshot,
@@ -3736,52 +3734,6 @@ class UnifiedMCPAgent:
             except Exception as exc:
                 increment_active_metric("vnext_device_configuration_unavailable")
                 logger.debug("vNext scoped configuration read unavailable: %s", exc)
-        # One verified, bounded implementation read can follow the matching
-        # device configuration. Its source ID must be linked by actual device
-        # metadata, never by a model's numeric suggestion.
-        driver_plan = (
-            pending_verified_driver_source_read(
-                objective, self.evidence.receipts(),
-            )
-            if getattr(self, "model_first_investigations_enabled", False)
-            and not _explicit_mutation_request(objective)
-            else None
-        )
-        if driver_plan is not None:
-            try:
-                driver_catalog = build_request_tool_catalog(
-                    await self.mcp.list_tools()
-                )
-                driver_tool = driver_catalog.available_tool("hub_read_apps_code")
-                driver_args = {
-                    "tool": "hub_get_source", "args": driver_plan,
-                }
-                if (
-                    driver_tool is not None
-                    and driver_catalog.gateway_operation_error(
-                        "hub_read_apps_code", driver_args,
-                    ) is None
-                    and not classify_tool_effect(driver_tool, driver_args).mutates
-                    and not unverified_driver_source_read(
-                        "hub_read_apps_code", driver_args,
-                        self.evidence.receipts(), domain="device_telemetry",
-                    )
-                ):
-                    result = await self.executor.execute(
-                        "hub_read_apps_code", driver_args, tool=driver_tool,
-                        supports_live_claim=True,
-                        evidence_kind="source_scoped_verified_driver_read",
-                    )
-                    messages.append({
-                        "role": "tool", "tool_name": "hub_read_apps_code",
-                        "content": result.content,
-                    })
-                    increment_active_metric("vnext_verified_driver_source_read")
-                else:
-                    increment_active_metric("vnext_verified_driver_source_unavailable")
-            except Exception as exc:
-                increment_active_metric("vnext_verified_driver_source_unavailable")
-                logger.debug("Verified driver source read unavailable: %s", exc)
         # Mandatory historical command provenance is a distinct event stream
         # from switch states and app logs. Complete one targeted, verified,
         # read-only command history check before final synthesis when the
