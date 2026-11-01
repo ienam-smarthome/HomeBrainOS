@@ -103,7 +103,21 @@ def build_review_packet(
         "evidence_scope_review": scope_review,
         "answer_coverage_review": answer_review,
         "stage75_evidence_answer_review": stage75_review,
+        "suggested_next_evidence_review": {
+            "suggestion": draft["next_evidence"],
+            "human_review_verdict": "not_reviewed",
+            "guidance": (
+                "Judge whether this proposed source could establish the "
+                "claimed fact, not merely whether it is relevant. A device "
+                "packet alone may not identify a command initiator."
+            ),
+            "automatically_verified": False,
+        },
         "reviewer_rubric": {
+            "next_evidence_quality": [
+                "adequately_scoped", "overstates_what_evidence_proves",
+                "insufficient_detail", "unclear",
+            ],
             "per_sentence": ["supported", "partially_supported",
                              "unsupported", "uncertain"],
             "overall_completeness": ["adequate", "important_omissions",
