@@ -756,9 +756,15 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                       "identity, stored configuration and dated execution "
                       "before using these logs to exclude an explanation."
                 )
-            # The complete missing-discriminator ledger is already in
-            # investigation_coverage.incidentReasoningDepth. Do not paste
-            # the internal investigation checklist into every answer.
+            # Retain one material uncertainty in prose without pasting the
+            # complete internal verification checklist into every answer.
+            if (depth.get("driverSourceRetrieved") is True
+                    and depth.get("driverMethodBehaviourVerified") is not True):
+                message += (
+                    "\n\n**Implementation limit:** Retrieved driver methods "
+                    "were not source-traced and verified for this device. "
+                    "The remaining proof gaps are available in Technical details."
+                )
     # The final reported outcome is separate from source/category completeness.
     # A successful source read must never convert an unresolved diagnosis to a
     # resolved physical/device cause.
