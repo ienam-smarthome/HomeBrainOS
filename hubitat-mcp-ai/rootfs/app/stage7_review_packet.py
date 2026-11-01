@@ -12,6 +12,8 @@ import hashlib
 import json
 from typing import Any
 
+from stage71_evidence_scope import build_evidence_scope_review
+
 
 def _bounded_record(record: dict[str, Any]) -> dict[str, Any]:
     # The scenario catalog is static. Use an explicit allowlist rather than
@@ -84,6 +86,7 @@ def build_review_packet(
         "author_sentences": sentences,
         "author_uncertainties": list(draft["uncertainties"]),
         "author_suggested_next_evidence": draft["next_evidence"],
+        "evidence_scope_review": build_evidence_scope_review(case, selected),
         "reviewer_rubric": {
             "per_sentence": ["supported", "partially_supported",
                              "unsupported", "uncertain"],
@@ -91,6 +94,13 @@ def build_review_packet(
                                      "insufficient_information"],
             "causal_calibration": ["appropriate", "overclaims",
                                    "uncertain"],
+            "negative_claim_scope": [
+                "not_a_negative_claim", "scoped_to_examined_records",
+                "overstates_global_absence", "unclear_scope",
+            ],
+            "question_coverage": [
+                "addressed", "omitted", "unverifiable", "unclear",
+            ],
         },
         "gold_reference_labels_included": False,
         "all_records_are_fictional": True,
