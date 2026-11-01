@@ -196,6 +196,11 @@ from investigation_checkpoint import (
     requests_explicit_hypothesis_comparison, build_evidence_checkpoint,
 )
 from causal_answer_coverage_alignment import align_causal_answer_with_coverage
+from causal_temporal_correlations import (
+    correlate_input_to_off_commands,
+    reconcile_temporal_publication,
+    render_temporal_evidence_for_synthesis,
+)
 from skill_secret_guard import redact_model_messages, redact_secrets
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
@@ -3798,6 +3803,21 @@ class UnifiedMCPAgent:
                 logger.debug(
                     "Verified producer's app-log source unavailable: %s", exc,
                 )
+        # Integrate source-linked input/command episodes before natural
+        # synthesis, using only current-turn read-only receipts. This is a
+        # cross-device observation, never a pre-decided causal verdict.
+        if is_investigative_question(objective):
+            correlations = correlate_input_to_off_commands(
+                self.evidence.receipts()
+            )
+            correlation_brief = render_temporal_evidence_for_synthesis(
+                correlations
+            )
+            if correlation_brief:
+                messages.append({
+                    "role": "user",
+                    "content": correlation_brief[:6500],
+                })
         content = await self.final_answers.answer(messages)
         # Terminal safety net. Earlier synthesis may skip causal validation if
         # a classifier or repair path fails; never send an unverified external
@@ -4084,6 +4104,21 @@ class UnifiedMCPAgent:
             )
             if confidence_aligned:
                 increment_active_metric("causal_coverage_confidence_aligned")
+            # Publication is not permitted to silently discard repeated
+            # independently sourced input/command timing evidence. Keep the
+            # canonical, bounded observation separate from root-cause proof.
+            if (request_class == "live-read"
+                    and not self._mutation_call_seen.get()
+                    and investigating(user_prompt)):
+                correlations = correlate_input_to_off_commands(evidence)
+                if correlations.get("patterns"):
+                    coverage = {
+                        **(coverage or {}),
+                        "crossSourceTemporalEvidence": correlations,
+                    }
+                    message, _ = reconcile_temporal_publication(
+                        message, correlations,
+                    )
             return AgentOutcome(
                 message=message,
                 request_class=request_class,

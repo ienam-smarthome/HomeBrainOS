@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.329**.
+Current add-on version: **0.18.330**.
+
+**Stage 9.5 cross-source causal evidence:** The investigation pipeline now correlates multiple source-linked motion/presence inactive reports with app-issued OFF commands across bounded episodes, preserving clock/provenance limitations and never interpreting timing as a proven cause. The model receives a concise evidence table before synthesis, and the final result retains a scoped cross-source finding and structured coverage even if the model overlooked it. No additional MCP reads, Cloud rounds or device commands. [Release notes](CHANGELOG-0.18.330.md).
 
 **Stage 9.4 causal answer/coverage consistency:** After model synthesis, the independent hypothesis-verification audit now reconciles claims of high root-cause confidence or completed cause investigation before final publication. Verified device commands, implementation evidence and natural analysis remain intact; a checked source class alone cannot certify a historical sensor trigger. No additional cloud rounds or hub reads. [Release notes](CHANGELOG-0.18.329.md).
 
