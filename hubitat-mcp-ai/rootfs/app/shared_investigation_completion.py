@@ -629,15 +629,31 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             # therefore controls every word actually published.
             trace = getattr(outcome, "private_model_draft", None)
             raw = getattr(trace, "raw_first", None)
-            if (
-                isinstance(raw, str) and raw.strip()
-                and raw == getattr(trace, "coordinator_result", None)
-                and raw == getattr(trace, "final_answer", None)
-                and raw == incoming_message
-                and publication["mode"] == "concise"
-                and not getattr(outcome, "confirmation_required", False)
+            # This outer boundary may have calibrated confidence or appended
+            # an evidence-scope warning. A legitimate host-side change to
+            # AgentOutcome.message is NOT proof that the first model-selected
+            # claim IDs are invalid. Revalidate the original private plan
+            # against the final normalized receipts instead of requiring
+            # byte-equality with an intermediate host wrapper.
+            #
+            # Crucially we do NOT publish a model's free-form text: only
+            # fixed host-rendered claims from a closed source-proof adapter.
+            # Coordinator/author mutation of the *original model plan* still
+            # fails closed. Record a fixed diagnostic rejection reason so
+            # another run cannot silently miss the intended publication mode.
+            if publication["mode"] != "concise":
+                rejection = "evidence-depth-required"
+            elif getattr(outcome, "confirmation_required", False):
+                rejection = "pending-confirmation"
+            elif not isinstance(raw, str) or not raw.strip():
+                rejection = "first-model-draft-missing"
+            elif (
+                raw != getattr(trace, "coordinator_result", None)
+                or raw != getattr(trace, "final_answer", None)
             ):
-                proposed, claim_reason = admit_model_claim_plan(
+                rejection = "draft-repaired-or-guarded"
+            else:
+                proposed, rejection = admit_model_claim_plan(
                     raw, normalized, coverage,
                 )
                 if proposed is not None:
@@ -647,12 +663,11 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                         "mode": "model-directed-source-claims",
                         "strategy": "model-selected-verified-claim-plan",
                         "modelChosenClaimsAttested": True,
-                        # The model chooses evidence and order. Its arbitrary
-                        # natural-language claims are NEVER certified.
                         "modelProseCertified": False,
                     }
-                else:
-                    publication["modelClaimPlanRejection"] = claim_reason
+                    rejection = None
+            if rejection is not None:
+                publication["modelClaimPlanRejection"] = rejection
             coverage["answerPublicationDecision"] = publication
             coverage["answerProjection"] = (
                 "model-directed-source-claims"
