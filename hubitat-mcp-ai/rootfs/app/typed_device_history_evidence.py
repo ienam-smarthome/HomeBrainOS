@@ -412,14 +412,18 @@ def render_target_device_evidence_answer(
             f"- {group['producer']}: {group['count']} recorded {name}() "
             "invocation" + ("" if group["count"] == 1 else "s")
         )
-    # If the question concerns telemetry and no commands were returned,
-    # the empty command section is not a useful explanation. Its complete
-    # bounded count and acknowledgement status remain in the technical
-    # normalizedDeviceHistory record.
+    # Preserve the source-bounded absence and delivery qualification, but
+    # never show an empty "Recorded command sources" section.
     if summary.get("commandCount"):
         lines.append(
-            "**Command outcomes:** Recorded command invocations cannot by "
-            "themselves establish physical delivery, execution or response."
+            "**Command evidence:** Recorded commands cannot establish "
+            "physical delivery, execution or response."
+        )
+    else:
+        lines.append(
+            "**Command evidence:** No command invocation was returned in "
+            "this bounded sample; physical command delivery cannot be "
+            "inferred or excluded from the available events."
         )
     matching_logs = [
         row for row in evidence
