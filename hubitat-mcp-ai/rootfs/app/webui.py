@@ -883,7 +883,9 @@ document.getElementById('runStage6').onclick=async()=>{
     const uncertainty=document.createElement('p');
     uncertainty.textContent='Uncertainties: '+(data.uncertainties||[]).join(' · ');out.append(uncertainty);
     const next=document.createElement('p');
-    next.textContent='AI-suggested next evidence (not verified): '+data.recommended_next_evidence;out.append(next);
+    next.textContent=data.recommended_next_evidence?
+      'AI-suggested next evidence (not verified): '+data.recommended_next_evidence:
+      'No validated AI follow-up suggestion was provided. The main factual answer may still be reviewed.';out.append(next);
     const warning=document.createElement('p');warning.className='stage5-note';
     warning.textContent='A mismatched source type is not automatically a false fact. Exact atom checks compare model-supplied field/value assertions with cited records; they do NOT verify all wording or hidden implications. The model may still omit important evidence. Independent human review is needed; this cannot enable the production publisher.';
     out.append(warning);
@@ -1126,6 +1128,19 @@ document.getElementById('runStage6').onclick=async()=>{
           'Gemma\'s proposal and its declared limitations are not proof and cannot enable publication.';
         panel78.append(intro);
         const proposal=sufficiency.model_proposal;
+        if(!proposal.next_evidence_validated_as_bounded_string){
+          const invalid=document.createElement('p');invalid.className='stage5-note';
+          invalid.textContent='The optional AI follow-up suggestion was missing or invalid. '+
+            'It was withheld rather than treating it as evidence. The factual sentences '+
+            'still require independent review.';
+          panel78.append(invalid);
+        }
+        if(proposal.field_status?.next_evidence_assessment==='invalid'){
+          const invalidAssessment=document.createElement('p');invalidAssessment.className='stage5-note';
+          invalidAssessment.textContent='The optional follow-up sufficiency declaration was malformed '+
+            'and discarded without rewriting the model\'s assertions.';
+          panel78.append(invalidAssessment);
+        }
         if(proposal.declaration_present&&proposal.assessment){
           const x=proposal.assessment;
           for(const [label,value] of [
@@ -1144,8 +1159,8 @@ document.getElementById('runStage6').onclick=async()=>{
           panel78.append(host);
         }else{
           const missing=document.createElement('p');missing.className='stage5-note';
-          missing.textContent='No structured follow-up limitation declaration was supplied. '+
-            'The legacy free-text suggestion remains unaudited.';
+          missing.textContent='No valid structured follow-up limitation declaration was supplied. '+
+            'Any bounded free-text suggestion remains unaudited.';
           panel78.append(missing);
         }
         const details=document.createElement('details');
