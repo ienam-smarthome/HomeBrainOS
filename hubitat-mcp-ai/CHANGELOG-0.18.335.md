@@ -1,0 +1,17 @@
+# v0.18.335 — source-typed answer publication, concise by default
+
+## Why
+The existing model-led final-answer coordinator already performs synthesis/repair, but generic telemetry completion previously replaced its result **unconditionally** with an exhaustive machine-generated event audit, even for an ordinary status question. A live v0.18.333 sample needed **11 cloud rounds** for an answer with many low-value ledger paragraphs, although the returned receipts established only saved status and bounded history.
+
+## Runtime architecture
+- Add a **separate source-based publication decision boundary** (`answer_publication_policy.py`): choose concise default or **explicit full-report** mode from the user's presentation request, **not** from a hardcoded room/device name or unverified model narrative. The decision and evidence source remain structured in `investigation_coverage.answerPublicationDecision`.
+- Add a generic concise source renderer for any target device with source-normalized event history. It starts with Hubitat's reported health and relevant MQTT status, distinguishes saved broker/driver connection attributes from actual endpoint activity, reports bounded event/command counts, preserves a single contradictory-clock warning and scoped latest state event, avoids asserting physical root cause, and finishes with a read-only discriminator. It contains no new driver-specific implementation claims.
+- **Full detail remains accessible on explicit request** using the unchanged `render_target_device_evidence_answer`. The complete normalized event list, collected source coverage, watchdog and other proof gaps remain in technical JSON for both modes; no serialized evidence is discarded.
+- Maintain `publicationBoundaryShadow` with the actual final chosen public response; `modelProseCertified=false` explicitly records that previous validator success is NOT source-level attestation for arbitrary natural language.
+- **Zero added provider/model/MCP rounds, no tools or device writes.** This is a presentation architecture improvement, **not** a model reasoning or cloud-latency claim. It does **not** turn unrestricted model prose on.
+
+## Acceptance / honest measurement
+Offline cross-domain regressions cover MQTT and non-MQTT targets, missing health, no fabricated source causes, bounded command and event evidence, direct renderer compatibility, duplicate clock protection, detail opt-in, schema failures and unchanged lighting/heating/non-read paths. Full repository CI is required on the exact PR head. The formal first-attempt model quality scorecard remains **NOT MEASURED** because the Claude/Gemma MQTT evidence comparison was one non-authenticated, source-matched sample. No v0.18.335 live timing or quality gain is claimed.
+
+## Risks / rollback
+Formatting may be too short for some rich source investigations; explicit user request for a full technical report restores the old view. This PR retains the old full renderer and all structured evidence and safeguards for immediate rollback. Revert `answer_publication_policy.py`, the brief renderer and the single shared-completion call to restore default long reports. Any future default promotion of **model-authored** prose requires independently attested source-linked claims and cross-domain blind reviews, not a lexical detector.
