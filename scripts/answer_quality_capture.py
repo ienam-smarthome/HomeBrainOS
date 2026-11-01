@@ -111,6 +111,10 @@ def extract_capture(
         return value if all(ch.isascii() and (ch.isalnum() or ch in ".:-_") for ch in value) else None
 
     read_mutations = sum(item.get("mutates") is True for item in evidence_objects)
+    unknown_effects = sum(
+        item.get("mutates") is not False or item.get("effect") != "read"
+        for item in evidence_objects
+    )
     report = {
         "schema": "homebrain-answer-quality-capture.v1",
         "case_id": case_id,
@@ -132,7 +136,8 @@ def extract_capture(
         "tool_calls_reported": _finite_nonnegative(counters.get("tool_calls")),
         "model_rounds_reported": _finite_nonnegative(counters.get("model_rounds")),
         "evidence_receipt_count": len(evidence_objects),
-        "evidence_read_only_observed": bool(evidence_objects) and read_mutations == 0,
+        "evidence_read_only_observed": bool(evidence_objects) and unknown_effects == 0,
+        "read_only_classification_unknown_count": unknown_effects,
         "mutating_receipt_count": read_mutations,
         "hypothesis_checks_reported": len([item for item in comparisons if isinstance(item, dict)]),
         "hypotheses_explicitly_unverified": sum(
