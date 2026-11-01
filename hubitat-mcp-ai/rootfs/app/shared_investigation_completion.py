@@ -29,6 +29,7 @@ from source_analysis_completion import (
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
 )
+from publication_boundary_shadow import observe_publication_boundary
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
     reconcile_telemetry_answer, render_command_only_evidence_answer,
@@ -596,9 +597,17 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 coverage["evidenceComplete"] = False
                 partial = True
                 metrics["outcome"] = "unresolved"
+            incoming_message = str(getattr(outcome, "message", "") or "")
             message = render_target_device_evidence_answer(
                 evidence, normalized,
                 clock_check=coverage.get("telemetryClockConsistency"),
+            )
+            # Record how often the host's deterministic finaliser displaces
+            # the incoming answer, without retaining its private contents.
+            # Incoming outcome text is NOT authenticated as raw model prose,
+            # and a replacement count says nothing about answer quality.
+            coverage["publicationBoundaryShadow"] = observe_publication_boundary(
+                incoming_message, message,
             )
             metrics.setdefault("counters", {})[
                 "typed_device_history_projections"
