@@ -23,7 +23,9 @@ _CODES = {
     "sentence/claim alignment required": "sentence_fields_do_not_match_contract",
     "invalid sentence text": "sentence_text_invalid_or_too_long",
     "unsupported or unknown sentence citation": "unknown_or_malformed_evidence_citation",
-    "missing or excessive atomic evidence assertions": "atomic_assertion_count_invalid",
+    "missing or excessive atomic evidence assertions": "atomic_assertion_count_invalid",  # historical
+    "invalid atomic assertion list": "atomic_assertion_list_not_array",
+    "excessive atomic evidence assertions": "atomic_assertion_count_exceeds_limit",
     "invalid or uncited atomic assertion": "atomic_assertion_field_or_value_invalid",
     "duplicate atomic assertion": "duplicate_atomic_assertion",
     "response too long": "total_answer_too_long",
