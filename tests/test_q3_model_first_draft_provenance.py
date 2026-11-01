@@ -93,7 +93,7 @@ def test_parallel_requests_do_not_share_raw_drafts():
             return private_snapshot()
         finally:
             reset_private_model_draft(token)
-    a, b = asyncio.run(asyncio.gather(worker("a"), worker("b"))) if False else asyncio.run(_pair(worker))
+    a, b = asyncio.run(_pair(worker))
     assert a.raw_first == "a" and b.raw_first == "b"
     assert private_snapshot() is None
 
@@ -164,7 +164,7 @@ def test_telemetry_publication_exposes_only_draft_boundary_flags():
         base, {"outcome": "success", "counters": {}, "timings_ms": {}},
     )
     result = apply_shared_investigation_completion(
-        wrapped, "Why is Anonymised Relay offline?"
+        wrapped, "Why is Anonymised Relay MQTT connected but device health offline?"
     )
     api = build_agent_response(result, model="fixture", elapsed_ms=42,
                                version="0.18.338")
