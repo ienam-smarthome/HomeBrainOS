@@ -33,7 +33,24 @@ SAFE_MISSING_SOURCE_KINDS = frozenset({
 
 def _missing_source_summary(coverage: dict[str, Any]) -> dict[str, Any]:
     """Record source gaps reported by HomeBrain, never infer completeness."""
-    raw = coverage.get("missingSourceKinds")
+    nested = coverage.get("sourceCoverage")
+    source_coverage = nested if isinstance(nested, dict) else {}
+    top_has = "missingSourceKinds" in coverage
+    nested_has = "missingSourceKinds" in source_coverage
+    # Production's shared completion contract nests missingSourceKinds under
+    # sourceCoverage; accept older top-level responses without silently
+    # preferring one inconsistent report over another.
+    if top_has and nested_has and coverage["missingSourceKinds"] != source_coverage["missingSourceKinds"]:
+        return {
+            "source_gap_reporting": "conflicting",
+            "missing_source_kind_count": None,
+            "recognized_missing_source_kinds": [],
+            "unclassified_missing_source_count": None,
+        }
+    raw = (
+        source_coverage["missingSourceKinds"] if nested_has
+        else coverage.get("missingSourceKinds")
+    )
     if not isinstance(raw, list):
         return {
             "source_gap_reporting": "not_provided",
@@ -123,6 +140,8 @@ def extract_capture(
     evidence_objects = [e for e in evidence if isinstance(e, dict)]
     coverage = response.get("investigation_coverage")
     coverage = coverage if isinstance(coverage, dict) else {}
+    nested_coverage = coverage.get("sourceCoverage")
+    nested_coverage = nested_coverage if isinstance(nested_coverage, dict) else {}
     comparisons = coverage.get("hypothesisComparisons")
     comparisons = comparisons if isinstance(comparisons, list) else []
     timed = metrics.get("timings_ms")
@@ -175,6 +194,25 @@ def extract_capture(
         "mutating_receipt_count": read_mutations,
         **_missing_source_summary(coverage),
         "source_packet_completeness": "not_independently_verified",
+        "source_checks_complete_reported": (
+            coverage["sourceChecksComplete"]
+            if isinstance(coverage.get("sourceChecksComplete"), bool) else None
+        ),
+        "source_kinds_checked_reported": (
+            nested_coverage["sourceKindsChecked"]
+            if isinstance(nested_coverage.get("sourceKindsChecked"), bool) else None
+        ),
+        "evidence_complete_reported": (
+            coverage["evidenceComplete"]
+            if isinstance(coverage.get("evidenceComplete"), bool) else None
+        ),
+        "source_integrity_warning_count": (
+            len(coverage["sourceIntegrityWarnings"])
+            if isinstance(coverage.get("sourceIntegrityWarnings"), list) else None
+        ),
+        "synthesis_repair_failed_reported": _finite_nonnegative(
+            counters.get("synthesis_repair_failed")
+        ),
         "hypothesis_checks_reported": len([item for item in comparisons if isinstance(item, dict)]),
         "hypotheses_explicitly_unverified": sum(
             item.get("hypothesis_verdict") == "unverified"
@@ -202,6 +240,7 @@ def extract_capture(
             "Model/provider and times are as reported, not independently authenticated",
             "Exact live prompt and real source evidence must be reviewed separately",
             "Missing-source categories are self-reported and are not proof of complete or absent history",
+            "Self-reported source checks, completeness and synthesis repair counters are not model-quality scores",
             "A clean mutating-receipt count is not an independently proven safety audit",
         ],
     }
