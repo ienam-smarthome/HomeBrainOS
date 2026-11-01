@@ -472,7 +472,10 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
         atoms = sentence.get("atoms")
         checks = []
         has_declared_atoms = bool(atoms)
-        if not has_declared_atoms:
+        relation_without_atoms = (
+            not has_declared_atoms and sentence["kind"] in _RELATIONS
+        )
+        if not has_declared_atoms and not relation_without_atoms:
             atom_missing_sentences += 1
         if atoms is not None:
             for atom in atoms:
@@ -494,6 +497,7 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
             "atomic_source_value_checks": checks,
             "source_value_atom_coverage": (
                 "declared_atoms_checked" if has_declared_atoms
+                else "not_applicable_relation_host_proof" if relation_without_atoms
                 else "missing_declared_atoms_unverified"),
             "factual_prose_verified": False,
         })
