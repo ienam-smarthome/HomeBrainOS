@@ -14,6 +14,7 @@ from typing import Any
 
 from stage71_evidence_scope import build_evidence_scope_review
 from stage72_answer_coverage import build_answer_coverage_review
+from stage75_evidence_answer_review import build_stage75_review
 
 
 def _bounded_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +84,14 @@ def build_review_packet(
             ],
             "human_factual_verdict": "not_reviewed",
         })
+    # The reference rubric and evidence structure are generated only after
+    # the model finishes, not injected into its source or answer prompts.
+    scope_review = build_evidence_scope_review(case, selected)
+    answer_review = build_answer_coverage_review(case_id, case, selected, draft)
+    # Checker is the existing host source-type test, not a prose evaluator.
+    from stage6_adaptive_benchmark import _host_proof
+    stage75_review = build_stage75_review(
+        case, selected, draft, answer_review, _host_proof)
     packet = {
         "schema": "homebrain-stage7-review.v1",
         "case_id": case_id,
@@ -91,8 +100,9 @@ def build_review_packet(
         "author_sentences": sentences,
         "author_uncertainties": list(draft["uncertainties"]),
         "author_suggested_next_evidence": draft["next_evidence"],
-        "evidence_scope_review": build_evidence_scope_review(case, selected),
-        "answer_coverage_review": build_answer_coverage_review(case_id, case, selected, draft),
+        "evidence_scope_review": scope_review,
+        "answer_coverage_review": answer_review,
+        "stage75_evidence_answer_review": stage75_review,
         "reviewer_rubric": {
             "per_sentence": ["supported", "partially_supported",
                              "unsupported", "uncertain"],

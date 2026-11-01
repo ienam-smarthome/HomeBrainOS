@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.306**.
+Current add-on version: **0.18.307**.
+
+**Stage 7.5 independent evidence-vs-answer review:** A postrun, synthetic-only evidence layer now distinguishes host-observable evidence types from model-supplied sentence labels, original-question completeness from citation overlap, and reported state/telemetry from command-correlated physical causation. Mobile review explicitly shows these as different diagnostics; it never automatically grades Gemma's natural prose, sends extra Cloud requests, changes live Hubitat/HA devices, or enables the production publisher. [Release notes](CHANGELOG-0.18.307.md).
 
 **Stage 7.4 epistemic scope pilot:** Experimental Stage 6 answers now declare each claim subject separately from whether it is affirmed, refuted or not established, and limit the claimed evidence scope. The host distinguishes scoped unresolved causality from an affirmative unique-cause claim, without treating the model's self-declaration or natural prose as independently proven. Stage 7 review asks humans to check that the sentence's actual wording matches the declared position. Prior v1/v2 outputs remain parseable; no production publisher, live device controls or additional cloud calls. [Release notes](CHANGELOG-0.18.306.md).
 

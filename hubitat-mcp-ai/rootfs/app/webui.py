@@ -766,7 +766,7 @@ document.getElementById('runStage6').onclick=async()=>{
     const metrics=document.createElement('p');metrics.textContent=
       'Relevant sources examined: '+data.relevant_source_recall+
       ' · Irrelevant sources: '+data.irrelevant_sources_selected+
-      ' · Expected finding-type coverage: '+data.expected_finding_type_coverage+
+      ' · Model-declared finding-label coverage (not answer quality): '+data.expected_finding_type_coverage+
       ' · Source-type mismatches: '+data.source_type_mismatches+
       ' · Other unsupported source types: '+data.unmatched_source_types_other+
       ' (high risk: '+data.high_risk_unsupported_sentences+')'+
@@ -874,7 +874,7 @@ document.getElementById('runStage6').onclick=async()=>{
     }
     if(data.missing_expected_finding_types?.length){
       const missing=document.createElement('p');
-      missing.textContent='Reference finding types missing: '+data.missing_expected_finding_types.join(', ');details.append(missing);
+      missing.textContent='Reference types not explicitly labelled by model (not necessarily missing from evidence or prose): '+data.missing_expected_finding_types.join(', ');details.append(missing);
     }
     out.append(details);
     const uncertainty=document.createElement('p');
@@ -989,6 +989,49 @@ document.getElementById('runStage6').onclick=async()=>{
           coverageControls.push({id:obligation.id,element:select});
         }
         panel.append(coveragePanel);
+      }
+      const stage75=reviewPacket.stage75_evidence_answer_review;
+      if(stage75?.schema==='homebrain-stage75-evidence-answer-review.v1'){
+        const layer=document.createElement('details');
+        const heading=document.createElement('summary');
+        heading.textContent='Stage 7.5 · Source structure vs answer quality';
+        layer.append(heading);
+        const structure=stage75.source_evidence;
+        const counts=document.createElement('p');
+        counts.textContent='Host-observable evidence types: '+
+          structure.host_observable_reference_type_coverage+' ('+
+          structure.host_observable_reference_types.join(', ')+') · '+
+          'Model-declared types: '+structure.model_declared_reference_type_coverage+
+          ' ('+structure.model_declared_reference_types.join(', ')+').';
+        layer.append(counts);
+        const explanation=document.createElement('p');explanation.className='stage5-note';
+        explanation.textContent='Host-observable structure is derived from inspected fictional records, '+
+          'not from a sentence label. It does not mean the original question was answered. '+
+          'Natural-language meaning remains not independently fact-checked; only human '+
+          'reviews can assess omissions, unjustified certainty, or causal implications.';
+        layer.append(explanation);
+        const ladder=stage75.causal_evidence_ladder;
+        const evidence=document.createElement('p');evidence.className='stage5-note';
+        evidence.textContent='Recorded commands: '+(ladder.recorded_command_ids.join(', ')||'none')+
+          ' · State reports: '+(ladder.reported_state_record_ids.join(', ')||'none')+
+          ' · Independent telemetry: '+(ladder.independent_device_telemetry_ids.join(', ')||'none')+
+          ' · Command acknowledgements: '+(ladder.command_acknowledgement_record_ids.join(', ')||'none')+
+          ' · Command-correlated execution proven: '+(ladder.command_correlated_execution_confirmed?'yes':'no')+
+          ' · Unique cause proven: '+(ladder.unique_causal_attribution_proven?'yes':'no')+'.';
+        layer.append(evidence);
+        const next=document.createElement('p');next.className='stage5-note';
+        next.textContent='Evidence follow-up guidance: '+ladder.next_evidence_review_hint+
+          ' Gemma suggested: '+stage75.model_next_evidence_suggestion.text+
+          ' (not independently validated).';
+        layer.append(next);
+        for(const item of stage75.original_question_review.obligations){
+          const line=document.createElement('p');
+          line.textContent=(item.importance==='critical'?'Critical ':'Supporting ')+
+            item.id.replace(/_/g,' ')+': '+item.reference_evidence_status.replace(/_/g,' ')+
+            ' · Actual answer quality: human review required.';
+          layer.append(line);
+        }
+        panel.append(layer);
       }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
