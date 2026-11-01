@@ -593,13 +593,13 @@ def test_shared_publication_detail_request_preserves_legacy_full_report():
         "outcome": "unresolved", "counters": {}, "timings_ms": {},
     })
     response = serialize(apply_shared_investigation_completion(
-        observed, "Give the full technical report for Generic Relay.",
+        observed, "Investigate why Generic Relay reports offline. Give the full technical report for this device.",
     ))
     # Full detail is explicit opt-in, not a new source/causality privilege.
-    if "normalizedDeviceHistory" in response["investigation_coverage"]:
-        assert response["investigation_coverage"]["answerPublicationDecision"]["mode"] == "requested-detail"
-        assert "**Device-scoped logs:**" in response["message"]
-        assert response["investigation_coverage"]["rootCauseVerified"] is False
+    assert "normalizedDeviceHistory" in response["investigation_coverage"]
+    assert response["investigation_coverage"]["answerPublicationDecision"]["mode"] == "requested-detail"
+    assert "**Device-scoped logs:**" in response["message"]
+    assert response["investigation_coverage"]["rootCauseVerified"] is False
 
 
 def test_q1_clock_conflict_printed_once_but_retained_in_technical_coverage():
