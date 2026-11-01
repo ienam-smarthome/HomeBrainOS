@@ -562,22 +562,23 @@ def render_target_device_evidence_brief(
             "command invocations). These are returned records, not "
             "proof of physical device activity or a complete history."
         )
-    latest = summary.get("latestReturnedStateEvent")
-    if isinstance(latest, dict):
-        attribute = str(latest.get("attribute") or "").strip()
-        value = str(latest.get("value") or "").strip()
-        date = str(latest.get("date") or "").strip()
-        if attribute and value and date:
-            parts[-1] += (
-                f" The latest returned state event was {attribute}={value} "
-                f"at {date}; it is not independently verified endpoint telemetry."
-            )
     if clock_check is not None and clock_check.get("sourcesAgree") is False:
         parts.append(render_telemetry_clock_qualification(clock_check))
     elif isinstance(reported, dict):
         discrepancy = reported_telemetry_consistency(reported)
         if discrepancy:
             parts.append("**Telemetry consistency:** " + discrepancy)
+    latest = summary.get("latestReturnedStateEvent")
+    if isinstance(latest, dict):
+        attribute = str(latest.get("attribute") or "").strip()
+        value = str(latest.get("value") or "").strip()
+        date = str(latest.get("date") or "").strip()
+        if attribute and value and date:
+            parts.append(
+                f"**Latest returned state event:** {attribute}={value} "
+                f"at {date}. This is a Hubitat report, not independent "
+                "evidence of a current physical device packet."
+            )
     if health and mqtt:
         parts.append(
             "**Explanation:** A driver/broker connection and the endpoint's "
