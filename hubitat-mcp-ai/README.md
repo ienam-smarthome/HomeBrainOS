@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.334**.
+Current add-on version: **0.18.335**.
+
+**Answer Quality Q3 source-typed answer publication:** Ordinary read-only device-telemetry investigations now produce a concise, evidence-grounded explanation by default; explicitly requested full technical reports retain the existing detailed renderer. The complete normalized events, clock/source limitations and unresolved physical-cause verdict stay in Technical details. No additional model calls or MCP reads; model prose is not falsely certified by generic synthesis validators. [Release notes](CHANGELOG-0.18.335.md).
 
 **Answer Quality Q1 publisher shadow:** A privacy-minimal diagnostic now records when shared device-telemetry completion replaces the incoming answer, without storing the answer text or treating the incoming text as authenticated raw model output. The publication decision and all safeguards are unchanged. [Release notes](CHANGELOG-0.18.334.md).
 
