@@ -446,11 +446,122 @@ def test_telemetry_coverage_and_driver_source_do_not_pretend_root_cause_resolved
     assert source["codeId"] == "3686"
     assert source["fullSourceAtRead"] is True
     assert source["methodBehaviourVerified"] is False
-    assert "20,531" not in answer["message"] or "source-offset units" in answer["message"]
-    assert "Code ID 3686" in answer["message"]
-    assert "This proves source retrieval only" in answer["message"]
+    # Technical provenance stays accessible without displacing the user's
+    # diagnosis with source chunk bookkeeping.
+    assert "Code ID 3686" not in answer["message"]
+    assert "source-offset units" not in answer["message"]
+    assert "Investigation depth still missing" not in answer["message"]
+    # A source read without a typed mixed-history packet is not enough
+    # to associate method-depth diagnostics with this target.
+    assert "incidentReasoningDepth" not in coverage
     assert answer["metrics"]["outcome"] == "unresolved"
 
+
+
+def test_telemetry_answer_keeps_technical_ledger_out_of_prose_for_any_device():
+    from typed_device_history_evidence import render_target_device_evidence_answer
+
+    summary = {
+        "deviceId": "9911",
+        "deviceLabel": "Anonymised Relay",
+        "queryWindowHours": 24,
+        "returnedEvents": 2,
+        "commandCount": 0,
+        "stateEventCount": 2,
+        "commandGroups": [],
+        "latestReturnedStateEvent": {
+            "attribute": "deviceHealth",
+            "value": "stale",
+            "date": "2026-11-01T12:00:00+00:00",
+            "producer": "Anonymised Relay",
+        },
+        "reportedDeviceState": {
+            "observedAt": "2026-11-01T12:00:05+00:00",
+            "reportedAttributes": {
+                "healthStatus": "offline",
+                "mqttStatus": "connected",
+                "switch": "off",
+            },
+        },
+        "historicalDataAgeSeconds": None,
+        "truncated": False,
+    }
+    message = render_target_device_evidence_answer([], summary)
+    assert "driver/broker connection can remain reported as connected" in message
+    assert "not verified driver implementation" in message
+    assert "Recorded command sources" not in message
+    assert "Command outcomes:" not in message
+    assert "No command invocation was returned" in message
+    assert "physical command delivery" in message
+    assert "deviceHealth=stale" in message
+    assert "History integrity:" in message
+    assert "not independently verified" in message
+
+
+def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
+    prior = {"domain": "device_telemetry", "evidenceComplete": False}
+    rows = [
+        receipt("hub_read_devices", "hub_list_devices", {
+            "labelFilter": "Anonymised Relay",
+        }, details={"reportedDeviceState": {
+            "deviceId": "9911", "label": "Anonymised Relay",
+            "source": "targeted-hubitat-device-state",
+            "observedAt": "2026-11-01T12:00:05+00:00",
+            "reportedAttributes": {
+                "healthStatus": "offline",
+                "mqttStatus": "connected",
+            },
+        }}),
+        receipt("hub_read_devices", "hub_list_device_events", {
+            "deviceId": "9911", "hoursBack": 24,
+        }, details={
+            "historySourceIntegrityVerified": False,
+            "observedEvents": [{
+                "name": "deviceHealth", "value": "stale",
+                "date": "2026-11-01T12:00:00+00:00",
+                "producedBy": {
+                    "type": "device", "label": "Anonymised Relay",
+                    "id": "9911",
+                },
+            }],
+        }),
+        receipt("homebrain_device_history", "homebrain_device_history", {
+            "name": "Anonymised Relay",
+        }, details={
+            "label": "Anonymised Relay", "hoursBack": 24,
+            "observedEvents": [{
+                "name": "deviceHealth", "value": "stale",
+                "date": "2026-11-01T12:00:00+00:00",
+                "producedBy": {
+                    "type": "device", "label": "Anonymised Relay",
+                    "id": "9911",
+                },
+            }],
+            "historySourceIntegrityVerified": False,
+        }),
+        receipt("hub_read_apps_code", "hub_get_source", {
+            "id": "9999", "type": "driver",
+        }, details={
+            "sourceRetrieved": True, "sourceCodeId": "9999",
+            "offset": 0, "chunkLength": 1000, "totalLength": 1000,
+        }),
+    ]
+    observed = build_observed_agent_outcome(outcome(rows, coverage=prior), {
+        "outcome": "unresolved", "counters": {}, "timings_ms": {},
+    })
+    result = serialize(apply_shared_investigation_completion(
+        observed, "Why is Anonymised Relay MQTT connected but device health offline?",
+    ))
+    cov = result["investigation_coverage"]
+    assert cov["domain"] == "device_telemetry"
+    assert cov["rootCauseVerified"] is False
+    assert cov["questionResolved"] is False
+    assert cov["additionalSourceCodeEvidence"]["codeId"] == "9999"
+    assert cov["additionalSourceCodeEvidence"]["methodBehaviourVerified"] is False
+    assert cov["incidentReasoningDepth"]["driverMethodBehaviourVerified"] is False
+    assert "Code ID 9999" not in result["message"]
+    assert "Investigation depth still missing" not in result["message"]
+    assert result["metrics"]["outcome"] == "unresolved"
 
 def test_failed_or_unverified_source_does_not_appear_as_verified_extra_code():
     prior = {"domain": "device_telemetry", "evidenceComplete": False}

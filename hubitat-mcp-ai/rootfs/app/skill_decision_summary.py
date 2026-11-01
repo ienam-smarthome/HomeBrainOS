@@ -170,8 +170,12 @@ def telemetry_skill_conclusion(summary: dict[str, Any]) -> str | None:
     )
     if str(attrs.get("mqttStatus") or "").casefold() == "connected":
         text += (
-            " The reported MQTT 'connected' attribute does not itself "
-            "confirm that this endpoint supplied a fresh physical packet."
+            " MQTT and device-health fields can describe different layers: "
+            "a driver/broker connection can remain reported as connected "
+            "without fresh telemetry from the endpoint. This is a possible "
+            "explanation, not verified driver implementation or proof of "
+            "the physical cause. The stored 'connected' value alone cannot "
+            "establish current device reachability or receipt of a fresh physical packet."
         )
     return text
 

@@ -403,22 +403,28 @@ def render_target_device_evidence_answer(
             "Cached lastSeen/dataAgeSeconds attributes require their "
             "original measurement timestamps."
         )
-    lines.append("**Recorded command sources:**")
-    for group in summary.get("commandGroups") or []:
+    groups = summary.get("commandGroups") or []
+    if groups:
+        lines.append("**Recorded command sources:**")
+    for group in groups:
         name = str(group["command"]).removeprefix("command-")
         lines.append(
             f"- {group['producer']}: {group['count']} recorded {name}() "
             "invocation" + ("" if group["count"] == 1 else "s")
         )
-    lines.append(
-        "**Command outcomes:** "
-        + ("Command invocations were returned in this bounded sample. "
-           if summary.get("commandCount") else
-           "No command invocation was returned in this bounded sample. ")
-        + "No end-to-end device acknowledgement or command delivery was "
-          "independently verified in these sources; absence of a matching "
-          "state-change record does not prove failed execution."
-    )
+    # Preserve the source-bounded absence and delivery qualification, but
+    # never show an empty "Recorded command sources" section.
+    if summary.get("commandCount"):
+        lines.append(
+            "**Command evidence:** Recorded command invocations do not "
+            "prove command delivery, physical execution or response."
+        )
+    else:
+        lines.append(
+            "**Command evidence:** No command invocation was returned in "
+            "this bounded sample; physical command delivery cannot be "
+            "inferred or excluded from the available events."
+        )
     matching_logs = [
         row for row in evidence
         if isinstance(row, dict) and row.get("success") is True
