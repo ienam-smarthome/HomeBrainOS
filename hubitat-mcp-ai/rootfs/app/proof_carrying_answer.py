@@ -177,7 +177,50 @@ def admit_model_claim_plan(
     return "\n\n".join(facts[x] for x in ids), "source-claim-plan-admitted"
 
 
+def eligible_model_claim_handoff(
+    message: Any,
+    evidence: list[dict[str, Any]],
+    provenance: Any,
+    *,
+    domain: str | None,
+) -> bool:
+    """Can the original unchanged provider plan survive prose-only guards?
+
+    This is deliberately narrower than final publication: the shared
+    boundary independently validates canonical coverage, including clock
+    consistency and root-cause uncertainty, before rendering any words.
+    Here we authorize ONLY preserving a machine-readable candidate through
+    post-synthesis *prose* rewrites; no statement is published by this check.
+    """
+    if domain != "device_telemetry" or not isinstance(message, str):
+        return False
+    if not getattr(provenance, "no_tools_final_stage", False):
+        return False
+    if not (
+        message == getattr(provenance, "raw_first", None)
+        == getattr(provenance, "coordinator_result", None)
+        == getattr(provenance, "final_answer", None)
+    ):
+        return False
+
+    # Reconstruct solely from actual source receipts; a model's self-cited
+    # IDs or causal confidence are never accepted as facts.
+    from typed_device_history_evidence import normalize_target_device_history
+    from telemetry_clock_consistency import assess_telemetry_clock_consistency
+
+    normalized = normalize_target_device_history(evidence)
+    clock = assess_telemetry_clock_consistency(evidence)
+    validated, _reason = admit_model_claim_plan(
+        message, normalized, {
+            "rootCauseVerified": False,
+            "telemetryClockConsistency": clock,
+        },
+    )
+    return validated is not None
+
+
 __all__ = [
     "SCHEMA", "attested_telemetry_claims", "model_claim_prompt",
     "admit_model_claim_plan",
+    "eligible_model_claim_handoff",
 ]
