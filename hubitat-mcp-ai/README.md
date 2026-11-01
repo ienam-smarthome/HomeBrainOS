@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.331**.
+Current add-on version: **0.18.332**.
+
+**Answer Quality Q1 telemetry presentation:** Show the status distinction before a timestamp warning, keep source-code offsets and missing-depth bookkeeping under Technical details, and omit empty command sections. The model-led investigation and evidence-validity gates are unchanged; no claim of measured live accuracy, latency or Claude parity. [Release notes](CHANGELOG-0.18.332.md).
 
 **Answer Quality Q1 dashboard simplification:** Synthetic Ollama Cloud/Stage 5/Stage 6 experiments and Live Shadow are retained, but nested under a closed **Advanced testing & diagnostics** section. Their existing consent gates and endpoints are unchanged, and System Check remains visible. This release records an ungraded current-build bridge-reporter attribution weakness rather than asserting an accuracy increase. [Release notes](CHANGELOG-0.18.331.md).
 
