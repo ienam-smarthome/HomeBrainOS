@@ -58,6 +58,7 @@ def test_exact_command_identity_allows_narrow_log_request_only():
     args=result["log_read_arguments"]
     assert args["tool"]=="hub_get_logs"
     assert args["args"]["appId"]=="4012"
+    assert args["args"]["mode"]=="past"
     assert args["args"]["limit"]==100
     assert args["args"]["since"]=="2026-11-01T13:30:59.835000Z"
     assert args["args"]["until"]=="2026-11-01T13:34:59.835000Z"
@@ -282,3 +283,71 @@ def test_stage92_exact_matching_explicit_row_remains_strong_identity_evidence():
     ]}))
     assert result["command_row_device_id_explicit"] is True
     assert result["log_scope_basis"] == "explicit_target_and_app_producer"
+
+
+def test_stage93_upstream_hubitat_entries_are_classified_without_inventing_utc_or_ids():
+    p=verified_issuer(plan(), envelope({"success":True,"events":[command()]}))
+    upstream={"mode":"past","count":3,"entries":[
+        {"name":"Private Hallway app","type":"app","time":"2026-11-01 13:32:59.900",
+         "level":"info","message":"App says turning off Secret Hallway token=PRIVATE"},
+        {"name":"Private Device","type":"dev","time":"2026-11-01 13:32:59.900",
+         "message":"Switch off Secret Device"},
+        {"name":"Private Hallway app","type":"app","time":"malformed",
+         "message":"Turning off Secret Hallway"},
+    ]}
+    out=project_verified_app_logs(p,envelope({"success":True,"result":upstream}))
+    assert out["status"]=="bounded_app_declarations_found"
+    assert out["app_log_source_format"]=="hubitat_past_entries"
+    assert out["app_log_rows_returned"]==3
+    assert out["excluded_other_app_rows"]==1
+    assert out["excluded_unusable_or_outside_time_rows"]==1
+    assert out["rows_without_explicit_app_identity"]==1
+    assert len(out["classified_decision_rows"])==1
+    row=out["classified_decision_rows"][0]
+    assert row["classification"]=="reported-off-request"
+    assert row["reported_hub_local_time"]=="2026-11-01 13:32:59.900"
+    assert row["reported_at_utc"] is None
+    assert row["source_time_basis"]=="hub_local_time_zone_unverified"
+    assert row["app_identity_basis"]=="backend_filter_only_unverified"
+    for private in ("Secret Hallway","token=PRIVATE","Private Device","Private Hallway"):
+        assert private not in str(out)
+    assert out["causal_link_proven"] is False
+    assert out["physical_execution_proven"] is False
+
+
+def test_stage93_real_upstream_past_empty_page_is_not_unusable_payload():
+    p=verified_issuer(plan(),envelope({"success":True,"events":[command()]}))
+    out=project_verified_app_logs(p,envelope({"result":{"mode":"past","entries":[],"count":0}}))
+    assert out["status"]=="no_classifiable_app_declarations"
+    assert out["app_log_rows_returned"]==0
+    assert out["source_coverage_complete"] is False
+
+
+def test_stage93_in_progress_snapshot_is_neither_empty_history_nor_failed_parse():
+    p=verified_issuer(plan(),envelope({"success":True,"events":[command()]}))
+    out=project_verified_app_logs(p,envelope({"result":{"status":"in_progress","tool":"hub_get_logs"}}))
+    assert out["status"]=="app_log_source_in_progress"
+    assert out["app_log_read_attempted"] is True
+    assert out["app_log_rows_returned"] is None
+    assert out["classified_decision_rows"] == []
+    assert not out["causal_link_proven"]
+
+
+def test_stage93_past_entries_reject_explicit_other_issuer_and_wrong_mode():
+    p=verified_issuer(plan(),envelope({"success":True,"events":[command()]}))
+    out=project_verified_app_logs(p,envelope({"mode":"past","entries":[
+        {"type":"app","appId":"9999","time":"2026-11-01 13:32:59.500",
+         "message":"Turning off private light"},
+    ]}))
+    assert out["status"]=="no_classifiable_app_declarations"
+    assert out["excluded_other_app_rows"] == 1
+    bad=project_verified_app_logs(p,envelope({"mode":"apps","entries":[]}))
+    assert bad["status"]=="app_log_payload_unusable"
+
+
+def test_stage93_user_interface_labels_hub_local_clock_without_utc_claim():
+    page=render_page("HomeBrainOS","0.18.328")
+    assert "hub-local time; UTC offset unverified" in page
+    assert "app_log_source_in_progress" in page
+    assert "entry.reported_hub_local_time" in page
+    assert "entry.reported_at_utc" in page
