@@ -820,7 +820,12 @@ class FinalAnswerCoordinator:
         # device telemetry packet. No new provider or MCP round is needed.
         # Other domains keep their existing causal/heating safety handling.
         telemetry_for_claim_plan = None
-        if contract is not None and contract.domain == "device_telemetry" and not causal:
+        # Device-connectivity questions often start with "why", so the
+        # broad causal classifier is true even when the domain is a bounded
+        # health/status observation. The typed proof adapter already rejects
+        # command-rich or non-status evidence. Do not suppress the plan
+        # solely because the question asks for an explanation.
+        if contract is not None and contract.domain == "device_telemetry":
             typed = normalize_target_device_history(evidence)
             clock = assess_telemetry_clock_consistency(evidence)
             typed_coverage = {
