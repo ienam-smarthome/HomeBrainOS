@@ -21,14 +21,23 @@ _STATUS_FIELDS = frozenset({
     "thermostatOperatingState",
 })
 _MAX_DEVICES = 1000
+# Never echo arbitrary upstream status strings: drivers may put log text,
+# secrets, IP addresses or unescaped HTML in otherwise conventional fields.
+_STATUS_VALUES = frozenset({
+    "on", "off", "online", "offline", "unknown", "stale",
+    "healthy", "unhealthy", "connected", "connecting",
+    "disconnected", "active", "inactive", "idle",
+    "heating", "cooling", "pending", "error", "warning",
+    "ok", "open", "closed", "present", "not_present",
+})
 
 
 def _safe_state(key: str, value: Any) -> str | int | float | bool | None:
     if key in _STATUS_FIELDS:
         # A state string is a report, not physical proof. Reject free-text
         # errors/messages, escaping odd whitespace/control characters.
-        if type(value) is str and 0 < len(value) <= 32 and value.isprintable():
-            return value
+        if type(value) is str and value.casefold().strip() in _STATUS_VALUES:
+            return value.casefold().strip()
     elif key in _SAFE_FIELDS and type(value) in (int, float, bool):
         if type(value) is float and not -1e9 <= value <= 1e9:
             return None
