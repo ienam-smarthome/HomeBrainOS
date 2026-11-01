@@ -637,10 +637,10 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
     if domain == "device_telemetry":
         clock_check = coverage.get("telemetryClockConsistency")
         if isinstance(clock_check, dict) and clock_check.get("sourcesAgree") is False:
-            message = (
-                render_telemetry_clock_qualification(clock_check)
-                + "\n\n" + message
-            )
+            # The diagnosis should answer the user's question first. A
+            # conflicting clock is important but is supporting evidence, not
+            # the headline or independent physical last-contact proof.
+            message += "\n\n" + render_telemetry_clock_qualification(clock_check)
     # Preserve explicitly requested, model-proposed alternatives even when
     # the safety-oriented typed evidence renderer replaces the model's prose.
     # A successful source-class read is NOT support, contradiction or proof
@@ -739,15 +739,9 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 item["fullSourceAtRead"], item["verifiedOffsetUnits"]
             ))
             coverage["additionalSourceCodeEvidence"] = selected
-            message += (
-                "\n\n**Retrieved implementation evidence:** "
-                "Code ID " + selected["codeId"] + " — "
-                + str(selected["verifiedOffsetUnits"]) + "/"
-                + str(selected["declaredTotalOffsetUnits"])
-                + " source-offset units returned. This proves source retrieval "
-                  "only; a root cause requires analysing relevant method "
-                  "branches and corroborating runtime/upstream evidence."
-            )
+            # A source read is not source-method verification. The precise
+            # code ID and chunk offsets belong in Technical details, not a
+            # second user-facing paragraph that displaces the answer.
     if domain == "device_telemetry":
         depth = coverage.get("incidentReasoningDepth")
         if isinstance(depth, dict):
@@ -762,15 +756,9 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                       "identity, stored configuration and dated execution "
                       "before using these logs to exclude an explanation."
                 )
-            if depth.get("missingDiscriminators"):
-                message += (
-                    "\n\n**Investigation depth still missing:** "
-                    + "; ".join(depth["missingDiscriminators"])
-                    + ". These are missing proof dimensions, not proof that "
-                      "the corresponding component is faulty. "
-                      "A retrieved driver source is not automatically an "
-                      "analysis of its timer/reset/update branches."
-                )
+            # The complete missing-discriminator ledger is already in
+            # investigation_coverage.incidentReasoningDepth. Do not paste
+            # the internal investigation checklist into every answer.
     # The final reported outcome is separate from source/category completeness.
     # A successful source read must never convert an unresolved diagnosis to a
     # resolved physical/device cause.
