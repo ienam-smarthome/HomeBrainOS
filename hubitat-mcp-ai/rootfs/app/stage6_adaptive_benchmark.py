@@ -20,6 +20,7 @@ from cloud_benchmark import BenchmarkError, benchmark_status
 from stage5_autonomous_benchmark import _json_object, _safe_cloud_error
 from stage65_question_value import evaluate_question_value_ledger
 from stage7_review_packet import build_review_packet
+from stage78_followup_sufficiency import validate_followup_assessment
 from stage74_epistemic_claims import (
     validate_epistemic_declaration, assess_epistemic_claim,
 )
@@ -345,11 +346,19 @@ def _decode_plan_control(raw: str, remaining: set[str], *, can_read: bool):
 
 def _validate_answer(raw: str, records: list[dict]) -> dict:
     result = _json_object(raw)
-    if (set(result) != {"schema", "sentences", "uncertainties", "next_evidence"}
-            or result["schema"] not in ("homebrain-stage6-answer.v1",
-                                       "homebrain-stage6-answer.v2",
-                                       "homebrain-stage6-answer.v3")):
+    version = result.get("schema")
+    if version not in ("homebrain-stage6-answer.v1",
+                       "homebrain-stage6-answer.v2",
+                       "homebrain-stage6-answer.v3"):
         raise ValueError("invalid answer structure")
+    expected = {"schema", "sentences", "uncertainties", "next_evidence"}
+    # Additive v3-only, optional for compatibility with earlier model runs and
+    # existing offline mock fixtures. Missing declaration is explicitly unaudited.
+    optional = {"next_evidence_assessment"} if version == "homebrain-stage6-answer.v3" else set()
+    if not expected <= set(result) or set(result) - expected - optional:
+        raise ValueError("invalid answer structure")
+    if "next_evidence_assessment" in result:
+        validate_followup_assessment(result["next_evidence_assessment"])
     v2 = result["schema"] in (
         "homebrain-stage6-answer.v2", "homebrain-stage6-answer.v3")
     v3 = result["schema"] == "homebrain-stage6-answer.v3"
@@ -879,7 +888,23 @@ class Stage6Benchmark:
                     "command,issuer,level,at,reported_at,driver_connected_to_broker,"
                     "independent_device_packet,physical_acknowledgement. "
                     "uncertainties 1-4 short strings; next_evidence a specific "
-                    "useful follow-up. No extra JSON keys or markdown."
+                    "useful follow-up. Also provide next_evidence_assessment "
+                    "with EXACT keys proposal_kind,could_establish,cannot_establish,"
+                    "additional_proof_needed. Proposal kind must be one of: "
+                    "device_telemetry,broker_session,watchdog_history,"
+                    "command_history,command_execution_receipt,clock_correlation,"
+                    "controller_decision_log,other. For a proposed next source, "
+                    "state separately what it could establish, what it cannot "
+                    "establish alone, and what additional proof is required to "
+                    "make the user's disputed conclusion. A periodic watchdog "
+                    "heartbeat alone does not time the instant connectivity "
+                    "was lost; an originating packet alone does not prove its "
+                    "clock accuracy or who issued a command. Distinguish a "
+                    "source's relevance from sufficiency for the actual claim. "
+                    "Never describe an unread source as already inspected. "
+                    "Each explanation string 8-210 chars. This declaration "
+                    "is your appraisal, not evidence or a host-verified fact. "
+                    "No extra JSON keys or markdown."
                 )},
                 {"role": "user", "content": json.dumps({
                     "scenario_title": case["title"],

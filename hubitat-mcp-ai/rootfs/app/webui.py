@@ -1115,6 +1115,57 @@ document.getElementById('runStage6').onclick=async()=>{
         panel77.append(p);
         panel.append(panel77);
       }
+      const sufficiency=reviewPacket.stage78_followup_sufficiency_review;
+      if(sufficiency?.schema==='homebrain-stage78-followup-sufficiency.v1'){
+        const panel78=document.createElement('details');
+        const heading=document.createElement('summary');
+        heading.textContent='Stage 7.8 · Can suggested evidence actually prove the claim?';
+        panel78.append(heading);
+        const intro=document.createElement('p');intro.className='stage5-note';
+        intro.textContent='Postrun independent evidence-class limits; not a semantic verdict. '+
+          'Gemma\'s proposal and its declared limitations are not proof and cannot enable publication.';
+        panel78.append(intro);
+        const proposal=sufficiency.model_proposal;
+        if(proposal.declaration_present&&proposal.assessment){
+          const x=proposal.assessment;
+          for(const [label,value] of [
+            ['Proposed source class',x.proposal_kind],
+            ['Could establish (model claim)',x.could_establish],
+            ['Cannot establish alone (model claim)',x.cannot_establish],
+            ['Additional verification required (model claim)',x.additional_proof_needed]
+          ]){
+            const line=document.createElement('p');line.className='stage5-note';
+            line.textContent=label+': '+value;panel78.append(line);
+          }
+          const host=document.createElement('p');host.className='stage5-note';
+          host.textContent='Independent class limitation: '+
+            (sufficiency.proposal_kind_host_limit||'Human assessment required')+
+            ' This is a type-level boundary, not confirmation of the proposal\'s wording.';
+          panel78.append(host);
+        }else{
+          const missing=document.createElement('p');missing.className='stage5-note';
+          missing.textContent='No structured follow-up limitation declaration was supplied. '+
+            'The legacy free-text suggestion remains unaudited.';
+          panel78.append(missing);
+        }
+        const details=document.createElement('details');
+        const detailsHeading=document.createElement('summary');
+        detailsHeading.textContent='Examined evidence types and what they cannot prove';
+        details.append(detailsHeading);
+        for(const item of sufficiency.host_source_capability_reference||[]){
+          const p=document.createElement('p');p.className='stage5-note';
+          p.textContent=item.record_kind.replace(/_/g,' ')+
+            ' ['+item.examined_record_ids.join(', ')+']: '+item.can_establish+
+            '. Limit: '+item.cannot_alone_establish;
+          details.append(p);
+        }
+        panel78.append(details);
+        const reminder=document.createElement('p');reminder.className='stage5-note';
+        reminder.textContent='Use the independent next-evidence quality dropdown in Stage 7.6 '+
+          'to judge whether the proposed evidence can establish its claimed conclusion.';
+        panel78.append(reminder);
+        panel.append(panel78);
+      }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
         ['partially_supported','Partially supported'],
