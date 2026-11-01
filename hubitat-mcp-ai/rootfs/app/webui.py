@@ -1166,6 +1166,59 @@ document.getElementById('runStage6').onclick=async()=>{
         panel78.append(reminder);
         panel.append(panel78);
       }
+      const stage78=reviewPacket.stage78_followup_sufficiency_review;
+      if(stage78?.schema==='homebrain-stage78-followup-sufficiency.v1'){
+        const panel78=document.createElement('details');
+        const h=document.createElement('summary');
+        h.textContent='Stage 7.8 · Can the next evidence prove the claim?';
+        panel78.append(h);
+        const intro=document.createElement('p');intro.className='stage5-note';
+        intro.textContent='Independent source-class limitations, not a factual grade. '+
+          'Gemma\'s own assessment is a proposal, not proof. No cloud requests are added.';
+        panel78.append(intro);
+        const proposal=stage78.model_proposal;
+        const proposed=document.createElement('p');
+        proposed.textContent='Suggested follow-up: '+proposal.next_evidence_text;
+        panel78.append(proposed);
+        if(proposal.declaration_present&&proposal.assessment){
+          const declaration=proposal.assessment;
+          for(const [label,value] of [
+            ['Proposed source class',declaration.proposal_kind],
+            ['Could establish',declaration.could_establish],
+            ['Cannot establish alone',declaration.cannot_establish],
+            ['Additional proof needed',declaration.additional_proof_needed]
+          ]){
+            const p=document.createElement('p');p.className='stage5-note';
+            p.textContent=label+': '+value;panel78.append(p);
+          }
+          const limit=document.createElement('p');limit.className='stage5-note';
+          limit.textContent='Host-held generic limitation: '+
+            (stage78.proposal_kind_host_limit||'Requires independent review')+
+            ' This reference does NOT certify the model\'s wording.';
+          panel78.append(limit);
+        }else{
+          const missing=document.createElement('p');missing.className='stage5-note';
+          missing.textContent='No model-authored sufficiency declaration: not reviewed; '+
+            'legacy response remains valid but cannot be rated for this dimension.';
+          panel78.append(missing);
+        }
+        const sources=document.createElement('details');
+        const sourceSummary=document.createElement('summary');
+        sourceSummary.textContent='What examined source types can and cannot prove';
+        sources.append(sourceSummary);
+        for(const item of stage78.host_source_capability_reference||[]){
+          const p=document.createElement('p');p.className='stage5-note';
+          p.textContent=item.record_kind+' ('+item.examined_record_ids.join(', ')+
+            '): '+item.can_establish+'. Limit: '+item.cannot_alone_establish;
+          sources.append(p);
+        }
+        panel78.append(sources);
+        const note=document.createElement('p');note.className='stage5-note';
+        note.textContent='Independent human review is required. A heartbeat, state report, '+
+          'device packet, or command log must not be promoted into stronger proof.';
+        panel78.append(note);
+        panel.append(panel78);
+      }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
         ['partially_supported','Partially supported'],
