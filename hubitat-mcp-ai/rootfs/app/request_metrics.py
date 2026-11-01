@@ -175,6 +175,7 @@ class RequestMetrics:
         "causal_off_provenance_reads", "causal_off_command_reused",
         "causal_off_app_log_reads", "causal_off_app_config_reads",
         "causal_archived_app_log_checks", "causal_broad_inventory_blocked",
+        "single_device_broad_reads_suppressed",
         "causal_controller_sufficient_stop", "causal_physical_command_reused",
         "answer_quality_gaps_found", "answer_quality_revision_rounds",
         "answer_quality_revision_rejected", "answer_quality_revision_incomplete",
