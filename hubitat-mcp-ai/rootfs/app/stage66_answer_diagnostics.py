@@ -23,6 +23,11 @@ _CODES = {
     "sentence/claim alignment required": "sentence_fields_do_not_match_contract",
     "invalid sentence text": "sentence_text_invalid_or_too_long",
     "unsupported or unknown sentence citation": "unknown_or_malformed_evidence_citation",
+    "invalid typed sentence citation kind": "invalid_claim_type",
+    "malformed evidence citation identifiers": "malformed_evidence_citation_ids",
+    "duplicate evidence citation": "duplicate_evidence_citation",
+    "source container used as evidence citation": "source_container_instead_of_record_id",
+    "unknown evidence record citation": "unknown_record_id_in_citation",
     "missing or excessive atomic evidence assertions": "atomic_assertion_count_invalid",  # historical
     "invalid atomic assertion list": "atomic_assertion_list_not_array",
     "excessive atomic evidence assertions": "atomic_assertion_count_exceeds_limit",

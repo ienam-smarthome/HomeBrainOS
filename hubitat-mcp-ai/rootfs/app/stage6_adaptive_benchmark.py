@@ -24,6 +24,7 @@ from stage78_followup_sufficiency import validate_followup_assessment
 from stage74_epistemic_claims import (
     validate_epistemic_declaration, assess_epistemic_claim,
 )
+from stage610_citation_contract import validate_leaf_citations
 from stage66_answer_diagnostics import (
     Stage6AnswerContractFailure, answer_failure_category,
     synthetic_planning_progress,
@@ -344,7 +345,9 @@ def _decode_plan_control(raw: str, remaining: set[str], *, can_read: bool):
     return minimal, sorted(set(issues))
 
 
-def _validate_answer(raw: str, records: list[dict]) -> dict:
+def _validate_answer(
+    raw: str, records: list[dict], *, source_container_ids: set[str] | None = None,
+) -> dict:
     result = _json_object(raw)
     version = result.get("schema")
     if version not in ("homebrain-stage6-answer.v1",
@@ -402,10 +405,11 @@ def _validate_answer(raw: str, records: list[dict]) -> dict:
         if v3:
             validate_epistemic_declaration(sent["epistemic"])
         ids = sent["evidence_ids"]
-        if (sent["kind"] not in _TYPES or not isinstance(ids, list)
-                or not 1 <= len(ids) <= 3 or len(ids) != len(set(ids))
-                or any(not isinstance(sid, str) or sid not in allowed for sid in ids)):
-            raise ValueError("unsupported or unknown sentence citation")
+        validate_leaf_citations(
+            sent["kind"], ids, allowed_kinds=_TYPES,
+            allowed_record_ids=allowed,
+            source_container_ids=source_container_ids or set(),
+        )
         if v2:
             atoms = sent["atoms"]
             if not isinstance(atoms, list):
@@ -831,6 +835,9 @@ class Stage6Benchmark:
                 selected.append(plan["source_id"])
             gathered = [{"source_id": sid, "records": all_sources[sid]["records"]}
                         for sid in selected]
+            records = [case["initial"]] + [
+                record for group in gathered for record in group["records"]
+            ]
             answer_messages = [
                 {"role": "system", "content": (
                     "Write your own concise, natural explanation of this fictional "
@@ -870,8 +877,16 @@ class Stage6Benchmark:
                     "could not establish without assuming the outcome. "
                     "Continue using natural language, not predefined "
                     "case-specific phrases. "
-                    "Use one typed label per sentence and exact "
-                    "source record IDs. Also extract up to four exact SOURCE "
+                    "Use one typed label per sentence and exact LEAF RECORD "
+                    "IDs from allowed_evidence_record_ids only. Source "
+                    "container IDs such as S1 or S2 identify groups, not "
+                    "observations, and MUST NEVER be used as evidence_ids or "
+                    "atoms[].record_id. For example a record with id E2 "
+                    "inside source_id S2 MUST be cited as E2, not S2. "
+                    "Do not cite unexamined or imagined records. If a claim "
+                    "has no available record support, omit that sentence "
+                    "rather than citing a group or inventing a record. "
+                    "Also extract up to four exact SOURCE "
                     "field/value atoms stated by the sentence; do not invent "
                     "values. For a supported source-factual assertion declare "
                     "1-4 exact sourced atoms when possible. If no exact field "
@@ -881,7 +896,9 @@ class Stage6Benchmark:
                     "invent atoms merely to fill the list. Even correct atoms "
                     "do not prove the sentence's causal/negative implications. "
                     "A sentence may carry other unlabelled implications. "
-                    "Return ONLY JSON {schema,sentences,uncertainties,next_evidence}. "
+                    "Return ONLY JSON with schema,sentences,uncertainties, "
+                    "optional next_evidence and optional "
+                    "next_evidence_assessment. "
                     "schema: homebrain-stage6-answer.v3; sentences array 1-7 "
                     "of {text,kind,evidence_ids,atoms,epistemic}. "
                     "epistemic={position,scope}: position is affirmed, refuted, "
@@ -948,6 +965,7 @@ class Stage6Benchmark:
                     "question": case["question"],
                     "initial_observation": case["initial"],
                     "examined_source_records": gathered,
+                    "allowed_evidence_record_ids": sorted(r["id"] for r in records),
                     "unexamined_source_titles": [
                         {"id": src["id"], "title": src["title"]}
                         for src in case["catalog"] if src["id"] not in selected
@@ -957,15 +975,14 @@ class Stage6Benchmark:
                     "stopped_by": stop_reason,
                 }, separators=(",", ":"), ensure_ascii=True)},
             ]
-            records = [case["initial"]] + [
-                record for group in gathered for record in group["records"]
-            ]
             try:
                 final_raw = await self._call(transport, answer_messages)
             except Exception as exc:
                 raise _safe_stage6_error(exc, "independent explanation") from None
             try:
-                answer = _validate_answer(final_raw, records)
+                answer = _validate_answer(
+                    final_raw, records, source_container_ids=set(selected),
+                )
             except (ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
                 # The final model reply may be ill-formed, but the previous
                 # (billable) source decisions are already complete and can
