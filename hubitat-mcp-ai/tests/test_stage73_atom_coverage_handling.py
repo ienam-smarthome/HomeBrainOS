@@ -208,7 +208,7 @@ def test_phone_ui_cannot_label_missing_atoms_as_source_verified():
     for phrase in (
         "Declared atom coverage:",
         "sentences_missing_declared_source_value_atoms",
-        "Missing declared source-value atoms — NOT independently value-verified",
+        "No declared source-value atoms — causal/negative prose not independently verified",
         "prose still unverified",
     ):
         assert phrase in html
