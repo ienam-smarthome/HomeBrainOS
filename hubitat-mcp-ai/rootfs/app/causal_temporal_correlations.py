@@ -294,9 +294,12 @@ def reconcile_temporal_publication(message: str, report: Any) -> tuple[str, bool
     # If the model already acknowledges the exact repeated sensor-command
     # association, leave its original prose alone.
     if (
-        "source-linked" in draft.casefold()
-        and "inactive" in draft.casefold()
-        and "off command" in draft.casefold()
+        "**Additional cross-source evidence (not a causal verdict):**" in draft
+        or (
+            "source-linked" in draft.casefold()
+            and "inactive" in draft.casefold()
+            and "off command" in draft.casefold()
+        )
     ):
         return draft, False
     summary = []
