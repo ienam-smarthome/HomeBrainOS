@@ -768,14 +768,17 @@ document.getElementById('runStage6').onclick=async()=>{
       ' · Irrelevant sources: '+data.irrelevant_sources_selected+
       ' · Model-declared finding-label coverage (not answer quality): '+data.expected_finding_type_coverage+
       ' · Source-type mismatches: '+data.source_type_mismatches+
-      ' · Other unsupported source types: '+data.unmatched_source_types_other+
-      ' (high risk: '+data.high_risk_unsupported_sentences+')'+
+      ' · Other unsupported typed statements (not a false-fact count): '+
+      data.unmatched_source_types_other+
+      ' (high-risk affirmative/refutation: '+data.high_risk_unsupported_sentences+')'+
       ' · Cited source-value atoms: '+data.source_value_atoms_verified+
       ' matched / '+data.source_value_atoms_mismatched+' mismatched.'+
       ' Declared atom coverage: '+(data.declared_source_value_coverage_complete?
         'complete (prose still unverified)':
-        'INCOMPLETE — '+data.sentences_missing_declared_source_value_atoms+
-        ' sentence(s) without model-declared atoms; no source-value proof for those sentences.');
+        'Not fully source-value-audited: '+
+        data.sentences_missing_declared_source_value_atoms+
+        ' sentence(s) lack declared atoms; scoped uncertainty can be valid '+
+        'without exact atoms, but its natural wording remains unverified.');
     out.append(metrics);
     if(data.epistemic_declarations_are_model_authored_not_prose_verified){
       const stance=document.createElement('p');
@@ -869,7 +872,7 @@ document.getElementById('runStage6').onclick=async()=>{
           ' · stance-to-prose match NOT verified':'')+
         ' ['+sent.evidence_ids.join(', ')+'] · '+sent.text+
         (atoms?' · Exact source-value checks: '+atoms:
-         ' · Missing declared source-value atoms — NOT independently value-verified');
+         ' · No declared source-value atoms — causal/negative prose not independently verified');
       details.append(line);
     }
     if(data.missing_expected_finding_types?.length){
@@ -990,6 +993,7 @@ document.getElementById('runStage6').onclick=async()=>{
         }
         panel.append(coveragePanel);
       }
+      let followupControl=null;
       const stage75=reviewPacket.stage75_evidence_answer_review;
       if(stage75?.schema==='homebrain-stage75-evidence-answer-review.v1'){
         const layer=document.createElement('details');
@@ -1019,11 +1023,55 @@ document.getElementById('runStage6').onclick=async()=>{
           ' · Command-correlated execution proven: '+(ladder.command_correlated_execution_confirmed?'yes':'no')+
           ' · Unique cause proven: '+(ladder.unique_causal_attribution_proven?'yes':'no')+'.';
         layer.append(evidence);
+        const ordered=document.createElement('p');ordered.className='stage5-note';
+        ordered.textContent='Command display order: '+
+          ladder.recorded_command_display_order_basis.replace(/_/g,' ')+
+          '. Recorded times do not prove actual execution or cross-day order.';
+        layer.append(ordered);
+        for(const cmd of ladder.recorded_command_timeline||[]){
+          const row=document.createElement('p');row.className='stage5-note';
+          row.textContent='Recorded command '+cmd.record_id+' · at '+
+            (cmd.recorded_at||'unknown')+' · clock '+cmd.clock_basis+'.';
+          layer.append(row);
+        }
+        const clocks=document.createElement('p');clocks.className='stage5-note';
+        clocks.textContent='State reports retain separate source and collector clocks; '+
+          'a source timestamp on a report is not independently authenticated device telemetry.';
+        layer.append(clocks);
+        for(const report of ladder.state_report_clock_receipts||[]){
+          const row=document.createElement('p');row.className='stage5-note';
+          row.textContent=report.record_id+' · source time '+
+            (report.source_time||'not provided')+' · collector receipt '+
+            (report.received_at||'not provided')+' · basis '+
+            (report.clock_basis||'not specified')+'.';
+          layer.append(row);
+        }
+        if(ladder.driver_broker_session_ids?.length){
+          const broker=document.createElement('p');broker.className='stage5-note';
+          broker.textContent='Broker session evidence: '+
+            ladder.driver_broker_session_ids.join(', ')+
+            '. Driver-to-broker connection does not itself prove the device is online.';
+          layer.append(broker);
+        }
         const next=document.createElement('p');next.className='stage5-note';
         next.textContent='Evidence follow-up guidance: '+ladder.next_evidence_review_hint+
           ' Gemma suggested: '+stage75.model_next_evidence_suggestion.text+
           ' (not independently validated).';
         layer.append(next);
+        const followup=document.createElement('label');
+        followup.textContent='Can the suggested next evidence establish what Gemma claims? ';
+        followupControl=document.createElement('select');
+        followupControl.setAttribute('aria-label','Next evidence quality review');
+        for(const [value,title] of [
+          ['not_reviewed','Not reviewed'],
+          ['adequately_scoped','Appropriately limited'],
+          ['overstates_what_evidence_proves','Overstates what this evidence proves'],
+          ['insufficient_detail','Too vague to verify'],
+          ['unclear','Unclear']]){
+          const option=document.createElement('option');
+          option.value=value;option.textContent=title;followupControl.append(option);
+        }
+        followup.append(followupControl);layer.append(followup);
         for(const item of stage75.original_question_review.obligations){
           const line=document.createElement('p');
           line.textContent=(item.importance==='critical'?'Critical ':'Supporting ')+
@@ -1119,13 +1167,16 @@ document.getElementById('runStage6').onclick=async()=>{
           })),
           overall_completeness:overallControls[0].value,
           causal_caution:overallControls[1].value,
+          next_evidence_quality:followupControl?
+            followupControl.value:'not_applicable_legacy',
           independently_reviewed_by_human:ratingControls.every(item=>
             item.element.value!=='not_reviewed'&&
             item.scopeElement.value!=='not_reviewed'&&
             (!item.meaningReview||item.meaningReview.value!=='not_reviewed'))&&
             questionControls.every(item=>item.element.value!=='not_reviewed')&&
             coverageControls.every(item=>item.element.value!=='not_reviewed')&&
-            overallControls.every(item=>item.value!=='not_reviewed'),
+            overallControls.every(item=>item.value!=='not_reviewed')&&
+            (!followupControl||followupControl.value!=='not_reviewed'),
         };
         const exportText=JSON.stringify({
           fictional_evidence_and_model_answer:reviewPacket,
