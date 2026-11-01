@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.312**.
+Current add-on version: **0.18.313**.
+
+**Stage 6.10 citation-contract clarity:** Explicitly lists examined leaf evidence record IDs for the synthetic final answer and distinguishes source container S* references from E*/I* record IDs. Unknown, malformed, duplicate or source-container citations still fail closed, with safe diagnostic codes and no retry or leaked authored content. Production publisher remains untouched. [Release notes](CHANGELOG-0.18.313.md).
 
 **Stage 7.9 declared proof-target review:** Adds an optional typed proof target to the synthetic Stage 6 follow-up assessment, a separate postrun generic source-class/target compatibility diagnostic, and mobile human-review guidance checking that the author's free-text claims actually match the declaration. Matching structured types do not prove factual or semantic adequacy. Legacy v3 outputs remain accepted, malformed optional targets are withheld, and the production publisher and four-call budget stay unchanged. [Release notes](CHANGELOG-0.18.312.md).
 
