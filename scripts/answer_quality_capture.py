@@ -116,7 +116,7 @@ def extract_capture(
         "case_id": case_id,
         "case_origin": kind,
         "capture_is_quality_review": False,
-        "source_packet_replay_equivalent": kind == "live_task" and match == "exact",
+        "matches_registered_live_question": kind == "live_task" and match == "exact",
         "model": bounded_identity(model),
         "provider": provider,
         "add_on_version": bounded_identity(version),
@@ -132,7 +132,7 @@ def extract_capture(
         "tool_calls_reported": _finite_nonnegative(counters.get("tool_calls")),
         "model_rounds_reported": _finite_nonnegative(counters.get("model_rounds")),
         "evidence_receipt_count": len(evidence_objects),
-        "evidence_read_only_observed": read_mutations == 0,
+        "evidence_read_only_observed": bool(evidence_objects) and read_mutations == 0,
         "mutating_receipt_count": read_mutations,
         "hypothesis_checks_reported": len([item for item in comparisons if isinstance(item, dict)]),
         "hypotheses_explicitly_unverified": sum(
