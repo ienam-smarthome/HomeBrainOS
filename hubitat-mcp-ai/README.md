@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.339**.
+Current add-on version: **0.18.340**.
+
+**Answer Quality Q3 model-plan handoff repair (v0.18.340):** The source-attested claim-ID prompt now applies to why-worded connectivity investigations, which the legacy broad causal classifier previously excluded. Independently verified, unchanged machine claim plans can cross the host's prose-only causal guards without a rewrite, and the existing publication boundary rechecks all typed facts. Unverified or modified prose remains fail-closed. This resolves a model-plan routing/handoff contradiction; cloud-round reduction remains unmeasured. [Release notes](CHANGELOG-0.18.340.md).
 
 **Answer Quality Q3 model-selected verified claims (v0.18.339):** For a safe, one-device, command-free telemetry source packet, Gemma can choose and order a compact proof-carrying claim plan in its existing final no-tools reply. The publisher rechecks every claim against normalized Hubitat evidence and renders only source-attested statements; arbitrary free-form prose, mismatched identities, missing caveats, altered drafts and other domains retain fail-closed source-backed output. Also suppresses an expensive hidden whole-hub attribute sweep after verified single-device resolution. This is model-directed claim selection, NOT general free-form model-prose certification. [Release notes](CHANGELOG-0.18.339.md).
 
