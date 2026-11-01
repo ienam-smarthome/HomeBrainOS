@@ -18,6 +18,7 @@ from typing import Any, Mapping
 from incident_reasoning_depth import assess_incident_reasoning_depth
 from investigation_intelligence import plan_investigation
 from typed_device_history_evidence import normalize_target_device_history
+from telemetry_completion_policy import single_target_telemetry_scope
 
 
 def _args(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -56,7 +57,8 @@ def pending_telemetry_configuration_read(
     must still verify the live gateway schema and non-mutating effect.
     """
     plan = plan_investigation(request)
-    if plan is None or plan.domain != "device_telemetry":
+    if (plan is None or plan.domain != "device_telemetry"
+            or not single_target_telemetry_scope(request)):
         return None
     normalized = normalize_target_device_history(receipts)
     if not isinstance(normalized, dict) or not _match_request(request, normalized):
