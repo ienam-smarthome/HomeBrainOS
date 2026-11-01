@@ -41,7 +41,6 @@ def unresolved_causal_hypotheses(coverage: Any) -> bool:
         and comparisons
         and all(
             isinstance(row, dict)
-            and row.get("discriminator_verified") is not True
             and row.get("hypothesis_verdict") != "verified"
             for row in comparisons
         )
