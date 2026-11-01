@@ -57,7 +57,7 @@ def test_model_claims_choose_order_but_not_unverified_sentence_content():
     assert set(["reported_health", "reported_mqtt", "clock_conflict",
                 "cause_unverified", "next_readonly"]).issubset(claims)
     prompt = model_claim_prompt(normalized(), coverage())
-    assert "OPTIONAL SOURCE-ATTESTED" in prompt
+    assert "REQUIRED FINAL ANSWER FORMAT" in prompt
     text, reason = admit_model_claim_plan(plan(), normalized(), coverage())
     assert reason == "source-claim-plan-admitted"
     assert text.startswith("Hubitat reports Test Relay healthStatus=offline")
