@@ -240,6 +240,8 @@ def test_stage92_command_chooser_requires_selection_for_multiple_source_commands
         "document.getElementById('liveShadowAppConsent').checked=false;",
         "document.getElementById('copyLiveShadowAppResult').disabled=true;",
         "selectedCommand.replaceChildren();",
+        "Recorded OFF-command issuers:",
+        "OFF-command issuers are recorded, but app triggers",
     ):
         assert phrase in page
     # No caller-supplied app ID is sent to the backend: exact source time
