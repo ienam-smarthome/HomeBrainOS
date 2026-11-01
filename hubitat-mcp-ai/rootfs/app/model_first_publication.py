@@ -86,6 +86,23 @@ def admit_model_first_telemetry_answer(
         or trace.raw_first != incoming
     ):
         return None, "model-draft-provenance-changed"
+    # An unresolved contradiction in independently unverified source clocks
+    # is a semantic evidence conflict, not a wording problem. Until a source
+    # has actually reconciled it, do not publish an unconstrained definitive
+    # narrative merely because the author mentioned one uncertainty somewhere.
+    # Fall back to the existing source-typed, clock-qualified explanation.
+    source_authority = coverage.get("sourceAuthority")
+    if isinstance(source_authority, Mapping):
+        clocks = source_authority.get("temporalClocks")
+        contradictory_clocks = (
+            isinstance(clocks, Mapping) and clocks.get("sourcesAgree") is False
+        )
+        independent_verification = (
+            source_authority.get("independentBrokerPacketsVerified") is True
+            and source_authority.get("verifiedInstalledDriverBehaviour") is True
+        )
+        if contradictory_clocks and not independent_verification:
+            return None, "unresolved-source-clock-conflict"
     answer = trace.raw_first.strip()
     if (
         len(answer) < 100 or len(answer) > 5500

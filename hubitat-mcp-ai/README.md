@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.343**.
+Current add-on version: **0.18.344**.
+
+**HomeBrain vNext source-identity and safety gate (v0.18.344):** Real v0.18.343 Gemma telemetry still asserted an active MQTT-broker session and verified silence despite no independent broker packets or reconciled clocks. In the existing opt-in mode, a successful device configuration read now retains *only* positively device-matched driver-code metadata, optionally allowing a single 8,000-character, live-declared read-only driver source chunk. Without this identity proof, no code read is attempted; a numeric ID in model prose is not proof. Technical source authority distinguishes *retrieved code* from *verified implementation behavior*. When conflicting clock readings remain unresolved by independent source evidence, the pre-existing, clock-qualified source-typed publisher takes over instead of publishing unverified unconstrained prose. No control permissions or default-on changes. [Release notes](CHANGELOG-0.18.344.md).
 
 **HomeBrain vNext typed evidence authority (v0.18.343):** When the opt-in `model_first_investigations_enabled` mode is enabled, single-device telemetry synthesis receives a compact request-local source-authority manifest separating saved Hubitat attributes, bounded state events, conflicting metadata clocks, driver-source evidence and independent broker/physical observations. After verified identity/history/scoped logs, one additional read-only device-configuration lookup may be performed, only when a configuration read was not already attempted and the live gateway admits it. This improves the model's evidence context; it does **not** certify model-authored factual claims, independently check MQTT broker state or bypass controls. Mode remains off by default, and the original publisher remains the fallback. [Release notes](CHANGELOG-0.18.343.md).
 

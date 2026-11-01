@@ -59,8 +59,13 @@ def _linked_driver_source_ids(
         if row.get("sub_tool") == "hub_get_device":
             if str(inner.get("deviceId") or "") != target_device_id:
                 continue
-            reported_id = details.get("deviceId") or details.get("id")
-            if reported_id is not None and str(reported_id) != target_device_id:
+            # All explicit identity fields must agree; selecting a single
+            # matching field must not conceal a second contradictory one.
+            if any(
+                details.get(field) not in (None, "")
+                and str(details[field]) != target_device_id
+                for field in ("deviceId", "id")
+            ):
                 continue
         else:
             reported = details.get("reportedDeviceState")
@@ -86,6 +91,47 @@ def _linked_driver_source_ids(
                 if value:
                     ids.add(value)
     return frozenset(ids)
+
+
+
+def verified_driver_configuration_metadata(
+    data: Any, target_device_id: str,
+) -> dict[str, Any] | None:
+    """Retain only an explicitly target-linked driver code ID, not raw config.
+
+    The Hubitat configuration response must itself name the requested device.
+    Device instance IDs, app code, generic type IDs and arbitrary nested
+    numbers are NOT driver source identifiers.
+    """
+    if not isinstance(data, dict):
+        return None
+    target = str(target_device_id or "")
+    observed = str(data.get("deviceId") or data.get("id") or "")
+    if (
+        not target.isdecimal() or observed != target
+        or any(
+            data.get(field) not in (None, "")
+            and str(data[field]) != target
+            for field in ("deviceId", "id")
+        )
+    ):
+        return None
+    candidates = []
+    for container in _CONTAINERS:
+        item = data.get(container)
+        if not isinstance(item, dict):
+            continue
+        for field in _CODE_KEYS:
+            candidate = _numeric_code_id(item.get(field))
+            if candidate:
+                candidates.append(candidate)
+    ids = set(candidates)
+    if len(ids) != 1:
+        return {"deviceId": target, "driverSourceCodeIdentity": "unverified"}
+    return {
+        "deviceId": target,
+        "driverSource": {"sourceCodeId": next(iter(ids))},
+    }
 
 
 def unverified_driver_source_read(
@@ -117,4 +163,4 @@ def unverified_driver_source_read(
     return proposed not in _linked_driver_source_ids(receipts, target_id)
 
 
-__all__ = ["unverified_driver_source_read"]
+__all__ = ["unverified_driver_source_read", "verified_driver_configuration_metadata"]
