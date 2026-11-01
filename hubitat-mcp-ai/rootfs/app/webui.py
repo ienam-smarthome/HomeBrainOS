@@ -199,6 +199,13 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input type="checkbox" id="liveShadowCommandConsent">I authorise three bounded read-only Hubitat device-event reads, with no AI or device controls.</label>
 <button type="button" id="runLiveShadowCommands" disabled>Compare command and switch events</button>
 <div id="liveShadowCommandReport" class="benchmark-report" role="status" aria-live="polite">Not run. Choose date and give fresh consent.</div>
+<div id="liveShadowAppFollowup" hidden>
+<p class="stage5-note">Stage 9.1 · Verified issuing-app follow-up. A separate, recent read-only command recheck is required before a bounded app-log read. It will show only safe decision classifications, not raw messages. No Cloud or device controls.</p>
+<div id="liveShadowAppFocal" class="muted">No verified recorded OFF command selected.</div>
+<label class="benchmark-consent"><input type="checkbox" id="liveShadowAppConsent">I authorise one read-only recorded-command recheck and one bounded issuing-app log query for this recent incident.</label>
+<button type="button" id="runLiveShadowAppDecision" disabled>Investigate recorded OFF command's app decisions</button>
+<div id="liveShadowAppReport" class="benchmark-report" role="status" aria-live="polite">Not run. Separate consent required.</div>
+</div>
 </details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
@@ -723,6 +730,58 @@ document.getElementById('runStage5').onclick=async()=>{
 };
 loadStage5Status();
 
+function liveShadowAppRefreshButton(){
+  const button=document.getElementById('runLiveShadowAppDecision');
+  button.disabled=button.dataset.running==='yes'
+    ||!/^\d{4}-\d{2}-\d{2}T/.test(button.dataset.commandTime||'')
+    ||!document.getElementById('liveShadowAppConsent').checked;
+}
+document.getElementById('liveShadowAppConsent').onchange=liveShadowAppRefreshButton;
+document.getElementById('runLiveShadowAppDecision').onclick=async()=>{
+  const button=document.getElementById('runLiveShadowAppDecision');
+  const report=document.getElementById('liveShadowAppReport');
+  const date=button.dataset.commandTime||'';
+  const device=button.dataset.deviceId||'';
+  if(button.disabled||!/^[0-9]{1,12}$/.test(device))return;
+  button.dataset.running='yes';liveShadowAppRefreshButton();
+  report.textContent='Rechecking the recorded command issuer and reading a bounded app-log window. No controls or Cloud.';
+  try{
+    const response=await fetch(apiPath('api/live-shadow/app-decision'),{
+      method:'POST',cache:'no-store',
+      headers:{'Content-Type':'application/json','x-homebrain-app-log-readonly':'confirmed'},
+      body:JSON.stringify({device_id:device,command_at_utc:date,confirm_app_decision_read:true})
+    });
+    if(!response.ok)throw new Error('Scoped app-decision read unavailable ('+response.status+').');
+    const data=await jsonResponse(response);
+    if(data.schema!=='homebrain-stage91-verified-app-log-shadow.v1')
+      throw new Error('Unexpected decision-source response.');
+    const lines=[
+      'App-decision follow-up · bounded read-only evidence',
+      'Status: '+data.status,
+      'Target device: '+data.device_id,
+      'Recorded command verified in current bounded page: '+(data.command_record_verified_in_bounded_page?'yes':'no'),
+      'Issuing app ID from command record: '+(data.recorded_issuer_app_id||'not established'),
+      'Source-recorded command time: '+(data.verified_command_at_utc||'not verified'),
+      'App-log read attempted: '+(data.app_log_read_attempted?'yes':'no'),
+      'Log rows returned: '+(data.app_log_rows_returned===null?'unknown':data.app_log_rows_returned),
+      'Classified app declarations (not verified execution):'
+    ];
+    for(const entry of data.classified_decision_rows||[]){
+      lines.push('• '+entry.reported_at_utc+' | '+entry.classification
+        +' | identity basis: '+entry.app_identity_basis);
+    }
+    if(!(data.classified_decision_rows||[]).length)
+      lines.push('• No classifiable app decisions in this bounded result; NOT proof no decision occurred.');
+    lines.push('A log declaration is not proof of app execution, physical switching, or the cause of an OFF report.');
+    for(const limit of data.limitations||[])lines.push('Limit: '+limit);
+    const pre=document.createElement('pre');
+    pre.style.whiteSpace='pre-wrap';pre.style.overflowWrap='anywhere';
+    pre.textContent=lines.join('\n');report.replaceChildren(pre);
+  }catch(e){report.textContent='Read-only app decision follow-up did not complete. '+e.message}
+  finally{document.getElementById('liveShadowAppConsent').checked=false;
+    button.dataset.running='no';liveShadowAppRefreshButton()}
+};
+
 function liveShadowCommandRefreshButton(){
   const id=document.getElementById('liveShadowDeviceId').value.trim();
   const date=document.getElementById('liveShadowIncidentDate').value;
@@ -943,6 +1002,14 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
 };
 
 document.getElementById('runLiveShadowCommands').onclick=async()=>{
+  const followup=document.getElementById('liveShadowAppFollowup');
+  followup.hidden=true;
+  document.getElementById('liveShadowAppConsent').checked=false;
+  const followupButton=document.getElementById('runLiveShadowAppDecision');
+  followupButton.dataset.commandTime='';
+  followupButton.dataset.deviceId='';
+  liveShadowAppRefreshButton();
+
   const button=document.getElementById('runLiveShadowCommands');
   const report=document.getElementById('liveShadowCommandReport');
   const id=document.getElementById('liveShadowDeviceId').value.trim();
@@ -960,6 +1027,22 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
     const data=await jsonResponse(response);
     if(data.schema!=='homebrain-stage85-command-shadow.v1')
       throw new Error('Unexpected command-history response.');
+    const recorded=(data.events||[]).filter(item=>
+      item.kind==='recorded_command'&&item.command==='off'
+      &&item.recorded_issuer_app_id
+      &&typeof item.source_reported_time_utc==='string');
+    // Select only an unambiguous recorded OFF command. The API rechecks
+    // its time, target and app ID before allowing an app-log read.
+    if(recorded.length===1){
+      followup.hidden=false;
+      followupButton.dataset.commandTime=recorded[0].source_reported_time_utc;
+      followupButton.dataset.deviceId=data.device_id;
+      document.getElementById('liveShadowAppFocal').textContent=
+        'Recorded OFF at '+recorded[0].source_reported_time_utc
+        +' by app '+recorded[0].recorded_issuer_app_id
+        +' — issuer will be reverified before reading logs.';
+      liveShadowAppRefreshButton();
+    }
     const review=data.transition_review||{};
     const lines=[
       'Recent switching investigation · reported events only',

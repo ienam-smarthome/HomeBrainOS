@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.324**.
+Current add-on version: **0.18.325**.
+
+**Stage 9.1 recorded-command issuer follow-up:** After a bounded device history identifies one OFF command with a source-reported app producer, a separate consent enables one **fresh exact-time command recheck** and one **app-ID-scoped four-minute Hubitat diagnostic log read**. Public results contain only safe decision classifications, never app-log messages or a claimed physical cause. The input cannot select an arbitrary app ID. No Cloud or device controls. [Release notes](CHANGELOG-0.18.325.md).
 
 **Stage 9.0 recent incident report reconstruction:** Command Shadow now describes bounded ON-to-OFF state-report intervals, unmatched events and missing command provenance in natural language before the technical audit. It never calls those physical cycles, authenticated timing or identified automation causes. No new Hubitat reads, Cloud AI, device commands or production publisher changes. [Release notes](CHANGELOG-0.18.324.md).
 
