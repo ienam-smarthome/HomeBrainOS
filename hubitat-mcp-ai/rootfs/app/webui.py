@@ -742,6 +742,7 @@ document.getElementById('runLiveShadow').onclick=async()=>{
       'Selected device ID: '+data.target_device_id,
       'Context complete: '+(data.live_context_complete?'yes':'no'),
       'Read-only follow-up ready: '+(data.ready_for_read_only_investigation?'yes':'no'),
+      'Provisional target report available: '+(data.ready_for_device_scoped_observation?'yes':'no'),
       'Causal attribution proven: NO',
       'Hub context read at: '+data.observed_at_utc,
       'Reported states (not physical proof):'
@@ -750,6 +751,16 @@ document.getElementById('runLiveShadow').onclick=async()=>{
       lines.push('• '+key+': '+String(value));
     }
     if(!Object.keys(data.device_reported_states||{}).length)lines.push('• No allowlisted state fields');
+    const diagnostic=data.context_diagnostics||{};
+    lines.push('Context integrity checks:');
+    lines.push('• Bounded device list: '+(diagnostic.device_array_well_formed_and_bounded?'yes':'no'));
+    lines.push('• Identity coverage marker: '+String(diagnostic.identity_marker||'unknown'));
+    lines.push('• Count/total comparison: '+String(diagnostic.total_marker||'unknown'));
+    lines.push('• Explicit partial/truncated: '+(diagnostic.explicit_partial_or_truncated?'yes':'no'));
+    if(Number.isInteger(diagnostic.returned_device_count))
+      lines.push('• Devices represented in returned snapshot: '+diagnostic.returned_device_count);
+    if(data.status==='scoped_reports_unverified_inventory')
+      lines.push('Important: these are PROVISIONAL reports from a returned subset; missing metadata does not prove completeness.');
     lines.push('Evidence limitation:');
     for(const item of data.evidence_limitations||[])lines.push('• '+item);
     lines.push('Next: '+data.reason);

@@ -65,15 +65,59 @@ def test_single_device_readiness_and_transport_not_device_proof():
     lambda x: x.update({"partial": True}),
     lambda x: x.update({"truncated": True}),
     lambda x: x.update({"totalDevices": 100}),
-    lambda x: x.pop("totalDevices"),
-    lambda x: x.pop("idsComplete"),
 ])
 def test_partial_or_unknown_inventory_must_fail_closed(mutation):
     x = context()
     mutation(x)
     p = project(x)
-    assert p["status"] == "blocked_incomplete_context"
+    assert p["status"] in {"blocked_explicit_partial_context", "blocked_total_mismatch"}
     assert not p["ready_for_read_only_investigation"]
+    assert p["device_reported_states"] == {}
+
+
+@pytest.mark.parametrize("remove", ["idsComplete", "totalDevices"])
+def test_missing_completeness_marker_gives_only_provisional_target_report(remove):
+    c = context()
+    c.pop(remove)
+    p = project(c)
+    assert p["status"] == "scoped_reports_unverified_inventory"
+    assert p["live_context_complete"] is False
+    assert p["ready_for_read_only_investigation"] is False
+    assert p["ready_for_device_scoped_observation"] is True
+    assert p["device_reported_states"]["healthStatus"] == "offline"
+    assert p["context_diagnostics"]["identity_marker"] in ("complete", "missing_or_unrecognised")
+    assert p["context_diagnostics"]["total_marker"] in ("matching", "missing_or_unrecognised")
+    assert p["publisher_approval"] is False
+
+
+def test_numeric_string_total_supported_only_when_identity_complete():
+    c = context()
+    c["totalDevices"] = "2"
+    p = project(c)
+    assert p["status"] == "ready_for_read_only_followup"
+    assert p["live_context_complete"] is True
+    assert p["context_diagnostics"]["total_marker"] == "matching"
+
+
+def test_unknown_target_in_provisional_subset_is_not_global_absence():
+    c = context()
+    c.pop("idsComplete")
+    p = project(c, device_id="9999")
+    assert p["status"] == "target_not_seen_in_unverified_context"
+    assert not p["ready_for_read_only_investigation"]
+    assert p["device_reported_states"] == {}
+
+
+def test_target_not_exposed_when_partial_or_count_conflicts():
+    c = context()
+    c["truncated"] = True
+    p = project(c)
+    assert p["status"] == "blocked_explicit_partial_context"
+    assert p["device_reported_states"] == {}
+    c = context()
+    c["totalDevices"] = 9
+    p = project(c)
+    assert p["status"] == "blocked_total_mismatch"
     assert p["device_reported_states"] == {}
 
 
