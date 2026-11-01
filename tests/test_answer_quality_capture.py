@@ -185,6 +185,79 @@ def test_absent_or_invalid_gap_field_is_not_a_verified_empty_list():
     assert invalid["missing_source_kind_count"] is None
     assert "SECRET-PRIVATE-GAP" not in json.dumps(invalid)
 
+
+def test_real_response_nested_source_coverage_does_not_look_absent():
+    item = response()
+    item["metrics"]["counters"]["synthesis_repair_failed"] = 1
+    item["investigation_coverage"].update({
+        "status": "partial-evidence",
+        "evidenceComplete": False,
+        "sourceChecksComplete": True,
+        "sourceIntegrityWarnings": ["SECRET-PRIVATE-EVENT-HISTORY-DETAIL"],
+        "sourceCoverage": {
+            "missingSourceKinds": [],
+            "sourceKindsChecked": True,
+        },
+    })
+    packet = extract_capture(
+        item, case_id="causal_light2_off", actual_question=None, root=ROOT,
+    )
+    assert packet["source_gap_reporting"] == "provided"
+    assert packet["missing_source_kind_count"] == 0
+    assert packet["source_checks_complete_reported"] is True
+    assert packet["source_kinds_checked_reported"] is True
+    assert packet["evidence_complete_reported"] is False
+    assert packet["source_integrity_warning_count"] == 1
+    assert packet["synthesis_repair_failed_reported"] == 1
+    assert packet["source_packet_completeness"] == "not_independently_verified"
+    assert "SECRET-" not in json.dumps(packet)
+
+
+def test_nested_missing_kinds_are_allowlisted_and_deduplicated():
+    item = response()
+    item["investigation_coverage"]["sourceCoverage"] = {
+        "missingSourceKinds": [
+            "app_logs", "device_history", "app_logs",
+            "SECRET-HOUSEHOLD-NAME", {"private": "SECRET-NESTED"},
+        ]
+    }
+    packet = extract_capture(
+        item, case_id="device_mqtt_conflict", actual_question=None, root=ROOT,
+    )
+    assert packet["source_gap_reporting"] == "provided"
+    assert packet["missing_source_kind_count"] == 5
+    assert packet["recognized_missing_source_kinds"] == ["app_logs", "device_history"]
+    assert packet["unclassified_missing_source_count"] == 2
+    assert "SECRET-" not in json.dumps(packet)
+
+
+def test_conflicting_top_level_and_nested_source_gap_reports_fail_closed():
+    item = response()
+    item["investigation_coverage"]["missingSourceKinds"] = []
+    item["investigation_coverage"]["sourceCoverage"] = {
+        "missingSourceKinds": ["SECRET-PRIVATE-GAP"]
+    }
+    packet = extract_capture(
+        item, case_id="causal_light2_off", actual_question=None, root=ROOT,
+    )
+    assert packet["source_gap_reporting"] == "conflicting"
+    assert packet["missing_source_kind_count"] is None
+    assert packet["recognized_missing_source_kinds"] == []
+    assert "SECRET-PRIVATE-GAP" not in json.dumps(packet)
+
+
+def test_missing_nested_metadata_is_not_false_or_zero():
+    item = response()
+    packet = extract_capture(
+        item, case_id="causal_light2_off", actual_question=None, root=ROOT,
+    )
+    assert packet["source_checks_complete_reported"] is None
+    assert packet["source_kinds_checked_reported"] is None
+    assert packet["evidence_complete_reported"] is None
+    assert packet["source_integrity_warning_count"] is None
+    assert packet["synthesis_repair_failed_reported"] is None
+
+
 def test_missing_model_answer_is_invalid():
     item = response()
     item["message"] = None
