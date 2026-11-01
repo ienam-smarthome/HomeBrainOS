@@ -268,3 +268,100 @@ def block_unscoped_historical_logs(
 
 
 __all__ += ["pending_scoped_explanation_command_read", "block_unscoped_historical_logs"]
+
+
+def pending_recent_focal_command_read(
+    request: str, receipts: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """One scoped command-history read for a recent observed ON/OFF boundary.
+
+    This completes a *missing source class* for normal-language questions,
+    rather than requiring a date and internal device ID in the user's words.
+    It never infers an issuing app, physical cause or original state action.
+    """
+    request_text = str(request or "")
+    is_recent = re.search(
+        r"(?i)\b(?:most recent(?:ly)?|latest|last)\b", request_text,
+    ) is not None
+    action_match = re.search(
+        r"(?i)\b(?:turned|went|switched|turn|switch|turning)\s+(on|off)\b"
+        r"|\b(?:on|off)\s+commands?\b"
+        r"|\bcommands?\s+(on|off)\b", request_text,
+    )
+    if not is_recent or not action_match:
+        return None
+    action = (action_match.group(1) or action_match.group(2)
+              or re.search(r"(?i)\b(on|off)\b", action_match.group(0)).group(1)).lower()
+    # This is a causal source obligation, not a general last-state query.
+    if not re.search(
+        r"(?i)\b(?:why|investigat\w*|cause|issuer|issued|command|"
+        r"automation|trigger|responsib\w*|provenance)\b", request_text,
+    ):
+        return None
+    verified: dict[str, str] = {}
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("evidence_kind") != "targeted_device_lookup":
+            continue
+        details = row.get("details")
+        state = details.get("reportedDeviceState") if isinstance(details, dict) else None
+        if not isinstance(state, dict):
+            continue
+        device_id = str(state.get("deviceId") or "")
+        label = str(state.get("label") or "").strip()
+        if (
+            device_id.isdecimal() and label
+            and re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])",
+                          request_text, re.IGNORECASE)
+        ):
+            verified[device_id] = label
+    if len(verified) != 1:
+        return None
+    device_id, label = next(iter(verified.items()))
+    horizons: list[int] = []
+    boundary_present = False
+    for row in receipts:
+        if not isinstance(row, dict):
+            continue
+        args = _args(row)
+        op = str(row.get("sub_tool") or
+                 (row.get("arguments") or {}).get("tool") or "")
+        if op == "hub_list_device_events" and str(args.get("deviceId") or "") == device_id:
+            if str(args.get("attribute") or "").lower() == f"command-{action}":
+                return None  # prior attempt, success or failure
+            if row.get("success") is True:
+                try:
+                    hours = int(args.get("hoursBack", args.get("hours_back")))
+                    if 1 <= hours <= 720:
+                        horizons.append(hours)
+                except (TypeError, ValueError, OverflowError):
+                    pass
+        if (row.get("tool") != "homebrain_device_history"
+                or row.get("success") is not True):
+            continue
+        details = row.get("details")
+        if not isinstance(details, dict):
+            continue
+        if str(details.get("label") or "").casefold() != label.casefold():
+            continue
+        if str(args.get("name") or "").casefold() != label.casefold():
+            continue
+        for event in (details.get("observedEvents") or [])[:200]:
+            if (
+                isinstance(event, dict)
+                and str(event.get("name") or "").lower() == "switch"
+                and str(event.get("value") or "").lower() == action
+                and isinstance(event.get("date"), str)
+            ):
+                boundary_present = True
+                break
+    if not boundary_present or not horizons:
+        return None
+    return {
+        "deviceId": device_id, "label": label[:120],
+        "action": action, "hoursBack": max(horizons),
+    }
+
+
+__all__.append("pending_recent_focal_command_read")
