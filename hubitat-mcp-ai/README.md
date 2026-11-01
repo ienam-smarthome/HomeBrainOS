@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.304**.
+Current add-on version: **0.18.305**.
+
+**Stage 7.3 source-value declaration coverage:** If a fictional model explanation provides `atoms=[]` for a non-relational sentence, the benchmark now preserves the explanation for **explicitly unaudited** human review instead of collapsing the whole four-request run, and clearly scores missing model-declared field proofs. Relation claims can still be supported by host structural comparisons without artificial field atoms. Oversized/malformed/duplicate assertions still fail validation; false values remain flagged as mismatched; high-risk physical and absence claims remain unsupported and no production publisher is enabled. [Release notes](CHANGELOG-0.18.305.md).
 
 **Stage 7.2 direct-answer coverage review:** The synthetic final-answer prompt now asks Gemma to answer the original incident question explicitly, separate causal uncertainty from the event list, and scope negative claims to inspected records. After the answer, an independent source-linked reviewer rubric exposes question-specific obligations without giving those references to the model beforehand. Review judgments remain manual and do not certify or activate the production publisher. [Release notes](CHANGELOG-0.18.304.md).
 
