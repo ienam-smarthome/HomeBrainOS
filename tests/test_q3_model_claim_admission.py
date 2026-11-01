@@ -54,7 +54,6 @@ def plan(ids=None):
 
 def test_model_claims_choose_order_but_not_unverified_sentence_content():
     claims = attested_telemetry_claims(normalized(), coverage())
-    assert set(plan.__name__ for _ in [1])  # stable test module loaded
     assert set(["reported_health", "reported_mqtt", "clock_conflict",
                 "cause_unverified", "next_readonly"]).issubset(claims)
     prompt = model_claim_prompt(normalized(), coverage())
@@ -64,7 +63,7 @@ def test_model_claims_choose_order_but_not_unverified_sentence_content():
     assert text.startswith("Hubitat reports Test Relay healthStatus=offline")
     assert "mqttStatus=connected" in text
     assert "The saved lastSeen and dataAgeSeconds metadata disagree" in text
-    assert "do not establish why" in text
+    assert "do not establish whether" in text
     assert "next read-only check" in text
     assert "physical endpoint" in text
 
