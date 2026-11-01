@@ -13,7 +13,7 @@ For the hallway example:
 - The response's own `investigation_coverage` reported **`rootCauseVerified=null`**, **`questionResolved=false`**, **`missingSourceKinds=["command_history"]`** and proposed external-initiator hypothesis unverified. There were no verified focal app-command decision records in the supplied evidence packet.
 - The model nonetheless asserted **high confidence** that a physical interaction or external bridge command caused the OFF transition because the event was typed `physical` and produced by a bridge. **That inference is not established.** A bridge reporting the state change does not mean the originating automation could not be in Hubitat.
 - The model retrieved relevant motion history and accurately reported the corresponding timing, but **did not integrate those facts into its causal preference**.
-- Reported full request: **65.9 seconds** wall time (approximately 64.3 seconds agent phase), **17 tool calls**, **10 model rounds**, free Ollama Cloud Gemma. This exceeds the preferred 45-second complex-investigation target, but the sample is too small to establish a performance distribution.
+- Reported full request: **67.1 seconds** wall time (approximately 64.3 seconds agent phase), **17 tool calls**, **10 model rounds**, free Ollama Cloud Gemma. This exceeds the preferred 45-second complex-investigation target, but the sample is too small to establish a performance distribution.
 - The answer contains a visible raw `\\n\\n` and crowded markdown heading. These are presentation-quality defects, not the underlying evidence error.
 
 For the living-room example:
