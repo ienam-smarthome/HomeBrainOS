@@ -103,7 +103,7 @@ def test_bad_input_fails_closed(id,when):
 def test_private_log_text_never_published_and_app_identity_reviewed():
     p=verified_issuer(plan(),envelope({"success":True,"events":[command()]}))
     output=project_verified_app_logs(p,envelope({"success":True,"logs":[
-        log(appId="4012",message="Action: Off: Secret Hallway Light password=private"),
+        log(appId="4012",message="Turning off Secret Hallway Light password=private"),
         log(appId="9999",message="Action: Off: Should not be accepted"),
         log(message="Button pressed near token:xyz@example.com"),
         log(at="2026-11-01T01:00:00Z",appId="4012",message="Action: Off: Too old"),
