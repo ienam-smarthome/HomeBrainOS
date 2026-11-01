@@ -104,7 +104,7 @@ def _run(model):
                        "atoms": [{"record_id": "E999", "field": "state", "value": "on"}]}],
         "uncertainties": ["Unknown physical operation"],
         "next_evidence": "Look for device acknowledgement",
-    }), "unknown_or_malformed_evidence_citation"),
+    }), "unknown_record_id_in_citation"),
     (json.dumps({
         "schema": "homebrain-stage6-answer.v2",
         "sentences": [{"text": "The device was reported on.",
