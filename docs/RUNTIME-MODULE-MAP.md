@@ -210,11 +210,11 @@ The repository drift test compares this table directly with the live directory. 
 | `general_evidence_completion.py` | Checks required investigative source classes against successful, scoped read receipts and reports missing classes without promoting source checks to proof. |
 | `shared_investigation_completion.py` | API-boundary, route-independent evidence coverage and partial-outcome reporting; never changes Hubitat or claims a read proves causality. |
 | `publication_boundary_shadow.py` | Records privacy-minimal, ungraded shape-only metadata when source-typed telemetry finalisation replaces an incoming answer; never retains model text, claims, devices, or changes publication policy. |
-| `driver_source_identity_guard.py` | Fail-closed driver-source code-ID admission for typed single-device investigations; requires a positively linked metadata receipt rather than confusing device IDs with source-code IDs. |
+| `driver_source_identity_guard.py` | Fail-closed source code-ID admission and minimal target-ID verified config metadata extractor; instance IDs never substitute for Groovy driver code IDs. |
 | `single_device_read_scope.py` | Admission of late whole-home context/name-filter calls after a verified single-target device-state and event-history pair; preserves focused reads and explicit wider-scope objectives. |
 | `telemetry_completion_policy.py` | Evidence-scoped stop for already checked single-device state/history/logs and a meaningful discriminator; prevents multiple independent diagnostic retry engines extending a partial-but-honest status answer. |
 | `proof_carrying_answer.py` | Validates model-selected claim plans against independently normalized, bounded single-device status/clock evidence; compiles only verified source statements, rejects unsupported free-form prose and leaves other domains fail-closed. |
-| `source_authority_packet.py` | Builds typed source-role, clock-conflict and independently verified-broker boundaries from current-turn telemetry receipts, and plans at most one ID-scoped read-only device configuration read. |
+| `source_authority_packet.py` | Builds typed source-role and clock-conflict authority; plans one target-scoped device configuration and one independently linked bounded read-only driver source chunk if verified metadata exists. |
 | `source_claim_contract.py` | Shared closed-schema claim-ID admission for host-attested fact catalogs and mandatory source limitations; no model prose, source reads or write authority. |
 | `model_first_publication.py` | Opt-in read-only model-authored telemetry output admission; verifies unchanged first model draft plus bounded high-risk source consistency; falls back without extra model calls or write permissions. |
 | `model_first_draft_provenance.py` | Private request-local provenance for the first no-tools provider completion, the coordinator output and author-boundary answer; exposes only privacy-safe transition booleans and never authorizes unsupported model prose. |
@@ -288,6 +288,6 @@ The repository drift test compares this table directly with the live directory. 
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
 | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
 | `tool_catalog_assembly.py` | Combines a request's already-fetched remote tools with the fixed local tool set into a ready `ToolDiscoveryCatalog`. |
-| `tool_executor.py` | Dispatches approved calls and records normalised results. |
+| `tool_executor.py` | Dispatches approved calls and records normalised results; for device configuration retains only ID-scoped driver source identity rather than raw settings. |
 | `tool_registry.py` | Defines local schemas and structured tool effects. |
 | `webui.py` | Renders the Home Assistant ingress interface. |
