@@ -22,6 +22,7 @@ from source_analysis_completion import (
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
+from driver_source_identity_guard import unverified_driver_source_read
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from device_incident_depth import (
     device_incident_followup, incident_progress_followup,
@@ -6244,6 +6245,17 @@ class UnifiedMCPAgent:
                     if investigative_request and not self._mutation_requested_by_user.get()
                     else None
                 )
+                # Source code IDs and device instance IDs are separate
+                # namespaces. Do not send a model-guessed driver ID to Hubitat
+                # once the read-only investigation has an attested device.
+                unlinked_driver_source = (
+                    unverified_driver_source_read(
+                        name, arguments, self.evidence.receipts(),
+                        domain=contract.domain if contract is not None else None,
+                    )
+                    if investigative_request and not self._mutation_requested_by_user.get()
+                    else False
+                )
                 missing_related_attribute = bool(
                     investigative_request
                     and name == _LOCAL_DEVICE_HISTORY_TOOL
@@ -6270,6 +6282,20 @@ class UnifiedMCPAgent:
                             "completed host-side from the resolved subject metadata. "
                             "Use the gathered controller/provenance evidence and move "
                             "to a different evidence class."
+                        )
+                    })
+                elif unlinked_driver_source:
+                    increment_active_metric("unverified_driver_source_ids_blocked")
+                    content = json.dumps({
+                        "error": (
+                            "Skipped driver source read: the proposed id has "
+                            "not been verified as the target device's "
+                            "driver SOURCE-CODE ID. A Hubitat device ID is "
+                            "not a driver code ID. Inspect matching "
+                            "device-scoped metadata for an explicit source "
+                            "code ID; if unavailable, state that driver "
+                            "implementation and watchdog behaviour remain "
+                            "unverified. No source call was executed."
                         )
                     })
                 elif scope_breadth_reason is not None:

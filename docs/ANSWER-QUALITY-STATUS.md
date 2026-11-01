@@ -2,8 +2,16 @@
 
 **Charter:** [ANSWER-QUALITY-CHARTER.md](ANSWER-QUALITY-CHARTER.md)  
 **Last baseline assessment:** 2026-11-01; **0 independently authenticated frozen-prompt first-attempt production reviews**, **2 complete source-bounded cross-domain diagnostics** (recorded command versus bridge reporter; device health versus MQTT status). The official scorecard remains **NOT MEASURED**.  
-**Current maintained add-on on main:** `0.18.334` ([PR #1240](https://github.com/ienam-smarthome/HomeBrainOS/pull/1240), merged `8040fd996bca635e766a938a901493c58d6398e7`, **7 exact-head CI checks green**). Adds privacy-minimal publication replacement observability and a fixed no-tools comparison prompt generator; **does not change the production answer-selection policy**. No live v0.18.334 reasoning, speed or Claude parity gain has been measured.
+**Most recent verified installed live add-on:** `0.18.336` (pending `0.18.337` source-identity fix in Q3 PR; see changelog) ([PR #1240](https://github.com/ienam-smarthome/HomeBrainOS/pull/1240), merged `8040fd996bca635e766a938a901493c58d6398e7`, **7 exact-head CI checks green**). Adds privacy-minimal publication replacement observability and a fixed no-tools comparison prompt generator; **does not change the production answer-selection policy**. No live v0.18.334 reasoning, speed or Claude parity gain has been measured.
 **Live Hubitat/HA mutation:** none authorised by this quality programme.
+
+## Live v0.18.336 comparison and source-identity finding (2026-11-01)
+
+**Observed v0.18.336:** The user provided full device-telemetry response and JSON for Bedroom 3 Mesh. The response is still concise and source-based, but `publicationBoundaryShadow.replacementPerformed=true`, `incomingVerifiedRawModelDraft=false`; the model's full explanation was **not source-attested**. Gemma 4 Ollama Cloud performed **5 model rounds**, **6 tool calls**, **17,553 ms provider time**, **21,232 ms elapsed** (prior v0.18.335 was 5 rounds, 8 calls, 19,018 ms provider, 24,910 ms elapsed). Unrelated 207-device whole-hub scan and generic name filter did not recur; no `single_device_broad_reads_suppressed` counter appeared, so the guard's causal impact cannot be isolated from this trace. Different source windows prevent a controlled speed A/B.
+
+**Specific remaining blocker:** the model sent `hub_get_source(type=driver,id=7103)` which failed. **7103 is a verified device-instance ID, not a verified driver source-code ID**. The source/method semantics, true endpoint last packet, broker state and physical outage remain unproven. The 11 bounded deviceHealth records alternate `unknown` and `stale` approximately every five minutes; this does not prove physical reconnection. The saved `lastSeen` on Oct 12 and static `dataAgeSeconds=162325` disagree (500.2 vs 45.1 hours at read).
+
+**v0.18.337 source-identity candidate:** enforce a general read-only source-code-ID provenance gate on driver-source reads only after a positively established single-device target, preserving matching metadata and other sources, without new model calls. If merged, leave actual live impact **NOT MEASURED** until a comparable test. **Still open:** independently attest the raw model draft and gate model-authored claims by receipts across telemetry/lighting/heating. Do not mistake a blocked incorrect read, a checked source class or current deterministic answer for confirmed root cause or Claude-level reasoning. No home-system writes.
 
 ## Live v0.18.335 Q3 observation and next general architecture step (2026-11-01)
 

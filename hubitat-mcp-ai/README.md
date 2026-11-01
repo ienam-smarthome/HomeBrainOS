@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.336**.
+Current add-on version: **0.18.337**.
+
+**Answer Quality Q3 verified driver-source ID (v0.18.337):** A device instance ID cannot be substituted for a driver code ID. Source reads now require a positively target-linked code ID from Hubitat metadata; unverified source lookups are rejected locally without a hub call or fabricated method interpretation. Scoped logs and independent diagnostics remain available. [Release notes](CHANGELOG-0.18.337.md).
 
 **Answer Quality Q3 read admission (v0.18.336):** After a single named device has a verified ID-scoped history and matching targeted state, suppress model-proposed whole-home snapshots and unrelated name filters for that request. Preserve scoped driver/log/network reads and explicitly requested multi-device comparisons. This removes avoidable broad reads, not verified model rounds or claim validation. No live speed gain certified. [Release notes](CHANGELOG-0.18.336.md).
 
