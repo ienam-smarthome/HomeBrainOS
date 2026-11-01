@@ -93,6 +93,9 @@ from live_shadow_preflight import build_live_shadow_preflight, build_verified_de
 from live_shadow_journal import project_shadow_history
 from live_shadow_case_brief import summarize_bounded_archive
 from live_shadow_commands import read_plan, project_command_shadow
+from live_shadow_app_decision import (
+    app_decision_read_plan, verified_issuer, project_verified_app_logs,
+)
 from mcp_client import tool_succeeded
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
@@ -631,6 +634,12 @@ class LiveShadowCommandRequest(BaseModel):
     device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
     incident_utc_date: str = Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
     confirm_command_read: bool = False
+
+
+class LiveShadowAppDecisionRequest(BaseModel):
+    device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
+    command_at_utc: str = Field(min_length=20, max_length=64)
+    confirm_app_decision_read: bool = False
 
 
 class Stage5BenchmarkRequest(BaseModel):
@@ -1388,6 +1397,72 @@ async def live_shadow_command_events(
         plan, results, read_at_utc=now.isoformat(),
     )
     return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/live-shadow/app-decision")
+async def live_shadow_app_decision(
+    payload: LiveShadowAppDecisionRequest, request: Request,
+) -> JSONResponse:
+    """One fixed re-verification read, then one issuer-scoped app log read.
+
+    No caller app ID, free-form subtool, cloud inference, live device commands,
+    persistent data collection or production publication.
+    """
+    if (payload.confirm_app_decision_read is not True
+            or request.headers.get("x-homebrain-app-log-readonly") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower()
+                != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(status_code=403, detail="Separate read-only app-log consent required.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403, detail="Same-origin request required.")
+    if not mcp.configured:
+        raise HTTPException(status_code=503, detail="Hubitat MCP is not configured.")
+    now = datetime.now(timezone.utc)
+    try:
+        plan = app_decision_read_plan(payload.device_id, payload.command_at_utc, now)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid recent, bounded command timestamp.") from None
+    # Neither the tool name nor the requested app ID is caller-selected.
+    try:
+        command_result = await asyncio.wait_for(
+            mcp.call_tool("hub_read_devices", {
+                "tool": "hub_list_device_events",
+                "args": {
+                    "deviceId": plan["device_id"],
+                    "hoursBack": plan["hours_back"],
+                    "limit": plan["event_limit"],
+                    "attribute": "command-off",
+                },
+            }), timeout=25.0,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Scoped command identity read failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Scoped command identity read unavailable.") from None
+    identity = verified_issuer(plan, command_result)
+    args = identity.pop("log_read_arguments", None)
+    if not args:
+        return JSONResponse(identity, headers={"Cache-Control": "no-store"})
+    try:
+        app_result = await asyncio.wait_for(
+            mcp.call_tool("hub_read_diagnostics", args), timeout=25.0,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Scoped app decision read failed: %s", type(exc).__name__)
+        identity["status"] = "app_log_read_unavailable"
+        identity["app_log_read_attempted"] = True
+        return JSONResponse(identity, headers={"Cache-Control": "no-store"})
+    # The projector strips free-text log messages, source names and secrets.
+    identity["log_read_arguments"] = args
+    projected = project_verified_app_logs(identity, app_result)
+    return JSONResponse(projected, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/evidence-journal/status")
