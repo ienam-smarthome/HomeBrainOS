@@ -7,7 +7,6 @@ unbounded attributes, log text, tokens or network identifiers.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from device_read_contract import live_context_is_complete
@@ -68,6 +67,8 @@ def build_live_shadow_preflight(
         ],
     }
     if (not live_context_is_complete(context)
+            or context.get("idsComplete") is not True
+            or type(context.get("totalDevices")) is not int
             or len(context.get("devices", [])) > _MAX_DEVICES):
         return {**baseline, "status": "blocked_incomplete_context",
                 "ready_for_read_only_investigation": False,
