@@ -18,6 +18,28 @@ Read [the permanent charter](ANSWER-QUALITY-CHARTER.md) and [live status](ANSWER
 5. Run the scorecard. Compare measured sample size, grounded claims, first-attempt usefulness, overclaims, safety and latency. Reject improvements that merely make an answer sound more confident or add redundant tool calls.
 6. Once a meaningful before/after effect is demonstrated, update the [status](ANSWER-QUALITY-STATUS.md), CI/PR and next action. This becomes the next chat's starting point.
 
+## Q1: privacy-minimal HomeBrain live capture
+
+The HomeBrain technical JSON includes actual device labels, IP addresses, command arguments, event payloads and potentially private logs. **Do not commit unredacted output to public GitHub**.
+
+After a user supplies the complete HomeBrain JSON in a private conversation, the assistant can review the source evidence in that conversation. For local reproducibility, the new `scripts/answer_quality_capture.py` extracts only limited metadata, hashes and ungraded coverage counts.
+
+```bash
+python scripts/answer_quality_capture.py \
+  --case-id causal_light2_off \
+  --input /private/homebrain-answer.json \
+  --question-file /private/exact-question.txt \
+  --output /private/ungraded-capture.json
+```
+
+The script **does not grade** correctness, quote private answer text, include raw tool responses, prove device safety, or claim a full-source replay. Its `prompt_match=exact` means only that the submitted question matches the registered *live* task question; synthetic curated cases are not live-replay equivalent simply because their words match. Review the technical response separately and label all conclusions supported, unsupported or unverified.
+
+For the first current-build capture, use the registered `causal_light2_off` question **verbatim**:
+
+> Investigate why Livingroom Light 2 turned OFF most recently. Do not change anything.
+
+The older observed Gemma reasoning failures are documented in [Q1 retrospective](ANSWER-QUALITY-Q1-RETROSPECTIVE.md). They are not scored as a frozen before/after benchmark.
+
 ## Scorecard commands
 
 ```bash
