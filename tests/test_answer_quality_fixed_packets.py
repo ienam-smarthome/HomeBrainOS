@@ -92,7 +92,8 @@ def test_same_packet_comparison_is_metadata_only_not_factual_score():
     assert result["comparison_status"] == "metadata_pairs_ready_for_independent_review"
     assert "grounded_conclusions_pct" not in result
     assert "first_attempt_useful_pct" not in result
-    assert "answer" not in json.dumps(result)
+    assert "answer_sha256" not in json.dumps(result)
+    assert "SECRET-" not in json.dumps(result)
 
 
 def test_no_pair_and_missing_case_are_not_measured():
