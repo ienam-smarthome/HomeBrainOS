@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.307**.
+Current add-on version: **0.18.308**.
+
+**Stage 7.6 cross-scenario calibration:** Experimental command timelines now distinguish comparable recorded time-of-day values from physical execution, cross-day order and clock accuracy; the evidence ladder also exposes receipt-versus-source clocks and broker-versus-device connectivity. The synthetic Ollama prompt asks for evidence that could establish causal linkage rather than assuming telemetry identifies an initiating app. Mobile review separately assesses next-evidence recommendations and clarifies unverified uncertainty warnings. Mock regression tests cover all three scenarios without real Cloud/device activity or production publisher changes. [Release notes](CHANGELOG-0.18.308.md).
 
 **Stage 7.5 independent evidence-vs-answer review:** A postrun, synthetic-only evidence layer now distinguishes host-observable evidence types from model-supplied sentence labels, original-question completeness from citation overlap, and reported state/telemetry from command-correlated physical causation. Mobile review explicitly shows these as different diagnostics; it never automatically grades Gemma's natural prose, sends extra Cloud requests, changes live Hubitat/HA devices, or enables the production publisher. [Release notes](CHANGELOG-0.18.307.md).
 
