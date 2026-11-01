@@ -886,6 +886,21 @@ class Stage6Benchmark:
                     "Do not cite unexamined or imagined records. If a claim "
                     "has no available record support, omit that sentence "
                     "rather than citing a group or inventing a record. "
+                    "evidence_ids MUST be a JSON ARRAY of 1 to 3 distinct "
+                    "nonempty STRING leaf IDs from allowed_evidence_record_ids. "
+                    "Never use a bare string, CSV string, object, number, "
+                    "null, empty array, repeated ID, or more than 3 IDs. "
+                    "Prefer exactly ONE ID for a simple observation or command; "
+                    "use 2-3 only when the sentence relates multiple records. "
+                    "Each atoms[].record_id must also be a cited leaf ID. "
+                    "Exact illustrative sentence-object JSON, SHAPE ONLY; "
+                    "do not copy it into the incident explanation: "
+                    '{"text":"A source report was recorded.",'
+                    '"kind":"state_report","evidence_ids":["I1"],'
+                    '"atoms":[],"epistemic":{"position":"affirmed",'
+                    '"scope":"examined_records"}}. '
+                    "The example I1 is the initial fictional record ID in "
+                    "these fixtures; only cite facts actually supported. "
                     "Also extract up to four exact SOURCE "
                     "field/value atoms stated by the sentence; do not invent "
                     "values. For a supported source-factual assertion declare "
@@ -919,7 +934,8 @@ class Stage6Benchmark:
                     "state_report,command_record,device_telemetry,broker_session,"
                     "rule_decision,timestamp_basis,time_order_conflict,"
                     "competing_commands,physical_confirmation,unique_cause,"
-                    "absence_proven. evidence_ids 1-3 shown IDs. atoms array "
+                    "absence_proven. evidence_ids must be an array of "
+                    "one to three allowed string record IDs. atoms array "
                     "of {record_id,field,value} with field exactly as in source "
                     "record and value exact JSON primitive; [] marks missing "
                     "declared source-value proof for ANY kind (not a pass). "

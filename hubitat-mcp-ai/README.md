@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.313**.
+Current add-on version: **0.18.314**.
+
+**Stage 6.11 citation-shape prompt hardening:** The synthetic final-answer prompt now explicitly requires evidence_ids to be a JSON array of 1–3 distinct leaf-record strings, prefers a single record for a simple claim, and supplies one non-case-specific JSON shape example. It retains the exact leaf allowlist from Stage 6.10 and rejects malformed identifiers without repair or retry. Regression tests include malformed list shapes and all three mocked scenarios within the four-call limit. [Release notes](CHANGELOG-0.18.314.md).
 
 **Stage 6.10 citation-contract clarity:** Explicitly lists examined leaf evidence record IDs for the synthetic final answer and distinguishes source container S* references from E*/I* record IDs. Unknown, malformed, duplicate or source-container citations still fail closed, with safe diagnostic codes and no retry or leaked authored content. Production publisher remains untouched. [Release notes](CHANGELOG-0.18.313.md).
 
