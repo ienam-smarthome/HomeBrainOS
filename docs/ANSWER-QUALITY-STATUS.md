@@ -13,14 +13,15 @@
 - **Baseline answer quality:** **NOT MEASURED**. Passing thousands of unit tests and release assurance does **not** measure factual accuracy or compare fairly with Claude.
 - **Real evidence motivating this change:** the Hallway Light 1 investigation first overclaimed a 15-second timeout; a later answer inferred unverified periodic keep-off while disregarding four independent source-timed motion-inactive → app OFF command pairs at approximately 15.1s. The **exact original 15:29 OFF trigger remains unverified**.
 - **Known model:** free Ollama Cloud `gemma4:31b` as observed in the user's last HomeBrain trace; model/provider must be documented on each new run.
-- **Current active task: Q1 actual baseline.** Capture one exact registered current-build, read-only HomeBrain answer (start with `causal_light2_off`), independently check source evidence and grade against the frozen case. The privacy-minimal Q1 extractor and historical failure analysis are being added in this PR. **0 quality-reviewed current-build answers**; user involvement remains Q&A capture only.
+- **Q1 capture tooling delivered:** [PR #1226](https://github.com/ienam-smarthome/HomeBrainOS/pull/1226) merged at `ffd5743dbfd307f281c5e2f3112dc6dea9173bb0`, all 3 required CI workflows green. The metadata-only Q&A capture script, adversarial tests and unscored historical failure review are on main; no add-on runtime update or live-device mutation.
+- **Current active task: Q1 actual baseline.** Request **one exact registered** read-only HomeBrain answer to `causal_light2_off`, independently check source evidence, then human-review the frozen case against its evidence. **0 reviewed current-build answers**; user involvement remains Q&A capture only.
 
 ## Milestone tracker
 
 | Milestone | State | Evidence required to close |
 | --- | --- | --- |
 | Q0: durable charter + fixed inventory + scorecard | **DONE** · PR #1224 · `06592de2a30aaa0e10e84209fbe9c006a242e45a` | CI green; 31 cases defined, 0 quality reviews, empty scorecard says not_measured |
-| Q1: reproducible 13 legacy + curated new cases | **IN PROGRESS — capture workflow and baseline** | Registered read-only first attempt + complete trace reviewed; zero fabricated pass/accuracy claims |
+| Q1: reproducible 13 legacy + curated new cases | **IN PROGRESS — capture tooling merged, first live answer pending** | Q1 PR #1226 merged `ffd5743dbfd307f281c5e2f3112dc6dea9173bb0`; complete source evidence and independent first-attempt review still required |
 | Q2: source-complete reasoning improvements | **Not started** | Before/after changes pass target cases and cross-domain negative controls |
 | Q3: same-evidence Gemma vs alternative model A/B | **Not started** | Paired, disclosed model versions/cost/latency, human causal review |
 | Q4: simplification and acceptance | **Not started** | Valid metrics and no safety regression |
