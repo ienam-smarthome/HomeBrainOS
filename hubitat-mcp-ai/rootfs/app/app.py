@@ -89,6 +89,7 @@ from cloud_connection_diagnostics import CloudConnectionDiagnostics
 from stage5_autonomous_benchmark import Stage5Benchmark, stage5_status
 from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
 from stage66_answer_diagnostics import Stage6AnswerContractFailure
+from live_shadow_preflight import build_live_shadow_preflight
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -610,6 +611,11 @@ class ChatRequest(BaseModel):
 class Stage6BenchmarkRequest(BaseModel):
     case_id: Literal["clock_conflict", "competing_commands", "stale_connectivity"]
     confirm_cloud_allowance: bool = False
+
+
+class LiveShadowPreflightRequest(BaseModel):
+    device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
+    confirm_read_only: bool = False
 
 
 class Stage5BenchmarkRequest(BaseModel):
@@ -1177,6 +1183,49 @@ async def run_stage6_benchmark(payload: Stage6BenchmarkRequest, request: Request
         )
     except BenchmarkError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+
+
+@app.post("/api/live-shadow/preflight")
+async def live_shadow_preflight(
+    payload: LiveShadowPreflightRequest, request: Request,
+) -> JSONResponse:
+    """Explicit consent -> one bounded read-only Hubitat context fetch.
+
+    No model transport, agent executor, tool calls, write APIs, historical
+    assertions, saved data, or production publisher.
+    """
+    if (payload.confirm_read_only is not True
+            or request.headers.get("x-homebrain-live-readonly") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower()
+                != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(
+            status_code=403,
+            detail="Explicit consent from the live shadow dashboard is required.",
+        )
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403, detail="Same-origin request required.")
+    if not mcp.configured:
+        raise HTTPException(status_code=503, detail="Hubitat MCP is not configured.")
+    try:
+        # Only resources/read for hubitat://context. Never send a callable
+        # MCP tool name or a user-provided tool argument to the MCP server.
+        context = await asyncio.wait_for(mcp.get_live_context(refresh=True), timeout=30.0)
+    except asyncio.CancelledError:
+        raise
+    except (Exception,) as exc:
+        logger.warning("Live shadow context read unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="Read-only Hubitat context is unavailable."
+        ) from None
+    packet = build_live_shadow_preflight(
+        payload.device_id, context,
+        observed_at_utc=datetime.now(timezone.utc).isoformat(),
+    )
+    return JSONResponse(packet, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/evidence-journal/status")
