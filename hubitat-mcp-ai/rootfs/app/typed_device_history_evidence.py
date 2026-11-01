@@ -506,8 +506,116 @@ def render_target_device_evidence_answer(
     return "\n\n".join(lines)
 
 
+def render_target_device_evidence_brief(
+    evidence: list[dict[str, Any]],
+    summary: dict[str, Any],
+    *,
+    clock_check: dict[str, Any] | None = None,
+) -> str:
+    """Concise source-first explanation; no model claims and no invented cause.
+
+    The exhaustive record remains in normalizedDeviceHistory and other
+    coverage fields. This is intentionally generic for any targeted device;
+    source reporting does not certify physical MQTT, RF, actuation or power.
+    """
+    label = str(summary.get("deviceLabel") or ("Device " + str(summary["deviceId"])))
+    reported = summary.get("reportedDeviceState")
+    values = (
+        reported.get("reportedAttributes") or {}
+        if isinstance(reported, dict) else {}
+    )
+    if not isinstance(values, dict):
+        values = {}
+    health = str(values.get("healthStatus") or "").strip()
+    mqtt = str(values.get("mqttStatus") or "").strip()
+    if health:
+        headline = (
+            f"**{label} reports healthStatus={health}.** "
+            "This is Hubitat's saved driver state, not an independent "
+            "measurement of the device's physical connectivity."
+        )
+    else:
+        headline = (
+            f"**{label}: the available records do not independently establish "
+            "current physical connectivity.**"
+        )
+    if mqtt:
+        headline += (
+            f" Hubitat also reports mqttStatus={mqtt}; this can describe "
+            "a different connection layer or cached status and does "
+            "not prove the endpoint is sending fresh messages."
+        )
+
+    event_count = summary.get("returnedEvents")
+    command_count = summary.get("commandCount")
+    state_count = summary.get("stateEventCount")
+    window = summary.get("queryWindowHours")
+    parts = [headline]
+    if (
+        type(event_count) is int and type(command_count) is int
+        and type(state_count) is int
+    ):
+        scope = f"in the {window}-hour query" if type(window) is int and window > 0 else "in the bounded query"
+        parts.append(
+            f"**What Hubitat recorded:** {event_count} events {scope} "
+            f"({state_count} state/attribute reports and {command_count} "
+            "command invocations). These are returned records, not "
+            "proof of physical device activity or a complete history."
+        )
+    latest = summary.get("latestReturnedStateEvent")
+    if isinstance(latest, dict):
+        attribute = str(latest.get("attribute") or "").strip()
+        value = str(latest.get("value") or "").strip()
+        date = str(latest.get("date") or "").strip()
+        if attribute and value and date:
+            parts[-1] += (
+                f" The latest returned state event was {attribute}={value} "
+                f"at {date}; it is not independently verified endpoint telemetry."
+            )
+    if clock_check is not None and clock_check.get("sourcesAgree") is False:
+        parts.append(render_telemetry_clock_qualification(clock_check))
+    elif isinstance(reported, dict):
+        discrepancy = reported_telemetry_consistency(reported)
+        if discrepancy:
+            parts.append("**Telemetry consistency:** " + discrepancy)
+    if health and mqtt:
+        parts.append(
+            "**Explanation:** A driver/broker connection and the endpoint's "
+            "actual data freshness can differ. That explains how the saved "
+            "statuses can coexist, but the installed driver's status-update "
+            "methods, current device reachability and outage cause are "
+            "not verified by these Hubitat records."
+        )
+    else:
+        parts.append(
+            "**Assessment:** Saved state and bounded history do not establish "
+            "the device's current physical reachability or the cause of "
+            "any communication failure."
+        )
+    if summary.get("commandCount"):
+        parts.append(
+            "Recorded commands are requests, not verified delivery or "
+            "physical execution."
+        )
+    if mqtt:
+        parts.append(
+            "**Next read-only check:** Compare the source-side last genuine "
+            "endpoint packet and broker/session evidence with the driver's "
+            "health and timestamp update logic. Check physical reachability "
+            "separately before attributing a cause."
+        )
+    else:
+        parts.append(
+            "**Next read-only check:** Compare independently sourced "
+            "device-originated telemetry and gateway logs with the saved "
+            "health/timestamp values."
+        )
+    return "\n\n".join(parts)
+
+
 __all__ = [
     "normalize_target_device_history",
     "render_target_device_evidence_answer",
+    "render_target_device_evidence_brief",
     "reported_telemetry_consistency",
 ]
