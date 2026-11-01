@@ -57,7 +57,7 @@ def test_model_claims_choose_order_but_not_unverified_sentence_content():
     assert set(["reported_health", "reported_mqtt", "clock_conflict",
                 "cause_unverified", "next_readonly"]).issubset(claims)
     prompt = model_claim_prompt(normalized(), coverage())
-    assert "OPTIONAL SOURCE-ATTESTED" in prompt
+    assert "REQUIRED FINAL ANSWER FORMAT" in prompt
     text, reason = admit_model_claim_plan(plan(), normalized(), coverage())
     assert reason == "source-claim-plan-admitted"
     assert text.startswith("Hubitat reports Test Relay healthStatus=offline")
@@ -141,7 +141,8 @@ def evidence():
     ]
 
 
-def api_for(draft, *, changed=False, confirmed=False, request_class="live-read"):
+def api_for(draft, *, changed=False, confirmed=False,
+            request_class="live-read", incoming_override=None):
     trace = PrivateModelDraft(
         raw_first=draft,
         coordinator_result=("modified" if changed else draft),
@@ -149,7 +150,8 @@ def api_for(draft, *, changed=False, confirmed=False, request_class="live-read")
         no_tools_final_stage=True,
     )
     outcome = AgentOutcome(
-        message=("modified" if changed else draft),
+        message=(incoming_override if incoming_override is not None
+                 else "modified" if changed else draft),
         request_class=request_class,
         evidence=evidence(), choices=[],
         confirmation_required=confirmed,
@@ -178,6 +180,37 @@ def test_actual_publisher_admits_verified_model_choices_only():
     assert cov["modelFirstDraftBoundary"]["publishedIsFirstModelDraft"] is False
     assert cov["rootCauseVerified"] is False
     assert "claim_ids" not in response["message"]
+
+
+def test_safe_host_calibration_does_not_veto_source_proven_model_claim_plan():
+    raw = plan(["reported_mqtt", "reported_health",
+                "cause_unverified", "next_readonly"])
+    # A previous host layer can add or alter a confidence qualifier.
+    # It is the original unchanged model's typed claim plan that is
+    # independently re-attested at the final evidence boundary.
+    response = api_for(
+        raw, incoming_override=(
+            "HOST CAUSAL VERIFICATION: unverified. " + raw
+        ),
+    )
+    coverage = response["investigation_coverage"]
+    assert coverage["answerPublicationDecision"]["mode"] == (
+        "model-directed-source-claims"
+    )
+    assert coverage["modelFirstDraftBoundary"][
+        "authorAnswerUnchangedAtSharedBoundary"
+    ] is False
+    assert "HOST CAUSAL VERIFICATION" not in response["message"]
+    assert "mqttStatus=connected" in response["message"]
+    assert coverage["answerPublicationDecision"]["modelProseCertified"] is False
+
+
+def test_rejected_unstructured_draft_exposes_fixed_diagnostic_reason():
+    response = api_for("The plug must be physically powered off.")
+    publication = response["investigation_coverage"]["answerPublicationDecision"]
+    assert publication["mode"] == "concise"
+    assert publication["modelClaimPlanRejection"] == "not-a-json-plan"
+    assert "physically powered off" not in response["message"]
 
 
 def test_repaired_or_unproved_model_text_never_becomes_public():
