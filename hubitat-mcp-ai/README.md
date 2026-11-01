@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.303**.
+Current add-on version: **0.18.304**.
+
+**Stage 7.2 direct-answer coverage review:** The synthetic final-answer prompt now asks Gemma to answer the original incident question explicitly, separate causal uncertainty from the event list, and scope negative claims to inspected records. After the answer, an independent source-linked reviewer rubric exposes question-specific obligations without giving those references to the model beforehand. Review judgments remain manual and do not certify or activate the production publisher. [Release notes](CHANGELOG-0.18.304.md).
 
 **Stage 7.1 negative evidence and causal-question review:** Post-run synthetic review now distinguishes absence of physical acknowledgement in inspected records from proof of global nonexistence or nonexecution. It displays model-inspected versus full fictional source coverage, independent review of each sentence's negative-claim scope, and four generic causal-question coverage prompts. No automatic semantic certification, additional Ollama requests, live-device reads or production publisher changes. [Release notes](CHANGELOG-0.18.303.md).
 

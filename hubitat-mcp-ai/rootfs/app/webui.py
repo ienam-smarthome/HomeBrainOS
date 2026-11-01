@@ -923,6 +923,52 @@ document.getElementById('runStage6').onclick=async()=>{
           questionControls.push({id:item.id,element:select});
         }
       }
+      // Stage 7.2 is independent post-run question-to-answer review.
+      // The rubric is not supplied to Gemma during source selection/answering.
+      const coverageControls=[];
+      const answerCoverage=reviewPacket.answer_coverage_review;
+      if(answerCoverage?.schema==='homebrain-stage72-answer-coverage.v1'){
+        const coveragePanel=document.createElement('details');
+        const coverageTitle=document.createElement('summary');
+        coverageTitle.textContent='Stage 7.2 · Did the answer resolve the actual question?';
+        coveragePanel.append(coverageTitle);
+        const intro=document.createElement('p');intro.className='stage5-note';
+        intro.textContent='Original question: '+answerCoverage.original_question+
+          ' Assess every required conclusion, including explicit uncertainty. '+
+          'A correct citation does not prove that the sentence answered this question. '+
+          'The following independent reference requirements were NOT shown to Gemma.';
+        coveragePanel.append(intro);
+        for(const obligation of answerCoverage.obligations||[]){
+          const item=document.createElement('div');item.className='stage5-review';
+          const title=document.createElement('p');
+          title.textContent=(obligation.importance==='critical'?'Critical: ':'Supporting: ')+
+            obligation.independent_reviewer_question;
+          item.append(title);
+          const citation=document.createElement('p');citation.className='stage5-note';
+          citation.textContent='Reference evidence IDs: '+obligation.reference_evidence_record_ids.join(', ')+
+            ' · Gemma cited: '+(obligation.reference_records_cited_by_model.join(', ')||'none')+
+            ' · Gemma did not examine: '+(obligation.reference_records_not_examined_by_model.join(', ')||'none')+
+            '. Citation overlap is not semantic answer verification.';
+          item.append(citation);
+          const label=document.createElement('label');label.textContent='Independent answer assessment: ';
+          const select=document.createElement('select');
+          select.setAttribute('aria-label','Answer obligation '+obligation.id);
+          for(const [value,name] of [
+            ['not_reviewed','Not reviewed'],
+            ['addressed_with_evidence','Explicitly answered with evidence'],
+            ['explicitly_unresolved','Explicitly states why it cannot be determined'],
+            ['omitted','Missing from final explanation'],
+            ['overclaimed','Overconfident / unsupported answer'],
+            ['unclear','Unclear / not enough to judge'],
+          ]){
+            const option=document.createElement('option');option.value=value;option.textContent=name;
+            select.append(option);
+          }
+          label.append(select);item.append(label);coveragePanel.append(item);
+          coverageControls.push({id:obligation.id,element:select});
+        }
+        panel.append(coveragePanel);
+      }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
         ['partially_supported','Partially supported'],
@@ -982,12 +1028,16 @@ document.getElementById('runStage6').onclick=async()=>{
           question_coverage:questionControls.map(item=>({
             question_id:item.id,reviewer_verdict:item.element.value
           })),
+          answer_obligation_review:coverageControls.map(item=>({
+            obligation_id:item.id,reviewer_verdict:item.element.value
+          })),
           overall_completeness:overallControls[0].value,
           causal_caution:overallControls[1].value,
           independently_reviewed_by_human:ratingControls.every(item=>
             item.element.value!=='not_reviewed'&&
             item.scopeElement.value!=='not_reviewed')&&
             questionControls.every(item=>item.element.value!=='not_reviewed')&&
+            coverageControls.every(item=>item.element.value!=='not_reviewed')&&
             overallControls.every(item=>item.value!=='not_reviewed'),
         };
         const exportText=JSON.stringify({
