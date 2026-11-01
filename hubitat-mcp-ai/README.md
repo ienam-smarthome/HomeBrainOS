@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.340**.
+Current add-on version: **0.18.341**.
+
+**Answer Quality Q3 cross-domain source-proof foundation (v0.18.341):** Shared claim-plan validation now supports separate source-witness adapters without enabling unrestricted model prose. An offline-only, target/time-scoped command-witness adapter tests issuer versus physical-cause distinctions. Telemetry uncertainty no longer assumes every health status is offline; existing protected runtime publication remains limited to telemetry. [Release notes](CHANGELOG-0.18.341.md).
 
 **Answer Quality Q3 unified telemetry completion (v0.18.340):** Reconcile verified model claim plans against final source evidence even when a later host confidence guard modified the incoming answer; report fixed rejection reasons for no-claim cases. One-device status/history/scoped logs plus a meaningful read or a gap checkpoint now completes bounded tool exploration instead of stacking independent retry engines; cap single-device connectivity tool rounds without affecting lighting, heating, multi-target or write requests. No extra model/provider calls; no unverified natural prose publication. [Release notes](CHANGELOG-0.18.340.md).
 
