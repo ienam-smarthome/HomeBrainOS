@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.316**.
+Current add-on version: **0.18.317**.
+
+**Stage 8.2 verified detailed shadow check:** A second, separately consented live read uses the existing verified paginated detailed-device inventory. The add-on may read multiple Hubitat inventory pages but projects only the selected numeric device's bounded current state fields to the phone. Fallback/stale/unverified source provenance is rejected, missing fields are not absence proof, and no Cloud AI, devices controls, event history or production publisher is used. [Release notes](CHANGELOG-0.18.317.md).
 
 **Stage 8.1 context completeness diagnostics:** Live Shadow distinguishes explicit truncation/partial context and mismatched source totals (still blocked) from missing completeness metadata. When a unique target is present in a returned subset but inventory completeness is unproven, only bounded **provisional target-scoped state reports** appear; no whole-hub or historical absence claim and read-only investigation readiness remains false. The phone UI shows a safe, fixed-vocabulary reason. Cloud and production publisher stay untouched. [Release notes](CHANGELOG-0.18.316.md).
 
