@@ -13,6 +13,8 @@ from typing import Any
 from device_history_service import DeviceHistoryService
 from mcp_client import tool_succeeded
 
+_MAX_SOURCE_ROWS = 50
+
 _OPS = ("command-off", "command-on", "switch")
 _DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
@@ -80,6 +82,8 @@ def project_command_shadow(plan: dict[str, Any], responses: Any,
         "causal_attribution_verified": False,
         "events": [],
         "read_status": {},
+        "read_diagnostics": {},
+        "zero_match_explanation": None,
         "limitations": [
             "Hubitat event page filters and retention can omit relevant older records.",
             "An empty or partial command page does not prove no command was issued.",
@@ -100,22 +104,67 @@ def project_command_shadow(plan: dict[str, Any], responses: Any,
         if not tool_succeeded(source):
             base["read_status"][expected] = "upstream_read_failed"
             continue
+        # "MCP succeeded" is transport status, NOT evidence that the expected
+        # structured events list was returned. Never call malformed envelopes
+        # an empty event history.
+        payload = DeviceHistoryService._payload(source.data)
+        rows = payload.get("events")
+        if type(rows) is not list:
+            base["read_status"][expected] = "unusable_event_payload"
+            base["read_diagnostics"][expected] = {
+                "source_rows": None, "rows_with_valid_dates": 0,
+                "matching_day_rows": 0, "page_at_limit": False,
+                "earliest_visible_utc": None, "latest_visible_utc": None,
+                "discarded_wrong_device": 0, "discarded_wrong_type": 0,
+                "discarded_missing_or_invalid_time": 0,
+                "dated_before_day": 0, "dated_after_day": 0,
+                "discarded_unrecognised_value": 0,
+                "note": "MCP success did not include a recognisable event array.",
+            }
+            continue
         base["read_status"][expected] = "successful_bounded_page"
-        events = DeviceHistoryService._events(source.data, limit=50)
+        # Report the total row-count as exposed, not a source-history total.
+        # Process only the original page bound even if a faulty upstream
+        # returns a larger array. This is not pagination proof.
+        events = DeviceHistoryService._events(source.data, limit=_MAX_SOURCE_ROWS)
+        diag = {
+            "source_rows": min(len(rows), _MAX_SOURCE_ROWS),
+            "rows_with_valid_dates": 0, "matching_day_rows": 0,
+            "page_at_limit": len(rows) >= _MAX_SOURCE_ROWS,
+            "earliest_visible_utc": None, "latest_visible_utc": None,
+            "discarded_wrong_device": 0, "discarded_wrong_type": 0,
+            "discarded_missing_or_invalid_time": 0,
+            "dated_before_day": 0, "dated_after_day": 0,
+            "discarded_unrecognised_value": 0,
+        }
+        visible_times = []
         # Target/operation in the upstream response is not absolute trust.
         for event in events:
-            name = str(event.get("name") or "").casefold()
-            if name != expected:
-                continue
             row_device = event.get("deviceId")
             if row_device not in (None, "") and str(row_device) != plan["device_id"]:
+                diag["discarded_wrong_device"] += 1
                 continue
             observed = _iso(event.get("date"))
-            if observed is None or not (start <= observed < end):
+            if observed is not None:
+                diag["rows_with_valid_dates"] += 1
+                visible_times.append(observed)
+            else:
+                diag["discarded_missing_or_invalid_time"] += 1
+                continue
+            name = str(event.get("name") or "").casefold()
+            if name != expected:
+                diag["discarded_wrong_type"] += 1
+                continue
+            if observed < start:
+                diag["dated_before_day"] += 1
+                continue
+            if observed >= end:
+                diag["dated_after_day"] += 1
                 continue
             if name == "switch":
                 value = str(event.get("value") or "").casefold()
                 if value not in ("on", "off"):
+                    diag["discarded_unrecognised_value"] += 1
                     continue
                 item = {"kind": "reported_switch_state", "value": value}
             else:
@@ -128,12 +177,47 @@ def project_command_shadow(plan: dict[str, Any], responses: Any,
             item["source_reported_time_utc"] = observed.isoformat()
             item["source_clock_authenticated"] = False
             item["physical_execution_verified"] = False
+            diag["matching_day_rows"] += 1
             output.append(item)
+        if visible_times:
+            diag["earliest_visible_utc"] = min(visible_times).isoformat()
+            diag["latest_visible_utc"] = max(visible_times).isoformat()
+        base["read_diagnostics"][expected] = diag
     base["events"] = sorted(output, key=lambda x: (x["source_reported_time_utc"], x["kind"]))
     base["returned_event_count"] = len(output)
-    base["status"] = ("bounded_source_evidence" if all(
-        v == "successful_bounded_page" for v in base["read_status"].values()
-    ) and len(base["read_status"]) == len(_OPS) else "partial_or_failed_read")
+    complete_page_shapes = (len(base["read_status"]) == len(_OPS) and all(
+        v == "successful_bounded_page" for v in base["read_status"].values()))
+    if not complete_page_shapes:
+        base["status"] = "partial_or_failed_read"
+        base["zero_match_explanation"] = (
+            "One or more upstream responses failed or lacked a usable events list."
+        )
+    elif not output:
+        base["status"] = "bounded_sources_no_day_matches"
+        diagnostic = list(base["read_diagnostics"].values())
+        if all(item["source_rows"] == 0 for item in diagnostic):
+            base["zero_match_explanation"] = (
+                "All three upstream pages returned zero event rows. This does not "
+                "establish whether older events have expired, were not retained, "
+                "or are omitted by the upstream event filter."
+            )
+        elif all(item["earliest_visible_utc"] is not None
+                 and item["earliest_visible_utc"] >= end.isoformat()
+                 for item in diagnostic if item["source_rows"] > 0) and any(
+                 item["source_rows"] > 0 for item in diagnostic):
+            base["zero_match_explanation"] = (
+                "Some source pages contain events, but their visible timestamps "
+                "are outside the selected day. A bounded page does not certify "
+                "that older history is absent."
+            )
+        else:
+            base["zero_match_explanation"] = (
+                "Upstream event rows were returned but none matched the requested "
+                "date, target, operation and accepted value. See the per-source "
+                "counts; no historical absence is established."
+            )
+    else:
+        base["status"] = "bounded_source_evidence"
     return base
 
 
