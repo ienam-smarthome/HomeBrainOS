@@ -554,6 +554,13 @@ def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
     ))
     cov = result["investigation_coverage"]
     assert cov["domain"] == "device_telemetry"
+    boundary = cov["publicationBoundaryShadow"]
+    assert boundary["strategy"] == "typed_target_history"
+    assert boundary["replacementPerformed"] is True
+    assert boundary["incomingVerifiedRawModelDraft"] is False
+    assert boundary["factualQualityMeasured"] is False
+    assert boundary["containsAnswerText"] is False
+    assert "Observed device state changes" not in str(boundary)
     assert cov["rootCauseVerified"] is False
     assert cov["questionResolved"] is False
     assert cov["additionalSourceCodeEvidence"]["codeId"] == "9999"

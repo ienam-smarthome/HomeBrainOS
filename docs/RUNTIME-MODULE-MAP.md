@@ -208,6 +208,7 @@ The repository drift test compares this table directly with the live directory. 
 | `causal_fail_closed_summary.py` | Provides a conservative observed-event fallback when the model's causal validation repair still fails. |
 | `general_evidence_completion.py` | Checks required investigative source classes against successful, scoped read receipts and reports missing classes without promoting source checks to proof. |
 | `shared_investigation_completion.py` | API-boundary, route-independent evidence coverage and partial-outcome reporting; never changes Hubitat or claims a read proves causality. |
+| `publication_boundary_shadow.py` | Records privacy-minimal, ungraded shape-only metadata when source-typed telemetry finalisation replaces an incoming answer; never retains model text, claims, devices, or changes publication policy. |
 | `general_task_engine.py` | Validates model-proposed cross-domain objectives, explicit proposal-only intent, skill selections, live capability-search phrases and evidence goals; advisory-only and opt-in, never grants MCP write authority. |
 | `gateway_argument_view.py` | Canonical read-only view of direct or one-level-wrapped MCP gateway operation envelopes so evidence, grounding, and gateway compatibility checks agree on the same sub-tool without rewriting provider payloads. |
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |

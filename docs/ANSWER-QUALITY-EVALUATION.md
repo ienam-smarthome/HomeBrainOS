@@ -9,6 +9,22 @@ Read [the permanent charter](ANSWER-QUALITY-CHARTER.md) and [live status](ANSWER
 - **31 defined cases is not 31 model runs, 31 source-verified answers, a 31-case replay system or a Claude score.**
 - `scripts/answer_quality_scorecard.py` measures **human-reviewed** answers only, never predicts performance or calls Ollama. Initially it reports `measurement_status=not_measured`.
 
+## Q1: identical Claude/Gemma source comparison — no live tool calls
+
+To avoid changing live Hubitat event windows, select an existing **synthetic or anonymised** frozen evidence packet, such as `aq_network_broker_vs_device_health`. Generate the **same** user-facing prompt for Claude and Gemma using:
+
+```bash
+python scripts/answer_quality_comparison_prompt.py --case-id aq_network_broker_vs_device_health
+```
+
+This renderer includes the source packet's immutable SHA-256 fingerprint, a neutral question, the fixed evidence list and explicit **no external tools / no historical chat context** instructions. It **does not** include the reviewer-only findings or forbidden-claim labels, and it never calls any model, MCP endpoint or household system.
+
+The reviewer should save Claude's **unmodified first response** privately, including model/version/provider, whether any tool actually ran (ideally **none**), measured wall time if known, and input hash. Do the same independently for Gemma **on the exact same prompt and fixed packet**. A user copying this packet into Claude is only **one side of the comparison**, not a completed scored Claude/Gemma A/B. Neither tool-call history nor elapsed time may be fabricated.
+
+The existing input-hash and metadata preflight can establish *pair eligibility*, but a real source reviewer must still assess factual grounding, hallucinated causes, first-attempt usefulness and clarity. Synthetic case quality cannot be silently promoted to real production performance. Keep any private raw model answers out of repository fixtures.
+
+**Separate production observation:** `investigation_coverage.publicationBoundaryShadow` in the maintained add-on reports a typed-history finaliser's private-text-free *incoming-message replacement*, not whether the model's original output was good or bad. Its fields deliberately say `incomingVerifiedRawModelDraft=false`, `factualQualityMeasured=false` and `publicationGuardPassed=null`. The publication policy stays unchanged pending comparable outcomes.
+
 ## Q1: fixed offline packet replay, without a model call
 
 The 18 curated synthetic/anonymised source packets can now be exported as **hash-pinned, model-facing inputs**. This is a reproducible offline comparison *input*, not a record of 18 model runs, a production benchmark or a source-truth certification.
