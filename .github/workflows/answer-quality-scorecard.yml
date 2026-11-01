@@ -17,6 +17,8 @@ on:
       - 'hubitat-mcp-ai/rootfs/app/answer_publication_policy.py'
       - 'hubitat-mcp-ai/rootfs/app/typed_device_history_evidence.py'
       - 'tests/test_q3_evidence_publication_policy.py'
+      - 'tests/test_q3_single_device_read_scope.py'
+      - 'hubitat-mcp-ai/rootfs/app/single_device_read_scope.py'
       - 'tests/test_answer_quality_capture.py'
       - 'tests/test_answer_quality_fixed_packets.py'
       - '.github/workflows/answer-quality-scorecard.yml'
@@ -39,7 +41,7 @@ jobs:
       - name: Validate review schema and anti-fabrication behavior
         run: |
           python -m pip install pytest
-          python -m pytest -q tests/test_answer_quality_scorecard.py tests/test_answer_quality_capture.py tests/test_answer_quality_fixed_packets.py tests/test_q1_publication_boundary_shadow.py tests/test_q3_evidence_publication_policy.py
+          python -m pytest -q tests/test_answer_quality_scorecard.py tests/test_answer_quality_capture.py tests/test_answer_quality_fixed_packets.py tests/test_q1_publication_boundary_shadow.py tests/test_q3_evidence_publication_policy.py tests/test_q3_single_device_read_scope.py
       - name: Verify frozen offline packet manifest (not model scores)
         run: |
           python scripts/answer_quality_fixed_packets.py export --output answer-quality-frozen-packets.jsonl
