@@ -9,6 +9,33 @@ Read [the permanent charter](ANSWER-QUALITY-CHARTER.md) and [live status](ANSWER
 - **31 defined cases is not 31 model runs, 31 source-verified answers, a 31-case replay system or a Claude score.**
 - `scripts/answer_quality_scorecard.py` measures **human-reviewed** answers only, never predicts performance or calls Ollama. Initially it reports `measurement_status=not_measured`.
 
+## Q1: fixed offline packet replay, without a model call
+
+The 18 curated synthetic/anonymised source packets can now be exported as **hash-pinned, model-facing inputs**. This is a reproducible offline comparison *input*, not a record of 18 model runs, a production benchmark or a source-truth certification.
+
+```bash
+# Exports all 18 packets as JSONL, with stable SHA-256 fingerprints.
+python scripts/answer_quality_fixed_packets.py export --output /private/fixed-q1.jsonl
+
+# Or export one fixed case for a controlled model evaluation.
+python scripts/answer_quality_fixed_packets.py export \
+  --case-id aq_network_broker_vs_device_health \
+  --output /private/network-q1.jsonl
+```
+
+Each JSONL row contains the **unchanged case question and evidence**, a `no-tools` offline policy, its case ID and an input fingerprint. It **does not** expose `required_findings`, `forbidden_claims` or earlier review grades to the model. Keep model prompt delivery, provider/model/version/settings, token budget and review rubric identical for a before/after pair. Never substitute a newer live history for a frozen packet.
+
+Once **actual** model runs exist, create **private metadata-only** JSON for each side with `schema=homebrain-answer-quality-offline-run.v1`, and a `runs` array. Each run must contain exactly `case_id`, `packet_sha256`, `answer_sha256`, `model`, `provider`, `build_sha` (full 40-character Git SHA), `attempt_index=1` and observed `elapsed_ms`. The answer, tool traces and any sensitive source data stay separately in the private review. The supplied commit SHA must be **independently authenticated** to the deployed code; a syntactically valid SHA alone does not prove this.
+
+```bash
+python scripts/answer_quality_fixed_packets.py compare \
+  --baseline /private/baseline-run-metadata.json \
+  --candidate /private/candidate-run-metadata.json \
+  --output /private/q1-pair-preflight.json
+```
+
+The comparison preflight verifies matching frozen packet hashes and first-attempt metadata, and reports matched/unmatched cases. It does **not** call Ollama, grade responses, certify real model-input delivery, confirm deployed hashes, or produce a success percentage. A valid metadata pair only becomes eligible for the **separate human/source-reviewed scorecard** after the identical question/evidence contract, first-attempt status and provenance are independently confirmed. Without run records, the result is `not_measured`. The 13 legacy live/control cases are **not** silently reclassified as offline evidence packets.
+
 ## Safe operator workflow (user should only need to provide HomeBrain Q&A)
 
 1. Pick the next `capture_required` legacy case or a curated question; give the user **one copyable read-only test prompt** with the necessary device IDs/time window and ask for HomeBrain's natural-language answer **and its complete technical evidence JSON**.
