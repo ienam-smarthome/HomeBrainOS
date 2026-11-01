@@ -24,7 +24,7 @@ from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_m
 from adaptive_investigation_policy import model_led_investigation_request, READ_ONLY_AGENT_DIRECTIVE
 from device_incident_depth import (
     device_incident_followup, incident_progress_followup,
-    evidence_progress_checkpoint,
+    evidence_progress_checkpoint, substantive_incident_progress_since,
     is_connectivity_root_cause_request, CONNECTIVITY_EVIDENCE_PLAN,
 )
 from paid_model_routing import (
@@ -5216,6 +5216,7 @@ class UnifiedMCPAgent:
         device_incident_followup_used = False
         device_incident_progress_retry_used = False
         incident_evidence_checkpoint_used = False
+        incident_checkpoint_receipt_count: int | None = None
         configuration_semantics_retry_used = False
         inventory_only_retry_used = False
         unified_source_followup_used = False
@@ -5725,6 +5726,9 @@ class UnifiedMCPAgent:
                             max_declared=self.tool_limit,
                         )
                         if catalog.schemas():
+                            incident_checkpoint_receipt_count = len(
+                                self.evidence.receipts()
+                            )
                             increment_active_metric(
                                 "incident_evidence_checkpoint_retry"
                             )
@@ -5795,7 +5799,14 @@ class UnifiedMCPAgent:
                 # opportunity to inspect installed driver code or controlling
                 # automation, or state which upstream capability is unavailable.
                 if (not device_incident_followup_used
-                        and not self._mutation_requested_by_user.get()):
+                        and not self._mutation_requested_by_user.get()
+                        and (
+                            incident_checkpoint_receipt_count is None
+                            or substantive_incident_progress_since(
+                                self.evidence.receipts(),
+                                incident_checkpoint_receipt_count,
+                            )
+                        )):
                     followup = device_incident_followup(
                         user_prompt, self.evidence.receipts()
                     )
