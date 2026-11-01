@@ -138,7 +138,7 @@ def test_mobile_ui_requires_separate_consent_for_app_log_read():
         "api/live-shadow/app-decision",
         "x-homebrain-app-log-readonly",
         "confirm_app_decision_read:true",
-        "recorded.length===1",
+        "selectable.length===1",
     ):
         assert phrase in page
 
@@ -224,3 +224,59 @@ def test_stage91_copy_buttons_include_both_rendered_reports_and_reset_stale_resu
     )[0]
     assert "JSON.stringify(data)" not in copy_handler
     assert "fetch(" not in copy_handler
+
+
+def test_stage92_command_chooser_requires_selection_for_multiple_source_commands():
+    page = render_page("HomeBrainOS", "0.18.327")
+    for phrase in (
+        'id="liveShadowAppCommandSelect" disabled',
+        "document.getElementById('liveShadowAppCommandSelect').onchange=liveShadowAppSelectCommand",
+        "const selectable=recorded.filter(item=>counts.get(item.source_reported_time_utc)===1)",
+        "if(selectable.length===1)selectedCommand.value=selectable[0].source_reported_time_utc;",
+        "if(selectable.length&&/^[0-9]{1,12}$/.test(String(data.device_id||'')))",
+        "option.dataset.deviceId=String(data.device_id);",
+        "option.dataset.issuerId=String(item.recorded_issuer_app_id);",
+        "button.dataset.commandTime=select.value||'';",
+        "document.getElementById('liveShadowAppConsent').checked=false;",
+        "document.getElementById('copyLiveShadowAppResult').disabled=true;",
+        "selectedCommand.replaceChildren();",
+    ):
+        assert phrase in page
+    # No caller-supplied app ID is sent to the backend: exact source time
+    # triggers independent verification of the issuing app.
+    assert "body:JSON.stringify({device_id:device,command_at_utc:date,confirm_app_decision_read:true})" in page
+
+
+def test_stage92_unrelated_explicit_device_row_does_not_upgrade_identity_proof():
+    p = plan()
+    other_time = "2026-11-01T13:31:00Z"
+    result = verified_issuer(p, envelope({"success":True,"events":[
+        command(with_id=True, timestamp=other_time),
+        command(with_id=False, timestamp=WHEN),
+    ]}))
+    assert result["recorded_issuer_app_id"] == "4012"
+    assert result["command_record_verified_in_bounded_page"]
+    assert result["command_row_device_id_explicit"] is False
+    assert result["log_scope_basis"] == "backend_target_filter_and_app_producer"
+
+
+def test_stage92_other_app_or_unverified_row_cannot_upgrade_focal_target_identity():
+    p = plan()
+    result = verified_issuer(p, envelope({"success":True,"events":[
+        command(with_id=False, timestamp=WHEN),
+        {"name":"command-off","deviceId":"7829","date":WHEN,
+         "producedBy":{"type":"device","id":"4012"}},
+    ]}))
+    assert result["recorded_issuer_app_id"] == "4012"
+    assert result["command_row_device_id_explicit"] is False
+    assert not result["causal_link_proven"]
+
+
+def test_stage92_exact_matching_explicit_row_remains_strong_identity_evidence():
+    p=plan()
+    result=verified_issuer(p, envelope({"success":True,"events":[
+        command(with_id=False, timestamp=WHEN),
+        command(with_id=True, timestamp=WHEN),
+    ]}))
+    assert result["command_row_device_id_explicit"] is True
+    assert result["log_scope_basis"] == "explicit_target_and_app_producer"
