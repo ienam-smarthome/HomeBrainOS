@@ -33,6 +33,7 @@ from typed_device_history_evidence import (
 from answer_publication_policy import publish_source_typed_answer
 from publication_boundary_shadow import observe_publication_boundary
 from model_first_draft_provenance import public_boundary_shape
+from proof_carrying_answer import admit_model_claim_plan
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
     reconcile_telemetry_answer, render_command_only_evidence_answer,
@@ -619,8 +620,43 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 normalized=normalized,
                 evidence_coverage=coverage,
             )
+            # Permit model-directed claim selection only if the exact first
+            # no-tools provider reply passed through coordinator and author
+            # guards unchanged. Any repaired model prose or missing private
+            # provenance falls back to the existing source-safe renderer.
+            # The admitted text is compiled from typed source claims, NOT
+            # arbitrary model-written prose. A strict source-proof adapter
+            # therefore controls every word actually published.
+            trace = getattr(outcome, "private_model_draft", None)
+            raw = getattr(trace, "raw_first", None)
+            if (
+                isinstance(raw, str) and raw.strip()
+                and raw == getattr(trace, "coordinator_result", None)
+                and raw == getattr(trace, "final_answer", None)
+                and raw == incoming_message
+                and publication["mode"] == "concise"
+                and not getattr(outcome, "confirmation_required", False)
+            ):
+                proposed, claim_reason = admit_model_claim_plan(
+                    raw, normalized, coverage,
+                )
+                if proposed is not None:
+                    message = proposed
+                    publication = {
+                        **publication,
+                        "mode": "model-directed-source-claims",
+                        "strategy": "model-selected-verified-claim-plan",
+                        "modelChosenClaimsAttested": True,
+                        # The model chooses evidence and order. Its arbitrary
+                        # natural-language claims are NEVER certified.
+                        "modelProseCertified": False,
+                    }
+                else:
+                    publication["modelClaimPlanRejection"] = claim_reason
             coverage["answerPublicationDecision"] = publication
             coverage["answerProjection"] = (
+                "model-directed-source-claims"
+                if publication["mode"] == "model-directed-source-claims" else
                 "target-scoped-concise-evidence"
                 if publication["mode"] == "concise" else
                 "target-scoped-mixed-event-evidence"

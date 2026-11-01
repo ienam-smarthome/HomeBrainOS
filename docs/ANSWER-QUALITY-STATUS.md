@@ -2,8 +2,16 @@
 
 **Charter:** [ANSWER-QUALITY-CHARTER.md](ANSWER-QUALITY-CHARTER.md)  
 **Last baseline assessment:** 2026-11-01; **0 independently authenticated frozen-prompt first-attempt production reviews**, **2 complete source-bounded cross-domain diagnostics** (recorded command versus bridge reporter; device health versus MQTT status). The official scorecard remains **NOT MEASURED**.  
-**Most recent verified installed live add-on:** `0.18.337` (source-identity guard in main; v0.18.338 draft provenance under review) ([PR #1240](https://github.com/ienam-smarthome/HomeBrainOS/pull/1240), merged `8040fd996bca635e766a938a901493c58d6398e7`, **7 exact-head CI checks green**). Adds privacy-minimal publication replacement observability and a fixed no-tools comparison prompt generator; **does not change the production answer-selection policy**. No live v0.18.334 reasoning, speed or Claude parity gain has been measured.
+**Most recent verified installed live add-on:** `0.18.338` (verified on user trace; v0.18.339 source-claim plan under review) ([PR #1240](https://github.com/ienam-smarthome/HomeBrainOS/pull/1240), merged `8040fd996bca635e766a938a901493c58d6398e7`, **7 exact-head CI checks green**). Adds privacy-minimal publication replacement observability and a fixed no-tools comparison prompt generator; **does not change the production answer-selection policy**. No live v0.18.334 reasoning, speed or Claude parity gain has been measured.
 **Live Hubitat/HA mutation:** none authorised by this quality programme.
+
+## Live v0.18.338 result and Q3 model-directed claim publication (2026-11-01)
+
+User-supplied read-only v0.18.338 Bedroom 3 Mesh result: **11 model rounds, 10 tool calls, 44,488 ms provider, 74,284 ms dominant whole-hub MCP call, 130,628 ms total**. The model's first final draft was genuinely captured and unchanged at coordinator and author boundary, but `authorAnswerUnchangedAtSharedBoundary=false` and `publishedIsFirstModelDraft=false`; the deterministic telemetry finaliser still replaced it. This is measured evidence, not proof of the model's semantic answer quality. A nested `homebrain_filter_devices(deviceHealth=stale)` scan invoked an expensive unscoped 207-device inventory, escaping v0.18.336's name-filter-specific broad-read block.
+
+**v0.18.339 candidate:** establish a **narrow proof-carrying answer plan**, using source-typed model-selected claim IDs, mandatory uncertainty, strict source/target/clock checks, no arbitrary free-form prose, no changed/unattested model draft, and host-rendered verifiable statements only. The model directs claim choice and order; every published word remains evidence-safe. Other domains, commands and ambiguous histories remain fail-closed. An expanded `single_device_read_scope` also blocks non-target attribute filters that otherwise launch hidden whole-home reads, without restricting explicit comparisons.
+
+**Do not overclaim:** This does NOT yet certify full model-authored natural language or causal conclusions in lighting/heating. It is proof-carrying model-directed selection, not semantic free-form entailment. No same-packet first-attempt speed/quality score, multi-domain clinical assessment or Claude parity is measured. A later generalized proof adapter and independently evaluated semantic-entailment admission strategy are required before permitting unrestricted model prose. No live home-system mutation is authorized.
 
 ## Live v0.18.337 model-first publication evidence (2026-11-01)
 
