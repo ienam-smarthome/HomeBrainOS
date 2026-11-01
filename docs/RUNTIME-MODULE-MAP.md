@@ -145,6 +145,7 @@ The repository drift test compares this table directly with the live directory. 
 | `performance_timeout_digest.py` | Produces a bounded, evidence-only performance report if final AI synthesis times out, with no speculative repair claims. |
 | `provenance_app_log_planner.py` | Selects one read-only app-log request for a verified command issuer and incident time, preventing duplicate checks. |
 | `historical_command_source_contract.py` | Identifies positive command events within mixed Hubitat history, derives UK-local incident times correctly in UTC, and separates recorded command producers from causal/physical evidence. |
+| `recorded_command_claim_contract.py` | Offline-only, timestamp/target-scoped positive command witness adapter; keeps an app command distinct from unknown upstream trigger and physical execution; never enables the live publisher. |
 | `conversation_recall.py` | Gives pure chat-reference questions a session-local, tool-free answer or one bounded model round, without pretending prior discussion proves Hubitat state. |
 | `current_state_claim_contract.py` | Reconciles simple current single-device status claims with same-turn targeted reported attributes when no independent source supports unreported measurements. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
@@ -213,6 +214,7 @@ The repository drift test compares this table directly with the live directory. 
 | `single_device_read_scope.py` | Admission of late whole-home context/name-filter calls after a verified single-target device-state and event-history pair; preserves focused reads and explicit wider-scope objectives. |
 | `telemetry_completion_policy.py` | Evidence-scoped stop for already checked single-device state/history/logs and a meaningful discriminator; prevents multiple independent diagnostic retry engines extending a partial-but-honest status answer. |
 | `proof_carrying_answer.py` | Validates model-selected claim plans against independently normalized, bounded single-device status/clock evidence; compiles only verified source statements, rejects unsupported free-form prose and leaves other domains fail-closed. |
+| `source_claim_contract.py` | Shared closed-schema claim-ID admission for host-attested fact catalogs and mandatory source limitations; no model prose, source reads or write authority. |
 | `model_first_draft_provenance.py` | Private request-local provenance for the first no-tools provider completion, the coordinator output and author-boundary answer; exposes only privacy-safe transition booleans and never authorizes unsupported model prose. |
 | `answer_publication_policy.py` | Separates evidence validation from concise-versus-explicit-detailed response presentation for source-typed investigations; never certifies free-form model claims, changes device state or discards normalized evidence. |
 | `general_task_engine.py` | Validates model-proposed cross-domain objectives, explicit proposal-only intent, skill selections, live capability-search phrases and evidence goals; advisory-only and opt-in, never grants MCP write authority. |
