@@ -139,6 +139,52 @@ def test_mutation_in_evidence_is_visible_as_a_number_not_raw_command():
     assert "SECRET-" not in json.dumps(packet)
 
 
+
+def test_source_gaps_are_triaged_without_leaking_untrusted_labels():
+    item = response()
+    item["investigation_coverage"]["missingSourceKinds"] = [
+        "command_history", "sensor_history", "command_history",
+        "SECRET-IP-192.168.1.239-and-personal-room", {"private": "SECRET-OBJECT"},
+    ]
+    packet = extract_capture(
+        item, case_id="causal_light2_off", actual_question=None, root=ROOT,
+    )
+    assert packet["source_gap_reporting"] == "provided"
+    assert packet["missing_source_kind_count"] == 5
+    assert packet["recognized_missing_source_kinds"] == ["command_history", "sensor_history"]
+    assert packet["unclassified_missing_source_count"] == 2
+    assert packet["source_packet_completeness"] == "not_independently_verified"
+    assert "SECRET-" not in json.dumps(packet)
+    assert "192.168" not in json.dumps(packet)
+
+
+def test_zero_reported_gaps_does_not_claim_source_completeness():
+    item = response()
+    item["investigation_coverage"]["missingSourceKinds"] = []
+    packet = extract_capture(
+        item, case_id="device_mqtt_conflict", actual_question=None, root=ROOT,
+    )
+    assert packet["source_gap_reporting"] == "provided"
+    assert packet["missing_source_kind_count"] == 0
+    assert packet["recognized_missing_source_kinds"] == []
+    assert packet["source_packet_completeness"] == "not_independently_verified"
+
+
+def test_absent_or_invalid_gap_field_is_not_a_verified_empty_list():
+    item = response()
+    absent = extract_capture(
+        item, case_id="causal_light2_off", actual_question=None, root=ROOT,
+    )
+    assert absent["source_gap_reporting"] == "not_provided"
+    assert absent["missing_source_kind_count"] is None
+    item["investigation_coverage"]["missingSourceKinds"] = "SECRET-PRIVATE-GAP"
+    invalid = extract_capture(
+        item, case_id="causal_light2_off", actual_question=None, root=ROOT,
+    )
+    assert invalid["source_gap_reporting"] == "not_provided"
+    assert invalid["missing_source_kind_count"] is None
+    assert "SECRET-PRIVATE-GAP" not in json.dumps(invalid)
+
 def test_missing_model_answer_is_invalid():
     item = response()
     item["message"] = None
