@@ -889,6 +889,40 @@ document.getElementById('runStage6').onclick=async()=>{
         sourceDetail.append(sourceText);
       }
       panel.append(sourceDetail);
+      const scopedReview=reviewPacket.evidence_scope_review;
+      const questionControls=[];
+      if(scopedReview?.schema==='homebrain-stage71-evidence-scope.v1'){
+        const scopeTitle=document.createElement('strong');
+        scopeTitle.textContent='Stage 7.1 · Evidence scope and causal-question coverage';
+        panel.append(scopeTitle);
+        const counts=document.createElement('p');counts.className='stage5-note';
+        const seen=scopedReview.model_examined_records;
+        const full=scopedReview.all_supplied_fictional_records;
+        counts.textContent='Physical acknowledgements in examined sources: '+
+          seen.positive_confirmation_records.length+
+          ' · In all supplied fictional records: '+full.positive_confirmation_records.length+
+          ' · Skipped sources: '+scopedReview.model_skipped_source_ids.join(', ')+
+          '. These records are not proof of complete event history.';
+        panel.append(counts);
+        const scopeHint=document.createElement('p');scopeHint.className='stage5-note';
+        scopeHint.textContent='Supported scope example: '+scopedReview.negative_claim_scope.supported_template+
+          ' Unsupported global claim: '+scopedReview.negative_claim_scope.unsupported_template+
+          ' A missing acknowledgement does not prove physical nonexecution.';
+        panel.append(scopeHint);
+        for(const item of scopedReview.review_questions||[]){
+          const wrap=document.createElement('div');wrap.className='stage5-review';
+          const title=document.createElement('p');title.textContent=item.question;wrap.append(title);
+          const label=document.createElement('label');label.textContent='Did the model address this question? ';
+          const select=document.createElement('select');select.setAttribute('aria-label','Question coverage '+item.id);
+          for(const [value,name] of [['not_reviewed','Not reviewed'],
+            ['addressed','Addressed with evidence'],['omitted','Important omission'],
+            ['unverifiable','Explicitly unresolved'],['unclear','Unclear']]){
+            const option=document.createElement('option');option.value=value;option.textContent=name;select.append(option);
+          }
+          label.append(select);wrap.append(label);panel.append(wrap);
+          questionControls.push({id:item.id,element:select});
+        }
+      }
       const ratingControls=[];
       const choices=[['not_reviewed','Not reviewed'],['supported','Supported'],
         ['partially_supported','Partially supported'],
@@ -904,8 +938,21 @@ document.getElementById('runStage6').onclick=async()=>{
         for(const [v,t] of choices){
           const opt=document.createElement('option');opt.value=v;opt.textContent=t;rating.append(opt);
         }
-        label.append(rating);group.append(label);panel.append(group);
-        ratingControls.push({number:sentence.number,element:rating});
+        label.append(rating);group.append(label);
+        const scopeLabel=document.createElement('label');
+        scopeLabel.textContent='Negative/absence claim scope: ';
+        const scopeSelect=document.createElement('select');
+        scopeSelect.setAttribute('aria-label','Sentence '+sentence.number+' negative claim scope');
+        for(const [value,name] of [['not_reviewed','Not reviewed'],
+          ['not_a_negative_claim','Not an absence claim'],
+          ['scoped_to_examined_records','Limited to examined records'],
+          ['overstates_global_absence','Overstates global absence'],
+          ['unclear_scope','Ambiguous scope']]){
+          const option=document.createElement('option');option.value=value;option.textContent=name;scopeSelect.append(option);
+        }
+        scopeLabel.append(scopeSelect);group.append(scopeLabel);panel.append(group);
+        ratingControls.push({number:sentence.number,element:rating,
+          scopeElement:scopeSelect});
       }
       const overall=document.createElement('div');overall.className='stage5-review';
       const fields=[
@@ -929,12 +976,18 @@ document.getElementById('runStage6').onclick=async()=>{
       copy.onclick=()=>{
         const review={
           per_sentence:ratingControls.map(item=>({
-            sentence_number:item.number,reviewer_verdict:item.element.value
+            sentence_number:item.number,reviewer_verdict:item.element.value,
+            reviewer_negative_scope:item.scopeElement.value
+          })),
+          question_coverage:questionControls.map(item=>({
+            question_id:item.id,reviewer_verdict:item.element.value
           })),
           overall_completeness:overallControls[0].value,
           causal_caution:overallControls[1].value,
           independently_reviewed_by_human:ratingControls.every(item=>
-            item.element.value!=='not_reviewed')&&
+            item.element.value!=='not_reviewed'&&
+            item.scopeElement.value!=='not_reviewed')&&
+            questionControls.every(item=>item.element.value!=='not_reviewed')&&
             overallControls.every(item=>item.value!=='not_reviewed'),
         };
         const exportText=JSON.stringify({
