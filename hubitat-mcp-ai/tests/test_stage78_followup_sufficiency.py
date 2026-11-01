@@ -179,8 +179,8 @@ def test_four_model_requests_no_extra_cloud_or_production_approval():
 def test_mobile_shows_followup_limitations_and_preserves_manual_review():
     html = render_page("HomeBrainOS", "0.18.310")
     for phrase in (
-        "Stage 7.8 · Can suggested evidence actually prove the claim?",
-        "could_establish", "cannot_establish", "additional_proof_needed",
+        "Stage 7.8 · Can the next evidence prove the claim?",
+        "Could establish", "Cannot establish alone", "Additional proof needed",
         "host_source_capability_reference", "next_evidence_quality:followupControl?",
         "production_publication_approval:false",
     ):
