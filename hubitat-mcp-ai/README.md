@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.342**.
+Current add-on version: **0.18.343**.
+
+**HomeBrain vNext typed evidence authority (v0.18.343):** When the opt-in `model_first_investigations_enabled` mode is enabled, single-device telemetry synthesis receives a compact request-local source-authority manifest separating saved Hubitat attributes, bounded state events, conflicting metadata clocks, driver-source evidence and independent broker/physical observations. After verified identity/history/scoped logs, one additional read-only device-configuration lookup may be performed, only when a configuration read was not already attempted and the live gateway admits it. This improves the model's evidence context; it does **not** certify model-authored factual claims, independently check MQTT broker state or bypass controls. Mode remains off by default, and the original publisher remains the fallback. [Release notes](CHANGELOG-0.18.343.md).
 
 **HomeBrain vNext read-only model-first pilot (v0.18.342):** A separately switchable `model_first_investigations_enabled` option (default false) lets single-device telemetry investigations request a natural model-authored explanation instead of mandatory JSON claim IDs. The API accepts the exact original provider draft only when coordinator, author and incoming output match and bounded high-risk consistency checks pass; otherwise it retains the previous source-rendered answer. This is a **provisional, not semantically certified** pilot; it neither adds MCP/model reads nor changes controls, heating, lighting or mutation permissions. To test: install v0.18.342, set `model_first_investigations_enabled: true` in the add-on configuration and restart the add-on. Use a READ-ONLY telemetry question and inspect `investigation_coverage.answerPublicationDecision.mode` for `model-authored-provisional` versus `modelFirstRejection`. Set false to roll back without downgrading. [Release notes](CHANGELOG-0.18.342.md).
 
