@@ -12,7 +12,7 @@
   3. The driver's watchdog updates the `lastActivity` attribute without endpoint payloads.
 - **Verified SHA-256:** `74ccff7fa2c23852655d12b45f6f5cbb6a3315de8c7647cac7b03441282f7150`, independently recalculated from `scripts/answer_quality_fixed_packets.py` canonical payload structure and the actual fixture. This confirms the **prompt text supplied by the assistant matched the registered case**, but does not independently certify what the provider ingested.
 - Prior prompt explicitly said **do not call MCP, browse or inspect live systems**; grading/rubric fields were not included.
-- The next user message supplied one response attributed by conversation context to Claude. **Exact Claude model/version not yet supplied; provider logs/tool-use status, wall time and first-attempt provenance not independently authenticated.** No Gemma response to the same frozen packet has been received.
+- The next user message supplied one response attributed by conversation context to Claude. **Claude model self-identified as Sonnet 5.5 in a later reply, with 'as far as I know' caveat. Sonnet 5.5 exists, but serving model, provider logs/tool state, elapsed time and first-attempt provenance were not independently authenticated.** No Gemma response to the same frozen packet has been received.
 
 ## Source-bounded qualitative review
 
@@ -35,10 +35,16 @@ The answer separated confirmed evidence, the most likely layer distinction, poss
 
 - This is **one Claude-attributed response for one frozen offline packet**. A v0.18.331, v0.18.332 or v0.18.333 HomeBrain *live device* response uses entirely different evidence, and **must not** be presented as a paired Gemma answer.
 - Require a **Gemma first-attempt answer using the identical question, packet SHA, three source facts and no-tools policy**, and disclose model/provider. Capture a private raw response (not in this repo) before blinded factual/clarity review.
-- Verify actual Claude model, first-attempt/non-revised status and whether tools were disabled if available. Do not fabricate these fields or infer elapsed time.
+- The reported Claude Sonnet 5.5 identity is **self-reported, not authenticated**; actual model, first-attempt status and tool settings remain unverified. Do not fabricate these fields or infer elapsed time.
 - Published metric remains **NOT MEASURED** and 0 completed cross-model A/B pairs.
 - No model API calls, network reads, device control, live Hubitat/HA modifications or private household records were used in this review.
 
 ## Next engineering gate
 
 Use this response as a **qualitative target**, not a canned MQTT answer. Evaluate why HomeBrain's source-grounded model-to-finalizer boundary replaces natural explanations with long diagnostics across **at least telemetry, historical command/report attribution, and heating**. Compare original, attested model outputs to final published outputs on the same source packet, with zero unsupported physical/cause claims. Only then consider any general model-first publication promotion.
+
+## Correct Ollama Cloud comparison target (2026-11-01)
+
+The user's HomeBrain runtime uses **Ollama Cloud Free** with Gemma 4 31B (not a local NucBox model used in an illustrative Claude command). Ollama's official Cloud API documentation says to use HTTPS `https://ollama.com/api/chat` with bearer `OLLAMA_API_KEY`, and API model name **`gemma4:31b`**; `gemma4:31b-cloud` is used with the installed Ollama app/CLI. A command using `gemma3` and `http://<nucbox-ip>:11434` would **not** test this model/provider. Sources: <https://docs.ollama.com/cloud>, <https://ollama.com/library/gemma4:31b-cloud> (reviewed 2026-11-01).
+
+No API keys, tokens, household logs or private answers are committed. The participant must execute any benchmark call themselves, retaining their key outside source control and chat. The comparison must use the full **identical original rendered prompt**, not just matching evidence facts. Disclose different temperature/sampling/model settings as comparison limitations; do not treat a `temperature:0` Gemma call as identical Claude sampling.
