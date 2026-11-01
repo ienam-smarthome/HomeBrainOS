@@ -945,15 +945,18 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                 ),
             )
         try:
-            return calibrate_api_outcome(
-                apply_shared_investigation_completion(
+            if _bool(OPTIONS.get("model_first_investigations_enabled"), False):
+                completed = apply_shared_investigation_completion(
                     outcome, request.message,
-                    model_first_investigations_enabled=_bool(
-                        OPTIONS.get("model_first_investigations_enabled"), False
-                    ),
-                ),
-                request.message,
-            )
+                    model_first_investigations_enabled=True,
+                )
+            else:
+                # Original two-argument boundary remains byte-compatible
+                # with existing tests, hosts and default-off integrations.
+                completed = apply_shared_investigation_completion(
+                    outcome, request.message,
+                )
+            return calibrate_api_outcome(completed, request.message)
         finally:
             if intent_token is not None:
                 reset_request_interpretation(intent_token)
