@@ -22,6 +22,7 @@ from source_analysis_completion import (
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
+from proof_carrying_answer import eligible_model_claim_handoff
 from model_first_draft_provenance import (
     PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
     record_coordinator_result, record_final_answer, private_snapshot,
@@ -3946,6 +3947,30 @@ class UnifiedMCPAgent:
             )):
                 message = redact_secrets(message)
             evidence = self.evidence.receipts()
+            # A tiny, independently revalidated model claim plan is machine
+            # data, not unrestricted model prose. Preserve it across later
+            # prose-only guards; the final API boundary revalidates every
+            # selected source claim before writing an answer. The plan must
+            # be the exact first no-tools provider completion, unchanged
+            # through both synthesis/author stages, for a typed telemetry
+            # target with zero attested commands.
+            preliminary_contract = (
+                None if resolve_primary_objective(user_prompt).is_source
+                else plan_investigation(user_prompt)
+            )
+            model_claim_plan_handoff = (
+                not self._mutation_requested_by_user.get()
+                and not self._mutation_call_seen.get()
+                and not is_history_investigation(user_prompt)
+                and eligible_model_claim_handoff(
+                    message, evidence, private_snapshot(),
+                    domain=(
+                        preliminary_contract.domain
+                        if preliminary_contract is not None else None
+                    ),
+                )
+                and not correlate_input_to_off_commands(evidence).get("patterns")
+            )
             # Defence in depth against every early return: a verified
             # inventory/identity lookup still cannot answer a cause question.
             if (not self._mutation_requested_by_user.get()
@@ -4009,7 +4034,8 @@ class UnifiedMCPAgent:
             # exits, rather than trusting a previous model-only validation.
             if (not self._mutation_requested_by_user.get()
                     and not self._mutation_call_seen.get()
-                    and is_causal_investigation(user_prompt)):
+                    and is_causal_investigation(user_prompt)
+                    and not model_claim_plan_handoff):
                 message, claim_calibrated = guard_unverified_initiator_claims(
                     message, evidence, user_prompt)
                 if claim_calibrated:
@@ -4112,9 +4138,12 @@ class UnifiedMCPAgent:
             # The hypothesis audit is calculated after model synthesis. Do
             # not return unsupported cause confidence alongside an explicitly
             # unverified hypothesis verdict in the same API response.
-            message, confidence_aligned = align_causal_answer_with_coverage(
-                message, coverage,
-            )
+            if model_claim_plan_handoff:
+                confidence_aligned = False
+            else:
+                message, confidence_aligned = align_causal_answer_with_coverage(
+                    message, coverage,
+                )
             if confidence_aligned:
                 increment_active_metric("causal_coverage_confidence_aligned")
             # Publication is not permitted to silently discard repeated
@@ -4122,7 +4151,8 @@ class UnifiedMCPAgent:
             # canonical, bounded observation separate from root-cause proof.
             if (request_class == "live-read"
                     and not self._mutation_call_seen.get()
-                    and investigating(user_prompt)):
+                    and investigating(user_prompt)
+                    and not model_claim_plan_handoff):
                 correlations = correlate_input_to_off_commands(evidence)
                 if correlations.get("patterns"):
                     coverage = {
