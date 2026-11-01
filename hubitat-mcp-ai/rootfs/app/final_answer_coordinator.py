@@ -14,6 +14,7 @@ from causal_native_logs import (
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
 from causal_initiator_provenance_guard import render_state_report_provenance
+from recent_command_issuer_sources import render_recent_command_issuer_sources
 from causal_answer_plan import render_causal_answer_plan
 from motion_lockout_investigation import is_motion_lockout_investigation
 from unified_investigation_bridge import (
@@ -876,6 +877,18 @@ class FinalAnswerCoordinator:
                     "role": "user", "content": authority_text,
                 })
                 increment_active_metric("vnext_source_authority_packet")
+        # The final request-scoped authority packet distinguishes a timestamped
+        # device command witness from post-event app-log completion. It contains
+        # no model claims and cannot grant writes or additional tool access.
+        if causal and evidence_scoped:
+            issuer_packet = render_recent_command_issuer_sources(
+                original_user, evidence,
+            )
+            if issuer_packet:
+                final_messages.append({
+                    "role": "user", "content": issuer_packet,
+                })
+                increment_active_metric("recent_issuer_source_packet")
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
