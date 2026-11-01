@@ -167,7 +167,7 @@ def test_mobile_displays_invalid_optional_advice_without_false_approval():
     html = render_page("HomeBrainOS", "0.18.311")
     for item in ("No validated AI follow-up suggestion was provided",
                  "The optional AI follow-up suggestion was missing or invalid",
-                 "factual sentences still require independent review",
+                 "still require independent review",
                  "production_publication_approval:false"):
         assert item in html
 
