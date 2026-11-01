@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.308**.
+Current add-on version: **0.18.309**.
+
+**Stage 7.7 cross-question evidence completeness:** The synthetic Stage 6 planner now receives the selected scenario title alongside the original question and is asked to prioritise distinct evidence needed for unresolved contrasts rather than redundant status reports. An independent, postrun Stage 7.7 review shows report/receipt time inversions and critical reference sources the model skipped, without exposing benchmark gold labels to its selection process. Source-origin timestamps are explicitly not treated as verified clock accuracy. No changes to the production publisher, MCP routing, live devices or cloud-call budget. [Release notes](CHANGELOG-0.18.309.md).
 
 **Stage 7.6 cross-scenario calibration:** Experimental command timelines now distinguish comparable recorded time-of-day values from physical execution, cross-day order and clock accuracy; the evidence ladder also exposes receipt-versus-source clocks and broker-versus-device connectivity. The synthetic Ollama prompt asks for evidence that could establish causal linkage rather than assuming telemetry identifies an initiating app. Mobile review separately assesses next-evidence recommendations and clarifies unverified uncertainty warnings. Mock regression tests cover all three scenarios without real Cloud/device activity or production publisher changes. [Release notes](CHANGELOG-0.18.308.md).
 

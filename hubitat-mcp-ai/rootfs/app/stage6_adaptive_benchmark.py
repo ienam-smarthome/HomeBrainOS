@@ -684,7 +684,9 @@ class Stage6Benchmark:
                 plan_messages = [
                     {"role": "system", "content": (
                         "You are conducting a wholly FICTIONAL, read-only smart-home "
-                        "investigation. First identify what the ORIGINAL QUESTION "
+                        "investigation. Treat the user-visible SCENARIO TITLE and "
+                        "the ORIGINAL QUESTION as one investigation objective. "
+                        "First identify what the ORIGINAL QUESTION "
                         "still requires, even when a plausible timeline is known. "
                         "Track up to four question IDs (Q1-Q4), each with status "
                         "unresolved, addressed, or unverifiable. Before STOP, "
@@ -705,8 +707,13 @@ class Stage6Benchmark:
                         "anything from its title. When reading, choose a source "
                         "with the HIGHEST expected information gain, not a "
                         "lower-rated convenience source; use your judgment "
-                        "between ties. STOP only when no unread material source "
-                        "remains. A finished event timeline does not itself "
+                        "between ties. Prefer sources directly testing distinct, "
+                        "still-unresolved contrasts in the original objective "
+                        "over redundant proxies or status heartbeats. A broker "
+                        "session, controller heartbeat and originating device "
+                        "packet address different evidence questions. STOP only "
+                        "when no unread material source remains. A finished "
+                        "event timeline does not itself "
                         "settle the incident's initiator or physical outcome. "
                         "Return only one JSON object with keys schema,action,"
                         "source_id,reason,questions,source_evaluations. "
@@ -722,6 +729,7 @@ class Stage6Benchmark:
                         "No extra keys or markdown."
                     )},
                     {"role": "user", "content": json.dumps({
+                        "scenario_title": case["title"],
                         "question": case["question"],
                         "initial_observation": case["initial"],
                         "sources_already_examined": gathered,
@@ -796,14 +804,23 @@ class Stage6Benchmark:
                     "Write your own concise, natural explanation of this fictional "
                     "incident from the supplied records. No suggested conclusions "
                     "are provided. Keep receipt clock time distinct from source "
-                    "event time. Report observations as REPORTS, not independently "
+                    "event time. When compatible source and receipt timestamps "
+                    "exist, explicitly compare their event-report orders and "
+                    "explain any inversion, without assuming physical sequence "
+                    "or clock synchronization. Independently originating device "
+                    "packets do not establish source-clock accuracy. "
+                    "Report observations as REPORTS, not independently "
                     "confirmed hardware changes. IMPORTANT: a state_report with "
                     "a device-source timestamp is STILL a state_report; only a "
                     "record explicitly labelled device_telemetry with "
                     "independent_device_packet true qualifies as device_telemetry. "
                     "Distinguish competing commands, physical outcomes, and "
-                    "unproven causes. Directly answer every material part of "
-                    "the ORIGINAL question rather than merely describing the "
+                    "unproven causes. Explicitly address the user-visible SCENARIO "
+                    "TITLE contrast as well as the ORIGINAL question; distinguish "
+                    "transport or broker connectivity from physical device "
+                    "connectivity when relevant. Directly answer every "
+                    "material part of the ORIGINAL question rather than merely "
+                    "describing the "
                     "timeline. If a cause or physical outcome cannot be "
                     "established from inspected records, explicitly say it "
                     "is NOT ESTABLISHED by those records, and identify what "
@@ -865,6 +882,7 @@ class Stage6Benchmark:
                     "useful follow-up. No extra JSON keys or markdown."
                 )},
                 {"role": "user", "content": json.dumps({
+                    "scenario_title": case["title"],
                     "question": case["question"],
                     "initial_observation": case["initial"],
                     "examined_source_records": gathered,
