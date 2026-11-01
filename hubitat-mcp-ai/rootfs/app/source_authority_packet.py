@@ -16,7 +16,6 @@ import re
 from typing import Any, Mapping
 
 from incident_reasoning_depth import assess_incident_reasoning_depth
-from driver_source_identity_guard import _linked_driver_source_ids
 from investigation_intelligence import plan_investigation
 from typed_device_history_evidence import normalize_target_device_history
 from telemetry_completion_policy import single_target_telemetry_scope
@@ -87,49 +86,6 @@ def pending_telemetry_configuration_read(
     return {"deviceId": target, "mode": "configuration"} if targeted_log else None
 
 
-
-def pending_verified_driver_source_read(
-    request: str, receipts: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    """Plan one bounded read-only driver-source chunk with verified identity.
-
-    Requires successful, uniquely linked target configuration evidence. Never
-    use model-supplied IDs, driver labels, a guessed instance ID, or infer a
-    positive source link from a successful configuration call alone.
-    """
-    plan = plan_investigation(request)
-    if (plan is None or plan.domain != "device_telemetry"
-            or not single_target_telemetry_scope(request)):
-        return None
-    normalized = normalize_target_device_history(receipts)
-    if not isinstance(normalized, dict) or not _match_request(request, normalized):
-        return None
-    if (normalized.get("truncated") is True
-            or normalized.get("commandCount") != 0):
-        return None
-    target = str(normalized["deviceId"])
-    valid_config = any(
-        isinstance(row, dict) and row.get("success") is True
-        and _leaf(row) == "hub_get_device"
-        and str(_args(row).get("deviceId") or "") == target
-        and str(_args(row).get("mode") or "").lower() == "configuration"
-        for row in receipts
-    )
-    if not valid_config:
-        return None
-    ids = _linked_driver_source_ids(receipts, target)
-    if len(ids) != 1:
-        return None
-    code_id = next(iter(ids))
-    for row in receipts:
-        if isinstance(row, dict) and _leaf(row) == "hub_get_source":
-            args = _args(row)
-            if (str(args.get("type") or "").lower() == "driver"
-                    and str(args.get("id") or "") == code_id):
-                return None  # success OR failure: no repeated source read
-    return {"type": "driver", "id": code_id, "offset": 0, "length": 8000}
-
-
 def telemetry_source_authority(
     request: str, receipts: list[dict[str, Any]],
     *,
@@ -169,16 +125,6 @@ def telemetry_source_authority(
             value = clock.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
                 temporal[key] = round(value, 1)
-    verified_driver_ids = _linked_driver_source_ids(receipts, target)
-    linked_driver_chunks = sum(
-        1 for r in receipts
-        if isinstance(r, dict) and r.get("success") is True
-        and _leaf(r) == "hub_get_source"
-        and str(_args(r).get("type") or "").lower() == "driver"
-        and str(_args(r).get("id") or "") in verified_driver_ids
-        and isinstance(r.get("details"), dict)
-        and r["details"].get("sourceRetrieved") is True
-    )
     independent_broker_packets = any(
         isinstance(r, dict) and r.get("success") is True
         and r.get("evidence_kind") == "mqtt_broker_packet_evidence"
@@ -198,7 +144,6 @@ def telemetry_source_authority(
         "commandRowsReturned": normalized.get("commandCount"),
         "scopedHubitatLogsChecked": scoped_logs,
         "temporalClocks": temporal,
-        "linkedDriverSourceChunkRetrieved": linked_driver_chunks > 0,
         "verifiedInstalledDriverBehaviour": depth.get("driverMethodBehaviourVerified") is True,
         "independentBrokerPacketsVerified": independent_broker_packets,
         "independentUpstreamObservationRetained": depth.get("independentUpstreamObservationRetained") is True,
@@ -244,8 +189,7 @@ def render_telemetry_authority(authority: Mapping[str, Any] | None) -> str | Non
             "rather than actual last physical contact."
         )
     verified = (
-        ("driver source chunk linked to this device", authority.get("linkedDriverSourceChunkRetrieved")),
-        ("driver implementation methods", authority.get("verifiedInstalledDriverBehaviour")),
+        ("driver implementation", authority.get("verifiedInstalledDriverBehaviour")),
         ("broker device-originated packets/session", authority.get("independentBrokerPacketsVerified")),
         ("independent upstream observation", authority.get("independentUpstreamObservationRetained")),
         ("physical actuation acknowledgement", authority.get("physicalActuationAcknowledged")),
@@ -270,6 +214,6 @@ def render_telemetry_authority(authority: Mapping[str, Any] | None) -> str | Non
 
 
 __all__ = [
-    "pending_telemetry_configuration_read", "pending_verified_driver_source_read", "telemetry_source_authority",
+    "pending_telemetry_configuration_read", "telemetry_source_authority",
     "render_telemetry_authority",
 ]
