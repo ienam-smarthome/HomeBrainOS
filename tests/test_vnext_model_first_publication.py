@@ -17,6 +17,7 @@ from model_first_publication import admit_model_first_telemetry_answer
 
 NORMALIZED = {
     "deviceId": "9911", "deviceLabel": "Test plug",
+    "commandCount": 0, "truncated": False,
     "reportedDeviceState": {
         "deviceId": "9911",
         "source": "targeted-hubitat-device-state",
@@ -130,3 +131,16 @@ def test_omitted_health_mqtt_or_uncertainty_fails_conservatively():
         )
         assert actual is None
         assert reason == expected
+
+
+def test_not_applied_to_command_or_ambiguous_target_history():
+    for n in (
+        {**NORMALIZED, "commandCount": 1},
+        {**NORMALIZED, "truncated": True},
+        {**NORMALIZED, "deviceId": ""},
+    ):
+        accepted, reason = admit_model_first_telemetry_answer(
+            NATURAL, trace(), n, COVERAGE,
+        )
+        assert accepted is None
+        assert reason == "unverified-source-scope"
