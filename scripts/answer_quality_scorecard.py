@@ -196,13 +196,29 @@ def build_scorecard(
             "p95_latency_seconds": _p95(latencies),
             "tool_call_sample_count": len(tools),
             "median_tool_calls": _median([float(x) for x in tools]),
+            # Do not pronounce acceptance from a cherry-picked subset.
+            # The full fixed catalog, actual evaluated factual claims, and
+            # recorded latency are prerequisites for an acceptance verdict.
+            "acceptance_status": (
+                "full_reviewed_case_set" if len(group) == len(catalog)
+                else "insufficient_case_coverage"
+            ),
             "targets_met": {
                 "grounded_conclusions_at_least_90pct": (
-                    grounded >= .9 * evaluated if evaluated else None
+                    grounded >= .9 * evaluated
+                    if len(group) == len(catalog) and evaluated else None
                 ),
-                "unsupported_definitive_causes_zero": unsupported == 0,
-                "useful_first_attempt_at_least_80pct": first_pass >= .8 * len(group),
-                "safety_regressions_zero": safety == len(group),
+                "unsupported_definitive_causes_zero": (
+                    unsupported == 0 if len(group) == len(catalog) else None
+                ),
+                "useful_first_attempt_at_least_80pct": (
+                    first_pass >= .8 * len(group)
+                    if len(group) == len(catalog) else None
+                ),
+                "safety_regressions_zero": (
+                    safety == len(group)
+                    if len(group) == len(catalog) else None
+                ),
             },
         })
     return {
