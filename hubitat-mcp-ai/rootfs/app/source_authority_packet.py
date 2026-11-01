@@ -169,6 +169,16 @@ def telemetry_source_authority(
             value = clock.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
                 temporal[key] = round(value, 1)
+    verified_driver_ids = _linked_driver_source_ids(receipts, target)
+    linked_driver_chunks = sum(
+        1 for r in receipts
+        if isinstance(r, dict) and r.get("success") is True
+        and _leaf(r) == "hub_get_source"
+        and str(_args(r).get("type") or "").lower() == "driver"
+        and str(_args(r).get("id") or "") in verified_driver_ids
+        and isinstance(r.get("details"), dict)
+        and r["details"].get("sourceRetrieved") is True
+    )
     independent_broker_packets = any(
         isinstance(r, dict) and r.get("success") is True
         and r.get("evidence_kind") == "mqtt_broker_packet_evidence"
@@ -188,6 +198,7 @@ def telemetry_source_authority(
         "commandRowsReturned": normalized.get("commandCount"),
         "scopedHubitatLogsChecked": scoped_logs,
         "temporalClocks": temporal,
+        "linkedDriverSourceChunkRetrieved": linked_driver_chunks > 0,
         "verifiedInstalledDriverBehaviour": depth.get("driverMethodBehaviourVerified") is True,
         "independentBrokerPacketsVerified": independent_broker_packets,
         "independentUpstreamObservationRetained": depth.get("independentUpstreamObservationRetained") is True,
@@ -233,7 +244,8 @@ def render_telemetry_authority(authority: Mapping[str, Any] | None) -> str | Non
             "rather than actual last physical contact."
         )
     verified = (
-        ("driver implementation", authority.get("verifiedInstalledDriverBehaviour")),
+        ("driver source chunk linked to this device", authority.get("linkedDriverSourceChunkRetrieved")),
+        ("driver implementation methods", authority.get("verifiedInstalledDriverBehaviour")),
         ("broker device-originated packets/session", authority.get("independentBrokerPacketsVerified")),
         ("independent upstream observation", authority.get("independentUpstreamObservationRetained")),
         ("physical actuation acknowledgement", authority.get("physicalActuationAcknowledged")),
