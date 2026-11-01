@@ -877,6 +877,9 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
       'Device ID: '+data.target_device_id,
       'Window: '+data.requested_window_start+' to '+data.requested_window_end,
       'Archive rows returned: '+(data.returned_event_count||0),
+      'Archived native command records (bounded page): '+(data.archived_native_command_count||0),
+      'Archived native state read-through reports: '+(data.archived_state_readthrough_count||0),
+      'Archive page reached 50-row cap: '+(data.archive_page_limit_reached?'yes':'no'),
       'Additional archive pages: '+(data.archive_has_more?'yes':'not indicated'),
       'Collection gaps in window: '+(data.collection_gaps||[]).length,
       'Complete event history proven: NO',
@@ -901,14 +904,21 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
       lines.push('• Apparent source-to-receipt gap (days): '+temporal.minimum_apparent_separation_days+' to '+temporal.maximum_apparent_separation_days);
     if(temporal.large_timestamp_discrepancy)
       lines.push('⚠ Historical timestamps differ from journal arrival by over 24 hours. This could be replay, delayed ingestion or clock error — do not call it fresh device contact.');
-    lines.push('Archived events:');
+    lines.push('Archived events and source-reported commands (not physical proof):');
     for(const ev of data.events||[]){
-      lines.push('• '+ev.attribute+'='+String(ev.reported_value)
+      const content=ev.record_kind==='archived_native_command_record'
+        ? 'Recorded '+ev.attribute+' from app ID '+ev.recorded_issuer_app_id
+        : ev.attribute+'='+String(ev.reported_value);
+      lines.push('• '+content
         +' | source: '+(ev.source_time_utc||'not available')
         +' | collector receipt: '+ev.received_at_utc
-        +' | '+ev.timestamp_basis);
+        +' | '+ev.timestamp_basis
+        +' | origin: '+ev.origin_class);
     }
-    if(!(data.events||[]).length)lines.push('• No retained, allowlisted device events returned; this is NOT proof of inactivity.');
+    if(!(data.archived_native_command_count||0))
+      lines.push('• No native command records in returned archive page. This is NOT proof no commands were issued.');
+    if(!(data.events||[]).length)
+      lines.push('• No retained, allowlisted device events returned; this is NOT proof of inactivity.');
     for(const gap of data.collection_gaps||[])
       lines.push('• Collection gap from '+gap.started_at_utc+' to '+(gap.ended_at_utc||'still open'));
     for(const limit of data.limitations||[])lines.push('Limit: '+limit);
