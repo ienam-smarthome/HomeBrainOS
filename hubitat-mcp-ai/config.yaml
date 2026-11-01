@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.18.341"
+version: "0.18.342"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -79,6 +79,7 @@ options:
   causal_deterministic_final_enabled: true
   causal_known_automations_json: '[{"name":"Hallway Lights ON","platform":"Aqara M3","triggerMode":"any","triggers":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1","aliases":["Hallway Sensor P1"]}],"derivedSensors":[{"device":"Hallway Soft Sensor","kind":"occupancy","sourceMode":"combined","sources":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1","aliases":["Hallway Sensor P1"]}]}],"actions":[{"device":"Hallway Light 1","transition":"on"},{"device":"Hallway Light 2","transition":"on"}]}]'
   general_task_engine_enabled: false
+  model_first_investigations_enabled: false
   semantic_agent_enabled: true
   semantic_default_brightness_step: 20
   semantic_default_temperature_step: 1.0
@@ -165,6 +166,7 @@ schema:
   causal_deterministic_final_enabled: bool
   causal_known_automations_json: str
   general_task_engine_enabled: bool
+  model_first_investigations_enabled: bool
   semantic_agent_enabled: bool
   semantic_default_brightness_step: int
   semantic_default_temperature_step: float

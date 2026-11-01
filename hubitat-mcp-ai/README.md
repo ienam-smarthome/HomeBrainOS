@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.341**.
+Current add-on version: **0.18.342**.
+
+**HomeBrain vNext read-only model-first pilot (v0.18.342):** A separately switchable `model_first_investigations_enabled` option (default false) lets single-device telemetry investigations request a natural model-authored explanation instead of mandatory JSON claim IDs. The API accepts the exact original provider draft only when coordinator, author and incoming output match and bounded high-risk consistency checks pass; otherwise it retains the previous source-rendered answer. This is a **provisional, not semantically certified** pilot; it neither adds MCP/model reads nor changes controls, heating, lighting or mutation permissions. To test: install v0.18.342, set `model_first_investigations_enabled: true` in the add-on configuration and restart the add-on. Use a READ-ONLY telemetry question and inspect `investigation_coverage.answerPublicationDecision.mode` for `model-authored-provisional` versus `modelFirstRejection`. Set false to roll back without downgrading. [Release notes](CHANGELOG-0.18.342.md).
 
 **Answer Quality Q3 cross-domain source-proof foundation (v0.18.341):** Shared claim-plan validation now supports separate source-witness adapters without enabling unrestricted model prose. An offline-only, target/time-scoped command-witness adapter tests issuer versus physical-cause distinctions. Telemetry uncertainty no longer assumes every health status is offline; existing protected runtime publication remains limited to telemetry. [Release notes](CHANGELOG-0.18.341.md).
 

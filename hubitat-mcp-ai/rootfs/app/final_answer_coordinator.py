@@ -358,9 +358,13 @@ class FinalAnswerCoordinator:
             Awaitable[dict[str, Any]],
         ],
         evidence_supplier: Callable[[], list[dict[str, Any]]] | None = None,
+        model_first_investigations_enabled: bool = False,
     ) -> None:
         self._chat = chat
         self._evidence_supplier = evidence_supplier
+        self.model_first_investigations_enabled = bool(
+            model_first_investigations_enabled
+        )
 
     async def _ensure_broad_performance_logs(
         self,
@@ -820,7 +824,9 @@ class FinalAnswerCoordinator:
         # device telemetry packet. No new provider or MCP round is needed.
         # Other domains keep their existing causal/heating safety handling.
         telemetry_for_claim_plan = None
-        if contract is not None and contract.domain == "device_telemetry" and not causal:
+        if (not self.model_first_investigations_enabled
+                and contract is not None
+                and contract.domain == "device_telemetry" and not causal):
             typed = normalize_target_device_history(evidence)
             clock = assess_telemetry_clock_consistency(evidence)
             typed_coverage = {
@@ -834,6 +840,23 @@ class FinalAnswerCoordinator:
                 })
                 telemetry_for_claim_plan = (typed, typed_coverage)
 
+        if (
+            self.model_first_investigations_enabled and contract is not None
+            and contract.domain == "device_telemetry" and not causal
+        ):
+            final_messages.append({
+                "role": "user",
+                "content": (
+                    "MODEL-FIRST READ-ONLY EXPLANATION: Answer naturally in "
+                    "clear paragraphs with a concrete evidence-backed timeline "
+                    "where available, distinguish the broker from endpoint "
+                    "freshness, and give a specific next READ-ONLY discriminator. "
+                    "Explain uncertainty, do not invent live pings, code reads, "
+                    "rules, acknowledgements or verified physical failures. "
+                    "Do not output a claim-ID JSON plan. No commands or device "
+                    "changes are authorized."
+                ),
+            })
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
@@ -914,7 +937,9 @@ class FinalAnswerCoordinator:
         if not issues:
             # Existing causal/focal analyzers already enforce their own one-pass
             # or bounded specialized repairs. Avoid extra rounds for those paths.
-            if contract is not None and not causal:
+            if (contract is not None and not causal
+                    and not (self.model_first_investigations_enabled
+                             and contract.domain == "device_telemetry")):
                 return await self._revise_incomplete_answer(
                     original_user, draft, evidence, final_messages, causal=causal,
                 )

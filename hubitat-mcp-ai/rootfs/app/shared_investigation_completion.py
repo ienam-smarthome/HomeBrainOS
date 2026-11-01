@@ -34,6 +34,7 @@ from answer_publication_policy import publish_source_typed_answer
 from publication_boundary_shadow import observe_publication_boundary
 from model_first_draft_provenance import public_boundary_shape
 from proof_carrying_answer import admit_model_claim_plan
+from model_first_publication import admit_model_first_telemetry_answer
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
     reconcile_telemetry_answer, render_command_only_evidence_answer,
@@ -126,7 +127,10 @@ def _safe_metrics(outcome: Any, *, partial: bool) -> dict[str, Any]:
     return metrics
 
 
-def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
+def apply_shared_investigation_completion(
+    outcome: Any, request: str, *,
+    model_first_investigations_enabled: bool = False,
+) -> Any:
     """Attach a structured assessment before /api/ask or /api/chat serialization.
 
     This checkpoint is independent of the path's early return and cannot make
@@ -641,7 +645,30 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
             # Coordinator/author mutation of the *original model plan* still
             # fails closed. Record a fixed diagnostic rejection reason so
             # another run cannot silently miss the intended publication mode.
-            if publication["mode"] != "concise":
+            if model_first_investigations_enabled:
+                proposed, reason = admit_model_first_telemetry_answer(
+                    incoming_message, trace, normalized, coverage,
+                )
+                if proposed is not None and not getattr(
+                    outcome, "confirmation_required", False
+                ) and getattr(outcome, "request_class", "live-read") == "live-read":
+                    message = proposed
+                    publication = {
+                        **publication,
+                        "strategy": "vnext-provenance-gated-model-first",
+                        "mode": "model-authored-provisional",
+                        "modelProseCertified": False,
+                        "claimSourceVerification": "bounded-consistency-guards",
+                        "physicalCauseCertified": False,
+                        "modelFirstDraftPublished": True,
+                    }
+                    rejection = None
+                else:
+                    publication["modelFirstRejection"] = (
+                        reason if proposed is None else "not-read-only"
+                    )
+                    rejection = "vnext-model-first-fallback"
+            elif publication["mode"] != "concise":
                 rejection = "evidence-depth-required"
             elif getattr(outcome, "confirmation_required", False):
                 rejection = "pending-confirmation"
@@ -670,6 +697,8 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 publication["modelClaimPlanRejection"] = rejection
             coverage["answerPublicationDecision"] = publication
             coverage["answerProjection"] = (
+                "model-authored-provisional"
+                if publication["mode"] == "model-authored-provisional" else
                 "model-directed-source-claims"
                 if publication["mode"] == "model-directed-source-claims" else
                 "target-scoped-concise-evidence"

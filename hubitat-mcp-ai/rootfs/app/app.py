@@ -182,6 +182,7 @@ def load_options() -> dict[str, Any]:
         "causal_deterministic_final_enabled": True,
         "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
         "general_task_engine_enabled": False,
+        "model_first_investigations_enabled": False,
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
@@ -396,6 +397,9 @@ agent = UnifiedMCPAgent(
     internet_control_aliases=OPTIONS.get("internet_control_aliases_json"),
     general_task_engine_enabled=_bool(
         OPTIONS.get("general_task_engine_enabled"), False
+    ),
+    model_first_investigations_enabled=_bool(
+        OPTIONS.get("model_first_investigations_enabled"), False
     ),
     semantic_agent_enabled=_bool(
         OPTIONS.get("semantic_agent_enabled"), True
@@ -941,10 +945,18 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                 ),
             )
         try:
-            return calibrate_api_outcome(
-                apply_shared_investigation_completion(outcome, request.message),
-                request.message,
-            )
+            if _bool(OPTIONS.get("model_first_investigations_enabled"), False):
+                completed = apply_shared_investigation_completion(
+                    outcome, request.message,
+                    model_first_investigations_enabled=True,
+                )
+            else:
+                # Original two-argument boundary remains byte-compatible
+                # with existing tests, hosts and default-off integrations.
+                completed = apply_shared_investigation_completion(
+                    outcome, request.message,
+                )
+            return calibrate_api_outcome(completed, request.message)
         finally:
             if intent_token is not None:
                 reset_request_interpretation(intent_token)
