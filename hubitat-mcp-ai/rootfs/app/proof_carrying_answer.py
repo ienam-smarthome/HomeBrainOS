@@ -16,8 +16,7 @@ import json
 import re
 from typing import Any, Mapping
 
-SCHEMA = "homebrain-source-claim-plan.v1"
-_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+from source_claim_contract import SCHEMA, admit_source_claim_plan
 _SAFE = re.compile(r"^[\w .:/+\\-]{1,90}$", re.UNICODE)
 
 
@@ -80,7 +79,7 @@ def attested_telemetry_claims(
         "cause_unverified": (
             "The available source records do not establish whether "
             "the physical endpoint is reporting, accepting commands, or why "
-            "its stored health state is offline."
+            "its currently reported health state has that value."
         ),
         "next_readonly": (
             "The next read-only check is to compare genuine endpoint-originated "
@@ -148,35 +147,11 @@ def admit_model_claim_plan(
     draft: Any, normalized: Mapping[str, Any] | None,
     coverage: Mapping[str, Any] | None,
 ) -> tuple[str | None, str]:
-    """Strict content-independent admission; only host-typed text is emitted."""
+    """Telemetry source adapter: select only receipt-attested host sentences."""
     facts = attested_telemetry_claims(normalized, coverage)
-    if not facts:
-        return None, "no-source-claims"
-    if not isinstance(draft, str) or len(draft) > 1500:
-        return None, "not-a-bounded-plan"
-    try:
-        item = json.loads(draft.strip())
-    except (TypeError, ValueError):
-        return None, "not-a-json-plan"
-    if not isinstance(item, dict) or set(item) != {"schema", "claim_ids"}:
-        return None, "unexpected-plan-fields"
-    if item["schema"] != SCHEMA:
-        return None, "unknown-plan-schema"
-    ids = item["claim_ids"]
-    if (not isinstance(ids, list) or not 3 <= len(ids) <= 7
-            or any(not isinstance(x, str) or not _ID.fullmatch(x) for x in ids)
-            or len(set(ids)) != len(ids)):
-        return None, "malformed-claims"
-    if any(x not in facts for x in ids):
-        return None, "unsupported-claim"
     mandatory = {"reported_health", "cause_unverified", "next_readonly"}
-    mandatory.update(x for x in ("reported_mqtt", "clock_conflict") if x in facts)
-    if not mandatory.issubset(ids):
-        return None, "missing-material-proof"
-    # No free-form model text is copied into the answer. The model's *choice
-    # and order* are honored but each statement is rendered from proven
-    # source facts. This is not arbitrary free-form model-prose certification.
-    return "\n\n".join(facts[x] for x in ids), "source-claim-plan-admitted"
+    mandatory.update(key for key in ("reported_mqtt", "clock_conflict") if key in facts)
+    return admit_source_claim_plan(draft, facts, mandatory)
 
 
 __all__ = [
