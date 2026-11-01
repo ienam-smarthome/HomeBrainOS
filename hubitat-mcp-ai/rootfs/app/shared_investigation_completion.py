@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from general_evidence_completion import assess_task_source_coverage
+from recent_command_issuer_sources import recent_command_issuer_sources
 from historical_command_source_contract import (
     focused_command_observation, incident_log_window_coverage,
     calibrate_command_causality,
@@ -522,6 +523,13 @@ def apply_shared_investigation_completion(
             "that the device was responsive or an upstream action occurred."
         ),
     }
+    # Source attestation for a latest-state causal question is a separate
+    # dimension from checked source classes and may remain unresolved even
+    # after successful unscoped app logs.
+    if causal:
+        issuer = recent_command_issuer_sources(request, evidence)
+        if issuer is not None:
+            coverage["recentCommandIssuerSource"] = issuer
     if domain == "rule_design_review":
         # The historical source-kind list is intentionally empty for design
         # reviews; vacuous empty-set coverage must not become a green

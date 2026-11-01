@@ -194,7 +194,8 @@ from skills_framework import render_skills_for_request
 from skill_topology import render_topology_plan
 from skill_source_completion import (
     pending_device_log_read, pending_historical_command_read,
-    pending_scoped_explanation_command_read, block_unscoped_historical_logs,
+    pending_scoped_explanation_command_read, pending_recent_focal_command_read,
+    block_unscoped_historical_logs,
 )
 from requested_device_explanation import render_requested_device_explanation
 from skill_focal_window import build_focal_source_plan, execute_focal_source_plan, render_unverified_focal_outcome, project_archived_focal_state
@@ -3745,6 +3746,9 @@ class UnifiedMCPAgent:
                     objective, self.evidence.receipts(),
                 )
                 or pending_scoped_explanation_command_read(
+                    objective, self.evidence.receipts(),
+                )
+                or pending_recent_focal_command_read(
                     objective, self.evidence.receipts(),
                 )
             )
