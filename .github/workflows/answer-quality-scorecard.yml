@@ -20,6 +20,8 @@ on:
       - 'tests/test_q3_single_device_read_scope.py'
       - 'tests/test_q3_model_first_draft_provenance.py'
       - 'tests/test_q3_model_first_draft_provenance_core.py'
+      - 'tests/test_q3_model_claim_admission.py'
+      - 'hubitat-mcp-ai/rootfs/app/proof_carrying_answer.py'
       - 'hubitat-mcp-ai/rootfs/app/model_first_draft_provenance.py'
       - 'tests/test_q3_driver_source_identity_guard.py'
       - 'hubitat-mcp-ai/rootfs/app/driver_source_identity_guard.py'
