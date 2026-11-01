@@ -91,6 +91,8 @@ from stage6_adaptive_benchmark import Stage6Benchmark, stage6_status
 from stage66_answer_diagnostics import Stage6AnswerContractFailure
 from live_shadow_preflight import build_live_shadow_preflight, build_verified_detail_shadow
 from live_shadow_journal import project_shadow_history
+from live_shadow_commands import read_plan, project_command_shadow
+from mcp_client import tool_succeeded
 from anthropic_transport import describe_anthropic_http_error
 from paid_model_routing import set_request_model_tier, reset_request_model_tier
 from evidence_claim_calibrator import calibrate_api_outcome
@@ -622,6 +624,12 @@ class LiveShadowPreflightRequest(BaseModel):
 class LiveShadowJournalRequest(BaseModel):
     device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
     confirm_archive_read: bool = False
+
+
+class LiveShadowCommandRequest(BaseModel):
+    device_id: str = Field(min_length=1, max_length=12, pattern=r"^[0-9]+$")
+    incident_utc_date: str = Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    confirm_command_read: bool = False
 
 
 class Stage5BenchmarkRequest(BaseModel):
@@ -1323,6 +1331,59 @@ async def live_shadow_journal_history(
     result = project_shadow_history(
         payload.device_id, archive,
         window_start=since, window_end=until, read_at=now.isoformat(),
+    )
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/live-shadow/command-events")
+async def live_shadow_command_events(
+    payload: LiveShadowCommandRequest, request: Request,
+) -> JSONResponse:
+    """Three fixed read-only Hubitat device-event reads, never model-selected.
+
+    Explicit consent and UTC day; a matching command is not actuator proof.
+    No app logs, writes, cloud inference, retries or new journal capture.
+    """
+    if (payload.confirm_command_read is not True
+            or request.headers.get("x-homebrain-command-readonly") != "confirmed"
+            or request.headers.get("content-type", "").split(";")[0].strip().lower()
+                != "application/json"
+            or request.headers.get("sec-fetch-site", "") == "cross-site"):
+        raise HTTPException(status_code=403, detail="Explicit command-history read consent required.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+        if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(status_code=403, detail="Same-origin request required.")
+    if not mcp.configured:
+        raise HTTPException(status_code=503, detail="Hubitat MCP is not configured.")
+    now = datetime.now(timezone.utc)
+    try:
+        plan = read_plan(payload.device_id, payload.incident_utc_date, now)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Choose a valid UTC date in the last 30 days.") from None
+    # Each operation is a fixed read-only upstream gateway method, not a
+    # free-form AI-generated tool instruction or user-authored subtool name.
+    results = []
+    for operation in plan["operations"]:
+        arguments = {"tool": "hub_list_device_events", "args": {
+            "deviceId": plan["device_id"], "hoursBack": plan["hours_back"],
+            "limit": plan["limit_per_operation"], "attribute": operation,
+        }}
+        try:
+            response = await asyncio.wait_for(
+                mcp.call_tool("hub_read_devices", arguments), timeout=25.0
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Live shadow command-history read unavailable: %s",
+                           type(exc).__name__)
+            raise HTTPException(status_code=503,
+                                detail="Targeted read-only command history unavailable.") from None
+        results.append((operation, response))
+    result = project_command_shadow(
+        plan, results, read_at_utc=now.isoformat(),
     )
     return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
