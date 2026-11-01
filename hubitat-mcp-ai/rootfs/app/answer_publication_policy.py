@@ -46,13 +46,29 @@ def publish_source_typed_answer(
     if not isinstance(evidence_coverage, dict):
         raise ValueError("source-typed publication requires coverage metadata")
     full_requested = bool(_EXPLICIT_DETAIL.search(str(request or "")))
-    message = detailed() if full_requested else concise()
+    # A complex/partial source graph can require exact issuer, clock and
+    # boundary qualifications even when the question asks for a short answer.
+    # Do not summarize away verified commands, truncated history or a
+    # source-correlated watchdog reference. This evidence-driven override is
+    # independent of room, device name or request keyword.
+    command_count = normalized.get("commandCount")
+    evidence_requires_detail = bool(
+        normalized.get("truncated") is True
+        or (type(command_count) is int and command_count > 0)
+        or evidence_coverage.get("watchdogEventTimingCorrelation") is not None
+    )
+    full = full_requested or evidence_requires_detail
+    message = detailed() if full else concise()
     if not isinstance(message, str) or not message.strip():
         raise ValueError("source-backed answer cannot be empty")
+    mode = (
+        "requested-detail" if full_requested else
+        "evidence-depth-required" if evidence_requires_detail else "concise"
+    )
     decision = {
         "schema": _PUBLICATION_SCHEMA,
         "strategy": "source-typed-evidence",
-        "mode": "requested-detail" if full_requested else "concise",
+        "mode": mode,
         "modelProseCertified": False,
         "claimSourceVerification": "normalized-targeted-receipts",
         "physicalCauseCertified": False,
