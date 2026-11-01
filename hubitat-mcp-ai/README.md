@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.309**.
+Current add-on version: **0.18.310**.
+
+**Stage 7.8 proposed-evidence sufficiency review:** An optional, bounded v3 model-authored follow-up assessment now separates what a suggested source could establish, what it could not prove alone, and which additional verification would be needed. A separate, generic postrun source-capability review and phone UI retain independent human evaluation without certifying prose, adding Cloud requests, routing to hidden reference sources or changing the production publisher. Legacy v3 packets without the optional declaration remain accepted but explicitly unaudited. [Release notes](CHANGELOG-0.18.310.md).
 
 **Stage 7.7 cross-question evidence completeness:** The synthetic Stage 6 planner now receives the selected scenario title alongside the original question and is asked to prioritise distinct evidence needed for unresolved contrasts rather than redundant status reports. An independent, postrun Stage 7.7 review shows report/receipt time inversions and critical reference sources the model skipped, without exposing benchmark gold labels to its selection process. Source-origin timestamps are explicitly not treated as verified clock accuracy. No changes to the production publisher, MCP routing, live devices or cloud-call budget. [Release notes](CHANGELOG-0.18.309.md).
 
