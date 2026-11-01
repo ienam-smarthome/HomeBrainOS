@@ -62,6 +62,9 @@ def test_plan_one_extra_read_only_configuration_only_for_verified_subject():
     assert pending_telemetry_configuration_read(
         "Investigate why Other Relay is offline.", items,
     ) is None
+    assert pending_telemetry_configuration_read(
+        "Compare Test Relay with all devices reporting offline.", items,
+    ) is None
     assert pending_telemetry_configuration_read(QUESTION, items[:-1]) is None
     copy = receipts()
     copy[-1]["arguments"]["args"]["deviceId"] = "9912"
