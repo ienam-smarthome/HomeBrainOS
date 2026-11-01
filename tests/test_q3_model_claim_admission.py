@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 import sys
 from pathlib import Path
 
@@ -197,3 +198,58 @@ def test_unrelated_causal_or_write_routes_cannot_gain_telemetry_certificate():
     raw = plan(["reported_mqtt", "reported_health", "cause_unverified", "next_readonly"])
     answer = api_for(raw, request_class="write")
     assert "answerPublicationDecision" not in answer.get("investigation_coverage", {})
+
+
+def test_valid_model_plan_handoff_requires_same_provider_draft_and_target_proof():
+    from proof_carrying_answer import eligible_model_claim_handoff
+    from model_first_draft_provenance import PrivateModelDraft
+    from investigation_intelligence import plan_investigation
+    question = "Why does Test Relay show MQTT connected but device health offline?"
+    contract = plan_investigation(question)
+    assert contract is not None and contract.domain == "device_telemetry"
+    raw = plan(["reported_mqtt", "reported_health", "cause_unverified", "next_readonly"])
+    trace = PrivateModelDraft(
+        raw_first=raw, coordinator_result=raw,
+        final_answer=raw, no_tools_final_stage=True,
+    )
+    assert eligible_model_claim_handoff(
+        raw, evidence(), trace, domain=contract.domain,
+    )
+    assert not eligible_model_claim_handoff(
+        raw, evidence(), trace, domain="historical_command",
+    )
+    assert not eligible_model_claim_handoff(
+        "An invented physical explanation", evidence(), trace,
+        domain=contract.domain,
+    )
+    assert not eligible_model_claim_handoff(
+        raw, evidence(), PrivateModelDraft(
+            raw_first=raw, coordinator_result=raw,
+            final_answer="post-validated repair",
+            no_tools_final_stage=True,
+        ), domain=contract.domain,
+    )
+
+
+@pytest.mark.asyncio
+async def test_final_model_prompt_asks_causal_worded_telemetry_for_source_claim_plan():
+    from final_answer_coordinator import FinalAnswerCoordinator
+    calls = []
+    raw = plan(["reported_mqtt", "reported_health", "cause_unverified", "next_readonly"])
+
+    async def chat(messages, tools):
+        calls.append((messages, tools))
+        return {"role": "assistant", "content": raw}
+
+    coordinator = FinalAnswerCoordinator(chat, evidence_supplier=evidence)
+    reply = await coordinator.answer([
+        {"role": "user", "content":
+            "Why does Test Relay show MQTT connected but device health offline?"}
+    ])
+    assert reply == raw
+    assert len(calls) == 1
+    assert calls[0][1] == []
+    assert any("OPTIONAL SOURCE-ATTESTED ANSWER PLAN" in str(m.get("content", ""))
+               for m in calls[0][0])
+
+
