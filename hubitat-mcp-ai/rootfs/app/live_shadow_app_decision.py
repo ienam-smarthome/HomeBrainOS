@@ -95,15 +95,15 @@ def verified_issuer(plan: dict[str, Any], command_source: Any) -> dict[str, Any]
     rows = DeviceHistoryService._events(command_source.data, limit=50)
     requested = _utc(plan["requested_command_at_utc"])
     issuers = set()
-    explicit_target_id = False
+    # Explicit device proof must belong to the exact matching command and
+    # verified issuer, never a different command elsewhere on this page.
+    explicit_issuers = set()
     for row in rows:
         if str(row.get("name") or "").casefold() != "command-off":
             continue
         row_id = row.get("deviceId")
         if row_id not in (None, "") and str(row_id) != plan["device_id"]:
             continue
-        if row_id not in (None, ""):
-            explicit_target_id = True
         when = _utc(row.get("date"))
         if when != requested:
             continue
@@ -111,6 +111,8 @@ def verified_issuer(plan: dict[str, Any], command_source: Any) -> dict[str, Any]
         app_id = str(producer.get("id") or "")
         if producer.get("type") == "app" and _ID.fullmatch(app_id):
             issuers.add(app_id)
+            if row_id not in (None, ""):
+                explicit_issuers.add(app_id)
     if len(issuers) != 1:
         packet["status"] = (
             "ambiguous_command_issuer" if issuers
@@ -118,6 +120,7 @@ def verified_issuer(plan: dict[str, Any], command_source: Any) -> dict[str, Any]
         )
         return packet
     app_id = next(iter(issuers))
+    explicit_target_id = app_id in explicit_issuers
     packet.update({
         "status": ("verified_app_issuer_only" if explicit_target_id
                    else "issuer_verified_from_backend_scoped_page"),
