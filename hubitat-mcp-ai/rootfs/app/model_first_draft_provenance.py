@@ -11,15 +11,15 @@ switch, or a source of write authorization.
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
 @dataclass(slots=True)
 class PrivateModelDraft:
-    raw_first: str | None = None
-    coordinator_result: str | None = None
-    final_answer: str | None = None
+    raw_first: str | None = field(default=None, repr=False)
+    coordinator_result: str | None = field(default=None, repr=False)
+    final_answer: str | None = field(default=None, repr=False)
     # No guessed serving model identity or provider proof.
     no_tools_final_stage: bool = False
 
