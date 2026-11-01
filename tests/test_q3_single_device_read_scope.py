@@ -16,6 +16,7 @@ def fixture(label="Relay A", target="9911"):
         {
             "tool": "hub_read_devices", "sub_tool": "hub_list_devices",
             "success": True,
+            "summary": "1 targeted device candidates",
             "arguments": {"tool": "hub_list_devices",
                           "args": {"labelFilter": label, "detailed": True}},
             "details": {
