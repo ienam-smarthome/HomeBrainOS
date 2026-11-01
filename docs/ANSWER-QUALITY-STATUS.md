@@ -2,7 +2,7 @@
 
 **Charter:** [ANSWER-QUALITY-CHARTER.md](ANSWER-QUALITY-CHARTER.md)  
 **Last baseline assessment:** 2026-11-01; **0 independently authenticated frozen-prompt first-attempt production reviews**, **2 complete source-bounded cross-domain diagnostics** (recorded command versus bridge reporter; device health versus MQTT status). The official scorecard remains **NOT MEASURED**.  
-**Most recent verified installed live add-on:** `0.18.341` (verified on user's 34.261-second read-only trace; **earlier build** `0.18.339` was also verified; v0.18.339 source-claim plan under review) ([PR #1240](https://github.com/ienam-smarthome/HomeBrainOS/pull/1240), merged `8040fd996bca635e766a938a901493c58d6398e7`, **7 exact-head CI checks green**). Adds privacy-minimal publication replacement observability and a fixed no-tools comparison prompt generator; **does not change the production answer-selection policy**. No live v0.18.334 reasoning, speed or Claude parity gain has been measured.
+**Most recent verified installed live add-on:** `0.18.341`, observed in the user's read-only 34.261-second Bedroom 3 Mesh run. An older `0.18.339` trace was also reviewed; [PR #1240](https://github.com/ienam-smarthome/HomeBrainOS/pull/1240) merged as `8040fd996bca635e766a938a901493c58d6398e7` with 7 green checks. v0.18.342 was merged in the repository but has **not yet been verified installed or evaluated live**. No measured model-quality improvement or Claude parity is asserted.
 **Live Hubitat/HA mutation:** none authorised by this quality programme.
 
 ## vNext v0.18.342 merged and user acceptance gate (2026-11-01)
