@@ -368,9 +368,16 @@ def _validate_answer(raw: str, records: list[dict]) -> dict:
             raise ValueError("unsupported or unknown sentence citation")
         if v2:
             atoms = sent["atoms"]
-            if (not isinstance(atoms, list) or len(atoms) > 4
-                    or (not atoms and sent["kind"] not in _RELATIONS)):
-                raise ValueError("missing or excessive atomic evidence assertions")
+            if not isinstance(atoms, list):
+                raise ValueError("invalid atomic assertion list")
+            if len(atoms) > 4:
+                raise ValueError("excessive atomic evidence assertions")
+            # [] is an explicit *unverified source-value coverage* outcome,
+            # not proof that a sentence has no factual claims. The model may
+            # lack safely extractable atoms for legitimate bounded absence or
+            # uncertainty language. Never invent an atom or silently certify
+            # the prose based on this absence; the audit reports incompleteness.
+            # Unexpected/false atoms still fail closed or score mismatched.
             seen_atoms = set()
             for atom in atoms:
                 if (not isinstance(atom, dict)
@@ -451,6 +458,7 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
     source_type_mismatches = 0
     atom_matches = 0
     atom_mismatches = 0
+    atom_missing_sentences = 0
     for sentence in draft["sentences"]:
         witnesses = [by_id[sid] for sid in sentence["evidence_ids"]]
         ok = _host_proof(sentence["kind"], witnesses)
@@ -463,6 +471,12 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
         source_type_mismatches += int(mismatch)
         atoms = sentence.get("atoms")
         checks = []
+        has_declared_atoms = bool(atoms)
+        relation_without_atoms = (
+            not has_declared_atoms and sentence["kind"] in _RELATIONS
+        )
+        if not has_declared_atoms and not relation_without_atoms:
+            atom_missing_sentences += 1
         if atoms is not None:
             for atom in atoms:
                 record = by_id[atom["record_id"]]
@@ -481,6 +495,10 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
             "typed_source_supported": ok,
             "source_type_mismatch": mismatch,
             "atomic_source_value_checks": checks,
+            "source_value_atom_coverage": (
+                "declared_atoms_checked" if has_declared_atoms
+                else "not_applicable_relation_host_proof" if relation_without_atoms
+                else "missing_declared_atoms_unverified"),
             "factual_prose_verified": False,
         })
         if ok:
@@ -505,6 +523,13 @@ def _audit(case: dict, selections: list[str], draft: dict) -> dict:
         "unmatched_source_types_other": unsupported - source_type_mismatches,
         "source_value_atoms_verified": atom_matches,
         "source_value_atoms_mismatched": atom_mismatches,
+        "sentences_missing_declared_source_value_atoms": atom_missing_sentences,
+        "declared_source_value_coverage_complete": (
+            atom_missing_sentences == 0 and
+            atom_mismatches == 0 and
+            draft.get("schema") == "homebrain-stage6-answer.v2"
+        ),
+        "declared_source_value_coverage_is_not_prose_verification": True,
         "sentences_with_unverified_free_prose": len(findings),
         "high_risk_unsupported_sentences": sum(
             not row["typed_source_supported"] and row["kind"] in _HIGH_RISK
@@ -744,7 +769,14 @@ class Stage6Benchmark:
                     "Use one typed label per sentence and exact "
                     "source record IDs. Also extract up to four exact SOURCE "
                     "field/value atoms stated by the sentence; do not invent "
-                    "values. A sentence may carry other unlabelled implications. "
+                    "values. For a supported source-factual assertion declare "
+                    "1-4 exact sourced atoms when possible. If no exact field "
+                    "value can be safely declared, return atoms=[]; this is "
+                    "explicitly scored as unverified source-value coverage, "
+                    "never automatically accepted as factual proof. Do not "
+                    "invent atoms merely to fill the list. Even correct atoms "
+                    "do not prove the sentence's causal/negative implications. "
+                    "A sentence may carry other unlabelled implications. "
                     "Return ONLY JSON {schema,sentences,uncertainties,next_evidence}. "
                     "schema: homebrain-stage6-answer.v2; sentences array 1-7 "
                     "of {text,kind,evidence_ids,atoms}. kind one of "
@@ -753,8 +785,9 @@ class Stage6Benchmark:
                     "competing_commands,physical_confirmation,unique_cause,"
                     "absence_proven. evidence_ids 1-3 shown IDs. atoms array "
                     "of {record_id,field,value} with field exactly as in source "
-                    "record and value exact JSON primitive; use [] only for "
-                    "time_order_conflict or competing_commands relations. "
+                    "record and value exact JSON primitive; [] marks missing "
+                    "declared source-value proof for ANY kind (not a pass). "
+                    "Never provide more than four atoms per sentence. "
                     "Allowed fields: state,source_time,received_at,clock_basis,"
                     "command,issuer,level,at,reported_at,driver_connected_to_broker,"
                     "independent_device_packet,physical_acknowledgement. "

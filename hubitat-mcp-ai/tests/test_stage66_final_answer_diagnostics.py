@@ -109,10 +109,10 @@ def _run(model):
         "schema": "homebrain-stage6-answer.v2",
         "sentences": [{"text": "The device was reported on.",
                        "kind": "state_report", "evidence_ids": ["I1"],
-                       "atoms": []}],
+                       "atoms": [{"record_id": "I1", "field": "state", "value": "on"}] * 5}],
         "uncertainties": ["Unknown physical operation"],
         "next_evidence": "Look for device acknowledgement",
-    }), "atomic_assertion_count_invalid"),
+    }), "atomic_assertion_count_exceeds_limit"),
 ])
 def test_validation_failure_preserves_synthetic_evidence_without_publishing_answer(answer, category):
     transport = FictionalFinal(answer)

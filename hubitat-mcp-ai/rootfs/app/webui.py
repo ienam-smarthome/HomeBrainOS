@@ -771,7 +771,12 @@ document.getElementById('runStage6').onclick=async()=>{
       ' · Other unsupported source types: '+data.unmatched_source_types_other+
       ' (high risk: '+data.high_risk_unsupported_sentences+')'+
       ' · Cited source-value atoms: '+data.source_value_atoms_verified+
-      ' matched / '+data.source_value_atoms_mismatched+' mismatched.';out.append(metrics);
+      ' matched / '+data.source_value_atoms_mismatched+' mismatched.'+
+      ' Declared atom coverage: '+(data.declared_source_value_coverage_complete?
+        'complete (prose still unverified)':
+        'INCOMPLETE — '+data.sentences_missing_declared_source_value_atoms+
+        ' sentence(s) without model-declared atoms; no source-value proof for those sentences.');
+    out.append(metrics);
     const stop=document.createElement('p');stop.textContent=
       'Gemma examined '+data.requested_source_reads+' additional records; stopped: '+
       data.stop_reason.replace(/_/g,' ')+(data.premature_stop_missing_relevant_sources?' · Some reference-relevant evidence was not inspected.':'')+
@@ -848,7 +853,8 @@ document.getElementById('runStage6').onclick=async()=>{
         (a.exact_source_value_match?'✓ ':'✕ ')+a.record_id+'.'+a.field).join(' · ');
       line.textContent=verdict+sent.kind.replace(/_/g,' ')+
         ' ['+sent.evidence_ids.join(', ')+'] · '+sent.text+
-        (atoms?' · Exact source-value checks: '+atoms:' · No source-value atoms checked');
+        (atoms?' · Exact source-value checks: '+atoms:
+         ' · Missing declared source-value atoms — NOT independently value-verified');
       details.append(line);
     }
     if(data.missing_expected_finding_types?.length){

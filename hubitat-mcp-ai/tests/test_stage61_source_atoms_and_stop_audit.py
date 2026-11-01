@@ -105,7 +105,7 @@ def test_state_report_with_source_clock_is_still_state_report_not_physical_proof
 
 @pytest.mark.parametrize("fault", [
     "unknown_atom_record", "unknown_atom_field", "mismatched_atom_reference",
-    "duplicate_atoms", "missing_atoms", "object_value", "extra_sentence_key",
+    "duplicate_atoms", "non_array_atoms", "excessive_atoms", "object_value", "extra_sentence_key",
 ])
 def test_v2_source_atom_contract_is_strict_and_no_guessing(fault):
     row = _sentence(
@@ -121,8 +121,10 @@ def test_v2_source_atom_contract_is_strict_and_no_guessing(fault):
         row["atoms"][0]["record_id"] = "E2"
     elif fault == "duplicate_atoms":
         row["atoms"] *= 2
-    elif fault == "missing_atoms":
-        row["atoms"] = []
+    elif fault == "non_array_atoms":
+        row["atoms"] = {}
+    elif fault == "excessive_atoms":
+        row["atoms"] *= 5
     elif fault == "object_value":
         row["atoms"][0]["value"] = {"injection": "ignored"}
     elif fault == "extra_sentence_key":
