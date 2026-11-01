@@ -1112,11 +1112,18 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
       liveShadowAppSelectCommand();
     }
     const review=data.transition_review||{};
+    const issuerIds=[...new Set(recorded.map(item=>String(item.recorded_issuer_app_id)))];
     const lines=[
       'Recent switching investigation · reported events only',
       ...(review.findings||[]).map((finding,i)=>(i+1)+'. '+finding),
-      'Conclusion: '+(review.conclusion||'Causal attribution not established.'),
-      'Next useful evidence: '+(review.next_evidence||'Contemporaneous app-decision and command-source evidence.'),
+      ...(recorded.length?[
+        'Recorded OFF-command issuers: '+recorded.length+' command(s) attributed by source to app ID(s) '+issuerIds.join(', ')+'.',
+        'Conclusion: OFF-command issuers are recorded, but app triggers, command delivery, physical switching and which command caused an OFF report are not established.',
+        'Next useful evidence: Select one recorded OFF command and inspect its bounded issuing-app declarations after a fresh command identity check.'
+      ]:[
+        'Conclusion: '+(review.conclusion||'Causal attribution not established.'),
+        'Next useful evidence: '+(review.next_evidence||'Contemporaneous app-decision and command-source evidence.')
+      ]),
       'Physical cycle proven: NO · app cause proven: NO',
       'Reported ON→OFF intervals (not proof of physical runtime):',
       ...(review.report_intervals||[]).map(item=>
