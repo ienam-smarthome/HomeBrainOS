@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.318**.
+Current add-on version: **0.18.319**.
+
+**Stage 8.4 temporal-integrity review:** The local Historical Shadow now distinguishes source-declared event time from collector arrival time, flags apparent gaps over 24 hours and source/receipt ordering inversions, and explicitly warns that delayed archive arrival does not prove contemporary device contact. The analysis is deterministic, postrun, privacy-safe, and no more Hubitat/Cloud reads are added. [Release notes](CHANGELOG-0.18.319.md).
 
 **Stage 8.3 opt-in archived history shadow:** A separate phone consent permits a single 30-day local Historical Journal query for one numeric device ID (50-record cap). It reports allowlisted state events, source time versus collector receipt and collection gaps, but no event absence, authenticated packet, command execution, physical state or causation proof. No new Hubitat reads, Cloud calls or production publisher changes. [Release notes](CHANGELOG-0.18.318.md).
 
