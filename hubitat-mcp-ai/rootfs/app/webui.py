@@ -199,12 +199,15 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input type="checkbox" id="liveShadowCommandConsent">I authorise three bounded read-only Hubitat device-event reads, with no AI or device controls.</label>
 <button type="button" id="runLiveShadowCommands" disabled>Compare command and switch events</button>
 <div id="liveShadowCommandReport" class="benchmark-report" role="status" aria-live="polite">Not run. Choose date and give fresh consent.</div>
+<button type="button" class="secondary copy-button" id="copyLiveShadowCommandResult" disabled>Copy command results</button>
 <div id="liveShadowAppFollowup" hidden>
 <p class="stage5-note">Stage 9.1 · Verified issuing-app follow-up. A separate, recent read-only command recheck is required before a bounded app-log read. It will show only safe decision classifications, not raw messages. No Cloud or device controls.</p>
 <div id="liveShadowAppFocal" class="muted">No verified recorded OFF command selected.</div>
 <label class="benchmark-consent"><input type="checkbox" id="liveShadowAppConsent">I authorise one read-only recorded-command recheck and one bounded issuing-app log query for this recent incident.</label>
 <button type="button" id="runLiveShadowAppDecision" disabled>Investigate recorded OFF command's app decisions</button>
 <div id="liveShadowAppReport" class="benchmark-report" role="status" aria-live="polite">Not run. Separate consent required.</div>
+<button type="button" class="secondary copy-button" id="copyLiveShadowAppResult" disabled>Copy test results</button>
+<p class="stage5-note">Copies the Command Shadow report and this app-decision follow-up together. Only the on-screen, privacy-filtered evidence is included.</p>
 </div>
 </details>
 <section class="card" id="systemHealthCard">
@@ -730,6 +733,25 @@ document.getElementById('runStage5').onclick=async()=>{
 };
 loadStage5Status();
 
+// Copy only the displayed, privacy-filtered result. No new Hubitat/API reads.
+document.getElementById('copyLiveShadowCommandResult').onclick=()=>{
+  const button=document.getElementById('copyLiveShadowCommandResult');
+  if(button.disabled)return;
+  const report=document.getElementById('liveShadowCommandReport').textContent||'';
+  if(report.trim())void copyText(report,button,'Copy command results');
+};
+document.getElementById('copyLiveShadowAppResult').onclick=()=>{
+  const button=document.getElementById('copyLiveShadowAppResult');
+  if(button.disabled)return;
+  const command=document.getElementById('liveShadowCommandReport').textContent||'';
+  const decision=document.getElementById('liveShadowAppReport').textContent||'';
+  if(!decision.trim())return;
+  const combined='HomeBrainOS Stage 9.1 test results\n\n'
+    +'Command Shadow (bounded device history):\n'+command
+    +'\n\nApp-decision follow-up (bounded logs):\n'+decision;
+  void copyText(combined,button,'Copy test results');
+};
+
 function liveShadowAppRefreshButton(){
   const button=document.getElementById('runLiveShadowAppDecision');
   button.disabled=button.dataset.running==='yes'
@@ -740,10 +762,12 @@ document.getElementById('liveShadowAppConsent').onchange=liveShadowAppRefreshBut
 document.getElementById('runLiveShadowAppDecision').onclick=async()=>{
   const button=document.getElementById('runLiveShadowAppDecision');
   const report=document.getElementById('liveShadowAppReport');
+  const copyButton=document.getElementById('copyLiveShadowAppResult');
   const date=button.dataset.commandTime||'';
   const device=button.dataset.deviceId||'';
   if(button.disabled||!/^[0-9]{1,12}$/.test(device))return;
   button.dataset.running='yes';liveShadowAppRefreshButton();
+  copyButton.disabled=true;
   report.textContent='Rechecking the recorded command issuer and reading a bounded app-log window. No controls or Cloud.';
   try{
     const response=await fetch(apiPath('api/live-shadow/app-decision'),{
@@ -779,6 +803,7 @@ document.getElementById('runLiveShadowAppDecision').onclick=async()=>{
     pre.textContent=lines.join('\n');report.replaceChildren(pre);
   }catch(e){report.textContent='Read-only app decision follow-up did not complete. '+e.message}
   finally{document.getElementById('liveShadowAppConsent').checked=false;
+    copyButton.disabled=false;
     button.dataset.running='no';liveShadowAppRefreshButton()}
 };
 
@@ -1004,6 +1029,8 @@ document.getElementById('runLiveShadowHistory').onclick=async()=>{
 document.getElementById('runLiveShadowCommands').onclick=async()=>{
   const followup=document.getElementById('liveShadowAppFollowup');
   followup.hidden=true;
+  document.getElementById('copyLiveShadowAppResult').disabled=true;
+  document.getElementById('liveShadowAppReport').textContent='Not run. Separate consent required.';
   document.getElementById('liveShadowAppConsent').checked=false;
   const followupButton=document.getElementById('runLiveShadowAppDecision');
   followupButton.dataset.commandTime='';
@@ -1012,10 +1039,12 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
 
   const button=document.getElementById('runLiveShadowCommands');
   const report=document.getElementById('liveShadowCommandReport');
+  const copyButton=document.getElementById('copyLiveShadowCommandResult');
   const id=document.getElementById('liveShadowDeviceId').value.trim();
   const date=document.getElementById('liveShadowIncidentDate').value;
   if(button.disabled||!/^[0-9]{1,12}$/.test(id))return;
   button.dataset.running='yes';liveShadowCommandRefreshButton();
+  copyButton.disabled=true;
   report.textContent='Reading three source-scoped Hubitat device-event pages. No commands or Cloud AI.';
   try{
     const response=await fetch(apiPath('api/live-shadow/command-events'),{
@@ -1103,6 +1132,7 @@ document.getElementById('runLiveShadowCommands').onclick=async()=>{
     report.textContent='Command Shadow read did not complete. '+e.message;
   }finally{
     document.getElementById('liveShadowCommandConsent').checked=false;
+    copyButton.disabled=false;
     button.dataset.running='no';liveShadowCommandRefreshButton();
   }
 };
