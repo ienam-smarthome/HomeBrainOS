@@ -73,11 +73,18 @@ def single_device_broad_read_reason(
     if tool_name == "homebrain_filter_devices":
         attr = str(arguments.get("attribute") or "").casefold()
         value = str(arguments.get("value") or "").strip()
-        # A filter for the *known name* is harmless and can check the
-        # target identity, but filtering unrelated names across the hub is
-        # not a targeted connectivity read.
-        if attr == "name" and value and value.casefold() not in label.casefold():
+        # This local *filter* builds an unscoped whole-hub inventory first.
+        # In the live v0.18.338 trace, filtering on deviceHealth=stale
+        # caused a 74-second, 207-device internal read that never appeared
+        # as a separate model-requested broad gateway operation. Any
+        # non-identity attribute sweep is therefore broad, even if the
+        # predicate happens to match the named target. Only allow a
+        # name-based filter explicitly matching the resolved target.
+        if attr == "name" and value and value.casefold() in label.casefold():
+            return None
+        if attr == "name":
             return "unrelated-name-filter-after-target-resolution"
+        return "unscoped-attribute-filter-after-target-resolution"
 
     return None
 
