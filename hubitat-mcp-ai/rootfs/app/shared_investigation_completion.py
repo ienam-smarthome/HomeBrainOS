@@ -28,7 +28,9 @@ from source_analysis_completion import (
 )
 from typed_device_history_evidence import (
     normalize_target_device_history, render_target_device_evidence_answer,
+    render_target_device_evidence_brief,
 )
+from answer_publication_policy import publish_source_typed_answer
 from publication_boundary_shadow import observe_publication_boundary
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
@@ -598,14 +600,33 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 partial = True
                 metrics["outcome"] = "unresolved"
             incoming_message = str(getattr(outcome, "message", "") or "")
-            message = render_target_device_evidence_answer(
-                evidence, normalized,
-                clock_check=coverage.get("telemetryClockConsistency"),
+            # Separate claim/source verification from presentation: ordinary
+            # questions get a concise evidence-led answer rather than an
+            # unconditional long report. Explicit full-detail requests retain
+            # the same exhaustive source-safe renderer. Never publish a model
+            # candidate solely because an earlier synthesis validator passed.
+            message, publication = publish_source_typed_answer(
+                request,
+                concise=lambda: render_target_device_evidence_brief(
+                    evidence, normalized,
+                    clock_check=coverage.get("telemetryClockConsistency"),
+                ),
+                detailed=lambda: render_target_device_evidence_answer(
+                    evidence, normalized,
+                    clock_check=coverage.get("telemetryClockConsistency"),
+                ),
+                normalized=normalized,
+                evidence_coverage=coverage,
             )
-            # Record how often the host's deterministic finaliser displaces
-            # the incoming answer, without retaining its private contents.
-            # Incoming outcome text is NOT authenticated as raw model prose,
-            # and a replacement count says nothing about answer quality.
+            coverage["answerPublicationDecision"] = publication
+            coverage["answerProjection"] = (
+                "target-scoped-concise-evidence"
+                if publication["mode"] == "concise" else
+                "target-scoped-mixed-event-evidence"
+            )
+            # The incoming outcome may have been repaired or replaced in
+            # an upstream stage. This privacy-safe shadow is not attestation
+            # that raw model prose was available or factually proven.
             coverage["publicationBoundaryShadow"] = observe_publication_boundary(
                 incoming_message, message,
             )
