@@ -78,8 +78,9 @@ def attested_telemetry_claims(
             "and no recorded commands; completeness is not independently proven."
         ),
         "cause_unverified": (
-            "The available source records do not establish why the "
-            "physical endpoint stopped reporting or whether it can receive commands."
+            "The available source records do not establish whether "
+            "the physical endpoint is reporting, accepting commands, or why "
+            "its stored health state is offline."
         ),
         "next_readonly": (
             "The next read-only check is to compare genuine endpoint-originated "
@@ -120,13 +121,14 @@ def model_claim_prompt(
     if not facts:
         return None
     display = "\n".join(f"- {key}: {value}" for key, value in facts.items())
+    mandatory = ["reported_health"]
+    mandatory += [x for x in ("reported_mqtt", "clock_conflict") if x in facts]
+    mandatory += ["cause_unverified", "next_readonly"]
+    example = json.dumps({"schema": SCHEMA, "claim_ids": mandatory}, separators=(",", ":"))
     return (
         "OPTIONAL SOURCE-ATTESTED ANSWER PLAN. To answer this bounded "
         "single-device status question with source-verified facts only, "
-        "output ONE JSON object with exactly two keys: "
-        f'{{"schema":"{SCHEMA}","claim_ids":'
-        '["reported_health","reported_mqtt","clock_conflict",'
-        '"cause_unverified","next_readonly"]}. '
+        "output ONE JSON object with exactly two keys, e.g. " + example + ". "
         "Select 3-7 distinct claim IDs ONLY from the source-backed facts "
         "below, in the order that best answers the original question. "
         "You MUST include reported_health, cause_unverified and next_readonly; "
