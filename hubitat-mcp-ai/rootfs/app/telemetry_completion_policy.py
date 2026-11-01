@@ -25,6 +25,11 @@ _WIDE = re.compile(
 )
 
 
+def single_target_telemetry_scope(request: str) -> bool:
+    """Shared request-scope test for evidence-saturation and source reads."""
+    return _WIDE.search(str(request or "")) is None
+
+
 def _leaf(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     raw = row.get("arguments")
     if not isinstance(raw, dict):
@@ -41,7 +46,7 @@ def ready_for_bounded_telemetry_answer(
     high_information_checkpoint_offered: bool = False,
 ) -> bool:
     """Positive proof of a bounded *answer opportunity*, never a root cause."""
-    if domain != "device_telemetry" or _WIDE.search(str(request or "")):
+    if domain != "device_telemetry" or not single_target_telemetry_scope(request):
         return False
     summary = normalize_target_device_history(evidence)
     if not isinstance(summary, dict):
@@ -98,4 +103,4 @@ def ready_for_bounded_telemetry_answer(
     return has_scoped_log and (has_discriminator or high_information_checkpoint_offered)
 
 
-__all__ = ["ready_for_bounded_telemetry_answer"]
+__all__ = ["ready_for_bounded_telemetry_answer", "single_target_telemetry_scope"]

@@ -35,6 +35,7 @@ from publication_boundary_shadow import observe_publication_boundary
 from model_first_draft_provenance import public_boundary_shape
 from proof_carrying_answer import admit_model_claim_plan
 from model_first_publication import admit_model_first_telemetry_answer
+from source_authority_packet import telemetry_source_authority
 from recorded_telemetry_freshness import (
     assess_recorded_telemetry_freshness, render_temporal_qualification,
     reconcile_telemetry_answer, render_command_only_evidence_answer,
@@ -588,6 +589,13 @@ def apply_shared_investigation_completion(
         normalized = normalize_target_device_history(evidence)
         if normalized is not None:
             coverage["normalizedDeviceHistory"] = normalized
+            if model_first_investigations_enabled:
+                source_authority = telemetry_source_authority(
+                    request, evidence,
+                    clock=coverage.get("telemetryClockConsistency"),
+                )
+                if source_authority is not None:
+                    coverage["sourceAuthority"] = source_authority
             coverage["answerProjection"] = "target-scoped-mixed-event-evidence"
             device_id = str(normalized["deviceId"])
             correlation = correlate_elapsed_watchdog_with_device_events(

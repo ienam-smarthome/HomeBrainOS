@@ -44,6 +44,7 @@ from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
 from model_first_draft_provenance import record_first_no_tools_draft
 from proof_carrying_answer import model_claim_prompt, admit_model_claim_plan
+from source_authority_packet import telemetry_source_authority, render_telemetry_authority
 from typed_device_history_evidence import normalize_target_device_history
 from telemetry_clock_consistency import assess_telemetry_clock_consistency
 from investigation_objective import resolve_primary_objective
@@ -857,6 +858,24 @@ class FinalAnswerCoordinator:
                     "changes are authorized."
                 ),
             })
+        # A compact single-authority packet comes AFTER verbose investigative
+        # and tool excerpt prompts so the model sees explicit source boundaries
+        # instead of treating a saved driver flag as upstream broker evidence.
+        # Do not add another synthesis round or choose a cause for the model.
+        if (
+            self.model_first_investigations_enabled and contract is not None
+            and contract.domain == "device_telemetry" and not causal
+        ):
+            authority = telemetry_source_authority(
+                original_user, evidence,
+                clock=assess_telemetry_clock_consistency(evidence),
+            )
+            authority_text = render_telemetry_authority(authority)
+            if authority_text:
+                final_messages.append({
+                    "role": "user", "content": authority_text,
+                })
+                increment_active_metric("vnext_source_authority_packet")
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
