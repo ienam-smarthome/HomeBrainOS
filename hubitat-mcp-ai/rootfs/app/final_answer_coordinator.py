@@ -43,6 +43,9 @@ from skill_investigation import render_skill_investigation
 from skill_grounded_answer import render_grounded_causal_answer
 from synthesis_validator import validate_synthesis
 from model_first_draft_provenance import record_first_no_tools_draft
+from proof_carrying_answer import model_claim_prompt, admit_model_claim_plan
+from typed_device_history_evidence import normalize_target_device_history
+from telemetry_clock_consistency import assess_telemetry_clock_consistency
 from investigation_objective import resolve_primary_objective
 from ai_investigation_routing import active_request_interpretation
 from device_incident_depth import is_connectivity_root_cause_request
@@ -812,12 +815,42 @@ class FinalAnswerCoordinator:
                 })
                 increment_active_metric("v3_claim_pilot_final_offered")
 
+        # Ask for a source-attestable model-directed claim plan only when
+        # this request genuinely has an ID-confirmed, command-free typed
+        # device telemetry packet. No new provider or MCP round is needed.
+        # Other domains keep their existing causal/heating safety handling.
+        telemetry_for_claim_plan = None
+        if contract is not None and contract.domain == "device_telemetry" and not causal:
+            typed = normalize_target_device_history(evidence)
+            clock = assess_telemetry_clock_consistency(evidence)
+            typed_coverage = {
+                "rootCauseVerified": False,
+                "telemetryClockConsistency": clock,
+            }
+            optional_claim_prompt = model_claim_prompt(typed, typed_coverage)
+            if optional_claim_prompt is not None:
+                final_messages.append({
+                    "role": "user", "content": optional_claim_prompt,
+                })
+                telemetry_for_claim_plan = (typed, typed_coverage)
+
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
         # completion, before source-focus repairs and synthesis validators.
         # Never put this private draft in a receipt, API JSON or log.
         record_first_no_tools_draft(draft)
+        # Exact JSON plan is a bounded choice among independently source-
+        # typed claims. Validate before generic prose repair so it cannot
+        # be rewritten into unlinked free-form statements. The API publisher
+        # revalidates the same plan against final canonical coverage.
+        if telemetry_for_claim_plan is not None:
+            typed, typed_coverage = telemetry_for_claim_plan
+            approved, _reason = admit_model_claim_plan(
+                draft, typed, typed_coverage,
+            )
+            if approved is not None:
+                return draft
         # Distinguish model formatting from later synthesis repair. No draft,
         # IDs, evidence values or JSON are retained; only boolean counters.
         if final_claim_prompt:
