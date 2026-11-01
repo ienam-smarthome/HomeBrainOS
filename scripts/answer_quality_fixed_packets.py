@@ -110,9 +110,9 @@ def validate_run_manifest(payload: Any, packets: list[dict[str, Any]]) -> dict[s
         _run_field(run["answer_sha256"], SHA256_RE, "answer_sha256")
         _run_field(run["build_sha"], GIT_SHA_RE, "build_sha")
         _run_field(run["model"], SAFE_MODEL_RE, "model")
-        if run["provider"] not in PROVIDERS:
+        if not isinstance(run["provider"], str) or run["provider"] not in PROVIDERS:
             raise ScorecardInputError("Unrecognized provider")
-        if isinstance(run["attempt_index"], bool) or run["attempt_index"] != 1:
+        if type(run["attempt_index"]) is not int or run["attempt_index"] != 1:
             raise ScorecardInputError("Only explicitly recorded first attempts may pair")
         ms = run["elapsed_ms"]
         if isinstance(ms, bool) or not isinstance(ms, (int, float)) or not math.isfinite(ms) or ms < 0:
