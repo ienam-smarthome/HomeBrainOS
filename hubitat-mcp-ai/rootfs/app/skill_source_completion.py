@@ -281,7 +281,7 @@ def pending_recent_focal_command_read(
     """
     request_text = str(request or "")
     is_recent = re.search(
-        r"(?i)\b(?:most recent(?:ly)?|latest|last)\b", request_text,
+        r"(?i)\b(?:most recent(?:ly)?|latest|last\s+(?:time|event|transition|switch|turned|went|on|off))\b", request_text,
     ) is not None
     action_match = re.search(
         r"(?i)\b(?:turned|went|switched|turn|switch|turning)\s+(on|off)\b"
