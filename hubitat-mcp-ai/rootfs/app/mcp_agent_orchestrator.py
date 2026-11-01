@@ -23,6 +23,7 @@ from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
 from telemetry_completion_policy import ready_for_bounded_telemetry_answer
+from source_authority_packet import pending_telemetry_configuration_read
 from model_first_draft_provenance import (
     PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
     record_coordinator_result, record_final_answer, private_snapshot,
@@ -3689,6 +3690,50 @@ class UnifiedMCPAgent:
                 # A failed or unavailable source must never masquerade as a
                 # checked-empty device history or abort the investigation.
                 logger.debug("Required scoped device log read unavailable: %s", exc)
+        # vNext evidence-first path: after target status, bounded history and
+        # scoped logs, perform at most ONE additional read of the installed
+        # device's configuration. This can identify driver metadata, but it
+        # cannot establish physical or broker connectivity. No inferred driver
+        # code ID is used and all write/confirmation routes are untouched.
+        config_plan = (
+            pending_telemetry_configuration_read(
+                objective, self.evidence.receipts(),
+            )
+            if getattr(self, "model_first_investigations_enabled", False)
+            and not _explicit_mutation_request(objective)
+            else None
+        )
+        if config_plan is not None:
+            try:
+                config_catalog = build_request_tool_catalog(
+                    await self.mcp.list_tools()
+                )
+                config_tool = config_catalog.available_tool("hub_read_devices")
+                config_args = {
+                    "tool": "hub_get_device", "args": config_plan,
+                }
+                if (
+                    config_tool is not None
+                    and config_catalog.gateway_operation_error(
+                        "hub_read_devices", config_args,
+                    ) is None
+                    and not classify_tool_effect(config_tool, config_args).mutates
+                ):
+                    result = await self.executor.execute(
+                        "hub_read_devices", config_args, tool=config_tool,
+                        supports_live_claim=True,
+                        evidence_kind="source_scoped_device_configuration",
+                    )
+                    messages.append({
+                        "role": "tool", "tool_name": "hub_read_devices",
+                        "content": result.content,
+                    })
+                    increment_active_metric("vnext_device_configuration_read")
+                else:
+                    increment_active_metric("vnext_device_configuration_unavailable")
+            except Exception as exc:
+                increment_active_metric("vnext_device_configuration_unavailable")
+                logger.debug("vNext scoped configuration read unavailable: %s", exc)
         # Mandatory historical command provenance is a distinct event stream
         # from switch states and app logs. Complete one targeted, verified,
         # read-only command history check before final synthesis when the
