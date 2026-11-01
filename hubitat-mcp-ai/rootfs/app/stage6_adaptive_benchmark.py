@@ -835,6 +835,9 @@ class Stage6Benchmark:
                 selected.append(plan["source_id"])
             gathered = [{"source_id": sid, "records": all_sources[sid]["records"]}
                         for sid in selected]
+            records = [case["initial"]] + [
+                record for group in gathered for record in group["records"]
+            ]
             answer_messages = [
                 {"role": "system", "content": (
                     "Write your own concise, natural explanation of this fictional "
@@ -971,9 +974,6 @@ class Stage6Benchmark:
                         plan_reviews[-1]["open_questions"] if plan_reviews else [],
                     "stopped_by": stop_reason,
                 }, separators=(",", ":"), ensure_ascii=True)},
-            ]
-            records = [case["initial"]] + [
-                record for group in gathered for record in group["records"]
             ]
             try:
                 final_raw = await self._call(transport, answer_messages)
