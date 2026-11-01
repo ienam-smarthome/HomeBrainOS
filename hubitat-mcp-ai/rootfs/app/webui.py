@@ -809,12 +809,21 @@ document.getElementById('runLiveShadowAppDecision').onclick=async()=>{
       'Log rows returned: '+(data.app_log_rows_returned===null?'unknown':data.app_log_rows_returned),
       'Classified app declarations (not verified execution):'
     ];
+    if(data.app_log_source_format)
+      lines.push('Log source format: '+data.app_log_source_format);
     for(const entry of data.classified_decision_rows||[]){
-      lines.push('• '+entry.reported_at_utc+' | '+entry.classification
+      const time=entry.reported_at_utc
+        ?entry.reported_at_utc+' (UTC source timestamp)'
+        :entry.reported_hub_local_time
+          ?entry.reported_hub_local_time+' (hub-local time; UTC offset unverified)'
+          :'time unavailable';
+      lines.push('• '+time+' | '+entry.classification
         +' | identity basis: '+entry.app_identity_basis);
     }
     if(!(data.classified_decision_rows||[]).length)
-      lines.push('• No classifiable app decisions in this bounded result; NOT proof no decision occurred.');
+      lines.push(data.status==='app_log_source_in_progress'
+        ?'• Hub log snapshot is still loading; no completed app-log page was returned.'
+        :'• No classifiable app decisions in this bounded result; NOT proof no decision occurred.');
     lines.push('A log declaration is not proof of app execution, physical switching, or the cause of an OFF report.');
     for(const limit of data.limitations||[])lines.push('Limit: '+limit);
     const pre=document.createElement('pre');
