@@ -17,6 +17,7 @@ from stage72_answer_coverage import build_answer_coverage_review
 from stage75_evidence_answer_review import build_stage75_review
 from stage77_relationship_review import build_stage77_review
 from stage78_followup_sufficiency import build_stage78_review
+from stage79_proof_target_review import build_stage79_review
 
 
 def _bounded_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -94,6 +95,7 @@ def build_review_packet(
     from stage6_adaptive_benchmark import _host_proof
     stage75_review = build_stage75_review(
         case, selected, draft, answer_review, _host_proof)
+    stage78_review = build_stage78_review(case, selected, draft)
     packet = {
         "schema": "homebrain-stage7-review.v1",
         "case_id": case_id,
@@ -106,7 +108,8 @@ def build_review_packet(
         "answer_coverage_review": answer_review,
         "stage75_evidence_answer_review": stage75_review,
         "stage77_relationship_review": build_stage77_review(case, selected, answer_review),
-        "stage78_followup_sufficiency_review": build_stage78_review(case, selected, draft),
+        "stage78_followup_sufficiency_review": stage78_review,
+        "stage79_proof_target_review": build_stage79_review(draft, stage78_review),
         "suggested_next_evidence_review": {
             "suggestion": draft["next_evidence"],
             "human_review_verdict": "not_reviewed",
