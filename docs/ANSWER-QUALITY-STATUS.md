@@ -9,6 +9,7 @@
 
 - **Direction fixed:** benchmark-first, generalisable evidence use, natural Claude-quality domain answers, safety and efficient first-attempt resolution. This direction persists between conversations.
 - **Evaluation inventory already existed:** `tests/fixtures/homebrain_golden_tasks_v1.json` has **13** target scenarios with mixed historical replay and `capture_required` statuses. There are also prior synthetic audit-reasoning and model-evaluation scripts; they are **not an independently measured first-attempt production baseline**.
+- **Q0 inventory under review:** 13 legacy golden tasks plus **18 curated source-packet cases = 31 defined cases**, with human-review rubrics and scorecard CLI; still no factual-success claims.
 - **Baseline answer quality:** **NOT MEASURED**. Passing thousands of unit tests and release assurance does **not** measure factual accuracy or compare fairly with Claude.
 - **Real evidence motivating this change:** the Hallway Light 1 investigation first overclaimed a 15-second timeout; a later answer inferred unverified periodic keep-off while disregarding four independent source-timed motion-inactive → app OFF command pairs at approximately 15.1s. The **exact original 15:29 OFF trigger remains unverified**.
 - **Known model:** free Ollama Cloud `gemma4:31b` as observed in the user's last HomeBrain trace; model/provider must be documented on each new run.
@@ -18,7 +19,7 @@
 
 | Milestone | State | Evidence required to close |
 | --- | --- | --- |
-| Q0: durable charter + fixed inventory + scorecard | **In development** (this PR) | CI green, merge SHA recorded; empty scorecard explicitly unmeasured |
+| Q0: durable charter + fixed inventory + scorecard | **Implementation committed; CI/merge pending** | CI green, merge SHA recorded; empty scorecard explicitly unmeasured |
 | Q1: reproducible 13 legacy + curated new cases | **Not measured** | Captured/replayed same-input results with trace/answers and grounded human review |
 | Q2: source-complete reasoning improvements | **Not started** | Before/after changes pass target cases and cross-domain negative controls |
 | Q3: same-evidence Gemma vs alternative model A/B | **Not started** | Paired, disclosed model versions/cost/latency, human causal review |
