@@ -6,6 +6,7 @@ a model inference, event backfill, or newly captured stream.
 """
 from __future__ import annotations
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 _EVENT_STATE = {
@@ -16,6 +17,8 @@ _EVENT_STATE = {
     "power": None,
 }
 _MAX_EVENTS = 50
+_COMMAND_ATTRIBUTES = frozenset({"command-on", "command-off", "command-setLevel"})
+_NATIVE_COMMAND_SOURCE = re.compile(r"^hubitat-mcp-command:app:([0-9]{1,12})$")
 
 
 def _valid_timestamp(value: Any) -> str | None:
@@ -129,6 +132,9 @@ def project_shadow_history(device_id: str, archive: Any, *,
         "physical_execution_verified": False,
         "causal_attribution_verified": False,
         "events": [],
+        "archived_native_command_count": 0,
+        "archived_state_readthrough_count": 0,
+        "archive_page_limit_reached": False,
         "collection_gaps": [],
         "temporal_integrity": _temporal_integrity([]),
         "limitations": [
@@ -137,6 +143,8 @@ def project_shadow_history(device_id: str, archive: Any, *,
             "Source timestamps and collector receipt times are not interchangeable.",
             "Large source-versus-receipt discrepancies may be replay or clock error; journal receipt is not fresh physical device contact.",
             "A reported state does not prove physical actuator behaviour or command causation.",
+            "Archived native commands identify a source-reported issuing app, not device delivery, successful execution or the app's trigger.",
+            "No archived commands in the returned page does not prove no commands occurred; prior source read-through and retention may be incomplete.",
         ],
     }
     if type(archive) is not dict or type(archive.get("events")) is not list or type(archive.get("gaps")) is not list:
@@ -148,22 +156,51 @@ def project_shadow_history(device_id: str, archive: Any, *,
         if type(row) is not dict or row.get("stream") != "events" or str(row.get("device_id")) != device_id:
             continue
         attribute = row.get("attribute")
-        if type(attribute) is not str or attribute not in _EVENT_STATE:
+        if type(attribute) is not str or (
+            attribute not in _EVENT_STATE and attribute not in _COMMAND_ATTRIBUTES
+        ):
             continue
-        val = _status_value(attribute, row.get("value"))
         receipt = _valid_timestamp(row.get("received_at"))
         event_at = _valid_timestamp(row.get("observed_at"))
         source_time = _valid_timestamp(row.get("source_time"))
-        if val is None or receipt is None or event_at is None:
+        if receipt is None or event_at is None:
             continue
-        cleaned.append({
-            "attribute": attribute, "reported_value": val,
+        # These command markers are created only by the journal's bounded
+        # native read-through path. Other caller- or socket-provided strings
+        # must never be promoted into a known issuing-app identity.
+        if attribute in _COMMAND_ATTRIBUTES:
+            origin = row.get("source")
+            match = _NATIVE_COMMAND_SOURCE.fullmatch(origin) if type(origin) is str else None
+            if match is None or source_time is None:
+                continue
+            entry = {
+                "attribute": attribute,
+                "record_kind": "archived_native_command_record",
+                "recorded_issuer_app_id": match.group(1),
+                "reported_value": None,
+                "origin_class": "native_history_readthrough_not_device_ack",
+            }
+        else:
+            val = _status_value(attribute, row.get("value"))
+            if val is None:
+                continue
+            entry = {
+                "attribute": attribute, "reported_value": val,
+                "record_kind": "reported_state_observation",
+                "origin_class": (
+                    "native_history_readthrough_not_device_ack"
+                    if row.get("source") == "hubitat-mcp-state"
+                    else "journal_stream_or_other_unverified_origin"
+                ),
+            }
+        entry.update({
             "observed_at_utc": event_at,
             "received_at_utc": receipt,
             "source_time_utc": source_time,
             "timestamp_basis": ("source_declared_not_authenticated"
                                 if source_time else "collector_only"),
         })
+        cleaned.append(entry)
     gaps = []
     for gap in archive["gaps"][:50]:
         if type(gap) is not dict or gap.get("stream") != "events":
@@ -175,6 +212,15 @@ def project_shadow_history(device_id: str, archive: Any, *,
                          "open_gap": end is None})
     baseline["temporal_integrity"] = _temporal_integrity(cleaned)
     baseline["events"] = cleaned
+    baseline["archived_native_command_count"] = sum(
+        e["record_kind"] == "archived_native_command_record" for e in cleaned
+    )
+    baseline["archived_state_readthrough_count"] = sum(
+        e["record_kind"] == "reported_state_observation"
+        and e["origin_class"] == "native_history_readthrough_not_device_ack"
+        for e in cleaned
+    )
+    baseline["archive_page_limit_reached"] = len(archive["events"]) == _MAX_EVENTS
     baseline["collection_gaps"] = gaps
     baseline["returned_event_count"] = len(cleaned)
     baseline["archive_has_more"] = archive.get("has_more") is True
