@@ -79,6 +79,23 @@ def build_stage78_review(case: dict[str, Any], selected: list[str],
     declaration = draft.get("next_evidence_assessment")
     if declaration is not None:
         validate_followup_assessment(declaration)
+    validation = draft.get("_followup_validation", {})
+    if type(validation) is not dict or any(
+        (k, v) not in (
+            ("next_evidence", "invalid_or_missing"),
+            ("next_evidence_assessment", "invalid"),
+        ) for k, v in validation.items()
+    ):
+        raise ValueError("invalid internal follow-up validation status")
+    next_evidence = draft.get("next_evidence", "")
+    valid_next_evidence = (
+        type(next_evidence) is str
+        and 5 <= len(next_evidence.strip()) <= 220
+        and "next_evidence" not in validation
+    )
+    # Never echo an invalid proposal into a response or reviewer packet.
+    if not valid_next_evidence:
+        next_evidence = ""
     records = [case["initial"]]
     for source in case["catalog"]:
         if source["id"] in selected:
@@ -99,7 +116,9 @@ def build_stage78_review(case: dict[str, Any], selected: list[str],
     return {
         "schema": "homebrain-stage78-followup-sufficiency.v1",
         "model_proposal": {
-            "next_evidence_text": draft["next_evidence"],
+            "next_evidence_text": next_evidence,
+            "next_evidence_validated_as_bounded_string": valid_next_evidence,
+            "field_status": dict(validation),
             "assessment": dict(declaration) if declaration is not None else None,
             "declaration_present": declaration is not None,
             "declaration_is_model_authored_not_proof": True,
