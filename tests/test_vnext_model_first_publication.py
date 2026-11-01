@@ -144,3 +144,28 @@ def test_not_applied_to_command_or_ambiguous_target_history():
         )
         assert accepted is None
         assert reason == "unverified-source-scope"
+
+
+def test_rollback_restores_model_first_for_unresolved_conflicting_clocks():
+    """The 0.18.344 unconditional clock gate is no longer a publisher override.
+
+    This proves behavior only. It is NOT proof of the factual correctness of
+    arbitrary model-authored prose or of physical endpoint connectivity.
+    """
+    coverage = {
+        **COVERAGE,
+        "sourceAuthority": {
+            "temporalClocks": {
+                "sourcesAgree": False,
+                "metadataAgeHoursAtRead": 503.0,
+                "reportedDataAgeHours": 45.1,
+            },
+            "independentBrokerPacketsVerified": False,
+            "verifiedInstalledDriverBehaviour": False,
+        },
+    }
+    message, reason = admit_model_first_telemetry_answer(
+        NATURAL, trace(), NORMALIZED, coverage,
+    )
+    assert message == NATURAL
+    assert reason == "model-authored-bounded-telemetry"
