@@ -126,6 +126,11 @@ def render_page(title: str, version: str) -> str:
 <div class="answer" id="answer" role="status" aria-live="polite">Ready for a question.</div>
 </section>
 <section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
+<details class="card" id="advancedDiagnosticsCard">
+<summary><strong>🧰 Advanced testing &amp; diagnostics</strong> <span class="muted">Optional developer tools</span></summary>
+<p class="muted">Answer Quality is now evaluated against reviewed HomeBrain answers, not old synthetic experiment scores. These tools are optional and do not need to be run for everyday questions. Cloud experiments may use your Ollama allowance; every live Hubitat read still requires explicit consent.</p>
+<details class="card" id="legacyCloudExperimentsCard">
+<summary><strong>🧪 Legacy cloud experiments</strong> <span class="muted">Optional, may use cloud allowance</span></summary>
 <details class="card" id="cloudBenchmarkCard">
 <summary><strong>🧪 Ollama Cloud benchmark</strong> <span class="muted">Uses your current account</span></summary>
 <p class="muted" id="cloudBenchmarkAvailability">Checking the configured cloud model…</p>
@@ -178,6 +183,7 @@ def render_page(title: str, version: str) -> str:
 <label class="benchmark-consent"><input type="checkbox" id="stage6Consent">I authorise up to four synthetic Ollama Cloud requests using my current allowance.</label>
 <div id="stage6Report" class="benchmark-report" role="status" aria-live="polite">No Stage 6 investigation has run this session.</div>
 </details>
+</details>
 <details class="card" id="liveShadowCard">
 <summary><strong>Live Shadow · Read-only preflight</strong> <span class="muted">One Hubitat device, no AI or controls</span></summary>
 <p class="stage5-note">Real Hubitat context READ only, after explicit consent. No Ollama Cloud requests, device commands, app/driver source reads, persistent capture or production publisher changes. The result is a current hub report, NOT verified physical history or causation.</p>
@@ -211,6 +217,7 @@ def render_page(title: str, version: str) -> str:
 <button type="button" class="secondary copy-button" id="copyLiveShadowAppResult" disabled>Copy test results</button>
 <p class="stage5-note">Copies the Command Shadow report and this app-decision follow-up together. Only the on-screen, privacy-filtered evidence is included.</p>
 </div>
+</details>
 </details>
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
