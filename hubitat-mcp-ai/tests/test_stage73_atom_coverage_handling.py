@@ -72,6 +72,26 @@ def test_empty_atoms_cannot_silently_support_high_risk_physical_or_global_absenc
     assert result["publisher_approval"] is False
 
 
+
+def test_relation_without_atoms_uses_structural_host_proof_not_missing_atom_penalty():
+    case = _CASES["competing_commands"]
+    draft = response(sentence(
+        kind="competing_commands", ids=["E1", "E2"],
+        text="Two different applications issued competing commands."))
+    records = [case["initial"]] + [
+        rec for src in case["catalog"] if src["id"] in ("S1", "S2")
+        for rec in src["records"]]
+    assert _validate_answer(json.dumps(draft), records) == draft
+    checks = _audit(case, ["S1", "S2"], draft)
+    assert checks["typed_source_supported_sentences"] == 1
+    assert checks["sentences_missing_declared_source_value_atoms"] == 0
+    assert checks["declared_source_value_coverage_complete"] is True
+    assert checks["sentence_citation_checks"][0]["source_value_atom_coverage"] == (
+        "not_applicable_relation_host_proof")
+    assert checks["prose_semantics_fully_verified"] is False
+    assert checks["publisher_approval"] is False
+
+
 def test_partial_atom_coverage_is_not_a_complete_pass_even_if_present_atoms_match():
     case = _CASES["competing_commands"]
     draft = response(
