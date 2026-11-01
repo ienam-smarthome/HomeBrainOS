@@ -22,7 +22,7 @@ Read [the permanent charter](ANSWER-QUALITY-CHARTER.md) and [live status](ANSWER
 
 The HomeBrain technical JSON includes actual device labels, IP addresses, command arguments, event payloads and potentially private logs. **Do not commit unredacted output to public GitHub**.
 
-After a user supplies the complete HomeBrain JSON in a private conversation, the assistant can review the source evidence in that conversation. For local reproducibility, the new `scripts/answer_quality_capture.py` extracts only limited metadata, hashes and ungraded coverage counts.
+After a user supplies the complete HomeBrain JSON in a private conversation, the assistant can review the source evidence in that conversation. For local reproducibility, the `scripts/answer_quality_capture.py` extractor records hashes, timing, receipt counts and a **strictly allowlisted** summary of HomeBrain's self-reported missing-source categories. It omits unknown/private gap labels and records only their count. `source_gap_reporting=not_provided` is different from a reported empty list; even a reported empty list leaves `source_packet_completeness=not_independently_verified`. These metadata are **not** a source-completeness verdict, factual grade, or proof of physical action.
 
 ```bash
 python scripts/answer_quality_capture.py \
