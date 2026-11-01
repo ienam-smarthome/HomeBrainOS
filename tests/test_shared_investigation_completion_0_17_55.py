@@ -554,6 +554,14 @@ def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
     ))
     cov = result["investigation_coverage"]
     assert cov["domain"] == "device_telemetry"
+    publication = cov["answerPublicationDecision"]
+    assert publication["schema"] == "homebrain-answer-publication-decision.v1"
+    assert publication["mode"] == "concise"
+    assert publication["modelProseCertified"] is False
+    assert cov["answerProjection"] == "target-scoped-concise-evidence"
+    assert "healthStatus=offline" in result["message"]
+    assert "mqttStatus=connected" in result["message"]
+    assert "**Device-scoped logs:**" not in result["message"]
     boundary = cov["publicationBoundaryShadow"]
     assert boundary["strategy"] == "typed_target_history"
     assert boundary["replacementPerformed"] is True
@@ -569,6 +577,30 @@ def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
     assert "Code ID 9999" not in result["message"]
     assert "Investigation depth still missing" not in result["message"]
     assert result["metrics"]["outcome"] == "unresolved"
+
+def test_shared_publication_detail_request_preserves_legacy_full_report():
+    original = outcome([
+        receipt("hub_read_devices", "hub_list_device_events", {
+            "deviceId": "9911", "hoursBack": 24,
+        }, details={"observedEvents": [{
+            "name": "deviceHealth", "value": "stale",
+            "date": "2026-11-01T12:00:00+00:00",
+            "producedBy": {"id": "9911", "type": "device",
+                           "label": "Generic Relay"},
+        }]}),
+    ], coverage={"domain": "device_telemetry", "evidenceComplete": False})
+    observed = build_observed_agent_outcome(original, {
+        "outcome": "unresolved", "counters": {}, "timings_ms": {},
+    })
+    response = serialize(apply_shared_investigation_completion(
+        observed, "Give the full technical report for Generic Relay.",
+    ))
+    # Full detail is explicit opt-in, not a new source/causality privilege.
+    if "normalizedDeviceHistory" in response["investigation_coverage"]:
+        assert response["investigation_coverage"]["answerPublicationDecision"]["mode"] == "requested-detail"
+        assert "**Device-scoped logs:**" in response["message"]
+        assert response["investigation_coverage"]["rootCauseVerified"] is False
+
 
 def test_q1_clock_conflict_printed_once_but_retained_in_technical_coverage():
     """The same clock conflict must not be rendered twice by separate layers."""
@@ -614,7 +646,7 @@ def test_q1_clock_conflict_printed_once_but_retained_in_technical_coverage():
     message = answer["message"]
     assert message.count("**Telemetry timing conflict:**") == 1
     assert "**Telemetry consistency:**" not in message
-    assert message.index("**Working diagnosis:**") < message.index(
+    assert message.index("healthStatus=offline") < message.index(
         "**Telemetry timing conflict:**"
     )
     assert message.index("**Telemetry timing conflict:**") < message.index(
