@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.315**.
+Current add-on version: **0.18.316**.
+
+**Stage 8.1 context completeness diagnostics:** Live Shadow distinguishes explicit truncation/partial context and mismatched source totals (still blocked) from missing completeness metadata. When a unique target is present in a returned subset but inventory completeness is unproven, only bounded **provisional target-scoped state reports** appear; no whole-hub or historical absence claim and read-only investigation readiness remains false. The phone UI shows a safe, fixed-vocabulary reason. Cloud and production publisher stay untouched. [Release notes](CHANGELOG-0.18.316.md).
 
 **Stage 8: consented read-only live shadow preflight:** The phone dashboard now provides a separate live context preflight for one numeric Hubitat device ID. It fetches a fresh Hubitat context through the existing read-only resource only after per-run user consent, projects only explicitly allowlisted reported state fields, rejects incomplete/ambiguous inventory, and never invokes Ollama, commands, the normal agent, or the production publisher. It cannot yet verify historical causation, physical actuation, source-clock accuracy or answer semantics. [Release notes](CHANGELOG-0.18.315.md).
 
