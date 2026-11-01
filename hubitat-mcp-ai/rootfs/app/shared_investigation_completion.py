@@ -598,6 +598,7 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 metrics["outcome"] = "unresolved"
             message = render_target_device_evidence_answer(
                 evidence, normalized,
+                clock_check=coverage.get("telemetryClockConsistency"),
             )
             metrics.setdefault("counters", {})[
                 "typed_device_history_projections"
@@ -636,10 +637,14 @@ def apply_shared_investigation_completion(outcome: Any, request: str) -> Any:
                 )
     if domain == "device_telemetry":
         clock_check = coverage.get("telemetryClockConsistency")
-        if isinstance(clock_check, dict) and clock_check.get("sourcesAgree") is False:
-            # The diagnosis should answer the user's question first. A
-            # conflicting clock is important but is supporting evidence, not
-            # the headline or independent physical last-contact proof.
+        if (
+            normalized is None
+            and isinstance(clock_check, dict)
+            and clock_check.get("sourcesAgree") is False
+        ):
+            # No typed-history renderer ran. Preserve the source-clock
+            # warning for a model-led/command-only response, without adding
+            # a second clock paragraph after a typed projection.
             message += "\n\n" + render_telemetry_clock_qualification(clock_check)
     # Preserve explicitly requested, model-proposed alternatives even when
     # the safety-oriented typed evidence renderer replaces the model's prose.

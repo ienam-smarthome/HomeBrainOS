@@ -563,6 +563,105 @@ def test_telemetry_source_provenance_and_depth_preserved_in_json_not_answer():
     assert "Investigation depth still missing" not in result["message"]
     assert result["metrics"]["outcome"] == "unresolved"
 
+def test_q1_clock_conflict_printed_once_but_retained_in_technical_coverage():
+    """The same clock conflict must not be rendered twice by separate layers."""
+    label = "Anonymised Socket"
+    state = {
+        "deviceId": "9911", "label": label,
+        "observedAt": "2026-11-01T18:27:13+00:00",
+        "source": "targeted-hubitat-device-state",
+        "reportedAttributes": {
+            "healthStatus": "offline",
+            "mqttStatus": "connected",
+            "lastSeen": "Mon Oct 12 01:30:01 BST 2026",
+            "dataAgeSeconds": "162325",
+        },
+    }
+    rows = [
+        receipt("hub_read_devices", "hub_list_devices", {
+            "labelFilter": label, "detailed": True,
+        }, details={"reportedDeviceState": state}),
+        receipt("hub_read_devices", "hub_list_device_events", {
+            "deviceId": "9911", "hoursBack": 24,
+        }, details={
+            "historySourceIntegrityVerified": False,
+            "observedEventsTruncated": False,
+            "observedEvents": [{
+                "name": "deviceHealth",
+                "value": "unknown",
+                "date": "2026-11-01T18:23:57+00:00",
+                "producedBy": {
+                    "id": "9911", "type": "device", "label": label,
+                },
+            }],
+        }),
+    ]
+    observed = build_observed_agent_outcome(
+        outcome(rows, coverage={"domain": "device_telemetry",
+                                "evidenceComplete": False}),
+        {"outcome": "unresolved", "counters": {}, "timings_ms": {}},
+    )
+    answer = serialize(apply_shared_investigation_completion(
+        observed, "Why is Anonymised Socket MQTT connected but health offline?",
+    ))
+    message = answer["message"]
+    assert message.count("**Telemetry timing conflict:**") == 1
+    assert "**Telemetry consistency:**" not in message
+    assert message.index("**Working diagnosis:**") < message.index(
+        "**Telemetry timing conflict:**"
+    )
+    assert message.index("**Telemetry timing conflict:**") < message.index(
+        "**Latest returned state event:**"
+    )
+    coverage = answer["investigation_coverage"]
+    assert coverage["telemetryClockConsistency"]["sourcesAgree"] is False
+    assert coverage["telemetryClockConsistency"]["physicalTelemetryProven"] is False
+    assert coverage["normalizedDeviceHistory"]["deviceId"] == "9911"
+    assert coverage["rootCauseVerified"] is False
+    assert coverage["questionResolved"] is False
+    assert answer["metrics"]["outcome"] == "unresolved"
+
+
+def test_q1_standalone_telemetry_renderer_keeps_clock_safety_guard():
+    """Direct callers cannot accidentally lose evidence-limited age warnings."""
+    from typed_device_history_evidence import render_target_device_evidence_answer
+
+    summary = {
+        "deviceId": "9911", "deviceLabel": "Anonymised Socket",
+        "queryWindowHours": 24,
+        "returnedEvents": 1, "commandCount": 0, "stateEventCount": 1,
+        "commandGroups": [], "truncated": False,
+        "latestReturnedStateEvent": {
+            "attribute": "deviceHealth", "value": "unknown",
+            "date": "2026-11-01T18:23:57+00:00",
+            "producer": "Anonymised Socket",
+        },
+        "reportedDeviceState": {
+            "observedAt": "2026-11-01T18:27:13+00:00",
+            "reportedAttributes": {
+                "healthStatus": "offline", "mqttStatus": "connected",
+                "lastSeen": "Mon Oct 12 01:30:01 BST 2026",
+                "dataAgeSeconds": "162325",
+            },
+        },
+    }
+    direct = render_target_device_evidence_answer([], summary)
+    assert direct.count("**Telemetry consistency:**") == 1
+    assert "Cached telemetry timestamps disagree:" in direct
+    reliable = render_target_device_evidence_answer(
+        [], summary, clock_check={"sourcesAgree": False,
+            "metadataAgeHoursAtRead": 498.0, "reportedDataAgeHours": 45.1},
+    )
+    assert reliable.count("**Telemetry timing conflict:**") == 1
+    assert "**Telemetry consistency:**" not in reliable
+    assert "498.0 hours" in reliable
+    agreeing = render_target_device_evidence_answer(
+        [], summary, clock_check={"sourcesAgree": True},
+    )
+    assert "**Telemetry timing conflict:**" not in agreeing
+    assert "**Telemetry consistency:**" not in agreeing
+
+
 def test_failed_or_unverified_source_does_not_appear_as_verified_extra_code():
     prior = {"domain": "device_telemetry", "evidenceComplete": False}
     rows = [
