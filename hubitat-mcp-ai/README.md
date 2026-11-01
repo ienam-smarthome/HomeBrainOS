@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.302**.
+Current add-on version: **0.18.303**.
+
+**Stage 7.1 negative evidence and causal-question review:** Post-run synthetic review now distinguishes absence of physical acknowledgement in inspected records from proof of global nonexistence or nonexecution. It displays model-inspected versus full fictional source coverage, independent review of each sentence's negative-claim scope, and four generic causal-question coverage prompts. No automatic semantic certification, additional Ollama requests, live-device reads or production publisher changes. [Release notes](CHANGELOG-0.18.303.md).
 
 **Stage 7 manual independent prose review:** Each successful synthetic Stage 6 investigation now returns a bounded, source-complete fictional review packet, with selected and unselected records plus the model-authored sentences. The phone UI allows per-sentence human factual verdicts and overall completeness/causal-caution ratings, with an explicit copy-only export. No extra cloud inference, external automatic reviewer, production publisher or live device access. The packet is not automatic semantic certification. [Release notes](CHANGELOG-0.18.302.md).
 
