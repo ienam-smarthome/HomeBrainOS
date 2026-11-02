@@ -450,6 +450,11 @@ class AnthropicMessagesTransport:
         if calls:
             normalized["tool_calls"] = calls
         observe_assistant_message(normalized)
-        record_active_provider_model(self.model, "anthropic")
+        record_active_provider_model(
+            self.model, "anthropic",
+            elapsed_ms=(time.monotonic() - started) * 1000,
+            tool_call_count=len(calls),
+            declared_tool_count=len(tool_declarations),
+        )
         # Never log prompts, HTTP bodies, tool arguments, or credentials.
         return normalized
