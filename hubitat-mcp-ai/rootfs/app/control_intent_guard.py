@@ -90,13 +90,13 @@ _QUESTION_LEAD = re.compile(
 # "do not": "Do not open forms, create rules, submit confirmations or modify
 # anything." A comma/list separator does not start a new positive command.
 _NEGATED_LIST_HEAD = re.compile(
-    r"(?i)\\b(?:do\\s+not|don['’]?t|never)\\s+"
-    r"(?:(?:also|actually)\\s+)?"
+    r"(?i)\b(?:do\s+not|don['’]?t|never)\s+"
+    r"(?:(?:also|actually)\s+)?"
     r"(?:open|create|submit|modify|change|control|turn|switch|"
     r"execute|send|write|alter|set|delete|disable|enable|"
-    r"restart|block|unblock|allow|configure|remove|pause|resume)\\b"
+    r"restart|block|unblock|allow|configure|remove|pause|resume)\b"
 )
-_NEGATION_BREAK = re.compile(r"(?i)\\b(?:but|however|instead|then)\\b")
+_NEGATION_BREAK = re.compile(r"(?i)\b(?:but|however|instead|then)\b")
 
 
 def _in_coordinated_prohibition(part: str, action_start: int) -> bool:
@@ -108,7 +108,7 @@ def _in_coordinated_prohibition(part: str, action_start: int) -> bool:
     for the new imperative that would revoke a read-only boundary.
     """
     before = part[:action_start]
-    boundary = max((before.rfind(ch) for ch in ".!?;\\n"), default=-1)
+    boundary = max((before.rfind(ch) for ch in ".!?;\n"), default=-1)
     sentence = before[boundary + 1:]
     heads = list(_NEGATED_LIST_HEAD.finditer(sentence))
     if not heads:
