@@ -186,3 +186,17 @@ def test_simple_daily_native_rule_does_not_prove_dated_one_time_semantics():
     result = draft(reference_document=daily)
     assert "native_one_time_reference_not_dated" in result.gaps
     assert result.request is None
+
+
+@pytest.mark.parametrize("now,when", [
+    (datetime(2027, 3, 28, 0, 45, tzinfo=TZ),
+     datetime(2027, 3, 28, 1, 30, tzinfo=TZ)),  # missing BST spring hour
+    (datetime(2027, 10, 31, 0, 45, tzinfo=TZ),
+     datetime(2027, 10, 31, 1, 30, tzinfo=TZ)),  # repeated GMT fall hour
+])
+def test_dated_native_candidate_rejects_dst_gap_and_fold(now, when):
+    name = f"Block Sample Switch (One-time {when:%Y-%m-%d %H:%M})"
+    item = draft(hub_now=now, scheduled_at=when, name=name)
+    assert item.request is None
+    assert "fresh_same_hub_timezone_one_time_clock_unverified" in item.gaps
+    assert not item.write_ready
