@@ -144,7 +144,8 @@ def run_frozen_trial(
         "actual_prompt_delivery": "local-http-requested-not-provider-independently-attested",
         "real_household_or_hub_reads": False,
         "production_publisher_tested": False,
-        "cloud_cost": 0,
+        "cloud_model_api_spend_usd": 0,
+        "github_runner_minutes_cost": "not_measured",
         "limitations": [
             "First-answer transport and timing only, no independent factual review",
             "Raw model replies are intentionally not logged or uploaded",
