@@ -129,7 +129,9 @@ def test_direct_control_and_different_ai_objective_stay_out():
 def test_model_can_choose_tools_and_method_projection_without_driver_word_trigger():
     source = (APP / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
     assert "incident_evidence_checkpoint_used = False" in source
-    assert "target_checkpoint = evidence_progress_checkpoint(" in source
+    assert "render=lambda: evidence_progress_checkpoint(" in source
+    assert 'kind="diagnostic-discriminator"' in source
+    assert "order=LATE_SOURCE_ORDER" in source
     assert "round_index + 1 < active_round_budget" in source
     assert "catalog.expose_read_gateways(" in source
     assert "source_investigation\n                        or (connectivity_incident and adaptive_investigation)" in source
