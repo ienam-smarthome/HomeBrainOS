@@ -9,6 +9,7 @@ import pytest
 
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from native_rule_document_preflight import (
     assess_native_schedule_preflight, native_schedule_batch_shape_valid,
