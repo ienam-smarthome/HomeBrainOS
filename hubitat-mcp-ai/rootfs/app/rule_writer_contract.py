@@ -69,16 +69,15 @@ def legacy_rule_writer_incompatibility(contract: str) -> str | None:
         return None
     if contract == NATIVE_DOCUMENT:
         return (
-            "Rule Machine creation was safely stopped before confirmation. "
-            "The installed Hubitat MCP server uses the NEW native "
-            "hub_set_rule(operation='create', args={parent_id, name, changes}) "
-            "document contract. HomeBrain's existing schedule compiler uses "
-            "the RETIRED addTrigger/addAction shortcut. Its native field IDs "
-            "and Rule Machine parent must be independently discovered; "
-            "renaming fields or blindly retrying risks a broken/partial rule. "
-            "No rule write was queued or executed. This HomeBrain version "
-            "cannot yet author that native document contract."
+            "Couldn't schedule this action. Rule Machine creation was safely "
+            "stopped before confirmation: the installed server requires the "
+            "NEW native document API (operation='create', "
+            "args={parent_id,name,changes}), while HomeBrain still uses "
+            "retired addTrigger/addAction shortcuts. Native trigger/action "
+            "fields are not yet verified. No rule write was queued or "
+            "executed."
         )
+
     return (
         "Rule Machine creation was safely stopped: HomeBrain could not "
         "verify that the installed MCP server supports its addTrigger/"

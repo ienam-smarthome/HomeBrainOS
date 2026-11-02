@@ -53,6 +53,7 @@ class RequestMetrics:
         "rule_night_idle_fastpath", "rule_create_timeout_found",
         "rule_create_timeout_unknown",
         "rule_schedule_fastpath", "rule_schedule_gateway_missing",
+        "rule_writer_native_unsupported", "rule_writer_contract_unverified",
         "task_evidence_retry", "task_evidence_incomplete",
         "unified_investigation_input_followup",
         "target_history_scope_retry", "unscoped_history_claim_rejected",

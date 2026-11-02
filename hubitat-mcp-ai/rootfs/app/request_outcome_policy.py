@@ -7,6 +7,8 @@ _OUTCOME_COUNTER_PRECEDENCE: tuple[tuple[str, str], ...] = (
     ("grounding_refusals", "refused"),
     ("mutation_verification_failures", "failed"),
     ("proposal_validation_failures", "failed"),
+    ("rule_writer_native_unsupported", "unresolved"),
+    ("rule_writer_contract_unverified", "unresolved"),
     ("rule_create_staging_unverified", "unresolved"),
     ("proposal_write_attempts_blocked", "unresolved"),
     ("write_unverified_no_confirmation", "unresolved"),

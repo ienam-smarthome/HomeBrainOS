@@ -440,6 +440,24 @@ def _without_prohibited_actions(text: str) -> str:
 
 
 
+def _verified_schedule_write_intent(
+    prompt: str, rules: RuleAuthoringService,
+) -> bool:
+    """Treat a validated delayed/scheduled imperative as a *future write*.
+
+    The immediate-control guard correctly rejects "after N minutes" from
+    direct execution. That restriction must not convert an independently
+    validated Rule Machine authoring request into a live READ. Explicit
+    read-only/review instructions still veto authoring.
+    """
+    return (
+        not explicitly_read_only_request(prompt)
+        and not rules.is_existing_rule_review_first(prompt)
+        and not rules.is_read_only_rule_design_request(prompt)
+        and rules.is_action_request(prompt)
+    )
+
+
 def _explicit_mutation_request(prompt: str) -> bool:
     """Return user write intent without treating diagnostic wording as a write.
 
@@ -4007,8 +4025,11 @@ class UnifiedMCPAgent:
         # This invocation performs stage-one review with read-only authority;
         # a later write still needs a fresh structured proposal and approval.
         mutation_request_token = self._mutation_requested_by_user.set(
-            _explicit_mutation_request(user_prompt)
-            and not self._review_first_mode.get()
+            not self._review_first_mode.get()
+            and (
+                _explicit_mutation_request(user_prompt)
+                or _verified_schedule_write_intent(user_prompt, self.rule_authoring)
+            )
         )
         class_token = self._request_class.set("tool-driven")
         objective_token = self._current_user_objective.set(str(user_prompt))
@@ -4567,7 +4588,8 @@ class UnifiedMCPAgent:
         # fell through to a model search for the fictional blockInternet
         # command and an unnecessary "what starts the countdown?" question.
         # Pure design questions must still remain read-only.
-        if self.rule_authoring.is_action_request(user_prompt) and not review_first:
+        if (_verified_schedule_write_intent(user_prompt, self.rule_authoring)
+                and not review_first):
             if not self.rule_write_enabled:
                 return RULE_WRITES_DISABLED_MESSAGE
             if RULE_MACHINE_GATEWAY not in catalog.available_names:
