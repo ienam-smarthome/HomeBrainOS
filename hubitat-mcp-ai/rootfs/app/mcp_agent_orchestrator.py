@@ -230,8 +230,7 @@ from known_automation_topology import (
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from historical_command_source_contract import history_window_instruction
-from provenance_app_log_planner import pending_provenance_app_log_read
-from method_command_source_contract import pending_command_app_decision_log
+from source_obligation_coordinator import select_issuing_app_log_obligation
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from control_intent_guard import unsafe_control_prompt, explicitly_read_only_request
 from request_classification import (
@@ -3669,12 +3668,26 @@ class UnifiedMCPAgent:
                           "physical initiator remain unverified."
                     ),
                 })
+        # Source-completion tool declarations are request-snapshot metadata.
+        # Fetch at most once across all finalization obligations, rather than
+        # rediscovering the same capabilities independently per source path.
+        source_completion_catalog = None
+
+        async def completion_catalog():
+            nonlocal source_completion_catalog
+            if source_completion_catalog is None:
+                source_completion_catalog = build_request_tool_catalog(
+                    await self.mcp.list_tools()
+                )
+                increment_active_metric("source_completion_catalog_discoveries")
+            return source_completion_catalog
+
         device_log_args = pending_device_log_read(
             objective, self.evidence.receipts(),
         )
         if device_log_args is not None:
             try:
-                live_catalog = build_request_tool_catalog(await self.mcp.list_tools())
+                live_catalog = await completion_catalog()
                 log_tool = live_catalog.declared_tool("hub_read_diagnostics")
                 if log_tool is not None:
                     execution = await self.executor.execute(
@@ -3708,9 +3721,7 @@ class UnifiedMCPAgent:
         )
         if config_plan is not None:
             try:
-                config_catalog = build_request_tool_catalog(
-                    await self.mcp.list_tools()
-                )
+                config_catalog = await completion_catalog()
                 config_tool = config_catalog.available_tool("hub_read_devices")
                 config_args = {
                     "tool": "hub_get_device", "args": config_plan,
@@ -3758,9 +3769,7 @@ class UnifiedMCPAgent:
         )
         if command_plan is not None:
             try:
-                live_catalog = build_request_tool_catalog(
-                    await self.mcp.list_tools()
-                )
+                live_catalog = await completion_catalog()
                 if live_catalog.available_tool("hub_read_devices") is not None:
                     old_receipt_count = len(self.evidence.receipts())
                     command_rows = await self.device_history._read_command_events(
@@ -3814,104 +3823,74 @@ class UnifiedMCPAgent:
                 logger.debug(
                     "Required historical command read unavailable: %s", exc
                 )
-        # Source-directed historical evidence obligation. Only an actual,
-        # successful, target-scoped command-on/off event with a verified app
-        # producer and matching device identity can authorize this log read.
-        # Prefer the diagnostic log gateway to guessing appId parameters on
-        # hub_list_device_events; execute at most once per incident/app/window.
-        source_log_plan = (
-            pending_provenance_app_log_read(
+        # One unified, source-backed app-log obligation. Previously the
+        # historic command and generic typed-command planners independently
+        # queried tool capabilities, planned the same app and duplicated
+        # effect checks. A pure selector retains both planners' verified
+        # issuer, identity, incident time and prior-attempt constraints.
+        # Select at most one request-local source and execute through one
+        # admission path, without loosening mutation or scope permissions.
+        app_log_obligation = (
+            select_issuing_app_log_obligation(
                 objective, self.evidence.receipts(),
             )
-            if not _explicit_mutation_request(objective) else None
+            if not _explicit_mutation_request(objective)
+            and not self._mutation_call_seen.get()
+            else None
         )
-        if source_log_plan is not None:
+        if app_log_obligation is not None:
+            historic_source = (
+                app_log_obligation["kind"] == "incident-command-provenance"
+            )
             try:
-                log_catalog = build_request_tool_catalog(
-                    await self.mcp.list_tools()
-                )
-                log_tool = log_catalog.available_tool("hub_read_diagnostics")
-                log_args = {
-                    "tool": source_log_plan["tool"],
-                    "args": source_log_plan["args"],
+                catalog = await completion_catalog()
+                selected_tool = catalog.available_tool("hub_read_diagnostics")
+                selected_args = {
+                    "tool": app_log_obligation["tool"],
+                    "args": app_log_obligation["args"],
                 }
                 if (
-                    log_tool is not None
-                    and log_catalog.gateway_operation_error(
-                        "hub_read_diagnostics", log_args,
+                    selected_tool is not None
+                    and catalog.gateway_operation_error(
+                        "hub_read_diagnostics", selected_args,
                     ) is None
-                    and not classify_tool_effect(log_tool, log_args).mutates
+                    and not classify_tool_effect(
+                        selected_tool, selected_args,
+                    ).mutates
                 ):
                     result = await self.executor.execute(
-                        "hub_read_diagnostics", log_args, tool=log_tool,
-                        supports_live_claim=True,
-                        evidence_kind="authoritative_native_app_logs",
+                        "hub_read_diagnostics", selected_args,
+                        tool=selected_tool, supports_live_claim=True,
+                        evidence_kind=(
+                            "authoritative_native_app_logs" if historic_source
+                            else "source_scoped_command_issuer_app_logs"
+                        ),
                     )
                     messages.append({
                         "role": "tool", "tool_name": "hub_read_diagnostics",
-                        "content": result.content,
+                        "content": redact_secrets(result.content),
                     })
+                    increment_active_metric("source_completion_app_log_reads")
                     increment_active_metric(
                         "historical_provenance_app_log_reads"
+                        if historic_source
+                        else "method_command_issuer_log_read"
                     )
-                    # A queried log source is not proof of a causal trigger;
-                    # report failures/empty rows without inventing absence.
-                    if not result.success:
+                    if not result.success and historic_source:
                         increment_active_metric(
                             "historical_provenance_app_log_failures"
                         )
                 else:
                     increment_active_metric(
                         "historical_provenance_app_log_unavailable"
+                        if historic_source else "method_command_issuer_log_unavailable"
                     )
             except Exception as exc:
                 increment_active_metric(
                     "historical_provenance_app_log_unavailable"
+                    if historic_source else "method_command_issuer_log_unavailable"
                 )
-                logger.debug(
-                    "Verified producer's app-log source unavailable: %s", exc,
-                )
-        # After a verified typed method command, inspect at most one issuing
-        # app's bounded historical decision log. Only logs tied to an
-        # actual producer ID and target label can justify this read.
-        method_log_plan = (
-            pending_command_app_decision_log(
-                objective, self.evidence.receipts(),
-            )
-            if not _explicit_mutation_request(objective) else None
-        )
-        if method_log_plan is not None:
-            try:
-                method_catalog = build_request_tool_catalog(
-                    await self.mcp.list_tools()
-                )
-                method_tool = method_catalog.available_tool("hub_read_diagnostics")
-                method_args = {
-                    "tool": method_log_plan["tool"],
-                    "args": method_log_plan["args"],
-                }
-                if (
-                    method_tool is not None
-                    and method_catalog.gateway_operation_error(
-                        "hub_read_diagnostics", method_args,
-                    ) is None
-                    and not classify_tool_effect(method_tool, method_args).mutates
-                ):
-                    result = await self.executor.execute(
-                        "hub_read_diagnostics", method_args,
-                        tool=method_tool, supports_live_claim=True,
-                        evidence_kind="source_scoped_command_issuer_app_logs",
-                    )
-                    messages.append({
-                        "role": "tool", "tool_name": "hub_read_diagnostics",
-                        "content": redact_secrets(result.content),
-                    })
-                    increment_active_metric("method_command_issuer_log_read")
-                else:
-                    increment_active_metric("method_command_issuer_log_unavailable")
-            except Exception as exc:
-                increment_active_metric("method_command_issuer_log_unavailable")
-                logger.debug("Typed command-app log read unavailable: %s", exc)
+                logger.debug("Verified issuing-app log source unavailable: %s", exc)
         # Integrate source-linked input/command episodes before natural
         # synthesis, using only current-turn read-only receipts. This is a
         # cross-device observation, never a pre-decided causal verdict.
