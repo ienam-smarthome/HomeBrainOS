@@ -65,10 +65,63 @@ def _label(row: dict[str, Any]) -> str:
     return str(row.get("name") or row.get("label") or "").strip()
 
 
-def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, Any]:
+def _native_parent_from_summary(
+    summary: Any, *, candidate_id: str, candidate_type_id: str | None,
+) -> tuple[dict[str, Any] | None, str]:
+    """Only source-returned typed native app identity can prove parentage.
+
+    The upstream summary=true read returns /installedapp/json/{id}; some
+    firmware returns only id/name/type/user. That cannot prove namespace.
+    """
+    if not isinstance(summary, dict) or summary.get("success") is not True:
+        return None, "native-app-summary-unavailable"
+    root = summary.get("app") if isinstance(summary.get("app"), dict) else summary
+    if _id(root.get("id")) != candidate_id:
+        return None, "native-app-summary-id-mismatch"
+    if root.get("user") is not False:
+        return None, "native-app-summary-built-in-unverified"
+    if root.get("parentId") not in (None, "") or root.get("parentAppId") not in (None, ""):
+        return None, "native-app-summary-parent-conflict"
+    if root.get("type") not in (None, "Rule Machine"):
+        return None, "native-app-summary-type-conflict"
+    reported_class_id = _id(root.get("appTypeId"))
+    if (reported_class_id is not None and candidate_type_id is not None
+            and reported_class_id != candidate_type_id):
+        return None, "native-app-summary-class-id-conflict"
+    typed = root.get("appType")
+    if not isinstance(typed, dict):
+        return None, "native-app-summary-class-namespace-unavailable"
+    if typed.get("namespace") != "hubitat" or typed.get("name") != "Rule Machine":
+        return None, "native-app-summary-class-namespace-unverified"
+    if typed.get("system") is False or typed.get("isBuiltIn") is False:
+        return None, "native-app-summary-system-conflict"
+    type_id = _id(typed.get("id"))
+    if type_id is not None and candidate_type_id is not None and type_id != candidate_type_id:
+        return None, "native-app-summary-class-id-conflict"
+    return {
+        "appId": candidate_id,
+        "appTypeId": candidate_type_id or type_id,
+        "namespace": "hubitat",
+        "name": "Rule Machine",
+        "proof": "source-typed-installed-app-summary",
+    }, ""
+
+
+def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: dict[str, Any] | None = None) -> dict[str, Any]:
     inst, inst_complete = _collection(instances, "apps", total_field="totalOnHub")
     type_rows, types_complete = _collection(types, "apps")
     rule_rows, rules_complete = _collection(rules, "rules")
+    # The upstream type endpoint can be count-complete for *community*
+    # classes while its separate built-in type enrichment is missing.
+    note = types.get("note") if isinstance(types, dict) else None
+    if isinstance(note, str) and (
+        "built-in" in note.lower()
+        and any(w in note.lower() for w in (
+            "omitted", "unavailable", "unexpected", "could not",
+        ))
+    ):
+        types_complete = False
+    summaries = summaries if isinstance(summaries, dict) else {}
     native_types = {
         _id(row.get("id")) for row in type_rows
         if row.get("namespace") == "hubitat"
@@ -77,6 +130,7 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, 
     }
     parents = []
     possible = []
+    summaries_checked = []
     for row in inst:
         if row.get("type") != "Rule Machine" or _label(row) != "Rule Machine":
             continue
@@ -88,6 +142,19 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, 
             parents.append({"appId": app_id, "appTypeId": app_type,
                             "namespace": "hubitat", "name": "Rule Machine"})
         else:
+            # A separate, read-only identity record may expose the exact
+            # native appType namespace/name when the catalog omits it.
+            if app_id in summaries:
+                candidate, gap = _native_parent_from_summary(
+                    summaries[app_id], candidate_id=app_id,
+                    candidate_type_id=app_type,
+                )
+                summaries_checked.append({
+                    "appId": app_id, "typeProofGap": gap or None,
+                })
+                if candidate is not None:
+                    parents.append(candidate)
+                    continue
             # Upstream installed-app rows can legitimately omit appTypeId.
             # Preserve the *specific* missing join rather than implying
             # namespace "hubitat" from a label or child count.
@@ -131,6 +198,7 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, 
         "source": "typed hub_list_apps instances/types + hub_list_rules",
         "parents": parents[:20],
         "candidateParents": possible[:20],
+        "summarySourceChecks": summaries_checked[:20],
         # Retain only the bounded built-in Rule Machine type-class IDs
         # needed to diagnose the join; never publish unrelated app names,
         # installed app inventories or private source code.
@@ -138,7 +206,7 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, 
             (t for t in native_types if t is not None),
             key=lambda item: int(item),
         )[:20],
-        "parentIdentityComplete": inst_complete and types_complete,
+        "parentIdentityComplete": inst_complete and (types_complete or bool(parents)),
         "oneTimeRules": matching[:30],
         "oneTimeMatchCount": len(matching),
         "ruleListComplete": rules_complete,
@@ -183,6 +251,20 @@ def render_inventory(data: dict[str, Any]) -> str:
                 "The candidate's appTypeId did not match a typed native "
                 "Rule Machine class in the returned app-type listing."
             )
+        for check in data.get("summarySourceChecks", []):
+            if check.get("appId") in {p["appId"] for p in data["candidateParents"]}:
+                reason = check.get("typeProofGap")
+                if reason == "native-app-summary-class-namespace-unavailable":
+                    lines.append(
+                        "The independent app summary omitted its native "
+                        "appType namespace/name. A built-in name alone "
+                        "cannot establish the native writer parent."
+                    )
+                elif reason and reason != "native-app-summary-unavailable":
+                    lines.append(
+                        "Independent app-summary verification remains "
+                        "unresolved (" + reason.replace("-", " ") + ")."
+                    )
     else:
         lines.append(
             "No native parent ID verified"
@@ -255,6 +337,18 @@ async def read_native_rule_inventory(
                       {"scope": "types"})
     rules = await get("hub_read_rules", "hub_list_rules", {})
     projection = project_rule_inventory(inst, types, rules)
+    # Only for an unverified parent: one exact-ID, read-only thin summary.
+    # This endpoint does not render the form or modify the hub.
+    if (not projection["parents"] and projection["candidateParents"]
+            and "hub_read_apps_code" in available_names):
+        candidate_id = projection["candidateParents"][0]["appId"]
+        summary = await get(
+            "hub_read_apps_code", "hub_get_app_config",
+            {"appId": candidate_id, "summary": True},
+        )
+        projection = project_rule_inventory(
+            inst, types, rules, summaries={candidate_id: summary},
+        )
     recorder.record(
         "homebrain_native_rule_inventory", {},
         success=bool(projection["parents"] or projection["oneTimeRules"]
