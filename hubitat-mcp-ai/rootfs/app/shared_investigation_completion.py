@@ -452,7 +452,15 @@ def apply_shared_investigation_completion(
                 + ". Do not infer that their devices or automations are healthy."
             )
         return _CoverageOutcome(outcome, system_audit, metrics, message)
-    if goal is None and not causal and not isinstance(prior, dict):
+    # A prior assessment can be a model-proposed source-check packet (for
+    # example, competing hypotheses about present readings), not evidence
+    # that the user's question asks WHO/WHY initiated a historical event.
+    # The legacy fallback below defaults to causal_provenance/command_history
+    # whenever no domain contract exists. Do not invent that obligation for
+    # factual current-status questions merely because a coverage dict exists.
+    # Preserve the original domain-specific coverage and outcome as issued;
+    # the real causal and explicit domain-contract paths still run below.
+    if goal is None and not causal:
         return outcome
     if goal is not None:
         domain = goal.domain
