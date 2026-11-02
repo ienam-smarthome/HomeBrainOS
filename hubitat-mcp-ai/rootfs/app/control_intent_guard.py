@@ -108,11 +108,11 @@ def _in_coordinated_prohibition(part: str, action_start: int) -> bool:
     for the new imperative that would revoke a read-only boundary.
     """
     # A regex match may start with the sentence separator itself.
-    # \". Then block\" is a new affirmative command, not a prohibited item.
-    if action_start < len(part) and part[action_start] in ".!?;\\n":
+    # A sentence followed by Then block is a new affirmative command.
+    if action_start < len(part) and part[action_start] in ".!?;\n":
         return False
     before = part[:action_start]
-    boundary = max(before.rfind(ch) for ch in ".!?;\n"), default=-1)
+    boundary = max((before.rfind(ch) for ch in ".!?;\n"), default=-1)
     sentence = before[boundary + 1:]
     heads = list(_NEGATED_LIST_HEAD.finditer(sentence))
     if not heads:
