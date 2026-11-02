@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 EARLY_SOURCE_ORDER = ("target-history", "upstream-input", "inventory-evidence")
+READ_ONLY_GATEWAYS = frozenset({
+    "hub_read_devices", "hub_read_apps_code", "hub_read_rules",
+    "hub_read_diagnostics", "hub_search_tools",
+})
 
 
 @dataclass(frozen=True)
@@ -41,7 +45,9 @@ def choose_model_source_followup(
         key=lambda candidate: EARLY_SOURCE_ORDER.index(candidate.kind),
     )
     for candidate in ordered:
-        if not candidate.read_gateways or not candidate.metric:
+        if (not candidate.read_gateways
+                or not set(candidate.read_gateways) <= READ_ONLY_GATEWAYS
+                or not candidate.metric):
             continue
         if not candidate.admitted():
             continue
@@ -53,5 +59,5 @@ def choose_model_source_followup(
     return None
 
 
-__all__ = ["EARLY_SOURCE_ORDER", "ModelSourceFollowup",
+__all__ = ["EARLY_SOURCE_ORDER", "READ_ONLY_GATEWAYS", "ModelSourceFollowup",
            "choose_model_source_followup"]
