@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.368**.
+Current add-on version: **0.18.369**.
 
 **HomeBrain vNext consolidated verified source finalization (v0.18.351):** Final answer generation now **coalesces two overlapping read-only app-decision log planners into one source obligation**, prioritizing a precisely source-backed historical command incident when one exists and otherwise using the independently verified issuing-app method-command plan. It performs at most one app-log query per finalization rather than independently entering two planners, while keeping the same app ID, incident time and prior failed-read no-retry constraints. Device log, source configuration, command history and app-log completion now share **one lazily fetched live capability catalog** in the finalization stage, avoiding repeat tool-schema retrieval within that stage. Source effect/schema checks, existing read-only permission gates, model-authored prose and factual limits are unchanged. This is incremental generic orchestration consolidation, **not** a verified <45-second model performance result or wholesale replacement of the existing multi-round planner. [Release notes](CHANGELOG-0.18.351.md).
 

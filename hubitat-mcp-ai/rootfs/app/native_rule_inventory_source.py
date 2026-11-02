@@ -88,7 +88,18 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, 
             parents.append({"appId": app_id, "appTypeId": app_type,
                             "namespace": "hubitat", "name": "Rule Machine"})
         else:
-            possible.append({"appId": app_id, "typeProof": "unverified"})
+            # Upstream installed-app rows can legitimately omit appTypeId.
+            # Preserve the *specific* missing join rather than implying
+            # namespace "hubitat" from a label or child count.
+            possible.append({
+                "appId": app_id,
+                "appTypeId": app_type,
+                "typeProof": "unverified",
+                "typeProofGap": (
+                    "instance-appTypeId-absent" if app_type is None
+                    else "no-matching-native-app-type-id"
+                ),
+            })
 
     matches: dict[str, dict[str, Any]] = {}
     for source, rows in (("hub_list_rules", rule_rows),
@@ -120,6 +131,13 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any) -> dict[str, 
         "source": "typed hub_list_apps instances/types + hub_list_rules",
         "parents": parents[:20],
         "candidateParents": possible[:20],
+        # Retain only the bounded built-in Rule Machine type-class IDs
+        # needed to diagnose the join; never publish unrelated app names,
+        # installed app inventories or private source code.
+        "nativeRuleMachineTypeIds": sorted(
+            (t for t in native_types if t is not None),
+            key=lambda item: int(item),
+        )[:20],
         "parentIdentityComplete": inst_complete and types_complete,
         "oneTimeRules": matching[:30],
         "oneTimeMatchCount": len(matching),
@@ -144,11 +162,27 @@ def render_inventory(data: dict[str, Any]) -> str:
         )
     elif data["candidateParents"]:
         ids = ", ".join(x["appId"] for x in data["candidateParents"])
+        gaps = sorted({
+            item.get("typeProofGap", "unknown-native-type-link")
+            for item in data["candidateParents"]
+        })
         lines.append(
             "Rule Machine-named app instance ID(s) "
-            + ids + " were returned, but their built-in app-type namespace "
-            "was not verified. The native parent ID remains unresolved."
+            + ids + " were returned, but their built-in app-type identity "
+            "could not be linked to those instance IDs. The native parent "
+            "ID remains unresolved."
         )
+        if gaps == ["instance-appTypeId-absent"]:
+            lines.append(
+                "The instance listing did not provide an appTypeId for "
+                "the Rule Machine candidate; matching the name alone "
+                "would not prove the native type."
+            )
+        elif gaps == ["no-matching-native-app-type-id"]:
+            lines.append(
+                "The candidate's appTypeId did not match a typed native "
+                "Rule Machine class in the returned app-type listing."
+            )
     else:
         lines.append(
             "No native parent ID verified"
