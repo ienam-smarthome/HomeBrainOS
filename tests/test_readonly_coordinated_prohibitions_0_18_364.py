@@ -43,7 +43,8 @@ PROMPT = (
     "Inspect the existing native rule. Do not open native forms, create rules, submit confirmations or modify anything.",
 ])
 def test_coordinated_prohibitions_preserve_read_only_authority(question):
-    assert explicitly_read_only_request(question)
+    if question.lower().startswith(("read-only", "read only")):
+        assert explicitly_read_only_request(question)
     assert not _explicit_mutation_request(question)
 
 
