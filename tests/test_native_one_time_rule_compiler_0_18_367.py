@@ -99,7 +99,7 @@ def test_switch_on_has_opposite_bool_without_changing_trigger_or_identity():
     on = draft(command="on")
     assert not on.write_ready
     assert on.request["args"]["args"]["changes"][0] == off.request["args"]["args"]["changes"][0]
-    assert on.request["args"]["args"]["changes"][1]["fields"][1]["value"] is True
+    assert on.request["args"]["args"]["changes"][1]["value"]["fields"][1]["value"] is True
 
 
 @pytest.mark.parametrize("sample,reason", [
