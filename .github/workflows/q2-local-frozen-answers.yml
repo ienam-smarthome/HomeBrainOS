@@ -1,0 +1,85 @@
+name: Q2 actual local first-answer frozen packet trial (no cloud)
+
+# Runs only on an approved same-repo PR modifying this isolated runner.
+# Real model answers are never uploaded or printed, even for public fixtures.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/q2-local-frozen-answers.yml'
+      - 'hubitat-mcp-ai/tools/q2_local_frozen_answers.py'
+      - 'tests/test_q2_local_frozen_answers.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: q2-local-frozen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actual-local-first-answers:
+    name: Two actual tiny local models, identical frozen evidence (ungraded)
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      OLLAMA_HOST: '127.0.0.1:11434'
+      OLLAMA_NO_CLOUD: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '2'
+      OLLAMA_CONTEXT_LENGTH: '4096'
+      GITHUB_ACTIONS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact local-only runner contract
+        run: |
+          set -euo pipefail
+          test "${OLLAMA_HOST}" = "127.0.0.1:11434"
+          test "${OLLAMA_NO_CLOUD}" = "1"
+          python -m compileall -q hubitat-mcp-ai/tools/q2_local_frozen_answers.py
+          python -m pytest tests/test_q2_local_frozen_answers.py -q
+      - name: Install temporary local Ollama
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 https://ollama.com/install.sh -o /tmp/q2-local-ollama-install.sh
+          sh /tmp/q2-local-ollama-install.sh
+          ollama --version
+      - name: Start isolated no-cloud Ollama
+        run: |
+          set -euo pipefail
+          nohup ollama serve >/tmp/q2-local-ollama.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS --noproxy '*' --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
+              echo "Q2 loopback Ollama available with cloud disabled"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Local model server unavailable"
+          exit 1
+      - name: Download two small public local model weights
+        run: |
+          set -euo pipefail
+          ollama pull qwen2.5:0.5b
+          ollama pull llama3.2:1b
+          ollama list | grep -F 'qwen2.5:0.5b'
+          ollama list | grep -F 'llama3.2:1b'
+      - name: Run Q2 first-answer trial (no raw responses or source judgments)
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          python hubitat-mcp-ai/tools/q2_local_frozen_answers.py \
+            --ack-no-cloud-synthetic-only --timeout-seconds 180
+      - name: Declare measurement boundaries
+        if: always()
+        run: |
+          echo "No Hubitat, Home Assistant, user data, API secrets or cloud inference."
+          echo "Real model first answers only; no independent human review or quality scoring."
+          echo "No production model-routing or publisher changes."
