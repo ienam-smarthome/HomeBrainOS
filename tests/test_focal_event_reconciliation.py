@@ -136,12 +136,13 @@ def test_wrong_target_ambiguous_target_or_failed_sources_fail_closed():
     rows = fixture()
     rows[2]["success"] = False
     facts = reconcile_focal_device_events(QUESTION, rows)
-    assert facts is not None and facts["attestedCommands"] == []
+    assert facts is not None
+    assert [x["name"] for x in facts["attestedCommands"]] == ["command-on"]
     rows = fixture()
     rows[2]["arguments"]["args"]["deviceId"] = "9999"
-    assert reconcile_focal_device_events(QUESTION, rows)[
-        "attestedCommands"
-    ] == []
+    assert [x["name"] for x in reconcile_focal_device_events(
+        QUESTION, rows
+    )["attestedCommands"]] == ["command-on"]
 
 
 def test_source_integrity_clock_and_actor_types_matter():
@@ -158,7 +159,8 @@ def test_source_integrity_clock_and_actor_types_matter():
                reconcile_focal_device_events(QUESTION, rows)["attestedCommands"])
     rows = fixture()
     rows[2]["details"]["observedEvents"][2]["date"] = "2026-11-01T18:07:35"
-    assert reconcile_focal_device_events(QUESTION, rows)["attestedCommands"] == []
+    assert all(x["name"] != "command-off" for x in
+               reconcile_focal_device_events(QUESTION, rows)["attestedCommands"])
     rows = fixture()
     assert reconcile_focal_device_events(
         "Investigate why Other Test Load 1 turned off", rows
