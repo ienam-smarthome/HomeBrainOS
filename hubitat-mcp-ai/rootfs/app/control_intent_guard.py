@@ -86,6 +86,41 @@ _QUESTION_LEAD = re.compile(
     r"did|does|do|could|can|should|would|will)\b"
 )
 
+# The verbs in a coordinated prohibition retain the polarity of its first
+# "do not": "Do not open forms, create rules, submit confirmations or modify
+# anything." A comma/list separator does not start a new positive command.
+_NEGATED_LIST_HEAD = re.compile(
+    r"(?i)\b(?:do\s+not|don['’]?t|never)\s+"
+    r"(?:(?:also|actually)\s+)?"
+    r"(?:open|create|submit|modify|change|control|turn|switch|"
+    r"execute|send|write|alter|set|delete|disable|enable|"
+    r"restart|block|unblock|allow|configure|remove|pause|resume)\b"
+)
+_NEGATION_BREAK = re.compile(r"(?i)\b(?:but|however|instead|then)\b")
+
+
+def _in_coordinated_prohibition(part: str, action_start: int) -> bool:
+    """Return true for a list member in a single explicit prohibition.
+
+    Stop at sentence boundaries/contrast clauses. This cannot erase an
+    independently affirmative instruction in a later sentence or after
+    "but/then". It only prevents prohibited list items from being mistaken
+    for the new imperative that would revoke a read-only boundary.
+    """
+    # A regex match may start with the sentence separator itself.
+    # A sentence followed by Then block is a new affirmative command.
+    if action_start < len(part) and part[action_start] in ".!?;\n":
+        return False
+    before = part[:action_start]
+    boundary = max((before.rfind(ch) for ch in ".!?;\n"), default=-1)
+    sentence = before[boundary + 1:]
+    heads = list(_NEGATED_LIST_HEAD.finditer(sentence))
+    if not heads:
+        return False
+    tail = sentence[heads[-1].end():]
+    return _NEGATION_BREAK.search(tail) is None
+
+
 
 def independent_affirmative_mutation_clause(
     prompt: str, *, start: int = 0,
@@ -101,6 +136,8 @@ def independent_affirmative_mutation_clause(
     question_lead = bool(_QUESTION_LEAD.match(part))
     for match in _INDEPENDENT_ACTION.finditer(part):
         if question_lead and first_question >= 0 and match.start() < first_question:
+            continue
+        if _in_coordinated_prohibition(part, match.start()):
             continue
         target = part[match.end():]
         if _NEGATED_OBJECT.match(target):
