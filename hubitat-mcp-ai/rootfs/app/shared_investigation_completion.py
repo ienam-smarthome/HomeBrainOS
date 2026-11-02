@@ -452,18 +452,28 @@ def apply_shared_investigation_completion(
                 + ". Do not infer that their devices or automations are healthy."
             )
         return _CoverageOutcome(outcome, system_audit, metrics, message)
-    # A prior assessment can be a model-proposed source-check packet (for
-    # example, competing hypotheses about present readings), not evidence
-    # that the user's question asks WHO/WHY initiated a historical event.
-    # The legacy fallback below defaults to causal_provenance/command_history
-    # whenever no domain contract exists. Do not invent that obligation for
-    # factual current-status questions merely because a coverage dict exists.
-    # Preserve the original domain-specific coverage and outcome as issued;
-    # the real causal and explicit domain-contract paths still run below.
-    if goal is None and not causal:
+    # An attached model-proposed source-check packet is not by itself a
+    # historical WHY/issuer question. Conversely, a specialist route may
+    # have independently established a domain even if this broad classifier
+    # cannot infer that domain from the user's wording alone.
+    # Continue the original verification for those host-defined domains, but
+    # never silently default a factual current-status read to causal
+    # provenance and command-history requirements.
+    specialist_domains = {
+        "device_telemetry", "existing_rule_verification",
+        "manual_motion_lockout", "rule_design_review",
+        "scheduler_ownership",
+    }
+    prior_domain = (
+        prior.get("domain") if isinstance(prior, dict) else None
+    )
+    if goal is None and not causal and prior_domain not in specialist_domains:
         return outcome
     if goal is not None:
         domain = goal.domain
+        required = _known_source_requirements(domain)
+    elif prior_domain in specialist_domains and not causal:
+        domain = prior_domain
         required = _known_source_requirements(domain)
     else:
         domain = "causal_provenance"
