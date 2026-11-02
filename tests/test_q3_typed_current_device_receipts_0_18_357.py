@@ -13,6 +13,7 @@ from tool_executor import ToolExecutor
 def target(label="Workshop Meter", ident="1234", *, attrs=None):
     return {
         "matched": True, "deviceId": ident, "requestCacheHit": False,
+        "reason": "exact normalized name",
         "attempts": [{"source": "label_filter", "count": 2}],
         "target": {"id": ident, "label": label, "attributes": (
             attrs if attrs is not None else {
@@ -56,6 +57,7 @@ def test_no_fuzzy_fallback_cache_ambiguous_or_cross_identity_projection():
         {"requestCacheHit": True},
         {"matched": False},
         {"deviceId": "9999"},
+        {"reason": "fuzzy similarity only"},
         {"attempts": [{"source": "authoritative_identity_fuzzy", "count": 3}]},
         {"attempts": [
             {"source": "label_filter", "count": 0},
