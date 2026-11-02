@@ -87,6 +87,18 @@ def native_schedule_batch_shape_valid(changes: Any) -> bool:
     return True
 
 
+def _property(properties: Any, name: str) -> dict[str, Any]:
+    if not isinstance(properties, dict):
+        return {}
+    value = properties.get(name)
+    return value if isinstance(value, dict) else {}
+
+
+def _required(schema: dict[str, Any], names: set[str]) -> bool:
+    required = schema.get("required")
+    return isinstance(required, list) and all(isinstance(item, str) for item in required) and names.issubset(set(required))
+
+
 def _native_create_schema(schema_reply: Any) -> bool:
     """Require the *actual unconfirmed* native operation schema, not a guide.
 
@@ -101,22 +113,22 @@ def _native_create_schema(schema_reply: Any) -> bool:
     if not isinstance(root, dict) or root.get("type") != "object" or root.get("additionalProperties") is not False:
         return False
     properties = root.get("properties")
-    if not isinstance(properties, dict) or not {"operation", "args", "confirm"}.issubset(set(root.get("required") or ())):
+    if not isinstance(properties, dict) or not _required(root, {"operation", "args", "confirm"}):
         return False
-    if properties.get("operation", {}).get("enum") != ["create"]:
+    if _property(properties, "operation").get("enum") != ["create"]:
         return False
-    if properties.get("confirm", {}).get("type") != "boolean":
+    if _property(properties, "confirm").get("type") != "boolean":
         return False
-    args = properties.get("args")
+    args = _property(properties, "args")
     if not isinstance(args, dict) or args.get("type") != "object" or args.get("additionalProperties") is not False:
         return False
     props = args.get("properties")
-    if not isinstance(props, dict) or not {"parent_id", "name", "changes"}.issubset(set(args.get("required") or ())):
+    if not isinstance(props, dict) or not _required(args, {"parent_id", "name", "changes"}):
         return False
     return (
-        props.get("parent_id", {}).get("type") == "integer"
-        and props.get("name", {}).get("type") == "string"
-        and props.get("changes", {}).get("type") == "array"
+        _property(props, "parent_id").get("type") == "integer"
+        and _property(props, "name").get("type") == "string"
+        and _property(props, "changes").get("type") == "array"
     )
 
 
