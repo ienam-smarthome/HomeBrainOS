@@ -143,9 +143,6 @@ def test_scoped_native_method_command_is_a_positive_history_witness():
         },
     }]
     assert len(typed_method_command_records(items)) == 1
-    assert assess_task_source_coverage(
-        ["command_history"], items,
-    ).source_kind if False else True
     assert "command_history" in assess_task_source_coverage(
         ["command_history"], items,
     ).checked
