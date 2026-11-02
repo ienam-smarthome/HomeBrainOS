@@ -148,3 +148,86 @@ def test_scoped_native_method_command_is_a_positive_history_witness():
     ).checked
     items[0]["arguments"]["args"].pop("deviceId")
     assert typed_method_command_records(items) == []
+
+
+def _source_bound_alias_evidence():
+    """Three distinct source roles for an otherwise differently named device."""
+    rows = evidence()
+    rows[0]["arguments"]["name"] = "Boost Relay"
+    rows[0]["details"]["label"] = "Boost Relay"
+    rows[0]["details"]["observedEvents"][1]["name"] = "command-on"
+    rows.append({
+        "tool": "hub_read_devices", "sub_tool": "hub_list_devices",
+        "success": True, "effect": "read", "mutates": False,
+        "evidence_kind": "targeted_device_lookup",
+        "arguments": {"tool": "hub_list_devices", "args": {
+            "labelFilter": "Boost Relay", "detailed": True,
+        }},
+        "details": {"reportedDeviceState": {
+            "deviceId": "9911", "label": "Boost Relay",
+            "reportedAttributes": {"switch": "off"},
+        }},
+    })
+    rows.append({
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True, "effect": "read", "mutates": False,
+        "arguments": {"tool": "hub_list_device_events",
+                      "args": {"deviceId": "9911", "hoursBack": 24, "limit": 20}},
+    })
+    rows.append({
+        "tool": "homebrain_resolve_device",
+        "success": True, "effect": "read", "mutates": False,
+        "arguments": {"name": "bathroom ventilation relay"},
+    })
+    return rows
+
+
+def test_alias_focal_binding_to_actual_device_commands_and_decision_logs():
+    rows = _source_bound_alias_evidence()
+    q = "Investigate why the bathroom ventilation relay most recently used boost"
+    packet = command_source_packet(q, rows)
+    assert packet["target"] == "Boost Relay"
+    assert packet["recordedCommands"][0]["recordedIssuerAppId"] == "2710"
+    assert packet["upstreamAutomationDecisionVerified"] is False
+    assert "Sparse sensor" in packet["notes"]
+    assert pending_command_app_decision_log(q, rows)["args"]["appId"] == "2710"
+
+
+def test_alias_source_binding_fails_closed_on_ambiguity_or_missing_source():
+    q = "Investigate why the bathroom ventilation relay most recently used boost"
+    data = _source_bound_alias_evidence()
+
+    for remove_tool in ("homebrain_resolve_device", "hub_list_device_events"):
+        rows = [r for r in data
+                if r.get("tool") != remove_tool
+                and r.get("sub_tool") != remove_tool]
+        assert command_source_packet(q, rows) is None
+
+    rows = _source_bound_alias_evidence()
+    rows[-2]["arguments"]["args"]["deviceId"] = "9999"
+    assert command_source_packet(q, rows) is None
+
+    rows = _source_bound_alias_evidence()
+    rows[-3]["details"]["reportedDeviceState"]["label"] = "Other Relay"
+    assert command_source_packet(q, rows) is None
+
+    rows = _source_bound_alias_evidence()
+    rows.insert(-1, {
+        "tool": "hub_read_devices", "sub_tool": "hub_list_devices",
+        "success": True, "effect": "read",
+        "evidence_kind": "targeted_device_lookup",
+        "arguments": {"tool": "hub_list_devices",
+                      "args": {"labelFilter": "Test Valve"}},
+        "details": {"reportedDeviceState": {
+            "deviceId": "8812", "label": "Test Valve",
+        }},
+    })
+    assert command_source_packet(q, rows) is None
+
+    rows = _source_bound_alias_evidence()
+    assert command_source_packet(
+        "Investigate why Another Relay most recently used boost", rows,
+    ) is None
+    assert command_source_packet(
+        "Investigate why Other Boost Relay turned on", rows,
+    ) is None
