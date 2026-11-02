@@ -324,6 +324,23 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                         and any(isinstance(health.get(k), bool)
                                 for k in ("stopped", "broken"))):
                     found.update(("identity", "health"))
+            if (leaf == "hub_set_rule"
+                    and args.get("operation") == "read"
+                    and row.get("evidence_kind") == "typed_native_rule_document"):
+                checked.update(("identity", "stored_logic", "health"))
+                if (str(args.get("rule_id") or "") == str(details.get("appId") or "")
+                        and details.get("source") == "hub_set_rule:read"
+                        and details.get("semanticFieldsValidated") is True
+                        and details.get("orderedActionsValidated") is True
+                        and details.get("conditionsValidated") is True
+                        and type(details.get("triggerCount")) is int
+                        and type(details.get("actionCount")) is int):
+                    found.update(("identity", "stored_logic"))
+                    health = details.get("verifiedHealth")
+                    if isinstance(health, dict) and any(
+                        type(health.get(k)) is bool for k in ("stopped", "broken")
+                    ):
+                        found.add("health")
             if leaf == "hub_get_app_config" and args.get("appId") not in (None, ""):
                 checked.update(("identity", "stored_logic"))
                 # Only a semantic projection validated against actual stored
