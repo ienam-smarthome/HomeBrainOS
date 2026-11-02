@@ -109,6 +109,10 @@ async def test_target_scoped_native_document_read_resolves_stored_logic():
     {k: v for k, v in DOC.items() if k != "actions"},
     {**DOC, "actions": [{"id": "1", "value": {}}]},
     {**DOC, "triggers": {"1": 10}},
+    {**DOC, "conditions": {"1": {"method": "compare"}}},
+    {**DOC, "expressions": {"1": "A and B"}},
+    {**DOC, "actions": [{"id": "1", "value": {"method": "if", "indent": "1"}}]},
+    {**DOC, "actions": [{"id": "1", "value": {"method": "getOnOffSwitch", "branch": "then"}}]},
     {**DOC, "actions": [
         {"id": "1", "value": {"method": "off"}},
         {"id": "1", "value": {"method": "on"}},
