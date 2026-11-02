@@ -14,6 +14,14 @@ The guide documents shape only: it does **not** supply authoritative native fiel
 
 The schema and sample changes in unit tests are synthetic fixtures; they **do not attest** native time/command field names or a working native scheduled rule. Passing these tests is a safety/shape result only, not an answer-quality benchmark or a successful rule creation.
 
+## Live read-only follow-up — reported field sample vs actual provenance (2026-11-02)
+
+The user supplied a v0.18.363 HomeBrain read-only investigation for candidate native rule **4136**, reported label `Internet: CAM OFF @10pm`. The model's answer reported `tCapab1="Certain Time (and optional date)"`, `time1="A specific time"`, `atTime1="22:00"`, action `actType.1="switchActs"`, `actSubType.1="getOnOffSwitch"`, `onOffSwitch.1=["6985","6988"]` and `onOff.1=false`. This is a **reported field candidate only**, not an authenticated native document read.
+
+**Provenance mismatch:** The supplied complete Technical JSON contains exactly **five** tool receipts: `hub_list_apps`, `hub_list_rules`, `hub_search_tools`, and two `hub_get_app_config(appId=4136)` reads. It contains **no `hub_set_rule(operation="read")` receipt** despite the model claiming it used that operation. Those app-config tool receipts do not expose full typed trigger/action values in the exported summaries, so this source packet cannot independently prove the native field values. The model also inferred parent ID **169** from matching aggregate counts (41 children/rules) rather than a returned child `parentAppId`; this is not proof of parentage. The `date1` field was empty in an apparently **daily** example; no dated **one-time** trigger, self-disable, DST or post-execution lifecycle was verified.
+
+**Next nonmutating evidence needed:** A genuine read-only `hub_set_rule(operation="read", rule_id=4136)` receipt/structured response with typed fields and child parent identity, plus a safe existing *one-time dated* rule sample, or equivalent authoritative upstream offline test evidence. Never infer typed values solely from model prose or summary keys. Do not call `operation="form"`, which upstream warns can mutate, solely to discover fields. No native authoring write is enabled.
+
 ## Preconditions before enabling native writes
 
 1. Using **read-only installed-server evidence**, resolve the exact native Rule Machine parent ID and obtain the actual unconfirmed `hub_set_rule(operation="create",confirm=false)` schema. Do not assume upstream `main` equals installed gateway.
