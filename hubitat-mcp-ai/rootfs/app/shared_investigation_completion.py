@@ -14,6 +14,7 @@ from typing import Any
 from general_evidence_completion import assess_task_source_coverage
 from recent_command_issuer_sources import recent_command_issuer_sources
 from method_command_source_contract import command_source_packet
+from focal_event_reconciliation import reconcile_focal_device_events
 from historical_command_source_contract import (
     focused_command_observation, incident_log_window_coverage,
     calibrate_command_causality,
@@ -534,6 +535,9 @@ def apply_shared_investigation_completion(
     method_commands = command_source_packet(request, evidence)
     if method_commands is not None:
         coverage["observedMethodCommandEvidence"] = method_commands
+    focal_events = reconcile_focal_device_events(request, evidence)
+    if focal_events is not None:
+        coverage["reconciledFocalEventEvidence"] = focal_events
     if domain == "rule_design_review":
         # The historical source-kind list is intentionally empty for design
         # reviews; vacuous empty-set coverage must not become a green
