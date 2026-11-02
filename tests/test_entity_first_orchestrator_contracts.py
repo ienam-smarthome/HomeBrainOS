@@ -144,6 +144,8 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
                     "",
                     {"devices": await self.get_cached_devices()},
                 )
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return _suite.MCPToolResult(name, arguments, {}, "", {"rules": []})
             if name == "hub_search_tools":
