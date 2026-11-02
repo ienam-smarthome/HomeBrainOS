@@ -45,6 +45,9 @@ def test_every_literal_runtime_metric_name_is_registered() -> None:
 
     call_to_allowlist = {
         "increment_active_metric": RequestMetrics.ALLOWED_COUNTERS,
+        # Helpers supplied this callback from the orchestration layer.
+        "increment_metric": RequestMetrics.ALLOWED_COUNTERS,
+        "count_metric": RequestMetrics.ALLOWED_COUNTERS,
         "observe_active_metric_max": RequestMetrics.ALLOWED_COUNTERS,
         "add_active_metric_ms": RequestMetrics.ALLOWED_TIMINGS,
     }
@@ -91,13 +94,21 @@ def test_every_literal_runtime_metric_name_is_registered() -> None:
             if allowed is None:
                 continue
             first = node.args[0]
-            if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
-                continue
-            if first.value not in allowed:
-                missing.append(
-                    f"{path.relative_to(APP_DIR)}:{node.lineno}: "
-                    f"{name}({first.value!r})"
-                )
+            # A conditional metric expression selects one of two fixed keys.
+            # The previous scan ignored it entirely, allowing a production
+            # investigation to crash with Unsupported metric counter.
+            candidates = (
+                (first.body, first.orelse)
+                if isinstance(first, ast.IfExp) else (first,)
+            )
+            for candidate in candidates:
+                if not isinstance(candidate, ast.Constant) or not isinstance(candidate.value, str):
+                    continue
+                if candidate.value not in allowed:
+                    missing.append(
+                        f"{path.relative_to(APP_DIR)}:{node.lineno}: "
+                        f"{name}({candidate.value!r})"
+                    )
     assert scanned > 10, "Expected installed runtime source tree"
     assert not missing, "Unregistered runtime metrics:\n" + "\n".join(missing)
 
