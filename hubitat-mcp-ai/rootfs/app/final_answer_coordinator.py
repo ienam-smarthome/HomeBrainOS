@@ -14,6 +14,7 @@ from causal_native_logs import (
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
 from current_state_clock_evidence import render_current_state_clock_evidence
+from requested_event_window_evidence import render_requested_event_window_evidence
 from causal_initiator_provenance_guard import render_state_report_provenance
 from recent_command_issuer_sources import render_recent_command_issuer_sources
 from method_command_source_contract import render_command_source_packet
@@ -924,6 +925,16 @@ class FinalAnswerCoordinator:
                     "role": "user", "content": clock_evidence,
                 })
                 increment_active_metric("current_state_clock_packet")
+        # The tool may have retrieved a broader history than the user's
+        # explicit rolling time window. Ground interval/event chronology in
+        # returned source times, without rewriting the model's natural prose,
+        # adding reads, or inferring physical execution/command provenance.
+        rolling_evidence = render_requested_event_window_evidence(
+            original_user, evidence,
+        )
+        if rolling_evidence:
+            final_messages.append({"role": "user", "content": rolling_evidence})
+            increment_active_metric("requested_event_window_packet")
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
