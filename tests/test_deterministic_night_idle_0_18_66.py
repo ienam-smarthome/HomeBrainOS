@@ -85,9 +85,12 @@ class NativeRuleMCP:
                 }},
             }
         elif name == "hub_get_tool_guide":
-            assert args["section"] == "set_rule_reference_actions"
-            data = {"content": "missing" if self.bad_guide else
-                    "ifThen cancelDelay delay endIf switch"}
+            if args["section"] == "set_rule_reference":
+                data = {"content": "set_rule_reference hub_set_rule name addTrigger addAction legacy shortcuts"}
+            else:
+                assert args["section"] == "set_rule_reference_actions"
+                data = {"content": "missing" if self.bad_guide else
+                        "ifThen cancelDelay delay endIf switch"}
         else:
             raise AssertionError("No mutation tool should be executed: " + name)
         return MCPToolResult(name, args, {}, "", data)

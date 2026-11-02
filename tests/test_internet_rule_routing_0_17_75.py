@@ -56,6 +56,8 @@ class FakeMCP:
             data = {"devices": [tab()]}
         elif name == "hub_read_rules":
             data = {"rules": []}
+        elif name == "hub_get_tool_guide":
+            data = {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"}
         else:
             raise AssertionError(f"Unexpected write or gateway call: {name}")
         return MCPToolResult(name, arguments, {}, "", data)

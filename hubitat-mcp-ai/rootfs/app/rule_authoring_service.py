@@ -26,6 +26,9 @@ from mcp_client import HubitatMCPClient
 logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
 from time_expressions import AT_TIME as _SHARED_AT_TIME, parse_clock as _shared_parse_clock
 from tool_registry import rule_machine_proposal_error
+from rule_writer_contract import (
+    installed_rule_writer_contract, legacy_rule_writer_incompatibility,
+)
 
 
 RULE_MACHINE_GATEWAY = "hub_manage_rule_machine"
@@ -942,6 +945,26 @@ class RuleAuthoringService:
         name = str(payload.get("name") or "").strip()
         return name or None
 
+    async def _rule_writer_contract(self) -> str:
+        """One read-only installed-server capability probe; no write or schema guess."""
+        arguments = {"section": "set_rule_reference"}
+        started = time.monotonic()
+        try:
+            result = await self.mcp.call_tool("hub_get_tool_guide", arguments)
+            contract = installed_rule_writer_contract(result)
+        except Exception:
+            logger.warning("Installed Rule Machine guide unavailable", exc_info=True)
+            contract = "unknown"
+        self._record_evidence(
+            "hub_get_tool_guide", arguments,
+            success=contract != "unknown",
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"Rule Machine writer contract: {contract}",
+            supports_live_claim=True,
+            evidence_kind="rule_writer_contract_check",
+        )
+        return contract
+
     async def duplicate_create_error(
         self,
         arguments: dict[str, Any],
@@ -967,6 +990,13 @@ class RuleAuthoringService:
         ]
         if not names:
             return None
+        # Confirmation replay is a fresh trust boundary. The server may have
+        # upgraded while the queued proposal was awaiting approval. Check the
+        # installed guide before ANY create write, not just at proposal time.
+        contract = await self._rule_writer_contract()
+        incompatible = legacy_rule_writer_incompatibility(contract)
+        if incompatible:
+            return incompatible
         normalized = [name.casefold() for name in names]
         duplicates_in_group = sorted(
             {
@@ -1034,6 +1064,16 @@ class RuleAuthoringService:
             return RuleAuthoringDecision(False)
         if RULE_MACHINE_GATEWAY not in available_gateways:
             return RuleAuthoringDecision(False)
+
+        # The installed server may now expose native document creation rather
+        # than the shortcut fields our deterministic compiler emits. Consult
+        # its own read-only guide before resolving a target or queuing an
+        # impossible/unsafe confirmed write. Never silently translate fields.
+        incompatible = legacy_rule_writer_incompatibility(
+            await self._rule_writer_contract()
+        )
+        if incompatible:
+            return RuleAuthoringDecision(True, incompatible)
 
         if not intent.recurring:
             runtime_now = self._now()

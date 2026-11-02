@@ -42,6 +42,8 @@ class FakeMCP:
             label = str(arguments.get("args", {}).get("labelFilter") or "")
             devices = [dict(CONTROL)] if label == CONTROL["label"] else []
             return result(name, arguments, {"success": True, "devices": devices})
+        if name == "hub_get_tool_guide":
+            return result(name, arguments, {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
         if name == "hub_read_rules":
             return result(name, arguments, {"success": True, "rules": []})
         raise AssertionError((name, arguments))

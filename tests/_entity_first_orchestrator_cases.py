@@ -398,6 +398,8 @@ async def test_rule_authoring_uses_deterministic_compiler_before_model():
                 return MCPToolResult(
                     name, arguments, {}, "", {"devices": found}
                 )
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return MCPToolResult(name, arguments, {}, "", {"rules": []})
             if name == "hub_search_tools":
@@ -583,6 +585,8 @@ async def test_rule_authoring_reachable_when_search_discovery_misses_gateway():
                         ]
                     },
                 )
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return MCPToolResult(name, arguments, {}, "", {"rules": []})
             if name == "hub_search_tools":
@@ -728,6 +732,8 @@ async def test_rule_authoring_sees_commands_from_targeted_projected_lookup():
                         ]
                     },
                 )
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return MCPToolResult(name, arguments, {}, "", {"rules": []})
             if name == "hub_search_tools":
@@ -778,6 +784,8 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return MCPToolResult(name, arguments, {}, "", {"rules": []})
             assert name == "hub_manage_rule_machine"
@@ -881,6 +889,8 @@ async def test_one_time_rule_end_to_end_creates_without_self_pause():
                         ]
                     },
                 )
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return MCPToolResult(name, arguments, {}, "", {"rules": []})
             if name == "hub_search_tools":
@@ -934,6 +944,8 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
+            if name == "hub_get_tool_guide":
+                return MCPToolResult(name, arguments, {}, "", {"content": "set_rule_reference hub_set_rule name addTrigger and addAction legacy shortcuts"})
             if name == "hub_read_rules":
                 return MCPToolResult(name, arguments, {}, "", {"rules": []})
             return MCPToolResult(
@@ -982,6 +994,7 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
     assert "1 remaining confirmed action was not attempted" in outcome.message
     assert "completed successfully" not in outcome.message.casefold()
     assert [name for name, _ in agent.mcp.calls] == [
+        "hub_get_tool_guide",
         "hub_read_rules",
         "hub_manage_rule_machine",
     ]
