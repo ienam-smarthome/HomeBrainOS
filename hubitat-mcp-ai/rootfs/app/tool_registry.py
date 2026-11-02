@@ -200,6 +200,81 @@ def _is_rule_capability_probe(tool_name: str, arguments: dict[str, Any]) -> bool
     )
 
 
+_NATIVE_DOCUMENT_READ_GATEWAYS = {
+    "hub_manage_native_rules_and_apps",
+    "hub_manage_rule_machine",
+}
+_NATIVE_DOCUMENT_READ_SECTIONS = {
+    "actions", "conditions", "triggers", "expressions", "variables", "settings",
+}
+
+
+def _is_native_rule_document_read(
+    name: str, arguments: dict[str, Any],
+) -> bool:
+    """Identify only the documented nonmutating native document *read*.
+
+    A broad hub_manage gateway is not read-only, and hub_set_rule's other
+    operations can create active/partial Rule Machine children. Classify
+    the fully bounded read envelope, not the "set" verb or a model claim.
+    The installed native implementation executes operation=read through
+    toolGetRuleDocument even when a boolean confirm=true is supplied.
+    """
+    if name not in _NATIVE_DOCUMENT_READ_GATEWAYS:
+        return False
+    if set(arguments) != {"tool", "args"}:
+        return False
+    if arguments.get("tool") != "hub_set_rule":
+        return False
+    payload = arguments.get("args")
+    if not isinstance(payload, dict) or not {
+        "operation", "rule_id",
+    }.issubset(payload):
+        return False
+    if set(payload) - {"operation", "rule_id", "args", "confirm", "bestPracticeKey"}:
+        return False
+    if payload.get("operation") != "read":
+        return False
+    rule_id = payload.get("rule_id")
+    if type(rule_id) is not int or rule_id <= 0:
+        return False
+    if "confirm" in payload and type(payload["confirm"]) is not bool:
+        return False
+    if "bestPracticeKey" in payload and not (
+        isinstance(payload["bestPracticeKey"], str)
+        and bool(payload["bestPracticeKey"].strip())
+    ):
+        return False
+    read_args = payload.get("args", {})
+    if not isinstance(read_args, dict) or set(read_args) - {
+        "sections", "cursor", "limit",
+    }:
+        return False
+    sections = read_args.get("sections")
+    if sections is not None and (
+        not isinstance(sections, list) or not sections
+        or len(sections) > len(_NATIVE_DOCUMENT_READ_SECTIONS)
+        or any(
+            not isinstance(s, str)
+            or s not in _NATIVE_DOCUMENT_READ_SECTIONS
+            for s in sections
+        )
+        or len(sections) != len(set(sections))
+    ):
+        return False
+    if ("cursor" in read_args or "limit" in read_args) and not (
+        isinstance(sections, list) and len(sections) == 1
+    ):
+        return False
+    if "cursor" in read_args and not isinstance(read_args["cursor"], str):
+        return False
+    if "limit" in read_args and not (
+        type(read_args["limit"]) is int and 1 <= read_args["limit"] <= 100
+    ):
+        return False
+    return True
+
+
 def _rule_specs(
     payload: dict[str, Any],
     singular: str,
@@ -817,6 +892,8 @@ def classify_tool_effect(
     if _is_gateway_schema_probe(name, arguments):
         return ToolEffect.READ
     if _is_rule_capability_probe(name, arguments):
+        return ToolEffect.READ
+    if _is_native_rule_document_read(name, arguments):
         return ToolEffect.READ
 
     operation_effect = _operation_effect(_structured_operations(arguments))
