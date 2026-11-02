@@ -13,6 +13,7 @@ from causal_native_logs import (
 )
 from causal_timeline import render_causal_timeline, explicitly_focused_event_rows
 from evidence_ledger import build_current_turn_evidence_ledger
+from current_state_clock_evidence import render_current_state_clock_evidence
 from causal_initiator_provenance_guard import render_state_report_provenance
 from recent_command_issuer_sources import render_recent_command_issuer_sources
 from method_command_source_contract import render_command_source_packet
@@ -912,6 +913,17 @@ class FinalAnswerCoordinator:
                 "role": "user", "content": reconciled_packet,
             })
             increment_active_metric("focal_evidence_reconciliation_packet")
+        # Generic current-status chronology uses source clocks, not a
+        # device-specific prose patch. The existing model synthesises the
+        # answer in its normal single no-tools completion. No new MCP reads
+        # or model rounds are requested.
+        if not objective.is_source and not causal and contract is None:
+            clock_evidence = render_current_state_clock_evidence(evidence)
+            if clock_evidence:
+                final_messages.append({
+                    "role": "user", "content": clock_evidence,
+                })
+                increment_active_metric("current_state_clock_packet")
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
