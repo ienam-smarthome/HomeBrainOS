@@ -35,7 +35,8 @@ def select_issuing_app_log_obligation(
             "verified": True, "available": True, "read_only": True,
             "tool": historical["tool"], "args": historical["args"],
         })
-    method = pending_command_app_decision_log(question, receipts)
+    method = (pending_command_app_decision_log(question, receipts)
+              if historical is None else None)
     if method is not None:
         candidates.append({
             "kind": "issuer-decision",
