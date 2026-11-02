@@ -26,7 +26,9 @@ from mcp_client import HubitatMCPClient
 logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
 from time_expressions import AT_TIME as _SHARED_AT_TIME, parse_clock as _shared_parse_clock
 from tool_registry import rule_machine_proposal_error
+from request_metrics import increment_active_metric
 from rule_writer_contract import (
+    NATIVE_DOCUMENT, UNKNOWN,
     installed_rule_writer_contract, legacy_rule_writer_incompatibility,
 )
 
@@ -955,6 +957,13 @@ class RuleAuthoringService:
         except Exception:
             logger.warning("Installed Rule Machine guide unavailable", exc_info=True)
             contract = "unknown"
+        # A successfully read guide is not a successful authoring request.
+        # Distinguish a known incompatible contract from a failed/untrusted
+        # guide and never advertise either refusal as a green success.
+        if contract == NATIVE_DOCUMENT:
+            increment_active_metric("rule_writer_native_unsupported")
+        elif contract == UNKNOWN:
+            increment_active_metric("rule_writer_contract_unverified")
         self._record_evidence(
             "hub_get_tool_guide", arguments,
             success=contract != "unknown",
