@@ -1,6 +1,8 @@
 # Answer Quality — active status and cross-chat handoff
 
-## v0.18.371 — verified upstream identity-source gap; completion fidelity candidate (2026-11-02)
+## v0.18.371 — native source identity completeness corrected, merged (2026-11-02)
+
+**Merged exact-head verification:** [PR #1319](https://github.com/ienam-smarthome/HomeBrainOS/pull/1319), tested head `536715dd4e0b1b95489dd8baed30bc1edc2fbaf0`, merge SHA `700fb033d23e79ad003e107b93a4633e1b63a8a5`, **7/7 CI checks green**, **5,972 Python tests passed, two warnings**, add-on smoke and scorecard integrity green. Released add-on **0.18.371**. New `parentIdentityComplete=false` when any native candidate remains unverified; `typesListComplete` keeps its returned-page meaning. Only derived Technical JSON completeness changes, not native class source, tool calls, final answer wording or permissions. **Installed after-result NOT MEASURED.** GitHub upstream permissions remain read-only; source proposal was documented but not submitted upstream. No Hubitat or Home Assistant writes.
 
 **Real installed v0.18.370 first-shot:** The user repeated the read-only native Rule Machine inventory. **3.237s** wall, 4 source MCP reads + one typed projection, no model rounds and no mutations. Installed candidate parent **169** has class ID **18**, but the type catalog supplied no typed native Rule Machine class for that ID. The new `hub_get_app_config(summary=true)` call succeeded in **102 ms**, but returned no native `appType.namespace/name`. Exact current-rule suffix match count **0** in the reported complete app/rule pages; parent still **UNVERIFIED**, `investigation_coverage.questionResolved=false`, no rule created. A current name-match absence does not prove historical execution or one-time cleanup. v0.18.370's typed projection showed `parentIdentityComplete=true` despite an unresolved candidate: returned-page count completeness was conflated with native identity proof.
 
