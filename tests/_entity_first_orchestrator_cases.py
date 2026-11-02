@@ -994,6 +994,7 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
     assert "1 remaining confirmed action was not attempted" in outcome.message
     assert "completed successfully" not in outcome.message.casefold()
     assert [name for name, _ in agent.mcp.calls] == [
+        "hub_get_tool_guide",
         "hub_read_rules",
         "hub_manage_rule_machine",
     ]
