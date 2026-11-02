@@ -40,6 +40,7 @@ PROMPT = (
     "Read only: review the schedule; don't open forms, create rules or submit changes.",
     "Read-only: check a smart switch. Never execute actions, change its state, or delete rules.",
     "Read-only: review Hubitat rules. Do not open forms, create rules, submit confirmations or modify anything.",
+    "Inspect the existing native rule. Do not open native forms, create rules, submit confirmations or modify anything.",
 ])
 def test_coordinated_prohibitions_preserve_read_only_authority(question):
     assert explicitly_read_only_request(question)
