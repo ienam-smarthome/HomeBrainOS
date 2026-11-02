@@ -107,9 +107,26 @@ def typed_method_command_records(
                 "commandRecorded": True,
                 "deviceAcknowledgementVerified": False,
                 "physicalActuationVerified": False,
-                "upstreamSchedulerDecisionVerified": False,
+                "upstreamAutomationDecisionVerified": False,
             })
     return sorted(rows, key=lambda x: x["at"], reverse=True)[:20]
+
+
+def _requested_exact_label(request: str, label: str) -> bool:
+    """Do not bind a short label inside a different compound device name.
+
+    A preceding title-case token may belong to the real device label, which
+    this receipt did not verify. Prefer no inferred app log to a wrong device.
+    This is deliberately conservative for partial label matches.
+    """
+    pattern = r"(?<![\\w-])" + re.escape(label) + r"(?![\\w-])"
+    for match in re.finditer(pattern, request, re.I):
+        before = request[:match.start()]
+        prefix = re.search(r"([A-Za-z][A-Za-z0-9-]*)\\s+$", before)
+        if prefix and prefix.group(1)[0].isupper():
+            continue
+        return True
+    return False
 
 
 def command_source_packet(
@@ -120,8 +137,7 @@ def command_source_packet(
     targets = [
         label for label in labels
         if not label.startswith("device:")
-        and re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])",
-                      request, re.I)
+        and _requested_exact_label(request, label)
     ]
     if len(targets) != 1:
         return None
@@ -131,14 +147,13 @@ def command_source_packet(
         "schema": "homebrain-method-command-evidence.v1",
         "target": target,
         "recordedCommands": records[:8],
-        "upstreamSchedulerDecisionVerified": False,
-        "boilerPhysicallyRunningVerified": False,
+        "upstreamAutomationDecisionVerified": False,
+        "physicalPlantOperationVerified": False,
         "commandHistoryComplete": False,
         "notes": (
-            "Reported thermostat idle/off and an OFF command can coexist "
-            "with unobserved scheduler/protection decisions. Never infer "
-            "that no heat command was ever issued or that every room's "
-            "demand/protection state is definitively off."
+            "A device state and recorded method command do not establish "
+            "the app's upstream decision, complete historical coverage, "
+            "physical plant operation or all other device requests."
         ),
     }
 
@@ -198,12 +213,12 @@ def render_command_source_packet(request: str, receipts: list[dict[str, Any]]) -
         + json.dumps(packet, ensure_ascii=False, separators=(",", ":"))
         + "\nExplain the actual recorded command, its source time and "
           "reported device state in natural language. Do not invent the "
-          "scheduler rule/trigger, protection timer status, boiler actuator "
-          "state or command-execution acknowledgement from these records. "
+          "upstream automation decision, protection/override state, "
+          "physical plant operation or hardware acknowledgement from these records. "
           "A successful app config read does not prove historical app "
           "decisions, and empty logs do not prove no rule ran. "
-          "Distinguish 'reported thermostat off/idle' from "
-          "'boiler never received a heat request'."
+          "Distinguish reported device state from independent plant "
+          "operation and absent-command claims."
     )
 
 
