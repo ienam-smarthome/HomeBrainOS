@@ -44,6 +44,7 @@ from recorded_telemetry_freshness import (
     reconcile_telemetry_answer, render_command_only_evidence_answer,
 )
 from investigation_intelligence import assess_investigation, plan_investigation
+from native_rule_inventory_source import is_native_rule_inventory_question
 from history_temporal_analysis import direct_recorded_duration_answer
 from request_outcome_policy import classify_completed_request
 from incident_reasoning_depth import assess_incident_reasoning_depth
@@ -148,6 +149,114 @@ def apply_shared_investigation_completion(
         return outcome
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
+
+    # Inventory membership is distinct from auditing the ordered
+    # executable logic of a particular Rule Machine rule. The old final
+    # completion gate incorrectly assigned existing_rule_verification and
+    # asked for health/conditions after a complete app/type/rule listing.
+    # Only accept a source-typed projection from a successful, read-only,
+    # host-owned inventory receipt; never accept model prose as proof.
+    if is_native_rule_inventory_question(request):
+        evidence_rows = list(getattr(outcome, "evidence", []) or [])
+        projections = [
+            row.get("details") for row in evidence_rows
+            if isinstance(row, dict)
+            and row.get("evidence_kind") == "typed_native_rule_inventory"
+            and row.get("success") is True
+            and row.get("mutates") is False
+            and row.get("effect") == "read"
+            and isinstance(row.get("details"), dict)
+            and row["details"].get("source")
+            == "typed hub_list_apps instances/types + hub_list_rules"
+        ]
+        if projections:
+            projection = projections[-1]
+            parents = projection.get("parents") or []
+            candidate_parents = projection.get("candidateParents") or []
+            names = projection.get("oneTimeRules") or []
+            parent_ok = bool(
+                isinstance(parents, list) and parents
+                and all(
+                    isinstance(item, dict)
+                    and item.get("namespace") == "hubitat"
+                    and item.get("name") == "Rule Machine"
+                    and str(item.get("appId") or "").isdigit()
+                    and str(item.get("appTypeId") or "").isdigit()
+                    for item in parents
+                )
+            )
+            listed = (projection.get("ruleListComplete") is True
+                      and projection.get("appListComplete") is True)
+            # An empty, complete inventory proves only that the exact
+            # suffix wasn't present at read time, not historical absence.
+            document_needed = bool(names) and bool(
+                re.search(r"\b(?:read|retrieve|inspect)\b.*\b(?:document|triggers|actions|settings)\b",
+                          request, re.I | re.S)
+            )
+            native_doc = any(
+                isinstance(row, dict)
+                and row.get("evidence_kind") == "typed_native_rule_document"
+                and row.get("success") is True
+                and row.get("effect") == "read"
+                and row.get("mutates") is False
+                for row in evidence_rows
+            )
+            document_ok = not document_needed or native_doc
+            complete = parent_ok and listed and document_ok
+            coverage = {
+                "domain": "native_rule_inventory",
+                "status": ("inventory-complete" if complete
+                           else "partial-evidence"),
+                "evidenceComplete": complete,
+                "questionResolved": complete,
+                "requirements": [
+                    {"key": "native_parent_identity",
+                     "state": "observed" if parent_ok
+                              else "checked-unverified" if candidate_parents
+                              else "not-established",
+                     "necessary": True,
+                     "source": "typed app instances/type class ID join"},
+                    {"key": "one_time_rule_inventory",
+                     "state": "observed" if listed
+                              else "checked-unverified",
+                     "necessary": True,
+                     "source": "complete hub_list_rules and app instances"},
+                    {"key": "native_document_if_matching",
+                     "state": "observed" if document_ok
+                              else "checked-unverified",
+                     "necessary": document_needed,
+                     "source": "target-scoped hub_set_rule(operation=read)"},
+                ],
+                "recordedCandidateParentIds": [
+                    str(x.get("appId")) for x in candidate_parents[:10]
+                    if isinstance(x, dict)
+                    and str(x.get("appId") or "").isdigit()
+                ],
+                "oneTimeMatchCount": (
+                    projection.get("oneTimeMatchCount")
+                    if type(projection.get("oneTimeMatchCount")) is int
+                    else None
+                ),
+                "absenceScope": (
+                    "complete-exact-suffix-current-inventory"
+                    if listed and names == [] else
+                    "matched-present" if names else
+                    "incomplete-inventory"
+                ),
+                "limitations": (
+                    [] if complete else
+                    ["native Rule Machine type/instance join unverified"]
+                    if not parent_ok and listed and document_ok else
+                    ["one or more required inventory evidence sources unverified"]
+                ),
+            }
+            metrics = _safe_metrics(outcome, partial=not complete)
+            if complete and metrics.get("outcome") in (None, "unresolved"):
+                if classify_completed_request(metrics.get("counters")) == "success":
+                    metrics["outcome"] = "success"
+            return _CoverageOutcome(
+                outcome, coverage, metrics, str(getattr(outcome, "message", "")),
+            )
     objective = resolve_primary_objective(request)
     interpreted = active_request_interpretation(request)
     interpreted_kind = interpreted.objective if interpreted else None
