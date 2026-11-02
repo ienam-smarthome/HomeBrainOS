@@ -109,6 +109,13 @@ def test_source_plan_skips_invalid_and_unverified_proposal():
     chosen = choose_model_source_followup(
         [bad, valid], offer=lambda _: True)
     assert chosen[0].kind == "upstream-input"
+    # Even a known priority kind must not turn a write gateway into a read.
+    unsafe = ModelSourceFollowup(
+        kind="target-history", admitted=lambda: True,
+        render=lambda: "read?", read_gateways=("hub_set_device",),
+        metric="fake",)
+    assert choose_model_source_followup(
+        [unsafe], offer=lambda _: True) is None
 
 
 def test_source_plan_is_pure_and_does_not_execute_callbacks_for_rejected():
