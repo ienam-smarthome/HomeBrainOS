@@ -98,6 +98,7 @@ def test_summary_must_provide_exact_native_type_link(patch, expected_gap):
     assert result["parents"] == []
     assert result["oneTimeRules"] == []
     assert result["summarySourceChecks"][0]["typeProofGap"] == expected_gap
+    assert result["parentIdentityComplete"] is False
 
 
 def test_bare_summary_type_or_false_builtin_class_cannot_gain_native_authority():
@@ -109,6 +110,7 @@ def test_bare_summary_type_or_false_builtin_class_cannot_gain_native_authority()
     assert p["parents"] == []
     assert p["candidateParents"][0]["appTypeId"] == "18"
     assert p["typesListComplete"] is False
+    assert p["parentIdentityComplete"] is False
     assert "omitted its native appType namespace/name" in render_inventory(p)
 
 
@@ -182,6 +184,7 @@ async def test_bare_summary_stays_unresolved_and_reports_specific_missing_proof(
         assert result["summarySourceChecks"][0]["typeProofGap"] == (
             "native-app-summary-class-namespace-unavailable"
         )
+        assert result["parentIdentityComplete"] is False
         assert "omitted its native appType namespace/name" in report
         assert "No exact one-time suffix matched" in report
     finally:
@@ -200,3 +203,40 @@ def test_native_summary_does_not_override_conflicting_explicit_class_record():
     assert p["summarySourceChecks"][0]["typeProofGap"] == (
         "native-app-summary-catalog-conflict"
     )
+
+def test_complete_type_page_is_not_complete_parent_identity_with_unjoined_candidate():
+    """Real failure shape: all returned rows were counted, but no class-ID join."""
+    known_user_types = {
+        "apps": [{"id": 740, "namespace": "community",
+                  "name": "Unrelated App", "system": False}],
+        "count": 1,
+    }
+    thin = {"success": True, "id": 169,
+            "type": "Rule Machine", "user": False}
+    projected = project_rule_inventory(
+        INSTANCES, known_user_types, RULES, {"169": thin},
+    )
+    assert projected["typesListComplete"] is True
+    assert projected["appListComplete"] is True
+    assert projected["ruleListComplete"] is True
+    assert projected["oneTimeMatchCount"] == 0
+    assert projected["parents"] == []
+    assert projected["candidateParents"][0]["appId"] == "169"
+    assert projected["parentIdentityComplete"] is False
+    assert projected["summarySourceChecks"][0]["typeProofGap"] == (
+        "native-app-summary-class-namespace-unavailable"
+    )
+
+
+def test_no_installed_parent_candidates_complete_catalog_can_establish_absence():
+    no_instances = {
+        "apps": [{"id": 560, "name": "Another App",
+                  "type": "Another App", "parentId": None}],
+        "count": 1, "totalOnHub": 1, "filter": "all",
+    }
+    types = {"apps": [{"id": 50, "name": "Another App",
+                       "namespace": "user"}], "count": 1}
+    projection = project_rule_inventory(no_instances, types, RULES)
+    assert projection["parents"] == []
+    assert projection["candidateParents"] == []
+    assert projection["parentIdentityComplete"] is True
