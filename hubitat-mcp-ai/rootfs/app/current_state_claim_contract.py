@@ -72,17 +72,30 @@ def _targeted_snapshot(
     for row in evidence:
         if not isinstance(row, dict) or row.get("success") is not True:
             continue
-        if row.get("evidence_kind") == "targeted_device_lookup":
+        if row.get("evidence_kind") in (
+            "targeted_device_lookup", "deterministic_targeted_device_resolution"
+        ):
             details = row.get("details")
             state = details.get("reportedDeviceState") if isinstance(details, dict) else None
             if isinstance(state, dict) and isinstance(state.get("reportedAttributes"), dict):
                 snapshots.append(state)
-        elif row.get("evidence_kind") != "deterministic_targeted_device_resolution":
+        else:
             # Non-lookup reads can independently support other measurements.
             return None
-    if len(snapshots) != 1:
+    if not snapshots:
         return None
-    snap = snapshots[0]
+    # An exact selected device can be reported by both the targeted gateway
+    # and the resolver. Their overlapping measured values must agree; never
+    # resolve conflicting state silently by arrival order.
+    snap = snapshots[-1]
+    for earlier in snapshots[:-1]:
+        if earlier.get("deviceId") != snap.get("deviceId"):
+            return None
+        first = earlier["reportedAttributes"]
+        latest = snap["reportedAttributes"]
+        for key in first.keys() & latest.keys():
+            if not _same_measurement(str(first[key]), latest[key]):
+                return None
     if not str(snap.get("deviceId") or "").isdigit() or not str(snap.get("label") or "").strip():
         return None
     return snap

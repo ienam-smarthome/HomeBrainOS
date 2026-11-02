@@ -16,6 +16,7 @@ from aggregate_fallback_policy import (
     observe_aggregate_result,
 )
 from evidence_recorder import EvidenceRecorder
+from current_device_receipt_projection import resolved_device_snapshot
 from evidence_gateway_contract import (
     normalize_gateway_read, missing_required_read_fields,
 )
@@ -147,6 +148,13 @@ class ToolExecutor:
         """Return bounded structured proof that is useful in technical receipts."""
 
         data = result.data
+        if result.name == "homebrain_resolve_device":
+            snapshot = resolved_device_snapshot(data)
+            if snapshot is not None:
+                # The local resolver already made the remote targeted read.
+                # Retain the exact selected device's allowlisted reported
+                # attributes in the API receipt; never invent event times.
+                return {"reportedDeviceState": snapshot}
         if (
             result.name == "hub_read_variables"
             and result.arguments.get("tool") == "hub_get_variable"
