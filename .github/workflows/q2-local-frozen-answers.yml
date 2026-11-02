@@ -44,6 +44,7 @@ jobs:
           test "${OLLAMA_HOST}" = "127.0.0.1:11434"
           test "${OLLAMA_NO_CLOUD}" = "1"
           python -m compileall -q hubitat-mcp-ai/tools/q2_local_frozen_answers.py
+          python -m pip install --disable-pip-version-check pytest
           python -m pytest tests/test_q2_local_frozen_answers.py -q
       - name: Install temporary local Ollama
         run: |
