@@ -1,5 +1,14 @@
 # Answer Quality — active status and cross-chat handoff
 
+## v0.18.368 candidate — first-shot Rule Machine parent/one-time inventory was discarded (2026-11-02)
+
+**Real v0.18.367 test:** A read-only question asked to identify a directly source-typed native Rule Machine parent app and list any rules with the literal "(One-time YYYY-MM-DD HH:MM)" suffix, using only read tools. It returned six successful nonmutating generic MCP receipts (instances twice, rules, name-filtered instances, app source ID 18, system app types), **no matched typed parent-ID or one-time-rule evidence**, and a generic partial **existing-rule action-tree** refusal with irrelevant comparison-controller language. 9 Ollama free rounds, 44.626s wall, 42.049s agent and 39.928s provider. Unsupported metric error from v0.18.366 was no longer present; the v0.18.367 safety fix worked, but first-shot correctness/usefulness did not.
+
+**Root cause:** The existing-rule publication gate requires a fully verified ordered action tree, which is appropriate for auditing how one named installed rule behaves, **not** for a factual inventory of app instance type/parent and rule names. The gateway receipts only retained field-name summaries; model output was thrown away when no action tree read was made. This is an evidence task mismatch, not lack of inventorial reads.
+
+**Q1 candidate fix:** A narrowly scoped source-backed native parent/rule inventory path executes three allowlisted read-only source calls and projects the returned app-instance/type join and exact one-time name+ID matches. The app instance must link through an actual appTypeId to a type with namespace "hubitat" and name "Rule Machine"; unmatched parents remain candidates only. Complete-page/cursor checks guard zero-match claims. The first surviving one-time rule can receive one verified operation=read native document read (no write gateway delegated to the model). A factual inventory answer is not overwritten by the deep rule-action verification template. Tests cover type mismatches, incomplete pages, nonmatching names, no-model first response and no mutating tools. This stays generic to Rule Machine inventory, not a hardcoded household rule. **Production result, source IDs and paired latency: NOT MEASURED** until the same installed v0.18.368 question is replayed.
+
+
 ## v0.18.367 — fatal unsupported metric counter on read-only native-rule investigation (2026-11-02)
 
 **Actual user-visible first-shot failure**: HomeBrain v0.18.366 returned `success=false`, `route=error`, `Request failed: Unsupported metric counter: investigation_source_checkpoint_offered` for a read-only request to identify the installed Rule Machine parent, list surviving `(One-time YYYY-MM-DD HH:MM)` rules and inspect an existing document. No complete Technical JSON with MCP receipts was returned. Do not infer that no reads executed or that Hubitat changed. This is an application exception, not a verified Hubitat failure.
