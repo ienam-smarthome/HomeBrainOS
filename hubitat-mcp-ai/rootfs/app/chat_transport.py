@@ -325,8 +325,19 @@ class ChatTransport:
         read_timeout: float,
         keep_alive: float | None,
     ) -> dict[str, Any]:
+        round_started = time.monotonic()
         prepared_messages, prepared_tools = prepare_reasoning_turn(messages, tools)
         streamed = callable(getattr(self.client, "stream", None))
+
+        def record_round(answer: dict[str, Any]) -> None:
+            calls = answer.get("tool_calls")
+            record_active_provider_model(
+                model_name, "local" if not api_key else "ollama-cloud",
+                elapsed_ms=(time.monotonic() - round_started) * 1000,
+                tool_call_count=len(calls) if isinstance(calls, list) else 0,
+                declared_tool_count=len(prepared_tools),
+            )
+
         try:
             if streamed:
                 answer = await self._chat_stream(
@@ -339,7 +350,7 @@ class ChatTransport:
                     read_timeout=read_timeout,
                     keep_alive=keep_alive,
                 )
-                record_active_provider_model(model_name, "local" if not api_key else "ollama-cloud")
+                record_round(answer)
                 return answer
             answer = await self._chat_post(
                 prepared_messages,
@@ -350,7 +361,7 @@ class ChatTransport:
                 timeout=timeout,
                 keep_alive=keep_alive,
             )
-            record_active_provider_model(model_name, "local" if not api_key else "ollama-cloud")
+            record_round(answer)
             return answer
         except EmptyOllamaAssistantMessage:
             # A completed provider round with neither content nor tool calls
@@ -375,7 +386,7 @@ class ChatTransport:
                     keep_alive=keep_alive,
                     disable_thinking=True,
                 )
-                record_active_provider_model(model_name, "local" if not api_key else "ollama-cloud")
+                record_round(answer)
                 return answer
             except EmptyOllamaAssistantMessage as exc:
                 increment_active_metric("ollama_empty_message_recovery_failed")
