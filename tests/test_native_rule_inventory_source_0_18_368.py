@@ -96,7 +96,7 @@ def test_names_or_matching_child_counts_do_not_prove_native_parent():
         "appId": "21", "appTypeId": "90", "typeProof": "unverified",
         "typeProofGap": "no-matching-native-app-type-id",
     }]
-    assert "not verified" in render_inventory(p)
+    assert "native parent ID remains unresolved" in render_inventory(p)
 
     wrong_class = copy.deepcopy(INST)
     wrong_class["apps"][0]["appTypeId"] = 999
