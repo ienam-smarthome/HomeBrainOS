@@ -40,7 +40,9 @@ def _simple_setting(row: Any) -> dict[str, Any] | None:
     v = row.get("value")
     if type(v) in (bool, int, float):
         result["value"] = v
-    elif isinstance(v, str) and len(v) <= 100 and not _REDACT.search(v):
+    elif isinstance(v, str):
+        if len(v) > 100 or _REDACT.search(v):
+            return None
         result["value"] = v
     return result
 
