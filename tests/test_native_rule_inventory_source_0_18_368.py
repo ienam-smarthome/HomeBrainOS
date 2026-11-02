@@ -116,7 +116,7 @@ def test_missing_or_truncated_inventory_cannot_prove_no_matches():
     p2 = project_rule_inventory(without, TYPES,
                                 {"rules": [], "count": 0, "nextCursor": "more"})
     assert p2["oneTimeMatchCount"] == 0
-    assert "cannot establish absence" in render_inventory(p2)
+    assert "do not establish absence" in render_inventory(p2)
 
 
 def test_exact_suffix_required_not_loose_one_time_name():
@@ -143,9 +143,36 @@ class FakeMCP:
 
     async def call_tool(self, gateway, args):
         self.calls.append((gateway, args))
-        assert gateway in {"hub_read_apps_code", "hub_read_rules"}
+        assert gateway in {
+            "hub_read_apps_code", "hub_read_rules",
+            "hub_manage_native_rules_and_apps",
+        }
         subtool = args.get("tool")
-        if subtool == "hub_list_rules":
+        if gateway == "hub_manage_native_rules_and_apps":
+            assert subtool == "hub_set_rule"
+            assert args["args"] == {"operation": "read", "rule_id": 72}
+            data = {
+                "rule_id": 72,
+                "validation": {"structuralIssues": [], "uiChecked": False},
+                "nativeHealth": {"broken": False, "stopped": False},
+                "triggers": {"1": "When time is 6:30 PM on November 1"},
+                "actions": [{
+                    "id": "1", "value": {"method": "getOnOffSwitch"},
+                }],
+                "conditions": {}, "expressions": {},
+                "settings": [
+                    {"name": "tCapab1", "type": "enum",
+                     "value": "Certain Time (and optional date)"},
+                    {"name": "atTime1", "type": "time",
+                     "value": "2026-11-01T18:30:00"},
+                    {"name": "actType.1", "type": "enum",
+                     "value": "switchActs"},
+                    {"name": "onOff.1", "type": "bool", "value": "false"},
+                    {"name": "onOffSwitch.1", "type": "capability.switch",
+                     "device_ids": ["99"]},
+                ],
+            }
+        elif subtool == "hub_list_rules":
             data = RULES
         elif args["args"]["scope"] == "instances":
             data = INST
@@ -201,9 +228,17 @@ async def test_orchestrator_returns_inventory_not_generic_deep_rule_refusal():
     assert "comparison controller" not in result.message
     assert "complete executable action tree" not in result.message
     assert result.investigation_coverage is None
-    assert len(mcp.calls) == 3
+    assert len(mcp.calls) == 4
+    assert mcp.calls[-1][1] == {
+        "tool": "hub_set_rule",
+        "args": {"operation": "read", "rule_id": 72},
+    }
+    assert "6:30 PM" in result.message
     assert all(not row.get("mutates") for row in result.evidence)
-    assert not any(x[1].get("tool") == "hub_set_rule" for x in mcp.calls)
+    assert all(row.get("effect") == "read" for row in result.evidence)
+    assert all(not (x[1].get("tool") == "hub_set_rule"
+                    and x[1]["args"]["operation"] != "read")
+               for x in mcp.calls)
 
 
 @pytest.mark.asyncio
