@@ -233,7 +233,7 @@ from historical_command_source_contract import history_window_instruction
 from source_obligation_coordinator import select_issuing_app_log_obligation
 from evidence_first_checkpoint_plan import SourceCheckpointBudget
 from evidence_first_source_followup import (
-    ModelSourceFollowup, choose_model_source_followup,
+    LATE_SOURCE_ORDER, ModelSourceFollowup, choose_model_source_followup,
 )
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from control_intent_guard import unsafe_control_prompt, explicitly_read_only_request
@@ -5863,162 +5863,145 @@ class UnifiedMCPAgent:
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
 
-                # A model-led root-cause investigation needs a read that
-                # discriminates between the leading explanations, not another
-                # generic history or unrelated log sample. Allow ONE extra
-                # evidence-choice round after a substantive target device read.
-                # This is NOT a keyword tool router: the interpreted objective
-                # controls eligibility; the model chooses among advertised
-                # read-only tools, with existing safety/round gates intact.
-                if (connectivity_incident
-                        and not incident_evidence_checkpoint_used
-                        and round_index + 1 < active_round_budget
-                        and not self._mutation_requested_by_user.get()):
-                    target_checkpoint = evidence_progress_checkpoint(
-                        user_prompt, self.evidence.receipts(),
-                    )
-                    if target_checkpoint:
-                        catalog.activate_investigation_read_view(
-                            max_declared=self.tool_limit
-                        )
-                        catalog.expose_read_gateways(
-                            ("hub_read_apps_code", "hub_read_rules",
-                             "hub_read_devices", "hub_read_diagnostics",
-                             SEARCH_TOOL),
-                            max_declared=self.tool_limit,
-                        )
-                        if catalog.schemas() and offer_source_checkpoint("diagnostic-discriminator"):
-                            incident_evidence_checkpoint_used = True
-                            increment_active_metric(
-                                "incident_evidence_checkpoint_retry"
-                            )
-                            messages.extend([
-                                assistant,
-                                {"role": "user", "content": target_checkpoint},
-                            ])
-                            tools = catalog.schemas()
-                            continue
-
-                # General evidence-sufficiency checkpoint: across device
-                # telemetry, motion, scheduler or other declared domain plans,
-                # an important source never queried is an opportunity for one
-                # more targeted read, not proof the question is unanswerable.
-                # Checked-but-empty and truly unavailable sources are not
-                # automatic retry triggers.
-                if (
-                    contract is not None
-                    and not self._investigation_reflection_used.get()
-                    and not self._mutation_requested_by_user.get()
-                ):
+                # Coalesce the later post-grounding evidence-choice proposals
+                # without changing source-class admission, priority, tool
+                # permissions or the independent final coverage/causal gates.
+                # Configuration semantics remains before this point because
+                # moving it past grounding would change a safety boundary.
+                def render_missing_required_source() -> str | None:
+                    if contract is None:
+                        return None
                     assessment = assess_investigation(
                         contract, self.evidence.receipts()
                     )
-                    missing_unchecked = any(
+                    if not any(
                         item.get("necessary") is True
                         and item.get("state") == "not-checked"
                         for item in assessment.get("requirements") or []
+                    ):
+                        return None
+                    read_tools = catalog.activate_investigation_read_view(
+                        max_declared=self.tool_limit
                     )
-                    if missing_unchecked:
-                        read_tools = catalog.activate_investigation_read_view(
-                            max_declared=self.tool_limit
+                    if not read_tools:
+                        return None
+                    return (
+                        render_investigation_checkpoint(
+                            user_prompt, self.evidence.receipts(),
+                            available_read_tools=read_tools,
+                            candidate_hypotheses=(
+                                task_plan.candidate_hypotheses
+                                if task_plan is not None
+                                and task_plan.operation == "investigate"
+                                else ()
+                            ),
                         )
-                        if read_tools and offer_source_checkpoint("missing-required-source"):
-                            self._investigation_reflection_used.set(True)
-                            increment_active_metric(
-                                "investigation_general_evidence_retry"
-                            )
-                            messages.extend([
-                                assistant,
-                                {"role": "user", "content": (
-                                    render_investigation_checkpoint(
-                                        user_prompt, self.evidence.receipts(),
-                                        available_read_tools=read_tools,
-                                        candidate_hypotheses=(
-                                            task_plan.candidate_hypotheses
-                                            if task_plan is not None
-                                            and task_plan.operation == "investigate"
-                                            else ()
-                                        ),
-                                    )
-                                    + "\nHOST MISSING SOURCE REQUIREMENTS: "
-                                    + json.dumps(
-                                        assessment.get("nextMissingSources") or [],
-                                        ensure_ascii=False,
-                                    )
-                                    + "\nFind the most decisive feasible "
-                                      "read-only source; do not repeat already "
-                                      "checked sources or invent tool leaves."
-                                )},
-                            ])
-                            tools = catalog.schemas()
-                            continue
-
-                # A single-device offline/MQTT investigation cannot be
-                # completed merely from status, a bounded event page and
-                # watchdog logs. Give the model ONE additional read-only
-                # opportunity to inspect installed driver code or controlling
-                # automation, or state which upstream capability is unavailable.
-                if (not device_incident_followup_used
-                        and not self._mutation_requested_by_user.get()):
-                    followup = device_incident_followup(
-                        user_prompt, self.evidence.receipts()
+                        + "\nHOST MISSING SOURCE REQUIREMENTS: "
+                        + json.dumps(
+                            assessment.get("nextMissingSources") or [],
+                            ensure_ascii=False,
+                        )
+                        + "\nFind the most decisive feasible read-only "
+                          "source; do not repeat already checked sources "
+                          "or invent tool leaves."
                     )
-                    if followup:
-                        # A checked source is not a new source choice.
+
+                late_read_gateways = (
+                    "hub_read_apps_code", "hub_read_rules",
+                    "hub_read_devices", "hub_read_diagnostics", SEARCH_TOOL,
+                )
+
+                def offer_late_source(kind: str) -> bool:
+                    if kind != "missing-required-source":
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit
                         )
                         catalog.expose_read_gateways(
-                            ("hub_read_apps_code", "hub_read_rules",
-                             "hub_read_devices", "hub_read_diagnostics",
-                             SEARCH_TOOL),
+                            late_read_gateways,
                             max_declared=self.tool_limit,
                         )
-                        if catalog.schemas() and offer_source_checkpoint("driver-or-controller"):
-                            device_incident_followup_used = True
-                            increment_active_metric(
-                                "device_incident_depth_retry"
-                            )
-                            messages.extend([
-                                assistant,
-                                {"role": "user", "content": followup},
-                            ])
-                            tools = catalog.schemas()
-                            continue
+                        if not catalog.schemas():
+                            return False
+                    # Missing-source planner already validated the current
+                    # read-view; unlike the other paths, it must not expose
+                    # any additional gateway.
+                    return offer_source_checkpoint(kind)
 
-                # A targeted dependency lookup is a useful investigative
-                # lead but not proof of a controlling automation. Give the AI
-                # at most one progress-gated chance to inspect the actual
-                # stored configuration or driver source before stopping. Do
-                # not waste a retry after the last allotted model round.
-                if (connectivity_incident and device_incident_followup_used
-                        and not device_incident_progress_retry_used
-                        and round_index + 1 < active_round_budget
-                        and not self._mutation_requested_by_user.get()):
-                    followthrough = incident_progress_followup(
-                        user_prompt, self.evidence.receipts(),
-                    )
-                    if followthrough:
-                        catalog.activate_investigation_read_view(
-                            max_declared=self.tool_limit,
-                        )
-                        catalog.expose_read_gateways(
-                            ("hub_read_apps_code", "hub_read_rules",
-                             "hub_read_devices", "hub_read_diagnostics",
-                             SEARCH_TOOL),
-                            max_declared=self.tool_limit,
-                        )
-                        if catalog.schemas() and offer_source_checkpoint("incident-progress"):
-                            device_incident_progress_retry_used = True
-                            increment_active_metric(
-                                "device_incident_progress_retry"
-                            )
-                            messages.extend([
-                                assistant,
-                                {"role": "user", "content": followthrough},
-                            ])
-                            tools = catalog.schemas()
-                            continue
+                late_source = choose_model_source_followup(
+                    (
+                        ModelSourceFollowup(
+                            kind="diagnostic-discriminator",
+                            admitted=lambda: (
+                                connectivity_incident
+                                and not incident_evidence_checkpoint_used
+                                and round_index + 1 < active_round_budget
+                                and not self._mutation_requested_by_user.get()
+                            ),
+                            render=lambda: evidence_progress_checkpoint(
+                                user_prompt, self.evidence.receipts(),
+                            ),
+                            read_gateways=late_read_gateways,
+                            metric="incident_evidence_checkpoint_retry",
+                        ),
+                        ModelSourceFollowup(
+                            kind="missing-required-source",
+                            admitted=lambda: (
+                                contract is not None
+                                and not self._investigation_reflection_used.get()
+                                and not self._mutation_requested_by_user.get()
+                            ),
+                            render=render_missing_required_source,
+                            read_gateways=(),
+                            metric="investigation_general_evidence_retry",
+                            read_view_only=True,
+                        ),
+                        ModelSourceFollowup(
+                            kind="driver-or-controller",
+                            admitted=lambda: (
+                                not device_incident_followup_used
+                                and not self._mutation_requested_by_user.get()
+                            ),
+                            render=lambda: device_incident_followup(
+                                user_prompt, self.evidence.receipts(),
+                            ),
+                            read_gateways=late_read_gateways,
+                            metric="device_incident_depth_retry",
+                        ),
+                        ModelSourceFollowup(
+                            kind="incident-progress",
+                            admitted=lambda: (
+                                connectivity_incident
+                                and device_incident_followup_used
+                                and not device_incident_progress_retry_used
+                                and round_index + 1 < active_round_budget
+                                and not self._mutation_requested_by_user.get()
+                            ),
+                            render=lambda: incident_progress_followup(
+                                user_prompt, self.evidence.receipts(),
+                            ),
+                            read_gateways=late_read_gateways,
+                            metric="device_incident_progress_retry",
+                        ),
+                    ),
+                    order=LATE_SOURCE_ORDER,
+                    offer=offer_late_source,
+                )
+                if late_source is not None:
+                    late_candidate, late_prompt = late_source
+                    if late_candidate.kind == "diagnostic-discriminator":
+                        incident_evidence_checkpoint_used = True
+                    elif late_candidate.kind == "missing-required-source":
+                        self._investigation_reflection_used.set(True)
+                    elif late_candidate.kind == "driver-or-controller":
+                        device_incident_followup_used = True
+                    else:
+                        device_incident_progress_retry_used = True
+                    increment_active_metric(late_candidate.metric)
+                    messages.extend([
+                        assistant, {"role": "user", "content": late_prompt},
+                    ])
+                    tools = catalog.schemas()
+                    continue
 
                 # A semantic investigation declares source *classes*, not
                 # conclusions. Check actual read receipts before allowing the
