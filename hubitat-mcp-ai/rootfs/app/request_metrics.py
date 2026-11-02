@@ -134,6 +134,7 @@ class RequestMetrics:
         "method_command_source_packet",
         "method_command_issuer_log_read",
         "method_command_issuer_log_unavailable",
+        "source_projection_reads_reused",
         "investigation_read_reflection", "investigation_general_evidence_retry",
         "investigation_write_blocked", "investigation_reflection_synthesized",
         "investigation_grounded_fallback",
