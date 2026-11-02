@@ -1,0 +1,181 @@
+{
+  "schema": "homebrain-q3-late-source-replay.v1",
+  "kind": "anonymous_synthetic_proposal_cases",
+  "limits": "Source-choice replay only. No model transcripts, physical events, private logs, or answer accuracy are certified.",
+  "order": [
+    "diagnostic-discriminator",
+    "missing-required-source",
+    "driver-or-controller",
+    "incident-progress"
+  ],
+  "cases": [
+    {
+      "id": "diag-wins",
+      "domain": "device-telemetry",
+      "admitted": [
+        "diagnostic-discriminator",
+        "missing-required-source",
+        "driver-or-controller"
+      ],
+      "prompts": {
+        "diagnostic-discriminator": "Inspect diagnostic discriminator",
+        "missing-required-source": "Read missing required source",
+        "driver-or-controller": "Read installed driver"
+      },
+      "expected": "diagnostic-discriminator"
+    },
+    {
+      "id": "missing-source-wins",
+      "domain": "heating",
+      "admitted": [
+        "missing-required-source",
+        "driver-or-controller"
+      ],
+      "prompts": {
+        "missing-required-source": "Inspect unqueried required source",
+        "driver-or-controller": "Inspect installed driver"
+      },
+      "expected": "missing-required-source"
+    },
+    {
+      "id": "checked-empty-is-not-unchecked",
+      "domain": "lighting",
+      "admitted": [
+        "driver-or-controller"
+      ],
+      "prompts": {
+        "driver-or-controller": "Inspect source config"
+      },
+      "expected": "driver-or-controller"
+    },
+    {
+      "id": "missing-source-unavailable",
+      "domain": "status",
+      "admitted": [
+        "missing-required-source",
+        "driver-or-controller"
+      ],
+      "prompts": {
+        "missing-required-source": "Read missing required source",
+        "driver-or-controller": "Read driver source"
+      },
+      "viewAvailable": false,
+      "expected": "driver-or-controller"
+    },
+    {
+      "id": "driver-over-progress",
+      "domain": "connectivity",
+      "admitted": [
+        "driver-or-controller",
+        "incident-progress"
+      ],
+      "prompts": {
+        "driver-or-controller": "Inspect installed driver",
+        "incident-progress": "Inspect dependency"
+      },
+      "expected": "driver-or-controller"
+    },
+    {
+      "id": "progress-after-driver-used",
+      "domain": "connectivity",
+      "admitted": [
+        "incident-progress"
+      ],
+      "prompts": {
+        "incident-progress": "Inspect proven dependency"
+      },
+      "expected": "incident-progress"
+    },
+    {
+      "id": "no-source-means-no-retry",
+      "domain": "automation",
+      "admitted": [],
+      "prompts": {},
+      "expected": null
+    },
+    {
+      "id": "no-new-read-after-offer",
+      "domain": "ventilation",
+      "admitted": [
+        "diagnostic-discriminator"
+      ],
+      "prompts": {
+        "diagnostic-discriminator": "Inspect logs"
+      },
+      "preoffers": [
+        "target-history"
+      ],
+      "expected": null
+    },
+    {
+      "id": "new-read-enables-progress",
+      "domain": "network",
+      "admitted": [
+        "incident-progress"
+      ],
+      "prompts": {
+        "incident-progress": "Inspect current dependency"
+      },
+      "preoffers": [
+        "target-history"
+      ],
+      "newRead": true,
+      "expected": "incident-progress"
+    },
+    {
+      "id": "three-offer-ceiling",
+      "domain": "heating",
+      "admitted": [
+        "missing-required-source"
+      ],
+      "prompts": {
+        "missing-required-source": "Inspect source"
+      },
+      "preoffers": [
+        "target-history",
+        "upstream-input",
+        "inventory-evidence"
+      ],
+      "expected": null
+    },
+    {
+      "id": "unavailable-diagnostic-tools-fall-through",
+      "domain": "sensors",
+      "admitted": [
+        "diagnostic-discriminator",
+        "missing-required-source"
+      ],
+      "prompts": {
+        "diagnostic-discriminator": "Read diagnostics",
+        "missing-required-source": "Read missing source"
+      },
+      "toolAvailable": false,
+      "expected": "missing-required-source"
+    },
+    {
+      "id": "scope-present-but-no-target-prompt",
+      "domain": "historical-causality",
+      "admitted": [
+        "diagnostic-discriminator",
+        "driver-or-controller"
+      ],
+      "prompts": {
+        "diagnostic-discriminator": "",
+        "driver-or-controller": "Read historical driver evidence"
+      },
+      "expected": "driver-or-controller"
+    },
+    {
+      "id": "missing-is-not-readable",
+      "domain": "ambiguity",
+      "admitted": [
+        "missing-required-source"
+      ],
+      "prompts": {
+        "missing-required-source": "Read source"
+      },
+      "viewAvailable": false,
+      "expected": null
+    }
+  ]
+}
