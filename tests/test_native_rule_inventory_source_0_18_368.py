@@ -92,7 +92,10 @@ def test_names_or_matching_child_counts_do_not_prove_native_parent():
     user_types["apps"][0]["namespace"] = "user"
     p = project_rule_inventory(INST, user_types, RULES)
     assert p["parents"] == []
-    assert p["candidateParents"] == [{"appId": "21", "typeProof": "unverified"}]
+    assert p["candidateParents"] == [{
+        "appId": "21", "appTypeId": "90", "typeProof": "unverified",
+        "typeProofGap": "no-matching-native-app-type-id",
+    }]
     assert "not verified" in render_inventory(p)
 
     wrong_class = copy.deepcopy(INST)
