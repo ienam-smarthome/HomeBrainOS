@@ -62,7 +62,7 @@ jobs:
       - name: Produce an honestly unmeasured starting scorecard
         run: |
           python scripts/answer_quality_scorecard.py --output answer-quality-scorecard.json
-          python -c "import json; r=json.load(open('answer-quality-scorecard.json')); assert r['measurement_status']=='not_measured' and r['models']==[] and r['total_defined_cases']==31"
+          python -c "import json; r=json.load(open('answer-quality-scorecard.json')); assert r['measurement_status']=='not_measured' and r['models']==[] and r['total_defined_cases']==53"
       - uses: actions/upload-artifact@v4
         with:
           name: answer-quality-scorecard-unmeasured
