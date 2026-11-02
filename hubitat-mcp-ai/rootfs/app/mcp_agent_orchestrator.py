@@ -231,6 +231,7 @@ from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from historical_command_source_contract import history_window_instruction
 from source_obligation_coordinator import select_issuing_app_log_obligation
+from evidence_first_checkpoint_plan import SourceCheckpointBudget
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from control_intent_guard import unsafe_control_prompt, explicitly_read_only_request
 from request_classification import (
@@ -5349,6 +5350,21 @@ class UnifiedMCPAgent:
             increment_active_metric("telemetry_read_round_budget")
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
+        source_checkpoint_budget = SourceCheckpointBudget(max_offers=3)
+
+        def offer_source_checkpoint(kind: str) -> bool:
+            # Model no-tool responses must not cascade through unrelated
+            # recovery engines without an independently successful new read.
+            # This never grants a tool, source identity or write permission.
+            allowed = source_checkpoint_budget.offer(
+                kind, self.evidence.receipts()
+            )
+            increment_active_metric(
+                "investigation_source_checkpoint_offered" if allowed
+                else "investigation_source_checkpoint_suppressed"
+            )
+            return allowed
+
         for round_index in range(active_round_budget):
             if adaptive_investigation or review_first:
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
@@ -5452,7 +5468,7 @@ class UnifiedMCPAgent:
                         and round_index + 1 < active_round_budget):
                     scoped_followup = render_target_scope_followup(
                         user_prompt, self.evidence.receipts())
-                    if scoped_followup:
+                    if scoped_followup and offer_source_checkpoint("target-history"):
                         target_history_scope_retry_used = True
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit)
@@ -5476,7 +5492,7 @@ class UnifiedMCPAgent:
                         and round_index + 1 < active_round_budget):
                     followup = unified_investigation_followup(
                         self.evidence.receipts(), user_prompt)
-                    if followup:
+                    if followup and offer_source_checkpoint("upstream-input"):
                         unified_source_followup_used = True
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit)
@@ -5501,7 +5517,8 @@ class UnifiedMCPAgent:
                             user_prompt, self.evidence.receipts()
                         ) or inventory_answer(assistant.get("content") or ""))):
                     if (not inventory_only_retry_used
-                            and round_index + 1 < active_round_budget):
+                            and round_index + 1 < active_round_budget
+                            and offer_source_checkpoint("inventory-evidence")):
                         inventory_only_retry_used = True
                         increment_active_metric("investigation_inventory_only_retry")
                         catalog.hide_inventory_during_investigation()
@@ -5567,7 +5584,7 @@ class UnifiedMCPAgent:
                         self.evidence.receipts(),
                     )
                     if semantics_prompt:
-                        configuration_semantics_retry_used = True
+                        # Cache/catalog admission is still authoritative.
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit
                         )
@@ -5577,7 +5594,8 @@ class UnifiedMCPAgent:
                             "hub_read_apps_code",
                             SEARCH_TOOL,
                         ])
-                        if catalog.schemas():
+                        if catalog.schemas() and offer_source_checkpoint("configuration-semantics"):
+                            configuration_semantics_retry_used = True
                             increment_active_metric(
                                 "configuration_semantics_source_retry"
                             )
@@ -5845,7 +5863,6 @@ class UnifiedMCPAgent:
                         user_prompt, self.evidence.receipts(),
                     )
                     if target_checkpoint:
-                        incident_evidence_checkpoint_used = True
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit
                         )
@@ -5855,7 +5872,8 @@ class UnifiedMCPAgent:
                              SEARCH_TOOL),
                             max_declared=self.tool_limit,
                         )
-                        if catalog.schemas():
+                        if catalog.schemas() and offer_source_checkpoint("diagnostic-discriminator"):
+                            incident_evidence_checkpoint_used = True
                             increment_active_metric(
                                 "incident_evidence_checkpoint_retry"
                             )
@@ -5889,7 +5907,7 @@ class UnifiedMCPAgent:
                         read_tools = catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit
                         )
-                        if read_tools:
+                        if read_tools and offer_source_checkpoint("missing-required-source"):
                             self._investigation_reflection_used.set(True)
                             increment_active_metric(
                                 "investigation_general_evidence_retry"
@@ -5931,7 +5949,7 @@ class UnifiedMCPAgent:
                         user_prompt, self.evidence.receipts()
                     )
                     if followup:
-                        device_incident_followup_used = True
+                        # A checked source is not a new source choice.
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit
                         )
@@ -5941,7 +5959,8 @@ class UnifiedMCPAgent:
                              SEARCH_TOOL),
                             max_declared=self.tool_limit,
                         )
-                        if catalog.schemas():
+                        if catalog.schemas() and offer_source_checkpoint("driver-or-controller"):
+                            device_incident_followup_used = True
                             increment_active_metric(
                                 "device_incident_depth_retry"
                             )
@@ -5965,7 +5984,6 @@ class UnifiedMCPAgent:
                         user_prompt, self.evidence.receipts(),
                     )
                     if followthrough:
-                        device_incident_progress_retry_used = True
                         catalog.activate_investigation_read_view(
                             max_declared=self.tool_limit,
                         )
@@ -5975,7 +5993,8 @@ class UnifiedMCPAgent:
                              SEARCH_TOOL),
                             max_declared=self.tool_limit,
                         )
-                        if catalog.schemas():
+                        if catalog.schemas() and offer_source_checkpoint("incident-progress"):
+                            device_incident_progress_retry_used = True
                             increment_active_metric(
                                 "device_incident_progress_retry"
                             )
@@ -5995,7 +6014,9 @@ class UnifiedMCPAgent:
                     source_coverage = assess_task_source_coverage(
                         task_plan.required_evidence_kinds, self.evidence.receipts(),
                     )
-                    if source_coverage.missing and not source_completion_retry_used:
+                    if (source_coverage.missing and not source_completion_retry_used
+                            and round_index + 1 < active_round_budget
+                            and offer_source_checkpoint("task-evidence-coverage")):
                         source_completion_retry_used = True
                         increment_active_metric("task_evidence_retry")
                         messages.extend([
@@ -6047,7 +6068,8 @@ class UnifiedMCPAgent:
                     followup = render_command_source_followup(
                         self.evidence.receipts()
                     )
-                    if followup:
+                    if (followup and round_index + 1 < active_round_budget
+                            and offer_source_checkpoint("causal-provenance")):
                         causal_completion_retry_used = True
                         causal_completion_mode = True
                         increment_active_metric("causal_completion_retry")

@@ -53,4 +53,55 @@ def select_evidence_checkpoint(
         "args": dict(chosen["args"]),
     }
 
-__all__ = ["PRIORITY", "select_evidence_checkpoint"]
+
+
+class SourceCheckpointBudget:
+    """One source-choice retry per new successful read scope, at most N.
+
+    This gate is request-local. An offered model round does not by itself
+    constitute new evidence. A failed read, repeated identical read or write
+    cannot renew the opportunity. Upstream admission and tool permissions
+    remain authoritative; this class never authorizes a tool operation.
+    """
+
+    def __init__(self, max_offers: int = 3) -> None:
+        self.max_offers = max(0, int(max_offers))
+        self.offered_kinds: list[str] = []
+        self._last_scopes: frozenset[tuple[str, str]] | None = None
+
+    @staticmethod
+    def successful_read_scopes(
+        receipts: Iterable[dict[str, Any]],
+    ) -> frozenset[tuple[str, str]]:
+        import json
+        scopes: set[tuple[str, str]] = set()
+        for item in receipts:
+            if not isinstance(item, dict):
+                continue
+            if item.get("success") is not True or item.get("effect") != "read":
+                continue
+            tool = item.get("tool")
+            args = item.get("arguments")
+            if not isinstance(tool, str) or not tool or not isinstance(args, dict):
+                continue
+            # Source scope, not a model assertion, timestamp or mutable
+            # response payload. Duplicate successes do not add progress.
+            signature = json.dumps(args, sort_keys=True, separators=(",", ":"),
+                                   default=str)
+            scopes.add((tool, signature))
+        return frozenset(scopes)
+
+    def offer(self, kind: str, receipts: Iterable[dict[str, Any]]) -> bool:
+        """Consume a bounded source-choice opportunity only after progress."""
+        if not isinstance(kind, str) or not kind:
+            return False
+        current = self.successful_read_scopes(receipts)
+        if len(self.offered_kinds) >= self.max_offers:
+            return False
+        if self._last_scopes is not None and not self._last_scopes < current:
+            return False
+        self._last_scopes = current
+        self.offered_kinds.append(kind)
+        return True
+
+__all__ = ["PRIORITY", "select_evidence_checkpoint", "SourceCheckpointBudget"]
