@@ -93,7 +93,9 @@ def test_simple_snapshot_and_other_causal_event_queries_do_not_force_driver_read
 def test_historical_offline_has_no_required_active_switch_interval():
     source = (APP / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
     assert "device_incident_followup_used = False" in source
-    assert "followup = device_incident_followup(" in source
+    assert "render=lambda: device_incident_followup(" in source
+    assert 'kind="driver-or-controller"' in source
+    assert "order=LATE_SOURCE_ORDER" in source
     assert '"device_incident_depth_retry"' in source
     assert "not is_connectivity_root_cause_request(user_prompt)" in source
     assert "catalog.expose_read_gateways(" in source
