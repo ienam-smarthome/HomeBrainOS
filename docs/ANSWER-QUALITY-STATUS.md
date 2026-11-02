@@ -1,5 +1,14 @@
 # Answer Quality — active status and cross-chat handoff
 
+## v0.18.367 — fatal unsupported metric counter on read-only native-rule investigation (2026-11-02)
+
+**Actual user-visible first-shot failure**: HomeBrain v0.18.366 returned `success=false`, `route=error`, `Request failed: Unsupported metric counter: investigation_source_checkpoint_offered` for a read-only request to identify the installed Rule Machine parent, list surviving `(One-time YYYY-MM-DD HH:MM)` rules and inspect an existing document. No complete Technical JSON with MCP receipts was returned. Do not infer that no reads executed or that Hubitat changed. This is an application exception, not a verified Hubitat failure.
+
+**Code-derived cause**: `mcp_agent_orchestrator.offer_source_checkpoint` emits either `investigation_source_checkpoint_offered` or `investigation_source_checkpoint_suppressed` via an `if` expression. Neither was registered in `RequestMetrics.ALLOWED_COUNTERS`; strict metrics bookkeeping raises `ValueError` when the active request encounters that branch. `tests/test_request_metrics_registry_0_17_31.py` previously visited only direct `ast.Constant` call arguments and silently skipped `ast.IfExp`. Two injected `skill_investigation_followup.increment_metric` counters were also missing and could fail on a different live branch.
+
+**Patch**: Register four bounded names and extend the AST regression scanner to include both conditional string leaves and injected metric callback callsites. A synthetic `SourceCheckpointBudget` replay covers both permitted and suppressed offers with active `RequestMetrics`, preserving three-offer budget and no write/tool changes. Bump maintained add-on version to **0.18.367**. **Installed after-result, completeness, first-pass quality and latency are NOT MEASURED** until a replay of the exact read-only user prompt. Do not claim the native parent or one-time rule existence until typed Hubitat tool output supports it.
+
+
 ## One-time native Rule Machine restoration — historical PR reconciliation and offline candidate (2026-11-02)
 
 **User correction accepted:** Earlier HomeBrainOS genuinely created dated one-off rules. PRs #445, #692, #697 supplied the relative scheduling, Hubitat-local ISO clock and DST correction. PR #698 installed guarded cleanup of expired one-off rules, and #951 documented a live Rule Machine child with actions despite a timeout. The user's latest UI shows the one-time cleanup scheduler enabled, with 41 rules checked, zero currently eligible, no deletes or failures at 07:00 on Nov 2. That proves the **cleanup** is still scheduled, not that modern **creation** works. The current native MCP server replaced the legacy shortcut; v0.18.361's confirmed create failed with `Unknown hub_set_rule property` (PR #1296).
