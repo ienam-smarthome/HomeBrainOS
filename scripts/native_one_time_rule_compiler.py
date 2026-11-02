@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from native_rule_document_preflight import (
@@ -137,6 +137,18 @@ def _source_one_time_sample(document: Any) -> tuple[dict[str, Any] | None, str]:
     return {"id": rule_id, "timeFormat": actual_time}, ""
 
 
+def _unique_real_wall_clock(when: datetime) -> bool:
+    """Reject DST gaps and repeated local hours unsupported by native ISO."""
+    if when.tzinfo is None:
+        return False
+    if when.replace(fold=0).utcoffset() != when.replace(fold=1).utcoffset():
+        return False
+    try:
+        return when.astimezone(timezone.utc).astimezone(when.tzinfo) == when
+    except (OverflowError, ValueError):
+        return False
+
+
 def compile_native_one_time_switch(
     *, guide: Any, schema_reply: Any, parent: Any,
     reference_document: Any, name: str, device_id: int,
@@ -157,6 +169,7 @@ def compile_native_one_time_switch(
             or not hasattr(hub_now.tzinfo, "key")
             or not hasattr(scheduled_at.tzinfo, "key")
             or hub_now.tzinfo.key != scheduled_at.tzinfo.key
+            or not _unique_real_wall_clock(scheduled_at)
             or scheduled_at <= hub_now
             or scheduled_at > hub_now + timedelta(days=7)):
         gaps.append("fresh_same_hub_timezone_one_time_clock_unverified")
