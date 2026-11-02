@@ -230,6 +230,7 @@ from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from historical_command_source_contract import history_window_instruction
 from provenance_app_log_planner import pending_provenance_app_log_read
+from method_command_source_contract import pending_command_app_decision_log
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from control_intent_guard import unsafe_control_prompt, explicitly_read_only_request
 from request_classification import (
@@ -3869,6 +3870,47 @@ class UnifiedMCPAgent:
                 logger.debug(
                     "Verified producer's app-log source unavailable: %s", exc,
                 )
+        # After a verified typed method command, inspect at most one issuing
+        # app's bounded historical decision log. Only logs tied to an
+        # actual producer ID and target label can justify this read.
+        method_log_plan = (
+            pending_command_app_decision_log(
+                objective, self.evidence.receipts(),
+            )
+            if not _explicit_mutation_request(objective) else None
+        )
+        if method_log_plan is not None:
+            try:
+                method_catalog = build_request_tool_catalog(
+                    await self.mcp.list_tools()
+                )
+                method_tool = method_catalog.available_tool("hub_read_diagnostics")
+                method_args = {
+                    "tool": method_log_plan["tool"],
+                    "args": method_log_plan["args"],
+                }
+                if (
+                    method_tool is not None
+                    and method_catalog.gateway_operation_error(
+                        "hub_read_diagnostics", method_args,
+                    ) is None
+                    and not classify_tool_effect(method_tool, method_args).mutates
+                ):
+                    result = await self.executor.execute(
+                        "hub_read_diagnostics", method_args,
+                        tool=method_tool, supports_live_claim=True,
+                        evidence_kind="source_scoped_command_issuer_app_logs",
+                    )
+                    messages.append({
+                        "role": "tool", "tool_name": "hub_read_diagnostics",
+                        "content": redact_secrets(result.content),
+                    })
+                    increment_active_metric("method_command_issuer_log_read")
+                else:
+                    increment_active_metric("method_command_issuer_log_unavailable")
+            except Exception as exc:
+                increment_active_metric("method_command_issuer_log_unavailable")
+                logger.debug("Typed command-app log read unavailable: %s", exc)
         # Integrate source-linked input/command episodes before natural
         # synthesis, using only current-turn read-only receipts. This is a
         # cross-device observation, never a pre-decided causal verdict.
