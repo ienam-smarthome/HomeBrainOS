@@ -75,8 +75,8 @@ def test_verified_target_command_gets_bounded_app_log_window_once():
     items = evidence()
     packet = command_source_packet(QUESTION, items)
     assert packet["target"] == "Thermostat"
-    assert packet["boilerPhysicallyRunningVerified"] is False
-    assert packet["upstreamSchedulerDecisionVerified"] is False
+    assert packet["physicalPlantOperationVerified"] is False
+    assert packet["upstreamAutomationDecisionVerified"] is False
     plan = pending_command_app_decision_log(QUESTION, items)
     assert plan["args"] == {
         "appId": "2710", "since": "2026-11-01T22:20:02Z",
