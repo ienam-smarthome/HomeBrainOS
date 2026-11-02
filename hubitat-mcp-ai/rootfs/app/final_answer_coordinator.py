@@ -15,6 +15,7 @@ from causal_timeline import render_causal_timeline, explicitly_focused_event_row
 from evidence_ledger import build_current_turn_evidence_ledger
 from causal_initiator_provenance_guard import render_state_report_provenance
 from recent_command_issuer_sources import render_recent_command_issuer_sources
+from method_command_source_contract import render_command_source_packet
 from causal_answer_plan import render_causal_answer_plan
 from motion_lockout_investigation import is_motion_lockout_investigation
 from unified_investigation_bridge import (
@@ -889,6 +890,15 @@ class FinalAnswerCoordinator:
                     "role": "user", "content": issuer_packet,
                 })
                 increment_active_metric("recent_issuer_source_packet")
+        # General typed method commands are source events, not proof of
+        # boiler operation or scheduler/protection decision. Keep those
+        # distinctions in the original model's final synthesis context.
+        method_packet = render_command_source_packet(original_user, evidence)
+        if method_packet is not None:
+            final_messages.append({
+                "role": "user", "content": method_packet,
+            })
+            increment_active_metric("method_command_source_packet")
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model

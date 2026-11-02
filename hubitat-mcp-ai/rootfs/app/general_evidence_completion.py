@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 from historical_command_source_contract import mixed_command_events
+from method_command_source_contract import typed_method_command_records
 
 EVIDENCE_KINDS = frozenset({
     "device_state",
@@ -155,6 +156,13 @@ def assess_task_source_coverage(
         # malformed events or mere model narration as command source checks.
         if mixed_command_events(row):
             seen.add("command_history")
+    # Other typed Hubitat method calls (setThermostatMode, setLevel,
+    # setHeatingSetpoint, etc.) are also command history, even when no
+    # command-off/command-on attribute filter was requested. Their trusted
+    # deterministic wrapper must identify its exact queried label.
+    # This proves a bounded command record exists, not historical completeness.
+    if typed_method_command_records(receipts):
+        seen.add("command_history")
     checked = tuple(kind for kind in needs if kind in seen)
     missing = tuple(kind for kind in needs if kind not in seen)
     return EvidenceCoverage(needs, checked, missing)
