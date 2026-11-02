@@ -117,6 +117,14 @@ def resolved_device_snapshot(data: Any) -> dict[str, Any] | None:
             or not isinstance(attempts[0], dict)
             or attempts[0].get("source") not in ("label_filter", "device_id_direct")):
         return None
+    if attempts[0]["source"] == "label_filter" and data.get("reason") not in (
+        "exact normalized name",
+        "exact semantic room and device name",
+        "exact semantic name with device-kind token omitted",
+    ):
+        # A fuzzy selection can be useful to the model, but it is not an
+        # independently exact identity for a public factual source receipt.
+        return None
     raw = data.get("target")
     if not isinstance(raw, dict):
         return None
