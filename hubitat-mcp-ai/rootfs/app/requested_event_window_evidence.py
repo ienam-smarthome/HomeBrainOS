@@ -66,7 +66,31 @@ def render_requested_event_window_evidence(
                 or receipt.get("evidence_kind") != "deterministic_device_event_history"):
             continue
         details = receipt.get("details")
-        if not isinstance(details, dict) or not isinstance(details.get("observedEvents"), list):
+        if not isinstance(details, dict):
+            continue
+        events = details.get("observedEvents")
+        source_count = details.get("sourceEventCount")
+        analysis_count = details.get("analysisEventCount")
+        # The device-history service intentionally omits observedEvents for
+        # an empty result, but still supplies exact zero source/analysis
+        # counts. A successful explicit-zero result is valid *bounded source
+        # evidence*. Do not require a nonempty event list to inform the model
+        # that no rows were returned for the queried attribute.
+        if events is None:
+            if not (type(source_count) is int and source_count == 0
+                    and type(analysis_count) is int and analysis_count == 0):
+                continue
+            events = []
+        elif not isinstance(events, list):
+            continue
+        elif not events and (
+            (source_count is not None and (type(source_count) is not int
+                                           or source_count != 0))
+            or (analysis_count is not None and (type(analysis_count) is not int
+                                                or analysis_count != 0))
+        ):
+            # A redacted/empty projection of a nonempty source is not a
+            # verified zero-event result. Never silently promote it to one.
             continue
         attr = details.get("attribute")
         if not isinstance(attr, str) or attr not in _STATES:
@@ -75,7 +99,7 @@ def render_requested_event_window_evidence(
         if timestamp is None:
             continue
         source_events = []
-        for event in details["observedEvents"][:250]:
+        for event in events[:250]:
             if not isinstance(event, dict) or event.get("name") != attr:
                 continue
             when = _utc(event.get("date"))
@@ -89,7 +113,7 @@ def render_requested_event_window_evidence(
             "asof": timestamp,
             "events": source_events,
             "integrity": details.get("historySourceIntegrityVerified") is True,
-            "source_count": details.get("sourceEventCount"),
+            "source_count": source_count,
             "truncated": details.get("observedEventsTruncated") is True,
             "label": str(details.get("label") or ""),
         })
