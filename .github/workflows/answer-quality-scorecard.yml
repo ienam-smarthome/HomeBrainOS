@@ -54,7 +54,7 @@ jobs:
       - name: Verify frozen offline packet manifest (not model scores)
         run: |
           python scripts/answer_quality_fixed_packets.py export --output answer-quality-frozen-packets.jsonl
-          python -c "import json; p=[json.loads(l) for l in open('answer-quality-frozen-packets.jsonl')]; assert len(p)==18 and all('required_findings' not in c and 'forbidden_claims' not in c for c in p)"
+          python -c "import json; p=[json.loads(l) for l in open('answer-quality-frozen-packets.jsonl')]; assert len(p)==40 and all('required_findings' not in c and 'forbidden_claims' not in c for c in p)"
       - name: Verify neutral Claude/Gemma evidence-only prompt has no private rubric
         run: |
           python scripts/answer_quality_comparison_prompt.py --case-id aq_network_broker_vs_device_health > fixed-neutral-model-prompt.txt
@@ -62,7 +62,7 @@ jobs:
       - name: Produce an honestly unmeasured starting scorecard
         run: |
           python scripts/answer_quality_scorecard.py --output answer-quality-scorecard.json
-          python -c "import json; r=json.load(open('answer-quality-scorecard.json')); assert r['measurement_status']=='not_measured' and r['models']==[] and r['total_defined_cases']==31"
+          python -c "import json; r=json.load(open('answer-quality-scorecard.json')); assert r['measurement_status']=='not_measured' and r['models']==[] and r['total_defined_cases']==53"
       - uses: actions/upload-artifact@v4
         with:
           name: answer-quality-scorecard-unmeasured

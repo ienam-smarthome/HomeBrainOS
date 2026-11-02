@@ -44,9 +44,9 @@ def reviews(records):
 
 def test_catalog_preserves_legacy_and_adds_reviewable_cases():
     catalog = load_catalog()
-    assert len(catalog) == 31
+    assert len(catalog) == 53
     assert sum(x["origin"] == "legacy_golden_tasks" for x in catalog.values()) == 13
-    assert sum(x["origin"] == "curated_source_packet" for x in catalog.values()) == 18
+    assert sum(x["origin"] == "curated_source_packet" for x in catalog.values()) == 40
     assert "causal_light2_off" in catalog
     assert "aq_focal_different_from_later_pattern" in catalog
     assert "aq_repeated_input_delay" in catalog
@@ -57,7 +57,7 @@ def test_empty_baseline_is_unmeasured_and_has_no_fictitious_quality_percentage()
     report = build_scorecard(reviews([]), load_catalog())
     assert report["measurement_status"] == "not_measured"
     assert report["models"] == []
-    assert report["total_defined_cases"] == 31
+    assert report["total_defined_cases"] == 53
     assert report["submitted_reviews"] == 0
     assert "not an automated truth judge" in report["warning"]
 
@@ -67,7 +67,7 @@ def test_one_review_is_only_a_partial_sample_not_a_passed_quality_gate():
     assert report["measurement_status"] == "measured_review_sample"
     model = report["models"][0]
     assert model["cases_reviewed"] == 1
-    assert model["cases_not_reviewed"] == 30
+    assert model["cases_not_reviewed"] == 52
     assert model["grounded_conclusions_pct"] == 100
     assert model["first_attempt_useful_pct"] == 100
     assert model["acceptance_status"] == "insufficient_case_coverage"
@@ -100,7 +100,7 @@ def test_full_reviewed_catalog_can_receive_a_gate_but_is_still_not_claude_parity
         reviews([reviewed(case_id) for case_id in catalog]), catalog,
     )
     model = report["models"][0]
-    assert model["cases_reviewed"] == 31
+    assert model["cases_reviewed"] == 53
     assert model["cases_not_reviewed"] == 0
     assert model["acceptance_status"] == "full_reviewed_case_set"
     assert all(value is True for value in model["targets_met"].values())

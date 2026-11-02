@@ -35,8 +35,8 @@ def manifest(*runs):
 
 def test_exact_curated_inventory_yields_only_model_visible_frozen_packet():
     packets = build_fixed_packets()
-    assert len(packets) == 18
-    assert len({p["case_id"] for p in packets}) == 18
+    assert len(packets) == 40
+    assert len({p["case_id"] for p in packets}) == 40
     assert any(p["case_id"] == "aq_network_broker_vs_device_health" for p in packets)
     assert any(p["case_id"] == "aq_early_heating_off_resume" for p in packets)
     for packet in packets:
@@ -169,3 +169,34 @@ def test_cli_comparison_with_empty_manifests_is_explicitly_unmeasured(tmp_path):
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["paired_cases"] == 0
     assert report["quality_measurement_status"] == "not_measured"
+
+def test_original_18_source_packets_remain_in_place_and_ungraded():
+    """Appending new cases must not rewrite the first, previously frozen cohort."""
+    original_ids = [
+        "aq_command_issuer_vs_reporter",
+        "aq_repeated_input_delay",
+        "aq_focal_different_from_later_pattern",
+        "aq_unverified_high_confidence",
+        "aq_app_logs_empty",
+        "aq_ambiguous_sensor_multicomponent",
+        "aq_bounded_no_on_command",
+        "aq_notified_app_not_issuer",
+        "aq_no_periodic_heartbeat_from_sparse_commands",
+        "aq_motion_p1_battery_no_motion",
+        "aq_network_broker_vs_device_health",
+        "aq_hub_load_warning_single_record",
+        "aq_early_heating_off_resume",
+        "aq_sensor_fan_schedule_handoff",
+        "aq_stale_versus_offline",
+        "aq_hub_job_count_not_latency",
+        "aq_control_success_requires_readback",
+        "aq_no_data_not_zero",
+    ]
+    source = json.loads(
+        (ROOT / "tests/fixtures/answer_quality_cases_v1.json").read_text()
+    )
+    assert [case["id"] for case in source["cases"][:18]] == original_ids
+    assert len(source["cases"]) == 40
+    assert all(c["review_status"] == "not_measured" for c in source["cases"])
+    assert all(c["read_only"] is True for c in source["cases"])
+    assert len({c["id"] for c in source["cases"]}) == 40

@@ -74,7 +74,7 @@ def test_fixed_prompt_is_deterministic_and_does_not_leak_rubric():
 
 def test_cross_domain_frozen_prompt_has_same_contract():
     packets = build_fixed_packets()
-    assert len(packets) == 18
+    assert len(packets) == 40
     for packet in packets:
         prompt = render_comparison_prompt(packet["case_id"])
         assert packet["packet_sha256"] in prompt

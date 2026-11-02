@@ -1,5 +1,16 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Q0 benchmark coverage expansion — 40 curated offline packets (candidate, 2026-11-02)
+
+**Milestone:** The charter's unfinished 40–50 curated benchmark-case target. Current main has 18 curated cases plus 13 distinct legacy tasks; this branch **appends 22 synthetic/anonymised cases** for 40 curated / 53 total without rewriting the original 18 prompts/evidence/rubrics, user histories, provider settings or add-on runtime. The old 13 task obligations remain separate. New cases cover exact historical windows, report/source time, command versus state, power/load, heat, fan, MQTT identity, typed native Rule Machine parent/one-shot semantics and read/write safety. No case is graded solely for being defined, and all new `review_status` values are `not_measured`.
+
+**Hypothesis and expected metric effect:** A larger frozen cross-domain cohort will expose answer failures previously missed by the 18-case suite and support more honest same-packet before/after reviews. It is **NOT itself a measured improvement** in grounding, first-attempt usefulness, latency or Claude comparison. Baseline **0 source-reviewed frozen first attempts**, paired post-change answers **0**, model gap **NOT MEASURED**; no model inference, hub read or mutation performed.
+
+**Tests and gate:** The offline packet exporter and scorecard tests are updated to expect 40 curated / 53 total, explicitly refuse grading on unreviewed cases, and check original 18 IDs/order unchanged. Run existing CI suite and merge only when all exact-head checks pass. Runtime add-on version stays **0.18.370**. Risk: expanded catalog changes the denominator for any full-cohort acceptance claim and adds reviewer workload; rollback is this benchmark-only branch or revert. No changes to native Rule Machine writing/permissions.
+
+**Next real source acceptance:** The separately installed v0.18.370 **read-only** inventory question plus Technical JSON is still necessary to decide whether `hub_get_app_config(summary=true)` directly proves app 169's native namespace/class. Continue Q1 source evidence, Q2 matched offline model comparison and Q3 latency by *reviewed* cases; never count this fixture expansion as a production quality gain. Native one-time creation stays disabled.
+
+
 ## v0.18.370 merged — native app-type catalog missing built-in class 18 (2026-11-02)
 
 **Merged and exact-head CI green:** [PR #1315](https://github.com/ienam-smarthome/HomeBrainOS/pull/1315), tested head `f4df327ad0e77751ce438fc778eb9266daf536ee`, merge commit `d5e2584e4f600c1e6028af5af33c0d5bce2c73ff`, **7/7 checks green, 5,969 Python tests passed, 2 warnings**. The fix performs a **single additional read-only** per-app summary to source-verify the exact native class only when the type-class catalog failed; it never infers parent 169 from names, app counts, a bare user=false flag or a contradictory catalog row. The app's missing systemAppTypes catalog is explicitly marked incomplete when upstream supplies that warning. **Actual installed v0.18.370 response, native parent classification and one-time creation: NOT MEASURED.** No Hubitat or Home Assistant writes, and native authoring remains disabled.
