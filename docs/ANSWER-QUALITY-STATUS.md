@@ -5,6 +5,12 @@
 **Most recent verified installed live add-on:** `0.18.347`, first read-only Fan Boost decision investigation on 2026-11-02: 66.506 seconds, Ollama Cloud Gemma 4 31B, 11 rounds / 19 tools. Direct app-issued ON/OFF commands supported; configured schedule aligned, but actual app decision logs absent and definitive causal proof **not established**. v0.18.348 is a candidate and NOT live-tested. Claude parity NOT MEASURED.
 **Live Hubitat/HA mutation:** none authorised by this quality programme.
 
+## v0.18.349 verified merge and next general efficiency target (2026-11-02)
+
+**MERGED / CI VERIFIED:** [PR #1267](https://github.com/ienam-smarthome/HomeBrainOS/pull/1267), merge `a713d914dd3969e9b6a8f58b6a3278bdb2574571`, exact tested head `eb9a0164a297925389435544ff6ef116715adcf4`. **All eight check runs green**, including **5,725 Python passed / 2 warnings**, add-on container smoke, release metadata, offline scorecard integrity and validation workflows. Only native-location-event versus local-wrapper same-window source re-use was introduced; all target device histories, longer pages, scope filters, app logs and control paths retain their previous behavior. No change to live Hubitat/HA.
+
+**Rollout and measurement:** This is the first bounded source-reuse component; **no live A/B or measured speed improvement**, and does not meaningfully claim to resolve 11 model rounds/19 tools. User was instructed to first run one unrelated Dehumidifier 1 ON-to-OFF diagnostic on v0.18.348 and return its first answer/Technical JSON before moving versions, to preserve a clear baseline. Do not claim a test result before it arrives. Next development is evidence-driven single-plan orchestration to stop overlapping host retry machinery and broad reads, preserving source classes and the natural model writer. Zero-definitive-unsupported-cause charter target remains unmet. Do not repeat prior MQTT, lighting, heating or fan incident tests.
+
 ## v0.18.349 first source-reuse consolidation candidate (2026-11-02)
 
 **Question/test issued to user on installed v0.18.348:** "Investigate the most recent complete ON-to-OFF cycle of Dehumidifier 1. What caused ON/OFF, which app issued commands, check power and decision logs, distinguish recorded commands/state from physical operation. Read-only." This is a **new cross-domain, first-shot** test; no answer or Technical JSON has yet been returned. Do not count it as an evaluation until reviewed.
