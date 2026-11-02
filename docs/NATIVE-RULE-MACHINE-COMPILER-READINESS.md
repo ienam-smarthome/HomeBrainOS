@@ -22,6 +22,12 @@ The user supplied a v0.18.363 HomeBrain read-only investigation for candidate na
 
 **Next nonmutating evidence needed:** A genuine read-only `hub_set_rule(operation="read", rule_id=4136)` receipt/structured response with typed fields and child parent identity, plus a safe existing *one-time dated* rule sample, or equivalent authoritative upstream offline test evidence. Never infer typed values solely from model prose or summary keys. Do not call `operation="form"`, which upstream warns can mutate, solely to discover fields. No native authoring write is enabled.
 
+## Verified native document read recovered in v0.18.364 (2026-11-02)
+
+A subsequent user-supplied complete Technical JSON **does** include a successful, source-linked `hub_manage_native_rules_and_apps(tool="hub_set_rule",args={operation:"read",rule_id:<rule>,confirm:true})` receipt. Its non-form document result showed the native 22:00 trigger and Switch OFF typed settings. This supersedes the prior **unverified model-only read claim** for those overlapping fields. The action method `getOnOffSwitch` was in the returned action row; its settings include `actType.1=switchActs`, but not a separate `actSubType.1` setting in that extracted row. Do not invent the missing setting. The `onOff.1` string `"false"` is a stored OFF flag; the switch selection is verified as a multiple `capability.switch` row. `uiChecked=false` means the native form/editor was **not** inspected.
+
+The gateway's READ operation is **not a write** according to upstream source, even if it carries `confirm:true`; HomeBrain's v0.18.364 effect classifier nevertheless tagged it `mutates=true` and queued an unnecessary sensitive action confirmation. Correct that local permission/evidence contract before further authoring. **Still unproven:** direct parent-child link, future dated one-time time-trigger field contract, timezone/DST and run-once/self-disable. A daily 22:00 sample alone is not an authoritative one-time rule compiler contract. Native creation stays disabled.
+
 ## Preconditions before enabling native writes
 
 1. Using **read-only installed-server evidence**, resolve the exact native Rule Machine parent ID and obtain the actual unconfirmed `hub_set_rule(operation="create",confirm=false)` schema. Do not assume upstream `main` equals installed gateway.
