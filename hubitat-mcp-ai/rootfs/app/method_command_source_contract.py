@@ -129,6 +129,74 @@ def _requested_exact_label(request: str, label: str) -> bool:
     return False
 
 
+def _unique_source_bound_target(
+    request: str, receipts: list[dict[str, Any]], labels: set[str],
+) -> str | None:
+    """Link a differently worded user subject to one read-only source target.
+
+    Requires a unique positively returned targeted ID/label, an independent
+    device-ID-scoped event-history read for the same ID, and a successful
+    deterministic resolution attempt for a phrase actually in the request.
+    Token overlap is only a contradiction filter, never identity proof.
+    """
+    targets: dict[str, str] = {}
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("evidence_kind") != "targeted_device_lookup":
+            continue
+        details = row.get("details")
+        state = details.get("reportedDeviceState") if isinstance(details, dict) else None
+        if not isinstance(state, dict):
+            continue
+        ident = str(state.get("deviceId") or "")
+        label = str(state.get("label") or "").strip()
+        if not ident.isdecimal() or int(ident) <= 0 or not label:
+            continue
+        args = _args(row)
+        if (str(row.get("sub_tool") or "") != "hub_list_devices"
+                or str(args.get("labelFilter") or "").casefold() != label.casefold()):
+            continue
+        targets[ident] = label
+    if len(targets) != 1:
+        return None
+    ident, label = next(iter(targets.items()))
+    if label not in labels:
+        return None
+    if (
+        re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", request, re.I)
+        and not _requested_exact_label(request, label)
+    ):
+        return None  # Reject a longer, explicitly different compound name.
+    overlap = {
+        t.casefold() for t in re.findall(r"[A-Za-z]{3,}", label)
+    } & {
+        t.casefold() for t in re.findall(r"[A-Za-z]{3,}", request)
+    }
+    if not overlap:
+        return None
+    confirmed_scoped_history = any(
+        isinstance(row, dict) and row.get("success") is True
+        and row.get("mutates") is not True
+        and row.get("effect") in (None, "read")
+        and str(row.get("sub_tool") or "") == "hub_list_device_events"
+        and str(_args(row).get("deviceId") or "") == ident
+        for row in receipts
+    )
+    if not confirmed_scoped_history:
+        return None
+    resolved = [
+        row for row in receipts
+        if isinstance(row, dict) and row.get("success") is True
+        and row.get("tool") == "homebrain_resolve_device"
+        and str(_args(row).get("name") or "").strip()
+        and str(_args(row).get("name") or "").strip().casefold() in request.casefold()
+    ]
+    if len(resolved) != 1:
+        return None
+    return label
+
+
 def command_source_packet(
     request: str, receipts: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -139,9 +207,14 @@ def command_source_packet(
         if not label.startswith("device:")
         and _requested_exact_label(request, label)
     ]
-    if len(targets) != 1:
+    if len(targets) == 1:
+        target = targets[0]
+    elif not targets:
+        target = _unique_source_bound_target(request, receipts, labels)
+        if target is None:
+            return None
+    else:
         return None
-    target = targets[0]
     records = typed_method_command_records(receipts, target=target)
     return {
         "schema": "homebrain-method-command-evidence.v1",
@@ -151,9 +224,15 @@ def command_source_packet(
         "physicalPlantOperationVerified": False,
         "commandHistoryComplete": False,
         "notes": (
-            "A device state and recorded method command do not establish "
-            "the app's upstream decision, complete historical coverage, "
-            "physical plant operation or all other device requests."
+            "A recorded command identifies its issuing application, not "
+            "its upstream trigger. Alignment with a configured schedule "
+            "supports a hypothesis but does not independently prove the "
+            "rule's decision. Sparse sensor observations cannot rule out "
+            "unseen threshold crossings or manual input. A bridge-reported "
+            "state is not independent physical-device proof. App decision "
+            "logs or a source-timed decision trace are needed before "
+            "claiming an internal trigger was confirmed; complete history "
+            "and physical actuation remain unverified."
         ),
     }
 
