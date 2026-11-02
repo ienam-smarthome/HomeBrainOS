@@ -44,6 +44,17 @@ class RuleMCP:
             return MCPToolResult(name, arguments, {}, "", {"devices": matches})
         if name == "hub_read_rules":
             return MCPToolResult(name, arguments, {}, "", {"rules": self.rules})
+        if name == "hub_get_tool_guide":
+            # Legacy installed MCP server fixture. Newer server native
+            # document contract is covered in separate mismatch tests.
+            return MCPToolResult(
+                name, arguments, {}, "",
+                {"content": (
+                    "set_rule_reference hub_set_rule: create a rule with name "
+                    "and addTrigger {capability, atTime} and addAction "
+                    "{capability, deviceIds, command}; existing appId edits."
+                )},
+            )
         raise AssertionError((name, arguments))
 
     async def get_cached_devices(self):
