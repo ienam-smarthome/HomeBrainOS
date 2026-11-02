@@ -186,3 +186,17 @@ async def test_bare_summary_stays_unresolved_and_reports_specific_missing_proof(
         assert "No exact one-time suffix matched" in report
     finally:
         evidence.reset(token)
+
+
+def test_native_summary_does_not_override_conflicting_explicit_class_record():
+    types = {
+        "apps": [{"id": 18, "namespace": "user",
+                  "name": "Community App", "system": False}],
+        "count": 1,
+    }
+    p = project_rule_inventory(INSTANCES, types, RULES, {"169": SUMMARY})
+    assert p["parents"] == []
+    assert p["candidateParents"][0]["appTypeId"] == "18"
+    assert p["summarySourceChecks"][0]["typeProofGap"] == (
+        "native-app-summary-catalog-conflict"
+    )
