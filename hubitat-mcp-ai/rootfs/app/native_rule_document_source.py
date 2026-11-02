@@ -65,6 +65,11 @@ def project_native_document(data: Any, app_id: str) -> dict[str, Any] | None:
             and isinstance(triggers, dict) and len(triggers) <= 100
             and isinstance(conditions, dict)):
         return None
+    # Nested IF/ELSE and expression graphs require their own validated
+    # native semantics. Never certify a partial projection of those as a
+    # complete action tree merely because the source document was returned.
+    if conditions or data.get("expressions") not in (None, {}):
+        return None
     if (data.get("nextCursor") is not None
             or data.get("truncated") is True
             or any(not isinstance(row, dict) or "id" not in row
@@ -77,7 +82,12 @@ def project_native_document(data: Any, app_id: str) -> dict[str, Any] | None:
         return None
     order = []
     for item in actions:
-        method = item["value"].get("method")
+        value = item["value"]
+        if set(value) - {"method", "quick", "indent"}:
+            return None
+        if value.get("indent") not in (None, ""):
+            return None
+        method = value.get("method")
         if not (isinstance(method, str) and _NAME.fullmatch(method)):
             return None
         order.append({"id": str(item["id"])[:16], "method": method})
