@@ -22,6 +22,7 @@ from source_analysis_completion import (
 from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
+from source_read_reuse_policy import duplicate_location_projection_reason
 from telemetry_completion_policy import ready_for_bounded_telemetry_answer
 from source_authority_packet import pending_telemetry_configuration_read
 from model_first_draft_provenance import (
@@ -6394,6 +6395,19 @@ class UnifiedMCPAgent:
                     if investigative_request and not self._mutation_requested_by_user.get()
                     else None
                 )
+                # A raw, successfully retrieved native location-event page
+                # already covers its unfiltered deterministic projection.
+                # Avoid asking the same source twice; preserve all device/
+                # mode/attribute-scoped evidence and longer source windows.
+                duplicate_projection_reason = (
+                    duplicate_location_projection_reason(
+                        user_prompt, self.evidence.receipts(), name, arguments,
+                    )
+                    if investigative_request
+                    and not self._mutation_requested_by_user.get()
+                    and not self._mutation_call_seen.get()
+                    else None
+                )
                 # Source code IDs and device instance IDs are separate
                 # namespaces. Do not send a model-guessed driver ID to Hubitat
                 # once the read-only investigation has an attested device.
@@ -6461,6 +6475,17 @@ class UnifiedMCPAgent:
                             "continue with source-linked driver methods, "
                             "targeted device logs and independent network/"
                             "broker observations. No device control occurred."
+                        )
+                    })
+                elif duplicate_projection_reason is not None:
+                    increment_active_metric("source_projection_reads_reused")
+                    content = json.dumps({
+                        "note": (
+                            "Skipped redundant local projection: an equal or "
+                            "wider bounded native location-event page was "
+                            "already read successfully in this request. "
+                            "Its available events remain in the model context. "
+                            "This does not establish complete location history."
                         )
                     })
                 elif broad_causal_inventory:
