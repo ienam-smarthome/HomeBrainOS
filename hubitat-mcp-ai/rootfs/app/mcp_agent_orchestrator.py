@@ -262,6 +262,7 @@ from targeted_rule_scope_policy import (
     is_new_rule_design_review_request,
 )
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
+from native_rule_document_source import prefetch_native_rule_document
 from existing_rule_settings_evidence import prefetch_installed_app_settings
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
@@ -4986,6 +4987,22 @@ class UnifiedMCPAgent:
             # must BOTH receive read-only health and variable evidence.
             # A device ID referenced later in the prompt is not an app ID.
             for app_id in named_rule_app_ids(user_prompt, max_items=3):
+                # Source-complete, read-only native documents are stronger
+                # than generic app setting keys. The management gateway is
+                # *never* exposed wholesale to a read-only model: host-owned
+                # prefetch uses one contract-validated read, and falls back
+                # to the existing partial readers if that source is absent.
+                native_complete = (
+                    await prefetch_native_rule_document(
+                        self.mcp, self.evidence,
+                        app_id=app_id,
+                        available_names=catalog.available_names,
+                        messages=messages,
+                    ) if existing_rule_verification else False
+                )
+                if native_complete:
+                    increment_active_metric("native_rule_document_prefetched")
+                    continue
                 await prefetch_native_rule_evidence(
                     self.mcp, self.evidence,
                     app_id=app_id,
