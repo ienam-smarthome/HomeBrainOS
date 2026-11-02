@@ -16,6 +16,7 @@ from evidence_ledger import build_current_turn_evidence_ledger
 from causal_initiator_provenance_guard import render_state_report_provenance
 from recent_command_issuer_sources import render_recent_command_issuer_sources
 from method_command_source_contract import render_command_source_packet
+from focal_event_reconciliation import render_focal_device_evidence
 from causal_answer_plan import render_causal_answer_plan
 from motion_lockout_investigation import is_motion_lockout_investigation
 from unified_investigation_bridge import (
@@ -899,6 +900,18 @@ class FinalAnswerCoordinator:
                 "role": "user", "content": method_packet,
             })
             increment_active_metric("method_command_source_packet")
+        # Cross-source reconciliation arrives after individual evidence
+        # projections, preventing a narrow final command-on read from
+        # concealing an earlier direct command-off source witness. This is
+        # evidence supplied to the model, not a new answer renderer.
+        reconciled_packet = render_focal_device_evidence(
+            original_user, evidence,
+        )
+        if reconciled_packet:
+            final_messages.append({
+                "role": "user", "content": reconciled_packet,
+            })
+            increment_active_metric("focal_evidence_reconciliation_packet")
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
         # This value comes directly from the *first* no-tools final-model
