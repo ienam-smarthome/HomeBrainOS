@@ -425,8 +425,8 @@ _READ_QUERY_PREFIX = re.compile(
 # mutation. Stop at an independent positive clause or sentence boundary.
 _NEGATED_WRITE_CLAUSE = re.compile(
     r"\b(?:do\s+not|don't|never)\s+(?:actually\s+)?"
-    r"(?:turn|switch|power|set|change|alter|create|delete|disable|enable|"
-    r"restart|block|unblock|allow|configure|execute|run|send|issue|"
+    r"(?:open|submit|turn|switch|power|set|change|alter|create|delete|"
+    r"disable|enable|restart|block|unblock|allow|configure|execute|run|send|issue|"
     r"install|remove|pause|resume|update|write|apply|schedule|"
     r"start|stop|toggle|lock|unlock)\b"
     r"(?:(?![.!?;]|\b(?:but|however|instead|then)\b).)*",
