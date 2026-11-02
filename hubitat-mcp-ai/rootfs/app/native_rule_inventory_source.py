@@ -153,8 +153,22 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: di
                     "appId": app_id, "typeProofGap": gap or None,
                 })
                 if candidate is not None:
-                    parents.append(candidate)
-                    continue
+                    # An explicit contradictory class with the same native
+                    # type ID outranks a summary claim. Missing catalog
+                    # rows are a gap; disagreeing rows are a conflict.
+                    contradictions = [
+                        t for t in type_rows
+                        if _id(t.get("id")) == app_type
+                        and (t.get("namespace") != "hubitat"
+                             or t.get("name") != "Rule Machine"
+                             or t.get("system") is False)
+                    ]
+                    if not contradictions:
+                        parents.append(candidate)
+                        continue
+                    summaries_checked[-1]["typeProofGap"] = (
+                        "native-app-summary-catalog-conflict"
+                    )
             # Upstream installed-app rows can legitimately omit appTypeId.
             # Preserve the *specific* missing join rather than implying
             # namespace "hubitat" from a label or child count.
