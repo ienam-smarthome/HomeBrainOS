@@ -6,6 +6,8 @@
 
 **Code-derived cause**: `mcp_agent_orchestrator.offer_source_checkpoint` emits either `investigation_source_checkpoint_offered` or `investigation_source_checkpoint_suppressed` via an `if` expression. Neither was registered in `RequestMetrics.ALLOWED_COUNTERS`; strict metrics bookkeeping raises `ValueError` when the active request encounters that branch. `tests/test_request_metrics_registry_0_17_31.py` previously visited only direct `ast.Constant` call arguments and silently skipped `ast.IfExp`. Two injected `skill_investigation_followup.increment_metric` counters were also missing and could fail on a different live branch.
 
+**MERGED / ALL GREEN:** [PR #1309](https://github.com/ienam-smarthome/HomeBrainOS/pull/1309), exact tested head `c7493c56dbafe0eaeb2b3808cec415f90d59e100`, merge commit `00d0e9645d1b90690ad8fa0a1244d793bb2df14e`; **6/6 exact-head CI checks passed, 5,935 Python tests passed, 2 warnings**. The released add-on is `0.18.367`. No live Hubitat or HA changes were made; this verifies the local metrics exception cannot recur through the covered branches, **not** the correctness of a native rule-parent investigation.
+
 **Patch**: Register four bounded names and extend the AST regression scanner to include both conditional string leaves and injected metric callback callsites. A synthetic `SourceCheckpointBudget` replay covers both permitted and suppressed offers with active `RequestMetrics`, preserving three-offer budget and no write/tool changes. Bump maintained add-on version to **0.18.367**. **Installed after-result, completeness, first-pass quality and latency are NOT MEASURED** until a replay of the exact read-only user prompt. Do not claim the native parent or one-time rule existence until typed Hubitat tool output supports it.
 
 
