@@ -136,6 +136,8 @@ class RequestMetrics:
         "method_command_issuer_log_unavailable",
         "source_projection_reads_reused",
         "focal_evidence_reconciliation_packet",
+        "source_completion_catalog_discoveries",
+        "source_completion_app_log_reads",
         "investigation_read_reflection", "investigation_general_evidence_retry",
         "investigation_write_blocked", "investigation_reflection_synthesized",
         "investigation_grounded_fallback",
