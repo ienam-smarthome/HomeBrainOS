@@ -1,6 +1,8 @@
 # Answer Quality — active status and cross-chat handoff
 
-## Q0 benchmark coverage expansion — 40 curated offline packets (candidate, 2026-11-02)
+## Q0 benchmark coverage expansion — 40 curated offline packets (MERGED, 2026-11-02)
+
+**Merged result:** [PR #1317](https://github.com/ienam-smarthome/HomeBrainOS/pull/1317), exact tested head `28d218d80f4d594c88dbefc4ed52330f9cfb001e`, main merge SHA `9418e3ffe13fd207f8f7b1df15a69f00b4812c09`. **6/6 exact-head CI checks green**, including **5,970 Python tests passed, two warnings**, offline scorecard integrity, add-on container smoke, metadata and validation. The expanded fixture exports exactly **40 curated** packets and retains the **13 legacy** task definitions (53 total). The original 18 curated IDs/order remain frozen, no rubric fields leak into model prompts, and this documentation-only handoff does not change the add-on version **0.18.370**. No live Hubitat/HA operations. **Factual accuracy, first-usefulness, paired model quality and latency improvements: NOT MEASURED**, so no quality percentage is claimed.
 
 **Milestone:** The charter's unfinished 40–50 curated benchmark-case target. Current main has 18 curated cases plus 13 distinct legacy tasks; this branch **appends 22 synthetic/anonymised cases** for 40 curated / 53 total without rewriting the original 18 prompts/evidence/rubrics, user histories, provider settings or add-on runtime. The old 13 task obligations remain separate. New cases cover exact historical windows, report/source time, command versus state, power/load, heat, fan, MQTT identity, typed native Rule Machine parent/one-shot semantics and read/write safety. No case is graded solely for being defined, and all new `review_status` values are `not_measured`.
 
