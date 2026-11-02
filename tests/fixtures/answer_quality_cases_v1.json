@@ -716,18 +716,18 @@
       "domain": "rule_machine",
       "prompt": "Is a Rule Machine parent verified when the instance and type lists disagree?",
       "available_evidence": [
-        "Installed app 169 is labelled Rule Machine and has appTypeId=18.",
-        "The returned type-class catalog has no id=18 row and warns built-in classes were omitted.",
+        "Installed app 901 is labelled Rule Machine and has appTypeId=718.",
+        "The returned type-class catalog has no id=718 row and warns built-in classes were omitted.",
         "The returned instance name is not a source-typed namespace binding."
       ],
       "required_findings": [
-        "169 remains a candidate, not a verified native writer parent.",
+        "901 remains a candidate, not a verified native writer parent.",
         "The missing built-in catalog cannot prove type absence.",
         "A direct source-attested class relationship is needed."
       ],
       "forbidden_claims": [
         "The native parent is verified solely by its display name.",
-        "No native Rule Machine exists because type 18 is missing."
+        "No native Rule Machine exists because type 718 is missing."
       ],
       "read_only": true,
       "review_status": "not_measured",
@@ -738,7 +738,7 @@
       "domain": "rule_machine",
       "prompt": "Can a thin installed-app summary verify the native Rule Machine class?",
       "available_evidence": [
-        "The exact-ID app summary returns {id:169,type:'Rule Machine',user:false}.",
+        "The exact-ID app summary returns {id:901,type:'Rule Machine',user:false}.",
         "The summary omits appType namespace and name metadata.",
         "The general type catalog also lacks a matching built-in type ID."
       ],
@@ -760,8 +760,8 @@
       "domain": "rule_machine",
       "prompt": "How should conflicting class evidence be reported?",
       "available_evidence": [
-        "A direct summary claims appType {id:18,namespace:'hubitat',name:'Rule Machine'}.",
-        "The independent type catalog maps class id=18 to a different community namespace.",
+        "A direct summary claims appType {id:718,namespace:'hubitat',name:'Rule Machine'}.",
+        "The independent type catalog maps class id=718 to a different community namespace.",
         "No source explains the disagreement."
       ],
       "required_findings": [
