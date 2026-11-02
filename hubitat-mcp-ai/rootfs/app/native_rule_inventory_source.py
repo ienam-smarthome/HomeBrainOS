@@ -220,7 +220,14 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: di
             (t for t in native_types if t is not None),
             key=lambda item: int(item),
         )[:20],
-        "parentIdentityComplete": inst_complete and (types_complete or bool(parents)),
+        # A count-complete app-type page can still lack the native class
+        # needed to resolve an installed candidate. Do not present that
+        # unresolved instance/type join as a complete parent identity.
+        # A successful independent typed summary can prove the parent even
+        # when the built-in type catalog remains incomplete.
+        "parentIdentityComplete": (
+            inst_complete and not possible and (types_complete or bool(parents))
+        ),
         "oneTimeRules": matching[:30],
         "oneTimeMatchCount": len(matching),
         "ruleListComplete": rules_complete,
