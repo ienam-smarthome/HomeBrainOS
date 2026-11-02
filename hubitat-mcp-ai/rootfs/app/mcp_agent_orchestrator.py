@@ -263,6 +263,9 @@ from targeted_rule_scope_policy import (
 )
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from native_rule_document_source import prefetch_native_rule_document
+from native_rule_inventory_source import (
+    is_native_rule_inventory_question, read_native_rule_inventory,
+)
 from existing_rule_settings_evidence import prefetch_installed_app_settings
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
@@ -4054,6 +4057,7 @@ class UnifiedMCPAgent:
             # Defence in depth against every early return: a verified
             # inventory/identity lookup still cannot answer a cause question.
             if (not self._mutation_requested_by_user.get()
+                    and not is_native_rule_inventory_question(user_prompt)
                     and investigating(user_prompt)
                     and inventory_answer(message)):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
@@ -4144,7 +4148,8 @@ class UnifiedMCPAgent:
                 request_class = "live-read"
             pending = self.confirmations.pending.get(str(session_id))
             contract = (
-                None if resolve_primary_objective(user_prompt).is_source
+                None if (resolve_primary_objective(user_prompt).is_source
+                         or is_native_rule_inventory_question(user_prompt))
                 else plan_investigation(user_prompt)
             )
             coverage = (
@@ -4438,6 +4443,50 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+
+        # A source-complete *inventory* answer is not an executable Rule
+        # Machine action-tree audit. Answer parent/type identity and exact
+        # one-time names from the typed Hubitat lists before a model enters
+        # the deep-rule retry/finalization path. Never grant write authority.
+        if (not self._mutation_requested_by_user.get()
+                and is_native_rule_inventory_question(user_prompt)):
+            inventory_answer_text, inventory_data = await read_native_rule_inventory(
+                self.mcp, self.evidence,
+                available_names=catalog.available_names,
+            )
+            if inventory_data["oneTimeRules"]:
+                first = inventory_data["oneTimeRules"][0]
+                native_messages = []
+                if await prefetch_native_rule_document(
+                    self.mcp, self.evidence,
+                    app_id=first["appId"],
+                    available_names=catalog.available_names,
+                    messages=native_messages,
+                ):
+                    receipt = self.evidence.receipts()[-1]
+                    details = receipt.get("details") or {}
+                    triggers = details.get("triggers") or {}
+                    actions = details.get("orderedActions") or []
+                    if isinstance(triggers, dict) and isinstance(actions, list):
+                        trigger_str = "; ".join(str(v)[:160] for v in triggers.values())
+                        action_str = ", ".join(
+                            str(a.get("method") or "") for a in actions
+                            if isinstance(a, dict)
+                        )
+                        inventory_answer_text += (
+                            "\n\n**Read-only native document for rule "
+                            + first["appId"] + ":** trigger(s): "
+                            + (trigger_str or "none") + "; ordered action "
+                            "methods: " + (action_str or "none") + ". "
+                            "These are stored fields, not verified executions."
+                        )
+                else:
+                    inventory_answer_text += (
+                        "\n\nThe native document for the first matching "
+                        "one-time rule could not be fully verified; no "
+                        "trigger/action details are certified."
+                    )
+            return inventory_answer_text
         # Inventory-only tools are useful for listing, but not as a model's
         # terminal answer to WHY/diagnostic objectives. This is enforced at
         # the tool catalog boundary, even after later discovery/expansion.
