@@ -91,9 +91,9 @@ def test_reconciles_earlier_off_despite_later_narrow_on_only_read():
         "reportedOnDurationSeconds"
     ] == 5771.985
     commands = facts["attestedCommands"]
-    assert len(commands) == 1  # Only native observedEvents read, not events-only page
-    assert commands[0]["name"] == "command-off"
-    assert commands[0]["issuerAppId"] == "3995"
+    assert len(commands) == 2  # Mixed-history OFF and filtered-page ON both count
+    assert {row["name"] for row in commands} == {"command-on", "command-off"}
+    assert all(row["issuerAppId"] == "3995" for row in commands)
     assert facts["reportedPowerSamples"][1]["value"] == "88.0"
     assert facts["reportedPowerSamples"][-1]["value"] == "0.0"
     assert facts["physicalPlantOperationVerified"] is False
@@ -150,10 +150,12 @@ def test_source_integrity_clock_and_actor_types_matter():
         if event["name"] == "command-off":
             event["producedBy"] = {"id": 3995, "name": "Test App"}
     facts = reconcile_focal_device_events(QUESTION, rows)
-    assert facts["attestedCommands"][0]["issuerAppId"] is None
+    assert next(x for x in facts["attestedCommands"]
+                if x["name"] == "command-off")["issuerAppId"] is None
     rows = fixture()
     rows[2]["details"]["observedEvents"][2]["type"] = "state"
-    assert reconcile_focal_device_events(QUESTION, rows)["attestedCommands"] == []
+    assert all(x["name"] != "command-off" for x in
+               reconcile_focal_device_events(QUESTION, rows)["attestedCommands"])
     rows = fixture()
     rows[2]["details"]["observedEvents"][2]["date"] = "2026-11-01T18:07:35"
     assert reconcile_focal_device_events(QUESTION, rows)["attestedCommands"] == []
