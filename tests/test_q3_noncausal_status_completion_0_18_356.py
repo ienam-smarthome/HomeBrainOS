@@ -93,6 +93,31 @@ def test_other_noncausal_factual_status_with_prior_source_packet_is_not_causal()
     assert assessed.investigation_coverage["sourceChecksComplete"] is False
 
 
+
+def test_host_specialist_telemetry_domain_is_preserved_without_keyword_route():
+    request = "Compare competing explanations for the endpoint's behaviour."
+    assert plan_investigation(request) is None
+    assert not is_causal_investigation(request)
+    original = _observation({
+        "domain": "device_telemetry", "evidenceComplete": False,
+        "hypothesisComparisonStatus": "model-proposed-source-checks-not-causal-verdicts",
+        "hypothesisComparisons": [{
+            "candidate": "Endpoint telemetry has not been independently verified",
+            "source_kind": "device_logs",
+            "required_origin": "upstream",
+            "origin_state": "upstream-origin-not-independently-verified",
+            "source_state": "source-class-checked-verdict-unverified",
+            "hypothesis_verdict": "unverified",
+        }],
+    })
+    assessed = apply_shared_investigation_completion(original, request)
+    assert assessed is not original
+    assert assessed.investigation_coverage["domain"] == "device_telemetry"
+    assert assessed.metrics["outcome"] == "unresolved"
+    assert "device_logs" in assessed.investigation_coverage[
+        "sourceCoverage"
+    ]["missingSourceKinds"]
+
 def test_real_why_request_still_requires_command_provenance():
     request = "Why did Workshop Plug turn off?"
     original = _observation(None)
