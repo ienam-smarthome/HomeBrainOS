@@ -1,6 +1,10 @@
 # Answer Quality — active status and cross-chat handoff
 
-## v0.18.370 candidate — native app-type catalog missing built-in class 18 (2026-11-02)
+## v0.18.370 merged — native app-type catalog missing built-in class 18 (2026-11-02)
+
+**Merged and exact-head CI green:** [PR #1315](https://github.com/ienam-smarthome/HomeBrainOS/pull/1315), tested head `f4df327ad0e77751ce438fc778eb9266daf536ee`, merge commit `d5e2584e4f600c1e6028af5af33c0d5bce2c73ff`, **7/7 checks green, 5,969 Python tests passed, 2 warnings**. The fix performs a **single additional read-only** per-app summary to source-verify the exact native class only when the type-class catalog failed; it never infers parent 169 from names, app counts, a bare user=false flag or a contradictory catalog row. The app's missing systemAppTypes catalog is explicitly marked incomplete when upstream supplies that warning. **Actual installed v0.18.370 response, native parent classification and one-time creation: NOT MEASURED.** No Hubitat or Home Assistant writes, and native authoring remains disabled.
+
+
 
 **Actual installed v0.18.369 evidence:** Rule Machine-named installed app **169**, `appTypeId=18`, no `hubitat/Rule Machine` built-in class in the app-type list, and zero exact one-time rule suffix matches in the complete reported current inventories. Three reads, no modifications, 2.786 seconds wall, 0 model rounds. Factual answer was on topic; parent still unresolved. Upstream `toolListHubApps` enriches community classes with best-effort built-in `systemAppTypes` from `/hub2/appsList`, so list/count completeness does not prove the built-in catalog is present. A second source, `hub_get_app_config(summary=true)`, reads the unrendered per-app identity `/installedapp/json/<id>` and may contain the native app-type pair; however upstream tests show it can also return only `{id,name,type,user}`. Do not presume native class identity or version.
 
