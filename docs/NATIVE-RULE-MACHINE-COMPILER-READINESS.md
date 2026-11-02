@@ -10,7 +10,7 @@ The guide documents shape only: it does **not** supply authoritative native fiel
 
 ## What this PR delivers
 
-`native_rule_document_preflight.py` is a **pure offline shape checker** built from the upstream native validators. It separately reports installed guide family, trustworthy unconfirmed-create schema shape, exact native parent identity, and one atomic trigger/action batch with typed `#` fields. It deliberately keeps `write_ready=False` even if all four checks pass. Synthetic regression tests check missing/malformed metadata, wrong parent identity, selector-field collisions, duplicate fields, incomplete/change-order batches, and absence of writes. This code is **not connected to the confirmation pipeline**. Existing v0.18.362 native-write refusal remains active.
+`scripts/native_rule_document_preflight.py` is a **pure offline shape checker** built from the upstream native validators. It separately reports installed guide family, trustworthy unconfirmed-create schema shape, exact native parent identity, and one atomic trigger/action batch with typed `#` fields. It deliberately keeps `write_ready=False` even if all four checks pass. Synthetic regression tests check missing/malformed metadata, wrong parent identity, selector-field collisions, duplicate fields, incomplete/change-order batches, and absence of writes. This code is **not connected to the confirmation pipeline**. Existing v0.18.362 native-write refusal remains active.
 
 The schema and sample changes in unit tests are synthetic fixtures; they **do not attest** native time/command field names or a working native scheduled rule. Passing these tests is a safety/shape result only, not an answer-quality benchmark or a successful rule creation.
 
