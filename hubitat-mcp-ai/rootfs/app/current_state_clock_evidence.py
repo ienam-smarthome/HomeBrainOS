@@ -117,8 +117,13 @@ def render_current_state_clock_evidence(
         for name in ("power", "switch", "amperage", "voltage"):
             if name in last_event:
                 event_at, value = last_event[name]
+                # Keep millisecond precision where the source supplies it;
+                # don't pad a whole-second source time with fabricated .000.
+                shown_time = event_at.isoformat(
+                    timespec="milliseconds" if event_at.microsecond else "seconds"
+                )
                 lines.append(
-                    f"- Latest RETURNED {name} event: {event_at.isoformat()}, "
+                    f"- Latest RETURNED {name} event: {shown_time}, "
                     f"reported value={value}; device event, NOT a lastSeen update."
                 )
             elif name in ("power", "switch"):
