@@ -119,10 +119,10 @@ def _requested_exact_label(request: str, label: str) -> bool:
     this receipt did not verify. Prefer no inferred app log to a wrong device.
     This is deliberately conservative for partial label matches.
     """
-    pattern = r"(?<![\\w-])" + re.escape(label) + r"(?![\\w-])"
+    pattern = r"(?<![\w-])" + re.escape(label) + r"(?![\w-])"
     for match in re.finditer(pattern, request, re.I):
         before = request[:match.start()]
-        prefix = re.search(r"([A-Za-z][A-Za-z0-9-]*)\\s+$", before)
+        prefix = re.search(r"([A-Za-z][A-Za-z0-9-]*)\s+$", before)
         if prefix and prefix.group(1)[0].isupper():
             continue
         return True
