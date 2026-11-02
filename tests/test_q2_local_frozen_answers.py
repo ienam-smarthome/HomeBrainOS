@@ -34,7 +34,7 @@ def test_actual_calls_are_exact_same_prompt_first_attempts_only():
     assert result["human_source_reviewed_pairs"] == 0
     assert result["quality_measurement"] == "not_measured"
     assert result["claude_or_gemma_comparison"] == "not_run"
-    assert result["cloud_cost"] == 0
+    assert result["cloud_model_api_spend_usd"] == 0
     assert all(x["attempt_index"] == 1 for x in result["records"])
     assert all(x["wall_ms"] == 125 for x in result["records"])
     for i in range(0, 8, 2):
