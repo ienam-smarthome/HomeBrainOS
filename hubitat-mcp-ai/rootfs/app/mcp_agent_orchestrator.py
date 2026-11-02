@@ -232,6 +232,9 @@ from model_context_policy import ModelContextPolicy
 from historical_command_source_contract import history_window_instruction
 from source_obligation_coordinator import select_issuing_app_log_obligation
 from evidence_first_checkpoint_plan import SourceCheckpointBudget
+from evidence_first_source_followup import (
+    ModelSourceFollowup, choose_model_source_followup,
+)
 from conversation_recall import conversation_reference_answer, conversation_reference_intent
 from control_intent_guard import unsafe_control_prompt, explicitly_read_only_request
 from request_classification import (
@@ -5457,87 +5460,99 @@ class UnifiedMCPAgent:
                     )
                     tools = catalog.schemas()
                     continue
-                # Source scope is a precondition for any historical zero-event
-                # conclusion. A successful hub-wide read cannot answer a
-                # question about independently resolved device IDs. The LLM
-                # retains tool choice; the host provides a bounded read-only
-                # completion opportunity instead of assuming no events.
-                if (investigative_request
-                        and not target_history_scope_retry_used
-                        and not self._mutation_requested_by_user.get()
-                        and round_index + 1 < active_round_budget):
-                    scoped_followup = render_target_scope_followup(
-                        user_prompt, self.evidence.receipts())
-                    if scoped_followup and offer_source_checkpoint("target-history"):
-                        target_history_scope_retry_used = True
-                        catalog.activate_investigation_read_view(
-                            max_declared=self.tool_limit)
-                        catalog.expose_read_gateways(
-                            ("hub_read_devices", SEARCH_TOOL),
-                            max_declared=self.tool_limit,
-                        )
-                        messages.extend([
-                            assistant, {"role": "user", "content": scoped_followup},
-                        ])
-                        tools = catalog.schemas()
-                        increment_active_metric("target_history_scope_retry")
-                        continue
-                # One source-driven recovery chance for the original HomeBrain
-                # investigator, never a second V2 planner or a keyword router.
-                # Model chooses the input READ from the existing permissions;
-                # the host neither grants a target identity nor executes it.
-                if (investigative_request
-                        and not self._mutation_requested_by_user.get()
-                        and not unified_source_followup_used
-                        and round_index + 1 < active_round_budget):
-                    followup = unified_investigation_followup(
-                        self.evidence.receipts(), user_prompt)
-                    if followup and offer_source_checkpoint("upstream-input"):
-                        unified_source_followup_used = True
-                        catalog.activate_investigation_read_view(
-                            max_declared=self.tool_limit)
-                        catalog.expose_read_gateways(
-                            ("hub_read_devices", "hub_read_apps_code",
-                             "hub_read_diagnostics", "hub_read_rules",
-                             SEARCH_TOOL),
-                            max_declared=self.tool_limit)
-                        messages.extend([
-                            assistant, {"role": "user", "content": followup},
-                        ])
-                        tools = catalog.schemas()
-                        increment_active_metric(
-                            "unified_investigation_input_followup")
-                        continue
-                # Primary diagnostic objective has not been met if all the
-                # reads so far are room/identity listings. Give the model ONE
-                # further evidence-source choice instead of shipping the
-                # successful inventory result as a false diagnosis.
-                if (diagnostic_objective
-                        and (inventory_without_investigation(
+                # The first source-recovery opportunity is now one
+                # receipt-grounded source-choice plan, rather than three
+                # independent retry branches. Their original admission
+                # functions, priority and advertised read gateways stay
+                # unchanged; no new model or MCP capability is introduced.
+                can_choose_source = bool(
+                    investigative_request
+                    and not self._mutation_requested_by_user.get()
+                    and round_index + 1 < active_round_budget
+                )
+                inventory_only = bool(
+                    diagnostic_objective
+                    and (
+                        inventory_without_investigation(
                             user_prompt, self.evidence.receipts()
-                        ) or inventory_answer(assistant.get("content") or ""))):
-                    if (not inventory_only_retry_used
-                            and round_index + 1 < active_round_budget
-                            and offer_source_checkpoint("inventory-evidence")):
-                        inventory_only_retry_used = True
-                        increment_active_metric("investigation_inventory_only_retry")
-                        catalog.hide_inventory_during_investigation()
-                        catalog.activate_investigation_read_view(
-                            max_declared=self.tool_limit
                         )
-                        catalog.expose_read_gateways(
-                            ("hub_read_apps_code", "hub_read_devices",
-                             "hub_read_diagnostics", "hub_read_rules"),
-                            max_declared=self.tool_limit,
-                        )
-                        messages.extend([
-                            assistant,
-                            {"role": "user", "content": incomplete_investigation_retry(
+                        or inventory_answer(assistant.get("content") or "")
+                    )
+                )
+                early_source = choose_model_source_followup(
+                    (
+                        ModelSourceFollowup(
+                            kind="target-history",
+                            admitted=lambda: (
+                                can_choose_source
+                                and not target_history_scope_retry_used
+                            ),
+                            render=lambda: render_target_scope_followup(
                                 user_prompt, self.evidence.receipts()
-                            )},
-                        ])
-                        tools = catalog.schemas()
-                        continue
+                            ),
+                            read_gateways=("hub_read_devices", SEARCH_TOOL),
+                            metric="target_history_scope_retry",
+                        ),
+                        ModelSourceFollowup(
+                            kind="upstream-input",
+                            admitted=lambda: (
+                                can_choose_source
+                                and not unified_source_followup_used
+                            ),
+                            render=lambda: unified_investigation_followup(
+                                self.evidence.receipts(), user_prompt
+                            ),
+                            read_gateways=(
+                                "hub_read_devices", "hub_read_apps_code",
+                                "hub_read_diagnostics", "hub_read_rules",
+                                SEARCH_TOOL,
+                            ),
+                            metric="unified_investigation_input_followup",
+                        ),
+                        ModelSourceFollowup(
+                            kind="inventory-evidence",
+                            admitted=lambda: (
+                                inventory_only
+                                and not inventory_only_retry_used
+                                and round_index + 1 < active_round_budget
+                            ),
+                            render=lambda: incomplete_investigation_retry(
+                                user_prompt, self.evidence.receipts()
+                            ),
+                            read_gateways=(
+                                "hub_read_apps_code", "hub_read_devices",
+                                "hub_read_diagnostics", "hub_read_rules",
+                            ),
+                            metric="investigation_inventory_only_retry",
+                            hide_inventory=True,
+                        ),
+                    ),
+                    offer=offer_source_checkpoint,
+                )
+                if early_source is not None:
+                    source_candidate, source_prompt = early_source
+                    if source_candidate.kind == "target-history":
+                        target_history_scope_retry_used = True
+                    elif source_candidate.kind == "upstream-input":
+                        unified_source_followup_used = True
+                    else:
+                        inventory_only_retry_used = True
+                    if source_candidate.hide_inventory:
+                        catalog.hide_inventory_during_investigation()
+                    catalog.activate_investigation_read_view(
+                        max_declared=self.tool_limit
+                    )
+                    catalog.expose_read_gateways(
+                        source_candidate.read_gateways,
+                        max_declared=self.tool_limit,
+                    )
+                    messages.extend([
+                        assistant, {"role": "user", "content": source_prompt},
+                    ])
+                    tools = catalog.schemas()
+                    increment_active_metric(source_candidate.metric)
+                    continue
+                if inventory_only:
                     increment_active_metric("investigation_inventory_only_stopped")
                     return honest_partial_answer(
                         user_prompt, self.evidence.receipts()

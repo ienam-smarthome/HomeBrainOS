@@ -166,7 +166,8 @@ async def test_actual_agent_boundary_does_not_return_familiar_wrong_inventory(mo
 def test_legacy_inventory_shortcut_is_checked_at_actual_tool_agent_boundary():
     source = (APP / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
     assert "catalog.hide_inventory_during_investigation()" in source
-    assert 'increment_active_metric("investigation_inventory_only_retry")' in source
+    assert 'metric="investigation_inventory_only_retry"' in source
+    assert "increment_active_metric(source_candidate.metric)" in source
     assert 'increment_active_metric("investigation_inventory_only_stopped")' in source
     assert 'increment_active_metric("investigation_unfulfilled_at_boundary")' in source
     assert "inventory_answer(message)" in source

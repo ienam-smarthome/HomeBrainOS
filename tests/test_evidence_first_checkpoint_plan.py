@@ -112,8 +112,13 @@ class EvidenceEpochFrozenReplayTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] /
                   "hubitat-mcp-ai" / "rootfs" / "app" /
                   "mcp_agent_orchestrator.py").read_text()
-        for name in ("target-history", "upstream-input", "inventory-evidence",
-                     "configuration-semantics", "diagnostic-discriminator",
+        # The first three source generators now flow through one shared
+        # evidence-first proposal selector and its original progress gate.
+        self.assertIn("early_source = choose_model_source_followup(", source)
+        self.assertIn("offer=offer_source_checkpoint", source)
+        for name in ("target-history", "upstream-input", "inventory-evidence"):
+            self.assertIn(f'kind="{name}"', source)
+        for name in ("configuration-semantics", "diagnostic-discriminator",
                      "missing-required-source", "driver-or-controller",
                      "incident-progress", "task-evidence-coverage",
                      "causal-provenance"):

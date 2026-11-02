@@ -1,0 +1,131 @@
+{
+  "schema": "homebrain-q3-early-source-replay.v1",
+  "kind": "anonymous_synthetic_source-choice_packets",
+  "limitations": "These are frozen selector inputs, not actual HomeBrain/Claude model transcripts or live evidence. Selector equality cannot certify factual answer quality or runtime latency.",
+  "cases": [
+    {
+      "id": "historical-target-and-upstream",
+      "domain": "historical-causality",
+      "candidate_prompts": {
+        "target-history": "Read source-scoped target history",
+        "upstream-input": "Read input source",
+        "inventory-evidence": "Inspect matching devices"
+      },
+      "admitted": [
+        "target-history",
+        "upstream-input",
+        "inventory-evidence"
+      ],
+      "expected": "target-history"
+    },
+    {
+      "id": "upstream-not-inventory",
+      "domain": "ventilation",
+      "candidate_prompts": {
+        "target-history": "",
+        "upstream-input": "Compare bounded sensor history",
+        "inventory-evidence": "Inspect matching devices"
+      },
+      "admitted": [
+        "target-history",
+        "upstream-input",
+        "inventory-evidence"
+      ],
+      "expected": "upstream-input"
+    },
+    {
+      "id": "inventory-only",
+      "domain": "device-telemetry",
+      "candidate_prompts": {
+        "inventory-evidence": "Inspect driver and scoped history"
+      },
+      "admitted": [
+        "inventory-evidence"
+      ],
+      "expected": "inventory-evidence"
+    },
+    {
+      "id": "unavailable-source-not-false-negative",
+      "domain": "heating",
+      "candidate_prompts": {
+        "target-history": "",
+        "upstream-input": ""
+      },
+      "admitted": [
+        "target-history",
+        "upstream-input"
+      ],
+      "expected": null
+    },
+    {
+      "id": "verified-device-but-no-second-read",
+      "domain": "lighting",
+      "candidate_prompts": {
+        "target-history": "Read verified device history",
+        "upstream-input": "Read source"
+      },
+      "admitted": [
+        "upstream-input"
+      ],
+      "expected": "upstream-input"
+    },
+    {
+      "id": "exhausted-retry-budget",
+      "domain": "status",
+      "candidate_prompts": {
+        "target-history": "Read source-scoped target history",
+        "upstream-input": "Read input source"
+      },
+      "admitted": [
+        "target-history",
+        "upstream-input"
+      ],
+      "preoffers": [
+        "target-history",
+        "upstream-input",
+        "inventory-evidence"
+      ],
+      "expected": null
+    },
+    {
+      "id": "repeat-source-does-not-rearm",
+      "domain": "network",
+      "candidate_prompts": {
+        "target-history": "Read target history"
+      },
+      "admitted": [
+        "target-history"
+      ],
+      "preoffers": [
+        "inventory-evidence"
+      ],
+      "successful_scopes": [],
+      "expected": null
+    },
+    {
+      "id": "new-read-allows-further-source",
+      "domain": "sensor",
+      "candidate_prompts": {
+        "target-history": "Read target history"
+      },
+      "admitted": [
+        "target-history"
+      ],
+      "preoffers": [
+        "inventory-evidence"
+      ],
+      "successful_scopes": [
+        {
+          "tool": "hub_read_devices",
+          "arguments": {
+            "deviceId": "17",
+            "attribute": "motion"
+          },
+          "success": true,
+          "effect": "read"
+        }
+      ],
+      "expected": "target-history"
+    }
+  ]
+}
