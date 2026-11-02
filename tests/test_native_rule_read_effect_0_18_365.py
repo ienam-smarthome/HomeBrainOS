@@ -138,10 +138,10 @@ async def test_model_native_read_avoids_confirmation_and_is_classified_as_read()
         {"message": {"role": "assistant", "tool_calls": [{
             "function": {"name": GATEWAY, "arguments": READ}
         }]}},
-        {"message": {"role": "assistant", "content": (
+        *[{"message": {"role": "assistant", "content": (
             "Rule 42 has a 22:00 time trigger and a reported Switch OFF "
             "setting. The parent ID and one-time date semantics are unknown."
-        )}},
+        )}} for _ in range(12)],
     ])
     agent = UnifiedMCPAgent(mcp, "test-key", "gemma4:31b", ai_client=ai)
     result = await agent.process_user_request_result(
@@ -177,7 +177,8 @@ async def test_model_generated_native_create_cannot_gain_write_authority():
                          "name": "Unapproved", "parent_id": 1},
             }}
         }]}},
-        {"message": {"role": "assistant", "content": "No native write occurred."}},
+        *[{"message": {"role": "assistant", "content": "No native write occurred."}}
+          for _ in range(16)],
     ])
     agent = UnifiedMCPAgent(mcp, "test-key", "gemma4:31b", ai_client=ai)
     result = await agent.process_user_request_result(
