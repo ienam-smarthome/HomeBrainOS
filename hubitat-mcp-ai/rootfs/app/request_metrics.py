@@ -15,7 +15,7 @@ class RequestMetricState:
     counters: dict[str, int] = field(default_factory=dict)
     timings_ms: dict[str, int] = field(default_factory=dict)
     outcome: str | None = None
-    model_round_details: list[dict[str, str]] = field(default_factory=list)
+    model_round_details: list[dict[str, Any]] = field(default_factory=list)
     paid_guard: dict[str, Any] = field(default_factory=dict)
 
 
@@ -257,11 +257,41 @@ class RequestMetrics:
                 max(0, int(value)),
             )
 
-    def record_provider_model(self, model: str, provider: str) -> None:
-        """Record only provider/model per successful HTTP model round."""
+    def record_provider_model(
+        self,
+        model: str,
+        provider: str,
+        *,
+        elapsed_ms: float | None = None,
+        tool_call_count: int | None = None,
+        declared_tool_count: int | None = None,
+    ) -> None:
+        """Save bounded, non-sensitive facts for each *successful* model round.
+
+        No tool names, arguments, text, source IDs, endpoints or prompts are
+        retained. The list records provider round duration, not server-only
+        inference duration; a failed attempt is not silently counted as a
+        successful round. Legacy callers still record model/provider only.
+        """
         state = self._state.get()
-        if state is not None and model and provider and len(state.model_round_details) < 64:
-            state.model_round_details.append({"model": str(model)[:100], "provider": provider})
+        if state is None or not model or not provider or len(state.model_round_details) >= 64:
+            return
+        row: dict[str, Any] = {
+            "model": str(model)[:100],
+            "provider": provider,
+        }
+        if (isinstance(elapsed_ms, (int, float))
+                and not isinstance(elapsed_ms, bool)
+                and 0 <= float(elapsed_ms) <= 3_600_000):
+            row["elapsed_ms"] = round(float(elapsed_ms))
+        if (type(tool_call_count) is int
+                and 0 <= tool_call_count <= 256):
+            row["tool_call_count"] = tool_call_count
+            row["result_kind"] = "tool_calls" if tool_call_count else "answer"
+        if (type(declared_tool_count) is int
+                and 0 <= declared_tool_count <= 256):
+            row["declared_tool_count"] = declared_tool_count
+        state.model_round_details.append(row)
 
     def observe_ms(self, name: str, elapsed_ms: int | float) -> None:
         if name not in self.ALLOWED_TIMINGS:
@@ -364,10 +394,22 @@ def increment_active_metric(name: str, amount: int = 1) -> None:
         metrics.increment(name, amount)
 
 
-def record_active_provider_model(model: str, provider: str) -> None:
+def record_active_provider_model(
+    model: str,
+    provider: str,
+    *,
+    elapsed_ms: float | None = None,
+    tool_call_count: int | None = None,
+    declared_tool_count: int | None = None,
+) -> None:
     metrics = _ACTIVE_REQUEST_METRICS.get()
     if metrics is not None:
-        metrics.record_provider_model(model, provider)
+        metrics.record_provider_model(
+            model, provider,
+            elapsed_ms=elapsed_ms,
+            tool_call_count=tool_call_count,
+            declared_tool_count=declared_tool_count,
+        )
 
 
 def add_active_metric_ms(name: str, elapsed_ms: int | float) -> None:
