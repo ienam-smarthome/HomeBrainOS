@@ -118,9 +118,12 @@ class EvidenceEpochFrozenReplayTests(unittest.TestCase):
         self.assertIn("offer=offer_source_checkpoint", source)
         for name in ("target-history", "upstream-input", "inventory-evidence"):
             self.assertIn(f'kind="{name}"', source)
-        for name in ("configuration-semantics", "diagnostic-discriminator",
-                     "missing-required-source", "driver-or-controller",
-                     "incident-progress", "task-evidence-coverage",
+        self.assertIn("late_source = choose_model_source_followup(", source)
+        self.assertIn("order=LATE_SOURCE_ORDER", source)
+        for name in ("diagnostic-discriminator", "missing-required-source",
+                     "driver-or-controller", "incident-progress"):
+            self.assertIn(f'kind="{name}"', source)
+        for name in ("configuration-semantics", "task-evidence-coverage",
                      "causal-provenance"):
             self.assertIn(f'offer_source_checkpoint("{name}")', source)
 
