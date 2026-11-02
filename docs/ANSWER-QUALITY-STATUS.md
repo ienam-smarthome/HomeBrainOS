@@ -2,8 +2,16 @@
 
 **Charter:** [ANSWER-QUALITY-CHARTER.md](ANSWER-QUALITY-CHARTER.md)  
 **Last baseline assessment:** 2026-11-01; **0 independently authenticated frozen-prompt first-attempt production reviews**, **2 complete source-bounded cross-domain diagnostics** (recorded command versus bridge reporter; device health versus MQTT status). The official scorecard remains **NOT MEASURED**.  
-**Most recent verified installed live add-on:** `0.18.347`, first read-only Fan Boost decision investigation on 2026-11-02: 66.506 seconds, Ollama Cloud Gemma 4 31B, 11 rounds / 19 tools. Direct app-issued ON/OFF commands supported; configured schedule aligned, but actual app decision logs absent and definitive causal proof **not established**. v0.18.348 is a candidate and NOT live-tested. Claude parity NOT MEASURED.
+**Most recent verified installed live add-on:** `0.18.348`, first read-only Dehumidifier 1 cycle investigation on 2026-11-02: 56.657 seconds, Ollama Cloud Gemma 4 31B, 11 rounds / 14 tools. A direct app-issued OFF command was retrieved but wrongly omitted, and power/switch duration claims were inaccurate. `0.18.350` is merged and CI-verified but NOT yet installed or live-evaluated. Claude parity NOT MEASURED.
 **Live Hubitat/HA mutation:** none authorised by this quality programme.
+
+## v0.18.350 exact-head merged and verified (2026-11-02)
+
+**MERGED and verified:** [PR #1269](https://github.com/ienam-smarthome/HomeBrainOS/pull/1269) merged as `030b17a1629d428a166a02cf2a908061b1309005`. Exact verified head `35ae2b60b74caa6195a8539a990b5caada77f991` passed **all eight check runs**, including **5,730 Python tests / 2 warnings**, add-on container smoke, release metadata, offline scorecard and validation pipelines. The first run caught an ID mismatch regression: a targeted lookup's wrong ID could be paired with same-named deterministic history. Corrected by requiring a **separately successful native history with the identical device ID** before publishing a reconciled packet. Final exact-head retest all green.
+
+**Actual scope:** One new read-only, request-local `focal_event_reconciliation.py` packet. It combines bounded native ID-scoped and corresponding label-scoped `observedEvents` and `events` across overlapping pages, projects both command directions, explicit command issuer app IDs, switch ON/OFF timestamp differences and discrete power reports, keeps truncation and missing-history caveats. The packet is provided to Gemma after narrower source packets and in Technical JSON `reconciledFocalEventEvidence`. There is **no host answer rewrite**, no new MCP requests, no model/permission change and no Hubitat/HA mutation.
+
+**Verification limits:** Tests show evidence can be correctly reconciled and supplied, NOT that Gemma will obey every factual boundary. No user-run v0.18.350 answer or frozen-source A/B yet; **user-perceived accuracy, latency and Claude parity NOT MEASURED**. Do not ask for another identical Dehumidifier 1 test; prior Bedroom 3 Mesh, Livingroom Light 2, Thermostat and Fan Boost repeats remain out of scope. The next engineering milestone remains unified source-first read planning and reducing overlapping provider/tool rounds, not a further case-specific string filter. New first-shot user test should target an unrelated domain only when useful.
 
 ## Cross-domain Dehumidifier 1 first-shot v0.18.348 — source found, answer missed it (2026-11-02)
 
