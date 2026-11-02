@@ -110,10 +110,17 @@ def reconcile_focal_device_events(
         sources.add(source)
         if details.get("observedEventsTruncated") is True:
             truncated = True
-        raw = details.get("observedEvents")
-        if not isinstance(raw, list):
-            continue
-        for ev in raw[:200]:
+        # The same authorized native gateway uses observedEvents for a
+        # bounded mixed history and events for an attribute-filtered command
+        # page. Both are positive witnesses; deduplicate by source time.
+        raw = [
+            ev
+            for field in ("observedEvents", "events")
+            for ev in (
+                details.get(field) if isinstance(details.get(field), list) else []
+            )[:200]
+        ]
+        for ev in raw[:400]:
             if not isinstance(ev, dict):
                 continue
             when = _datetime(ev.get("date"))
