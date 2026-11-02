@@ -81,6 +81,24 @@ def reconcile_focal_device_events(
     if target is None:
         return None
     ident, label = target
+    # A label alone is insufficient to bind events to an ID. Require at
+    # least one *independent successful native read* for the target's exact
+    # numeric device ID before combining any deterministic label history.
+    # Wrong-ID lookup/history mismatches fail closed rather than creating a
+    # plausible but falsely attributed source timeline.
+    native_id_witness = any(
+        isinstance(row, dict)
+        and row.get("tool") == "hub_read_devices"
+        and row.get("sub_tool") == "hub_list_device_events"
+        and row.get("success") is True
+        and row.get("mutates") is not True
+        and row.get("effect") in (None, "read")
+        and _positive_id(_args(row).get("deviceId")) == ident
+        and isinstance(row.get("details"), dict)
+        for row in receipts
+    )
+    if not native_id_witness:
+        return None
     events: dict[tuple[str, str, str], dict[str, Any]] = {}
     sources: set[str] = set()
     truncated = False
