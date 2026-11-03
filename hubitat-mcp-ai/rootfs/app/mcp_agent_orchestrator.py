@@ -23,7 +23,10 @@ from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
 from source_read_reuse_policy import duplicate_location_projection_reason
-from telemetry_completion_policy import ready_for_bounded_telemetry_answer
+from telemetry_completion_policy import (
+    ready_for_bounded_telemetry_answer,
+    ready_after_bounded_telemetry_read,
+)
 from source_authority_packet import pending_telemetry_configuration_read
 from model_first_draft_provenance import (
     PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
@@ -6939,21 +6942,13 @@ class UnifiedMCPAgent:
             # this does not mark root cause or physical reachability verified.
             if (
                 bounded_device_telemetry
-                and round_actions
-                and not round_has_mutation
-                and not round_tool_failure
-                and any(
-                    isinstance(row, dict)
-                    and row.get("success") is True
-                    and row.get("mutates") is not True
-                    and row.get("effect") == "read"
-                    for row in self.evidence.receipts()[
-                        telemetry_receipts_before_round:
-                    ]
-                )
-                and ready_for_bounded_telemetry_answer(
+                and ready_after_bounded_telemetry_read(
                     user_prompt, self.evidence.receipts(),
                     domain=contract.domain if contract is not None else None,
+                    receipt_count_before_round=telemetry_receipts_before_round,
+                    had_tool_actions=bool(round_actions),
+                    round_has_mutation=round_has_mutation,
+                    round_tool_failure=round_tool_failure,
                     high_information_checkpoint_offered=(
                         incident_evidence_checkpoint_used
                         or device_incident_followup_used
