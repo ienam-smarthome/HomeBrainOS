@@ -2,6 +2,10 @@
 
 **2026-11-03 | Offline preparation only | HomeBrainOS v0.18.380 unchanged**
 
+## Upstream native parent class identity required (2026-11-03)
+
+The upstream MCP server's read-only app-type class projection omits the source-provided `appType.name` and `namespace` in the full-config mode, while the thin summary and built-in type list can lack them on the installed firmware. See [source-grounded upstream contribution request](UPSTREAM-NATIVE-RM-PARENT-IDENTITY.md) for the proposed read-only identity contract, negative tests and current 403 GitHub contribution permission gap. **No verified native parent identity yet, no BAT live writes allowed.** The offline candidate now also requires exact `namespace="hubitat"`; a matching name, flags or an unresolved appTypeId alone cannot pass. This is not a workaround for the missing source proof. No previous manual Rule 4259 or owned-device reads need repeating.
+
 ## Decision and evidence boundary
 
 The upstream [MCP Rule Server issue #575](https://github.com/kingpanther13/Hubitat-local-MCP-server/issues/575) remains open for native `atDate#` fields. It blocks *dated one-time triggers*, not necessarily an existing Rule Machine delay action. The upstream `TOOL_GUIDE.md` documents `hub_set_rule(operation="create")` for a native Rule-5.1 child and `hub_call_rule(action="actions")` for the Run Actions button. However the writer's success on the installed server has NOT been tested.

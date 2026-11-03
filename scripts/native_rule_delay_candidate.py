@@ -162,9 +162,10 @@ def find_parent(call: Call) -> int:
     types = _list(call, "hub_read_apps_code", "hub_list_apps",
                   {"scope": "types", "nameFilter": "Rule Machine"}, "apps")
     match = [t for t in types if _numeric_id(t.get("id")) == _numeric_id(parent["appTypeId"])]
-    if len(match) != 1 or match[0].get("name") != "Rule Machine" or not all(
-        match[0].get(k) is True for k in ("system", "isBuiltIn", "allowNewInstances")
-    ):
+    if (len(match) != 1 or match[0].get("name") != "Rule Machine"
+            or match[0].get("namespace") != "hubitat"
+            or not all(match[0].get(k) is True
+                       for k in ("system", "isBuiltIn", "allowNewInstances"))):
         raise Refuse("rm_parent_type_mismatch")
     return int(parent["id"])
 
