@@ -256,3 +256,50 @@ def test_paid_model_no_budget_exhaustion_never_warns_about_midway_switch():
     assert response["model_continuity"]["free_rounds_after_paid"] == 1
     assert response["model_continuity"]["estimated_budget_exhausted"] is False
     assert "**Model continuity:**" not in response["message"]
+
+
+def test_api_submitted_question_has_privacy_safe_normalized_digest():
+    import hashlib
+
+    original = "  Why  did" + chr(9) + " this   light switch?" + chr(10)
+    response = build_agent_response(
+        FakeOutcome(), model="gemma4:31b", elapsed_ms=100,
+        version="0.18.382", submitted_question=original,
+    )
+    proof = response["request_provenance"]
+    assert proof == {
+        "source": "api_ask_request",
+        "normalization": "collapse-whitespace-v1",
+        "normalized_prompt_sha256": hashlib.sha256(
+            b"Why did this light switch?"
+        ).hexdigest(),
+        "model_delivery_verified": False,
+        "first_attempt_verified": False,
+        "deployed_build_sha_verified": False,
+    }
+    assert original not in str(proof)
+    assert "Why did this light switch?" not in str(proof)
+    assert "request_provenance" not in build_agent_response(
+        FakeOutcome(), model="none", elapsed_ms=100, version="0.18.382",
+    )
+    assert "request_provenance" not in build_agent_response(
+        FakeOutcome(), model="none", elapsed_ms=100, version="0.18.382",
+        submitted_question="   ",
+    )
+
+
+def test_api_submitted_question_hash_is_not_answer_or_history_hash():
+    first = build_agent_response(
+        FakeOutcome(message="Reply 1"), model="none", elapsed_ms=10,
+        version="0.18.382", submitted_question="Question",
+    )
+    second = build_agent_response(
+        FakeOutcome(message="Reply 2"), model="none", elapsed_ms=10,
+        version="0.18.382", submitted_question="Question",
+    )
+    third = build_agent_response(
+        FakeOutcome(message="Reply 2"), model="none", elapsed_ms=10,
+        version="0.18.382", submitted_question="Different question",
+    )
+    assert first["request_provenance"] == second["request_provenance"]
+    assert first["request_provenance"] != third["request_provenance"]

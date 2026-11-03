@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -128,6 +129,32 @@ def extract_capture(
     else:
         match = "different"
 
+    # The production API now hashes the submitted question at the HTTP
+    # boundary. This attests receipt only, not model input or first attempt.
+    # Never copy arbitrary fields from untrusted provenance objects.
+    provenance = response.get("request_provenance")
+    api_hash = None
+    if (isinstance(provenance, dict)
+            and provenance.get("source") == "api_ask_request"
+            and provenance.get("normalization") == "collapse-whitespace-v1"):
+        value = provenance.get("normalized_prompt_sha256")
+        if (isinstance(value, str) and
+                re.fullmatch(r"[0-9a-f]{64}", value)):
+            api_hash = value
+    registered_hash = _sha256(normalized_reference)
+    supplied_hash = (
+        _sha256(normalized_actual) if normalized_actual is not None else None
+    )
+    api_match = (
+        "not_provided" if api_hash is None
+        else "conflicting_question" if supplied_hash is not None
+             and api_hash != supplied_hash
+        else "exact" if api_hash == registered_hash else "different"
+    )
+    question_verified_at_api = (
+        kind == "live_task" and api_match == "exact"
+    )
+
     message = response.get("message")
     if not isinstance(message, str):
         raise ScorecardInputError("HomeBrain response has no string message")
@@ -173,14 +200,24 @@ def extract_capture(
         "case_id": case_id,
         "case_origin": kind,
         "capture_is_quality_review": False,
-        "matches_registered_live_question": kind == "live_task" and match == "exact",
+        "matches_registered_live_question": (
+            kind == "live_task"
+            and (api_match == "exact" or
+                 (api_match == "not_provided" and match == "exact"))
+        ),
+        "api_submitted_prompt_match": api_match,
+        "api_submitted_prompt_sha256": api_hash,
+        "api_prompt_attested_at_request_boundary": question_verified_at_api,
+        "model_input_prompt_verified": False,
+        "first_attempt_verified": False,
+        "deployed_git_sha_verified": False,
         "model": bounded_identity(model),
         "provider": provider,
         "add_on_version": bounded_identity(version),
         "model_tier": _safe_str(response.get("model_tier_requested"), {"free", "paid", "local"}),
         "prompt_match": match,
-        "registered_prompt_sha256": _sha256(normalized_reference),
-        "actual_prompt_sha256": _sha256(normalized_actual) if normalized_actual is not None else None,
+        "registered_prompt_sha256": registered_hash,
+        "actual_prompt_sha256": supplied_hash,
         "answer_sha256": _sha256(message),
         "answer_character_count": len(message),
         "technical_outcome": _safe_str(metrics.get("outcome"), {"success", "unresolved", "failed", "refused", "cancelled"}),
@@ -238,7 +275,7 @@ def extract_capture(
             "No natural-language answer text or private event payload is exported",
             "No correctness, causal conclusion or first-attempt status is inferred",
             "Model/provider and times are as reported, not independently authenticated",
-            "Exact live prompt and real source evidence must be reviewed separately",
+            "API-reported prompt hashes attest only submission at the HTTP boundary, not model input, first attempt, deployed build or source truth",
             "Missing-source categories are self-reported and are not proof of complete or absent history",
             "Self-reported source checks, completeness and synthesis repair counters are not model-quality scores",
             "A clean mutating-receipt count is not an independently proven safety audit",

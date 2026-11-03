@@ -31,3 +31,4 @@ def test_api_ask_passes_runtime_metadata_to_builder() -> None:
     assert "model=agent.model_name" in ask_source
     assert "elapsed_ms=round((time.perf_counter() - started) * 1000)" in ask_source
     assert "version=VERSION" in ask_source
+    assert "submitted_question=request.message" in ask_source
