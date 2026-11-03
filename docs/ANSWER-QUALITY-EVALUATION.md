@@ -141,6 +141,25 @@ A review file must have the following structure (illustrative schema **only; not
 
 The numeric values above are **fake examples to illustrate field types**, not the actual user's baseline or a validated HomeBrain measurement. Do not commit fake reviews as real evidence.
 
+## Latency cohorts (Q1 measurement safety)
+
+The scorecard retains the legacy pooled median/p95 for compatibility, but marks it
+`mixed_observations_not_a_charter_target`: it may mix fundamentally different
+tasks and offline-only prompts. Use `models[].latency_by_cohort` instead:
+
+- `live_status_control`: nominal legacy status/health/inventory/control/safety cases; 15-second charter target.
+- `live_investigation`: nominal legacy investigation cases; 45-second preferred charter target.
+- `live_rule_authoring`: nominal legacy rule-authoring cases; no asserted common-read SLA.
+- `offline_source_packet`: the 40 curated source-only model prompts, **never**
+  treated as actual Hubitat/HA live request latency.
+
+Every cohort reports reviewed cases, observed timing count, median, p95, and
+`not_measured` or `observational_only_not_an_acceptance_verdict`.
+One sample does not establish a population distribution or prove a target is met.
+The cohort describes the registered case, **not independently verified actual
+provider input, wall-time, deployment or first-attempt authenticity**. This
+change does not call models or improve response content by itself.
+
 ## How to interpret the scorecard
 
 - `not_measured`: no human-reviewed results. Not zero defects, not failure and not success.
