@@ -1,5 +1,39 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Internet blocker source-verification routing — v0.18.386 candidate (2026-11-03)
+
+**Live user-supplied v0.18.385 result:** read-only parent/one-time inventory
+question returned 25.650s, six `gemma4:31b` Ollama-free model rounds,
+ten tool calls, parent *candidate* 169 but no direct native namespace proof.
+It unnecessarily invoked `hub_get_source(id=18,type=app)` three times
+for inaccessible built-in Groovy and claimed "42 one-time" when the
+receipt showed only an overall rules list, not 42 matching dated suffixes.
+`hub_get_app_config(appId=169,summary=true)` was **not called**;
+`request_provenance.first_attempt_verified=false`, so not an accepted
+first-answer benchmark. Developer's MCP 5.1.5 fix itself is not disproved.
+
+**General code cause and candidate fix:** bare "why" in the inventory
+classifier diverted a request asking **why source identity was unverified**
+to the generic model deep-analysis path. New source-objective classifier
+reserves deep analysis for actual execution/causal questions. The typed
+read-only inventory path then calls the existing 3 bounded source lists
+plus at most one exact lightweight summary if parent identity is
+unresolved; prints source-verified type/namespace and only exact
+one-time-name matches; no costly Groovy source/model rounds or writer.
+Synthetic orchestrator tests distinguish identity-coverage from
+execution-cause prompts and prohibit mutation.
+**Real after latency/answer correctness: NOT YET MEASURED** until
+v0.18.386 is installed and read-only acceptance is provided.
+
+**Internet-blocker safety:** this still does not prove actual installed
+MCP version, namespace, native dated trigger, switch OFF due event,
+or OpenWrt enforcement. No live Hubitat/HA/router changes. Both
+dated and delay BAT scripts remain disabled. No live test-device
+creation or scheduled action without separate user authorization.
+Answer Quality charter remains active; this work corrects a general
+source-selection failure observed in a real answer.
+
+
 ## Internet-blocker MCP 5.1.5 read-only native-parent fix — v0.18.385 GREEN MERGED (2026-11-03)
 
 **CI and merge:** [PR #1369](https://github.com/ienam-smarthome/HomeBrainOS/pull/1369)

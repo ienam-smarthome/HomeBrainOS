@@ -59,6 +59,17 @@ RULES = {
     (QUESTION, True),
     ("List my one-off Rule Machine rules and their IDs", True),
     ("Identify Rule Machine parent app ID from installed app listing", True),
+    ("Identify the installed native Rule Machine parent app and find existing "
+     "one-time Rule Machine rules using read-only app/rule inventory. "
+     "Report the parent ID, source-verified type and namespace, or explain "
+     "why identity remains unverified. Report any incomplete source coverage. "
+     "Do not create, execute, modify, pause or delete anything.", True),
+    ("Find existing Rule Machine rules and explain why parent namespace is unverified", True),
+    ("List one-time Rule Machine rules and report why source identity is missing", True),
+    ("Find Rule Machine rules and explain why the rule turned OFF", False),
+    ("Find Rule Machine rules that caused the last OFF event", False),
+    ("Find Rule Machine rules and explain why it failed to execute", False),
+    ("List Rule Machine rules and what triggered them", False),
     ("What triggered Rule Machine rule 4136 to turn off yesterday?", False),
     ("Read-only: explain nested IF and delay cancellation of rule 4136", False),
     ("Please turn off internet for this device", False),
@@ -133,9 +144,10 @@ def test_exact_suffix_required_not_loose_one_time_name():
 
 
 class FakeMCP:
-    def __init__(self, *, missing_type=False):
+    def __init__(self, *, missing_type=False, flat_summary=False):
         self.calls = []
         self.missing_type = missing_type
+        self.flat_summary = flat_summary
 
     async def list_tools(self):
         return [
@@ -177,6 +189,13 @@ class FakeMCP:
             }
         elif subtool == "hub_list_rules":
             data = RULES
+        elif subtool == "hub_get_app_config":
+            assert args["args"] == {"appId": "21", "summary": True}
+            data = {
+                "success": True, "id": 21, "type": "Rule Machine",
+                "user": False, "appTypeId": 90, "parentId": None,
+                **({"namespace": "hubitat"} if self.flat_summary else {}),
+            }
         elif args["args"]["scope"] == "instances":
             data = INST
         else:
@@ -242,6 +261,41 @@ async def test_orchestrator_returns_inventory_not_generic_deep_rule_refusal():
     assert all(not (x[1].get("tool") == "hub_set_rule"
                     and x[1]["args"]["operation"] != "read")
                for x in mcp.calls)
+
+
+@pytest.mark.asyncio
+async def test_source_scope_explanation_routes_to_typed_inventory_not_groovy_or_model():
+    """A bounded identity-coverage explanation is not a rule-execution audit."""
+    question = (
+        "Identify the installed native Rule Machine parent app and find existing "
+        "one-time Rule Machine rules using read-only app/rule inventory. "
+        "Report the parent ID, source-verified type and namespace, or explain "
+        "why identity remains unverified. Report any incomplete source coverage. "
+        "Do not create, execute, modify, pause or delete anything."
+    )
+    mcp = FakeMCP(missing_type=True, flat_summary=True)
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b", ai_client=NeverAskModel(),
+    )
+    result = await agent.process_user_request_result(
+        question, session_id="native-inventory-source-coverage",
+    )
+    assert result.request_class == "live-read"
+    assert not result.confirmation_required
+    assert "ID **21**" in result.message
+    assert "namespace **hubitat**" in result.message
+    assert "ID 72" in result.message
+    assert "Other recurring rule" not in result.message
+    assert "one-time" in result.message.lower()
+    assert not any("source code" in x["summary"].lower() for x in result.evidence)
+    assert [x[1]["tool"] for x in mcp.calls] == [
+        "hub_list_apps", "hub_list_apps", "hub_list_rules",
+        "hub_get_app_config", "hub_set_rule",
+    ]
+    assert mcp.calls[3][1]["args"] == {"appId": "21", "summary": True}
+    assert mcp.calls[4][1]["args"]["operation"] == "read"
+    assert all(row["effect"] == "read" and row["mutates"] is False
+               for row in result.evidence)
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,25 @@
 - Built-in Rule Machine type rows may still be omitted from `hub_list_apps(scope="types")`. The disabled offline `find_parent` now accepts a **strict exact installed-app summary fallback** only when there is no matching type row, and otherwise refuses inconsistent/missing evidence. A name-only candidate or mere label/type ID is not enough.
 - **Do not assume the user's installed MCP version:** the user says their server was updated, but no authoritative installed v5.1.5 receipt or fresh source-typed Rule Machine summary has been supplied yet. MCP v5.1.5 fixes two previously established blockers, not every scheduling, ownership, execution or cleanup gap.
 
+## Read-only inventory source selection — v0.18.386 candidate
+
+The first installed v0.18.385 identity/inventory attempt did **not** take
+the intended thin summary path. The original question's "explain why
+identity remains unverified" was incorrectly classed as a historical
+causal investigation. Its six model rounds and Groovy source reads
+did not independently prove the native namespace; it also conflated
+an all-rule count with one-time rule matches.
+
+v0.18.386 corrects the **objective classifier**, not the MCP writer:
+a plain source-coverage explanation is an inventory read; execution
+causes and actual rule behavior still require deeper evidence. On
+a missing native type-list join, the pre-existing inventory route can
+call only `hub_get_app_config(appId=<verified candidate>,summary=true)`,
+whose flat `namespace` is understood since v0.18.385. It does not
+read built-in source code, add a model round or create any rules.
+Before commissioning a BAT, require a current exact source receipt
+and separate approval for the one disposable test switch/rule.
+
 ## HomeBrain v0.18.385 read-only identity compatibility (candidate)
 
 After MCP 5.1.5, the thin `hub_get_app_config(appId,summary=true)`
