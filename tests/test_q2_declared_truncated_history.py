@@ -161,7 +161,7 @@ def test_shared_completion_replaces_unsupported_model_cause_using_partial_source
         },
     )
     final = apply_shared_investigation_completion(
-        outcome, "Why does Test Relay show connected but offline?",
+        outcome, "Why does Test Relay show MQTT connected when its health is offline?",
     )
     answer = final.message
     coverage = final.investigation_coverage
