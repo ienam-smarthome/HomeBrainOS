@@ -1,5 +1,8 @@
 # Upstream request: source-attested native Rule Machine parent class (read-only)
 
+
+> **Resolved upstream on 2026-11-03:** [MCP PR #576](https://github.com/kingpanther13/Hubitat-local-MCP-server/pull/576) merged and released as 5.1.5. The previously missing native app namespace is now projected by `hub_get_app_config(summary=true)`, and dated triggers are supported. This document is historical context, not an open developer request. Installed-hub verification and live BAT are still required; see [current dated BAT preflight](NATIVE-RM-DATED-BAT-PREFLIGHT.md).
+
 **2026-11-03 · Dependency preparation, no live writes**
 
 ## Source evidence and scope
