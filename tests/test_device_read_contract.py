@@ -85,7 +85,7 @@ def test_normalizer_repairs_the_010433_mixed_projection() -> None:
     assert arguments["args"]["format"] == "detailed"
     assert "detailed" not in arguments["args"]
     assert "offset" not in arguments["args"]
-    assert "cursor" not in arguments["args"]
+    assert arguments["args"]["cursor"] == "0"
 
 
 def test_projection_shape_validation_distinguishes_missing_from_empty_state() -> None:
