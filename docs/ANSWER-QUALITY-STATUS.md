@@ -1,5 +1,31 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Internet-blocker MCP 5.1.5 read-only native-parent fix — v0.18.385 candidate (2026-11-03)
+
+**Source-contract defect:** upstream PR #576 emits direct `namespace` in
+`hub_get_app_config(summary=true)`, but v0.18.384's live inventory
+projector only trusted a nested `appType` object, which the *thin*
+summary need not provide. The existing offline BAT parent finder already
+accepted flat identity; production read-only diagnostics therefore lagged
+the developer fix. v0.18.385 candidate teaches the common inventory
+projector to use exact flat `id/type/namespace/user` plus independent
+instance ID, with nested and catalog contradiction checks and synthetic
+no-write tests. No form read, model/prose change, new cloud calls or
+live writes. **CI, merge, installed acceptance and network effect are
+still pending/not measured at candidate stage**. Version changes only
+because maintained runtime read-only behavior changes. The original Q1
+programme continues alongside the explicitly resumed blocker work.
+
+**User read-only evidence received separately:** multi-device status
+question (2026-11-03 23:25 UTC) reported two scoped current switch/level
+reads, but inspected history for one device only, with
+`sourceScopeComplete=false`/`questionResolved=false` and a green
+success flag. The asserted automation cause exceeds the limited
+command-history scope; do **not** count it as certified first-attempt
+quality. Preserve this Q1 candidate for later general source/answer
+review, without holding up the safety-first Internet-blocker track.
+
+
 ## Q1 scorecard latency-cohort separation — verified GREEN MERGE (2026-11-03)
 
 **Verified:** [PR #1367](https://github.com/ienam-smarthome/HomeBrainOS/pull/1367)
