@@ -124,3 +124,81 @@ def test_missing_scoped_log_and_cross_device_identity_fail_open():
         ]},
     })
     assert not ready(src, checkpoint=True)
+
+
+def counted_partial_evidence(label="Test Relay", target="9911"):
+    """Positive truncated pair with one explicitly unshown source row."""
+    from copy import deepcopy
+
+    src = deepcopy(evidence())
+    src[0]["details"]["reportedDeviceState"]["label"] = label
+    src[0]["details"]["reportedDeviceState"]["deviceId"] = target
+    src[0]["arguments"]["args"]["labelFilter"] = label
+    src[1] = {
+        "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
+        "success": True, "effect": "read", "mutates": False,
+        "timestamp": "2026-11-03T07:10:54.238034+00:00",
+        "summary": f"3 device events for '{label}'",
+        "arguments": {"tool": "hub_list_device_events",
+                      "args": {"deviceId": target, "hoursBack": 24}},
+    }
+    src.append({
+        "tool": "homebrain_device_history", "sub_tool": None,
+        "success": True, "effect": "read", "mutates": False,
+        "timestamp": "2026-11-03T07:10:54.240369+00:00",
+        "details": {
+            "label": label, "hoursBack": 24,
+            "observedEvents": [
+                {"name": "deviceHealth", "value": "unknown",
+                 "date": "2026-11-03T07:09:52+00:00",
+                 "producedBy": {"id": target, "type": "device", "label": label}},
+                {"name": "deviceHealth", "value": "stale",
+                 "date": "2026-11-03T07:07:42+00:00",
+                 "producedBy": {"id": target, "type": "device", "label": label}},
+            ],
+            "sourceEventCount": 3, "analysisEventCount": 3,
+            "observedEventsTruncated": True,
+            "historySourceIntegrityVerified": False,
+        },
+    })
+    src[2]["arguments"]["args"]["deviceId"] = target
+    return src
+
+
+def test_declared_partial_history_allows_no_cause_early_answer_after_checkpoint():
+    for label, target in (
+        ("Test Relay", "9911"),
+        ("Heating Controller", "9922"),
+        ("Ventilation Plug", "9933"),
+    ):
+        src = counted_partial_evidence(label, target)
+        question = f"Why is {label} offline?"
+        assert not ready(src, question=question, checkpoint=False)
+        assert ready(src, question=question, checkpoint=True)
+        assert not ready(src, question=question, domain="heating", checkpoint=True)
+        assert not ready(src, question=f"Compare {label} with every device", checkpoint=True)
+        assert not ready(src[:-2], question=question, checkpoint=True)
+
+
+def test_partial_history_missing_row_proof_or_target_identity_never_stops():
+    from copy import deepcopy
+
+    base = counted_partial_evidence()
+    edits = (
+        lambda s: s[3]["details"].pop("sourceEventCount"),
+        lambda s: s[3]["details"].__setitem__("sourceEventCount", 4),
+        lambda s: s[3]["details"].__setitem__("analysisEventCount", 4),
+        lambda s: s[3]["details"].__setitem__("observedEventsTruncated", False),
+        lambda s: s[3]["details"].__setitem__("historySourceIntegrityVerified", True),
+        lambda s: s[3]["details"].__setitem__("hoursBack", 48),
+        lambda s: s[3]["details"].__setitem__("label", "Wrong Plug"),
+        lambda s: s[3].__setitem__("timestamp", "2026-11-03T07:11:20+00:00"),
+        lambda s: s[0]["details"]["reportedDeviceState"].__setitem__(
+            "deviceId", "9999"),
+        lambda s: s[2]["arguments"]["args"].__setitem__(
+            "deviceId", "9999"),
+    )
+    for edit in edits:
+        src = deepcopy(base)
+        edit(src)
+        assert not ready(src, checkpoint=True)

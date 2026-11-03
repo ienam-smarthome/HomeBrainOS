@@ -191,3 +191,52 @@ def test_typed_decision_fail_closed_on_missing_source_coverage_or_target():
             "Why?", concise=lambda: "", detailed=lambda: "detailed",
             normalized=summary, evidence_coverage={},
         )
+
+
+def test_count_attested_partial_without_commands_keeps_concise_uncertainty():
+    for label in ("Example socket", "Anonymised heating plug", "Ventilation relay"):
+        summary = packet(label, count=16)
+        summary.update({
+            "truncated": True, "joinedDerivedHistory": True,
+            "sourceReportedEventCount": 17, "unshownEventCount": 1,
+        })
+        answer, decision = publish(f"Why is {label} offline?", summary)
+        assert decision["mode"] == "concise"
+        assert "17" in answer and "16" in answer
+        assert "1 omitted" in answer
+        assert "Unseen events cannot be" in answer
+        assert "does not prove" in answer
+        assert "physical" in answer
+        assert "**Device-scoped logs:**" not in answer
+
+
+def test_uncounted_truncation_or_command_history_requires_detail():
+    summary = packet(count=16)
+    summary.update({
+        "truncated": True, "joinedDerivedHistory": True,
+        "sourceReportedEventCount": 17, "unshownEventCount": 1,
+    })
+    for edit in (
+        {"sourceReportedEventCount": None},
+        {"unshownEventCount": None},
+        {"unshownEventCount": 0},
+        {"joinedDerivedHistory": False},
+        {"sourceReportedEventCount": 99},
+        {"commandCount": 1},
+    ):
+        candidate = {**summary, **edit}
+        msg, decision = publish("Why is the test device offline?", candidate)
+        assert decision["mode"] == "evidence-depth-required", edit
+        assert "**Device-scoped logs:**" in msg
+
+
+def test_full_user_request_retains_all_details_for_counted_partial_history():
+    summary = packet(count=16)
+    summary.update({
+        "truncated": True, "joinedDerivedHistory": True,
+        "sourceReportedEventCount": 17, "unshownEventCount": 1,
+    })
+    answer, decision = publish("Give the full investigation report.", summary)
+    assert decision["mode"] == "requested-detail"
+    assert "**History integrity:**" in answer
+    assert "1 omitted" in answer
