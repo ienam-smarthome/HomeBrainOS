@@ -5,8 +5,8 @@ Read [the permanent charter](ANSWER-QUALITY-CHARTER.md) and [live status](ANSWER
 ## What currently exists
 
 - The prior `tests/fixtures/homebrain_golden_tasks_v1.json` has 13 target tasks, some still requiring live evidence capture.
-- New `tests/fixtures/answer_quality_cases_v1.json` has **18 synthetic/anonymised source packets**, each with a question, facts available to the model and private grading obligations.
-- **31 defined cases is not 31 model runs, 31 source-verified answers, a 31-case replay system or a Claude score.**
+- New `tests/fixtures/answer_quality_cases_v1.json` has **40 synthetic/anonymised source packets**, each with a question, facts available to the model and private grading obligations.
+- **53 defined cases is not 53 model runs, 53 source-verified answers, a 53-case replay system or a Claude score.**
 - `scripts/answer_quality_scorecard.py` measures **human-reviewed** answers only, never predicts performance or calls Ollama. Initially it reports `measurement_status=not_measured`.
 
 ## Q1: identical Claude/Gemma source comparison — no live tool calls
@@ -27,10 +27,10 @@ The existing input-hash and metadata preflight can establish *pair eligibility*,
 
 ## Q1: fixed offline packet replay, without a model call
 
-The 18 curated synthetic/anonymised source packets can now be exported as **hash-pinned, model-facing inputs**. This is a reproducible offline comparison *input*, not a record of 18 model runs, a production benchmark or a source-truth certification.
+The 40 curated synthetic/anonymised source packets can now be exported as **hash-pinned, model-facing inputs**. This is a reproducible offline comparison *input*, not a record of 18 model runs, a production benchmark or a source-truth certification.
 
 ```bash
-# Exports all 18 packets as JSONL, with stable SHA-256 fingerprints.
+# Exports all 40 packets as JSONL, with stable SHA-256 fingerprints.
 python scripts/answer_quality_fixed_packets.py export --output /private/fixed-q1.jsonl
 
 # Or export one fixed case for a controlled model evaluation.
@@ -51,6 +51,21 @@ python scripts/answer_quality_fixed_packets.py compare \
 ```
 
 The comparison preflight verifies matching frozen packet hashes and first-attempt metadata, and reports matched/unmatched cases. It does **not** call Ollama, grade responses, certify real model-input delivery, confirm deployed hashes, or produce a success percentage. A valid metadata pair only becomes eligible for the **separate human/source-reviewed scorecard** after the identical question/evidence contract, first-attempt status and provenance are independently confirmed. Without run records, the result is `not_measured`. The 13 legacy live/control cases are **not** silently reclassified as offline evidence packets.
+
+## Q1 v0.18.382: exact submitted question provenance (no answer grading)
+
+When the installed add-on exposes `request_provenance` in `/api/ask`, its SHA-256 fingerprint is computed from the **validated submitted HTTP question**, with whitespace stripped/collapsed under `collapse-whitespace-v1`. The raw prompt, history, device identifiers and private answer are **not** copied into the provenance object. The metadata capture CLI checks this hash against a registered live-task question, refuses contradictory hashes and keeps any private answer out of exported records.
+
+```bash
+python scripts/answer_quality_capture.py \
+  --case-id device_mqtt_conflict \
+  --input /private/actual-homebrain-api-response.json \
+  --output /private/q1-capture.json
+```
+
+A missing separate `--question-file` may now still yield `api_submitted_prompt_match=exact` for a **live legacy task**, when the response includes the valid, matching server-reported fingerprint. `prompt_match=not_checked` remains accurate when the text itself was not separately supplied. Contradictory user-pasted question and API hash yields `api_submitted_prompt_match=conflicting_question`, **not** a certified exact registered match.
+
+**Limits:** This is not signed server provenance, proof of model-input delivery, first-attempt status, source completeness, factual grading or independently verified deployed Git commit. The installed version may identify a release, but does not authenticate its exact source SHA. A known registered question may be guessable from its hash; store raw responses and source material privately. No inference of accuracy should be made from a hash match alone.
 
 ## Safe operator workflow (user should only need to provide HomeBrain Q&A)
 
