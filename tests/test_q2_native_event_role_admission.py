@@ -149,3 +149,17 @@ def test_anonymised_cross_domain_records_stay_observations_not_causes():
         assert report["state_report_count"] == 1
         assert report["direct_command_count"] == 0
         assert report["upstream_initiator_established"] is False
+
+
+def test_shared_validator_receives_native_state_roles_before_causal_publication():
+    from synthesis_validator import validate_synthesis
+
+    msg = "The action was initiated by an external source outside of Hubitat."
+    revised, reasons = validate_synthesis(
+        msg, [native(state())],
+        original_user="Investigate why the actuator turned OFF.",
+        causal=True,
+    )
+    assert "causal_unverified_initiator" in reasons
+    assert "initiated by an external source" not in revised
+    assert "does not identify an initiating controller" in revised
