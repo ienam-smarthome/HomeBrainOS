@@ -463,7 +463,7 @@ async def test_health_audit_rejects_duplicate_page_ids_and_falls_back(monkeypatc
         return [MCPTool("hub_read_devices", "gateway", {"type": "object"})]
 
     async def call_tool(name, args):
-        offset = args["args"]["offset"]
+        offset = int(args["args"]["cursor"])
         page = {
             "devices": [
                 {"id": str(i if offset == 0 else i - 50),
@@ -498,7 +498,7 @@ async def test_health_audit_serial_pages_when_total_not_reported(monkeypatch):
         return [MCPTool("hub_read_devices", "gateway", {"type": "object"})]
 
     async def call_tool(name, args):
-        offset = args["args"]["offset"]
+        offset = int(args["args"]["cursor"])
         requests.append(offset)
         return MCPToolResult(name, args, {}, "", {
             "devices": [{"id": str(offset), "attributes": []}],
