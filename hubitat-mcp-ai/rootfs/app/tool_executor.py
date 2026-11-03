@@ -288,6 +288,15 @@ class ToolExecutor:
     def result_summary(result: MCPToolResult) -> str:
         details = ToolExecutor.result_details(result)
         if details is not None:
+            if details.get("sourceType") == "hub_information_driver":
+                # A generic dict-keys summary leaks source schema names such
+                # as ip_address and obscures the now-attested scalar fields.
+                # Publish only the validated read scope and count.
+                return (
+                    "hub information driver: "
+                    f"scope={details['requestedScope']}; "
+                    f"reported fields={len(details['reported'])}"
+                )
             temporal = details.get("temporalAnalysis")
             if isinstance(temporal, dict):
                 interval_count = temporal.get("intervalCount")
