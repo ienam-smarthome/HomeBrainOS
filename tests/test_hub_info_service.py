@@ -294,3 +294,33 @@ async def test_hub_resource_poll_has_no_firmware_settlement_claim():
     assert result_snapshot.data["refresh_command_count"] == 1
     assert result_snapshot.data["firmware_status_settled"] is None
     assert len(mcp.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_last_firmware_poll_deadline_does_not_claim_status_settled():
+    cached = [{
+        "id": "1089", "label": "Hub Info",
+        "attributes": {"hubUpdateStatus": "up to date",
+                       "hubUpdateVersion": "2.5.3.117"},
+    }]
+    refresh = result("hub_manage_devices", {}, {"success": True})
+    update = result("hub_manage_devices", {}, {"success": True})
+    missing = result("hub_read_devices", {}, {
+        "id": "1089", "label": "Hub Info",
+        "attributes": [{"name": "freeMemory", "currentValue": 900}],
+    })
+    final = result("hub_read_devices", {}, {
+        "id": "1089", "label": "Hub Info",
+        "attributes": [
+            {"name": "hubUpdateStatus", "currentValue": "up to date"},
+            {"name": "hubUpdateVersion", "currentValue": "2.5.3.117"},
+        ],
+    })
+    mcp = FakeMCP(cached, [refresh, update] + [missing] * 9 + [final])
+    outcome = await HubInfoService(mcp, sleep=no_sleep).snapshot(
+        {"scope": "full"}
+    )
+    assert outcome.data["poll_read_count"] == 10
+    assert outcome.data["poll_sleep_ms"] == 4500
+    assert outcome.data["firmware_status_settled"] is False
+    assert len(mcp.calls) == 12
