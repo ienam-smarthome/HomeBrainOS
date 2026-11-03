@@ -310,3 +310,123 @@ def test_cli_uses_private_input_and_generates_ungraded_metadata(tmp_path):
     assert packet["matches_registered_live_question"] is True
     assert packet["review"]["status"] == "pending_independent_source_review"
     assert "SECRET-" not in output_path.read_text(encoding="utf-8")
+
+
+def test_q1_api_attestation_recovers_exact_registered_live_question_without_paste():
+    import hashlib
+    old = json.loads(
+        (ROOT / "tests/fixtures/homebrain_golden_tasks_v1.json").read_text()
+    )["tasks"]
+    exact = next(t["prompt"] for t in old if t["key"] == "device_mqtt_conflict")
+    data = response()
+    normalized = " ".join(exact.strip().split())
+    data["request_provenance"] = {
+        "source": "api_ask_request",
+        "normalization": "collapse-whitespace-v1",
+        "normalized_prompt_sha256": hashlib.sha256(
+            normalized.encode("utf-8")
+        ).hexdigest(),
+        "model_delivery_verified": False,
+        "first_attempt_verified": False,
+    }
+    captured = extract_capture(
+        data, case_id="device_mqtt_conflict", actual_question=None, root=ROOT,
+    )
+    assert captured["prompt_match"] == "not_checked"
+    assert captured["api_submitted_prompt_match"] == "exact"
+    assert captured["matches_registered_live_question"] is True
+    assert captured["api_prompt_attested_at_request_boundary"] is True
+    assert captured["model_input_prompt_verified"] is False
+    assert captured["deployed_git_sha_verified"] is False
+    assert captured["first_attempt_verified"] is False
+    assert exact not in json.dumps(captured)
+
+
+def test_q1_api_prompt_conflict_cannot_be_relabelled_as_exact_first_answer():
+    import hashlib
+    old = json.loads(
+        (ROOT / "tests/fixtures/homebrain_golden_tasks_v1.json").read_text()
+    )["tasks"]
+    exact = next(t["prompt"] for t in old if t["key"] == "device_mqtt_conflict")
+    data = response()
+    data["request_provenance"] = {
+        "source": "api_ask_request",
+        "normalization": "collapse-whitespace-v1",
+        "normalized_prompt_sha256": hashlib.sha256(
+            b"Some other submitted question"
+        ).hexdigest(),
+    }
+    mismatch = extract_capture(
+        data, case_id="device_mqtt_conflict",
+        actual_question=exact, root=ROOT,
+    )
+    assert mismatch["prompt_match"] == "exact"
+    assert mismatch["api_submitted_prompt_match"] == "conflicting_question"
+    assert mismatch["matches_registered_live_question"] is False
+    assert not mismatch["api_prompt_attested_at_request_boundary"]
+    different = extract_capture(
+        data, case_id="device_mqtt_conflict",
+        actual_question=None, root=ROOT,
+    )
+    assert different["api_submitted_prompt_match"] == "different"
+    assert not different["matches_registered_live_question"]
+
+
+@pytest.mark.parametrize("value", [
+    "SECRET-PROMPT", "a" * 63, "A" * 64, None, 123,
+])
+def test_q1_untrusted_api_prompt_hash_is_not_exported_or_trusted(value):
+    data = response()
+    data["request_provenance"] = {
+        "source": "api_ask_request",
+        "normalization": "collapse-whitespace-v1",
+        "normalized_prompt_sha256": value,
+        "message": "SECRET-HOUSEHOLD",
+    }
+    captured = extract_capture(
+        data, case_id="device_mqtt_conflict",
+        actual_question=None, root=ROOT,
+    )
+    assert captured["api_submitted_prompt_match"] == "not_provided"
+    assert captured["api_submitted_prompt_sha256"] is None
+    assert "SECRET-" not in json.dumps(captured)
+
+
+def test_q1_forged_wrong_source_or_normalization_does_not_attest():
+    data = response()
+    for source, normalization in [
+        ("model_guess", "collapse-whitespace-v1"),
+        ("api_ask_request", "trim-only"),
+    ]:
+        data["request_provenance"] = {
+            "source": source,
+            "normalization": normalization,
+            "normalized_prompt_sha256": "b" * 64,
+        }
+        out = extract_capture(
+            data, case_id="device_mqtt_conflict",
+            actual_question=None, root=ROOT,
+        )
+        assert out["api_submitted_prompt_match"] == "not_provided"
+        assert out["matches_registered_live_question"] is False
+
+
+def test_q1_curated_offline_packet_cannot_become_live_case_from_matching_hash():
+    import hashlib
+    curated = json.loads(
+        (ROOT / "tests/fixtures/answer_quality_cases_v1.json").read_text()
+    )["cases"][0]
+    data = response()
+    data["request_provenance"] = {
+        "source": "api_ask_request",
+        "normalization": "collapse-whitespace-v1",
+        "normalized_prompt_sha256": hashlib.sha256(
+            " ".join(curated["prompt"].strip().split()).encode()
+        ).hexdigest(),
+    }
+    out = extract_capture(
+        data, case_id=curated["id"], actual_question=None, root=ROOT,
+    )
+    assert out["api_submitted_prompt_match"] == "exact"
+    assert out["matches_registered_live_question"] is False
+    assert out["api_prompt_attested_at_request_boundary"] is False
