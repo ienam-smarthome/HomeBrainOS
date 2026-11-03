@@ -648,10 +648,17 @@ class RuleAuthoringService:
             target_utc = current.astimezone(timezone.utc) + timedelta(minutes=minutes)
             if target_utc.second or target_utc.microsecond:
                 target_utc = target_utc.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            if (target_utc - current.astimezone(timezone.utc)).total_seconds() <= 60:
+                # The native writer requires a strictly >60s lead time;
+                # a one-minute delay requested on an exact minute boundary
+                # must land on the *following* whole-minute opportunity.
+                target_utc += timedelta(minutes=1)
             return target_utc.astimezone(current.tzinfo)
         target = current + timedelta(minutes=minutes)
         if target.second or target.microsecond:
             target = target.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if (target - current).total_seconds() <= 60:
+            target += timedelta(minutes=1)
         return target
 
     def _relative_intent(
