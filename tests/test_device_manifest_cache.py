@@ -242,13 +242,13 @@ async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
         {
             "tool": "hub_list_devices",
             "args": {
-                "detailed": True,
+                "format": "detailed",
                 "fields": [
                         "id", "name", "label", "room",
                         "capabilities", "attributes", "commands", "lastActivity",
                 ],
                 "limit": 50,
-                "offset": 0,
+                "cursor": "0",
             },
         },
     )]
@@ -271,7 +271,7 @@ async def test_device_manifest_pagination_follows_advancing_offsets(monkeypatch)
         return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
 
     async def call_tool(name, arguments):
-        calls.append(arguments["args"]["offset"])
+        calls.append(int(arguments["args"]["cursor"]))
         return MCPToolResult(name, arguments, {}, "", {"result": pages[len(calls) - 1]})
 
     monkeypatch.setattr(client, "list_tools", list_tools)
@@ -295,7 +295,7 @@ async def test_device_manifest_pagination_stops_on_non_advancing_offset(monkeypa
         return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
 
     async def call_tool(name, arguments):
-        offset = arguments["args"]["offset"]
+        offset = int(arguments["args"]["cursor"])
         calls.append(offset)
         return MCPToolResult(
             name,
@@ -333,7 +333,7 @@ async def test_device_manifest_pagination_is_bounded_by_a_hard_page_cap(monkeypa
         return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
 
     async def call_tool(name, arguments):
-        offset = arguments["args"]["offset"]
+        offset = int(arguments["args"]["cursor"])
         calls.append(offset)
         next_offset = offset + 50
         return MCPToolResult(
@@ -379,12 +379,12 @@ async def test_health_audit_uses_fresh_lean_projection_and_concurrent_verified_p
         assert name == "hub_read_devices"
         assert arguments["tool"] == "hub_list_devices"
         args = arguments["args"]
-        assert args["detailed"] is True
+        assert args["format"] == "detailed"
         assert args["fields"] == [
             "id", "name", "label", "room", "capabilities", "attributes",
             "lastActivity",
         ]
-        offset = args["offset"]
+        offset = int(args["cursor"])
         requests.append(offset)
         active += 1
         peak = max(peak, active)
