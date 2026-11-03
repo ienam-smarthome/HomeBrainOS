@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from mcp_client import tool_succeeded
+from owned_device_inventory_source import is_explicit_owned_device_inventory_request
 
 _ONE_TIME = re.compile(r"\(One-time \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)$", re.I)
 _LOOKUP = re.compile(r"\b(?:list|find|identify|enumerate|show|locate|which|existing)\b", re.I)
@@ -27,6 +28,8 @@ _ID = re.compile(r"[1-9]\d{0,8}")
 def is_native_rule_inventory_question(question: str) -> bool:
     """A factual inventory lookup, not a named-rule logic/execution audit."""
     text = str(question or "")
+    if is_explicit_owned_device_inventory_request(text):
+        return False  # quoted Rule Machine exclusions are not the user objective
     return bool(_LOOKUP.search(text) and _TOPIC.search(text)
                 and _OBJECT.search(text) and not _DEEP.search(text)
                 and not _LITERAL_ID.search(text))
