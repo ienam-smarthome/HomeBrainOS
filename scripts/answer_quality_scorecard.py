@@ -24,6 +24,29 @@ LEGACY = REPO / "tests/fixtures/homebrain_golden_tasks_v1.json"
 CURATED = REPO / "tests/fixtures/answer_quality_cases_v1.json"
 VALID_GRADES = {"pass", "partial", "fail"}
 REVIEW_KEYS = ("grounding", "causal_calibration", "useful_first_attempt", "clarity", "safety")
+LATENCY_COHORTS = (
+    "live_status_control", "live_investigation",
+    "live_rule_authoring", "offline_source_packet",
+)
+LIVE_LATENCY_TARGET_SECONDS = {
+    "live_status_control": 15,
+    "live_investigation": 45,
+}
+
+
+def _latency_cohort(origin: str, domain: str) -> str:
+    """Partition nominal case types; never infer actual run provenance.
+
+    Offline packet model-only timings must never be judged against live
+    status/control and investigation latency thresholds.
+    """
+    if origin == "curated_source_packet":
+        return "offline_source_packet"
+    if domain in {"status", "health", "inventory", "control", "safety"}:
+        return "live_status_control"
+    if domain == "investigation":
+        return "live_investigation"
+    return "live_rule_authoring"
 
 
 class ScorecardInputError(ValueError):
@@ -43,6 +66,7 @@ def load_catalog(legacy: Path = LEGACY, curated: Path = CURATED) -> dict[str, di
         catalog[case_id] = {
             "case_id": case_id, "domain": item.get("category", "unknown"),
             "origin": "legacy_golden_tasks", "replay": item.get("replay"),
+            "latency_cohort": _latency_cohort("legacy_golden_tasks", item.get("category", "unknown")),
         }
     for item in new.get("cases", []):
         case_id = str(item.get("id") or "").strip()
@@ -55,6 +79,7 @@ def load_catalog(legacy: Path = LEGACY, curated: Path = CURATED) -> dict[str, di
         catalog[case_id] = {
             "case_id": case_id, "domain": item.get("domain", "unknown"),
             "origin": "curated_source_packet", "replay": "curated_offline_packet",
+            "latency_cohort": _latency_cohort("curated_source_packet", item.get("domain", "unknown")),
         }
     if len(catalog) != len(old["tasks"]) + len(new["cases"]):
         raise ScorecardInputError("Case catalog count mismatch")
@@ -108,6 +133,7 @@ def validate_review(record: Any, catalog: dict[str, dict]) -> dict:
     return {
         "case_id": case_id,
         "domain": catalog[case_id]["domain"],
+        "latency_cohort": catalog[case_id]["latency_cohort"],
         "model": model,
         "build_sha": commit,
         "reviewer": reviewer,
@@ -176,6 +202,28 @@ def build_scorecard(
             item["tool_calls"] for item in group
             if item["tool_calls"] is not None
         ]
+        # Group nominal live status/control, complex investigation and
+        # model-only offline packet observations before publishing latency.
+        # The group describes the fixed case inventory, not verified live
+        # deployment or independently authenticated timing.
+        latency_by_cohort = {}
+        for cohort in LATENCY_COHORTS:
+            subset = [item for item in group if item["latency_cohort"] == cohort]
+            seconds = [
+                item["latency_seconds"] for item in subset
+                if item["latency_seconds"] is not None
+            ]
+            latency_by_cohort[cohort] = {
+                "cases_reviewed": len(subset),
+                "latency_sample_count": len(seconds),
+                "median_latency_seconds": _median(seconds),
+                "p95_latency_seconds": _p95(seconds),
+                "charter_target_seconds": LIVE_LATENCY_TARGET_SECONDS.get(cohort),
+                "target_assessment": (
+                    "not_measured" if not seconds else
+                    "observational_only_not_an_acceptance_verdict"
+                ),
+            }
         reports.append({
             "model": model,
             "build_sha": commit,
@@ -194,6 +242,8 @@ def build_scorecard(
             "latency_sample_count": len(latencies),
             "median_latency_seconds": _median(latencies),
             "p95_latency_seconds": _p95(latencies),
+            "global_latency_scope": "mixed_observations_not_a_charter_target",
+            "latency_by_cohort": latency_by_cohort,
             "tool_call_sample_count": len(tools),
             "median_tool_calls": _median([float(x) for x in tools]),
             # Do not pronounce acceptance from a cherry-picked subset.
@@ -227,7 +277,10 @@ def build_scorecard(
         "warning": (
             "Human/source-reviewed case ratings; not an automated truth judge "
             "or a claim of Claude parity. Missing cases are not passes. "
-            "For meaningful acceptance, evaluate the fixed full case set."
+            "For meaningful acceptance, evaluate the fixed full case set. "
+            "Overall latency may mix live-category and offline-only observations; "
+            "use the separate latency cohorts, never the pooled median/p95, "
+            "when discussing live targets."
         ),
         "legacy_cases": sum(x["origin"] == "legacy_golden_tasks" for x in catalog.values()),
         "curated_cases": sum(x["origin"] == "curated_source_packet" for x in catalog.values()),
