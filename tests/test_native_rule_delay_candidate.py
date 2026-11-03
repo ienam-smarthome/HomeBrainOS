@@ -26,7 +26,8 @@ class Hub:
     def __init__(self, *, corrupt=None, jobs=1, timeout=False,
                  partial=False, start_ok=True, backup_ok=True,
                  have_backup=True, type_found=True, pause_ok=True,
-                 list_ok=True, guide=GUIDE, type_namespace="hubitat"):
+                 list_ok=True, guide=GUIDE, type_namespace="hubitat",
+                 summary=None):
         self.calls = []
         self.rules = {}
         self.corrupt = corrupt
@@ -38,6 +39,7 @@ class Hub:
         self.pause_ok = pause_ok
         self.type_found = type_found
         self.type_namespace = type_namespace
+        self.summary = summary
         self.list_ok = list_ok
         self.guide = guide
         self.backups = [{"createTimeOrig": "2026-11-03T03:01:07+0000"}] if have_backup else []
@@ -67,6 +69,8 @@ class Hub:
                     "namespace": self.type_namespace,
                     "isBuiltIn": True, "allowNewInstances": True}] if self.type_found else []),
             ]}
+        if tool == "hub_get_app_config":
+            return deepcopy(self.summary) if self.summary is not None else {"success": False}
         if tool == "hub_list_rules":
             if not self.list_ok:
                 return {"success": False}
@@ -372,3 +376,43 @@ def test_cleanup_disabled_without_completed_action_proof():
     with pytest.raises(n.Refuse,match="cleanup_requires_completion_evidence"):
         n.cleanup_expired(hub,NOW)
     assert not hub.calls
+
+
+@pytest.mark.parametrize("summary,expected", [
+    ({"success": True, "id": 169, "type": "Rule Machine",
+      "namespace": "hubitat", "user": False}, True),
+    ({"success": True, "id": 169, "type": "Rule Machine",
+      "namespace": "community", "user": False}, False),
+    ({"success": True, "id": 169, "type": "Rule Machine",
+      "namespace": "", "user": False}, False),
+    ({"success": True, "id": 169, "type": "Rule Machine",
+      "user": False}, False),
+    ({"success": True, "id": 169, "type": "Rule Machine",
+      "namespace": "hubitat", "user": True}, False),
+    ({"success": True, "id": 170, "type": "Rule Machine",
+      "namespace": "hubitat", "user": False}, False),
+    ({"success": True, "id": 169, "type": "Unrelated App",
+      "namespace": "hubitat", "user": False}, False),
+    ({"success": True, "id": 169, "type": "Rule Machine",
+      "namespace": "hubitat", "user": False, "appTypeId": 99}, False),
+    ({"success": False, "id": 169, "type": "Rule Machine",
+      "namespace": "hubitat", "user": False}, False),
+])
+def test_upstream_515_summary_parent_proof_only_if_exact_typed_source(summary, expected):
+    hub = Hub(type_found=False, summary=summary)
+    if expected:
+        assert n.find_parent(hub) == 169
+        assert hub.calls_for("hub_get_app_config") == [
+            {"appId": "169", "summary": True}
+        ]
+    else:
+        with pytest.raises(n.Refuse, match="rm_parent_type_mismatch"):
+            n.find_parent(hub)
+    assert not hub.calls_for("hub_set_rule")
+    assert not hub.calls_for("hub_create_backup")
+
+
+def test_verified_type_list_keeps_priority_without_extra_summary():
+    hub = Hub(summary={"success": False})
+    assert n.find_parent(hub) == 169
+    assert not hub.calls_for("hub_get_app_config")
