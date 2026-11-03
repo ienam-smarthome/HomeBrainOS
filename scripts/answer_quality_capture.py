@@ -275,7 +275,7 @@ def extract_capture(
             "No natural-language answer text or private event payload is exported",
             "No correctness, causal conclusion or first-attempt status is inferred",
             "Model/provider and times are as reported, not independently authenticated",
-            "Exact live prompt and real source evidence must be reviewed separately",
+            "API-reported prompt hashes attest only submission at the HTTP boundary, not model input, first attempt, deployed build or source truth",
             "Missing-source categories are self-reported and are not proof of complete or absent history",
             "Self-reported source checks, completeness and synthesis repair counters are not model-quality scores",
             "A clean mutating-receipt count is not an independently proven safety audit",
