@@ -1,6 +1,27 @@
 # Answer Quality — active status and cross-chat handoff
 
-## Internet blocker source-verification routing — v0.18.386 candidate (2026-11-03)
+## Internet blocker source-verification routing — v0.18.386 GREEN MERGED (2026-11-03)
+
+**Verified repository result:** [PR #1371](https://github.com/ienam-smarthome/HomeBrainOS/pull/1371)
+merged as `a9cdf4e6df4ee66ec8e61a37d9746af2f752e369`
+after **7/7 CI checks green on exact PR head**
+`991b99d4bebb4d048a8ae019f27a7cd645093fc3`: **6,197
+Python tests passed, 2 warnings**, plus secondary test, two
+validation jobs, add-on smoke, metadata and offline-scorecard.
+Add-on source version **0.18.386**. No device, automation, rule, HA
+or router/network mutations occurred.
+
+**Next single read-only installed acceptance:** install v0.18.386, then
+repeat the **exact same inventory/identity question** from 23:37 UTC
+without changing wording. Capture complete public response and
+Technical Details JSON. Confirm source-verified parent class/namespace,
+exact one-time suffix count, inventory scope and elapsed/model rounds.
+Do not count this repeat as a new first attempt; it is a paired
+before/after observation. If current MCP still omits `namespace`,
+report that evidence gap instead of authorizing a writer.
+The production Internet blocker stays disabled pending independent
+dated-rule scheduling and network enforcement evidence, and a separate,
+specific approval for any disposable BAT.
 
 **Live user-supplied v0.18.385 result:** read-only parent/one-time inventory
 question returned 25.650s, six `gemma4:31b` Ollama-free model rounds,
@@ -12,7 +33,7 @@ receipt showed only an overall rules list, not 42 matching dated suffixes.
 `request_provenance.first_attempt_verified=false`, so not an accepted
 first-answer benchmark. Developer's MCP 5.1.5 fix itself is not disproved.
 
-**General code cause and candidate fix:** bare "why" in the inventory
+**General code cause and merged fix:** bare "why" in the inventory
 classifier diverted a request asking **why source identity was unverified**
 to the generic model deep-analysis path. New source-objective classifier
 reserves deep analysis for actual execution/causal questions. The typed
