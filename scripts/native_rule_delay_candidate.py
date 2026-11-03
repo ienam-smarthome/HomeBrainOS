@@ -3,7 +3,7 @@
 Native dated triggers remain unsupported by upstream 5.1.1 (issue #575).
 This module has no HomeBrainOS runtime import or invocation. The writer accepts
 only an injected *test* transport and needs explicit confirmation + enablement.
-Real Run Actions, readback shape, job attribution and completion are unverified.
+The upstream source documents readback shape but live Rule 4259 read failed.\nReal Run Actions via MCP, job attribution and completion are unverified.
 """
 from __future__ import annotations
 
@@ -209,8 +209,15 @@ def verify_rule(call: Call, rule_id: int, req: DelayRequest, p: Plan) -> None:
     if not isinstance(actions, list) or len(actions) != 2:
         raise Refuse("verify_failed")
     ids = []
-    for action, subtype in zip(actions, ("getDelay", "getOnOffSwitch")):
-        if not isinstance(action, dict) or action.get("subtype") != subtype:
+    for action, method in zip(actions, ("getDelay", "getOnOffSwitch")):
+        # Native document source: toolGetRuleDocument returns the ordered
+        # actionList as [{id: "1", value: nativeState.actions["1"]}, ...].
+        # The method sits under value.method, NOT in a top-level subtype.
+        # Never accept the invented test-only {id, subtype} shape.
+        if not isinstance(action, dict):
+            raise Refuse("verify_failed")
+        value = action.get("value")
+        if not isinstance(value, dict) or value.get("method") != method:
             raise Refuse("verify_failed")
         index = _numeric_id(action.get("id"))
         if index is None or index in ids:
