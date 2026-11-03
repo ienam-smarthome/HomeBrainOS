@@ -17,7 +17,7 @@ from mcp_client import HubitatMCPClient, tool_succeeded
 logger = logging.getLogger("HomeBrainOS.OneTimeRuleCleanup")
 
 _ONE_TIME_NAME = re.compile(
-    r"^.+ \(One-time (?P<scheduled>\d{4}-\d{2}-\d{2} \d{2}:\d{2})\)$"
+    r"^HB one-shot \| .+ \(One-time (?P<scheduled>\d{4}-\d{2}-\d{2} \d{2}:\d{2})\)$"
 )
 
 
@@ -47,9 +47,12 @@ class OneTimeRuleCleanupService:
     """Soft-delete expired HomeBrain one-time Rule Machine rules only.
 
     Ownership is deliberately narrow: a rule must have both a Rule Machine app id
-    and the exact HomeBrain suffix ``(One-time YYYY-MM-DD HH:MM)``. The suffix is
+    and the dedicated ``HB one-shot |`` ownership prefix *plus* the
+    exact suffix ``(One-time YYYY-MM-DD HH:MM)``. The suffix is
     interpreted in the same Hubitat-local timezone supplied by ``local_now``.
-    Ordinary/recurring rules, malformed names, and future one-time rules are never
+    Legacy suffix-only rules (even previously created by HomeBrain) are left
+    unchanged for manual migration; ordinary/recurring rules, malformed
+    names, and future one-time rules are never
     submitted to the delete gateway.
     """
 
