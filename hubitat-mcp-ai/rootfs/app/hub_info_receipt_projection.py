@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import re
+from ipaddress import ip_address
 from typing import Any
 
 _VERSION = re.compile(r"\d{1,4}(?:\.\d{1,5}){1,5}")
@@ -37,7 +38,9 @@ _UNITS = {
 def _safe_number(value: Any) -> int | float | None:
     if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
+    if type(value) is int:
+        return value if abs(value) <= 1e10 else None
+    if type(value) is float:
         return value if math.isfinite(value) and abs(value) <= 1e10 else None
     if not isinstance(value, str) or not _NUMBER.fullmatch(value.strip()):
         return None
@@ -71,8 +74,21 @@ def hub_info_receipt_details(
             fields[name] = number
     for name in ("installed_firmware", "available_firmware"):
         value = data.get(name)
-        if isinstance(value, str) and _VERSION.fullmatch(value.strip()):
-            fields[name] = value.strip()
+        if not isinstance(value, str) or not _VERSION.fullmatch(value.strip()):
+            continue
+        # Reject private/network-looking payloads in this otherwise numeric
+        # field; a firmware major/minor number is not an IP attribution.
+        candidate = value.strip()
+        try:
+            network_address = ip_address(candidate)
+        except ValueError:
+            network_address = None
+        if network_address is not None and (
+            network_address.is_private or network_address.is_loopback
+            or network_address.is_link_local or network_address.is_reserved
+        ):
+            continue
+        fields[name] = candidate
     for name in _STATUS_FIELDS:
         value = data.get(name)
         if isinstance(value, bool):
@@ -84,7 +100,7 @@ def hub_info_receipt_details(
         "none", "no alerts", "clear", "0",
     }:
         fields["hub_alerts"] = alerts.strip().casefold()
-    elif alerts == 0:
+    elif type(alerts) is int and alerts == 0:
         fields["hub_alerts"] = 0
     uptime = data.get("uptime")
     if isinstance(uptime, str) and _UPTIME.fullmatch(uptime.strip()):
