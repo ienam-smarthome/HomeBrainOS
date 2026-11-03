@@ -71,6 +71,15 @@ def _target_label(evidence: list[dict[str, Any]], target_id: str) -> str:
                     return str(match.get("label") or match.get("name") or "")
         requested = str(_args(row).get("labelFilter") or "").strip()
         if requested and row.get("summary") == "1 targeted device candidates":
+            # A name-filtered receipt is only useful for this specific
+            # target ID if its typed reported state does not contradict
+            # that ID. The name alone must not join another device's
+            # independent history packet.
+            reported = details.get("reportedDeviceState")
+            if isinstance(reported, dict):
+                observed_id = str(reported.get("deviceId") or "")
+                if observed_id and observed_id != target_id:
+                    continue
             return requested
     return ""
 
@@ -121,12 +130,24 @@ def _join_derived_event_rows(
         if hours and str(details.get("hoursBack") or "") != hours:
             continue
         rows = details.get("observedEvents")
-        if (
-            not isinstance(rows, list)
-            or len(rows) != expected_count
-            or not all(isinstance(item, dict) for item in rows)
-        ):
+        if not isinstance(rows, list) or not all(isinstance(item, dict) for item in rows):
             continue
+        # The deterministic receipt can deliberately retain fewer event
+        # rows than the native ID-scoped source reported.  Do not throw away
+        # every preserved row solely because a bounded projection is
+        # explicitly truncated. Require the original reported count to
+        # match BOTH the derived source and analysis counts, as well as an
+        # explicit truncation flag. Otherwise do not infer the missing rows.
+        if len(rows) != expected_count:
+            if not (
+                0 < len(rows) < expected_count
+                and details.get("observedEventsTruncated") is True
+                and type(details.get("sourceEventCount")) is int
+                and details["sourceEventCount"] == expected_count
+                and type(details.get("analysisEventCount")) is int
+                and details["analysisEventCount"] == expected_count
+            ):
+                continue
         time = _timestamp(row.get("timestamp"))
         if time is None:
             continue
@@ -264,6 +285,12 @@ def normalize_target_device_history(
     ), None)
     detail = source_details
     truncated = detail.get("observedEventsTruncated") is True
+    declared_source_rows = detail.get("sourceEventCount")
+    if (
+        type(declared_source_rows) is not int
+        or declared_source_rows < len(source)
+    ):
+        declared_source_rows = None
     groups: dict[tuple[str, str], int] = {}
     for item in commands:
         key = (item["producer"], item["command"])
@@ -275,6 +302,11 @@ def normalize_target_device_history(
         "queryWindowHours": hours or None,
         "receiptCheckedAt": checked_at.isoformat() if checked_at else None,
         "returnedEvents": len(commands) + len(states),
+        "sourceReportedEventCount": declared_source_rows,
+        "unshownEventCount": (
+            declared_source_rows - len(source)
+            if truncated and declared_source_rows is not None else None
+        ),
         "commandCount": len(commands),
         "stateEventCount": len(states),
         "truncated": truncated,
@@ -479,11 +511,21 @@ def render_target_device_evidence_answer(
         if alignment is not None:
             lines.append(render_elapsed_watchdog_correlation(alignment))
     if summary.get("truncated"):
-        lines.append(
-            "**History integrity:** The returned event page is explicitly "
-            "truncated. Older events and command/response boundaries may "
-            "be omitted."
-        )
+        unseen = summary.get("unshownEventCount")
+        if type(unseen) is int and unseen > 0:
+            lines.append(
+                "**History integrity:** The source reported "
+                f"{summary['sourceReportedEventCount']} event rows, but only "
+                f"{summary['returnedEvents']} are present in this inspected "
+                f"projection ({unseen} omitted). The unseen events cannot "
+                "be classified or used to rule out commands or telemetry."
+            )
+        else:
+            lines.append(
+                "**History integrity:** The returned event page is explicitly "
+                "truncated. Older events and command/response boundaries may "
+                "be omitted."
+            )
     else:
         lines.append(
             "**History integrity:** This bounded result has not been "
@@ -561,6 +603,15 @@ def render_target_device_evidence_brief(
             f"({state_count} state/attribute reports and {command_count} "
             "command invocations). These are returned records, not "
             "proof of physical device activity or a complete history."
+        )
+    unseen = summary.get("unshownEventCount")
+    if summary.get("truncated") and type(unseen) is int and unseen > 0:
+        parts.append(
+            "**History coverage:** The source reports "
+            f"{summary['sourceReportedEventCount']} event rows, but only "
+            f"{summary['returnedEvents']} are present in the retained "
+            f"sample ({unseen} omitted). Unseen events cannot be "
+            "classified or used to establish absence."
         )
     if clock_check is not None and clock_check.get("sourcesAgree") is False:
         parts.append(render_telemetry_clock_qualification(clock_check))
