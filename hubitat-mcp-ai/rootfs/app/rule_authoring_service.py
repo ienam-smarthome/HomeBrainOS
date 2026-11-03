@@ -636,6 +636,31 @@ class RuleAuthoringService:
             return None
         return amount * (60 if unit.casefold().startswith(("hour", "hr")) else 1)
 
+    @staticmethod
+    def _relative_next_minute(current: datetime, minutes: int) -> datetime:
+        """Delay by real elapsed minutes, then CEIL to the next minute.
+
+        Work on UTC instants for aware clocks: ordinary ZoneInfo wall-clock
+        addition can otherwise land in a nonexistent spring DST hour.
+        A naive injected test clock retains its existing wall-clock basis.
+        """
+        if current.tzinfo is not None:
+            target_utc = current.astimezone(timezone.utc) + timedelta(minutes=minutes)
+            if target_utc.second or target_utc.microsecond:
+                target_utc = target_utc.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            if (target_utc - current.astimezone(timezone.utc)).total_seconds() <= 60:
+                # The native writer requires a strictly >60s lead time;
+                # a one-minute delay requested on an exact minute boundary
+                # must land on the *following* whole-minute opportunity.
+                target_utc += timedelta(minutes=1)
+            return target_utc.astimezone(current.tzinfo)
+        target = current + timedelta(minutes=minutes)
+        if target.second or target.microsecond:
+            target = target.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if (target - current).total_seconds() <= 60:
+            target += timedelta(minutes=1)
+        return target
+
     def _relative_intent(
         self,
         text: str,
@@ -657,7 +682,7 @@ class RuleAuthoringService:
             if not target:
                 continue
             current = now if now is not None else self._now()
-            trigger = current.replace(microsecond=0) + timedelta(minutes=minutes)
+            trigger = self._relative_next_minute(current, minutes)
             return _ScheduleIntent(
                 target=target,
                 start_time=trigger.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -790,7 +815,41 @@ class RuleAuthoringService:
         clean = re.sub(r"[-_]+", " ", target_label)
         clean = " ".join(clean.split())
         base = clean if clean.casefold().startswith(label.casefold() + " ") else f"{label} {clean}"
-        return f"{base} ({suffix})"
+        name = f"{base} ({suffix})"
+        # Only this explicit ownership prefix lets the nightly cleanup
+        # distinguish HomeBrain-created one-shots from user-authored rules
+        # that happen to use the old descriptive suffix.
+        return f"HB one-shot | {name}" if suffix.startswith("One-time ") else name
+
+    @staticmethod
+    def _one_shot_clock_error(start_time: str, now_local: datetime) -> str | None:
+        """Do not create a dated trigger too soon or in a DST gap/fold."""
+        if now_local.tzinfo is None:
+            return "time_in_past_or_too_soon"
+        try:
+            wall = datetime.fromisoformat(start_time)
+        except ValueError:
+            return "time_in_past_or_too_soon"
+        if wall.tzinfo is not None:
+            return "time_in_past_or_too_soon"
+        one = wall.replace(tzinfo=now_local.tzinfo, fold=0)
+        two = wall.replace(tzinfo=now_local.tzinfo, fold=1)
+        # Without an independently verified offset/epoch field the native
+        # date editor cannot disambiguate either occurrence of a repeated
+        # hour. Likewise refuse nonexistent spring-time wall clock values.
+        if one.utcoffset() != two.utcoffset():
+            return "native_oneshot_dst_time_ambiguous"
+        if one.astimezone(timezone.utc).astimezone(now_local.tzinfo).replace(
+            tzinfo=None
+        ) != wall:
+            return "native_oneshot_dst_time_ambiguous"
+        delta = (
+            one.astimezone(timezone.utc)
+            - now_local.astimezone(timezone.utc)
+        ).total_seconds()
+        if delta <= 60:
+            return "time_in_past_or_too_soon"
+        return None
 
     @classmethod
     def _action(
@@ -1078,10 +1137,26 @@ class RuleAuthoringService:
         # than the shortcut fields our deterministic compiler emits. Consult
         # its own read-only guide before resolving a target or queuing an
         # impossible/unsafe confirmed write. Never silently translate fields.
-        incompatible = legacy_rule_writer_incompatibility(
-            await self._rule_writer_contract()
-        )
+        installed_contract = await self._rule_writer_contract()
+        incompatible = legacy_rule_writer_incompatibility(installed_contract)
         if incompatible:
+            if installed_contract == NATIVE_DOCUMENT and not intent.recurring:
+                # The installed native document writer is NOT the legacy
+                # addTrigger/addAction compiler. In particular the dated
+                # form-field/value contract and readback are still unknown.
+                # Do not guess atTime#=ISO, date# or parent_id, and never
+                # queue an active half-authored rule. This refusal is an
+                # explicit diagnosis, not a successful schedule.
+                return RuleAuthoringDecision(
+                    True,
+                    "native_oneshot_date_field_unverified: The installed "
+                    "Rule Machine server uses native operation='create' with parent_id but "
+                    "HomeBrain has no verified dated trigger field/value "
+                    "contract or approved native create/readback path. "
+                    "A read-only comparison of an existing dated Rule Machine "
+                    "form with an undated form is needed. No rule write was "
+                    "queued or executed.",
+                )
             return RuleAuthoringDecision(True, incompatible)
 
         if not intent.recurring:
@@ -1097,6 +1172,15 @@ class RuleAuthoringService:
             intent = self._intent(prompt, now=hub_now)
             if intent is None:
                 return RuleAuthoringDecision(False)
+            time_error = self._one_shot_clock_error(intent.start_time, hub_now)
+            if time_error is not None:
+                return RuleAuthoringDecision(
+                    True,
+                    f"{time_error}: The requested one-time wall clock is "
+                    "ambiguous, in the past, or too close to the current "
+                    "Hubitat-local time to schedule safely. No rule write "
+                    "was queued or executed.",
+                )
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
         internet_access = intent.start_command.casefold() in {

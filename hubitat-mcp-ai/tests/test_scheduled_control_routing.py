@@ -68,17 +68,17 @@ def test_clock_scheduled_control_hands_off_to_rule_authoring() -> None:
         (
             f"block {TARGET} after 1 minute",
             "blockInternet",
-            "2026-10-02T22:26:12",
+            "2026-10-02T22:27:00",
         ),
         (
             f"turn on {TARGET} in 30 mins",
             "on",
-            "2026-10-02T22:55:12",
+            "2026-10-02T22:56:00",
         ),
         (
             f"turn off {TARGET} 2 hours later",
             "off",
-            "2026-10-03T00:25:12",
+            "2026-10-03T00:26:00",
         ),
     ],
 )

@@ -69,7 +69,7 @@ def legacy_rule_writer_incompatibility(contract: str) -> str | None:
         return None
     if contract == NATIVE_DOCUMENT:
         return (
-            "Couldn't schedule this action. Rule Machine creation was safely "
+            "rm_contract_changed: Rule Machine creation was safely "
             "stopped before confirmation: the installed server requires the "
             "NEW native document API (operation='create', "
             "args={parent_id,name,changes}), while HomeBrain still uses "

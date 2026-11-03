@@ -49,17 +49,17 @@ class FakeMCP:
                     "rules": [
                         {
                             "appId": "4210",
-                            "name": "Block Media Google TV Streamer (One-time 2026-10-03 08:42)",
+                            "name": "HB one-shot | Block Media Google TV Streamer (One-time 2026-10-03 08:42)",
                             "status": "active",
                         },
                         {
                             "appId": "4211",
-                            "name": "Block Media Google TV Streamer (One-time 2026-10-03 11:46)",
+                            "name": "HB one-shot | Block Media Google TV Streamer (One-time 2026-10-03 11:46)",
                             "status": "active",
                         },
                         {
                             "appId": "5000",
-                            "name": "Future Light (One-time 2026-10-04 08:00)",
+                            "name": "HB one-shot | Future Light (One-time 2026-10-04 08:00)",
                             "status": "active",
                         },
                         {
@@ -275,3 +275,20 @@ def test_cleanup_corrupt_persisted_state_does_not_block_scheduler(tmp_path) -> N
     assert status["last_run"] is None
     assert status["persistence_error"]
     assert status["time"] == "17:15"
+
+
+def test_generic_legacy_suffix_cannot_authorize_destructive_cleanup():
+    now = datetime(2026, 10, 4, 1, 0, tzinfo=ZoneInfo("Europe/London"))
+    candidate = OneTimeRuleCleanupService._candidate
+    assert not candidate(
+        "Block Sample (One-time 2026-10-03 08:42)", "4123", now, 10
+    )
+    assert not candidate(
+        "HB one-shot | Block Sample (Daily)", "4123", now, 10
+    )
+    assert not candidate(
+        "HB one-shot | Block Sample (One-time 2026-10-03 08:42)", None, now, 10
+    )
+    assert candidate(
+        "HB one-shot | Block Sample (One-time 2026-10-03 08:42)", "4123", now, 10
+    )
