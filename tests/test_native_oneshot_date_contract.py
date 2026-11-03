@@ -16,7 +16,9 @@ import pytest
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
-from native_oneshot_date_contract import inspect_native_one_shot_date_field
+from native_oneshot_date_contract import (
+    NATIVE_ONESHOT_ENABLED, inspect_native_one_shot_date_field,
+)
 from rule_authoring_service import RuleAuthoringService
 
 UNDATED = {
@@ -45,6 +47,7 @@ DATED = {
 
 
 def test_unique_typed_dated_field_is_discovery_only():
+    assert NATIVE_ONESHOT_ENABLED is False
     result = inspect_native_one_shot_date_field(
         dated_read=DATED, undated_read=UNDATED
     )
