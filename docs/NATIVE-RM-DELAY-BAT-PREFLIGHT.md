@@ -10,6 +10,19 @@ Read-only HomeBrain v0.18.380 **already verified** existing manual rule 4259's o
 
 **Important contract discovery:** The upstream tool guide uses **different hourly acknowledgements** for `hub_set_rule` (guide section `set_rule_reference`) versus `hub_call_rule` and `hub_set_rule_paused` (section `builtin_app_tools_rules`). The offline candidate previously obtained only the first. The new offline-only patch retrieves both and uses each with the corresponding call; it still has `NATIVE_DELAY_ENABLED=False` and no runtime import. A write-guidance key is *not* authorization to issue writes.
 
+## Installed read-only settings/triggers checkpoint — 2026-11-03 16:12 UTC
+
+The user submitted the full HomeBrain v0.18.380 answer and Technical details JSON for `hub_set_rule(operation="read",rule_id=4259,args={"sections":["settings","triggers"]})`. It reported `success=true`, `sourceSuccess=true`, `projectionVerified=true`, one nonmutating `typed_native_rule_section` receipt, **49 settings** (4 redacted or unsupported) and **zero returned trigger entries**. Request elapsed 2.397s; one MCP call 230 ms, zero model rounds. In the returned answer:
+
+- `actType.1=delayActs`, `actSubType.1=getDelay`, `delayMinute.1=2`; `delayHour.1` and `delaySecond.1` are **blank** (not verified zero).
+- `actType.2=switchActs`, `actSubType.2=getOnOffSwitch`, `onOff.2=false`, and `onOffSwitch.2.device_ids=["7995"]`. The capability setting's raw value was labelled unavailable; the device ID selector was still shown.
+- `cancelAct.1`, `randomAct.1`, and `uVar.1` are **blank** (not verified false). The absence of returned trigger rows is consistent with the manually made triggerless test, but does not alone certify all Rule Machine execution semantics.
+- The **technical receipt attests the section retrieval but does not embed individual setting rows or the raw trigger collection**. The readable values are from HomeBrain's returned textual projection. Do not treat `projectionVerified=true` as independent provenance for every setting value, or merge this read and the earlier actions read into a single atomic native snapshot.
+
+This **closes the requested settings/triggers read checkpoint**, not the live MCP-created BAT. Existing offline candidate `verify_rule()` already requires exact readable numeric/Boolean settings for its **newly created** child. Extra synthetic negative controls ensure the manually observed blanks are **never silently accepted as 0/false**, and no `hub_call_rule` follows such a mismatch.
+
+**Remaining preflight:** installed gateway contracts/version, typed native Rule Machine parent/type join, complete duplicate-rule inventory, authorized/MCP-owned virtual-switch inventory, and source-confirmed recent backup immediately before a separately approved write. Never rerun the manual Rule 4259 test to fill these gaps.
+
 ## Read-only preflight — collect before asking for any mutation approval
 
 1. **Installed source contract:** Read `hub_get_tool_guide(section="set_rule_reference")`, `hub_get_tool_guide(section="builtin_app_tools_rules")`, and `hub_get_tool_guide(section="virtual_devices")`; inspect actual available gateway/sub-tool schemas and installed MCP version. Guide hashes are rotating; fetch new keys when/if a separately approved write later happens. Do not call `hub_set_rule(operation="form")` — even opening the native editor may run app code or change state.
@@ -18,7 +31,7 @@ Read-only HomeBrain v0.18.380 **already verified** existing manual rule 4259's o
 4. **Device/backup:** Read `hub_list_devices(scope="owned")` and `hub_list_backups(scope="hub_local")` for MCP-owned virtual targets and backup recency. Do not infer a manually created Hubitat virtual switch is MCP-owned. A backup younger than 24 hours must be **source-confirmed just before a future write**; do not create one during this preflight.
 5. **Safety/permission:** Confirm read-only tool availability, rule creation guidance, no conflicting existing test rule, target scope, and no hidden write calls. If a source errors, is truncated, or does not match, return **blocked / not yet established**, not permission to create.
 
-Only the existing rule's **actions** read has been provided live in this conversation. The remaining live preflight inputs are **not yet collected**. Public upstream source contracts are useful context, not proof of the user's installed gateway or Rule Machine capabilities.
+Both the manual rule's **actions-only** read and its separate **settings/triggers** read have now been provided live. The installed guides, native parent/type join, complete relevant inventories and recent backup remain unverified. Public upstream source contracts are useful context, not proof of the user's installed gateway or Rule Machine capabilities.
 
 ### One copyable HomeBrain read-only request (no mutations)
 
