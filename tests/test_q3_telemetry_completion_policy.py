@@ -7,7 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(ROOT))
 
-from telemetry_completion_policy import ready_for_bounded_telemetry_answer
+from telemetry_completion_policy import (
+    ready_for_bounded_telemetry_answer,
+    ready_after_bounded_telemetry_read,
+)
 
 
 def evidence():
@@ -202,3 +205,115 @@ def test_partial_history_missing_row_proof_or_target_identity_never_stops():
         src = deepcopy(base)
         edit(src)
         assert not ready(src, checkpoint=True)
+
+
+def after_read(src, *, before, question="Why is Test Relay offline?",
+               domain="device_telemetry", checkpoint=False,
+               had_actions=True, mutated=False, failed=False):
+    return ready_after_bounded_telemetry_read(
+        question, src, domain=domain,
+        receipt_count_before_round=before,
+        had_tool_actions=had_actions,
+        round_has_mutation=mutated,
+        round_tool_failure=failed,
+        high_information_checkpoint_offered=checkpoint,
+    )
+
+
+def test_post_read_stop_admits_new_scoped_configuration_after_core_evidence():
+    # The preexisting state/history/log check was insufficient before the
+    # configuration read. A successful new read changes that decision in
+    # the SAME tool round, without waiting for model no-tool completion.
+    base = evidence()
+    before = len(base)
+    assert not after_read(base, before=before)
+    base.append({
+        "tool": "hub_read_devices", "sub_tool": "hub_get_device",
+        "success": True, "mutates": False, "effect": "read",
+        "arguments": {"tool": "hub_get_device",
+                      "args": {"deviceId": "9911", "mode": "configuration"}},
+    })
+    assert after_read(base, before=before)
+    assert ready(base)
+
+
+def test_post_read_stop_works_with_explicitly_counted_partial_sources():
+    for label, ident in (
+        ("Test Relay", "9911"),
+        ("Heating Zone Plug", "9922"),
+        ("Ventilation Relay", "9933"),
+    ):
+        src = counted_partial_evidence(label, ident)
+        # Add a fresh scoped config read in the current tool round.
+        before = len(src)
+        src.append({
+            "tool": "hub_read_devices", "sub_tool": "hub_get_device",
+            "success": True, "mutates": False, "effect": "read",
+            "arguments": {"tool": "hub_get_device",
+                          "args": {"deviceId": ident,
+                                   "mode": "configuration"}},
+        })
+        assert after_read(src, before=before,
+                          question=f"Why is {label} offline?")
+        assert not after_read(src, before=before,
+                              question=f"Compare {label} across all devices")
+
+
+def test_post_read_stop_denies_duplicate_error_mutation_and_unscoped_source():
+    from copy import deepcopy
+
+    src = evidence()
+    last = {
+        "tool": "hub_read_devices", "sub_tool": "hub_get_device",
+        "success": True, "mutates": False, "effect": "read",
+        "arguments": {"tool": "hub_get_device",
+                      "args": {"deviceId": "9911", "mode": "configuration"}},
+    }
+    base = len(src)
+    src.append(last)
+    assert after_read(src, before=base)
+    assert not after_read(src, before=len(src))  # same old receipts: no new read
+    assert not after_read(src, before=base, had_actions=False)
+    assert not after_read(src, before=base, mutated=True)
+    assert not after_read(src, before=base, failed=True)
+    assert not after_read(src, before=base, domain="causal_provenance")
+    assert not after_read(src, before=base,
+                          question="Why is Unknown Relay offline?")
+    for change in (
+        {"success": False},
+        {"mutates": True},
+        {"effect": "write"},
+    ):
+        revised = deepcopy(src)
+        revised[-1].update(change)
+        assert not after_read(revised, before=base)
+    no_logs = [row for row in deepcopy(src)
+               if row.get("sub_tool") != "hub_get_logs"]
+    assert not after_read(no_logs, before=2)
+
+
+def test_post_read_stop_does_not_promote_checkpoint_without_new_success():
+    from copy import deepcopy
+
+    src = counted_partial_evidence()
+    before = len(src)
+    # Existing success and an offered checkpoint do not imply the model just
+    # performed a real, new source read.
+    assert not after_read(src, before=before, checkpoint=True)
+    src.append({
+        "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+        "success": False, "mutates": False, "effect": "read",
+        "arguments": {"tool": "hub_get_logs",
+                      "args": {"deviceId": "9911", "since": "24h"}},
+    })
+    assert not after_read(src, before=before, checkpoint=True)
+    other = deepcopy(src)
+    other[-1].update({"success": True,
+                      "arguments": {"tool": "hub_get_logs",
+                                    "args": {"deviceId": "7777"}}})
+    # Scoped logs were already present, but a successful other-target read
+    # alone must not let the host assume any new target telemetry.
+    # A fresh unrelated read is accepted only as a *round completion* when
+    # previous independent source-sufficiency already holds. It does not
+    # promote the other device's attributes into target evidence.
+    assert after_read(other, before=before, checkpoint=True)
