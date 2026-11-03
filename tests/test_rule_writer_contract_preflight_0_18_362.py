@@ -86,6 +86,7 @@ async def test_native_document_server_is_rejected_before_confirmation_or_write()
     assert "No rule write was queued or executed" in result.message
     assert "parent_id" in result.message
     assert "native" in result.message.casefold()
+    assert "native_oneshot_date_field_unverified" in result.message
     assert server.calls == [("hub_get_tool_guide", {"section": "set_rule_reference"})]
 
 
@@ -149,3 +150,16 @@ def test_probe_resists_unrelated_or_error_outputs():
         is_error = True
         data = {"content": OLD_GUIDE}
     assert installed_rule_writer_contract(Errored()) == UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_recurring_native_writer_refusal_does_not_claim_missing_one_shot_date():
+    server = Server()
+    result = await _service(server).propose(
+        "Turn off Desk Lamp every day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+    assert result.handled and not result.actions
+    assert "NEW native" in result.message
+    assert "native_oneshot_date_field_unverified" not in result.message
+    assert server.calls == [("hub_get_tool_guide", {"section": "set_rule_reference"})]
