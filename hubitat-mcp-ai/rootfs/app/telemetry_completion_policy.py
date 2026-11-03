@@ -121,4 +121,51 @@ def ready_for_bounded_telemetry_answer(
     return has_scoped_log and (has_discriminator or high_information_checkpoint_offered)
 
 
-__all__ = ["ready_for_bounded_telemetry_answer", "single_target_telemetry_scope"]
+def ready_after_bounded_telemetry_read(
+    request: str,
+    evidence: list[dict[str, Any]],
+    *,
+    domain: str | None,
+    receipt_count_before_round: int,
+    had_tool_actions: bool,
+    round_has_mutation: bool,
+    round_tool_failure: bool,
+    high_information_checkpoint_offered: bool = False,
+) -> bool:
+    """Reuse source sufficiency immediately after a *new* safe read result.
+
+    Tool rounds need not end in a model no-tool response. At least one new
+    successful read receipt must have arrived in this round. Existing source
+    guards still decide sufficiency; a successful query is not evidence of a
+    physical packet, a complete history, or an established cause.
+    """
+    if (
+        domain != "device_telemetry"
+        or not had_tool_actions
+        or round_has_mutation
+        or round_tool_failure
+        or type(receipt_count_before_round) is not int
+        or receipt_count_before_round < 0
+        or receipt_count_before_round >= len(evidence)
+    ):
+        return False
+    new_reads = evidence[receipt_count_before_round:]
+    if not any(
+        isinstance(row, dict)
+        and row.get("success") is True
+        and row.get("mutates") is not True
+        and row.get("effect") == "read"
+        for row in new_reads
+    ):
+        return False
+    return ready_for_bounded_telemetry_answer(
+        request, evidence, domain=domain,
+        high_information_checkpoint_offered=high_information_checkpoint_offered,
+    )
+
+
+__all__ = [
+    "ready_for_bounded_telemetry_answer",
+    "ready_after_bounded_telemetry_read",
+    "single_target_telemetry_scope",
+]

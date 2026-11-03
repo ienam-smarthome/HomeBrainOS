@@ -23,7 +23,10 @@ from source_method_projection import SourceChunkCollector
 from tool_free_knowledge_policy import eligible_tool_free_knowledge, tool_free_messages
 from single_device_read_scope import single_device_broad_read_reason
 from source_read_reuse_policy import duplicate_location_projection_reason
-from telemetry_completion_policy import ready_for_bounded_telemetry_answer
+from telemetry_completion_policy import (
+    ready_for_bounded_telemetry_answer,
+    ready_after_bounded_telemetry_read,
+)
 from source_authority_packet import pending_telemetry_configuration_read
 from model_first_draft_provenance import (
     PrivateModelDraft, begin_private_model_draft, reset_private_model_draft,
@@ -5508,6 +5511,11 @@ class UnifiedMCPAgent:
                         # Capture failure cannot affect tool permissions,
                         # original calls or final answer publication.
                         increment_active_metric("stage3_capture_observation_error")
+            # A post-read stop below must be tied to at least one genuinely
+            # new successful receipt, never a duplicate/skipped call.
+            telemetry_receipts_before_round = (
+                len(self.evidence.receipts()) if bounded_device_telemetry else 0
+            )
             if not calls:
                 # One independently source-backed opportunity to answer is
                 # sufficient after the checked target status/history/logs and
@@ -6924,6 +6932,33 @@ class UnifiedMCPAgent:
                         })
                         increment_active_metric(
                             "v3_ranked_upstream_round_offer")
+            # The existing telemetry sufficiency check above handles a
+            # model's no-tool response. The final missing scoped read can
+            # instead arrive in this very tool round. Evaluate the SAME
+            # verified source/target/log/checkpoint contract immediately,
+            # without forcing another model planning round merely to obtain
+            # a voluntary no-tool response. Read-only finalization still
+            # performs its normal source completion and publication gates;
+            # this does not mark root cause or physical reachability verified.
+            if (
+                bounded_device_telemetry
+                and ready_after_bounded_telemetry_read(
+                    user_prompt, self.evidence.receipts(),
+                    domain=contract.domain if contract is not None else None,
+                    receipt_count_before_round=telemetry_receipts_before_round,
+                    had_tool_actions=bool(round_actions),
+                    round_has_mutation=round_has_mutation,
+                    round_tool_failure=round_tool_failure,
+                    high_information_checkpoint_offered=(
+                        incident_evidence_checkpoint_used
+                        or device_incident_followup_used
+                    ),
+                )
+            ):
+                increment_active_metric("telemetry_post_read_sufficiency_stop")
+                increment_active_metric("investigative_finalization")
+                return await self._final_answer(messages)
+
             # Source-led device investigation: once real contiguous code,
             # device configuration, scoped history and logs are collected,
             # stop model-driven duplicate page reads and synthesize once.
