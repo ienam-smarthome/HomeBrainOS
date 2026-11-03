@@ -91,14 +91,32 @@ def _native_parent_from_summary(
     if (reported_class_id is not None and candidate_type_id is not None
             and reported_class_id != candidate_type_id):
         return None, "native-app-summary-class-id-conflict"
+    # MCP 5.1.5 adds the source-observed namespace directly to the thin
+    # summary=true response. It deliberately does not render an app page or
+    # promise the full app.appType object. Older full/extended records may
+    # carry that nested object instead. Never invent namespace from the label.
+    flat_namespace = root.get("namespace")
     typed = root.get("appType")
-    if not isinstance(typed, dict):
-        return None, "native-app-summary-class-namespace-unavailable"
-    if typed.get("namespace") != "hubitat" or typed.get("name") != "Rule Machine":
-        return None, "native-app-summary-class-namespace-unverified"
-    if typed.get("system") is False or typed.get("isBuiltIn") is False:
-        return None, "native-app-summary-system-conflict"
-    type_id = _id(typed.get("id"))
+    if typed is None:
+        if flat_namespace is None:
+            return None, "native-app-summary-class-namespace-unavailable"
+        # Without a nested type, both identity fields must be attested by
+        # the same thin app summary, not inferred from the instance listing.
+        if flat_namespace != "hubitat" or root.get("type") != "Rule Machine":
+            return None, "native-app-summary-class-namespace-unverified"
+        type_id = None
+    else:
+        # A malformed or contradictory full type must not be silently
+        # disregarded just because the flat namespace looks correct.
+        if not isinstance(typed, dict):
+            return None, "native-app-summary-class-namespace-unavailable"
+        if typed.get("namespace") != "hubitat" or typed.get("name") != "Rule Machine":
+            return None, "native-app-summary-class-namespace-unverified"
+        if flat_namespace is not None and flat_namespace != typed.get("namespace"):
+            return None, "native-app-summary-class-namespace-unverified"
+        if typed.get("system") is False or typed.get("isBuiltIn") is False:
+            return None, "native-app-summary-system-conflict"
+        type_id = _id(typed.get("id"))
     if type_id is not None and candidate_type_id is not None and type_id != candidate_type_id:
         return None, "native-app-summary-class-id-conflict"
     return {
