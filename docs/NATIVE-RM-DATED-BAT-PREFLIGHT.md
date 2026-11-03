@@ -10,7 +10,16 @@
 - Built-in Rule Machine type rows may still be omitted from `hub_list_apps(scope="types")`. The disabled offline `find_parent` now accepts a **strict exact installed-app summary fallback** only when there is no matching type row, and otherwise refuses inconsistent/missing evidence. A name-only candidate or mere label/type ID is not enough.
 - **Do not assume the user's installed MCP version:** the user says their server was updated, but no authoritative installed v5.1.5 receipt or fresh source-typed Rule Machine summary has been supplied yet. MCP v5.1.5 fixes two previously established blockers, not every scheduling, ownership, execution or cleanup gap.
 
-## Read-only inventory source selection — v0.18.386 candidate
+## Read-only inventory source selection — v0.18.386 GREEN MERGED
+
+[PR #1371](https://github.com/ienam-smarthome/HomeBrainOS/pull/1371)
+merged with 7/7 CI green and 6,197 Python tests passing. This confirms
+**offline source routing correctness**, not installed MCP version,
+native Rule Machine identity, dated trigger firing or Internet-blocker
+function. A fresh installed read-only receipt remains mandatory.
+No test switch or rule has been created by repository work.
+
+## Read-only inventory source selection — v0.18.386 original candidate
 
 The first installed v0.18.385 identity/inventory attempt did **not** take
 the intended thin summary path. The original question's "explain why
