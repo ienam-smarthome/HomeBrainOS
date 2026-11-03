@@ -6924,6 +6924,32 @@ class UnifiedMCPAgent:
                         })
                         increment_active_metric(
                             "v3_ranked_upstream_round_offer")
+            # The existing telemetry sufficiency check above handles a
+            # model's no-tool response. The final missing scoped read can
+            # instead arrive in this very tool round. Evaluate the SAME
+            # verified source/target/log/checkpoint contract immediately,
+            # without forcing another model planning round merely to obtain
+            # a voluntary no-tool response. Read-only finalization still
+            # performs its normal source completion and publication gates;
+            # this does not mark root cause or physical reachability verified.
+            if (
+                bounded_device_telemetry
+                and round_actions
+                and not round_has_mutation
+                and not round_tool_failure
+                and ready_for_bounded_telemetry_answer(
+                    user_prompt, self.evidence.receipts(),
+                    domain=contract.domain if contract is not None else None,
+                    high_information_checkpoint_offered=(
+                        incident_evidence_checkpoint_used
+                        or device_incident_followup_used
+                    ),
+                )
+            ):
+                increment_active_metric("telemetry_post_read_sufficiency_stop")
+                increment_active_metric("investigative_finalization")
+                return await self._final_answer(messages)
+
             # Source-led device investigation: once real contiguous code,
             # device configuration, scoped history and logs are collected,
             # stop model-driven duplicate page reads and synthesize once.
