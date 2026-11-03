@@ -86,7 +86,7 @@ class Hub:
             settings, actions = [], []
             for i, action in enumerate(self.rules[5000]["changes"], 1):
                 val = action["value"]
-                actions.append({"id": i, "subtype": val["subtype"]})
+                actions.append({"id": str(i), "value": {"method": val["subtype"]}})
                 settings.append({"name": f"actSubType.{i}", "value": val["subtype"]})
                 for field in val["fields"]:
                     value = field["value"]
@@ -101,7 +101,15 @@ class Hub:
             if self.corrupt == "missing_triggers":
                 doc.pop("triggers")
             if self.corrupt == "extra_action":
-                actions.append({"id": 3, "subtype": "getDelay"})
+                actions.append({"id": "3", "value": {"method": "getDelay"}})
+            if self.corrupt == "missing_action_value":
+                actions[0].pop("value")
+            if self.corrupt == "wrong_action_method":
+                actions[0]["value"]["method"] = "getOnOffSwitch"
+            if self.corrupt == "legacy_fake_subtype":
+                actions[0] = {"id": 1, "subtype": "getDelay"}
+            if self.corrupt == "duplicate_action_id":
+                actions[1]["id"] = actions[0]["id"]
             if self.corrupt == "extra_setting_action":
                 settings.append({"name": "actSubType.3", "value": "getDelay"})
             if self.corrupt == "wrong_device":
@@ -170,6 +178,15 @@ def test_synthetic_happy_path_does_not_claim_physical_block():
     assert len(hub.runs)==1
     writes=hub.calls_for("hub_set_rule")
     assert [x["operation"] for x in writes]==["create","read"]
+    # The wire-format read is the upstream native actionList projection:
+    # ordered entries carry {id, value:{method}}, not top-level subtype.
+    read_doc = hub("hub_manage_rule_machine", "hub_set_rule",
+                   {"operation": "read", "rule_id": 5000,
+                    "args": {"sections": ["actions", "settings", "triggers"]}})
+    assert read_doc["actions"] == [
+        {"id": "1", "value": {"method": "getDelay"}},
+        {"id": "2", "value": {"method": "getOnOffSwitch"}},
+    ]
     changes=writes[0]["args"]["changes"]
     assert [(v["part"],v["value"]["subtype"]) for v in changes]==[
         ("action","getDelay"),("action","getOnOffSwitch")]
@@ -215,7 +232,9 @@ def test_failed_pause_requires_manual_review():
 
 
 @pytest.mark.parametrize("corrupt", ["missing_triggers","extra_action","extra_setting_action",
-                                      "wrong_device","wrong_delay","has_trigger","broken"])
+                                      "wrong_device","wrong_delay","has_trigger","broken",
+                                      "missing_action_value","wrong_action_method",
+                                      "legacy_fake_subtype","duplicate_action_id"])
 def test_bad_readback_is_paused_and_never_started(corrupt):
     hub=Hub(corrupt=corrupt)
     with pytest.raises(n.Refuse,match="verify_failed"):
