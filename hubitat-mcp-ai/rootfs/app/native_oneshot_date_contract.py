@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+# An explicit integration gate: the runtime native create adapter, approved
+# backup/confirmation sequence and post-write verifier are NOT implemented.
+# Evidence discovery alone never enables a native one-shot write.
+NATIVE_ONESHOT_ENABLED = False
+
 _DATE_ONLY = re.compile(r"(\d{4})-(\d{2})-(\d{2})\Z")
 _EXPECTED = {
     "tCapab1": ("enum", "Certain Time (and optional date)"),
@@ -129,4 +134,4 @@ def inspect_native_one_shot_date_field(
     )
 
 
-__all__ = ["DateFieldProbe", "inspect_native_one_shot_date_field"]
+__all__ = ["NATIVE_ONESHOT_ENABLED", "DateFieldProbe", "inspect_native_one_shot_date_field"]
