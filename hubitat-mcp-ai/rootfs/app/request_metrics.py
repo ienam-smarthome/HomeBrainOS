@@ -133,6 +133,7 @@ class RequestMetrics:
         "device_incident_depth_retry", "device_incident_progress_retry",
         "incident_evidence_checkpoint_retry",
         "telemetry_read_round_budget", "telemetry_sufficiency_stop",
+        "model_read_timeout",
         "vnext_device_configuration_read",
         "vnext_device_configuration_unavailable",
         "vnext_source_authority_packet",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -42,6 +43,11 @@ from tool_registry import ToolEffect, classify_tool_effect
 
 
 logger = logging.getLogger("HomeBrainOS.ToolExecutor")
+# Bound each model-selected READ (including semaphore waits and local helpers).
+# The 180-second request coordinator remains a separate hard overall ceiling.
+# Only read operations participate: a confirmed write must never be cancelled
+# and then silently retried because of this read-only deadline.
+_MODEL_READ_WAIT_SECONDS = 30.0
 ToolHandler = Callable[[dict[str, Any]], Awaitable[MCPToolResult]]
 _SEARCH_TOOL = "hub_search_tools"
 
@@ -565,11 +571,22 @@ class ToolExecutor:
         if effect.mutates:
             self._invalidate_live_device_snapshot()
         started = self._clock()
+        model_selected_read = reasoning_round_size > 0 and not effect.mutates
         try:
-            result = (
-                await handler(safe_arguments)
+            operation = (
+                handler(safe_arguments)
                 if handler is not None
-                else await self.mcp.call_tool(name, safe_arguments)
+                else self.mcp.call_tool(name, safe_arguments)
+            )
+            # A single local helper, MCP queue wait or chained network read
+            # must not silently consume the entire investigation deadline.
+            # asyncio.wait_for cancels the coroutine if it exceeds the budget.
+            # The result is then a failed READ receipt, never claimed evidence.
+            result = (
+                await asyncio.wait_for(
+                    operation, timeout=_MODEL_READ_WAIT_SECONDS,
+                )
+                if model_selected_read else await operation
             )
             result = normalize_performance_result(name, safe_arguments, result)
             # Semantic history may be requested without an explicit binary state
@@ -663,19 +680,35 @@ class ToolExecutor:
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)
             self._record_execution_metrics(name, elapsed_ms, remote=remote)
+            read_timed_out = model_selected_read and isinstance(exc, asyncio.TimeoutError)
+            error_text = (
+                "Model-selected read timed out at the bounded per-read deadline; "
+                "no verified result was returned. Continue with other existing "
+                "evidence or report the unavailable source without guessing."
+                if read_timed_out else str(exc)[:1000]
+            )
+            if read_timed_out:
+                increment_active_metric("model_read_timeout")
             if record_evidence:
                 self.evidence.record(
                     name,
                     receipt_arguments,
                     success=False,
                     elapsed_ms=elapsed_ms,
-                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
-                    supports_live_claim=supports_live_claim,
+                    summary=(
+                        "Model read timeout; no verified source result"
+                        if read_timed_out else
+                        f"{type(exc).__name__}: {str(exc)[:140]}"
+                    ),
+                    supports_live_claim=False if read_timed_out else supports_live_claim,
                     evidence_kind=evidence_kind,
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,
                 )
-            logger.exception("Tool %s failed", name)
+            if read_timed_out:
+                logger.warning("Model-selected read %s timed out without evidence", name)
+            else:
+                logger.exception("Tool %s failed", name)
             if effect.mutates:
                 self._invalidate_live_device_snapshot()
             return ToolExecution(
@@ -684,7 +717,7 @@ class ToolExecutor:
                 effect=effect,
                 success=False,
                 elapsed_ms=elapsed_ms,
-                content=json.dumps({"error": str(exc)[:1000]}),
+                content=json.dumps({"error": error_text}),
                 error=exc,
             )
 
