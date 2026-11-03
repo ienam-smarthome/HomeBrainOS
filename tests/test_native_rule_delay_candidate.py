@@ -1,6 +1,6 @@
 """Synthetic tests for offline native delay candidate.
 
-The real ordered native action methods were read. MCP-created execution is UNVERIFIED.
+The real ordered action methods and settings/triggers were read. MCP-created execution is UNVERIFIED.
 No Hubitat device, backup or model is accessed.
 """
 from __future__ import annotations
@@ -122,6 +122,20 @@ class Hub:
                 next(x for x in settings if x["name"] == "onOffSwitch.2")["device_ids"] = ["8888"]
             if self.corrupt == "wrong_delay":
                 next(x for x in settings if x["name"] == "delayMinute.1")["value"] = "99"
+            # Live manual Rule 4259 read returned blank values for these
+            # inputs. Blank is NOT equivalent to stored zero/false. The
+            # synthetic writer must refuse to start on unknown readback.
+            blank_fields = {
+                "blank_delay_hour": "delayHour.1",
+                "blank_delay_second": "delaySecond.1",
+                "blank_user_variable": "uVar.1",
+                "blank_cancel": "cancelAct.1",
+                "blank_random": "randomAct.1",
+                "blank_on_off": "onOff.2",
+            }
+            if self.corrupt in blank_fields:
+                next(x for x in settings if x["name"] ==
+                     blank_fields[self.corrupt])["value"] = ""
             if self.corrupt == "has_trigger":
                 doc["triggers"] = [{"id": 1}]
             if self.corrupt == "broken":
@@ -282,7 +296,10 @@ def test_failed_pause_requires_manual_review():
 @pytest.mark.parametrize("corrupt", ["missing_triggers","extra_action","extra_setting_action",
                                       "wrong_device","wrong_delay","has_trigger","broken",
                                       "missing_action_value","wrong_action_method",
-                                      "legacy_fake_subtype","duplicate_action_id"])
+                                      "legacy_fake_subtype","duplicate_action_id",
+                                      "blank_delay_hour","blank_delay_second",
+                                      "blank_user_variable","blank_cancel",
+                                      "blank_random","blank_on_off"])
 def test_bad_readback_is_paused_and_never_started(corrupt):
     hub=Hub(corrupt=corrupt)
     with pytest.raises(n.Refuse,match="verify_failed"):
