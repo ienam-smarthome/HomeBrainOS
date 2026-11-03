@@ -272,6 +272,10 @@ from native_rule_document_source import (
 from native_rule_inventory_source import (
     is_native_rule_inventory_question, read_native_rule_inventory,
 )
+from owned_device_inventory_source import (
+    is_explicit_owned_device_inventory_request,
+    read_owned_virtual_device_inventory,
+)
 from existing_rule_settings_evidence import prefetch_installed_app_settings
 from stateful_rule_capabilities import (
     inspect_stateful_rule_capabilities,
@@ -4064,6 +4068,7 @@ class UnifiedMCPAgent:
             # inventory/identity lookup still cannot answer a cause question.
             if (not self._mutation_requested_by_user.get()
                     and not is_native_rule_inventory_question(user_prompt)
+                    and not is_explicit_owned_device_inventory_request(user_prompt)
                     and investigating(user_prompt)
                     and inventory_answer(message)):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
@@ -4173,7 +4178,8 @@ class UnifiedMCPAgent:
             if exact_section is not None:
                 coverage = exact_section
             elif (request_class == "live-read" and contract is not None
-                    and contract.domain == "existing_rule_verification"):
+                    and contract.domain == "existing_rule_verification"
+                    and not is_explicit_owned_device_inventory_request(user_prompt)):
                 message = calibrate_existing_rule_verification(
                     message, evidence, coverage, request=user_prompt,
                 )
@@ -4458,6 +4464,17 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+
+        # Honor a single, explicit device-only read before generic Rule
+        # Machine discovery. "Do not call Rule Machine" is a restriction,
+        # not a request to audit rules or infer a writer parent.
+        if (not self._mutation_requested_by_user.get()
+                and is_explicit_owned_device_inventory_request(user_prompt)):
+            answer, _projection = await read_owned_virtual_device_inventory(
+                self.mcp, self.evidence,
+                available_names=catalog.available_names,
+            )
+            return answer
 
         # A source-complete *inventory* answer is not an executable Rule
         # Machine action-tree audit. Answer parent/type identity and exact

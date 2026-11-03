@@ -45,6 +45,7 @@ from recorded_telemetry_freshness import (
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from native_rule_inventory_source import is_native_rule_inventory_question
+from owned_device_inventory_source import owned_device_coverage
 from native_rule_document_source import explicit_native_read_coverage
 from history_temporal_analysis import direct_recorded_duration_answer
 from request_outcome_policy import classify_completed_request
@@ -164,6 +165,22 @@ def apply_shared_investigation_completion(
             metrics["outcome"] = "success"
         return _CoverageOutcome(
             outcome, section_coverage, metrics,
+            str(getattr(outcome, "message", "") or ""),
+        )
+
+    # Exact owned-device reads carry their own typed scope and completeness
+    # contract. Do not reclassify a negative Rule Machine safety instruction
+    # as a whole-rule audit or manufacture device absence on source errors.
+    owned_coverage = owned_device_coverage(
+        request, list(getattr(outcome, "evidence", []) or []),
+    )
+    if owned_coverage is not None:
+        resolved = owned_coverage["questionResolved"]
+        metrics = _safe_metrics(outcome, partial=not resolved)
+        if resolved and metrics.get("outcome") in (None, "unresolved", "success"):
+            metrics["outcome"] = "success"
+        return _CoverageOutcome(
+            outcome, owned_coverage, metrics,
             str(getattr(outcome, "message", "") or ""),
         )
 
