@@ -169,6 +169,20 @@ def test_plan_never_uses_naive_dates_invalid_targets_or_early_deadlines():
         d.plan(REQ, datetime(2026, 11, 3, 10, 0))
 
 
+def test_dated_bat_parent_uses_readonly_summary_when_builtin_catalog_omits_namespace():
+    hub = DatedHub(type_namespace=None, summary={
+        "success": True, "id": 169, "type": "Rule Machine",
+        "namespace": "hubitat", "user": False, "appTypeId": 18,
+        "parentId": None,
+    })
+    assert d.find_parent(hub) == 169
+    assert hub.calls_for("hub_get_app_config") == [
+        {"appId": "169", "summary": True}
+    ]
+    assert not hub.calls_for("hub_set_rule")
+    assert not hub.calls_for("hub_create_backup")
+
+
 def test_dated_create_exact_source_declared_trigger_no_run_actions(enabled):
     hub = DatedHub(type_found=False, summary={
         "success": True, "id": 169, "type": "Rule Machine",
