@@ -205,9 +205,13 @@ def parse_explicit_native_read(
     section_match = _EXPLICIT_SECTIONS.search(prompt)
     if len(ids) != 1 or section_match is None:
         return None
-    sections = tuple(re.findall(
-        r"['\"]([a-z]+)['\"]", section_match.group(1), re.I
-    ))
+    raw_sections = section_match.group(1)
+    if not re.fullmatch(
+        r"\s*['\"][a-z]+['\"](?:\s*,\s*['\"][a-z]+['\"])*\s*",
+        raw_sections, re.I,
+    ):
+        return None
+    sections = tuple(re.findall(r"['\"]([a-z]+)['\"]", raw_sections, re.I))
     if (not sections or len(set(sections)) != len(sections)
             or set(sections) - _NATIVE_SECTIONS):
         return None
