@@ -155,6 +155,7 @@ async def test_local_snapshot_records_value_receipt_without_changing_answer_or_t
     assert receipt["mutates"] is False
     assert receipt["effect"] == "read"
     assert receipt["details"]["reported"]["cpu_percent"] == pytest.approx(16.75)
+    assert receipt["summary"].startswith("hub information driver: scope=full; reported fields=")
     assert "SECRET" not in str(receipt)
     assert "PRIVATE" not in str(receipt)
     assert "ip_address" not in str(receipt)
