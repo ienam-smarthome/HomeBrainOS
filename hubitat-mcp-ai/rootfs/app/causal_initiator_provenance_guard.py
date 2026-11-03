@@ -25,6 +25,9 @@ def _typed_producer_id(producer: dict[str, Any], kind: str) -> str:
     fields rather than attributing a command or a reporter to either actor.
     """
     field = "appId" if kind == "app" else "deviceId"
+    declared_type = str(producer.get("type") or "").casefold()
+    if declared_type and declared_type != kind:
+        return ""
     role_id = str(producer.get(field) or "")
     native_id = (
         str(producer.get("id") or "")
@@ -80,6 +83,13 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
         native = sub == "hub_list_device_events"
         deterministic = tool == "homebrain_device_history"
         if not native and not deterministic:
+            continue
+        if native and receipt.get("evidence_kind") not in {
+            "tool_result", "authoritative_device_event_history",
+            "authoritative_command_event_history",
+        }:
+            # A matching tool name does not legitimise model-derived or
+            # unverified receipt kinds.
             continue
         details = receipt.get("details")
         if not isinstance(details, dict):
@@ -282,7 +292,7 @@ def guard_unverified_initiator_claims(
                  or ("conclusion:" in stripped.casefold()
                      and bool(_EXTERNAL.search(stripped))))
             and not bool(_SCOPE_QUALIFIER.search(stripped))
-            and bool(re.search(r"\b(?:caus\w*|initiator|initiating|"
+            and bool(re.search(r"\b(?:caus\w*|initiat\w*|"
                                r"trigger\w*|command\w*|logic|"
                                r"automatio\w*|controlled|toggled|operated|switched|responsible|interaction)\b",
                                stripped, re.I))
