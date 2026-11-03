@@ -1822,6 +1822,7 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
         model=agent.model_name,
         elapsed_ms=round((time.perf_counter() - started) * 1000),
         version=VERSION,
+        submitted_question=request.message,
     )
     result["model_tier_requested"] = request.model_tier
     return result
