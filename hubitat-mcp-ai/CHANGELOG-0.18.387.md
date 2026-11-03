@@ -12,7 +12,7 @@ The upstream [Hubitat MCP type listing](https://github.com/kingpanther13/Hubitat
 
 HomeBrain's prior confirmation path treated any catalog row whose `namespace != "hubitat"` as a contradiction, **including an absent namespace on an otherwise built-in row**. This improperly vetoes independently typed installed-app evidence. v0.18.387 distinguishes an *absent* namespace from an explicitly *different* one, while retaining contradictions for mismatched class name, explicit non-Hubitat namespace, `system=false` or `isBuiltIn=false`. The native catalog-only join now refuses explicit user-code flags even if the namespace string is misleading. An independent summary is still necessary to attest `namespace=hubitat` when the built-in catalog omitted it.
 
-A bounded `catalogClassConflicts` diagnostic contains only class ID, whether the class name matches, coarse namespace status and source boolean flags—never arbitrary third-party app names or raw inventory. The same read-only MCP operations run, with no additional model rounds or tools.
+A bounded `catalogClassConflicts` diagnostic contains only class ID, whether the class name matches, coarse namespace status and source boolean flags—never arbitrary third-party app names or raw inventory. The same read-only MCP operations run, with no additional model rounds or tools. The **offline-only, disabled** dated BAT parent helper also no longer refuses a built-in type solely because the catalog omits namespace: it demands an exact independent `summary=true` attestation before any hypothetical write. Explicitly non-native class flags and root/ID conflicts still refuse. No production BAT enablement or added runtime tool calls.
 
 ## Offline tests and limitations
 
