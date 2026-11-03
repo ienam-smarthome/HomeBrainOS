@@ -67,6 +67,7 @@ RULES = {
     ("Find existing Rule Machine rules and explain why parent namespace is unverified", True),
     ("List one-time Rule Machine rules and report why source identity is missing", True),
     ("Find Rule Machine rules and explain why the rule turned OFF", False),
+    ("Find Rule Machine rules that caused the last OFF event", False),
     ("Find Rule Machine rules and explain why it failed to execute", False),
     ("List Rule Machine rules and what triggered them", False),
     ("What triggered Rule Machine rule 4136 to turn off yesterday?", False),
