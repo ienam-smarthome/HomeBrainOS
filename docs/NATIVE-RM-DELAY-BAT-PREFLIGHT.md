@@ -23,6 +23,33 @@ This **closes the requested settings/triggers read checkpoint**, not the live MC
 
 **Remaining preflight:** installed gateway contracts/version, typed native Rule Machine parent/type join, complete duplicate-rule inventory, authorized/MCP-owned virtual-switch inventory, and source-confirmed recent backup immediately before a separately approved write. Never rerun the manual Rule 4259 test to fill these gaps.
 
+## Installed native-parent identity checkpoint — 2026-11-03 16:22 UTC
+
+The user's v0.18.380 typed read-only Rule Machine inventory finished in **1.057s**, using **five tool calls**, with `metrics.outcome=unresolved` and no writes. The projection retained **candidate app 169** with `appTypeId=18`, but **no native Rule Machine app-type IDs** in the returned `hub_list_apps(scope="types")` evidence. The separate `hub_get_app_config(appId=169,summary=true)` lacked typed `appType.namespace/name`. The complete app/rule lists and zero exact `(One-time YYYY-MM-DD HH:MM)` suffix matches are not proof of the parent class or of no conflicting `HB delay | ...` rule. Specifically, the original user request also asked for `hub_list_devices(scope="owned",format="detailed")`, but the chosen native-rule inventory route **did not issue that tool call**, so **owned device inventory is NOT CHECKED** (not empty).
+
+**Upstream explanation from current source** (`libraries/mcp-code-management-lib.groovy`): `hub_list_apps(scope="types")` starts with `/hub2/userAppTypes`, which lists community code definitions, and adds built-in classes from `/hub2/appsList.systemAppTypes` if that property is a usable list. A successful, count-complete response therefore need not contain the built-in class required to match `appTypeId=18`; a missing join remains unverified. The installed summary also does not expose a usable typed class. The current upstream dated-trigger [issue #575](https://github.com/kingpanther13/Hubitat-local-MCP-server/issues/575) already describes this separate parent identity visibility gap. **Do not hardcode app 169, assume type 18 is definitely the native parent, use the legacy 19 class or issue any create operation on name-only evidence.**
+
+**Conservative decision:** the candidate writer's strict `find_parent()` must refuse the current installed evidence (`rm_parent_type_mismatch`). Offline negative controls cover returned-list completeness without a native join and false/community namespace. The correctly unresolved outcome is not a Hubitat or MCP read outage. A safe isolated MCP-created BAT remains gated until parent identity can be source-proven, along with the remaining owned-device, fresh-backup and installed guide checks. If a read-only installed endpoint cannot prove the namespace/name, request a narrow upstream exposure of the parent class (or a verified alternative read); do not bypass the safety gate.
+
+### Next read-only request — only the omitted owned-device inventory
+
+```text
+Read-only inventory of MCP-created virtual devices ONLY.
+
+Call hub_list_devices with scope="owned" and format="detailed" through
+an authorized read-only MCP gateway. Follow every returned nextCursor.
+Return the number of returned devices and the completeness status.
+For each Virtual Switch report its device ID, label, driverType,
+driverNamespace and mcpManaged flag when source-provided.
+
+If the source read fails, is partial or is unavailable, report the exact
+MCP error and do not infer an empty inventory.
+
+Do not use any rule operations or modify any device, rule, backup or setting.
+```
+
+Keep the returned Technical details JSON private; do not commit raw household inventory. **This does not itself resolve the native Rule Machine parent identity gap.**
+
 ## Read-only preflight — collect before asking for any mutation approval
 
 1. **Installed source contract:** Read `hub_get_tool_guide(section="set_rule_reference")`, `hub_get_tool_guide(section="builtin_app_tools_rules")`, and `hub_get_tool_guide(section="virtual_devices")`; inspect actual available gateway/sub-tool schemas and installed MCP version. Guide hashes are rotating; fetch new keys when/if a separately approved write later happens. Do not call `hub_set_rule(operation="form")` — even opening the native editor may run app code or change state.
