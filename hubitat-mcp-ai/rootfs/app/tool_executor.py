@@ -17,6 +17,7 @@ from aggregate_fallback_policy import (
     observe_aggregate_result,
 )
 from evidence_recorder import EvidenceRecorder
+from hub_info_receipt_projection import hub_info_receipt_details
 from current_device_receipt_projection import resolved_device_snapshot
 from evidence_gateway_contract import (
     normalize_gateway_read, missing_required_read_fields,
@@ -39,7 +40,7 @@ from reasoning_policy import (
 from request_metrics import add_active_metric_ms, increment_active_metric
 from source_evidence_metadata import source_read_metadata
 from existing_rule_page_evidence import existing_rule_page_metadata
-from tool_registry import ToolEffect, classify_tool_effect
+from tool_registry import ToolEffect, classify_tool_effect, LOCAL_HUB_INFO_TOOL
 
 
 logger = logging.getLogger("HomeBrainOS.ToolExecutor")
@@ -154,6 +155,8 @@ class ToolExecutor:
         """Return bounded structured proof that is useful in technical receipts."""
 
         data = result.data
+        if result.name == LOCAL_HUB_INFO_TOOL:
+            return hub_info_receipt_details(result.arguments, data)
         if result.name == "homebrain_resolve_device":
             snapshot = resolved_device_snapshot(data)
             if snapshot is not None:
