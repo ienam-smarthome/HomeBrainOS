@@ -1,6 +1,8 @@
 # Native Rule Machine delayed switch: offline review and upstream issue #575
 
-**2026-11-03 · HomeBrainOS main baseline: 0.18.377 · Status: NOT ENABLED, NO LIVE TEST**
+**2026-11-03 · Historical offline review baseline: 0.18.377 · Current status: writer NOT ENABLED; manual delay/OFF reported PASS and v0.18.380 actions-only native read PASS; MCP-native create/start NOT TESTED.**
+
+For the current read-only preflight, separately approved virtual-switch BAT procedure and v0.18.380 boundaries, see [NATIVE-RM-DELAY-BAT-PREFLIGHT.md](NATIVE-RM-DELAY-BAT-PREFLIGHT.md). Historical notes below retain their original evidence timing rather than silently replacing earlier observations.
 
 ## Source and reproduced upstream limitation
 
