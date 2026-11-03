@@ -1,21 +1,40 @@
 # Answer Quality — active status and cross-chat handoff
 
-## Q1 scorecard latency-cohort separation — candidate (2026-11-03)
+## Q1 scorecard latency-cohort separation — verified GREEN MERGE (2026-11-03)
 
-**Hypothesis:** the existing scorecard's one pooled latency median/p95 mixes
-offline model-only packets with real-status and investigation categories,
-so it cannot support either live 15s/45s charter comparison. The next
-small, backwards-compatible change partitions reviewed timings by fixed
-legacy/live case family and curated/offline packet class, keeps the existing
-pooled metric explicitly marked mixed, and adds negative tests for missing
-timings and synthetic-only data. No new source values, model prompts, live
-commands, device settings or model rounds. **Real before/after answer quality,
-live performance sample distributions and exact-first-attempt denominators:
-NOT MEASURED.** Green CI, if achieved, verifies only the scoring partition.
-Rollback: revert the scorecard/test/docs PR; deployed add-on version remains
-0.18.384. Continue source-reviewed Q1 first-answer captures, followed by
-same-packet Q2 model A/B.
+**Verified:** [PR #1367](https://github.com/ienam-smarthome/HomeBrainOS/pull/1367)
+merged as `2c402515f55b22d9d42d09b01cddd84428d60f5f`.
+Exact tested PR head `59425745745fc9be654dc4e9ef1e32beb0a45d38`:
+**6/6 checks GREEN**, **6,175 Python tests passed, 2 warnings**,
+plus add-on smoke, metadata validation, two validate jobs and offline
+scorecard integrity. Runtime add-on remains **0.18.384**. No live
+Hubitat/HA/OpenWrt changes, model prompts, MCP calls, publication logic,
+writer paths or secrets involved.
 
+**General measurement correction:** The old scorecard pooled latency from
+40 curated **offline-only** model packets with 13 nominal legacy live
+status/control/investigation/rule cases. That pooled median/p95 cannot
+test either the status/control 15s or complex investigation 45s charter
+target. The new `latency_by_cohort` reports separate counts, medians, p95s,
+nominal target and explicit observational/non-verdict status, preserves
+the original pooled numbers with a mixed-scope warning, and leaves
+missing timing `not_measured`. Synthetic regression tests verify that
+offline model timings cannot be counted as live performance. The
+cohort labels are case definitions, **not proof of live-run provenance**.
+No real quality or population-level latency gain is claimed: formal
+frozen first-attempt denominator **0**, live cohorts **not measured**.
+
+**Next unfinished original roadmap milestone:** Q1 independently reviewed,
+new first-attempt status/control and investigation receipts with exact
+question fingerprint, response/tool evidence, tool-call timing and
+published-vs-model distinction where present; then Q2 same-packet Gemma
+versus alternative model comparison. Do not repeat the already
+closed named-dimmer regression or count green CI as answer quality.
+A useful next untested **read-only** legacy question is
+`Compare the states of Hallway Light 1 and Livingroom Light 2.`
+(case `multi_device_named`), requesting the natural answer and complete
+technical JSON in the private chat. No mutation or Internet blocker
+activation is authorized. Rollback: revert PR #1367.
 
 ## Native one-time Internet-block BAT candidate — offline preparation merged GREEN (2026-11-03)
 
