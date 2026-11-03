@@ -591,7 +591,7 @@ async def test_plain_one_time_control_phrasing_creates_a_dated_single_shot_rule(
 
     assert decision.handled is True
     assert decision.message is None
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+    assert decision.rule_names == ("HB one-shot | Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
     action = decision.actions[0]
     assert action["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
 
@@ -629,10 +629,10 @@ async def test_redundant_trailing_state_word_is_not_folded_into_device_name():
 
     assert on_decision.handled is True
     assert on_decision.message is None
-    assert on_decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+    assert on_decision.rule_names == ("HB one-shot | Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
     assert off_decision.handled is True
     assert off_decision.message is None
-    assert off_decision.rule_names == ("Turn off Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+    assert off_decision.rule_names == ("HB one-shot | Turn off Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
 
 
 @pytest.mark.asyncio
@@ -655,7 +655,7 @@ async def test_two_one_time_requests_for_different_times_the_same_day_are_not_du
     # Simulate the noon rule already existing on the hub, named using the
     # same date-and-time suffix format propose() now generates.
     existing_rules = [
-        {"id": "4173", "name": "Turn on Bedroom 1 Lamp (One-time 2026-08-07 12:00)"},
+        {"id": "4173", "name": "HB one-shot | Turn on Bedroom 1 Lamp (One-time 2026-08-07 12:00)"},
     ]
     service = RuleAuthoringService(
         RuleMCP([lamp], existing_rules), recorder, now=lambda: fixed_now
@@ -669,7 +669,7 @@ async def test_two_one_time_requests_for_different_times_the_same_day_are_not_du
 
     assert decision.handled is True
     assert decision.message is None
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+    assert decision.rule_names == ("HB one-shot | Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
     assert len(decision.actions) == 1
     assert decision.actions[0]["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
 
@@ -778,7 +778,7 @@ async def test_one_time_request_for_a_time_already_passed_today_rolls_to_tomorro
     assert decision.handled is True
     action = decision.actions[0]
     assert action["args"]["addTrigger"]["atTime"] == "2026-08-08T07:00:00"
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-08 07:00)",)
+    assert decision.rule_names == ("HB one-shot | Turn on Bedroom 1 Lamp (One-time 2026-08-08 07:00)",)
 
 
 @pytest.mark.asyncio
@@ -870,7 +870,7 @@ async def test_leading_please_does_not_block_device_name_resolution():
 
     assert decision.handled is True
     assert decision.message is None
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+    assert decision.rule_names == ("HB one-shot | Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
 
 
 @pytest.mark.asyncio
