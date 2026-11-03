@@ -814,6 +814,36 @@ class RuleAuthoringService:
         # that happen to use the old descriptive suffix.
         return f"HB one-shot | {name}" if suffix.startswith("One-time ") else name
 
+    @staticmethod
+    def _one_shot_clock_error(start_time: str, now_local: datetime) -> str | None:
+        """Do not create a dated trigger too soon or in a DST gap/fold."""
+        if now_local.tzinfo is None:
+            return "time_in_past_or_too_soon"
+        try:
+            wall = datetime.fromisoformat(start_time)
+        except ValueError:
+            return "time_in_past_or_too_soon"
+        if wall.tzinfo is not None:
+            return "time_in_past_or_too_soon"
+        one = wall.replace(tzinfo=now_local.tzinfo, fold=0)
+        two = wall.replace(tzinfo=now_local.tzinfo, fold=1)
+        # Without an independently verified offset/epoch field the native
+        # date editor cannot disambiguate either occurrence of a repeated
+        # hour. Likewise refuse nonexistent spring-time wall clock values.
+        if one.utcoffset() != two.utcoffset():
+            return "native_oneshot_dst_time_ambiguous"
+        if one.astimezone(timezone.utc).astimezone(now_local.tzinfo).replace(
+            tzinfo=None
+        ) != wall:
+            return "native_oneshot_dst_time_ambiguous"
+        delta = (
+            one.astimezone(timezone.utc)
+            - now_local.astimezone(timezone.utc)
+        ).total_seconds()
+        if delta <= 60:
+            return "time_in_past_or_too_soon"
+        return None
+
     @classmethod
     def _action(
         cls,
@@ -1135,6 +1165,15 @@ class RuleAuthoringService:
             intent = self._intent(prompt, now=hub_now)
             if intent is None:
                 return RuleAuthoringDecision(False)
+            time_error = self._one_shot_clock_error(intent.start_time, hub_now)
+            if time_error is not None:
+                return RuleAuthoringDecision(
+                    True,
+                    f"{time_error}: The requested one-time wall clock is "
+                    "ambiguous, in the past, or too close to the current "
+                    "Hubitat-local time to schedule safely. No rule write "
+                    "was queued or executed.",
+                )
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
         internet_access = intent.start_command.casefold() in {
