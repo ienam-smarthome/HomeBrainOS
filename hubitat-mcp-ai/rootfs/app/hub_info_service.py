@@ -245,6 +245,9 @@ class HubInfoService:
                     ),
                 )
         live_device: dict[str, Any] | None = None
+        poll_read_count = 0
+        poll_sleep_ms = 0
+        firmware_status_settled: bool | None = (False if scope in {"firmware", "full"} else None)
         # Captured from the raw, list-shaped live device *before*
         # merge_device_identity() flattens its "attributes" into a plain
         # {name: value} dict -- device_attribute_units() only understands
@@ -256,6 +259,7 @@ class HubInfoService:
         last_complete_firmware: tuple[Any, Any] | None = None
         stable_complete_reads = 0
         for attempt in range(poll_attempts):
+            poll_read_count += 1
             source = await self.mcp.call_tool(
                 "hub_read_devices",
                 {
@@ -303,6 +307,13 @@ class HubInfoService:
                     or stable_complete_reads >= 2
                     or attempt == poll_attempts - 1
                 )
+                if scope in {"firmware", "full"}:
+                    # A final-attempt deadline allows a bounded reply, but
+                    # does not independently establish that firmware settled.
+                    firmware_status_settled = bool(complete_firmware and (
+                        refreshed_firmware != baseline_firmware
+                        or stable_complete_reads >= 2
+                    ))
                 if (
                     scope not in {"firmware", "full"}
                     or (complete_firmware and firmware_settled)
@@ -310,6 +321,7 @@ class HubInfoService:
                     break
             if attempt < poll_attempts - 1:
                 await self._sleep(0.5)
+                poll_sleep_ms += 500
         if live_device is None:
             return self._error(
                 arguments,
@@ -390,6 +402,11 @@ class HubInfoService:
             "hub_alerts": value("hubAlerts"),
             "matter_status": value("matterStatus"),
             "last_poll": value("lastPollTime"),
+            # Operational instrumentation only; does not add any read.
+            "poll_read_count": poll_read_count,
+            "poll_sleep_ms": poll_sleep_ms,
+            "refresh_command_count": len(commands),
+            "firmware_status_settled": firmware_status_settled,
         }
         return MCPToolResult(
             LOCAL_HUB_INFO_TOOL,

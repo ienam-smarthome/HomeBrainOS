@@ -241,6 +241,7 @@ The repository drift test compares this table directly with the live directory. 
 | `investigation_policy.py` | Central shared classification for causal and analytical history requests so orchestration and final synthesis use the same request intent. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
+| `hub_info_receipt_projection.py` | Allowlisted, source-scoped Hub Info metrics for private evidence grading; omits device identity, IP addresses, arbitrary alert text and unsupported numeric/status values. |
 | `hub_timezone.py` | Resolves and briefly caches the authoritative Hubitat IANA timezone for semantic history windows. |
 | `live_evidence_authority.py` | Combines live evidence receipts with grounding decisions. |
 | `location_correlation.py` | Computes deterministic tight temporal proximity between observed device-history interval boundaries and current-turn location/mode events. |
