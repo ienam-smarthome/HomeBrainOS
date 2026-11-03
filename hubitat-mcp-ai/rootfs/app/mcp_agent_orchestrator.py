@@ -267,6 +267,7 @@ from targeted_rule_scope_policy import (
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from native_rule_document_source import (
     prefetch_native_rule_document, read_explicit_native_rule_document,
+    explicit_native_read_coverage,
 )
 from native_rule_inventory_source import (
     is_native_rule_inventory_question, read_native_rule_inventory,
@@ -4162,7 +4163,16 @@ class UnifiedMCPAgent:
                 if contract is not None and request_class == "live-read"
                 else None
             )
-            if (request_class == "live-read" and contract is not None
+            # An exact native section read is not an entire rule audit.
+            # Its original verified answer (or source error) must survive
+            # the generic existing-rule claim calibrator.
+            exact_section = (
+                explicit_native_read_coverage(user_prompt, evidence)
+                if request_class == "live-read" else None
+            )
+            if exact_section is not None:
+                coverage = exact_section
+            elif (request_class == "live-read" and contract is not None
                     and contract.domain == "existing_rule_verification"):
                 message = calibrate_existing_rule_verification(
                     message, evidence, coverage, request=user_prompt,

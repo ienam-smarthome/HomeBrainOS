@@ -391,3 +391,80 @@ async def read_explicit_native_rule_document(
             )
     output.append("No modifying Hubitat calls were made.")
     return "\n\n".join(output)
+
+
+def explicit_native_read_coverage(
+    prompt: str, evidence: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Scope completion to the exact requested native section, not whole-rule audit.
+
+    Only a receipt for the same target and exact sections can override generic
+    existing-rule requirements. A rejected source/projection remains unresolved.
+    This is an evidence gate, never a way to infer runtime execution or mutate.
+    """
+    requested = parse_explicit_native_read(prompt)
+    if requested is None:
+        return None
+    rule_id, sections = requested
+    for receipt in reversed(evidence):
+        if not isinstance(receipt, dict):
+            continue
+        if receipt.get("evidence_kind") != "typed_native_rule_section":
+            continue
+        if receipt.get("mutates") is not False or receipt.get("effect") != "read":
+            continue
+        args = receipt.get("arguments")
+        envelope = args.get("args") if isinstance(args, dict) else None
+        inner = envelope.get("args") if isinstance(envelope, dict) else None
+        details = receipt.get("details")
+        if not (isinstance(envelope, dict) and isinstance(inner, dict)
+                and isinstance(details, dict)
+                and args.get("tool") == "hub_set_rule"
+                and envelope.get("operation") == "read"
+                and str(envelope.get("rule_id")) == rule_id
+                and inner.get("sections") == list(sections)
+                and details.get("appId") == rule_id
+                and details.get("operation") == "read"
+                and details.get("requestedSections") == list(sections)
+                and details.get("gateway") == receipt.get("tool")):
+            continue
+        verified = (receipt.get("success") is True
+                    and details.get("sourceSuccess") is True
+                    and details.get("projectionVerified") is True
+                    and receipt.get("supports_live_claim") is True)
+        if verified and "actions" in sections:
+            actions = details.get("orderedActions")
+            verified = (
+                isinstance(actions, list) and len(actions) <= 100
+                and len({str(x.get("id")) for x in actions
+                         if isinstance(x, dict)}) == len(actions)
+                and all(isinstance(x, dict)
+                        and re.fullmatch(r"[1-9]\d{0,8}", str(x.get("id") or ""))
+                        and isinstance(x.get("method"), str)
+                        and _NAME.fullmatch(x["method"])
+                        for x in actions)
+            )
+        return {
+            "domain": "native_rule_section_read",
+            "status": ("requested-sections-verified" if verified
+                       else "requested-sections-unverified"),
+            "evidenceComplete": verified,
+            "questionResolved": verified,
+            "requestedRuleId": rule_id,
+            "requestedSections": list(sections),
+            "sourceSuccess": details.get("sourceSuccess") is True,
+            "projectionVerified": verified,
+            "requirements": [{
+                "key": "requested_native_sections",
+                "state": "observed" if verified else "checked-unverified",
+                "necessary": True,
+                "source": "target-matched typed_native_rule_section",
+            }],
+            "limitations": (
+                ["Only requested native sections verified; rule execution, "
+                 "other sections and physical effects were not assessed."]
+                if verified else
+                ["Requested native read or projection was not verified."]
+            ),
+        }
+    return None
