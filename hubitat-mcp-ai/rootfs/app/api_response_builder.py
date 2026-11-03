@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 from current_state_claim_contract import ground_current_device_status
 from investigation_evidence_ledger import reconcile_command_denials
 from lockout_claim_consistency import annotate_lockout_disagreement
@@ -518,6 +519,7 @@ def build_agent_response(
     model: str,
     elapsed_ms: int,
     version: str,
+    submitted_question: str | None = None,
 ) -> dict[str, Any]:
     """Build the stable /api/ask response without exposing private request data."""
 
@@ -851,6 +853,21 @@ def build_agent_response(
             # must not be presented as a completed source investigation.
             # Only this explicit synthesis failure changes API success.
             result["success"] = False
+    # This is evidence of which question reached /api/ask, not a claim
+    # that the model received it unchanged or that this was its first attempt.
+    # Only the normalized digest is released: no prompt, history or secrets.
+    if isinstance(submitted_question, str) and submitted_question.strip():
+        normalized = " ".join(submitted_question.strip().split())
+        result["request_provenance"] = {
+            "source": "api_ask_request",
+            "normalization": "collapse-whitespace-v1",
+            "normalized_prompt_sha256": hashlib.sha256(
+                normalized.encode("utf-8")
+            ).hexdigest(),
+            "model_delivery_verified": False,
+            "first_attempt_verified": False,
+            "deployed_build_sha_verified": False,
+        }
     return result
 
 
