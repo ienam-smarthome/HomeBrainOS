@@ -36,7 +36,7 @@ async def test_relative_schedule_uses_hub_timezone_not_utc_container_clock():
     assert source == "hub_get_info"
     assert hub_now.isoformat().startswith("2026-10-03T09:42:00+01:00")
     assert intent is not None
-    assert intent.start_time == "2026-10-03T09:43:00"
+    assert intent.start_time == "2026-10-03T09:44:00"  # >60s safety lead
 
 
 def test_one_time_clock_uses_supplied_hub_local_now_for_next_occurrence():
