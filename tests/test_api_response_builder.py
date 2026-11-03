@@ -261,7 +261,7 @@ def test_paid_model_no_budget_exhaustion_never_warns_about_midway_switch():
 def test_api_submitted_question_has_privacy_safe_normalized_digest():
     import hashlib
 
-    original = "  Why  did\\t this   light switch?\\n"
+    original = "  Why  did" + chr(9) + " this   light switch?" + chr(10)
     response = build_agent_response(
         FakeOutcome(), model="gemma4:31b", elapsed_ms=100,
         version="0.18.382", submitted_question=original,
