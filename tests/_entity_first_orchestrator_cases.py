@@ -923,7 +923,7 @@ async def test_one_time_rule_end_to_end_creates_without_self_pause():
 
     outcome = await agent.process_user_request_result("confirm", session_id="one-time-e2e")
 
-    assert "Created **Turn on Livingroom Light 1" in outcome.message
+    assert "Created **HB one-shot | Turn on Livingroom Light 1" in outcome.message
     assert "appId: 9001" in outcome.message
     assert "pause itself" not in outcome.message
     writes = [arguments for name, arguments in mcp.calls if name == "hub_manage_rule_machine"]
