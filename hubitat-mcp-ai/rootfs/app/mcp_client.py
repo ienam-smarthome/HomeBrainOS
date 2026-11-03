@@ -33,6 +33,24 @@ class MCPError(RuntimeError):
     pass
 
 
+def _next_device_cursor(page: dict[str, Any]) -> int | None:
+    """Read the native paginated-device continuation, retaining legacy fixtures.
+
+    Current upstream returns nextCursor (numeric string), not nextOffset.
+    A missing/invalid or conflicting cursor must not certify completeness.
+    """
+    native = page.get("nextCursor")
+    legacy = page.get("nextOffset")
+    if native is not None and legacy is not None and str(native) != str(legacy):
+        raise MCPError("conflicting native and legacy device pagination cursors")
+    raw = native if native is not None else legacy
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not str(raw).strip().isdecimal():
+        raise MCPError("invalid device pagination cursor")
+    return int(str(raw).strip())
+
+
 @dataclass(slots=True)
 class MCPTool:
     name: str
@@ -533,11 +551,11 @@ class HubitatMCPClient:
                 devices = first_devices
                 mode = "one_page"
             else:
-                next_offset = first_page.get("nextOffset")
+                next_offset = _next_device_cursor(first_page)
                 try:
                     offset = int(next_offset)
                 except (ValueError, TypeError):
-                    raise MCPError("missing advancing nextOffset")
+                    raise MCPError("missing advancing device cursor")
                 if offset <= 0:
                     raise MCPError("pagination did not advance")
 
@@ -569,7 +587,7 @@ class HubitatMCPClient:
                         if requested_offset + expected_count < total:
                             if page.get("hasMore") is not True:
                                 raise MCPError("pagination ended before reported total")
-                            if int(page.get("nextOffset") or 0) != requested_offset + page_size:
+                            if (_next_device_cursor(page) or 0) != requested_offset + page_size:
                                 raise MCPError("unexpected next page offset")
                         elif page.get("hasMore") is True:
                             raise MCPError("pagination continued past reported total")
@@ -584,7 +602,7 @@ class HubitatMCPClient:
                     while page.get("hasMore") is True:
                         if pages_fetched >= self._MAX_DEVICE_PAGES:
                             raise MCPError("pagination exceeded hard page cap")
-                        requested = int(page.get("nextOffset") or 0)
+                        requested = (_next_device_cursor(page) or 0)
                         if requested <= current_offset:
                             raise MCPError("pagination offset did not advance")
                         current_offset = requested
@@ -663,22 +681,22 @@ class HubitatMCPClient:
         if using_gateway:
             devices = list(value or [])
             page = self._find_device_page(result.data)
-            current_offset = int(arguments["args"]["offset"])
+            current_offset = int(arguments["args"]["cursor"])
             pages_fetched = 1
             while (
                 page
                 and page.get("hasMore") is True
-                and page.get("nextOffset") is not None
+                and _next_device_cursor(page) is not None
                 and pages_fetched < self._MAX_DEVICE_PAGES
             ):
                 try:
-                    next_offset = int(page["nextOffset"])
+                    next_offset = _next_device_cursor(page)
                 except (TypeError, ValueError):
                     break
                 if next_offset <= current_offset:
                     break
                 current_offset = next_offset
-                arguments["args"]["offset"] = current_offset
+                arguments["args"]["cursor"] = str(current_offset)
                 result = await self.call_tool(tool_name, arguments)
                 devices.extend(self._find_device_list(result.data) or [])
                 page = self._find_device_page(result.data)
