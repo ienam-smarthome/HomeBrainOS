@@ -46,14 +46,26 @@ def publish_source_typed_answer(
     if not isinstance(evidence_coverage, dict):
         raise ValueError("source-typed publication requires coverage metadata")
     full_requested = bool(_EXPLICIT_DETAIL.search(str(request or "")))
-    # A complex/partial source graph can require exact issuer, clock and
-    # boundary qualifications even when the question asks for a short answer.
-    # Do not summarize away verified commands, truncated history or a
-    # source-correlated watchdog reference. This evidence-driven override is
-    # independent of room, device name or request keyword.
+    # A complex source graph can require issuer or watchdog details. A
+    # truncated, command-free sample with explicitly attested missing-row
+    # count can now be explained just as safely in the concise renderer:
+    # it states how many rows are unknown and does not infer their content.
+    # Keep full detail for truncation without this counted source integrity,
+    # positive command evidence, any watchdog correlation or explicit user
+    # request. This rule depends on evidence shape, not device type/name.
     command_count = normalized.get("commandCount")
-    evidence_requires_detail = bool(
+    retained = normalized.get("returnedEvents")
+    total = normalized.get("sourceReportedEventCount")
+    unseen = normalized.get("unshownEventCount")
+    counted_partial = (
         normalized.get("truncated") is True
+        and normalized.get("joinedDerivedHistory") is True
+        and type(retained) is int and retained > 0
+        and type(total) is int and type(unseen) is int
+        and unseen > 0 and total == retained + unseen
+    )
+    evidence_requires_detail = bool(
+        (normalized.get("truncated") is True and not counted_partial)
         or (type(command_count) is int and command_count > 0)
         or evidence_coverage.get("watchdogEventTimingCorrelation") is not None
     )
