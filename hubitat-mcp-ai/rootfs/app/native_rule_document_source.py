@@ -179,6 +179,7 @@ async def prefetch_native_rule_document(
 _EXPLICIT_ID = re.compile(
     r"\brule[_\s-]*id\s*[:=#]?\s*['\"]?([1-9]\d{1,8})\b", re.I
 )
+_NATURAL_RULE_ID = re.compile(r"\brule\s+([1-9]\d{1,8})\b", re.I)
 _EXPLICIT_OPERATION = re.compile(
     r"\boperation\s*['\"]?\s*[:=]\s*['\"]?read\b", re.I
 )
@@ -201,7 +202,7 @@ def parse_explicit_native_read(
     prompt = str(prompt or "")
     if "hub_set_rule" not in prompt.casefold() or not _EXPLICIT_OPERATION.search(prompt):
         return None
-    ids = set(_EXPLICIT_ID.findall(prompt))
+    ids = set(_EXPLICIT_ID.findall(prompt)) | set(_NATURAL_RULE_ID.findall(prompt))
     section_match = _EXPLICIT_SECTIONS.search(prompt)
     if len(ids) != 1 or section_match is None:
         return None
