@@ -261,9 +261,9 @@ async def test_device_manifest_pagination_follows_advancing_offsets(monkeypatch)
 
     client = HubitatMCPClient("http://hub/mcp")
     pages = [
-        {"devices": [{"id": "1"}], "hasMore": True, "nextOffset": 50},
-        {"devices": [{"id": "2"}], "hasMore": True, "nextOffset": 100},
-        {"devices": [{"id": "3"}], "hasMore": False, "nextOffset": None},
+        {"devices": [{"id": "1"}], "hasMore": True, "nextCursor": "50"},
+        {"devices": [{"id": "2"}], "hasMore": True, "nextCursor": "100"},
+        {"devices": [{"id": "3"}], "hasMore": False},
     ]
     calls = []
 
@@ -514,3 +514,17 @@ async def test_health_audit_serial_pages_when_total_not_reported(monkeypatch):
     assert metrics["mode"] == "verified_serial_pages"
     assert metrics["complete"] is True
     await client.close()
+
+
+def test_native_device_cursor_parser_fail_closes_on_conflict_or_bad_value():
+    from mcp_client import MCPError, _next_device_cursor
+
+    assert _next_device_cursor({"nextCursor": "50"}) == 50
+    assert _next_device_cursor({"nextOffset": 50}) == 50
+    assert _next_device_cursor({"nextCursor": "50", "nextOffset": 50}) == 50
+    assert _next_device_cursor({}) is None
+    with pytest.raises(MCPError, match="conflicting"):
+        _next_device_cursor({"nextCursor": "60", "nextOffset": 50})
+    for bad in ("private-device-id", -10, True):
+        with pytest.raises(MCPError, match="invalid"):
+            _next_device_cursor({"nextCursor": bad})
