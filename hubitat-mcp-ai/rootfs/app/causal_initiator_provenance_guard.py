@@ -18,6 +18,27 @@ from causal_evidence_graph import build_causal_evidence_graph
 from causal_fail_closed_summary import _focal_sensor_correlations
 
 
+def _typed_producer_id(producer: dict[str, Any], kind: str) -> str:
+    """Accept explicit role-specific IDs or a typed native {id,type} pair.
+
+    A bare id does not prove an app/device role. Reject conflicting identity
+    fields rather than attributing a command or a reporter to either actor.
+    """
+    field = "appId" if kind == "app" else "deviceId"
+    declared_type = str(producer.get("type") or "").casefold()
+    if declared_type and declared_type != kind:
+        return ""
+    role_id = str(producer.get(field) or "")
+    native_id = (
+        str(producer.get("id") or "")
+        if str(producer.get("type") or "").casefold() == kind else ""
+    )
+    if role_id and native_id and role_id != native_id:
+        return ""
+    candidate = role_id or native_id
+    return candidate if candidate.isdecimal() and int(candidate) > 0 else ""
+
+
 def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, Any]:
     """Source-role graph from successful device-scoped event-history reads.
 
@@ -63,6 +84,13 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
         deterministic = tool == "homebrain_device_history"
         if not native and not deterministic:
             continue
+        if native and receipt.get("evidence_kind") not in {
+            "tool_result", "authoritative_device_event_history",
+            "authoritative_command_event_history",
+        }:
+            # A matching tool name does not legitimise model-derived or
+            # unverified receipt kinds.
+            continue
         details = receipt.get("details")
         if not isinstance(details, dict):
             continue
@@ -82,7 +110,16 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
             # A label-only wrapper without an independently verified unique
             # identity is not a sound cross-receipt causal source.
             continue
-        rows = details.get("observedEvents") or details.get("boundaryEvents") or []
+        # hub_list_device_events returns native rows in details.events. The
+        # deterministic wrapper instead uses observedEvents/boundaryEvents.
+        # Only the already device-scoped native tool may supply this third
+        # shape; never use an arbitrary unrelated details.events collection.
+        rows = (
+            details.get("observedEvents")
+            or details.get("boundaryEvents")
+            or (details.get("events") if native else None)
+            or []
+        )
         if not isinstance(rows, list):
             continue
         truncated = truncated or details.get("observedEventsTruncated") is True
@@ -96,8 +133,8 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
             producer = row.get("producedBy")
             producer = producer if isinstance(producer, dict) else {}
             if attribute.startswith("command-"):
-                app_id = str(producer.get("appId") or "")
-                if app_id.isdecimal():
+                app_id = _typed_producer_id(producer, "app")
+                if app_id:
                     command_apps.add(app_id)
                     command_devices.add(device_id)
                     command_observations.add((device_id, date, attribute, app_id))
@@ -109,11 +146,8 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
                 continue
             observations.add((device_id, date, attribute, str(value)[:80]))
             reported_devices.add(device_id)
-            reporter_id = str(producer.get("deviceId") or
-                              (producer.get("id") if
-                               str(producer.get("type") or "").casefold() == "device"
-                               else "") or "")
-            if reporter_id.isdecimal():
+            reporter_id = _typed_producer_id(producer, "device")
+            if reporter_id:
                 edges.add(("device:" + reporter_id, "device:" + device_id,
                            "reported-state"))
                 label = str(producer.get("name") or producer.get("label") or "").strip()
@@ -122,8 +156,8 @@ def build_state_report_provenance(evidence: list[dict[str, Any]]) -> dict[str, A
             for listener in (row.get("triggered") or [])[:40]:
                 if not isinstance(listener, dict):
                     continue
-                app_id = str(listener.get("appId") or "")
-                if app_id.isdecimal():
+                app_id = _typed_producer_id(listener, "app")
+                if app_id:
                     listeners.add(app_id)
                     edges.add(("device:" + device_id, "app:" + app_id,
                                "notified-listener"))
@@ -258,7 +292,7 @@ def guard_unverified_initiator_claims(
                  or ("conclusion:" in stripped.casefold()
                      and bool(_EXTERNAL.search(stripped))))
             and not bool(_SCOPE_QUALIFIER.search(stripped))
-            and bool(re.search(r"\b(?:caus\w*|initiator|initiating|"
+            and bool(re.search(r"\b(?:caus\w*|initiat\w*|"
                                r"trigger\w*|command\w*|logic|"
                                r"automatio\w*|controlled|toggled|operated|switched|responsible|interaction)\b",
                                stripped, re.I))
