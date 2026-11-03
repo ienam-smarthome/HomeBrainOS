@@ -307,7 +307,13 @@ async def test_last_firmware_poll_deadline_does_not_claim_status_settled():
     update = result("hub_manage_devices", {}, {"success": True})
     missing = result("hub_read_devices", {}, {
         "id": "1089", "label": "Hub Info",
-        "attributes": [{"name": "freeMemory", "currentValue": 900}],
+        # Explicit live nulls override the cached identity's pre-refresh
+        # firmware fields; simply omitting them would keep the cached values.
+        "attributes": [
+            {"name": "freeMemory", "currentValue": 900},
+            {"name": "hubUpdateStatus", "currentValue": None},
+            {"name": "hubUpdateVersion", "currentValue": None},
+        ],
     })
     final = result("hub_read_devices", {}, {
         "id": "1089", "label": "Hub Info",
