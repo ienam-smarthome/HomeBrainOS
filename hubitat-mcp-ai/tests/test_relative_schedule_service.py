@@ -98,7 +98,7 @@ async def test_relative_block_schedule_uses_internet_group_and_real_switch_off()
     assert decision.target is not None
     assert decision.target["id"] == "6923"
     assert decision.rule_names == (
-        "Block Media Google TV Streamer (One-time 2026-10-02 22:26)",
+        "HB one-shot | Block Media Google TV Streamer (One-time 2026-10-02 22:27)",
     )
     assert len(decision.actions) == 1
 
@@ -107,7 +107,7 @@ async def test_relative_block_schedule_uses_internet_group_and_real_switch_off()
     assert payload["addTrigger"] == {
         "capability": "Certain Time (and optional date)",
         "time": "A specific time",
-        "atTime": "2026-10-02T22:26:12",
+        "atTime": "2026-10-02T22:27:00",
     }
     assert payload["addAction"] == {
         "capability": "runCommand",
