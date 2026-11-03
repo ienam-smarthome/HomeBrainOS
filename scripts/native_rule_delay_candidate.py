@@ -166,11 +166,17 @@ def find_parent(call: Call) -> int:
         raise Refuse("rm_parent_type_mismatch")
     if len(match) == 1:
         row = match[0]
-        if (row.get("name") != "Rule Machine" or row.get("namespace") != "hubitat"
+        if (row.get("name") != "Rule Machine"
+                or row.get("namespace") not in (None, "", "hubitat")
                 or not all(row.get(k) is True
                            for k in ("system", "isBuiltIn", "allowNewInstances"))):
             raise Refuse("rm_parent_type_mismatch")
-        return int(parent["id"])
+        if row.get("namespace") == "hubitat":
+            return int(parent["id"])
+        # /hub2/appsList.systemAppTypes may omit namespace even while
+        # source-projecting built-in flags. Require the independent
+        # MCP 5.1.5 thin installed-app summary before admitting identity.
+        # An explicitly different namespace never reaches this fallback.
 
     # Upstream PR #576 (MCP 5.1.5) makes namespace available on the
     # cheap installed-app summary. Built-in types may still be omitted
@@ -183,6 +189,8 @@ def find_parent(call: Call) -> int:
             or summary.get("type") != "Rule Machine"
             or summary.get("namespace") != "hubitat"
             or summary.get("user") is not False
+            or summary.get("parentId") not in (None, "")
+            or summary.get("parentAppId") not in (None, "")
             or (summary.get("appTypeId") is not None and
                 _numeric_id(summary.get("appTypeId")) != _numeric_id(parent["appTypeId"]))):
         raise Refuse("rm_parent_type_mismatch")
