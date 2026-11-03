@@ -506,7 +506,7 @@ class RequestCoordinator:
                             f"Investigation reached its {deadline_seconds:g}s deadline "
                             f"during {last_stage}. No verified read-only results "
                             "were available. Check the HomeBrain add-on Logs "
-                            "using the request ID and review "
+                            f"using request ID {progress.request_id} and review "
                             "investigation_deadline_seconds in the add-on settings."
                         ),
                     )
