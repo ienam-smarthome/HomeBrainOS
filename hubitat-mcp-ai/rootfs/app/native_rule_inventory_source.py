@@ -22,7 +22,7 @@ _OBJECT = re.compile(r"\b(?:parent(?:\s+app|\s+id)?|one.time|one.off|inventory|r
 # not an investigation into a rule firing. Generic "why" previously
 # diverted these requests to the model/Groovy source route.
 _DEEP = re.compile(
-    r"\b(?:nested\s+if|delay cancellation|historical\s+off|"
+    r"\b(?:caused|nested\s+if|delay cancellation|historical\s+off|"
     r"triggered\s+(?:it|them|this\s+rule)|actually\s+(?:run|executed)|"
     r"(?:why|how|what)\b[^.!?\n]{0,120}\b(?:"
     r"turn(?:ed|ing)?\s+(?:on|off)|switch(?:ed|ing)?\s+(?:on|off)|"
