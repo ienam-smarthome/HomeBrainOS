@@ -26,7 +26,7 @@ class Hub:
     def __init__(self, *, corrupt=None, jobs=1, timeout=False,
                  partial=False, start_ok=True, backup_ok=True,
                  have_backup=True, type_found=True, pause_ok=True,
-                 list_ok=True, guide=GUIDE):
+                 list_ok=True, guide=GUIDE, type_namespace="hubitat"):
         self.calls = []
         self.rules = {}
         self.corrupt = corrupt
@@ -37,6 +37,7 @@ class Hub:
         self.backup_ok = backup_ok
         self.pause_ok = pause_ok
         self.type_found = type_found
+        self.type_namespace = type_namespace
         self.list_ok = list_ok
         self.guide = guide
         self.backups = [{"createTimeOrig": "2026-11-03T03:01:07+0000"}] if have_backup else []
@@ -63,6 +64,7 @@ class Hub:
                 {"id": 19, "name": "Rule Machine Legacy", "system": True,
                  "isBuiltIn": True, "allowNewInstances": False},
                 *([{"id": 18, "name": "Rule Machine", "system": True,
+                    "namespace": self.type_namespace,
                     "isBuiltIn": True, "allowNewInstances": True}] if self.type_found else []),
             ]}
         if tool == "hub_list_rules":
@@ -325,6 +327,16 @@ def test_legacy_parent_type_19_cannot_substitute_missing_type_18():
     with pytest.raises(n.Refuse,match="rm_parent_type_mismatch"):
         schedule(hub)
     assert not hub.calls_for("hub_set_rule")
+
+
+@pytest.mark.parametrize("namespace", ["community", "", None])
+def test_parent_type_namespace_not_attested_never_creates_rule(namespace):
+    hub = Hub(type_namespace=namespace)
+    with pytest.raises(n.Refuse, match="rm_parent_type_mismatch"):
+        schedule(hub)
+    assert not hub.calls_for("hub_set_rule")
+    assert not hub.calls_for("hub_create_backup")
+    assert not hub.runs
 
 
 def test_rule_inventory_failure_never_becomes_no_duplicate():
