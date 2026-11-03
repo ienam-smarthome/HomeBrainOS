@@ -92,8 +92,8 @@ def test_unknown_value_formats_do_not_prove_status_or_leak_raw_text():
     snap.update({
         "cpu_percent": "100%; 10.1.2.3",
         "temperature": "NaN",
-        "free_memory": float("inf"),
-        "installed_firmware": "untrusted 2.5.3.117",
+        "free_memory": 10 ** 200,
+        "installed_firmware": "192.168.1.239",
         "zigbee_status": "PRIVATE-USER-NAME",
         "update_status": "PRIVATE-SECRET-TEXT",
         "hub_alerts": "PRIVATE-BROKEN-DEVICE-LABEL",
