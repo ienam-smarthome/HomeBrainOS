@@ -790,7 +790,11 @@ class RuleAuthoringService:
         clean = re.sub(r"[-_]+", " ", target_label)
         clean = " ".join(clean.split())
         base = clean if clean.casefold().startswith(label.casefold() + " ") else f"{label} {clean}"
-        return f"{base} ({suffix})"
+        name = f"{base} ({suffix})"
+        # Only this explicit ownership prefix lets the nightly cleanup
+        # distinguish HomeBrain-created one-shots from user-authored rules
+        # that happen to use the old descriptive suffix.
+        return f"HB one-shot | {name}" if suffix.startswith("One-time ") else name
 
     @classmethod
     def _action(
@@ -1078,10 +1082,26 @@ class RuleAuthoringService:
         # than the shortcut fields our deterministic compiler emits. Consult
         # its own read-only guide before resolving a target or queuing an
         # impossible/unsafe confirmed write. Never silently translate fields.
-        incompatible = legacy_rule_writer_incompatibility(
-            await self._rule_writer_contract()
-        )
+        installed_contract = await self._rule_writer_contract()
+        incompatible = legacy_rule_writer_incompatibility(installed_contract)
         if incompatible:
+            if installed_contract == NATIVE_DOCUMENT and not intent.recurring:
+                # The installed native document writer is NOT the legacy
+                # addTrigger/addAction compiler. In particular the dated
+                # form-field/value contract and readback are still unknown.
+                # Do not guess atTime#=ISO, date# or parent_id, and never
+                # queue an active half-authored rule. This refusal is an
+                # explicit diagnosis, not a successful schedule.
+                return RuleAuthoringDecision(
+                    True,
+                    "native_oneshot_date_field_unverified: The installed "
+                    "Rule Machine server uses native operation='create' but "
+                    "HomeBrain has no verified dated trigger field/value "
+                    "contract or approved native create/readback path. "
+                    "A read-only comparison of an existing dated Rule Machine "
+                    "form with an undated form is needed. No rule write was "
+                    "queued or executed.",
+                )
             return RuleAuthoringDecision(True, incompatible)
 
         if not intent.recurring:
