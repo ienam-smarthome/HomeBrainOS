@@ -1113,7 +1113,7 @@ class RuleAuthoringService:
                 return RuleAuthoringDecision(
                     True,
                     "native_oneshot_date_field_unverified: The installed "
-                    "Rule Machine server uses native operation='create' but "
+                    "Rule Machine server uses native operation='create' with parent_id but "
                     "HomeBrain has no verified dated trigger field/value "
                     "contract or approved native create/readback path. "
                     "A read-only comparison of an existing dated Rule Machine "
