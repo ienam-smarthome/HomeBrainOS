@@ -45,6 +45,7 @@ from recorded_telemetry_freshness import (
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from native_rule_inventory_source import is_native_rule_inventory_question
+from native_rule_document_source import explicit_native_read_coverage
 from history_temporal_analysis import direct_recorded_duration_answer
 from request_outcome_policy import classify_completed_request
 from incident_reasoning_depth import assess_incident_reasoning_depth
@@ -149,6 +150,22 @@ def apply_shared_investigation_completion(
         return outcome
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
+
+    # Complete only the explicit requested source projection, not an
+    # unrelated whole-rule investigation. Preserve the original direct-read
+    # response including any actual MCP error without new model/tool calls.
+    section_coverage = explicit_native_read_coverage(
+        request, list(getattr(outcome, "evidence", []) or []),
+    )
+    if section_coverage is not None:
+        resolved = section_coverage["questionResolved"]
+        metrics = _safe_metrics(outcome, partial=not resolved)
+        if resolved and metrics.get("outcome") in (None, "unresolved", "success"):
+            metrics["outcome"] = "success"
+        return _CoverageOutcome(
+            outcome, section_coverage, metrics,
+            str(getattr(outcome, "message", "") or ""),
+        )
 
     # Inventory membership is distinct from auditing the ordered
     # executable logic of a particular Rule Machine rule. The old final
