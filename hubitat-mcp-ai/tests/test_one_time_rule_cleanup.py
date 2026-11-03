@@ -49,17 +49,17 @@ class FakeMCP:
                     "rules": [
                         {
                             "appId": "4210",
-                            "name": "Block Media Google TV Streamer (One-time 2026-10-03 08:42)",
+                            "name": "HB one-shot | Block Media Google TV Streamer (One-time 2026-10-03 08:42)",
                             "status": "active",
                         },
                         {
                             "appId": "4211",
-                            "name": "Block Media Google TV Streamer (One-time 2026-10-03 11:46)",
+                            "name": "HB one-shot | Block Media Google TV Streamer (One-time 2026-10-03 11:46)",
                             "status": "active",
                         },
                         {
                             "appId": "5000",
-                            "name": "Future Light (One-time 2026-10-04 08:00)",
+                            "name": "HB one-shot | Future Light (One-time 2026-10-04 08:00)",
                             "status": "active",
                         },
                         {
