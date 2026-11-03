@@ -1,5 +1,8 @@
 # Native Rule Machine delay — read-only preflight and isolated MCP BAT
 
+
+> **Superseded for new tests:** MCP v5.1.5 now supports native date-typed one-time triggers. Prefer the [current dated BAT preflight](NATIVE-RM-DATED-BAT-PREFLIGHT.md); this older delay/Run Actions route remains offline-disabled and is retained only as a fallback. No live rule/device changes are authorized by the upstream fix.
+
 **2026-11-03 | Offline preparation only | HomeBrainOS v0.18.380 unchanged**
 
 ## Upstream native parent class identity required (2026-11-03)
