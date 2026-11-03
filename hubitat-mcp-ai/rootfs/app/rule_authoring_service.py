@@ -636,6 +636,24 @@ class RuleAuthoringService:
             return None
         return amount * (60 if unit.casefold().startswith(("hour", "hr")) else 1)
 
+    @staticmethod
+    def _relative_next_minute(current: datetime, minutes: int) -> datetime:
+        """Delay by real elapsed minutes, then CEIL to the next minute.
+
+        Work on UTC instants for aware clocks: ordinary ZoneInfo wall-clock
+        addition can otherwise land in a nonexistent spring DST hour.
+        A naive injected test clock retains its existing wall-clock basis.
+        """
+        if current.tzinfo is not None:
+            target_utc = current.astimezone(timezone.utc) + timedelta(minutes=minutes)
+            if target_utc.second or target_utc.microsecond:
+                target_utc = target_utc.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            return target_utc.astimezone(current.tzinfo)
+        target = current + timedelta(minutes=minutes)
+        if target.second or target.microsecond:
+            target = target.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        return target
+
     def _relative_intent(
         self,
         text: str,
@@ -657,7 +675,7 @@ class RuleAuthoringService:
             if not target:
                 continue
             current = now if now is not None else self._now()
-            trigger = current.replace(microsecond=0) + timedelta(minutes=minutes)
+            trigger = self._relative_next_minute(current, minutes)
             return _ScheduleIntent(
                 target=target,
                 start_time=trigger.strftime("%Y-%m-%dT%H:%M:%S"),
