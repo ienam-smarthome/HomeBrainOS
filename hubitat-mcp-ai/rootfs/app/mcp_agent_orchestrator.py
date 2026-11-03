@@ -4068,6 +4068,7 @@ class UnifiedMCPAgent:
             # inventory/identity lookup still cannot answer a cause question.
             if (not self._mutation_requested_by_user.get()
                     and not is_native_rule_inventory_question(user_prompt)
+                    and not is_explicit_owned_device_inventory_request(user_prompt)
                     and investigating(user_prompt)
                     and inventory_answer(message)):
                 increment_active_metric("investigation_unfulfilled_at_boundary")
@@ -4177,7 +4178,8 @@ class UnifiedMCPAgent:
             if exact_section is not None:
                 coverage = exact_section
             elif (request_class == "live-read" and contract is not None
-                    and contract.domain == "existing_rule_verification"):
+                    and contract.domain == "existing_rule_verification"
+                    and not is_explicit_owned_device_inventory_request(user_prompt)):
                 message = calibrate_existing_rule_verification(
                     message, evidence, coverage, request=user_prompt,
                 )
