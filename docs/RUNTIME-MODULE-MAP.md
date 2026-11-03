@@ -285,6 +285,7 @@ The repository drift test compares this table directly with the live directory. 
 | `native_rule_inventory_source.py` | Source-linked, read-only Rule Machine parent/type join and dated one-time inventory. Proves exact app IDs and names where typed lists permit; never infers child parentage from counts or treats inventory as action-tree proof. |
 | `native_rule_document_source.py` | Makes one bounded, host-owned read-only native Rule Machine document retrieval for a named existing rule; projects typed source fields and rejects mismatched, incomplete or sensitive evidence without exposing a write gateway to the model. |
 | `native_rule_evidence_prefetch.py` | Reads native rule health and numeric local-variable metadata through a bounded read-only MCP gateway before deep Rule Machine interpretation. |
+| `native_oneshot_date_contract.py` | Read-only difference of typed native Rule Machine dated/undated trigger form fields; never authorizes native creation. |
 | `rule_writer_contract.py` | Verify read-only installed hub_set_rule guide and fail-closed when native document API cannot accept legacy rule shortcuts; avoid unsupported confirmed writes. |
 | `rule_authoring_service.py` | Compiles supported fixed-time schedules, and classifies stateful automation goals for capability-driven authoring. |
 | `stateful_rule_capabilities.py` | Performs live read-only Rule Machine capability preflight and rejects incomplete cumulative-usage proposal topology before confirmation. |
