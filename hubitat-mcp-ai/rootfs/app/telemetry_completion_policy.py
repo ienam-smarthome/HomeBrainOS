@@ -58,9 +58,27 @@ def ready_for_bounded_telemetry_answer(
     if (
         str(state.get("deviceId") or "") != target_id
         or state.get("source") != "targeted-hubitat-device-state"
-        or summary.get("truncated") is True
     ):
         return False
+    if summary.get("truncated") is True:
+        # An explicitly source-count-matched, partially retained history
+        # remains sufficient to *publish a bounded, unresolved answer* after
+        # status, history, scoped logs and one discriminator opportunity.
+        # The unobserved rows are not proof of absence or physical contact.
+        # Reject all other truncated/unmatched histories rather than
+        # turning a missing evidence packet into an early stop.
+        retained = summary.get("returnedEvents")
+        unshown = summary.get("unshownEventCount")
+        total = summary.get("sourceReportedEventCount")
+        if not (
+            summary.get("joinedDerivedHistory") is True
+            and summary.get("eventSource") == "verified-direct-derived-receipt-pair"
+            and type(retained) is int and retained > 0
+            and type(unshown) is int and unshown > 0
+            and type(total) is int and total == retained + unshown
+            and summary.get("sourceIntegrityVerified") is False
+        ):
+            return False
     label = str(summary.get("deviceLabel") or "").strip()
     if not label or label.casefold() not in str(request or "").casefold():
         return False
