@@ -76,6 +76,53 @@ def test_one_review_is_only_a_partial_sample_not_a_passed_quality_gate():
     assert model["p95_latency_seconds"] == 38.5
 
 
+def test_latency_cohorts_keep_offline_packets_out_of_live_charter_targets():
+    catalog = load_catalog()
+    assert catalog["status_named_dimmer"]["latency_cohort"] == "live_status_control"
+    assert catalog["causal_light2_off"]["latency_cohort"] == "live_investigation"
+    assert catalog["rule_create_midnight"]["latency_cohort"] == "live_rule_authoring"
+    assert catalog["aq_repeated_input_delay"]["latency_cohort"] == "offline_source_packet"
+
+    status = reviewed("status_named_dimmer")
+    status["metrics"]["latency_seconds"] = 9.5
+    investigation = reviewed("causal_light2_off")
+    investigation["metrics"]["latency_seconds"] = 49.0
+    offline = reviewed("aq_repeated_input_delay")
+    offline["metrics"]["latency_seconds"] = 1.2
+    report = build_scorecard(reviews([status, investigation, offline]), catalog)["models"][0]
+    cohorts = report["latency_by_cohort"]
+    assert report["median_latency_seconds"] == 9.5  # Compatibility only; mixed.
+    assert report["global_latency_scope"] == "mixed_observations_not_a_charter_target"
+    assert cohorts["live_status_control"]["median_latency_seconds"] == 9.5
+    assert cohorts["live_status_control"]["p95_latency_seconds"] == 9.5
+    assert cohorts["live_status_control"]["charter_target_seconds"] == 15
+    assert cohorts["live_investigation"]["median_latency_seconds"] == 49.0
+    assert cohorts["live_investigation"]["charter_target_seconds"] == 45
+    assert cohorts["offline_source_packet"]["median_latency_seconds"] == 1.2
+    assert cohorts["offline_source_packet"]["charter_target_seconds"] is None
+    assert cohorts["live_rule_authoring"]["latency_sample_count"] == 0
+    assert cohorts["live_rule_authoring"]["median_latency_seconds"] is None
+    assert cohorts["live_rule_authoring"]["target_assessment"] == "not_measured"
+    assert all(
+        row["target_assessment"] != "passed"
+        for row in cohorts.values()
+    )
+    assert report["acceptance_status"] == "insufficient_case_coverage"
+
+
+def test_latency_cohort_missing_timing_is_not_assigned_zero_or_a_pass():
+    record = reviewed("status_named_dimmer")
+    record["metrics"] = {"tool_calls": 2}
+    report = build_scorecard(reviews([record]), load_catalog())["models"][0]
+    status = report["latency_by_cohort"]["live_status_control"]
+    assert status["cases_reviewed"] == 1
+    assert status["latency_sample_count"] == 0
+    assert status["median_latency_seconds"] is None
+    assert status["p95_latency_seconds"] is None
+    assert status["target_assessment"] == "not_measured"
+    assert report["latency_sample_count"] == 0
+
+
 def test_partial_or_failed_review_cannot_hide_unsupported_claims():
     item = reviewed()
     item["review"].update({

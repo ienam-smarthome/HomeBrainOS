@@ -1,5 +1,22 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Q1 scorecard latency-cohort separation — candidate (2026-11-03)
+
+**Hypothesis:** the existing scorecard's one pooled latency median/p95 mixes
+offline model-only packets with real-status and investigation categories,
+so it cannot support either live 15s/45s charter comparison. The next
+small, backwards-compatible change partitions reviewed timings by fixed
+legacy/live case family and curated/offline packet class, keeps the existing
+pooled metric explicitly marked mixed, and adds negative tests for missing
+timings and synthetic-only data. No new source values, model prompts, live
+commands, device settings or model rounds. **Real before/after answer quality,
+live performance sample distributions and exact-first-attempt denominators:
+NOT MEASURED.** Green CI, if achieved, verifies only the scoring partition.
+Rollback: revert the scorecard/test/docs PR; deployed add-on version remains
+0.18.384. Continue source-reviewed Q1 first-answer captures, followed by
+same-packet Q2 model A/B.
+
+
 ## Native one-time Internet-block BAT candidate — offline preparation merged GREEN (2026-11-03)
 
 **Verified release-independent merge:** [PR #1365](https://github.com/ienam-smarthome/HomeBrainOS/pull/1365) tested at exact head `e1ea29a4194d7daf579141b1885cc9e32a4844de`, merged as `53c4daa60c01fb482303a02279542a9013322d57`. **5/5 CI jobs green**, including **6,173 Python tests passed, 2 warnings**, metadata, add-on smoke and offline scorecard integrity. Source add-on version **0.18.384 unchanged**; code is scripts/tests/docs only and no production import. The fresh disabled script `scripts/native_rule_dated_candidate.py` includes native date (yyyy-MM-dd) + hub-local time trigger / OFF action, strict source-typed parent summary fallback from upstream MCP 5.1.5, DST-safe minute alignment, pre-existing fresh-backup gate (NO backup creation), duplicate/timeout/refusal logic, and strict rule readback. It **never issues Run Actions or deletes a rule**. Prior disabled delay script unchanged in runtime. `NATIVE_DATED_ENABLED=False`, `NATIVE_DELAY_ENABLED=False`; no live Hubitat/HA/OpenWrt mutations.
