@@ -308,7 +308,12 @@ class HubInfoService:
                     or attempt == poll_attempts - 1
                 )
                 if scope in {"firmware", "full"}:
-                    firmware_status_settled = complete_firmware and firmware_settled
+                    # A final-attempt deadline allows a bounded reply, but
+                    # does not independently establish that firmware settled.
+                    firmware_status_settled = bool(complete_firmware and (
+                        refreshed_firmware != baseline_firmware
+                        or stable_complete_reads >= 2
+                    ))
                 if (
                     scope not in {"firmware", "full"}
                     or (complete_firmware and firmware_settled)
