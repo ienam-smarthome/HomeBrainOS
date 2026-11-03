@@ -71,6 +71,15 @@ def _target_label(evidence: list[dict[str, Any]], target_id: str) -> str:
                     return str(match.get("label") or match.get("name") or "")
         requested = str(_args(row).get("labelFilter") or "").strip()
         if requested and row.get("summary") == "1 targeted device candidates":
+            # A name-filtered receipt is only useful for this specific
+            # target ID if its typed reported state does not contradict
+            # that ID. The name alone must not join another device's
+            # independent history packet.
+            reported = details.get("reportedDeviceState")
+            if isinstance(reported, dict):
+                observed_id = str(reported.get("deviceId") or "")
+                if observed_id and observed_id != target_id:
+                    continue
             return requested
     return ""
 
