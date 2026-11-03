@@ -32,13 +32,13 @@ async def test_minimal_live_identity_inventory_uses_no_state_or_capabilities():
         assert name == "hub_read_devices"
         args = arguments["args"]
         calls.append(args)
-        assert args["detailed"] is False
+        assert args["format"] == "summary"
         assert "attributes" not in args["fields"]
         assert "currentStates" not in args["fields"]
         assert "commands" not in args["fields"]
         assert "capabilities" not in args["fields"]
         assert "lastActivity" not in args["fields"]
-        offset = args["offset"]
+        offset = int(args["cursor"])
         count = 50 if offset == 0 else 1
         items = [{"id": str(offset+i+1),
                   "label": f"Device {offset+i+1}",

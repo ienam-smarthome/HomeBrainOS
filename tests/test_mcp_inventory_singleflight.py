@@ -33,7 +33,7 @@ async def test_live_snapshot_joins_inflight_manifest_without_duplicate_post() ->
         del allow_empty
         posts.append(payload)
         args = payload["params"]["arguments"]["args"]
-        if args.get("detailed") is True:
+        if args.get("format") == "detailed":
             started.set()
             await release.wait()
             return {
@@ -143,7 +143,7 @@ async def test_write_invalidation_prevents_reusing_inflight_manifest_snapshot() 
         del allow_empty
         posts += 1
         args = payload["params"]["arguments"]["args"]
-        if args.get("detailed") is True:
+        if args.get("format") == "detailed":
             started.set()
             await release.wait()
             devices = [{"id": "1", "label": "Before write"}]

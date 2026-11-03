@@ -102,7 +102,7 @@ async def test_verified_parallel_audit_page_latencies_are_measured_without_more_
     async def call_tool(name, arguments):
         assert name == "hub_read_devices"
         args = arguments["args"]
-        offset = args["offset"]
+        offset = int(args["cursor"])
         requests.append(offset)
         assert args["limit"] == 50
         assert "commands" not in args["fields"]

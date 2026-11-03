@@ -18,6 +18,7 @@ def test_each_coverage_counter_maps_to_expected_outcome() -> None:
         "confirmation_expired": "unresolved",
         "device_resolution_ambiguous": "unresolved",
         "device_resolution_missing": "unresolved",
+        "device_resolution_source_failed": "unresolved",
     }
 
     for counter, expected in cases.items():

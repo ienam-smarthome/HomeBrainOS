@@ -653,7 +653,7 @@ class ToolExecutor:
                     success=success,
                     elapsed_ms=elapsed_ms,
                     summary=self.result_summary(result),
-                    supports_live_claim=supports_live_claim,
+                    supports_live_claim=bool(supports_live_claim and success),
                     evidence_kind=evidence_kind,
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,

@@ -69,11 +69,13 @@ class DeviceReadPlan:
         offset: int = 0,
         capability_filter: str | None = None,
     ) -> dict[str, Any]:
+        # Upstream accepts format/cursor, NOT detailed/offset.  Keep the
+        # Python plan's detailed/offset concepts internally only.
         args: dict[str, Any] = {
-            "detailed": self.detailed,
+            "format": "detailed" if self.detailed else "summary",
             "fields": list(self.fields),
             "limit": int(limit),
-            "offset": int(offset),
+            "cursor": str(int(offset)),
         }
         if capability_filter:
             args["capabilityFilter"] = str(capability_filter)
@@ -122,37 +124,47 @@ def normalize_hub_list_devices_arguments(
     name: str,
     arguments: dict[str, Any],
 ) -> str | None:
-    """Normalize a projected device-list request to the upstream wire contract.
+    """Translate internal projected reads to the upstream MCP wire contract.
 
-    This is deliberately applied at the MCP boundary rather than in prompt or
-    intent routing, so every caller gets the same protocol semantics. The
-    upstream implementation auto-promotes projections containing capabilities,
-    attributes, or commands into detailed mode. Detailed mode never emits the
-    summary-only ``currentStates`` field, so a mixed projection must use
-    ``attributes`` for state instead.
-
-    The argument object is normalized in place so evidence records describe the
-    actual request sent to Hubitat. The return value is the state field expected
-    in the response, or ``None`` when the projection did not request state.
+    All `hub_list_devices` gateway calls must use `format` (summary/detailed)
+    and `cursor` for paging. The upstream server rejects the legacy
+    `detailed` and `offset` arguments as unknown BEFORE reading the hub.
+    This normalization runs once at the MCP client boundary, preserving the
+    same requested scope/label and making evidence reflect the sent request.
     """
-
     if name != "hub_read_devices" or arguments.get("tool") != "hub_list_devices":
         return None
     inner = arguments.get("args")
     if not isinstance(inner, dict):
         return None
-    fields = inner.get("fields")
-    if not isinstance(fields, list) or not fields:
-        return None
 
-    field_names = [str(field) for field in fields]
-    detailed = bool(inner.get("detailed")) or any(
-        field in _DETAIL_ONLY_FIELDS for field in field_names
+    legacy_detailed = inner.pop("detailed", None)
+    legacy_offset = inner.pop("offset", None)
+    if legacy_offset is not None and "cursor" not in inner:
+        inner["cursor"] = str(legacy_offset)
+
+    fields = inner.get("fields")
+    field_names = [str(field) for field in fields] if isinstance(fields, list) else []
+    detail_projected = any(field in _DETAIL_ONLY_FIELDS for field in field_names)
+    format_requested = inner.get("format")
+    detailed = (
+        format_requested == "detailed" or legacy_detailed is True
+        or detail_projected
     )
+    if detailed and format_requested in (None, "summary", "detailed"):
+        inner["format"] = "detailed"
+    elif legacy_detailed is False and format_requested is None:
+        inner["format"] = "summary"
+
+    if not field_names:
+        return None
     state_requested = "currentStates" in field_names or "attributes" in field_names
     if not state_requested:
         return None
 
+    # In detailed mode the native state container is attributes; in summary
+    # mode it is currentStates. A missing response state remains unresolved,
+    # not evidence that every device is switched off.
     expected = "attributes" if detailed else "currentStates"
     opposite = "currentStates" if expected == "attributes" else "attributes"
     normalized: list[str] = []
@@ -163,8 +175,6 @@ def normalize_hub_list_devices_arguments(
     if expected not in normalized:
         normalized.append(expected)
     inner["fields"] = normalized
-    if detailed:
-        inner["detailed"] = True
     return expected
 
 
