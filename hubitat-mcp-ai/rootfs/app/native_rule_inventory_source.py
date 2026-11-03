@@ -17,9 +17,20 @@ _ONE_TIME = re.compile(r"\(One-time \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)$", re.I)
 _LOOKUP = re.compile(r"\b(?:list|find|identify|enumerate|show|locate|which|existing)\b", re.I)
 _TOPIC = re.compile(r"\b(?:rule machine|rules?|one.time|one.off)\b", re.I)
 _OBJECT = re.compile(r"\b(?:parent(?:\s+app|\s+id)?|one.time|one.off|inventory|rules?\s+list)\b", re.I)
+# Only execution/causality needs a deep rule audit. A request to report
+# *why source identity is unverified* is still a typed inventory objective,
+# not an investigation into a rule firing. Generic "why" previously
+# diverted these requests to the model/Groovy source route.
 _DEEP = re.compile(
-    r"\b(?:why|caused|triggered it|actually (?:run|executed)|"
-    r"nested\s+if|delay cancellation|historical\s+off)\b", re.I,
+    r"\b(?:nested\s+if|delay cancellation|historical\s+off|"
+    r"triggered\s+(?:it|them|this\s+rule)|actually\s+(?:run|executed)|"
+    r"(?:why|how|what)\b[^.!?\n]{0,120}\b(?:"
+    r"turn(?:ed|ing)?\s+(?:on|off)|switch(?:ed|ing)?\s+(?:on|off)|"
+    r"execut(?:e|ed|ing)|fired?|ran|run|trigger(?:ed|ing)?|"
+    r"caus(?:e|ed|ing)|cancel(?:led|ed)|disabl(?:ed|ing)|"
+    r"stopp?ed|fail(?:ed)?\s+to\s+(?:run|execute)"
+    r")\b)"
+    , re.I,
 )
 _LITERAL_ID = re.compile(r"\b(?:rule|app)\s*(?:id|#)?\s*[:#]?\s*\d{3,8}\b", re.I)
 _ID = re.compile(r"[1-9]\d{0,8}")
@@ -268,7 +279,12 @@ def render_inventory(data: dict[str, Any]) -> str:
         lines.append(
             "Verified native Rule Machine parent app"
             + ("s" if len(parents) != 1 else "") + ": "
-            + ", ".join("ID **" + p["appId"] + "**" for p in parents) + "."
+            + ", ".join(
+                "ID **" + p["appId"] + "** "
+                + "(type **" + p["name"] + "**, namespace **"
+                + p["namespace"] + "**)"
+                for p in parents
+            ) + "."
         )
     elif data["candidateParents"]:
         ids = ", ".join(x["appId"] for x in data["candidateParents"])
