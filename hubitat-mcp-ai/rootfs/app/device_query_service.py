@@ -938,6 +938,10 @@ class DeviceQueryService:
     def _read_failure(
         tool_name: str, arguments: dict[str, Any], source: MCPToolResult
     ) -> MCPToolResult:
+        # A named-device read that the source rejected is not an absence
+        # verdict. Surface an unresolved outcome rather than a green badge.
+        if tool_name == DEVICE_RESOLVE_TOOL:
+            increment_active_metric("device_resolution_source_failed")
         return MCPToolResult(
             tool_name,
             arguments,
@@ -1265,6 +1269,7 @@ class DeviceQueryService:
                     "hub_read_devices", source_arguments
                 )
             except Exception as exc:
+                increment_active_metric("device_resolution_source_failed")
                 self._record_evidence(
                     "hub_read_devices", source_arguments,
                     success=False,
@@ -1289,6 +1294,8 @@ class DeviceQueryService:
                     },
                 )
             valid_source = self._tool_succeeded(source)
+            if not valid_source:
+                increment_active_metric("device_resolution_source_failed")
             target = source.data if isinstance(source.data, dict) else {}
             device_id = str(target.get("id") or target.get("deviceId") or "")
             direct_match = valid_source and device_id == requested
