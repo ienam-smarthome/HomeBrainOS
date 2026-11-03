@@ -48,6 +48,17 @@ class FakeMCP:
 
 def test_parser_requires_explicit_native_read_section_and_single_exact_id():
     assert parse_explicit_native_read(PROMPT) == ("4259", ("actions",))
+    # Exact wording used by the installed 0.18.378 live acceptance test.
+    natural_prompt = (
+        'Read existing Rule Machine rule 4259 using hub_set_rule with '
+        'operation="read" and args={"sections":["actions"]}. '
+        'Return the ordered action IDs and value.method.'
+    )
+    assert parse_explicit_native_read(natural_prompt) == ("4259", ("actions",))
+    assert parse_explicit_native_read(
+        natural_prompt + ' rule_id=4258'
+    ) is None  # conflicting explicit identifiers must fail closed
+
     assert parse_explicit_native_read(PROMPT.replace("4259", "8621")) == (
         "8621", ("actions",)
     )
@@ -95,6 +106,34 @@ async def test_exact_native_action_read_returns_ordered_methods_not_faux_subtype
             {"id": "1", "method": "getDelay"},
             {"id": "2", "method": "getOnOffSwitch"},
         ]
+    finally:
+        evidence.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_live_prompt_with_natural_rule_id_uses_exact_actions_read():
+    prompt = (
+        'Read existing Rule Machine rule 4259 using hub_set_rule with '
+        'operation="read" and args={"sections":["actions"]}. '
+        'Return the ordered action IDs and value.method. '
+        'If the native MCP read fails, show the actual error code and message. '
+        'Read-only: do not create, modify, execute, pause or delete anything.'
+    )
+    source = FakeMCP()
+    evidence = EvidenceRecorder()
+    token = evidence.begin()
+    try:
+        result = await read_explicit_native_rule_document(
+            source, evidence, prompt=prompt,
+            available_names={"hub_manage_native_rules_and_apps"},
+        )
+        assert "id=1; value.method=getDelay" in result
+        assert len(source.calls) == 1
+        assert source.calls[0][1]["args"] == {
+            "operation": "read", "rule_id": 4259,
+            "args": {"sections": ["actions"]},
+        }
+        assert evidence.receipts()[0]["evidence_kind"] == "typed_native_rule_section"
     finally:
         evidence.reset(token)
 
