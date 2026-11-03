@@ -5508,6 +5508,11 @@ class UnifiedMCPAgent:
                         # Capture failure cannot affect tool permissions,
                         # original calls or final answer publication.
                         increment_active_metric("stage3_capture_observation_error")
+            # A post-read stop below must be tied to at least one genuinely
+            # new successful receipt, never a duplicate/skipped call.
+            telemetry_receipts_before_round = (
+                len(self.evidence.receipts()) if bounded_device_telemetry else 0
+            )
             if not calls:
                 # One independently source-backed opportunity to answer is
                 # sufficient after the checked target status/history/logs and
@@ -6937,6 +6942,15 @@ class UnifiedMCPAgent:
                 and round_actions
                 and not round_has_mutation
                 and not round_tool_failure
+                and any(
+                    isinstance(row, dict)
+                    and row.get("success") is True
+                    and row.get("mutates") is not True
+                    and row.get("effect") == "read"
+                    for row in self.evidence.receipts()[
+                        telemetry_receipts_before_round:
+                    ]
+                )
                 and ready_for_bounded_telemetry_answer(
                     user_prompt, self.evidence.receipts(),
                     domain=contract.domain if contract is not None else None,
