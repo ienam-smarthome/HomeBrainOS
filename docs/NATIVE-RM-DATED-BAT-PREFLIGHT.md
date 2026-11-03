@@ -10,6 +10,20 @@
 - Built-in Rule Machine type rows may still be omitted from `hub_list_apps(scope="types")`. The disabled offline `find_parent` now accepts a **strict exact installed-app summary fallback** only when there is no matching type row, and otherwise refuses inconsistent/missing evidence. A name-only candidate or mere label/type ID is not enough.
 - **Do not assume the user's installed MCP version:** the user says their server was updated, but no authoritative installed v5.1.5 receipt or fresh source-typed Rule Machine summary has been supplied yet. MCP v5.1.5 fixes two previously established blockers, not every scheduling, ownership, execution or cleanup gap.
 
+## HomeBrain v0.18.385 read-only identity compatibility (candidate)
+
+After MCP 5.1.5, the thin `hub_get_app_config(appId,summary=true)`
+exposes native `namespace` directly alongside `id`, `type`, and
+`user`; it is not required to include the **full-page**
+`app.appType` object. HomeBrain 0.18.384 still required that nested
+object in its inventory projector, so a valid new upstream summary
+could be incorrectly reported as an unresolved parent. HomeBrain's
+0.18.385 candidate accepts only source-verified **flat** class identity,
+retaining the older nested form and strict contradictions/ID checks.
+The test is read-only, without opening a Hubitat app form. This repairs
+identity interpretation; it does **not** authorize a dated write or
+prove the installed hub/server has the expected readback.
+
 ## Architecture decision
 
 **Prefer a single dated native trigger over the old triggerless Delay → Run Actions workaround.** The dated rule is created with one trigger of `Certain Time (and optional date)` and one OFF action, and its future native schedule should run without an immediate `hub_call_rule(action="actions")`. The old script `scripts/native_rule_delay_candidate.py` remains disabled and retained as historical fallback only. New script `scripts/native_rule_dated_candidate.py` is also **OFFLINE ONLY** with `NATIVE_DATED_ENABLED=False`, no add-on runtime import and no production flag.

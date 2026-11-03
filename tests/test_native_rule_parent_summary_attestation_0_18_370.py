@@ -66,6 +66,79 @@ def test_direct_summary_source_attests_native_parent_even_if_types_omitted():
     assert "Verified native Rule Machine parent app: ID **169**" in render_inventory(result)
 
 
+# Upstream MCP 5.1.5 summary=true is a *thin* identity record with a
+# flat native namespace, not the full page's app.appType tree.
+FLAT_515_SUMMARY = {
+    "success": True, "id": 169, "name": "Rule Machine",
+    "type": "Rule Machine", "namespace": "hubitat",
+    "user": False, "appTypeId": 18, "parentId": None,
+}
+
+
+def test_mcp_515_flat_native_summary_proves_exact_parent_without_page_render():
+    parent, gap = _native_parent_from_summary(
+        FLAT_515_SUMMARY, candidate_id="169", candidate_type_id="18"
+    )
+    assert gap == ""
+    assert parent == {
+        "appId": "169", "appTypeId": "18",
+        "namespace": "hubitat", "name": "Rule Machine",
+        "proof": "source-typed-installed-app-summary",
+    }
+    result = project_rule_inventory(
+        INSTANCES, TYPES_MISSING_SYSTEM, RULES, {"169": FLAT_515_SUMMARY},
+    )
+    assert result["parents"] == [parent]
+    assert result["candidateParents"] == []
+    assert result["parentIdentityComplete"] is True
+    assert "ID **169**" in render_inventory(result)
+
+
+@pytest.mark.parametrize("patch,expected", [
+    ({"namespace": None}, "native-app-summary-class-namespace-unavailable"),
+    ({"namespace": "user"}, "native-app-summary-class-namespace-unverified"),
+    ({"namespace": "Hubitat"}, "native-app-summary-class-namespace-unverified"),
+    ({"type": "Rule-5.1"}, "native-app-summary-type-conflict"),
+    ({"user": True}, "native-app-summary-built-in-unverified"),
+    ({"id": 170}, "native-app-summary-id-mismatch"),
+    ({"appTypeId": 19}, "native-app-summary-class-id-conflict"),
+    ({"parentId": 20}, "native-app-summary-parent-conflict"),
+    ({"appType": {"id": 18, "namespace": "user", "name": "Rule Machine"}},
+     "native-app-summary-class-namespace-unverified"),
+    ({"appType": {"id": 18, "namespace": "hubitat", "name": "Other App"}},
+     "native-app-summary-class-namespace-unverified"),
+    ({"appType": {"id": 18, "namespace": "hubitat", "name": "Rule Machine",
+                  "system": False}},
+     "native-app-summary-system-conflict"),
+])
+def test_mcp_515_flat_summary_refuses_missing_contradictory_or_unverified_identity(patch, expected):
+    record = deepcopy(FLAT_515_SUMMARY)
+    record.update(patch)
+    parent, reason = _native_parent_from_summary(
+        record, candidate_id="169", candidate_type_id="18"
+    )
+    assert parent is None and reason == expected
+    result = project_rule_inventory(
+        INSTANCES, TYPES_MISSING_SYSTEM, RULES, {"169": record}
+    )
+    assert result["parents"] == []
+    assert result["parentIdentityComplete"] is False
+
+
+def test_mcp_515_flat_summary_never_overrides_conflicting_typed_catalog():
+    types = {
+        "apps": [{"id": 18, "namespace": "community", "name": "Other",
+                  "system": False}], "count": 1,
+    }
+    result = project_rule_inventory(
+        INSTANCES, types, RULES, {"169": FLAT_515_SUMMARY},
+    )
+    assert result["parents"] == []
+    assert result["summarySourceChecks"][0]["typeProofGap"] == (
+        "native-app-summary-catalog-conflict"
+    )
+
+
 @pytest.mark.parametrize("patch,expected_gap", [
     ({}, "native-app-summary-class-namespace-unavailable"),
     ({"user": True}, "native-app-summary-built-in-unverified"),
@@ -115,10 +188,11 @@ def test_bare_summary_type_or_false_builtin_class_cannot_gain_native_authority()
 
 
 class StubMCP:
-    def __init__(self, *, typed_summary=True, type_catalog=TYPES_MISSING_SYSTEM):
+    def __init__(self, *, typed_summary=True, flat_summary=False, type_catalog=TYPES_MISSING_SYSTEM):
         self.calls = []
         self.type_catalog = type_catalog
         self.typed_summary = typed_summary
+        self.flat_summary = flat_summary
 
     async def call_tool(self, gateway, args):
         self.calls.append((gateway, args))
@@ -129,7 +203,7 @@ class StubMCP:
                 "tool": "hub_get_app_config",
                 "args": {"appId": "169", "summary": True}
             }
-            data = SUMMARY if self.typed_summary else {
+            data = (FLAT_515_SUMMARY if self.flat_summary else SUMMARY) if self.typed_summary else {
                 "success": True, "id": 169, "type": "Rule Machine",
                 "user": False,
             }
@@ -167,6 +241,30 @@ async def test_readonly_summary_is_one_extra_call_only_when_native_catalog_gap()
                    for x in evidence.receipts())
     finally:
         evidence.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_actual_readonly_inventory_accepts_mcp_515_thin_summary():
+    client = StubMCP(flat_summary=True)
+    recorder = EvidenceRecorder()
+    token = recorder.begin()
+    try:
+        answer, result = await read_native_rule_inventory(
+            client, recorder,
+            available_names={"hub_read_apps_code", "hub_read_rules"},
+        )
+        assert result["parents"][0]["appId"] == "169"
+        assert result["parents"][0]["proof"] == "source-typed-installed-app-summary"
+        assert len(client.calls) == 4
+        assert client.calls[-1][1] == {
+            "tool": "hub_get_app_config",
+            "args": {"appId": "169", "summary": True},
+        }
+        assert "ID **169**" in answer
+        assert all(x["effect"] == "read" and x["mutates"] is False
+                   for x in recorder.receipts())
+    finally:
+        recorder.reset(token)
 
 
 @pytest.mark.asyncio
