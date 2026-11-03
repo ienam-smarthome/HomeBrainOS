@@ -10,6 +10,19 @@
 - Built-in Rule Machine type rows may still be omitted from `hub_list_apps(scope="types")`. The disabled offline `find_parent` now accepts a **strict exact installed-app summary fallback** only when there is no matching type row, and otherwise refuses inconsistent/missing evidence. A name-only candidate or mere label/type ID is not enough.
 - **Do not assume the user's installed MCP version:** the user says their server was updated, but no authoritative installed v5.1.5 receipt or fresh source-typed Rule Machine summary has been supplied yet. MCP v5.1.5 fixes two previously established blockers, not every scheduling, ownership, execution or cleanup gap.
 
+## v0.18.387 native class namespace-absence distinction — candidate
+
+Upstream `hub_list_apps(scope=types)` can return `systemAppTypes` with
+`system/isBuiltIn=true` but **no namespace**; that absence is not a
+contradiction of the installed-app summary's independent
+`getAppByAppId(...).appType.namespace` value. A catalog row with a
+genuinely different namespace, name or explicit user-code flags remains
+a veto. Public conflict witnesses are bounded/redacted and no new
+MCP calls, writer permissions or BAT enablement have been added.
+The v0.18.386 installed 3.611s read was source-incomplete for parent
+verification; it did not expose the raw catalog class. v0.18.387
+requires a fresh read-only installed acceptance before any BAT approval.
+
 ## Read-only inventory source selection — v0.18.386 GREEN MERGED
 
 [PR #1371](https://github.com/ienam-smarthome/HomeBrainOS/pull/1371)
