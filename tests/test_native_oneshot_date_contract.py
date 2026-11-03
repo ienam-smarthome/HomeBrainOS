@@ -113,3 +113,27 @@ def test_autumn_dst_elapsed_delay_preserves_absolute_elapsed_time():
     assert result.fold == 1
     # Ambiguous local time is *not* a native authoring guarantee; the
     # native writer is still closed until an offset-aware trigger is proven.
+
+
+def test_native_one_shot_time_refuses_past_and_near_deadline():
+    tz = ZoneInfo("Europe/London")
+    now = datetime(2026, 11, 3, 9, 29, 30, tzinfo=tz)
+    assert RuleAuthoringService._one_shot_clock_error(
+        "2026-11-03T09:30:00", now
+    ) == "time_in_past_or_too_soon"
+    assert RuleAuthoringService._one_shot_clock_error(
+        "2026-11-03T09:20:00", now
+    ) == "time_in_past_or_too_soon"
+    assert RuleAuthoringService._one_shot_clock_error(
+        "2026-11-03T09:31:00", now
+    ) is None
+
+
+@pytest.mark.parametrize("when,now", [
+    ("2027-03-28T01:30:00", datetime(2027, 3, 27, 12, 0, tzinfo=ZoneInfo("Europe/London"))),
+    ("2027-10-31T01:30:00", datetime(2027, 10, 30, 12, 0, tzinfo=ZoneInfo("Europe/London"))),
+])
+def test_native_one_shot_time_rejects_missing_or_repeated_local_hour(when, now):
+    assert RuleAuthoringService._one_shot_clock_error(
+        when, now
+    ) == "native_oneshot_dst_time_ambiguous"
