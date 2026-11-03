@@ -1,5 +1,16 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Q1 API-submitted prompt provenance v0.18.382 — merged, live acceptance pending (2026-11-03)
+
+**Verified release:** [PR #1358](https://github.com/ienam-smarthome/HomeBrainOS/pull/1358), exact tested head `96183e34a5566482bedfdbec061865975e13da17`, merge SHA `6f3fa751dfa194e287ba8c29b8e39a8795bcd6bf`. **All 6 required CI jobs green**, including **6,124 Python tests passed, 2 warnings**, Hubitat MCP AI tests, add-on container smoke, metadata, repository validation, and offline scorecard integrity. Runtime source release **0.18.382**. The HTTP `/api/ask` response adds only a SHA-256 of the exact validated submitted question (normalized whitespace), plus explicit no-proof flags for actual model input, first attempt and deployed build SHA. The existing Q1 capture CLI compares it to the registered question without exporting private prompt text. Invalid/contradictory fingerprints cannot be marked exact. No model/tool rounds added and no Hubitat/HA changes.
+
+**Measured baseline:** Older first-response JSON has no API-sourced normalized question fingerprint; recorded Q1 source reviews could not authenticate their literal submitted question from the technical payload. **Installed v0.18.382 after-result: NOT MEASURED.** Matching a hash is *not* a human source grade, proof of first attempt, deployed commit identity, or live source completeness. Formal Q1 first-useful/grounded rates and Q2 Gemma/Claude comparison remain **not_measured**. This is improved diagnostic testability with offline tests, not evidence that any natural answer became better.
+
+**Next single real Q1 acceptance:** After updating to 0.18.382 and selecting **New topic**, ask the unchanged registered legacy read-only question `What is the hub health status?` (case `broad_hub_health`). Paste the full HomeBrain answer plus complete Technical details JSON to the private chat. Verify `request_provenance.normalized_prompt_sha256` matches the frozen question, report observed run time and actual tool/model receipts, and then independently assess which health claims are supported by the returned sources. This one run will still not provide statistically meaningful percentages or an independently authenticated build SHA. Do not request any Internet-blocker-related action or replay already accepted device tests. Continue Q1 cross-domain first-answer capture and Q2 same-packet model review thereafter.
+
+**Workstream freeze:** The user explicitly paused Internet-blocker research. Do not resume native delay writer, upstream developer requests or sandbox live tests without a new explicit request; disabled writer stays disabled.
+
+
 ## Original Q1 Answer Quality work resumed — blocker project PAUSED (2026-11-03)
 
 **User direction:** Stop work on the delayed Internet-blocker and return to the **original HomeBrainOS answer-quality mission**. No new delayed-block development, native RM preflight questions, test device creation or upstream contribution until the user explicitly reopens that topic. The offline candidate remains disabled; no Hubitat/HA device or rule was changed. Resume **Q1 source/prompt provenance → same-evidence first-answer reviews → Q2 measured model A/B → Q3 publication/latency simplification**, not case-specific patches.
