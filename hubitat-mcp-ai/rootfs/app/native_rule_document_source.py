@@ -171,3 +171,222 @@ async def prefetch_native_rule_document(
               "date semantics may be inferred from an absent field."
     })
     return True
+
+
+# An explicitly requested native document read is different from a *complete*
+# rule-logic audit. A failed all-sections projection must not swallow the raw
+# source error or substitute irrelevant default review obligations.
+_EXPLICIT_ID = re.compile(
+    r"\brule[_\s-]*id\s*[:=#]?\s*['\"]?([1-9]\d{1,8})\b", re.I
+)
+_EXPLICIT_OPERATION = re.compile(
+    r"\boperation\s*['\"]?\s*[:=]\s*['\"]?read\b", re.I
+)
+_EXPLICIT_SECTIONS = re.compile(
+    r"\bsections['\"]?\s*[:=]\s*\[([^\]]+)\]", re.I
+)
+_NATIVE_SECTIONS = frozenset({
+    "actions", "conditions", "triggers", "expressions", "variables", "settings",
+})
+_ERROR_SECRET = re.compile(
+    r"(?i)\b(?:password|secret|token|api[_-]?key|authorization|"
+    r"credential|bearer)\b\s*[:=]\s*['\"]?[^,\s;}\]]+"
+)
+
+
+def parse_explicit_native_read(
+    prompt: str,
+) -> tuple[str, tuple[str, ...]] | None:
+    """Recognise a specific caller-authored read envelope, not a vague intent."""
+    prompt = str(prompt or "")
+    if "hub_set_rule" not in prompt.casefold() or not _EXPLICIT_OPERATION.search(prompt):
+        return None
+    ids = set(_EXPLICIT_ID.findall(prompt))
+    section_match = _EXPLICIT_SECTIONS.search(prompt)
+    if len(ids) != 1 or section_match is None:
+        return None
+    raw_sections = section_match.group(1)
+    if not re.fullmatch(
+        r"\s*['\"][a-z]+['\"](?:\s*,\s*['\"][a-z]+['\"])*\s*",
+        raw_sections, re.I,
+    ):
+        return None
+    sections = tuple(re.findall(r"['\"]([a-z]+)['\"]", raw_sections, re.I))
+    if (not sections or len(set(sections)) != len(sections)
+            or set(sections) - _NATIVE_SECTIONS):
+        return None
+    return next(iter(ids)), sections
+
+
+def _error_text(value: Any) -> str:
+    raw = " ".join(str(value or "").split())
+    return _ERROR_SECRET.sub("[credential redacted]", raw)[:360] or (
+        "The MCP response did not expose an error message."
+    )
+
+
+def _exact_source_error(reply: Any) -> tuple[str, str]:
+    data = getattr(reply, "data", None)
+    if isinstance(data, dict):
+        code = data.get("code") or data.get("errorCode")
+        error = data.get("error")
+        if isinstance(error, dict):
+            code = code or error.get("code")
+            error = error.get("message") or error.get("error")
+        message = error or data.get("message")
+        if message is not None:
+            return _error_text(code or "mcp_tool_error"), _error_text(message)
+    return (
+        "mcp_tool_error" if getattr(reply, "is_error", False) else "mcp_read_unverified",
+        _error_text(getattr(reply, "text", "")),
+    )
+
+
+async def read_explicit_native_rule_document(
+    mcp: Any, evidence: Any, *,
+    prompt: str, available_names: set[str] | frozenset[str],
+) -> str | None:
+    """Read only requested native sections; never perform writes or retries.
+
+    Publish bounded, whitelisted fields instead of a raw native document
+    (which can contain private user settings). A real tool error and a valid
+    response rejected by the verifier are distinguished in the receipt.
+    """
+    parsed = parse_explicit_native_read(prompt)
+    if parsed is None:
+        return None
+    app_id, sections = parsed
+    gateway = next((g for g in _GATEWAYS if g in available_names), None)
+    if gateway is None:
+        return (
+            f"Native rule {app_id} read unavailable: the installed MCP catalog "
+            "has no approved native rule-document gateway. No changes made."
+        )
+    request = {"tool": "hub_set_rule", "args": {
+        "operation": "read", "rule_id": int(app_id),
+        "args": {"sections": list(sections)},
+    }}
+    if classify_tool_effect(MCPTool(gateway, gateway, {}), request) is not ToolEffect.READ:
+        return "Native rule read blocked by the read-only gate. No changes made."
+    started = time.monotonic()
+    reply = None
+    try:
+        reply = await mcp.call_tool(gateway, request)
+        source_ok = tool_succeeded(reply)
+        error = None if source_ok else _exact_source_error(reply)
+    except Exception as exc:
+        source_ok = False
+        error = ("mcp_call_exception", _error_text(
+            f"{type(exc).__name__}: {exc}"
+        ))
+    data = getattr(reply, "data", None)
+    if source_ok and (
+        not isinstance(data, dict)
+        or str(data.get("rule_id") or "") != app_id
+    ):
+        error = ("target_document_unverified",
+                 "Returned native document was not linked to the requested rule ID.")
+    if source_ok and error is None and any(s not in data for s in sections):
+        error = ("requested_section_missing",
+                 "MCP returned a document without the requested section.")
+    if source_ok and error is None and (
+        data.get("nextCursor") is not None or data.get("truncated") is True
+    ):
+        error = ("native_section_incomplete",
+                 "MCP returned a partial page; no complete-section claim.")
+    methods: list[tuple[str, str]] = []
+    if source_ok and error is None and "actions" in sections:
+        rows = data["actions"]
+        if not isinstance(rows, list) or len(rows) > 100:
+            error = ("native_actions_invalid", "Actions are not a bounded ordered list.")
+        else:
+            seen: set[str] = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    error = ("native_actions_invalid", "A native action row was malformed.")
+                    break
+                aid = str(row.get("id") or "")
+                val = row.get("value")
+                method = val.get("method") if isinstance(val, dict) else None
+                if (not re.fullmatch(r"[1-9]\d{0,8}", aid)
+                        or aid in seen or not isinstance(method, str)
+                        or not _NAME.fullmatch(method)):
+                    error = ("native_actions_invalid",
+                             "A native action has no unique ID or value.method.")
+                    break
+                seen.add(aid)
+                methods.append((aid, method))
+    elapsed = round((time.monotonic() - started) * 1000)
+    verified = source_ok and error is None
+    details: dict[str, Any] = {
+        "appId": app_id, "gateway": gateway, "operation": "read",
+        "requestedSections": list(sections), "sourceSuccess": source_ok,
+        "projectionVerified": verified,
+    }
+    if error is not None:
+        details["errorCode"], details["errorMessage"] = error
+    elif methods:
+        details["orderedActions"] = [
+            {"id": aid, "method": method} for aid, method in methods
+        ]
+    evidence.record(
+        gateway, request, success=verified, elapsed_ms=elapsed,
+        summary=("Verified explicit native section read" if verified
+                 else f"Native read not verified: {error[0] if error else 'unknown'}"),
+        evidence_kind="typed_native_rule_section",
+        supports_live_claim=verified, mutates=False, effect="read",
+        details=details,
+    )
+    header = (
+        f"Native Rule Machine read for rule {app_id}. "
+        f"Gateway: {gateway}. Operation: read. "
+        f"Requested sections: {', '.join(sections)}."
+    )
+    if error is not None:
+        return (
+            header + "\n\nSource read NOT VERIFIED. "
+            f"Error code: {error[0]}. Error detail: {error[1]}\n\n"
+            "This does not prove the rule is missing or incorrectly configured. "
+            "No modifying calls were made."
+        )
+    output = [header]
+    if "actions" in sections:
+        output.append("Native ordered action entries:")
+        output.extend(
+            f"{position}. id={aid}; value.method={method}"
+            for position, (aid, method) in enumerate(methods, 1)
+        )
+        if not methods:
+            output.append("No native action rows returned.")
+        output.append(
+            "Action order and methods are reported by the native document; "
+            "they do not prove execution or device effects."
+        )
+    if "settings" in sections:
+        rows = data["settings"]
+        if isinstance(rows, list) and len(rows) <= 256:
+            safe = [_simple_setting(row) for row in rows]
+            output.append(
+                f"Settings: {len(rows)} returned; "
+                f"{sum(v is None for v in safe)} redacted or unsupported."
+            )
+            for row in safe:
+                if row is not None:
+                    output.append(
+                        f"name={row['name']}; type={row['type']}; "
+                        f"value={str(row.get('value', 'unavailable'))[:100]}; "
+                        f"device_ids={row.get('device_ids', [])}"
+                    )
+        else:
+            output.append("Settings shape unverified; no settings exported.")
+    for section in sections:
+        if section not in {"actions", "settings"}:
+            value = data[section]
+            output.append(
+                f"{section}: {len(value)} returned entries; "
+                "nested meaning not independently verified."
+                if isinstance(value, (dict, list)) else
+                f"{section}: unexpected source shape (unverified)."
+            )
+    output.append("No modifying Hubitat calls were made.")
+    return "\n\n".join(output)

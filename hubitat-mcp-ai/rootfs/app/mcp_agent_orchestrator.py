@@ -265,7 +265,9 @@ from targeted_rule_scope_policy import (
     is_new_rule_design_review_request,
 )
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
-from native_rule_document_source import prefetch_native_rule_document
+from native_rule_document_source import (
+    prefetch_native_rule_document, read_explicit_native_rule_document,
+)
 from native_rule_inventory_source import (
     is_native_rule_inventory_question, read_native_rule_inventory,
 )
@@ -4558,6 +4560,19 @@ class UnifiedMCPAgent:
                 "Nothing was executed. Submit the original request again and only "
                 "confirm when the response carries a verified pending action."
             )
+        # An explicitly selected native Rule Machine operation=read is a
+        # source-retrieval request, not a complete historical investigation.
+        # Honor the exact requested sections through one non-mutating call.
+        # In particular, do not replace a server error with a generic
+        # partial-settings review (or burn further model planning rounds).
+        if not self._mutation_requested_by_user.get():
+            native_document = await read_explicit_native_rule_document(
+                self.mcp, self.evidence, prompt=user_prompt,
+                available_names=catalog.available_names,
+            )
+            if native_document is not None:
+                return native_document
+
         # Current, named-app lockout configuration has an existing read-only
         # gateway. Call it deterministically instead of spending multiple model
         # rounds guessing a sub-operation as an undeclared top-level tool.
