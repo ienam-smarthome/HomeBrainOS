@@ -50,6 +50,14 @@ Do not use any rule operations or modify any device, rule, backup or setting.
 
 Keep the returned Technical details JSON private; do not commit raw household inventory. **This does not itself resolve the native Rule Machine parent identity gap.**
 
+## Installed owned-device inventory passed; parent class proof still unavailable (2026-11-03 16:58 UTC)
+
+**Installed HomeBrainOS v0.18.381 live acceptance:** explicit `hub_list_devices(scope="owned",format="detailed")` ran through `hub_read_devices`, one remote read and one local projection receipt in 1.321 seconds. Complete one-page **1/1** source-backed MCP-owned inventory, one Virtual Switch, `mcpManaged=true`, and source-scoped `questionResolved=true/outcome=success`. No modifying calls and no Rule Machine calls. The device is an **existing private, MCP-owned Virtual Switch**, not a newly created disposable BAT device; its name and ID are intentionally omitted here. **Never reuse this device in a test without separate explicit permission.**
+
+**Class identity remains blocked independently.** Review of the upstream `libraries/mcp-code-management-lib.groovy` confirms that summary `hub_get_app_config` returns the thin app JSON unchanged, while full config mode projects only `appType.system` and `appType.menu` for the class, not the required typed `namespace/name` join. The upstream app-type catalog can omit built-in class rows. Neither mode currently proves the parent class from the source evidence available to this project; do not substitute a label-only check, hardcode a parent ID, or automatically start a native child. Request a source-supported read-only class record from the upstream server developer before separately approving a new disposable virtual-switch BAT.
+
+**Preflight deltas:** owned-device enumeration **COMPLETE**; manual Rule 4259 actions/settings/triggers **READ**; built-in Rule Machine parent/type join **UNVERIFIED**; installed guide and local backup freshness still to be checked before any separately approved write. Existing virtual device **must remain untouched**. The offline native writer remains disabled and the date-typed trigger upstream issue is separate from the parent identity issue. No need to repeat the completed owned-device or Rule 4259 reads.
+
 ## Read-only preflight — collect before asking for any mutation approval
 
 1. **Installed source contract:** Read `hub_get_tool_guide(section="set_rule_reference")`, `hub_get_tool_guide(section="builtin_app_tools_rules")`, and `hub_get_tool_guide(section="virtual_devices")`; inspect actual available gateway/sub-tool schemas and installed MCP version. Guide hashes are rotating; fetch new keys when/if a separately approved write later happens. Do not call `hub_set_rule(operation="form")` — even opening the native editor may run app code or change state.
