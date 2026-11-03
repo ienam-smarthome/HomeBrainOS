@@ -6,12 +6,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import pytest
 
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
 from evidence_recorder import EvidenceRecorder
+from shared_investigation_completion import apply_shared_investigation_completion
+from native_rule_document_source import explicit_native_read_coverage
 from mcp_client import MCPToolResult
 from native_rule_document_source import (
     parse_explicit_native_read, read_explicit_native_rule_document,
@@ -279,3 +282,107 @@ async def test_error_details_hide_embedded_credentials():
         assert "very-secret-secret" not in text
     finally:
         evidence.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_exact_read_visible_answer_survives_shared_completion():
+    # Reproduces installed 0.18.379: source verified two ordered actions,
+    # yet generic finalizer previously replaced them with "unverified".
+    request = ('Read existing Rule Machine rule 4259 using hub_set_rule '
+               'with operation="read" and args={"sections":["actions"]}. '
+               'Return the ordered action IDs and value.method.')
+    evidence = EvidenceRecorder()
+    token = evidence.begin()
+    try:
+        original = await read_explicit_native_rule_document(
+            FakeMCP(), evidence, prompt=request,
+            available_names={"hub_manage_native_rules_and_apps"},
+        )
+        rows = evidence.receipts()
+        scope = explicit_native_read_coverage(request, rows)
+        assert scope["questionResolved"] is True
+        assert scope["requestedSections"] == ["actions"]
+        outcome = SimpleNamespace(
+            message=original, route="unified-mcp-agent",
+            request_class="live-read", evidence=rows,
+            metrics={"outcome": "success", "counters": {"tool_calls": 1}},
+        )
+        result = apply_shared_investigation_completion(outcome, request)
+        assert result.message == original
+        assert "id=1; value.method=getDelay" in result.message
+        assert "id=2; value.method=getOnOffSwitch" in result.message
+        assert "No typed rule-health" not in result.message
+        assert result.investigation_coverage["questionResolved"] is True
+        assert result.metrics["outcome"] == "success"
+        assert result.metrics["counters"]["tool_calls"] == 1
+    finally:
+        evidence.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_failed_exact_read_keeps_real_error_and_unresolved_status():
+    request = ('Read rule 4259 via hub_set_rule operation="read" '
+               'sections=["actions"]')
+    evidence = EvidenceRecorder()
+    token = evidence.begin()
+    try:
+        original = await read_explicit_native_rule_document(
+            FakeMCP({"error": {"code": "DENIED", "message": "Read unavailable"}},
+                    error=True),
+            evidence, prompt=request,
+            available_names={"hub_manage_native_rules_and_apps"},
+        )
+        result = apply_shared_investigation_completion(SimpleNamespace(
+            message=original, route="unified-mcp-agent",
+            request_class="live-read", evidence=evidence.receipts(),
+            metrics={"outcome": "success", "counters": {}},
+        ), request)
+        assert result.message == original
+        assert "DENIED" in result.message
+        assert result.metrics["outcome"] == "unresolved"
+        assert result.investigation_coverage["questionResolved"] is False
+    finally:
+        evidence.reset(token)
+
+
+def test_native_section_completion_rejects_wrong_target_or_scope():
+    correct = {
+        "tool": "hub_manage_native_rules_and_apps",
+        "sub_tool": "hub_set_rule",
+        "evidence_kind": "typed_native_rule_section",
+        "success": True,
+        "supports_live_claim": True,
+        "mutates": False,
+        "effect": "read",
+        "arguments": {"tool": "hub_set_rule", "args": {
+            "operation": "read", "rule_id": 4259,
+            "args": {"sections": ["actions"]}}},
+        "details": {"appId": "4259", "gateway": "hub_manage_native_rules_and_apps",
+                    "operation": "read", "requestedSections": ["actions"],
+                    "sourceSuccess": True, "projectionVerified": True,
+                    "orderedActions": [{"id": "1", "method": "getDelay"}]},
+    }
+    request = 'hub_set_rule operation="read" rule 4259 sections=["actions"]'
+    assert explicit_native_read_coverage(request, [correct])["questionResolved"]
+    from copy import deepcopy
+    for field, value in [
+        ("wrong-id", 9999), ("wrong-section", ["settings"]),
+        ("mutated", True), ("no-source", False), ("duplicate-id", None),
+    ]:
+        row = deepcopy(correct)
+        if field == "wrong-id":
+            row["arguments"]["args"]["rule_id"] = value
+        elif field == "wrong-section":
+            row["arguments"]["args"]["args"]["sections"] = value
+        elif field == "mutated":
+            row["mutates"] = value
+        elif field == "no-source":
+            row["details"]["sourceSuccess"] = value
+        else:
+            row["details"]["orderedActions"].append(
+                {"id": "1", "method": "getOnOffSwitch"})
+        scope = explicit_native_read_coverage(request, [row])
+        if field in {"wrong-id", "wrong-section", "mutated"}:
+            assert scope is None
+        else:
+            assert scope is not None and scope["questionResolved"] is False
