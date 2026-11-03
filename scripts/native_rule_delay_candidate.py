@@ -1,9 +1,9 @@
 """OFFLINE ONLY: review candidate for native Rule Machine delayed switch actions.
 
-Native dated triggers remain unsupported by upstream 5.1.1 (issue #575).
+Upstream MCP 5.1.5 fixes native date fields and summary class identity (#576).
 This module has no HomeBrainOS runtime import or invocation. The writer accepts
 only an injected *test* transport and needs explicit confirmation + enablement.
-The upstream source documents readback shape but live Rule 4259 read failed.\nReal Run Actions via MCP, job attribution and completion are unverified.
+Manual Rule 4259 actions/settings readback passed; MCP-created Run Actions remains unverified.
 """
 from __future__ import annotations
 
@@ -162,10 +162,29 @@ def find_parent(call: Call) -> int:
     types = _list(call, "hub_read_apps_code", "hub_list_apps",
                   {"scope": "types", "nameFilter": "Rule Machine"}, "apps")
     match = [t for t in types if _numeric_id(t.get("id")) == _numeric_id(parent["appTypeId"])]
-    if (len(match) != 1 or match[0].get("name") != "Rule Machine"
-            or match[0].get("namespace") != "hubitat"
-            or not all(match[0].get(k) is True
-                       for k in ("system", "isBuiltIn", "allowNewInstances"))):
+    if len(match) > 1:
+        raise Refuse("rm_parent_type_mismatch")
+    if len(match) == 1:
+        row = match[0]
+        if (row.get("name") != "Rule Machine" or row.get("namespace") != "hubitat"
+                or not all(row.get(k) is True
+                           for k in ("system", "isBuiltIn", "allowNewInstances"))):
+            raise Refuse("rm_parent_type_mismatch")
+        return int(parent["id"])
+
+    # Upstream PR #576 (MCP 5.1.5) makes namespace available on the
+    # cheap installed-app summary. Built-in types may still be omitted
+    # from /hub2/appsList.systemAppTypes. An exact independent installed-app
+    # identity is an acceptable, source-backed fallback; no name-only guess.
+    summary = _response(call("hub_read_apps_code", "hub_get_app_config",
+            {"appId": str(parent["id"]), "summary": True}),
+            "rm_parent_type_mismatch")
+    if (str(summary.get("id")) != str(parent["id"])
+            or summary.get("type") != "Rule Machine"
+            or summary.get("namespace") != "hubitat"
+            or summary.get("user") is not False
+            or (summary.get("appTypeId") is not None and
+                _numeric_id(summary.get("appTypeId")) != _numeric_id(parent["appTypeId"]))):
         raise Refuse("rm_parent_type_mismatch")
     return int(parent["id"])
 
