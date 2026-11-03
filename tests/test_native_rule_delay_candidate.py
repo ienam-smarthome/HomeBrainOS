@@ -1,6 +1,6 @@
 """Synthetic tests for offline native delay candidate.
 
-The real getDelay native action readback and runtime execution are UNVERIFIED.
+The real ordered native action methods were read. MCP-created execution is UNVERIFIED.
 No Hubitat device, backup or model is accessed.
 """
 from __future__ import annotations
@@ -17,6 +17,8 @@ import native_rule_delay_candidate as n
 NOW = datetime(2026, 11, 3, 10, 0, 7, tzinfo=timezone.utc)
 GUIDE = ('I-HAVE-READ-THE-GUIDE-set_rule_reference-c15e90a2 '
          'hub_set_rule(operation:"create",args:{parent_id,name,changes:[...]},confirm:true)')
+CONTROL_GUIDE = ('I-HAVE-READ-THE-GUIDE-builtin_app_tools_rules-a73b19cf '
+                 'hub_call_rule hub_set_rule_paused')
 REQ = n.DelayRequest("6923", "Test Internet Switch", 900)
 
 
@@ -47,7 +49,11 @@ class Hub:
     def __call__(self, gateway, tool, params):
         self.calls.append((gateway, tool, deepcopy(params)))
         if gateway == "hub_get_tool_guide":
-            return {"success": True, "content": self.guide}
+            section = params.get("section")
+            return {"success": True, "content": (
+                CONTROL_GUIDE if section == "builtin_app_tools_rules"
+                else self.guide if section == "set_rule_reference" else ""
+            )}
         if tool == "hub_list_apps":
             if params["scope"] == "instances":
                 return {"apps": [{"id": 169, "name": "Rule Machine", "type": "Rule Machine",
@@ -191,6 +197,48 @@ def test_synthetic_happy_path_does_not_claim_physical_block():
     assert [(v["part"],v["value"]["subtype"]) for v in changes]==[
         ("action","getDelay"),("action","getOnOffSwitch")]
     assert {f["name"]:f["value"] for f in changes[1]["value"]["fields"]}["onOff.#"] is False
+
+
+def test_each_write_tool_uses_correct_live_guide_section_key():
+    hub = Hub()
+    assert schedule(hub).ok
+    guide_sections = [
+        args["section"] for gateway, _, args in hub.calls
+        if gateway == "hub_get_tool_guide"
+    ]
+    assert guide_sections[:2] == ["set_rule_reference", "builtin_app_tools_rules"]
+    create = next(x for x in hub.calls_for("hub_set_rule")
+                  if x["operation"] == "create")
+    assert create["bestPracticeKey"].startswith(
+        "I-HAVE-READ-THE-GUIDE-set_rule_reference-")
+    run = hub.calls_for("hub_call_rule")[0]
+    assert run["bestPracticeKey"].startswith(
+        "I-HAVE-READ-THE-GUIDE-builtin_app_tools_rules-")
+    assert run["bestPracticeKey"] != create["bestPracticeKey"]
+
+
+def test_wrong_control_guide_stops_before_backup_or_create():
+    hub = Hub()
+    original = hub.__call__
+    def invalid_control_guide(gateway, tool, params):
+        if gateway == "hub_get_tool_guide" and params.get("section") == "builtin_app_tools_rules":
+            hub.calls.append((gateway, tool, deepcopy(params)))
+            return {"success": True, "content": GUIDE}
+        return original(gateway, tool, params)
+    with pytest.raises(n.Refuse, match="rm_contract_changed"):
+        n.schedule_delayed_switch(invalid_control_guide, REQ, NOW, enabled=True, approved=True)
+    assert not hub.calls_for("hub_set_rule")
+    assert not hub.calls_for("hub_create_backup")
+    assert not hub.runs
+
+
+def test_partial_create_pause_uses_control_guide_acknowledgment():
+    hub = Hub(partial=True)
+    with pytest.raises(n.Refuse, match="create_failed"):
+        schedule(hub)
+    pause = hub.calls_for("hub_set_rule_paused")[0]
+    assert pause["bestPracticeKey"].startswith(
+        "I-HAVE-READ-THE-GUIDE-builtin_app_tools_rules-")
 
 
 def test_allow_is_switch_on():

@@ -18,7 +18,6 @@ NATIVE_DELAY_ENABLED = False
 MIN_DELAY_SECONDS = 60
 MAX_DELAY_SECONDS = 86400 - 1
 LABEL_PREFIX = "HB delay | "
-_KEY = re.compile(r"I-HAVE-READ-THE-GUIDE-set_rule_reference-[0-9a-fA-F]+")
 
 
 class Refuse(Exception):
@@ -96,15 +95,37 @@ def _response(value: Any, code: str) -> dict[str, Any]:
     return value
 
 
-def get_contract(call: Call) -> str:
-    guide = _response(call("hub_get_tool_guide", "", {"section": "set_rule_reference"}), "rm_contract_changed")
+def _guide_section_key(call: Call, section: str) -> tuple[str, str]:
+    """Inspect the server's current guide; a section-specific key is not reusable."""
+    guide = _response(
+        call("hub_get_tool_guide", "", {"section": section}),
+        "rm_contract_changed",
+    )
     content = guide.get("content")
-    if not isinstance(content, str) or not all(x in content for x in ('operation:"create"', "parent_id", "changes")):
+    if not isinstance(content, str):
         raise Refuse("rm_contract_changed")
-    key = _KEY.search(content)
+    key = re.search(
+        r"I-HAVE-READ-THE-GUIDE-" + re.escape(section) + r"-[0-9a-fA-F]+",
+        content,
+    )
     if not key:
         raise Refuse("rm_contract_changed")
-    return key.group(0)
+    return key.group(0), content
+
+
+def get_contract(call: Call) -> str:
+    key, content = _guide_section_key(call, "set_rule_reference")
+    if not all(x in content for x in ('operation:"create"', "parent_id", "changes")):
+        raise Refuse("rm_contract_changed")
+    return key
+
+
+def get_rule_control_contract(call: Call) -> str:
+    """Run Actions / pause need builtin_app_tools_rules, NOT the set_rule key."""
+    key, content = _guide_section_key(call, "builtin_app_tools_rules")
+    if "hub_call_rule" not in content or "hub_set_rule_paused" not in content:
+        raise Refuse("rm_contract_changed")
+    return key
 
 
 def _list(call: Call, gateway: str, tool: str, args: dict[str, Any], key: str) -> list[dict[str, Any]]:
@@ -253,10 +274,10 @@ def verify_rule(call: Call, rule_id: int, req: DelayRequest, p: Plan) -> None:
         raise Refuse("verify_failed")
 
 
-def _pause(call: Call, rule_id: int) -> None:
+def _pause(call: Call, rule_id: int, control_key: str) -> None:
     try:
         result = _response(call("hub_manage_rule_machine", "hub_set_rule_paused",
-                                {"ruleId": rule_id, "paused": True}), "pause_failed")
+                                {"ruleId": rule_id, "paused": True, "bestPracticeKey": control_key}), "pause_failed")
         if result.get("success") is not True:
             raise Refuse("pause_failed")
     except Exception as exc:
@@ -271,6 +292,7 @@ def schedule_delayed_switch(
     if not enabled or not approved:
         raise Refuse("native_delay_disabled" if not enabled else "confirmation_required")
     guide_key = get_contract(call)
+    control_key = get_rule_control_contract(call)
     parent_id = find_parent(call)
     if _existing(call, p.label):
         # Never restart a pending or previously completed rule just because
@@ -293,18 +315,18 @@ def schedule_delayed_switch(
                        and x["result"].get("success") is True for x in res["results"]))
     if not success or rid is None:
         if rid is not None:
-            _pause(call, int(rid))
+            _pause(call, int(rid), control_key)
         raise Refuse("create_failed" if rid else "create_outcome_unknown")
     rule_id = int(rid)
     try:
         verify_rule(call, rule_id, req, p)
     except Exception as exc:
-        _pause(call, rule_id)
+        _pause(call, rule_id, control_key)
         raise Refuse("verify_failed") from exc
     # Never retry Run Actions automatically; no duplicate execution risk.
     try:
         run = call("hub_manage_rule_machine", "hub_call_rule",
-                   {"ruleId": rule_id, "action": "actions"})
+                   {"ruleId": rule_id, "action": "actions", "bestPracticeKey": control_key})
     except Exception as exc:
         raise Refuse("start_outcome_unknown") from exc
     if not isinstance(run, dict) or run.get("success") is not True or run.get("failedRuleIds"):
