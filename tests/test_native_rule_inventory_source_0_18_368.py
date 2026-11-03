@@ -255,3 +255,67 @@ async def test_orchestrator_can_report_unverified_parent_without_fabricating_id(
     assert "native parent ID remains unresolved" in result.message
     assert "ID **21**" not in result.message
     assert result.confirmation_count == 0
+
+
+def test_live_20261103_parent_class_gap_remains_unresolved_even_with_complete_lists():
+    """Real receipt shape, synthetic minimal rows; no source payload guessed.
+
+    App candidate 169 refers to appTypeId 18, but the returned type list had
+    no matching native class and the thin summary omitted appType namespace.
+    Inventory completeness does not certify the missing type join.
+    """
+    instances = {
+        "apps": [{"id": 169, "name": "Rule Machine",
+                  "type": "Rule Machine", "appTypeId": 18,
+                  "parentId": None, "user": False, "hasChildren": True}],
+        "count": 1, "totalOnHub": 1, "filter": "all",
+    }
+    types = {"apps": [{"id": 19, "name": "Rule Machine Legacy",
+                         "namespace": "hubitat", "system": True,
+                         "isBuiltIn": True}], "count": 1}
+    rules = {"rules": [], "count": 0}
+    summary = {
+        "success": True,
+        "app": {"id": 169, "name": "Rule Machine", "type": "Rule Machine",
+                "user": False, "appTypeId": 18, "parentId": None},
+    }
+    projected = project_rule_inventory(
+        instances, types, rules, summaries={"169": summary},
+    )
+    assert projected["parents"] == []
+    assert projected["candidateParents"] == [{
+        "appId": "169", "appTypeId": "18", "typeProof": "unverified",
+        "typeProofGap": "no-matching-native-app-type-id",
+    }]
+    assert projected["summarySourceChecks"] == [{
+        "appId": "169",
+        "typeProofGap": "native-app-summary-class-namespace-unavailable",
+    }]
+    assert projected["ruleListComplete"] is True
+    assert projected["appListComplete"] is True
+    assert projected["typesListComplete"] is True
+    assert projected["parentIdentityComplete"] is False
+    assert projected["nativeRuleMachineTypeIds"] == []
+    assert "parent ID remains unresolved" in render_inventory(projected)
+    # A dated-rule suffix scan does not check for the offline delay writer's
+    # unique label, and this inventory route did not read owned devices.
+    assert projected["oneTimeMatchCount"] == 0
+    assert "ownedDevices" not in projected
+
+
+def test_same_class_id_from_community_type_is_not_native_parent_proof():
+    instances = {
+        "apps": [{"id": 169, "name": "Rule Machine",
+                  "type": "Rule Machine", "appTypeId": 18,
+                  "parentId": None, "user": False}],
+        "count": 1, "totalOnHub": 1, "filter": "all",
+    }
+    types = {
+        "apps": [{"id": 18, "name": "Rule Machine",
+                  "namespace": "community", "system": False,
+                  "isBuiltIn": False}], "count": 1,
+    }
+    proj = project_rule_inventory(instances, types,
+                                  {"rules": [], "count": 0})
+    assert proj["parents"] == []
+    assert proj["parentIdentityComplete"] is False
