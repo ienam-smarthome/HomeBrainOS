@@ -1,6 +1,30 @@
 # Answer Quality — active status and cross-chat handoff
 
-## Internet-blocker MCP 5.1.5 read-only native-parent fix — v0.18.385 candidate (2026-11-03)
+## Internet-blocker MCP 5.1.5 read-only native-parent fix — v0.18.385 GREEN MERGED (2026-11-03)
+
+**CI and merge:** [PR #1369](https://github.com/ienam-smarthome/HomeBrainOS/pull/1369)
+tested at exact head `e54e5f1cb3230e10c8e505719536e851baa33317`
+with **6/6 checks green** (Full Python **6,189 passed, 2 warnings**;
+Hubitat MCP AI test, add-on smoke, metadata, validate, offline-scorecard).
+Merged as `d279b98a63d3a48653575818893c533d48482b74`.
+Maintained add-on release **0.18.385**. Initial CI metadata mismatch
+was corrected by updating both README version declarations before the
+final green exact-head run. No hub, Home Assistant, OpenWrt or device
+writes occurred.
+
+**Installed after-result: NOT YET VERIFIED.** Green offline tests show
+that the new flat `namespace=hubitat` source form can resolve an exact,
+unique native parent and reject conflicting identity. The user's installed
+MCP version, real summary fields, dated scheduling, future firing and router
+blocking remain unverified. **Next single read-only user capture** after
+installing v0.18.385: identify the installed native Rule Machine parent and
+list existing one-time Rule Machine rules using the read-only inventory,
+allowing its one thin `hub_get_app_config(summary=true)` fallback; return
+the complete natural answer and Technical details JSON. Verify source
+scope and identity, then ask separately for approval before a newly
+owned disposable virtual-switch BAT. No real access-blocking or production
+writer enablement. Answer Quality programme continues independently.
+
 
 **Source-contract defect:** upstream PR #576 emits direct `namespace` in
 `hub_get_app_config(summary=true)`, but v0.18.384's live inventory
@@ -11,8 +35,8 @@ the developer fix. v0.18.385 candidate teaches the common inventory
 projector to use exact flat `id/type/namespace/user` plus independent
 instance ID, with nested and catalog contradiction checks and synthetic
 no-write tests. No form read, model/prose change, new cloud calls or
-live writes. **CI, merge, installed acceptance and network effect are
-still pending/not measured at candidate stage**. Version changes only
+live writes. **CI and merge are now green as above; installed acceptance and
+network effect remain not measured**. Version changes only
 because maintained runtime read-only behavior changes. The original Q1
 programme continues alongside the explicitly resumed blocker work.
 
