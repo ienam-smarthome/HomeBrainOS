@@ -45,6 +45,7 @@ class FakeHub:
         self.writes = []
         self.reads = []
         self.guide_calls = 0
+        self.detailed_manifest_calls = 0
 
     async def list_tools(self):
         return [
@@ -54,6 +55,7 @@ class FakeHub:
         ]
 
     async def get_cached_devices(self):
+        self.detailed_manifest_calls += 1
         return [
             {"id": str(did), "label": label, "driver": driver}
             for did, label, driver in DEVICES
@@ -295,6 +297,15 @@ async def test_real_orchestrator_queues_after_driver_preflight_and_executes_afte
     assert first.confirmation_required is True
     assert first.confirmation_count == 1
     assert "6923" in first.message
+    assert hub.detailed_manifest_calls == 0
+    summary_calls = [
+        args["args"] for name, args in hub.reads
+        if name == "hub_read_devices" and args.get("tool") == "hub_list_devices"
+    ]
+    assert len(summary_calls) == 2  # Synthetic Cudy fleet spans two pages.
+    assert all(page["format"] == "summary" for page in summary_calls)
+    assert all(page["fields"] == ["id", "label", "driver"] for page in summary_calls)
+    assert all(page["limit"] == 50 for page in summary_calls)
     assert not hub.writes
     pending = agent.confirmations.pending["timer-confirm-test"]
     assert len(pending.actions) == 1
@@ -323,4 +334,81 @@ async def test_orchestrator_does_not_queue_timer_when_driver_not_patched():
     )
     assert outcome.confirmation_required is False
     assert "driver does not report" in outcome.message
+    assert not hub.writes
+
+
+
+@pytest.mark.asyncio
+async def test_driver_path_avoids_full_detailed_manifest_even_if_it_is_broken():
+    class NoDetailedManifest(FakeHub):
+        async def get_cached_devices(self):
+            raise AssertionError("Expensive detailed manifest must not be used")
+
+    hub = NoDetailedManifest()
+    agent = UnifiedMCPAgent(
+        hub, "fake-key", "gemma4:31b", ai_client=NoModel(),
+        rule_write_enabled=True, require_sensitive_confirmation=True,
+    )
+    outcome = await agent.process_user_request_result(
+        "Block Google TV after 2 mins", session_id="summary-only",
+    )
+    assert outcome.confirmation_required is True
+    assert not hub.writes
+
+
+@pytest.mark.asyncio
+async def test_incomplete_filtered_summary_fails_closed_without_rule_machine_fallback():
+    class Incomplete(FakeHub):
+        async def call_tool(self, name, arguments):
+            result = await super().call_tool(name, arguments)
+            if name == "hub_read_devices" and arguments["tool"] == "hub_list_devices":
+                return self._ret(name, arguments, {
+                    "devices": result.data["devices"], "partial": True,
+                    "nextCursor": result.data.get("nextCursor"),
+                })
+            return result
+
+    hub = Incomplete()
+    agent = UnifiedMCPAgent(
+        hub, "fake-key", "gemma4:31b", ai_client=NoModel(),
+        rule_write_enabled=True, require_sensitive_confirmation=True,
+    )
+    result = await agent.process_user_request_result(
+        "Block Google TV after 2 mins", session_id="incomplete-summary",
+    )
+    assert result.confirmation_required is False
+    assert "could not be verified" in result.message
+    assert not hub.writes
+
+
+def test_summary_total_mismatch_never_admits_unique_target():
+    class Truncated(FakeHub):
+        async def call_tool(self, name, arguments):
+            result = await super().call_tool(name, arguments)
+            if name == "hub_read_devices" and arguments["tool"] == "hub_list_devices":
+                return self._ret(name, arguments, {
+                    "devices": result.data["devices"],
+                    "total": 50,
+                    "nextCursor": None,
+                })
+            return result
+
+    hub = Truncated()
+    with pytest.raises(RuntimeError, match="Incomplete device inventory total"):
+        asyncio.run(TimedInternetControl(hub).list_devices())
+    assert not hub.writes
+
+
+@pytest.mark.asyncio
+async def test_non_cudy_timer_request_keeps_legacy_route_without_driver_write():
+    hub = FakeHub()
+    agent = UnifiedMCPAgent(
+        hub, "fake-key", "gemma4:31b", ai_client=NoModel(),
+        rule_write_enabled=True, require_sensitive_confirmation=True,
+    )
+    outcome = await agent.process_user_request_result(
+        "Block Tab S9 FE after 5 mins", session_id="non-cudy",
+    )
+    assert "Rule Machine write gateway is unavailable" in outcome.message
+    assert not outcome.confirmation_required
     assert not hub.writes

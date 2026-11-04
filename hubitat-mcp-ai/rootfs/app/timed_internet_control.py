@@ -92,15 +92,6 @@ def _parsed_deadline(raw: Any) -> datetime | None:
 
 
 class TimedInternetControl:
-    @staticmethod
-    def _words_for_candidate(targets: list[str]) -> set[str] | None:
-        """Manifest admission hint only; never sufficient for authorisation."""
-        if not isinstance(targets, list) or not targets:
-            return set()
-        if len(targets) == 1 and targets[0].casefold() in ("all", "everything", "all devices"):
-            return None
-        return set(word for target in targets for word in _words(target))
-
     def __init__(self, mcp: HubitatMCPClient) -> None:
         self.mcp = mcp
 
@@ -109,6 +100,7 @@ class TimedInternetControl:
 
     async def list_devices(self) -> list[ManagedDevice]:
         devices: dict[int, ManagedDevice] = {}
+        seen_ids: set[int] = set()
         cursor = ""
         seen = set()
         for _ in range(50):
@@ -117,14 +109,30 @@ class TimedInternetControl:
             seen.add(cursor)
             data = await self._call("hub_read_devices", {
                 "tool": "hub_list_devices",
-                "args": {"format": "summary", "labelFilter": "Block", "cursor": cursor},
+                "args": {
+                    "format": "summary",
+                    "labelFilter": "Block",
+                    "fields": ["id", "label", "driver"],
+                    "limit": 50,
+                    "cursor": cursor,
+                },
             })
+            # A partial page can hide an equally valid second match. Never
+            # convert incomplete discovery into a unique write target.
+            if data.get("partial") is True or data.get("budgetLimited") is True:
+                raise RuntimeError("Incomplete Cudy device inventory; no target was verified")
             page = data.get("devices")
             if not isinstance(page, list):
                 raise RuntimeError("Device inventory was not returned")
             for row in page:
                 if not isinstance(row, dict):
                     continue
+                try:
+                    page_id = int(row.get("id"))
+                    if page_id > 0:
+                        seen_ids.add(page_id)
+                except (ValueError, TypeError):
+                    pass
                 label = str(row.get("label") or row.get("name") or "")
                 driver = str(row.get("driver") or "")
                 if driver != MANAGED_DRIVER or not label.startswith("Block "):
@@ -142,6 +150,17 @@ class TimedInternetControl:
             if nxt is None or str(nxt) == "":
                 if data.get("hasMore") is True:
                     raise RuntimeError("Device inventory indicates unreturned pages")
+                # Some MCP releases omit hasMore yet return a filtered total.
+                # We cannot safely select a unique match from fewer rows than
+                # the server said exist.
+                total = data.get("total")
+                if total is not None:
+                    try:
+                        expected = int(total)
+                    except (TypeError, ValueError):
+                        raise RuntimeError("Unparseable device inventory total")
+                    if expected < 0 or len(seen_ids) != expected:
+                        raise RuntimeError("Incomplete device inventory total")
                 return list(devices.values())
             if not str(nxt).isdecimal():
                 raise RuntimeError("Untrusted device inventory cursor")

@@ -78,3 +78,18 @@ at most 20 entries, sequentially.
   This new driver feature does not need or modify either.
 
 **No live Hubitat/Router changes were made as part of the repository work.**
+
+## v0.18.399 preflight performance
+
+The initial v0.18.398 live request spent 37.95 s in MCP HTTP before it
+offered confirmation. This release removes the expensive detailed all-device
+manifest from the driver preflight and requests only a filtered summary with
+id, label, driver and bounded cursor pages. It does not cache a write identity.
+Before confirmation it still independently reads the selected driver's
+timedBlockMins and timedBlockAt attributes. The approval replay re-reads
+complete device identity before issuing the command.
+
+Technical JSON now includes a timed_internet_preflight timing (ms) and
+summary-preflight counters. Record a new live command after installation to
+measure whether the preflight actually improved. The previous 38.16 s and
+1.8 s observations are the v0.18.398 baseline, not v0.18.399 results.
