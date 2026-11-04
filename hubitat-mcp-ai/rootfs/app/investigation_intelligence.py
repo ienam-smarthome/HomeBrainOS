@@ -215,7 +215,14 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     # category in every stage. Never reclassify "automation" + "read-only"
     # into rule creation, or MQTT offline into switch-command provenance.
     from ai_investigation_routing import active_request_interpretation
+    from targeted_rule_scope_policy import (
+        is_existing_rule_verification_request, is_app_class_identity_question,
+    )
     interpreted = active_request_interpretation(request)
+    # Source-class identity is a separate objective, even if an upstream
+    # advisory classifier assigned the broad "verify configuration" label.
+    if is_app_class_identity_question(request):
+        return _PLANS["app_class_identity"]
     if interpreted is not None and interpreted.objective is not None:
         contract_for_objective = {
             "device_connectivity": "device_telemetry",
@@ -227,11 +234,6 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     # Prioritise the actual requested scope, not the combination of the words
     # "read-only" and "do not create". Those occur in existing-rule audits too.
     # This changes investigation reporting only, not write authorisation.
-    from targeted_rule_scope_policy import (
-        is_existing_rule_verification_request, is_app_class_identity_question,
-    )
-    if is_app_class_identity_question(request):
-        return _PLANS["app_class_identity"]
     if is_existing_rule_verification_request(request):
         return _PLANS["existing_rule_verification"]
     # Explicit future design with a separate no-write instruction is not a
