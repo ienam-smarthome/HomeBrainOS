@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.391**.
+Current add-on version: **0.18.392**.
+
+**Problem-first automation status (v0.18.392):** Large inventories now render a bounded fault/uncertainty summary instead of hundreds of routine active configuration rows. Paused or disabled settings remain clearly reported but are not counted as evidence of malfunction. Explicit requests to list all automation rules still show the full inventory; Technical JSON continues to return every deduplicated source item. These are source-backed presentation changes, not proof of runtime execution or a completed hardware/automation health check. [Release notes](CHANGELOG-0.18.392.md).
 
 **Q1 initial read-only tool admission (v0.18.391):** For questions with no independently recorded user mutation authority, the model's *initial* function-calling tool list omits write-capable functions even when pre-round fuzzy discovery finds them. This prunes only current declarations (not installed capabilities) and retains original read sources. Later explicit discovery can still expose a mixed-purpose gateway when its read operation is required; the existing atomic write rejection and confirmation guards remain in place. Explicitly authorised creation/control paths retain their normal writer availability. The current live v0.18.390 comparison remained ungraded (15.168s, 7 read receipts, one blocked write attempt); this release's effect on accuracy, first-answer usefulness, actual cloud rounds and latency is **NOT MEASURED** until a new controlled read-only response. [Release notes](CHANGELOG-0.18.391.md).
 
