@@ -23,6 +23,7 @@ from device_state_summary import (
     capability_names,
     device_attributes,
     is_light_device,
+    switch_state_coverage,
 )
 from device_target_resolver import (
     CandidateResolution,
@@ -1812,12 +1813,21 @@ class DeviceQueryService:
             active_lights(devices), devices,
             question=user_question, tool_room=str(arguments.get("room") or ""),
         )
+        # Source inventory completeness and per-candidate state coverage
+        # are separate claims. Unknown recognised light states are NOT off.
+        coverage = switch_state_coverage(
+            devices, device_kind="light",
+            rooms=tuple(scope.get("matchedRooms") or ())
+            if scope.get("scope") == "room" else (),
+        )
         data = {
             "lights": lights,
             "count": len(lights),
-            "definition": "light/bulb capability with switch=on",
+            "definition": "recognised light/bulb capability or label with switch=on",
             "total_scanned": len(devices),
             "complete": scope.get("scopeVerified") is True,
+            "state_coverage_complete": coverage["unknown_state_count"] == 0,
+            "state_coverage": coverage,
             "read_scope": "bulk live context",
             **scope,
         }
@@ -2017,12 +2027,19 @@ class DeviceQueryService:
             active_non_light_switches(devices), devices,
             question=user_question, tool_room=str(arguments.get("room") or ""),
         )
+        coverage = switch_state_coverage(
+            devices, device_kind="non_light_switch",
+            rooms=tuple(scope.get("matchedRooms") or ())
+            if scope.get("scope") == "room" else (),
+        )
         data = {
             "switches": switches,
             "count": len(switches),
-            "definition": "switch=on excluding light/bulb capabilities",
+            "definition": "reported switch=on excluding recognised light devices",
             "total_scanned": len(devices),
             "complete": scope.get("scopeVerified") is True,
+            "state_coverage_complete": coverage["unknown_state_count"] == 0,
+            "state_coverage": coverage,
             "read_scope": "bulk live context",
             **scope,
         }
