@@ -1,5 +1,47 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Rule Machine Llama local saved-file SHA discrepancy resolved
+
+User reopened the original private local Q2 Rule Machine parent
+capture directory and ran PowerShell `Get-FileHash` on
+`aq_rule_parent_type_gap.candidate.txt`. The **actual saved
+file's SHA-256** is
+`b8ee24d20674fb6d932027d11188cdc81e8b8d4b1078ea84ea5ecf8d221d5ca6`,
+**exactly matching** `candidate.json` for local
+`llama3.2:3b` on packet
+`21542170532d34510b19613f6c7bd97958cf300aa8cf151e2649ef8328b14cf3`.
+The user's `Get-Content -Encoding UTF8 -Raw` showed the same
+substantive answer as the earlier paste. The former assistant
+hash over pasted text differed because its **representation**
+was not byte-identical; **the saved benchmark answer is not
+shown to be corrupted**. The earlier Q2 status's "integrity
+discrepancy" is **superseded** by this original-file
+verification. The original-file hash and manifest are
+verified by the user's local check, not independent
+provider attestation, and it does **not** prove Llama's
+reasoning correctness.
+
+All **four local Q2 domain pairs** now have complete
+user-observed outputs and the Rule Machine file-integrity
+question is closed. Evidence-based qualitative judgments
+remain unchanged: Qwen more source-complete but speculative;
+Llama faster but incomplete or causally wrong on several
+cases. Blinded SHA-bound human grades, overall grounding
+percentages, provider comparison beyond one Gemma Cloud
+MQTT case, and actual HomeBrain end-to-end metrics are
+**NOT MEASURED**.
+
+**Next step:** One *read-only live HomeBrainOS*
+investigation of native Rule Machine parent identity
+(app 169) with complete natural-language answer and
+Technical JSON. Do not create/modify/execute rules,
+change existing model routing or infer native class
+identity from an app display name. No new offline
+inference required. Add-on remains **v0.18.404**.
+[Updated four-domain review](ANSWER-QUALITY-Q2-FOUR-DOMAIN-LOCAL-REVIEW-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 fourth local Rule Machine identity case completed; four-domain descriptive review, no formal score
 
 **Actual Windows local A/B on the final four-case-set domain:**
