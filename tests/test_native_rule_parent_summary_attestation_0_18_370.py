@@ -125,6 +125,71 @@ def test_mcp_515_flat_summary_refuses_missing_contradictory_or_unverified_identi
     assert result["parentIdentityComplete"] is False
 
 
+def test_builtin_type_row_missing_namespace_does_not_veto_independent_native_summary():
+    """Upstream systemAppTypes may provide built-in flags without namespace."""
+    native_without_namespace = {
+        "apps": [{"id": 18, "name": "Rule Machine",
+                  "system": True, "isBuiltIn": True, "menu": "apps"}],
+        "count": 1,
+    }
+    report = project_rule_inventory(
+        INSTANCES, native_without_namespace, RULES,
+        {"169": FLAT_515_SUMMARY},
+    )
+    assert report["parents"] == [{
+        "appId": "169", "appTypeId": "18",
+        "namespace": "hubitat", "name": "Rule Machine",
+        "proof": "source-typed-installed-app-summary",
+    }]
+    assert report["nativeRuleMachineTypeIds"] == []
+    assert report["parentIdentityComplete"]
+    assert report["catalogClassConflicts"] == []
+    assert "namespace **hubitat**" in render_inventory(report)
+
+
+@pytest.mark.parametrize("row", [
+    {"id": 18, "namespace": "community", "name": "Other",
+     "system": False, "isBuiltIn": False},
+    {"id": 18, "namespace": "user", "name": "Rule Machine",
+     "system": False, "isBuiltIn": False},
+    {"id": 18, "namespace": None, "name": "Other",
+     "system": True, "isBuiltIn": True},
+    {"id": 18, "namespace": "user", "name": "Rule Machine",
+     "system": True, "isBuiltIn": True},
+    {"id": 18, "namespace": "hubitat", "name": "Rule Machine",
+     "system": False, "isBuiltIn": True},
+    {"id": 18, "namespace": "hubitat", "name": "Rule Machine",
+     "system": True, "isBuiltIn": False},
+])
+def test_true_catalog_conflicts_still_veto_parent_and_redact_other_class_names(row):
+    types = {"apps": [row], "count": 1}
+    result = project_rule_inventory(
+        INSTANCES, types, RULES, {"169": FLAT_515_SUMMARY},
+    )
+    assert result["parents"] == []
+    assert result["parentIdentityComplete"] is False
+    assert result["summarySourceChecks"][0]["typeProofGap"] == (
+        "native-app-summary-catalog-conflict"
+    )
+    conflicts = result["catalogClassConflicts"]
+    assert len(conflicts) == 1
+    assert conflicts[0]["appTypeId"] == "18"
+    assert conflicts[0]["classNameMatches"] is (row["name"] == "Rule Machine")
+    assert "name" not in conflicts[0]
+    assert "Other" not in str(conflicts)
+    assert "contradicts" in render_inventory(result)
+
+
+def test_positive_catalog_join_must_reject_explicit_user_code_flag():
+    instances = deepcopy(INSTANCES)
+    types = {"apps": [{"id": 18, "namespace": "hubitat",
+                       "name": "Rule Machine", "system": False,
+                       "isBuiltIn": False}], "count": 1}
+    result = project_rule_inventory(instances, types, RULES)
+    assert result["parents"] == []
+    assert result["candidateParents"][0]["appId"] == "169"
+
+
 def test_mcp_515_flat_summary_never_overrides_conflicting_typed_catalog():
     types = {
         "apps": [{"id": 18, "namespace": "community", "name": "Other",

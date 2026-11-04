@@ -139,6 +139,41 @@ def _native_parent_from_summary(
     }, ""
 
 
+def _native_catalog_row_conflicts(row: dict[str, Any]) -> bool:
+    """A missing namespace is not a contradictory namespace.
+
+    The MCP type listing combines userAppTypes with built-in systemAppTypes.
+    The latter can have system/isBuiltIn=true while omitting namespace.
+    A separate installed-app summary can authoritatively supply that field.
+    Explicit contrary class name/namespace or user-code flags still veto.
+    """
+    namespace = row.get("namespace")
+    return (
+        row.get("name") != "Rule Machine"
+        or namespace not in (None, "", "hubitat")
+        or row.get("system") is False
+        or row.get("isBuiltIn") is False
+    )
+
+
+def _safe_catalog_conflict(row: dict[str, Any], type_id: str) -> dict[str, Any]:
+    """Publish only the relevant identity conflict, never third-party names."""
+    namespace = row.get("namespace")
+    return {
+        "appTypeId": type_id,
+        "classNameMatches": row.get("name") == "Rule Machine",
+        "namespaceEvidence": (
+            "absent" if namespace in (None, "") else
+            "hubitat" if namespace == "hubitat" else "conflicting"
+        ),
+        "system": row.get("system") if type(row.get("system")) is bool else None,
+        "isBuiltIn": (
+            row.get("isBuiltIn")
+            if type(row.get("isBuiltIn")) is bool else None
+        ),
+    }
+
+
 def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: dict[str, Any] | None = None) -> dict[str, Any]:
     inst, inst_complete = _collection(instances, "apps", total_field="totalOnHub")
     type_rows, types_complete = _collection(types, "apps")
@@ -158,11 +193,14 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: di
         _id(row.get("id")) for row in type_rows
         if row.get("namespace") == "hubitat"
         and row.get("name") == "Rule Machine"
+        and row.get("system") is not False
+        and row.get("isBuiltIn") is not False
         and _id(row.get("id"))
     }
     parents = []
     possible = []
     summaries_checked = []
+    catalog_class_conflicts: list[dict[str, Any]] = []
     for row in inst:
         if row.get("type") != "Rule Machine" or _label(row) != "Rule Machine":
             continue
@@ -190,14 +228,20 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: di
                     # rows are a gap; disagreeing rows are a conflict.
                     contradictions = [
                         t for t in type_rows
-                        if _id(t.get("id")) == app_type
-                        and (t.get("namespace") != "hubitat"
-                             or t.get("name") != "Rule Machine"
-                             or t.get("system") is False)
+                        if app_type is not None
+                        and _id(t.get("id")) == app_type
+                        and _native_catalog_row_conflicts(t)
                     ]
                     if not contradictions:
                         parents.append(candidate)
                         continue
+                    # Only a genuine contradiction vetoes the independent
+                    # thin installed-app summary. A built-in catalog class
+                    # with a missing namespace is *not* one.
+                    catalog_class_conflicts.extend(
+                        _safe_catalog_conflict(t, app_type)
+                        for t in contradictions[:6]
+                    )
                     summaries_checked[-1]["typeProofGap"] = (
                         "native-app-summary-catalog-conflict"
                     )
@@ -245,6 +289,7 @@ def project_rule_inventory(instances: Any, types: Any, rules: Any, summaries: di
         "parents": parents[:20],
         "candidateParents": possible[:20],
         "summarySourceChecks": summaries_checked[:20],
+        "catalogClassConflicts": catalog_class_conflicts[:6],
         # Retain only the bounded built-in Rule Machine type-class IDs
         # needed to diagnose the join; never publish unrelated app names,
         # installed app inventories or private source code.
@@ -317,6 +362,13 @@ def render_inventory(data: dict[str, Any]) -> str:
                         "The independent app summary omitted its native "
                         "appType namespace/name. A built-in name alone "
                         "cannot establish the native writer parent."
+                    )
+                elif reason == "native-app-summary-catalog-conflict":
+                    lines.append(
+                        "The exact class-ID catalog record contradicts the "
+                        "installed app's independent native summary. "
+                        "Identity remains unverified; the Technical details "
+                        "include redacted class-identity conflict fields."
                     )
                 elif reason and reason != "native-app-summary-unavailable":
                     lines.append(

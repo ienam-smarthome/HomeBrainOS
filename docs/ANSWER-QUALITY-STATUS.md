@@ -1,5 +1,40 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Internet-blocker native class catalog consistency — v0.18.387 candidate (2026-11-03)
+
+**Installed paired read-only test v0.18.386:** 3.611s, zero model
+rounds, five logical tool calls vs v0.18.385's 25.650s, six rounds,
+ten calls on the same prompt (85.9% shorter observed elapsed, **n=1**
+pair; not a controlled distribution or certified first attempt). Source
+projector found parent candidate app 169, appTypeId 18; returned
+zero exact one-time suffixes from complete rule/app listings.
+Exact `hub_get_app_config(169,summary=true)` read succeeded but native
+parent remained unresolved due to `native-app-summary-catalog-conflict`.
+The private diagnostic JSON did not include raw catalog class entries;
+actual installed conflict details **are still unverified**.
+
+**General source-contract finding:** the upstream MCP
+`hub_list_apps(scope=types)` builds from community userAppTypes plus
+native systemAppTypes; the built-in class can have `system=true` and
+`isBuiltIn=true` with no `namespace`. HomeBrain 0.18.386 treated
+`namespace=None` as a contradictory namespace even when thin
+`hub_get_app_config(summary=true)` independently attested the
+installed app's namespace. The 0.18.387 candidate distinguishes
+**missing** from **explicitly conflicting** namespace, accepts a
+source-typed summary only with exact ID/type/user/root identity, and
+retains hard refusals for explicit foreign namespace, wrong class
+name and any user-code flags. A bounded, name-redacted conflict witness
+is reported if a real mismatch remains; no added MCP reads/cloud rounds.
+
+**Acceptance pending:** source tests and CI first; then one same-question
+read-only installed receipt with native parent verification or typed
+conflict details. No real timed switch test, one-time execution or
+OpenWrt blocking is established. The offline BAT scripts remain
+disabled, and a live harmless virtual-switch test needs independent
+written approval. No household automation/device/network changed.
+The permanent Answer Quality Q1/Q2 roadmap remains active.
+
+
 ## Internet blocker source-verification routing — v0.18.386 GREEN MERGED (2026-11-03)
 
 **Verified repository result:** [PR #1371](https://github.com/ienam-smarthome/HomeBrainOS/pull/1371)

@@ -343,6 +343,36 @@ def test_parent_type_namespace_not_attested_never_creates_rule(namespace):
     assert not hub.runs
 
 
+def test_builtin_catalog_missing_namespace_requires_matching_independent_summary():
+    valid = {"success": True, "id": 169, "type": "Rule Machine",
+             "namespace": "hubitat", "user": False,
+             "appTypeId": 18, "parentId": None}
+    hub = Hub(type_namespace=None, summary=valid)
+    assert n.find_parent(hub) == 169
+    assert hub.calls_for("hub_get_app_config") == [
+        {"appId": "169", "summary": True}
+    ]
+    assert not hub.calls_for("hub_set_rule")
+    assert not hub.calls_for("hub_create_backup")
+
+
+@pytest.mark.parametrize("patch", [
+    {"namespace": "user"},
+    {"user": True},
+    {"appTypeId": 20},
+    {"parentId": 99},
+    {"parentAppId": 22},
+])
+def test_builtin_catalog_missing_namespace_never_overrides_bad_summary(patch):
+    valid = {"success": True, "id": 169, "type": "Rule Machine",
+             "namespace": "hubitat", "user": False, "appTypeId": 18}
+    hub = Hub(type_namespace=None, summary={**valid, **patch})
+    with pytest.raises(n.Refuse, match="rm_parent_type_mismatch"):
+        n.find_parent(hub)
+    assert not hub.calls_for("hub_set_rule")
+    assert not hub.calls_for("hub_create_backup")
+
+
 def test_rule_inventory_failure_never_becomes_no_duplicate():
     hub=Hub(list_ok=False)
     with pytest.raises(n.Refuse,match="inventory_unverified"):
