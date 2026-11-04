@@ -1,5 +1,46 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 source-verified first-answer A/B: private capture workflow candidate
+
+**Next step after Q1:** Existing Q2 no-cloud GitHub runner recorded true
+small-local-model first-answer response timings and SHA digests but
+deliberately discarded raw replies. That cannot support human source
+review of causal calibration, first-answer usefulness or naturalness.
+Existing `answer_quality_paired_reviews.py` requires answer-SHA-bound
+private human reviews, not merely completion counters.
+
+**Proposed Q2 capability:** `scripts/answer_quality_q2_private_capture.py`
+provides an explicit local run on 1–4 fixed synthetic/anonymised source
+packets (default four across causal issuer, heating, MQTT and rules).
+Each model receives exactly the same rendered prompt, one request per
+arm with no retry, fixed requested settings and no MCP tools. Private
+raw answers, SHA-256 metadata, and **unfilled** (null-grade) answer-linked
+human review forms are written only to a new directory outside this
+repository. Local loopback/Ollama model inventory is supported; the
+official Ollama Cloud Gemma endpoint requires separate `--run`,
+`--ack-cloud-usage` and an environment API key. No cloud call or model
+response is executed by CI. There is no unconsented billing, Hubitat/HA
+write, production runtime code or add-on version change. Mocked tests
+verify source equality, exact hashes, false-score rejection, tool-free
+requests, explicit cost acknowledgement, private output and failures.
+
+**Measurement:** This implementation is offline evaluation
+infrastructure only. First-model reasoning quality, Gemma-versus-
+alternative human-reviewed paired results, Claude comparison,
+production publisher effect and p50/p95 **NOT MEASURED** until real
+model replies and actual human source reviews exist. Previous Q1
+observations stand unchanged.
+
+**Acceptance/continuation:** Verify full exact-head CI and
+documentation; do not merge if gate red. Then perform an explicitly
+approved private, actual first-answer capture on installed/local
+model transports and compare manually reviewed identical packets
+with existing `scripts/answer_quality_paired_reviews.py`. Do not
+extrapolate from synthetic tests or tiny local models to Gemma.
+[Implementation and limits](ANSWER-QUALITY-Q2-PRIVATE-FIRST-ANSWER-CAPTURE-20261104.md).
+
+---
+
 ## 2026-11-04 — Q1 v0.18.404 broad hub health: live snapshot good, alert coverage partial
 
 The exact registered read-only `broad_hub_health` question
