@@ -244,7 +244,7 @@ async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
             "args": {
                 "format": "detailed",
                 "fields": [
-                        "id", "name", "label", "room",
+                        "id", "name", "label", "room", "driver",
                         "capabilities", "attributes", "commands", "lastActivity",
                 ],
                 "limit": 50,
@@ -381,7 +381,7 @@ async def test_health_audit_uses_fresh_lean_projection_and_concurrent_verified_p
         args = arguments["args"]
         assert args["format"] == "detailed"
         assert args["fields"] == [
-            "id", "name", "label", "room", "capabilities", "attributes",
+            "id", "name", "label", "room", "driver", "capabilities", "attributes",
             "lastActivity",
         ]
         offset = int(args["cursor"])
