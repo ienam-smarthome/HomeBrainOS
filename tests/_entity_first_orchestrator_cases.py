@@ -2535,7 +2535,8 @@ async def test_hub_info_request_uses_authoritative_snapshot_not_generic_info():
     ]
     assert "homebrain_hub_info_snapshot" in declared
     assert "hub_get_info" not in declared
-    assert outcome.message == "Hub firmware 2.5.1.136 is up to date."
+    assert "Firmware 2.5.1.136 matches source-reported available version 2.5.1.136" in outcome.message
+    assert "external update freshness unverified" in outcome.message
     assert outcome.evidence[-1]["evidence_kind"] == (
         "authoritative_hub_info_snapshot"
     )
