@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Any
 
 from mcp_client import MCPTool
+from native_switch_schedule import dated_switch_proposal_error
 
 LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 LOCAL_QUERY_TOOL = "homebrain_query_devices"
@@ -759,13 +760,16 @@ def rule_machine_proposal_error(
             "Read hub_get_tool_guide(section=\"set_rule_reference\") and retry. "
             "No action was queued or executed."
         )
+    if payload.get("operation") == "create":
+        # A single narrow source-attested native document authoring contract.
+        # No arbitrary native forms/updates or model-invented fields are
+        # admitted by this path. This pure gate is rerun on confirmation.
+        return dated_switch_proposal_error(payload)
     if "operation" in payload or isinstance(payload.get("args"), dict):
         return (
-            "Invalid Rule Machine proposal: hub_set_rule does not use an "
-            "operation/create/args envelope. Put name, addTrigger(s), and "
-            "addAction(s) directly inside the gateway args object. Read "
-            "hub_get_tool_guide(section=\"set_rule_reference\") and retry. "
-            "No action was queued or executed."
+            "Invalid Rule Machine proposal: use the verified native "
+            "operation=create document contract, or a compatible legacy "
+            "server. No action was queued or executed."
         )
     if payload.get("confirm") is True:
         return (
