@@ -45,7 +45,7 @@ def test_message_is_problem_first_and_includes_attention_count():
 
     message = AutomationStatusService._message(items)
 
-    assert message.startswith("Hubitat returned 4 automation items. 3 need attention.")
+    assert message.startswith("Hubitat returned 4 automation items. 2 need attention.")
     assert "Inventory: 2 app instances, 2 Rule Machine entries." in message
     assert message.index("### Broken (1)") < message.index("### Paused (1)")
     assert message.index("### Paused (1)") < message.index("### Unknown (1)")
@@ -158,3 +158,37 @@ def test_absent_rule_result_does_not_imply_hub_has_zero_rules():
     )
     assert "not evidence of zero rules" in message
     assert "no individual rule execution was verified" in message
+
+def test_large_config_inventory_is_problem_first_and_paused_is_not_failure():
+    items = [
+        {"id": str(i), "name": f"Enabled {i}", "display_name": f"Enabled {i}",
+         "type": "app", "status": "active"}
+        for i in range(146)
+    ]
+    items.extend(
+        {"id": str(i), "name": f"Disabled {i}", "display_name": f"Disabled {i}",
+         "type": "app", "status": "disabled"}
+        for i in range(146, 164)
+    )
+    items.append({"id": "164", "name": "Paused", "display_name": "Paused",
+                  "type": "rule", "status": "paused"})
+    short = AutomationStatusService._message(items)
+    assert "165 automation items" in short
+    assert "18 disabled, 1 paused, 0 broken markers" in short
+    assert "need attention" not in short
+    assert "may be intentional" in short
+    assert "### Paused (1)" in short
+    assert "Enabled 0" not in short
+    assert "Disabled 146" not in short
+    assert len(short) < 1500
+    long = AutomationStatusService._message(items, full=True)
+    assert "Enabled 0" in long
+    assert "Disabled 146" in long
+
+
+def test_full_inventory_requires_explicit_quantifier():
+    assert AutomationStatusService.wants_full_inventory("List every automation and rule")
+    assert AutomationStatusService.wants_full_inventory("show all rules")
+    assert AutomationStatusService.wants_full_inventory("Give me the complete automation inventory")
+    assert not AutomationStatusService.wants_full_inventory("What is the status of my rules?")
+    assert not AutomationStatusService.wants_full_inventory("Which rules need attention?")
