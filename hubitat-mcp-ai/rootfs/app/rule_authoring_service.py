@@ -1542,13 +1542,16 @@ class RuleAuthoringService:
             if native_mode:
                 parent_id = await self._native_parent_id()
                 guide_key = await self._native_guide_key()
-                if parent_id is None or guide_key is None:
+                if parent_id is None:
                     return RuleAuthoringDecision(
                         True,
-                        "The native Rule Machine parent or installed guide "
-                        "acknowledgement is not verified; nothing was queued.",
+                        "The native Rule Machine parent is not source-verified. "
+                        "No rule was queued.",
                         rule_names=(single_name,), target=target,
                     )
+                # The upstream guide acknowledges writes only when that
+                # setting is enabled. Do not invent a key when not advertised:
+                # upstream will refuse a required missing key before writing.
                 try:
                     wall = datetime.fromisoformat(intent.start_time)
                     if wall.tzinfo is not None:
