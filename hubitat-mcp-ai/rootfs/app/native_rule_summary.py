@@ -40,6 +40,23 @@ def _text(row: dict[str, Any] | None, typ: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _typed_bool(row: dict[str, Any] | None) -> bool | None:
+    """Decode only canonical native bool values, never general truthiness.
+
+    Hubitat native settings often expose bool form values as the strings
+    "true" and "false", unlike the typed Python booleans in mock fixtures.
+    Missing/empty/unknown values remain unverified.
+    """
+    if not isinstance(row, dict) or row.get("type") != "bool":
+        return None
+    raw = row.get("value")
+    if type(raw) is bool:
+        return raw
+    if isinstance(raw, str) and raw in ("true", "false"):
+        return raw == "true"
+    return None
+
+
 def _minutes(settings: dict[str, dict[str, Any]], action_id: str) -> str | None:
     """Only a saved hrs:min:sec Wait field can support duration prose."""
     selector = settings.get(f"delayAct.{action_id}")
@@ -109,8 +126,7 @@ def describe_native_rule(
         dated = (
             trigger_date is not None
             and isinstance(date_mark, dict)
-            and date_mark.get("type") == "bool"
-            and date_mark.get("value") is True
+            and _typed_bool(date_mark) is True
         )
         if clock is not None and dated:
             text = f"On **{trigger_date} at {clock}** (saved dated trigger)"
@@ -136,13 +152,11 @@ def describe_native_rule(
         if method == "getOnOffSwitch":
             direction = settings.get(f"onOff.{action_id}")
             targets = settings.get(f"onOffSwitch.{action_id}")
-            if (isinstance(direction, dict)
-                    and direction.get("type") == "bool"
-                    and type(direction.get("value")) is bool
+            if (_typed_bool(direction) is not None
                     and isinstance(targets, dict)
                     and targets.get("type") == "capability.switch"
                     and targets.get("device_ids")):
-                onoff = "ON" if direction["value"] else "OFF"
+                onoff = "ON" if _typed_bool(direction) else "OFF"
                 ids = ", ".join(targets["device_ids"])
                 action = f"Set switch **{onoff}** \u2014 device ID(s) **{ids}**"
             else:
