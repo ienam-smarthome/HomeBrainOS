@@ -1,5 +1,72 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — timed Internet field validation DONE; permanent Q1 Answer Quality resumed
+
+**User-observed functional acceptance (not a Q1 answer-quality score):** The
+installed HomeBrainOS v0.18.398 and hub-resident Cudy driver successfully
+scheduled and executed a 2-minute Internet block for the first media device.
+The driver reported blocking just after the deadline; the user confirmed
+they manually restored Internet access. With v0.18.399, the separate media
+device also armed a 2-minute timer and reported **timer reached** and
+**Internet BLOCKED** at 11:45:17 GMT (about 0.25s after the local target).
+The driver later reported **Internet ALLOWED** at 11:46:26 GMT; the issuer
+of that subsequent allowance has **not** been independently established.
+Hubitat logs reported MAC blocking and conntrack flushing; no independent
+packet-level connectivity probe was supplied. No Hubitat/HA/router writes
+were made by the repository work.
+
+**Performance — verified single two-device comparison, not a population
+distribution:** The earlier v0.18.398 initial timer proposal was
+**38.160s** (37.951s MCP HTTP); the v0.18.399 first proposal was
+**1.541s** (1.534s MCP HTTP; timed-internet summary preflight 1.056s).
+That is a ~25x / ~96% difference between two **different** media devices,
+not a controlled identical-device throughput trial or a first-answer
+accuracy result. Confirmed driver command/readback took roughly 1.8s
+on the TV example and 1.6s on the other device. Engineering PRs
+[#1396](https://github.com/ienam-smarthome/HomeBrainOS/pull/1396)
+(0.18.398, merged `23196101`) and
+[#1397](https://github.com/ienam-smarthome/HomeBrainOS/pull/1397)
+(0.18.399, merged `c8aec3f9`) passed the blocking release gates.
+Live multi-device batch cancellation and missed-hub-reboot jobs remain
+unverified; do not infer them from two successful single-device timers.
+
+**Original user direction restored:** Return to the permanent Answer
+Quality Q1→Q2→Q3→Q4 roadmap documented in
+[ANSWER-QUALITY-CHARTER.md](ANSWER-QUALITY-CHARTER.md). Do not continue
+incident-specific timer patches. Maintained add-on version is
+**0.18.399**. Current 53 registered evaluation cases = 13 legacy
+tasks + 40 curated synthetic offline source packets. The official
+independently reviewed first-attempt accuracy/grounding denominator is
+still **0 (NOT MEASURED)**. A timed-block success or CI count must not
+be counted as answer correctness or Claude parity.
+
+**Current Q1 milestone:** Add a privacy-safe one-response intake utility
+`scripts/answer_quality_live_sample.py`, which binds the
+source response to the **exact registered API prompt digest**, preserves
+only source-execution/timing/outcome metadata, and always leaves human
+source grading and first-attempt certification **not measured**.
+See [Q1 intake procedure](ANSWER-QUALITY-Q1-LIVE-SAMPLE-INTAKE.md).
+This is an **offline evaluation utility** only; no add-on runtime
+change, no further timer patch and **no version bump**. CI and merge
+for this candidate must be verified separately.
+
+**Next user-supplied acceptance (one read-only first response):** In a
+fresh HomeBrain topic, submit exactly the unchanged registered
+`multi_device_named` prompt:
+`Compare the states of Hallway Light 1 and Livingroom Light 2.`
+Return the first natural-language answer **and complete Technical JSON**
+privately. Do not change anything. Independently review source identity,
+individual current switch and level reads, staleness, tool outcomes and
+whether the answer says more than its receipts support. This is a new Q1
+observational sample, NOT an authenticated certified first attempt while
+the API sets `first_attempt_verified=false`.
+Then continue Q1 measured cross-domain evidence before Q2 same-source
+Gemma versus alternative model comparison. Roll back the evaluation-only
+intake PR if it leaks sensitive source details or mistakes transport
+success for grounded answer quality.
+
+---
+
 ## 2026-11-04 — v0.18.397 native MCP installed-version fix MERGED
 
 **User-observed baseline:** On installed HomeBrain 0.18.396, the request `Block TV after 30 mins` entered deterministic scheduled-write path and returned unresolved in **121 ms**, with one verified `hub_get_tool_guide(set_rule_reference)` read, zero other reads and no write. Message: `native_oneshot_date_field_unverified` because cached MCP initialize did not attest installed Rule Server **>=5.1.6**. Earlier Hubitat read reported **5.1.5**, but exact current version was **not established by this failed request**. Upstream [#575](https://github.com/kingpanther13/Hubitat-local-MCP-server/issues/575) closed with new date-field support for >=5.1.6. The user wants the original one-shot workflow; **the cumulative allowance app is NOT required**. The daily one-time cleanup was shown enabled for 07:00 (last run 4 Nov, zero deletes/failures). It only removes expired `HB one-shot |`-named rules; user-created test rule 4285 stays untouched.
