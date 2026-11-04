@@ -27,6 +27,9 @@ _ROOM_STATUS_POLICY = """
 
 ROOM STATUS EVIDENCE
 - For a room-status/state question, preserve useful per-device observations instead of collapsing distinct sensor readings into an unattributed range.
+- For a current-state or brightness comparison, resolve each named device and rely on its independently read switch/level attributes. Answer the requested comparison directly; do not broaden a current snapshot into event history, automation-issuer speculation, duty-cycle totals or a causal investigation unless the user explicitly requests those.
+- A retained dimmer level while switch=off is a reported setting, not proof of current light output. A bridge-reported switch transition and a nearby automation-issued command are distinct kinds of evidence; neither an event listener nor temporal proximity establishes the automation's original trigger.
+
 - Include relevant switch/level, motion/presence, temperature, humidity, illuminance, battery, and explicit health/connectivity states when current-turn evidence supplies them.
 - Name the source device for environmental readings when more than one device reports the same attribute.
 - Preserve source-supplied update/activity timestamps when they materially qualify a cached state. Never invent a timestamp.
