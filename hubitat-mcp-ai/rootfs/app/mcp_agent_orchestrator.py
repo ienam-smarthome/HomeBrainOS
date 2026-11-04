@@ -4847,6 +4847,12 @@ class UnifiedMCPAgent:
             catalog.replace_declared([
                 *catalog.declared_names, "hub_manage_virtual_device",
             ])
+        # A read-only user objective cannot grant a model write authority.
+        # Hide write-capable schemas before the first provider round instead
+        # of waiting for an unnecessary blocked proposal. Keep this a prune,
+        # not a broad read-tool expansion, to preserve initial source choice.
+        if not self._mutation_requested_by_user.get():
+            catalog.restrict_declared_to_read_only()
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(
@@ -5571,6 +5577,12 @@ class UnifiedMCPAgent:
                 tools = catalog.schemas()
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
+                tools = catalog.schemas()
+            # Discovery and later source checkpoints may alter declarations.
+            # Re-apply the original user-authority boundary on EVERY round.
+            # Authorized write requests retain the unchanged normal catalog.
+            if not self._mutation_requested_by_user.get():
+                catalog.restrict_declared_to_read_only()
                 tools = catalog.schemas()
             set_request_stage(
                 f"AI reasoning (round {round_index + 1}/{active_round_budget})"
