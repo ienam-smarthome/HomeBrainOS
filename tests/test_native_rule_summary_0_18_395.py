@@ -93,3 +93,22 @@ def test_no_leak_on_invalid_trigger_or_wrong_id():
     assert describe_native_rule(item, app_id="1234", methods=methods()) is None
     item = packet()
     assert describe_native_rule(item, app_id="4321", methods=methods()) is None
+
+
+def test_large_native_editor_document_stays_short_with_redacted_count():
+    item = packet()
+    # The live test rule returned 71 editor settings, six redacted or
+    # unsupported. Reproduce the volume without copied private values.
+    item["settings"].extend(
+        {"name": f"uiButton{i}", "type": "button", "value": ""}
+        for i in range(55)
+    )
+    item["settings"].extend(
+        {"name": f"passwordField{i}", "type": "text", "value": "redacted"}
+        for i in range(5)
+    )
+    assert len(item["settings"]) == 71
+    answer = describe_native_rule(item, app_id="1234", methods=methods())
+    assert "71 setting(s) returned; 6 settings redacted or unsupported" in answer
+    assert "uiButton0" not in answer and "passwordField0" not in answer
+    assert len(answer) < 1600
