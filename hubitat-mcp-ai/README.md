@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.398**.
+Current add-on version: **0.18.399**.
+
+**Timed Internet preflight optimisation (v0.18.399):** After live v0.18.398 testing verified the driver timer fired on device 6923, HomeBrain now resolves candidate Cudy Block devices with one lightweight, filtered summary inventory instead of the redundant detailed all-device manifest scan. It retains full driver identity, ambiguity and expected-ID guards, existing user confirmation, and post-write deadline verification. A partial summary fails closed. The observed prior confirmation delay was 38.16 s (37.95 s MCP HTTP); new live latency remains **not measured** until an installed comparison. [Release notes](CHANGELOG-0.18.399.md).
 
 **Hub-resident timed Internet control (v0.18.398):** Add a dedicated, approval-required path for delayed blocks on verified Cudy Managed Device instances, using driver-provided commands, ID-scoped MCP writes and deadline read-back. The feature requires the owner to install and validate the separate Groovy driver patch before use; HomeBrain does not upload driver code or create Rule Machine rules. No live timer firing or router enforcement has been measured. [Setup and limitations](../docs/TIMED-INTERNET.md). [Release notes](CHANGELOG-0.18.398.md).
 
