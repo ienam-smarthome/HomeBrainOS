@@ -32,7 +32,8 @@ _BULLET_LABEL = re.compile(
     r"(?P<label>CPU(?:\s+load|\s+usage)?(?:\s*\([^)]*\))?"
     r"|free\s+memory|temperature|temp|database(?:\s+size)?"
     r"|zigbee|z[- ]?wave|matter|hub\s+alerts?|alerts?)"
-    r"(?:\*\*)?\s*:\s*(?P<value>.+?)(?P<end>\r?\n?)$"
+    r"(?P<sep>(?:\*\*)?\s*:\s*(?:\*\*)?|:\s*(?:\*\*)?)"
+    r"(?P<value>.+?)(?P<end>\r?\n?)$"
 )
 _NUMBER = re.compile(r"(?<![A-Za-z0-9])[-+]?\d+(?:\.\d+)?(?![A-Za-z0-9])")
 _VERSION = re.compile(r"\b\d+(?:\.\d+){2,}\b")
@@ -199,8 +200,8 @@ def guard_typed_status_claims(
             # Preserve the model's formatting and surrounding answer, never
             # fabricate an entire report from a partially observed source.
             parts.append(
-                f"{match.group('prefix')}{match.group('label')}: "
-                f"{replacement}{match.group('end')}"
+                f"{match.group('prefix')}{match.group('label')}"
+                f"{match.group('sep')}{replacement}{match.group('end')}"
             )
             corrections.append(issue)
         else:
