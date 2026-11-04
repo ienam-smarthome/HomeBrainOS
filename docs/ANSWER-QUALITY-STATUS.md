@@ -1,5 +1,48 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 local answer-only capability correction merged; actual A/B still pending
+
+**Merged and exact-head CI verified:** [PR #1415](https://github.com/ienam-smarthome/HomeBrainOS/pull/1415)
+fixes the offline Q2 first-answer capture's response-format/think-budget
+hazard; tested PR head `40a4580effa4595f3f0ac55aeec86c9f4d7a7909`,
+merged commit `7c2f1b5a6e3b944e3dcd2d1c4822a66467651d2f`.
+All three required workflows succeeded, including **6,450 Python
+tests passed (2 warnings)**, release assurance, container smoke,
+metadata validation and Answer Quality integrity.
+
+**Specific installed failure:** Windows local-model capture with
+`qwen3.5:4b` and `llama3.2:3b` stopped on a generic no-final-answer
+error. No exact failing model/raw provider response was captured, no
+valid paired model answers were saved, and no semantic score resulted.
+This failed invocation must not be counted as a completed first attempt.
+
+**General repair:** After a local Ollama model inventory check,
+`/api/show` supplies thinking capabilities. When a Boolean off
+setting is supported, local `/api/chat` requests use the top-level
+`think:false` setting, preserving the same frozen evidence,
+temperature/seed/context/token budget, no tool definitions and
+no retry. Nonthinking models do not receive the field. Other
+thinking modes that cannot be switched off fail closed. Private
+error messages now distinguish thinking-only, empty final text,
+tool-call responses and oversized output, with safe arm
+identification. **Cloud transport is unchanged**, and the add-on
+remains **v0.18.404**.
+
+**Important evaluation boundary:** This is local **answer-only**
+first-output comparison, NOT an evaluation of thinking-enabled
+model quality. All tests were synthetic/mock transport; no
+actual Windows Qwen/Llama run after merge has yet been observed,
+and Q2 factual grading, independent first-attempt provenance,
+Gemma/Claude comparison and p50/p95 remain **NOT MEASURED**.
+Next: user updates the local checkout and runs the same frozen
+MQTT case once using a new private folder. Privately review
+the actual plaintext and SHA-bound metadata, then continue
+cross-domain Q2 fixed-evidence comparisons. No Hubitat, HA,
+router, device, Rule Machine or production agent modifications.
+[Detailed Q2 procedure](ANSWER-QUALITY-Q2-PRIVATE-FIRST-ANSWER-CAPTURE-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 Windows local-only capture: incomplete model output, bounded candidate fix
 
 **User-observed blocked first attempt:** From a valid local
