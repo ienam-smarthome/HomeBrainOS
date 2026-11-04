@@ -283,6 +283,20 @@ class TimedInternetControl:
                 })
             if not selected:
                 return self._receipt(args, {"success": False, "error": "No eligible managed Block devices"})
+            # Host-only confirmation snapshot: refuse any device substitution
+            # between preview and user approval, especially for bulk "all".
+            expected_ids = args.get("_expected_ids")
+            if expected_ids is not None:
+                actual_ids = sorted(d.id for d in selected)
+                if (
+                    not isinstance(expected_ids, list)
+                    or any(isinstance(i, bool) or not isinstance(i, int) for i in expected_ids)
+                    or sorted(expected_ids) != actual_ids
+                ):
+                    return self._receipt(args, {
+                        "success": False,
+                        "error": "Confirmed target IDs changed; no timed command was sent",
+                    })
             if action == "status":
                 pending = []
                 unknown = []
