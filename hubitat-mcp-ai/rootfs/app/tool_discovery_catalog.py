@@ -380,6 +380,23 @@ class ToolDiscoveryCatalog:
         }
         return [name for name in requested if name not in self._available]
 
+    def restrict_declared_to_read_only(self) -> tuple[str, ...]:
+        """Prune the current model view without expanding its read capabilities.
+
+        A request without user mutation authority should not advertise write
+        functions at all. Preserve currently discovered read schemas/order;
+        the execution-time mutation and confirmation guards remain independent.
+        A management gateway is excluded even when an empty probe would
+        classify as a read, because later arguments could mutate.
+        """
+        selected = [
+            name for name, tool in self._declared.items()
+            if not name.startswith(("hub_manage_", "hub_set_"))
+            and not classify_tool_effect(tool, {}).mutates
+        ]
+        self.replace_declared(selected)
+        return tuple(selected)
+
     def expand(
         self, result: MCPToolResult, *, query: str = ""
     ) -> list[MCPTool]:

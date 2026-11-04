@@ -4847,6 +4847,12 @@ class UnifiedMCPAgent:
             catalog.replace_declared([
                 *catalog.declared_names, "hub_manage_virtual_device",
             ])
+        # A read-only user objective cannot grant a model write authority.
+        # Hide write-capable schemas before the first provider round instead
+        # of waiting for an unnecessary blocked proposal. Keep this a prune,
+        # not a broad read-tool expansion, to preserve initial source choice.
+        if not self._mutation_requested_by_user.get():
+            catalog.restrict_declared_to_read_only()
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(
@@ -5572,6 +5578,13 @@ class UnifiedMCPAgent:
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
+            # Later explicit discovery may identify a mixed-purpose gateway
+            # that provides a verified read not available in pure read tools
+            # (for example a native Rule Machine document read). Preserve
+            # that schema for source completeness: the per-call effect guard
+            # still atomically rejects every unauthorized mutation. After a
+            # rejected batch, the sticky read-only recovery view below the
+            # existing guard continues to exclude management gateways.
             set_request_stage(
                 f"AI reasoning (round {round_index + 1}/{active_round_budget})"
             )
