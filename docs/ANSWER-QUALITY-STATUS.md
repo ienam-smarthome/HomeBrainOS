@@ -28,7 +28,7 @@ conflicting same-ID snapshots are not combined. Unsupported
 global alert/health and external firmware claims are qualified.
 No new model rounds, MCP reads or mutation permissions. Pure
 synthetic tests assess field/identity/format/absence boundaries.
-Exact-head CI, merge and installed after-results are pending.
+**Verified merge and tests:** [PR #1402](https://github.com/ienam-smarthome/HomeBrainOS/pull/1402) passed all four required workflows on exact tested head `03a5d68a914eb4a94b64a65d2c55fc8524034cb3`: **6,385 Python tests passed (2 warnings)**, metadata, add-on container smoke, validation and Answer Quality integrity. Merged to `main` as `e6c5130903441da5efc7fcfe39daf50ea649d9c8`. Add-on version `0.18.401` verified on main. **Installed after-response and latency remain unmeasured.**
 [Detailed source review](ANSWER-QUALITY-Q1-TYPED-REPORTS-20261104.md).
 
 **Q1 paired snapshot regression measured:** v0.18.399 two-light
