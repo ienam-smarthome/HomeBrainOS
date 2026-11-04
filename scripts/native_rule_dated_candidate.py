@@ -75,7 +75,13 @@ def plan(req: DatedRequest, now: datetime) -> DatedPlan:
     digest = hashlib.sha256(
         f"{req.device_id}|{verb}|{due.isoformat()}".encode("utf-8")
     ).hexdigest()[:12]
-    name = f"{LABEL_PREFIX}{label} {verb} | {due:%Y-%m-%dT%H:%MZ} | {digest}"
+    # This exact, terminal marker is the native inventory reader's
+    # one-time rule discovery contract. Retain the UTC slot and digest
+    # to disambiguate repeated local clock minutes around DST fallback.
+    name = (
+        f"{LABEL_PREFIX}{label} {verb} | {due:%Y-%m-%dT%H:%MZ} | {digest}"
+        f" (One-time {local:%Y-%m-%d %H:%M})"
+    )
     return DatedPlan(name, due, date, time)
 
 
