@@ -132,7 +132,7 @@ def guard_telemetry_source_claims(
     depth = depth if isinstance(depth, Mapping) else {}
     driver_verified = (
         authority.get("verifiedInstalledDriverBehaviour") is True
-        or depth.get("driverMethodBehaviourVerified") is True
+        and depth.get("driverMethodBehaviourVerified") is True
     )
     physical_verified = (
         authority.get("physicalCauseEstablished") is True
@@ -163,6 +163,12 @@ def guard_telemetry_source_claims(
             "whereas dataAgeSeconds reports approximately "
             f"{clock['reportedDataAgeHours']} hours. They disagree; "
             "neither verifies last physical-telemetry contact."
+        )
+    elif clock and clock.get("physicalTelemetryProven") is not True:
+        clock_note = (
+            "Stored lastSeen and reported dataAgeSeconds are Hubitat metadata; "
+            "neither independently verifies the time of the last physical "
+            "device-originated telemetry packet."
         )
     driver_note = (
         "The installed driver's status-update and watchdog implementation "
@@ -200,7 +206,7 @@ def guard_telemetry_source_claims(
         physical_qualified = bool(_QUALIFIED.search(physical_preceding))
         if not physical_verified and physical_match and not physical_qualified:
             key = "physical"
-        elif clock_conflict and (
+        elif clock_note and (
             _LAST_SEEN_PHYSICAL.search(line) or _DATA_AGE_PHYSICAL.search(line)
         ):
             key = "clock"
