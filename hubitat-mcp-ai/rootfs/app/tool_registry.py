@@ -27,6 +27,7 @@ LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 LOCAL_CONTROL_TOOL = "homebrain_control_devices"
+LOCAL_TIMED_INTERNET_TOOL = "homebrain_timed_internet"
 LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 LOCAL_WEATHER_TOOL = "homebrain_weather_snapshot"
 # Added 0.10.410: previously only reachable through a deterministic dispatch
@@ -50,6 +51,7 @@ EVIDENCE_KINDS = {
     LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
     LOCAL_HOME_SNAPSHOT_TOOL: "deterministic_home_snapshot",
     LOCAL_CONTROL_TOOL: "deterministic_device_control",
+    LOCAL_TIMED_INTERNET_TOOL: "verified_driver_timer_state",
     LOCAL_HUB_INFO_TOOL: "authoritative_hub_info_snapshot",
     LOCAL_WEATHER_TOOL: "authoritative_weather_snapshot",
     LOCAL_LOCATION_EVENTS_TOOL: "authoritative_location_event_history",
@@ -943,6 +945,9 @@ def classify_tool_effect(
         return ToolEffect.DESTRUCTIVE_WRITE
     if name in _SENSITIVE_GATEWAYS:
         return ToolEffect.SENSITIVE_WRITE
+    if name == LOCAL_TIMED_INTERNET_TOOL:
+        return (ToolEffect.READ if arguments.get("action") == "status"
+                else ToolEffect.SENSITIVE_WRITE)
     if name == LOCAL_CONTROL_TOOL:
         return ToolEffect.ROUTINE_WRITE
     if name.startswith("homebrain_"):
@@ -1362,6 +1367,35 @@ def home_snapshot_tool() -> MCPTool:
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
+    )
+
+
+def timed_internet_tool() -> MCPTool:
+    """Driver-bound Internet timer; every write requires host confirmation."""
+    return MCPTool(
+        LOCAL_TIMED_INTERNET_TOOL,
+        (
+            "Manage hub-resident delayed Internet blocks for verified "
+            "Cudy Managed Device Block devices. block_in: schedule an Internet "
+            "block N minutes after approval, NOT immediately. allow_for: allow "
+            "now then block after N minutes. cancel: cancel a pending timer. "
+            "status: read pending timers. Requests are confirmed by HomeBrain "
+            "and completion is reported only after driver deadline read-back."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["block_in", "allow_for", "cancel", "status"]},
+                "targets": {
+                    "type": "array", "items": {"type": "string", "minLength": 1},
+                    "description": "Block device names, or ['all'] for eligible non-protected devices.",
+                },
+                "minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+            },
+            "required": ["action"],
+            "additionalProperties": False,
+        },
+        annotations={"readOnlyHint": False, "effect": ToolEffect.SENSITIVE_WRITE.value},
     )
 
 
