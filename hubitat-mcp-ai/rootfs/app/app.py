@@ -911,7 +911,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
                 else:
                     operation = automation_status.snapshot(
                         advisory=automation_status.is_advisory_request(request.message),
-                        full=automation_status.wants_full_inventory(request.message),
+                        **({"full": True} if automation_status.wants_full_inventory(request.message) else {}),
                     )
         else:
             if (request.model_tier != "claude" and
