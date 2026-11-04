@@ -1027,7 +1027,9 @@ class RuleAuthoringService:
         # Distinguish a known incompatible contract from a failed/untrusted
         # guide and never advertise either refusal as a green success.
         if contract == NATIVE_DOCUMENT:
-            increment_active_metric("rule_writer_native_unsupported")
+            # Native-document is a supported writer on attested 5.1.6+
+            # servers. Its presence alone is not an unsupported outcome.
+            increment_active_metric("rule_writer_native_document_detected")
         elif contract == UNKNOWN:
             increment_active_metric("rule_writer_contract_unverified")
         self._record_evidence(
@@ -1253,6 +1255,7 @@ class RuleAuthoringService:
                 return "Native Rule Machine writer contract changed. No rule was created."
             supported, version_reason = await self._native_date_version_check()
             if not supported:
+                increment_active_metric("rule_writer_native_unsupported")
                 return version_reason
             verified_parent = await self._native_parent_id()
             if verified_parent is None:
@@ -1355,6 +1358,7 @@ class RuleAuthoringService:
                 )
             supported, version_reason = await self._native_date_version_check()
             if not supported:
+                increment_active_metric("rule_writer_native_unsupported")
                 return RuleAuthoringDecision(
                     True,
                     "native_oneshot_date_field_unverified: " + version_reason,
