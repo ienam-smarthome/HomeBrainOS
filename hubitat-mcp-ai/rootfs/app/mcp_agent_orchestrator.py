@@ -187,6 +187,7 @@ from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
+from typed_status_claim_guard import guard_typed_status_claims
 from evidence_source_scope import source_app_scope_error
 from target_history_scope import (
     render_target_scope_followup,
@@ -4167,6 +4168,17 @@ class UnifiedMCPAgent:
                 request_class = "conversational"
             else:
                 request_class = "live-read"
+            # Ordinary status answers often exit without synthesis validation.
+            # Their final publication still must respect the exact fields in
+            # a successful typed read-only snapshot (missing != zero/healthy).
+            # This is one localized final claim check, not a new source query,
+            # model round, rendering template or authorization path.
+            if request_class == "live-read" and not self._mutation_call_seen.get():
+                message, typed_issues = guard_typed_status_claims(message, evidence)
+                if typed_issues:
+                    increment_active_metric(
+                        "typed_status_source_claim_repairs", len(typed_issues)
+                    )
             pending = self.confirmations.pending.get(str(session_id))
             contract = (
                 None if (resolve_primary_objective(user_prompt).is_source
