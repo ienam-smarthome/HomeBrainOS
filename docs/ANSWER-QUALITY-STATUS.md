@@ -1,5 +1,53 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — generic virtual-device creation contract (v0.18.389 candidate; CI / installed acceptance pending)
+
+**New real failure receipt (supplied by user):** installed v0.18.388
+received a specific authorised request for a disposable Virtual Switch,
+`HB BAT Isolated Timer Switch 2026-11-04`. The normal confirmation was
+queued after three read calls; after user confirmation, HomeBrain submitted
+`hub_manage_devices.hub_create_device` with
+`deviceTypeId="Virtual Switch"`, a display-name virtual type.
+The server returned an explicit **failure**:
+"Could not resolve one supported native driver type for Virtual Switch;
+no device create request sent." Confirmation execution was **304 ms**;
+the first pre-confirm request was **12.879 s** (four Cloud Gemma rounds,
+three read tool calls). These are two distinct request phases and
+**not** a first-attempt accuracy score. There is **no verified new switch**,
+scheduled Rule Machine test or production Internet block.
+
+**General contract correction under development:** The upstream
+`hub_manage_virtual_device` is a *direct* tool with a `deviceType`
+field, already classified as sensitive by HomeBrain, but fuzzy
+discovery can favour the generic `hub_manage_devices` gateway.
+Only for positively authorised virtual-device provisioning, offer the
+live direct schema to the model; do not invent missing capabilities or
+grant a write from discovery. Reject `Virtual ...` display labels
+used as generic `hub_create_device.deviceTypeId` before any confirmation,
+and check again on confirmation resume. Preserve natural model
+argument selection and the existing user-intent, write-master and
+confirmation boundaries. No household device or rule was changed
+during repository work.
+
+**Hypothesis / metric:** Correct operation selection should improve
+the observed failed Virtual Switch case. Offline same-input mock
+tests check that the direct tool is available despite bad fuzzy search,
+that a wrong native driver ID is blocked, and that missing tools remain
+missing. Real after-install first-answer choice, successful creation,
+latency, source-verified ownership and **official answer-quality score
+are NOT MEASURED**. This is not a claim of Claude-quality parity.
+Rollback is to revert the focused v0.18.389 PR if the no-write,
+confirmation or tool discovery regressions appear.
+
+**Roadmap remains:** Q1 baseline / fixed source packets and ungraded
+first-attempt evaluations remain active; no new incident-specific
+publisher rule was introduced. Do not activate production Internet
+blocking, turn the test switch ON, create a dated rule, or modify the
+router from this release. Re-evaluate only with new authorised,
+source-backed read-only receipts when a live source is essential.
+CI/merge SHA to be updated from GitHub's exact-head results, never
+predicted.
+
 ## Internet-blocker read-only preflight PASSED on installed 0.18.388; isolated BAT discovery fix — 2026-11-04 00:36 UTC
 
 **Real user-provided acceptance:** v0.18.388 returned the previously
