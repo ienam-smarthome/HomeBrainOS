@@ -11,6 +11,9 @@ sys.path.insert(0, str(ROOT))
 
 import pytest  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
+from device_read_contract import device_read_plan  # noqa: E402
+from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
+from timed_internet_control import TOOL_NAME  # noqa: E402
 from timed_internet_control import (  # noqa: E402
     TimedInternetControl, MAX_BATCH, HUB_TIMEZONE, timed_internet_intent,
 )
@@ -42,6 +45,19 @@ class FakeHub:
         self.writes = []
         self.reads = []
         self.guide_calls = 0
+
+    async def list_tools(self):
+        return [
+            MCPTool("hub_read_devices", "Read hub devices", {"type": "object"}),
+            MCPTool("hub_manage_devices", "Control hub devices", {"type": "object"}),
+            MCPTool("hub_get_tool_guide", "Read tool guide", {"type": "object"}),
+        ]
+
+    async def get_cached_devices(self):
+        return [
+            {"id": str(did), "label": label, "driver": driver}
+            for did, label, driver in DEVICES
+        ]
 
     @staticmethod
     def _ret(name, args, data, *, is_error=False, text=""):
@@ -251,3 +267,60 @@ def test_bulk_write_uses_one_guide_ack_and_sequential_gateway_calls():
     assert result["success"]
     assert hub.guide_calls == 1
     assert len(hub.writes) == 2
+
+
+class NoModel:
+    async def post(self, *_args, **_kwargs):
+        raise AssertionError("Deterministic timed Internet route must not use an AI round")
+
+    async def aclose(self):
+        return None
+
+
+def test_driver_field_is_explicit_in_managed_device_manifest():
+    plan = device_read_plan(include_capabilities=True, include_commands=True)
+    assert "driver" in plan.fields
+
+
+@pytest.mark.asyncio
+async def test_real_orchestrator_queues_after_driver_preflight_and_executes_after_confirmation():
+    hub = FakeHub()
+    agent = UnifiedMCPAgent(
+        hub, "fake-key", "gemma4:31b", ai_client=NoModel(),
+        rule_write_enabled=True, require_sensitive_confirmation=True,
+    )
+    first = await agent.process_user_request_result(
+        "Block Google TV after 30 mins", session_id="timer-confirm-test",
+    )
+    assert first.confirmation_required is True
+    assert first.confirmation_count == 1
+    assert "6923" in first.message
+    assert not hub.writes
+    pending = agent.confirmations.pending["timer-confirm-test"]
+    assert len(pending.actions) == 1
+    tool, arguments = pending.actions[0]
+    assert tool == TOOL_NAME
+    assert arguments["_expected_ids"] == [6923]
+    assert arguments["action"] == "block_in"
+    approval = await agent.process_user_request_result(
+        "yes", session_id="timer-confirm-test",
+    )
+    assert approval.confirmation_required is False
+    assert hub.timers[6923][0] == 30
+    assert "read-back verified" in approval.message
+    assert "Actual future execution" in approval.message
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_does_not_queue_timer_when_driver_not_patched():
+    hub = FakeHub(patched=False)
+    agent = UnifiedMCPAgent(
+        hub, "fake-key", "gemma4:31b", ai_client=NoModel(),
+        rule_write_enabled=True, require_sensitive_confirmation=True,
+    )
+    outcome = await agent.process_user_request_result(
+        "Block Google TV after 30 mins", session_id="timer-unpatched-test",
+    )
+    assert outcome.confirmation_required is False
+    assert "driver does not report" in outcome.message
+    assert not hub.writes
