@@ -88,3 +88,66 @@ cross-domain run, and is not part of this valid Cloud pair.
 HomeBrainOS add-on v0.18.404, no device or Rule Machine
 writes, and no assertion of Ollama Cloud cost/credit usage
 (the manifest has no actual cost receipt).
+
+## Full baseline answer received and independently hash-checked in conversation
+
+**After the earlier metadata-only report**, the user pasted the *entire*
+Gemma Cloud first response. Computing SHA-256 over exactly the pasted
+UTF-8 text with LF line endings and **no trailing newline** yields
+`5a09a7146dd7351168426851c6edbecb8e42663557b2de38d2cf972fa88b38ad`,
+a byte-for-byte digest match to the user's saved `baseline.json`.
+This authenticates consistency with the user-provided digest,
+**not** independent provider/server provenance or execution mode.
+The earlier isolated excerpt mentioning broker disconnect logs is
+**not** the text of the matched Gemma answer: the hash-verified full
+answer instead recommends reading the driver's `mqttStatus`
+variable definition. Do not conflate those fragments or invent
+a longer answer.
+
+**Gemma's complete answer** records broker MQTT session connected,
+device healthStatus offline, stale endpoint telemetry, and a
+qualified explanation that `mqttStatus` may reflect the driver
+broker connection rather than endpoint connectivity. It says
+specific `mqttStatus` logic remains unknown and recommends
+checking driver source code for its variable definition.
+It does **not** mention the source-provided fact that a
+driver watchdog writes `lastActivity` without a new endpoint
+payload. It gives no verified physical root cause; the proposed
+driver code check is a meaningful read-only way to verify
+the `mqttStatus` computation, but may not distinguish the
+watchdog-written timestamp from a real endpoint event.
+
+**Same-packet Qwen response**, previously provided verbatim
+and digest-matched between local comparison runs, correctly
+covers broker/session versus endpoint health and explicitly
+identifies the watchdog-written `lastActivity` as not being
+a fresh device packet. It appropriately qualifies a physical
+disconnection as only one possibility. It offers a broker
+disconnect-log check rather than the more direct endpoint
+payload versus watchdog `lastActivity` discriminator, and
+some speculative background-process mechanism.
+
+**Preliminary qualitative relative conclusion (not a blinded or
+completed human rubric):** Gemma delivers a fast, clear,
+source-consistent but **incomplete** first explanation; Qwen
+offers **more complete coverage** of all three supplied
+source facts with weaker efficiency. Neither asserts a
+definitive unsupported physical failure. Neither should
+be declared best overall on one MQTT case. The previously
+measured 828ms versus 22,750ms requests are retained
+unaltered; cloud cost is unverified. Full-source
+reasoning quality has now been *qualitatively inspected*,
+but no independent SHA-bound human scorecard form was
+completed; **official human_reviewed_pairs and aggregate
+model accuracy stay not_measured**.
+
+**Next evidence, not a new output patch:** Complete the
+previously blocked cross-domain command-attribution,
+early-heating-off and Rule Machine native-identity cases.
+For reliability, user may execute **one frozen local-only
+case per new private directory** so a later failure
+does not discard other cases' completed answers. The
+existing runner does not save incomplete multi-case
+results. Avoid new paid Cloud inference until the
+case-level local process is stable and the user
+explicitly authorises cost.
