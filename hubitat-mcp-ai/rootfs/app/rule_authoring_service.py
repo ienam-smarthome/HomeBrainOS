@@ -1502,13 +1502,40 @@ class RuleAuthoringService:
                     rule_names=(single_name,),
                     target=target,
                 )
-            create_action = self._action(
-                name=single_name,
-                at_time=intent.start_time,
-                device_id=device_id,
-                capability_filter=capability_filter,
-                command=intent.start_command,
-            )
+            if native_mode:
+                parent_id = await self._native_parent_id()
+                guide_key = await self._native_guide_key()
+                if parent_id is None or guide_key is None:
+                    return RuleAuthoringDecision(
+                        True,
+                        "The native Rule Machine parent or installed guide "
+                        "acknowledgement is not verified; nothing was queued.",
+                        rule_names=(single_name,), target=target,
+                    )
+                try:
+                    wall = datetime.fromisoformat(intent.start_time)
+                    if wall.tzinfo is not None:
+                        raise ValueError("expected hub-local wall clock")
+                    local_at = wall.replace(tzinfo=hub_now.tzinfo)
+                    create_action = create_dated_switch(
+                        name=single_name, parent_id=parent_id,
+                        device_id=str(device_id), command=intent.start_command,
+                        hub_local_at=local_at, best_practice_key=guide_key,
+                    )
+                except (TypeError, ValueError):
+                    return RuleAuthoringDecision(
+                        True,
+                        "Native dated Switch candidate could not be verified. "
+                        "No rule was queued.", target=target,
+                    )
+            else:
+                create_action = self._action(
+                    name=single_name,
+                    at_time=intent.start_time,
+                    device_id=device_id,
+                    capability_filter=capability_filter,
+                    command=intent.start_command,
+                )
             # One-time rules are deliberately left with only their dated
             # trigger and device action. The nightly HomeBrain cleanup removes
             # expired generated rules after the safety grace period; self-pause
