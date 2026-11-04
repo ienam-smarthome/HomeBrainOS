@@ -189,7 +189,15 @@ def switch_state_coverage(
         light = is_light_device(device)
         attributes = device_attributes(device)
         if device_kind == "light":
-            if not light:
+            capabilities = capability_names(device)
+            # A label containing "light" can describe a light *sensor*.
+            # Label-only classification is eligible for an ON/OFF claim
+            # only where a Switch capability/state supports that semantic.
+            explicit_light = bool(capabilities & {
+                "light", "bulb", "colorcontrol", "colortemperature",
+            })
+            switch_shaped = "switch" in capabilities or "switch" in attributes
+            if not light or not (explicit_light or switch_shaped):
                 continue
         elif light or ("switch" not in attributes and
                        "switch" not in capability_names(device)):
