@@ -1308,7 +1308,7 @@ async def test_initial_registry_payload_stays_bounded_with_many_remote_tools():
     declared = ai.requests[0][1]["json"]["tools"]
     names = [item["function"]["name"] for item in declared]
     assert answer == "Hello."
-    assert len(declared) == 13
+    assert len(declared) == 12  # read-only first view hides local control
     assert names[0] == "hub_search_tools"
     assert "homebrain_resolve_device" in names
     assert "homebrain_device_history" in names
@@ -1503,7 +1503,6 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             "homebrain_home_snapshot",
             "homebrain_hub_info_snapshot",
             "homebrain_weather_snapshot",
-            "homebrain_control_devices",
         ]
 
 
