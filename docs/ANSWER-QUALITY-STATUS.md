@@ -1,5 +1,46 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 v0.18.404 installed MQTT/health acceptance: measured improvement
+
+**Live installed paired case:** The unchanged read-only `device_mqtt_conflict`
+question was run once on add-on version **0.18.404**. Published answer was
+useful and appropriately `unresolved`: healthStatus offline vs MQTT connected
+are different reported layers, clocks disagree (**567.9h** from lastSeen vs
+**45.1h** reported data age), and physical device status, broker packets,
+installed driver/watchdog method and outage cause were **not verified**.
+The 24h bounded history returned 13 state/attribute events (including
+disconnected/reconnected MQTT reports) and 0 commands. This is not a
+verified history of genuine endpoint packets.
+
+**Measured single-request improvement:** v0.18.404 wall **29.023s**,
+provider **21.780s**, **6** free Gemma rounds, **7** read-only tool calls,
+versus installed v0.18.403 **42.635s**, provider **35.241s**,
+**8** rounds and **13** calls. Difference **-13.612s (-31.9%)**,
+-2 rounds, -6 calls. v0.18.402 was 36.507s / 6 rounds / 8 calls.
+Not a measured latency distribution or proof of causality.
+
+**Corrected publication, not proven model-first accuracy:**
+`telemetry_post_read_sufficiency_stop=1`; new bounded evidence gate used.
+`telemetry_source_claim_repairs=2` (driver and clock).
+Publication still replaced model-authored text:
+`publicationBoundaryShadow.replacementPerformed=true`,
+`publishedIsFirstModelDraft=false`; model-delivery/first-attempt/build-SHA
+attestation all false. Source-class checks complete but
+`evidenceComplete=false`, `rootCauseVerified=false`, no independent
+broker packets, driver behaviour or physical communication verified.
+A legitimate device config read occurred; no device-ID-as-app-ID
+Groovy lookup observed. No Hubitat/HA/router/device writes.
+
+**Decision:** Accept this single published-answer and wall-time
+regression; do **not** score raw-model correctness or p50/p95 and do
+not patch/repeat this same MQTT device. Next frozen different-domain
+Q1 read-only case is `broad_hub_health`: `What is the hub health status?`
+Get one full natural answer + Technical JSON, review current live
+health versus unsupported root cause, then progress to Q2 same-evidence
+model comparison. [Details](ANSWER-QUALITY-Q1-TELEMETRY-V404-LIVE-ACCEPTANCE-20261104.md).
+
+---
+
 ## 2026-11-04 — Q1 MQTT/health v0.18.403 published grounding improved; saturation v0.18.404 candidate
 
 **Paired live installed observation:** The exact frozen read-only
