@@ -1,6 +1,35 @@
 # Answer Quality — active status and cross-chat handoff
 
-## Native Rule Machine multi-source read-only preflight routing — v0.18.388 candidate (2026-11-04)
+## Native Rule Machine multi-source read-only preflight routing — v0.18.388 GREEN MERGED (2026-11-04)
+
+**Repository gate verified:** [PR #1376](https://github.com/ienam-smarthome/HomeBrainOS/pull/1376)
+merged as `c89b0493d19a47e2b7ce3297a3da648c2d2cf51c`
+with **7/7 CI checks passed on exact final PR head**
+`426ee66afa1c205844f761b6a15ab246c0dd5404`.
+Full Python suite **6,223 passed, 2 warnings**; metadata, offline
+scorecard, add-on smoke, test and two validation checks all succeeded.
+An earlier head failed only the architecture module-map registration,
+which was corrected before the green final run.
+
+**Current state:** maintained HomeBrain add-on source **0.18.388**,
+not yet evidenced as installed; original v0.18.387 native parent
+ID 169 remains source-verified. Production Internet-blocker
+**DISABLED**; read-only preflight cannot authorize scheduling.
+No live Hubitat/HA/OpenWrt changes.
+
+**One next installed acceptance:** install v0.18.388 and use the exact
+same read-only version/backup/guides question recorded below in a
+fresh HomeBrain topic; return natural answer and full Technical Details
+JSON, omitting secrets. Inspect `typed_native_rule_readiness` fields:
+`mcpServerVersion`, `latestHubLocalBackupUtc`,
+`toolGuideAvailability`, `preflightEvidenceComplete`, and
+`readinessForMutation=false`. Missing source remains unverified;
+verify live backup freshness against independently reported hub time
+before a later separately approved disposable test. Do not reuse
+the existing MCP-owned household Virtual Switch. Even a complete
+read-only preflight does not prove native dated execution or OpenWrt
+enforcement.
+
 
 **Installed v0.18.387 user result at 00:19:25 UTC:** another read-only
 native Rule Machine parent inventory was returned in **2.970 seconds**
@@ -19,7 +48,7 @@ No modifying tools were called and production Internet-blocker is
 **Reproducible general routing defect:** the existing native inventory
 classifier independently matched `Rule Machine`, `backup inventory`
 and the question's `which` tool-guide sections, incorrectly treating
-a multi-source preflight as a rule/app inventory. The v0.18.388 candidate
+a multi-source preflight as a rule/app inventory. The merged v0.18.388 release
 adds a **separately scoped read-only readiness objective** ahead of
 single-subject inventory, recognizing at least two positive read
 obligations (version, backup, guide) rather than negative instructions.
