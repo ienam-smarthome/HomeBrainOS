@@ -25,6 +25,7 @@ from typing import Any
 from confirmation_policy import ConfirmationPolicy
 from confirmation_store import PendingConfirmation
 from mcp_client import MCPTool
+from native_virtual_device_creation_contract import virtual_device_creation_error
 from request_metrics import add_active_metric_ms, increment_active_metric
 from rule_authoring_service import NEW_RULE_ID_TOKEN
 from tool_discovery_catalog import ToolDiscoveryCatalog
@@ -522,6 +523,12 @@ class ConfirmedActionCoordinator:
             arguments = normalize_rule_machine_proposal(
                 tool_name, raw_arguments
             )
+            virtual_error = virtual_device_creation_error(tool_name, arguments)
+            if virtual_error is not None:
+                return (
+                    "The queued virtual-device operation was cancelled before "
+                    "any Hubitat write. " + virtual_error
+                )
             proposal_error = rule_machine_proposal_error(tool_name, arguments)
             if proposal_error is not None:
                 return (
