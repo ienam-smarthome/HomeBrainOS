@@ -76,7 +76,7 @@ class FakeMCP:
                     {"name": "PRIVATE-HUB-NAME-2.lzf",
                      "createTimeOrig": (
                          "unknown" if self.bad_timestamp
-                         else "2026-11-04T03:01:00+0000"
+                         else "2026-11-03T03:01:00+0000"
                      )},
                 ],
                 **({"partial": True, "hubBackupErrors": ["unreadable"]}
@@ -128,7 +128,7 @@ async def test_complete_preflight_direct_read_only_no_secret_leakage_or_model_ro
         "hub_read_apps_code", "hub_get_tool_guide", "hub_get_tool_guide",
     ]
     assert "5.1.5" in outcome.message
-    assert "2026-11-04T03:01:00+00:00" in outcome.message
+    assert "2026-11-03T03:01:00+00:00" in outcome.message
     assert "set_rule_reference: readable" in outcome.message
     assert "builtin_app_tools_rules: readable" in outcome.message
     assert "PRIVATE" not in outcome.message
