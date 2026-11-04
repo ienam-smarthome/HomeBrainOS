@@ -51,6 +51,9 @@ class Server:
             return MCPToolResult(name, arguments, {}, "", {"content": self.guide})
         if name == "hub_read_rules":
             return MCPToolResult(name, arguments, {}, "", {"rules": []})
+        if name == "hub_get_info":
+            assert arguments == {}
+            return MCPToolResult(name, arguments, {}, "", {"mcpServerVersion": "5.1.5"})
         # No scheduler, device or rule write is permissible with a new guide.
         raise AssertionError(f"unexpected call: {name}")
 
@@ -87,7 +90,11 @@ async def test_native_document_server_is_rejected_before_confirmation_or_write()
     assert "parent_id" in result.message
     assert "native" in result.message.casefold()
     assert "native_oneshot_date_field_unverified" in result.message
-    assert server.calls == [("hub_get_tool_guide", {"section": "set_rule_reference"})]
+    assert server.calls == [
+        ("hub_get_tool_guide", {"section": "set_rule_reference"}),
+        ("hub_get_info", {}),
+    ]
+    assert "5.1.5" in result.message
 
 
 @pytest.mark.asyncio
