@@ -299,6 +299,12 @@ async def decide_read_route(
             route = "model_led"
         else:
             route = _safe_route(proposal, question)
+        # Scope correction applies after specialist-route arbitration too.
+        # A model's overbroad system/performance route cannot transform a
+        # single app's source-typed native identity into an unrelated audit.
+        from targeted_rule_scope_policy import is_app_class_identity_question
+        if route == "model_led" and is_app_class_identity_question(question):
+            objective = "app_class_identity"
         # A missing/invalid model objective must not re-enable downstream
         # keyword classifiers (notably rule authoring and ON/OFF causality).
         # Generic investigation is safe: it never grants write permissions.
