@@ -1,5 +1,12 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — v0.18.395 named Rule Machine read answer quality candidate
+
+**Observed installed 0.18.394:** The user confirmed **Rule Machine ID 4285 `One-off block TV` is a test rule**. Their first HomeBrain answer correctly routed to `named-rule-read` and used `hub_list_rules` + `hub_set_rule(operation=read)` in **548 ms**, but printed **71 internal native settings (6 redacted/unsupported)** instead of resolving the asked sequence in natural language. The stored settings indicate `atTime1=08:00`, action IDs `1=getOnOffSwitch` (typed `onOff.1=false`, device ID 6923), `3=getWaitEvents` (`delayMin.3=15`), and `4=getOnOffSwitch` (`onOff.4=true`, device ID 6923). The date flag was empty; no dated one-time trigger can be established merely from this test rule's name. No evidence of actual scheduling, firing, or network reachability was supplied. **The test rule must not be modified or used as production.**
+
+**Candidate 0.18.395:** A generic source-scoped, redaction-safe formatter maps native action IDs to typed saved settings and summarises trigger time plus ON/OFF/Wait ordered configuration. It explicitly distinguishes dated one-time fields, undated times, conditional action graphs, unavailable device targets, unsupported action semantics, and actual run state. The existing explicit raw native-section reader remains untouched for technical diagnostics; same two source reads and no extra AI rounds. Synthetic regression includes a 71-setting / 6-redacted packet and unrelated switch IDs, *not* hardcoded Google TV behavior. CI and merge to be verified. **First-attempt installed answer benefit, model quality and future scheduled execution remain NOT MEASURED.** No live Hubitat/HA/router changes. Roll back if the formatter fabricates execution or suppresses source errors.
+
+
 ## 2026-11-04 — v0.18.393 exact named-rule read and v0.18.394 native one-time scheduling merged
 
 **Merged:** [PR #1389](https://github.com/ienam-smarthome/HomeBrainOS/pull/1389) passed 6/6 CI checks at head `703953c5a7e5e0d6cb142fd04dc9a0f812c8362f`, merged at `61a8a7c6d8090bac5df0b711db5c43f4e8b34326`. Release **0.18.393** routes a quoted named-rule details question to a source-unique ID and read-only native rule-document sections instead of the incorrect 165-item inventory. Installed same-question outcome **NOT MEASURED**.

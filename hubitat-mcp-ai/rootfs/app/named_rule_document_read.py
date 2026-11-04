@@ -135,6 +135,7 @@ async def read_named_rule_document(mcp: Any, name: str) -> NamedRuleReadOutcome:
     )
     result = await read_explicit_native_rule_document(
         mcp, _Evidence(evidence), prompt=request, available_names=available,
+        summary_mode=True,
     )
     if result is None:
         return NamedRuleReadOutcome(

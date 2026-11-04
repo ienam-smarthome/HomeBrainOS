@@ -288,6 +288,7 @@ The repository drift test compares this table directly with the live directory. 
 | `owned_device_inventory_source.py` | Source-scoped read-only MCP-owned device inventory; bounds cursor pages, validates ownership and completeness, and prevents Rule Machine prohibition text from redirecting explicit device-only requests. |
 | `named_rule_document_read.py` | Resolves exact quoted existing Rule Machine names against a complete native list and performs one privacy-safe, read-only native document section read; refuses ambiguous or unverified sources. |
 | `native_switch_schedule.py` | Validates typed native one-time calendar Switch rule candidates against a bounded schema and never executes them directly. |
+| `native_rule_summary.py` | Projects bounded, privacy-filtered saved native Rule Machine trigger/action settings into a concise human-readable configuration sequence, without claiming runtime effects or undocumented one-time dates. |
 | `native_rule_document_source.py` | Makes one bounded, host-owned read-only native Rule Machine document retrieval for a named existing rule; projects typed source fields and rejects mismatched, incomplete or sensitive evidence without exposing a write gateway to the model. |
 | `native_rule_evidence_prefetch.py` | Reads native rule health and numeric local-variable metadata through a bounded read-only MCP gateway before deep Rule Machine interpretation. |
 | `native_oneshot_date_contract.py` | Read-only difference of typed native Rule Machine dated/undated trigger form fields; never authorizes native creation. |
