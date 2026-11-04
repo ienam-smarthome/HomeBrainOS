@@ -1,5 +1,61 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 MQTT/health v0.18.403 published grounding improved; saturation v0.18.404 candidate
+
+**Paired live installed observation:** The exact frozen read-only
+`device_mqtt_conflict` question was rerun on 0.18.403.
+Published answer: correctly distinguishes saved `healthStatus=offline`
+from `mqttStatus=connected`, refuses physical/driver-watchdog root
+cause proof, and reports `lastSeen` metadata **566.8h** versus
+`dataAgeSeconds` **45.1h**, `sourcesAgree=false`.
+Outcome appropriately `unresolved`. Publication applied
+`telemetry_source_claim_repairs=2` (driver method + physical
+assertions). The underlying model's first no-tools draft was
+**not** published unchanged; `modelFirstRejection` says
+`model-draft-provenance-changed`, and
+`publicationBoundaryShadow.replacementPerformed=true`.
+Do not score it as independently grounded raw-model reasoning.
+
+**Performance regression:** 0.18.402 paired response 36.507s,
+6 free model rounds, 8 tool calls, provider 29.747s, versus
+0.18.403 42.635s, 8 rounds, 13 tool calls, provider
+35.241s. Difference **+6.128s**, 2 extra rounds and 5
+extra calls; two live samples are not a controlled latency
+distribution or proof of which code caused the difference.
+The v403 trace includes source/tool discovery and
+`homebrain_read_groovy_source(appId=7103)` after target
+device **7103** was already independently verified; this
+is a device ID, not an app instance identity. Installed
+source proof returned zero verified characters. A failed
+`hub_get_app_config(appId=7103)` and device-dependency
+reads add no independent proof of installed driver code.
+
+**Q1 general defect / candidate 0.18.404:** Source-saturated
+status/history/logs plus independently contradictory
+`lastSeen` and data-age clocks provide a bounded answer
+to a single device's `offline` vs MQTT `connected` contrast
+without needing unsupported physical/driver investigation.
+Add general stop after independently checked status,
+bounded history, scoped logs and actual clock mismatch;
+preserve uncertainty, cross-device and write protection.
+An optional failed tool in a round must not erase the
+necessary successful read evidence. Add a verified-device
+vs Groovy-app instance identity admission guard to prevent
+device IDs being passed as app IDs absent an actual
+typed device-dependent app link. No extra reads/model
+rounds; no alteration to actual driver/Hubitat/HA/router.
+[Source review](ANSWER-QUALITY-Q1-TELEMETRY-STOP-20261104.md).
+
+**After-live quality/latency unmeasured.** Synthetic CI
+is not physical or first-draft model verification.
+Exact-head CI and merge remain pending until green.
+After installing the release, run the exact frozen
+read-only question *once* as paired acceptance, inspect
+stop counters, answer and Technical JSON, then stop
+repeating the same device case and continue another
+Q1 domain toward same-evidence Q2 model comparisons.
+
+---
 ## 2026-11-04 — Q1 MQTT/health reasoning source-scope failure; v0.18.403 candidate
 
 **Live registered read-only case:** User submitted exactly
