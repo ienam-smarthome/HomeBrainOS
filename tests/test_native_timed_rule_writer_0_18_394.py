@@ -72,6 +72,8 @@ def test_native_create_is_validated_at_gateway_and_has_explicit_confirmation():
     )
     assert approved["args"]["confirm"] is True
     assert "confirm" not in call["args"]
+    assert dated_switch_proposal_error(approved["args"]) is not None
+    assert dated_switch_proposal_error(approved["args"], approved=True) is None
 
 
 @pytest.mark.parametrize("patch", [
@@ -88,7 +90,9 @@ def test_native_gate_rejects_unverified_creates(patch):
 
 
 def test_native_receipt_must_prove_persisted_document_and_schedule():
-    args = gateway_call()
+    args = ConfirmationPolicy.approved_arguments(
+        "hub_manage_rule_machine", gateway_call(),
+    )
     ok = execution(receipt())
     assert ConfirmedActionCoordinator.verified_rule_execution(ok, args)
     report = ConfirmedActionCoordinator.confirmed_rule_report(
