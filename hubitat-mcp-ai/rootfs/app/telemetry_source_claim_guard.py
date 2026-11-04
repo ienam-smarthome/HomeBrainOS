@@ -124,6 +124,10 @@ def guard_telemetry_source_claims(
         return original, []
     authority = coverage.get("sourceAuthority")
     authority = authority if isinstance(authority, Mapping) else {}
+    target_id = str(authority.get("targetDeviceId") or "")
+    if target_id and target_id != ident:
+        # Another target's health state cannot authorise a correction here.
+        return original, []
     depth = coverage.get("incidentReasoningDepth")
     depth = depth if isinstance(depth, Mapping) else {}
     driver_verified = (
@@ -188,8 +192,13 @@ def guard_telemetry_source_claims(
             lines.append(source_line)
             continue
         key = ""
-        if (not physical_verified and _PHYSICAL_CERTAIN.search(line)
-                and not _QUALIFIED.search(line)):
+        physical_match = _PHYSICAL_CERTAIN.search(line)
+        physical_preceding = (
+            line[max(0, physical_match.start() - 42):physical_match.start()]
+            if physical_match is not None else ""
+        )
+        physical_qualified = bool(_QUALIFIED.search(physical_preceding))
+        if not physical_verified and physical_match and not physical_qualified:
             key = "physical"
         elif clock_conflict and (
             _LAST_SEEN_PHYSICAL.search(line) or _DATA_AGE_PHYSICAL.search(line)
