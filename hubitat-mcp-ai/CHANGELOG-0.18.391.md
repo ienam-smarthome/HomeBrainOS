@@ -22,8 +22,10 @@ median/p95, and cloud cost remain **NOT MEASURED**.
 - Prune currently declared schemas to installed, effect-classified
   read-only tools before the **first** provider function-calling round
   whenever the request lacks independent user mutation authority.
-- Reapply the same presentation-only boundary before every later round,
-  so search and source discovery cannot expose a new write gateway.
+- Preserve later explicitly discovered mixed-purpose management gateways
+  for their verified read sub-operations, because some source documents
+  have no equivalent dedicated read gateway. Unauthorized mutations still
+  fail atomically through the unchanged per-call effect classifier.
 - Keep initial read choices and schema ordering; do not automatically
   expand the starting list to 32 source tools, add provider rounds or
   synthesize fixed prose.
@@ -37,8 +39,9 @@ median/p95, and cloud cost remain **NOT MEASURED**.
 
 Synthetic offline tests verify the initial read-only function schemas,
 normal read execution, atomic handling of a malicious undeclared write,
-tool rediscovery pruning, and preservation of the installed direct
-virtual-device writer for separately authorised calls. GitHub Actions
+independent catalog pruning, permitted later source discovery, and
+preservation of the installed direct virtual-device writer for
+separately authorised calls. GitHub Actions
 full suite, metadata checks and packaging smoke tests are required
 to pass on the **exact PR head SHA** before merge.
 
