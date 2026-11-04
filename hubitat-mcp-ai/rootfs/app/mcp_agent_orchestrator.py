@@ -6424,6 +6424,32 @@ class UnifiedMCPAgent:
                             ),
                         }),
                     })
+                # A rejected model batch is not a reason to offer the same
+                # write-capable schema again on a read-only turn. The model
+                # may otherwise repeat its write proposal and waste provider
+                # rounds without gathering any source evidence. Use only
+                # ACTUALLY installed, effect-classified read tools next;
+                # this does not execute the rejected companions, invent a
+                # capability, or relax the underlying mutation guard.
+                if not self._mutation_requested_by_user.get():
+                    read_names = catalog.activate_investigation_read_view(
+                        max_declared=self.tool_limit
+                    )
+                    tools = catalog.schemas()
+                    increment_active_metric("read_only_write_recovery_view")
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST READ-ONLY RECOVERY: The preceding tool-call "
+                            "batch was rejected atomically. Do not repeat a "
+                            "write or assume any companion read was performed. "
+                            "Only these installed read tools are now available: "
+                            + (", ".join(read_names) or "none") + ". "
+                            "Use them to check the requested evidence, or "
+                            "explain exactly which checks remain unverified. "
+                            "No mutation is authorized."
+                        ),
+                    })
                 continue
             if proposal_errors:
                 failed_name, failed_reason = proposal_errors[0]
