@@ -45,7 +45,6 @@ def create_dated_switch(
                         {"name": "time#", "type": "enum", "value": "A specific time"},
                         {"name": "atTime#", "type": "time", "value": at_time},
                         {"name": "date#", "type": "bool", "value": True},
-                        {"name": "year#", "type": "bool", "value": False},
                         {"name": "atDate#", "type": "date", "value": day},
                     ],
                 }},
@@ -117,11 +116,10 @@ def dated_switch_proposal_error(payload: Any) -> str | None:
             return invalid()
         tm = {x["name"]: (x["type"], x["value"]) for x in tf}
         am = {x["name"]: (x["type"], x["value"]) for x in af}
-        if set(tm) != {"time#", "atTime#", "date#", "year#", "atDate#"} or set(am) != {"onOffSwitch.#", "onOff.#"}:
+        if set(tm) != {"time#", "atTime#", "date#", "atDate#"} or set(am) != {"onOffSwitch.#", "onOff.#"}:
             return invalid()
         if (tm["time#"] != ("enum", "A specific time")
                 or tm["date#"] != ("bool", True)
-                or tm["year#"] != ("bool", False)
                 or tm["atDate#"] != ("date", match.group(1))
                 or tm["atTime#"][0] != "time"
                 or not isinstance(tm["atTime#"][1], str)):
