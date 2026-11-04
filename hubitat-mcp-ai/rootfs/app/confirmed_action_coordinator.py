@@ -156,7 +156,7 @@ class ConfirmedActionCoordinator:
         """
         from native_switch_schedule import dated_switch_proposal_error
         payload = arguments.get("args") if isinstance(arguments, dict) else None
-        if (dated_switch_proposal_error(payload) is not None
+        if (dated_switch_proposal_error(payload, approved=True) is not None
                 or not bool(getattr(execution, "success", False))):
             return False
         data = cls.rule_result_data(execution)
