@@ -174,3 +174,55 @@ async def test_confirmation_replay_rejects_old_version_or_duplicate():
         return {NAME.casefold()}
     service._existing_names = duplicate
     assert "already exist" in await service.duplicate_create_group_error([gateway_call()])
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_positive_relative_and_clock_schedule_compiler():
+    """No native write occurs; only an approved future proposal is compiled."""
+    # Avoid test-module import coupling: the same bounded fake server is
+    # implemented locally and exposes only device/rule source reads.
+    class Source:
+        server_info = {"name": "hubitat-mcp-rule-server", "version": "5.1.6"}
+        def __init__(self):
+            self.calls = []
+        async def get_cached_devices(self):
+            return [{"id": "6923", "label": "Block Google-TV-Streamer",
+                     "room": "Internet", "commands": ["on", "off"],
+                     "capabilities": ["Switch"]}]
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                data = {"devices": await self.get_cached_devices()}
+            elif name == "hub_read_rules":
+                data = {"rules": [], "count": 0}
+            else:
+                raise AssertionError(f"unexpected source read: {name}")
+            return MCPToolResult(name, arguments, {}, "", data)
+    source = Source()
+    fixed = datetime(2026, 11, 10, 8, 0, tzinfo=ZoneInfo("Europe/London"))
+    service = RuleAuthoringService(source, lambda *a, **kw: None, now=lambda: fixed)
+    async def contract():
+        return NATIVE_DOCUMENT
+    async def parent():
+        return 169
+    async def guide_key():
+        return None
+    async def hubtime(clock):
+        return fixed, "Europe/London", "source-verified-test-clock"
+    service._rule_writer_contract = contract
+    service._native_parent_id = parent
+    service._native_guide_key = guide_key
+    service._hub_timezone.now_in_hub_timezone = hubtime
+    for prompt in ("block the tv after 15 minutes", "block the tv at 8:15am"):
+        decision = await service.propose(
+            prompt, available_gateways={"hub_manage_rule_machine"},
+        )
+        assert decision.handled and decision.message is None
+        assert len(decision.actions) == 1
+        action = decision.actions[0]
+        assert rule_machine_proposal_error("hub_manage_rule_machine", action) is None
+        changes = action["args"]["args"]["changes"]
+        assert changes[0]["value"]["fields"][-1]["value"] == "2026-11-10"
+        assert changes[1]["value"]["fields"][0]["value"] == ["6923"]
+        assert changes[1]["value"]["fields"][1]["value"] is False
+        assert all(tool != "hub_manage_rule_machine" for tool, _ in source.calls)
