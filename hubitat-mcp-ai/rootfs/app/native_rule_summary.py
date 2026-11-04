@@ -11,33 +11,26 @@ import re
 from datetime import date
 from typing import Any
 
-_SETTING_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.#-]{0,75}$")
+from native_rule_document_source import _simple_setting
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _DEVICE = re.compile(r"^[1-9]\d{0,8}$")
 _SECRET = re.compile(r"(?i)(?:password|secret|token|api.?key|credential|pin|authorization)")
 
 
 def _setting(row: Any) -> dict[str, Any] | None:
-    """Match the native reader's conservative simple-setting projection."""
-    if not isinstance(row, dict):
+    """Reuse the same privacy-safe projection as the native section reader.
+
+    Most native form settings have a null/absent device_ids field. The
+    underlying reader legitimately omits that metadata; a null optional
+    field must not invalidate the setting's typed value. Source values
+    remain whitelisted and credentials still fail closed.
+    """
+    safe = _simple_setting(row)
+    if safe is None:
         return None
-    name, typ = row.get("name"), row.get("type")
-    if (not isinstance(name, str) or not _SETTING_NAME.fullmatch(name)
-            or _SECRET.search(name) or not isinstance(typ, str)
-            or not _SETTING_NAME.fullmatch(typ)):
-        return None
-    raw = row.get("value")
-    if isinstance(raw, str) and (len(raw) > 100 or _SECRET.search(raw)):
-        return None
-    if type(raw) not in (bool, int, float, str, type(None)):
-        return None
-    ids = row.get("device_ids", [])
-    if (not isinstance(ids, list) or len(ids) > 24 or
-            any(not isinstance(i, (str, int)) or not _DEVICE.fullmatch(str(i))
-                for i in ids)):
-        return None
-    return {"name": name, "type": typ, "value": raw,
-            "device_ids": [str(i) for i in ids]}
+    # A missing/null/invalid device_ids field is not an attested device.
+    # Only a validated list of IDs from the canonical projector is usable.
+    return {**safe, "device_ids": safe.get("device_ids", [])}
 
 
 def _text(row: dict[str, Any] | None, typ: str) -> str | None:
@@ -45,6 +38,23 @@ def _text(row: dict[str, Any] | None, typ: str) -> str | None:
         return None
     value = row.get("value")
     return value if isinstance(value, str) and value else None
+
+
+def _typed_bool(row: dict[str, Any] | None) -> bool | None:
+    """Decode only canonical native bool values, never general truthiness.
+
+    Hubitat native settings often expose bool form values as the strings
+    "true" and "false", unlike the typed Python booleans in mock fixtures.
+    Missing/empty/unknown values remain unverified.
+    """
+    if not isinstance(row, dict) or row.get("type") != "bool":
+        return None
+    raw = row.get("value")
+    if type(raw) is bool:
+        return raw
+    if isinstance(raw, str) and raw in ("true", "false"):
+        return raw == "true"
+    return None
 
 
 def _minutes(settings: dict[str, dict[str, Any]], action_id: str) -> str | None:
@@ -58,8 +68,19 @@ def _minutes(settings: dict[str, dict[str, Any]], action_id: str) -> str | None:
         if not isinstance(setting, dict) or setting.get("type") not in ("number", "decimal"):
             continue
         raw = setting.get("value")
-        if type(raw) in (float, int) and 0 <= raw <= 1440 and raw == int(raw) and raw != 0:
+        # Hubitat may serialize a typed number field as a numeric string.
+        # Only an integer-valued, bounded number under a numeric type can
+        # qualify as a duration; prose, empty strings and booleans cannot.
+        number: int | None = None
+        if type(raw) is int and 0 < raw <= 1440:
+            number = raw
+        elif type(raw) is float and raw.is_integer() and 0 < raw <= 1440:
             number = int(raw)
+        elif isinstance(raw, str) and re.fullmatch(r"[0-9]{1,4}(?:\.0+)?", raw):
+            candidate = int(raw.split(".", 1)[0])
+            if 0 < candidate <= 1440:
+                number = candidate
+        if number is not None:
             parts.append((str(number), label + ("" if number == 1 else "s")))
     return " ".join(f"{num} {unit}" for num, unit in parts) if parts else None
 
@@ -105,8 +126,7 @@ def describe_native_rule(
         dated = (
             trigger_date is not None
             and isinstance(date_mark, dict)
-            and date_mark.get("type") == "bool"
-            and date_mark.get("value") is True
+            and _typed_bool(date_mark) is True
         )
         if clock is not None and dated:
             text = f"On **{trigger_date} at {clock}** (saved dated trigger)"
@@ -132,13 +152,11 @@ def describe_native_rule(
         if method == "getOnOffSwitch":
             direction = settings.get(f"onOff.{action_id}")
             targets = settings.get(f"onOffSwitch.{action_id}")
-            if (isinstance(direction, dict)
-                    and direction.get("type") == "bool"
-                    and type(direction.get("value")) is bool
+            if (_typed_bool(direction) is not None
                     and isinstance(targets, dict)
                     and targets.get("type") == "capability.switch"
                     and targets.get("device_ids")):
-                onoff = "ON" if direction["value"] else "OFF"
+                onoff = "ON" if _typed_bool(direction) else "OFF"
                 ids = ", ".join(targets["device_ids"])
                 action = f"Set switch **{onoff}** \u2014 device ID(s) **{ids}**"
             else:
