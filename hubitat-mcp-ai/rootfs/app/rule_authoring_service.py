@@ -1256,20 +1256,21 @@ class RuleAuthoringService:
         native_mode = installed_contract == NATIVE_DOCUMENT
         incompatible = legacy_rule_writer_incompatibility(installed_contract)
         if native_mode:
-            if not self._native_date_supported(self.mcp):
-                return RuleAuthoringDecision(
-                    True,
-                    "native_oneshot_date_field_unverified: Installed MCP Rule Server "
-                    "version 5.1.6 or later has not been verified through MCP "
-                    "initialize. Upgrade/reconnect before scheduling. No rule queued.",
-                )
             if intent.recurring or intent.end_time is not None:
                 return RuleAuthoringDecision(
                     True,
-                    "The native date-writer currently supports only a single "
-                    "dated Switch action. Daily repetition and multi-action "
-                    "block/restore require separate native verification. "
-                    "No rule was queued.",
+                    legacy_rule_writer_incompatibility(NATIVE_DOCUMENT)
+                    or "Recurring native schedule not yet verified; no write queued.",
+                )
+            if not self._native_date_supported(self.mcp):
+                return RuleAuthoringDecision(
+                    True,
+                    "native_oneshot_date_field_unverified: Installed native MCP "
+                    "Rule Server version 5.1.6 or later has not been verified "
+                    "through MCP initialize. Native operation=create requires "
+                    "an independently verified parent_id and typed trigger "
+                    "fields. Upgrade/reconnect before scheduling. "
+                    "No rule write was queued or executed.",
                 )
         elif incompatible:
             return RuleAuthoringDecision(True, incompatible)
