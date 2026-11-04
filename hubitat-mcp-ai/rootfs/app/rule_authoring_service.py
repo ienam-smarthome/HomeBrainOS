@@ -1149,9 +1149,37 @@ class RuleAuthoringService:
         # upgraded while the queued proposal was awaiting approval. Check the
         # installed guide before ANY create write, not just at proposal time.
         contract = await self._rule_writer_contract()
-        incompatible = legacy_rule_writer_incompatibility(contract)
-        if incompatible:
-            return incompatible
+        native_candidates = [
+            item.get("tool") == "hub_set_rule"
+            and isinstance(item.get("args"), dict)
+            and item["args"].get("operation") == "create"
+            for item in arguments
+        ]
+        if any(native_candidates):
+            if not all(native_candidates) or contract != NATIVE_DOCUMENT:
+                return "Native Rule Machine writer contract changed. No rule was created."
+            if not self._native_date_supported(self.mcp):
+                return (
+                    "The installed MCP server does not attest the 5.1.6 native "
+                    "dated-trigger fix. No rule was created."
+                )
+            verified_parent = await self._native_parent_id()
+            if verified_parent is None:
+                return "The native Rule Machine parent is not verified. No rule was created."
+            for item in arguments:
+                payload = item["args"]
+                invalid = dated_switch_proposal_error(payload)
+                if invalid is not None:
+                    return invalid
+                if payload["args"]["parent_id"] != verified_parent:
+                    return (
+                        "The queued native parent differs from the freshly "
+                        "verified Rule Machine parent. No rule was created."
+                    )
+        else:
+            incompatible = legacy_rule_writer_incompatibility(contract)
+            if incompatible:
+                return incompatible
         normalized = [name.casefold() for name in names]
         duplicates_in_group = sorted(
             {
