@@ -4709,11 +4709,41 @@ class UnifiedMCPAgent:
         # user mutation authority and the structured sensitive-write gate remain
         # separate and mandatory.  Unknown/non-Cudy/protected targets fail
         # closed rather than falling through to a generic immediate OFF.
+        timer_candidate = timed_internet_intent(user_prompt)
         timer_args = (
-            timed_internet_intent(user_prompt)
-            if self._mutation_requested_by_user.get() and not review_first
+            timer_candidate
+            if timer_candidate is not None and not review_first
+            and (
+                timer_candidate["action"] == "status"
+                or self._mutation_requested_by_user.get()
+                or timer_candidate["action"] == "cancel"
+            )
             else None
         )
+        if timer_args is not None and timer_args["action"] == "status":
+            read = await self.timed_internet.handle(timer_args)
+            data = read.data if isinstance(read.data, dict) else {}
+            verified_read = data.get("success") is True
+            self.evidence.record(
+                TIMED_INTERNET_TOOL, timer_args, success=verified_read,
+                elapsed_ms=0, summary="Driver timer status inventory",
+                supports_live_claim=verified_read,
+                evidence_kind="verified_driver_timer_state", mutates=False,
+            )
+            if not verified_read:
+                return ("The pending Internet timer inventory could not be verified "
+                        "from the Cudy Managed Device drivers; no status is inferred.")
+            pending = data.get("pending") or []
+            return (
+                "Pending hub-resident Internet block timers (driver reports):\n"
+                + "\n".join(
+                    f"- {row['label']} (device {row['id']}): "
+                    f"{row['fires_at']} Europe/London"
+                    for row in pending
+                )
+                if pending else
+                "No pending Internet block timers were reported by the Cudy Managed Device inventory."
+            )
         if timer_args is not None:
             # Only an independently identified Cudy Managed Device qualifies
             # for the driver path. Other devices retain the existing native
@@ -4738,19 +4768,25 @@ class UnifiedMCPAgent:
                     + ("Choices: " + ", ".join(options[:8]) if options else
                        "Protected network infrastructure cannot be timed-blocked.")
                 )
-            if len(selected) == 1 and not problems:
-                try:
-                    current_mins, current_at = await self.timed_internet._read_state(selected[0])
-                except Exception:
-                    current_mins, current_at = None, None
-                if current_mins is None or current_at is None:
+            if selected and not problems:
+                # Recheck every verified driver before offering an action,
+                # leaving the entire group untouched if any member lacks
+                # the driver timer implementation.
+                states = []
+                for device in selected:
+                    try:
+                        states.append(await self.timed_internet._read_state(device))
+                    except Exception:
+                        states.append((None, None))
+                if any(m is None or at is None for m, at in states):
                     return (
                         "No Internet timer was queued: the target driver does not "
                         "report both timedBlockMins and timedBlockAt. Install and "
                         "test the Cudy Managed Device timer patch, then Save "
                         "Preferences on the device before retrying."
                     )
-                timer_args = {**timer_args, "targets": [selected[0].label]}
+                timer_args = {**timer_args, "targets": [d.label for d in selected],
+                              "_expected_ids": [d.id for d in selected]}
                 decision = self.confirmation_policy.decide(
                     session_id, [(TIMED_INTERNET_TOOL, timer_args)],
                 )
@@ -4775,13 +4811,26 @@ class UnifiedMCPAgent:
                         }],
                     },
                 )
+                targets_summary = "; ".join(
+                    f"{d.label} (device {d.id})" for d in selected
+                )
+                if timer_args["action"] == "cancel":
+                    return (
+                        f"Please confirm cancellation of the pending Internet "
+                        f"timer for {targets_summary}. No Internet block will "
+                        "be issued by this cancellation."
+                    )
+                behaviour = (
+                    "allow Internet immediately, then block it"
+                    if timer_args["action"] == "allow_for"
+                    else "block Internet"
+                )
                 return (
-                    f"Please confirm: schedule {selected[0].label} "
-                    f"(Hubitat device {selected[0].id}) to block Internet "
+                    f"Please confirm: {behaviour} for {targets_summary} "
                     f"{timer_args['minutes']} minutes AFTER approval. "
-                    "This confirmation does not block it immediately. "
-                    "The hub driver must report the scheduled deadline before "
-                    "HomeBrain claims that a timer was armed."
+                    "A block_in confirmation does not block immediately. "
+                    "HomeBrain will require a matching driver-reported timer "
+                    "deadline before claiming a timer was armed."
                 )
 
         # The user's explicit time-bound rule command is the authority for
