@@ -1,5 +1,51 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 typed-source grounding: Hub health → cross-domain correction
+
+**New frozen Q1 domain observation:** Installed 0.18.400 responded
+to `What is the hub health status?` in 11,139ms with 2 Gemma rounds
+and 1 successful Hub Information Driver typed snapshot. The answer
+accurately reported available 5-minute CPU 0.78 / 19.5%, memory
+756.39 MB, DB 175 MB, uptime 18h33m54s and source-reported
+system statuses, but asserted temperature **42.5°C** with no value
+in `reported` (only a °C unit). It also claimed a complete healthy
+hub, no alerts and externally up-to-date firmware beyond the
+typed source's completeness/freshness. No packet-level endpoint
+or independent alert check exists in that receipt.
+
+**Later user screenshot of Hub Info C8 Pro (device 1089):** UI showed
+changed CPU 1.36/34.0%, memory 782.07 MB and DB 177 MB.
+These are a separate later observation, not a contradiction of
+the earlier API snapshot; the screenshot does not show the complete
+attribute inventory or prove a timestamp for every field.
+
+**General development candidate 0.18.401:** One shared final
+typed-source guard reconciles precise status claims against
+reported scalar values and scoped device identity across Hub Info,
+light/device states, power, humidity, battery and other supported
+status measurements. Source unit metadata does not prove a value;
+conflicting same-ID snapshots are not combined. Unsupported
+global alert/health and external firmware claims are qualified.
+No new model rounds, MCP reads or mutation permissions. Pure
+synthetic tests assess field/identity/format/absence boundaries.
+Exact-head CI, merge and installed after-results are pending.
+[Detailed source review](ANSWER-QUALITY-Q1-TYPED-REPORTS-20261104.md).
+
+**Q1 paired snapshot regression measured:** v0.18.399 two-light
+question 19.409s, 6 model rounds, 7 tool calls, unnecessary
+one-sided history → v0.18.400 same-question repeat 8.227s,
+3 rounds, 4 calls, no history, independently correct current
+device states. Reported Hallway ON/50 and Livingroom OFF/retained
+60 in the later read; state changes over time are not contradictions.
+This is a single repeated test, not a new first-attempt score.
+
+**Next read-only acceptance after deployment:** Submit the exact
+registered hub-health question again and provide the natural
+answer and complete Technical JSON. Review field coverage,
+uncertainty and natural response. A repeat is not a new first
+attempt; continue independent cross-domain Q1 before Q2.
+
+---
 ## 2026-11-04 — Q1 first read-only multi-device state sample; 0.18.400 candidate
 
 **Observed installed v0.18.399 (one user-supplied first-received response):**
