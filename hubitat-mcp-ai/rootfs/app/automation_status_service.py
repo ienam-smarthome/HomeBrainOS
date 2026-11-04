@@ -10,7 +10,7 @@ from automation_diagnostic_policy import is_automation_runtime_diagnostic
 from mcp_client import HubitatMCPClient, MCPToolResult
 
 _STATUSES = ("active", "disabled", "paused", "broken", "unknown")
-_ATTENTION_STATUSES = ("broken", "paused", "unknown")
+_ATTENTION_STATUSES = ("broken", "unknown")
 _STATUS_PRECEDENCE = ("broken", "paused", "disabled", "active")
 _ADVISORY_WORDS = (
     "recommend", "recommendation", "recommendations",
@@ -519,8 +519,31 @@ class AutomationStatusService:
             )
         return "\n".join(lines)
 
+    @staticmethod
+    def wants_full_inventory(prompt: str) -> bool:
+        """Only explicit all/every requests expand normal app/rule lists.
+
+        A plain status or problem check must not turn a 165-entry inventory
+        into a wall of text. The structured automation_items stay complete.
+        """
+        text = " ".join(str(prompt or "").casefold().split())
+        return bool(
+            re.search(
+                r"\\b(?:all|every|entire|full|complete)\\b.{0,60}"
+                r"\\b(?:automations?|rules?|apps?|inventory)\\b",
+                text,
+            )
+            or re.search(
+                r"\\b(?:automations?|rules?|apps?)\\b.{0,35}"
+                r"\\b(?:all|every|full|complete)\\b",
+                text,
+            )
+        )
+
     @classmethod
-    def _message(cls, items: list[dict[str, Any]]) -> str:
+    def _message(
+        cls, items: list[dict[str, Any]], *, full: bool = False,
+    ) -> str:
         if not items:
             return "No automation apps or Rule Machine rules were returned by Hubitat."
         counts = cls.status_counts(items)
@@ -543,6 +566,55 @@ class AutomationStatusService:
             "A Hubitat broken-name marker alone does not identify a failing action. "
             "For execution failures, run the comprehensive read-only System Check.",
         ]
+        if not full and len(items) > 40:
+            lines = [
+                summary,
+                f"Inventory: {app_count} app instances, {rule_count} Rule Machine entries.",
+                f"Configuration: {counts['active']} enabled/not disabled, "
+                f"{counts['disabled']} disabled, {counts['paused']} paused, "
+                f"{counts['broken']} broken markers, {counts['unknown']} unknown.",
+                "",
+                "No execution success or failure is established by these configuration "
+                "flags. Paused and disabled may be intentional; neither alone is a "
+                "broken automation. Runtime errors, device health, actions and "
+                "dependencies were not checked. Use the read-only System Check "
+                "to investigate execution failures.",
+            ]
+            for status in ("broken", "unknown", "paused"):
+                matching = [item for item in items if item["status"] == status]
+                if not matching:
+                    continue
+                lines.append(f"\n### {status.title()} ({len(matching)})")
+                for item in matching[:10]:
+                    marker = (
+                        " [Hubitat name marker; cause unverified]"
+                        if status == "broken" and "marked the automation name"
+                        in str(item.get("status_reason") or "") else ""
+                    )
+                    conflict = " [conflicting source state]" if item.get("status_conflict") else ""
+                    lines.append(
+                        f"- {item.get('display_name') or item['name']} ({item['type']})"
+                        + (f" [ID {item['id']}]" if item.get("id") else "")
+                        + marker + conflict
+                    )
+                if len(matching) > 10:
+                    lines.append(f"...and {len(matching) - 10} more {status}.")
+            if counts["disabled"]:
+                lines.append(
+                    f"\n{counts['disabled']} disabled configurations omitted from the "
+                    "short summary (request the full inventory to list them)."
+                )
+            if counts["active"]:
+                lines.append(
+                    f"{counts['active']} enabled/not-disabled configurations omitted "
+                    "from the short summary."
+                )
+            if not attention_count and not conflict_count:
+                lines.append(
+                    "No broken or unknown configuration entries were returned. "
+                    "This does not prove every automation works."
+                )
+            return "\n".join(lines)
         for status in ("broken", "paused", "unknown", "disabled", "active"):
             matching = [item for item in items if item["status"] == status]
             if matching:
@@ -639,7 +711,7 @@ class AutomationStatusService:
             combined[key] = entry
         return list(combined.values())
 
-    async def snapshot(self, *, advisory: bool = False, brief: bool = False) -> AutomationStatusOutcome:
+    async def snapshot(self, *, advisory: bool = False, brief: bool = False, full: bool = False) -> AutomationStatusOutcome:
         calls = (
             ("hub_read_apps_code", {"tool": "hub_list_apps", "args": {"scope": "instances"}}, "app"),
             ("hub_read_rules", {"tool": "hub_list_rules", "args": {}}, "rule"),
@@ -697,7 +769,7 @@ class AutomationStatusService:
         message = (
             self._advisory_message(ordered, devices) if advisory else (
                 self._brief_message(ordered, rule_coverage=rule_coverage)
-                if brief else self._message(ordered)
+                if brief else self._message(ordered, full=full)
             )
         )
         return AutomationStatusOutcome(
