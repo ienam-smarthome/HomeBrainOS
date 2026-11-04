@@ -163,6 +163,61 @@ def active_non_light_switches(
     )
 
 
+
+def switch_state_coverage(
+    devices: list[dict[str, Any]],
+    *,
+    device_kind: str,
+    rooms: tuple[str, ...] = (),
+) -> dict[str, int]:
+    """Coverage for typed ON/OFF aggregation, not whole-home physical proof.
+
+    An inventory may contain every device ID yet omit a switch state from
+    some recognised lights/switches. Such devices cannot be counted OFF.
+    When a room filter is supplied, only that authoritative room counts.
+    All counts are source metadata, never user-identifying labels.
+    """
+    if device_kind not in {"light", "non_light_switch"}:
+        raise ValueError("Expected light or non_light_switch")
+    def room_key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", value.casefold())
+    allowed = {room_key(str(r)) for r in rooms} if rooms else None
+    candidates = observed_on = observed_off = unknown = 0
+    for device in devices:
+        if allowed is not None and room_key(room_name(device) or "") not in allowed:
+            continue
+        light = is_light_device(device)
+        attributes = device_attributes(device)
+        if device_kind == "light":
+            capabilities = capability_names(device)
+            # A label containing "light" can describe a light *sensor*.
+            # Label-only classification is eligible for an ON/OFF claim
+            # only where a Switch capability/state supports that semantic.
+            explicit_light = bool(capabilities & {
+                "light", "bulb", "colorcontrol", "colortemperature",
+            })
+            switch_shaped = "switch" in capabilities or "switch" in attributes
+            if not light or not (explicit_light or switch_shaped):
+                continue
+        elif light or ("switch" not in attributes and
+                       "switch" not in capability_names(device)):
+            continue
+        candidates += 1
+        state = str(attributes.get("switch") or device.get("switch") or "").strip().lower()
+        if state == "on":
+            observed_on += 1
+        elif state == "off":
+            observed_off += 1
+        else:
+            unknown += 1
+    return {
+        "candidate_count": candidates,
+        "on_count": observed_on,
+        "off_count": observed_off,
+        "unknown_state_count": unknown,
+    }
+
+
 def active_lights(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return every light device whose current switch state is on."""
 
@@ -216,4 +271,5 @@ __all__ = [
     "internet_access_state",
     "is_light_device",
     "room_name",
+    "switch_state_coverage",
 ]
