@@ -1,5 +1,40 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 live same-API-prompt v0.18.389 → v0.18.390 receipt comparison
+
+**One observed, ungraded user-supplied live pair:** same normalized API
+prompt digest and same Gemma Free model, but `model_delivery_verified=false`,
+`first_attempt_verified=false`, `deployed_build_sha_verified=false`
+in both envelopes. The old 25,925ms/2-read/5-round/2-blocked-write
+receipt compared with v0.18.390's **15,168ms/7-read/4-round/1-blocked-write**
+receipt; one recovery-view activation was recorded. Delta -10,757ms
+(**41.5% faster on this one pair**); candidate still exceeds the
+15-second routine target. API outcome shifted from `success` to
+`unresolved` despite both transports returning `success=true`.
+No recorded write in either; no verified live Internet block.
+
+**Important unresolved claims:** current hub time is model-derived, not
+independently hub-read; current `hub_get_info` receipt is not a source
+for MCP server version; latest-backup claim appears older than an
+earlier separately reported hub-local source timestamp; test-switch
+lookup used a generic rather than the canonical unique label; and
+absence of `dated` in rule labels is not evidence that no native
+one-time rule exists. A tool discovery receipt does not certify direct
+writer availability or authorization. The six displayed answers are
+**not source-verified as a set**.
+
+**Q1 evaluation work:** [Qualitative live-pair review](ANSWER-QUALITY-Q1-PREFLIGHT-LIVE-PAIR-20261104.md)
+and generic privacy-bounded
+`scripts/answer_quality_live_receipt_diff.py` plus synthetic tests
+were prepared to compare honest elapsed, reads, blocked writes, request
+outcomes, and API-prompt equality without counting model words as
+truth, copying private device content, or publishing an inaccurate
+first-attempt score. This work changes **no add-on runtime/version**.
+Formal factual-grounding/first-attempt score and model comparison
+remain **NOT MEASURED**. Next: CI-gated evaluation PR then a
+separate ordinary multi-device Q1 read-only receipt, followed by
+source-packet Q2 comparison. Production Internet blocker **DISABLED**.
+
 ## 2026-11-04 — installed Q1 read-only six-check failure; generic recovery (v0.18.390 GREEN MERGED)
 
 **Merged previous release:** [PR #1380](https://github.com/ienam-smarthome/HomeBrainOS/pull/1380) passed **8/8** final checks and merged as `cf784f82aaa057b098629a95767b13c4b079bcf2`. The user supplied a live result self-reporting **add-on v0.18.389**. This establishes an installed version string, not independently authenticated deployed Git SHA.
