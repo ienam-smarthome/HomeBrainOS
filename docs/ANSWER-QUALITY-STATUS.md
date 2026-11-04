@@ -1,5 +1,72 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — v0.18.405 general app-class identity fix merged, live acceptance pending
+
+**Merged production-code fix:** [PR #1427](https://github.com/ienam-smarthome/HomeBrainOS/pull/1427)
+tested exact head `5207a97ee09516aed296ce43f1b00dda7388a8f7`,
+merged commit `2b2f146df22d2539ab0effd352670bf458f0dd79`.
+All four required workflows passed: Hubitat MCP AI tests,
+Validate HomeBrain OS, Release assurance and Answer
+Quality scorecard integrity. The dedicated add-on and
+full release Python suites each reported **6,477 tests
+passed, 2 warnings**; metadata and container smoke green.
+Earlier failing PR attempts were corrected, including
+README/changelog version synchronisation and a pytest
+reserved-param test name. A cancelled intermediate CI
+run was **not** counted as success; the final exact-head
+four-workflow gate is all-green.
+
+**Change:** Native installed-app **class/parent identity**
+read questions are separated from installed-rule
+**executable action-tree verification** in model-advisory
+interpretation, deterministic scope, evidence obligations
+and shared completion. Generic read success and field
+names cannot certify native class membership; an
+incomplete type catalog does not prove a type missing.
+The old stored-logic guard now cannot replace a
+class-identity explanation with generic inactivity-OFF,
+duplicate-rule and nested-IF boilerplate, even if it
+sees a stale old rule-audit coverage label. Combined
+requests explicitly asking for compiled triggers
+and ordered actions retain the strict installed-rule
+contract. No new inference/tool call, auto-write,
+native writer enablement or hub state mutation.
+
+**Critical deployment boundary:** PR merged to main
+and add-on **source version v0.18.405** is available;
+the user's reported **installed runtime was v0.18.404**
+during the failing 33.825s/7-round/4-read live test.
+**No installed v0.18.405 acceptance sample yet.**
+Do not say the source fix has improved end-to-end
+latency, resolved class identity, or solved upstream
+MCP Rule Machine parent verification without new
+read-only evidence. The four-domain offline Qwen/Llama
+results and one Gemma Cloud MQTT result remain
+separate; no official blinded human scores or
+Claude parity have been established.
+
+**Next action:** User updates Hubitat MCP AI add-on
+to v0.18.405 in Home Assistant, then asks exactly
+one read-only question: "Investigate whether Rule
+Machine app instance 169 is independently verified
+as the native Rule Machine parent. Separate the
+app's displayed name, its app-type identity, and
+any independently verified native class relationship.
+Explain what remains unverified and what read-only
+evidence would resolve it. Do not create, modify
+or execute any rule." Obtain full answer and
+**Technical JSON**; check intended
+`app_class_identity` domain, non-certified
+parent proof if typed mapping is absent,
+no unrelated rule-action boilerplate,
+tool/round counts, and total wall time.
+No rule writer or devices should be touched.
+If v0.18.405 still fails, investigate its actual
+typed receipt/plan/publisher path before another
+fix; avoid incident-specific patches.
+
+---
+
 ## 2026-11-04 — first live Rule Machine native parent-identity test: scope/publisher defect; v0.18.405 correction pending acceptance
 
 **Actual user-provided installed HomeBrain v0.18.404 read-only
