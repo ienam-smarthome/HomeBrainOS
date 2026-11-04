@@ -24,7 +24,7 @@ from native_rule_readiness_source import _server_version
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from hub_timezone import HubTimezoneResolver
-from mcp_client import HubitatMCPClient
+from mcp_client import HubitatMCPClient, tool_succeeded
 
 logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
 from time_expressions import AT_TIME as _SHARED_AT_TIME, parse_clock as _shared_parse_clock
@@ -1050,6 +1050,99 @@ class RuleAuthoringService:
         parts = version.split("-", 1)[0].split("+", 1)[0].split(".")
         return len(parts) == 3 and tuple(int(x) for x in parts) >= (5, 1, 6)
 
+    @staticmethod
+    def _native_date_version_ok(version: str | None) -> bool:
+        if not isinstance(version, str):
+            return False
+        if not re.fullmatch(r"[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?", version):
+            return False
+        parts = version.split("-", 1)[0].split("+", 1)[0].split(".")
+        return len(parts) == 3 and tuple(int(x) for x in parts) >= (5, 1, 6)
+
+    async def _native_date_version_check(self) -> tuple[bool, str]:
+        """Inspect native server identity; recover a stale initialize safely.
+
+        A guide describing the native writer does not attest the installed
+        date-field implementation. hub_get_info.mcpServerVersion is a native,
+        current read-only source. If it disagrees with a cached initialize
+        identity after an upgrade, require a fresh initialize agreement
+        before allowing any write. Never infer a version from HomeBrain's
+        own package, firmware, or the upstream GitHub release.
+        """
+        initial = _server_version(self.mcp)
+        if self._native_date_supported(self.mcp):
+            return True, "MCP initialize serverInfo"
+
+        read_started = time.monotonic()
+        observed: str | None = None
+        try:
+            receipt = await self.mcp.call_tool("hub_get_info", {})
+            data = receipt.data if tool_succeeded(receipt) and isinstance(receipt.data, dict) else {}
+            candidate = data.get("mcpServerVersion")
+            if isinstance(candidate, str) and re.fullmatch(
+                r"[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?",
+                candidate.strip()
+            ):
+                observed = candidate.strip()
+        except Exception:
+            # Version identity is optional diagnostic evidence, never a reason
+            # to invent or execute a native write.
+            pass
+        self._record_evidence(
+            "hub_get_info", {},
+            success=observed is not None,
+            elapsed_ms=round((time.monotonic() - read_started) * 1000),
+            summary=(
+                "Installed MCP Rule Server version from native hub_get_info: "
+                + (observed or "unavailable")
+            ),
+            supports_live_claim=observed is not None,
+            evidence_kind="native_rule_server_version",
+            effect="read", mutates=False,
+            details={
+                "initializeVersion": initial,
+                "hubInfoMcpServerVersion": observed,
+            },
+        )
+        if observed is not None and not self._native_date_version_ok(observed):
+            return False, (
+                f"Installed MCP Rule Server version **{observed}** does not "
+                "support the native one-time date trigger (requires **5.1.6 "
+                "or later**). Update the MCP Rule Server in Hubitat Package "
+                "Manager and reconnect HomeBrain. No rule was created."
+            )
+        if observed is not None and self._native_date_version_ok(observed):
+            # A server might have been upgraded after HomeBrain cached its
+            # initialize identity. Re-initialize and require both version
+            # sources to attest the same server before granting authoring.
+            refresh = getattr(self.mcp, "initialize", None)
+            if callable(refresh):
+                try:
+                    await refresh(force=True)
+                except Exception:
+                    pass
+            refreshed = _server_version(self.mcp)
+            if refreshed == observed and self._native_date_supported(self.mcp):
+                return True, "hub_get_info plus refreshed MCP initialize serverInfo"
+            return False, (
+                "The current MCP Rule Server reports version "
+                f"**{observed}**, but HomeBrain's MCP initialize identity "
+                f"({initial or 'unavailable'}) could not be reconciled. "
+                "Reconnect the MCP client before scheduling. No rule was created."
+            )
+        if initial is not None:
+            return False, (
+                f"MCP initialize reports Rule Server version **{initial}**, "
+                "but current hub_get_info version could not be verified. "
+                "Native dated rules require **5.1.6 or later**; reconnect "
+                "HomeBrain or update the server. No rule was created."
+            )
+        return False, (
+            "Neither MCP initialize nor hub_get_info verified the installed "
+            "MCP Rule Server version. Native dated rules require **5.1.6 "
+            "or later**. Reconnect the MCP client. No rule was created."
+        )
+
     async def _native_parent_id(self) -> int | None:
         """Resolve a native Rule Machine parent using two read-only sources."""
         try:
@@ -1158,11 +1251,9 @@ class RuleAuthoringService:
         if any(native_candidates):
             if not all(native_candidates) or contract != NATIVE_DOCUMENT:
                 return "Native Rule Machine writer contract changed. No rule was created."
-            if not self._native_date_supported(self.mcp):
-                return (
-                    "The installed MCP server does not attest the 5.1.6 native "
-                    "dated-trigger fix. No rule was created."
-                )
+            supported, version_reason = await self._native_date_version_check()
+            if not supported:
+                return version_reason
             verified_parent = await self._native_parent_id()
             if verified_parent is None:
                 return "The native Rule Machine parent is not verified. No rule was created."
@@ -1262,15 +1353,11 @@ class RuleAuthoringService:
                     legacy_rule_writer_incompatibility(NATIVE_DOCUMENT)
                     or "Recurring native schedule not yet verified; no write queued.",
                 )
-            if not self._native_date_supported(self.mcp):
+            supported, version_reason = await self._native_date_version_check()
+            if not supported:
                 return RuleAuthoringDecision(
                     True,
-                    "native_oneshot_date_field_unverified: Installed native MCP "
-                    "Rule Server version 5.1.6 or later has not been verified "
-                    "through MCP initialize. Native operation=create requires "
-                    "an independently verified parent_id and typed trigger "
-                    "fields. Upgrade/reconnect before scheduling. "
-                    "No rule write was queued or executed.",
+                    "native_oneshot_date_field_unverified: " + version_reason,
                 )
         elif incompatible:
             return RuleAuthoringDecision(True, incompatible)
