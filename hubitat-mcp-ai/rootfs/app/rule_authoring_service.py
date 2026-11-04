@@ -18,6 +18,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
+from native_switch_schedule import create_dated_switch, dated_switch_proposal_error
+from native_rule_inventory_source import _native_parent_from_summary
+from native_rule_readiness_source import _server_version
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from hub_timezone import HubTimezoneResolver
@@ -1003,7 +1006,11 @@ class RuleAuthoringService:
         payload = arguments.get("args")
         if not isinstance(payload, dict) or payload.get("appId") not in {None, ""}:
             return None
-        name = str(payload.get("name") or "").strip()
+        source = (
+            payload.get("args")
+            if payload.get("operation") == "create" else payload
+        )
+        name = str(source.get("name") or "").strip() if isinstance(source, dict) else ""
         return name or None
 
     async def _rule_writer_contract(self) -> str:
@@ -1032,6 +1039,86 @@ class RuleAuthoringService:
             evidence_kind="rule_writer_contract_check",
         )
         return contract
+
+
+    @staticmethod
+    def _native_date_supported(mcp: Any) -> bool:
+        """Only installed MCP initialize identity attests upstream #575."""
+        version = _server_version(mcp)
+        if version is None:
+            return False
+        parts = version.split("-", 1)[0].split("+", 1)[0].split(".")
+        return len(parts) == 3 and tuple(int(x) for x in parts) >= (5, 1, 6)
+
+    async def _native_parent_id(self) -> int | None:
+        """Resolve a native Rule Machine parent using two read-only sources."""
+        try:
+            listed = await self.mcp.call_tool("hub_read_apps_code", {
+                "tool": "hub_list_apps",
+                "args": {"scope": "instances"},
+            })
+            data = listed.data if not listed.is_error and isinstance(listed.data, dict) else {}
+            rows = data.get("apps")
+            if (not isinstance(rows, list) or len(rows) > 5000
+                    or data.get("truncated") is True or data.get("nextCursor")
+                    or (type(data.get("count")) is int
+                        and data["count"] != len(rows))):
+                return None
+            candidates = [
+                row for row in rows if isinstance(row, dict)
+                and row.get("name") == "Rule Machine"
+                and row.get("type") == "Rule Machine"
+                and row.get("user") is False
+                and row.get("parentId") in (None, "")
+                and str(row.get("id") or "").isdigit()
+            ]
+            if len(candidates) != 1:
+                return None
+            parent_id = int(candidates[0]["id"])
+            candidate_type = candidates[0].get("appTypeId")
+            if not str(candidate_type or "").isdigit():
+                return None
+            detail_result = await self.mcp.call_tool("hub_read_apps_code", {
+                "tool": "hub_get_app_config",
+                "args": {"appId": str(parent_id), "summary": True},
+            })
+            detail = detail_result.data if not detail_result.is_error and isinstance(detail_result.data, dict) else {}
+            verified, _gap = _native_parent_from_summary(
+                detail,
+                candidate_id=str(parent_id),
+                candidate_type_id=str(candidate_type),
+            )
+            return parent_id if verified is not None else None
+        except Exception:
+            return None
+
+    async def _native_guide_key(self) -> str | None:
+        """Read the installed acknowledgement key, never invent one."""
+        try:
+            guide = await self.mcp.call_tool(
+                "hub_get_tool_guide", {"section": "set_rule_reference"}
+            )
+            if guide.is_error:
+                return None
+            def flatten(value: Any) -> str:
+                if isinstance(value, str):
+                    return value
+                if isinstance(value, dict):
+                    return "\n".join(
+                        flatten(value[k]) for k in
+                        ("content", "text", "guide", "result", "data")
+                        if k in value
+                    )
+                if isinstance(value, list):
+                    return "\n".join(flatten(v) for v in value)
+                return ""
+            match = re.search(
+                r"I-HAVE-READ-THE-GUIDE-set_rule_reference-[0-9a-fA-F]+",
+                flatten(guide.data),
+            )
+            return match.group(0) if match else None
+        except Exception:
+            return None
 
     async def duplicate_create_error(
         self,
@@ -1062,9 +1149,37 @@ class RuleAuthoringService:
         # upgraded while the queued proposal was awaiting approval. Check the
         # installed guide before ANY create write, not just at proposal time.
         contract = await self._rule_writer_contract()
-        incompatible = legacy_rule_writer_incompatibility(contract)
-        if incompatible:
-            return incompatible
+        native_candidates = [
+            item.get("tool") == "hub_set_rule"
+            and isinstance(item.get("args"), dict)
+            and item["args"].get("operation") == "create"
+            for item in arguments
+        ]
+        if any(native_candidates):
+            if not all(native_candidates) or contract != NATIVE_DOCUMENT:
+                return "Native Rule Machine writer contract changed. No rule was created."
+            if not self._native_date_supported(self.mcp):
+                return (
+                    "The installed MCP server does not attest the 5.1.6 native "
+                    "dated-trigger fix. No rule was created."
+                )
+            verified_parent = await self._native_parent_id()
+            if verified_parent is None:
+                return "The native Rule Machine parent is not verified. No rule was created."
+            for item in arguments:
+                payload = item["args"]
+                invalid = dated_switch_proposal_error(payload)
+                if invalid is not None:
+                    return invalid
+                if payload["args"]["parent_id"] != verified_parent:
+                    return (
+                        "The queued native parent differs from the freshly "
+                        "verified Rule Machine parent. No rule was created."
+                    )
+        else:
+            incompatible = legacy_rule_writer_incompatibility(contract)
+            if incompatible:
+                return incompatible
         normalized = [name.casefold() for name in names]
         duplicates_in_group = sorted(
             {
@@ -1138,25 +1253,26 @@ class RuleAuthoringService:
         # its own read-only guide before resolving a target or queuing an
         # impossible/unsafe confirmed write. Never silently translate fields.
         installed_contract = await self._rule_writer_contract()
+        native_mode = installed_contract == NATIVE_DOCUMENT
         incompatible = legacy_rule_writer_incompatibility(installed_contract)
-        if incompatible:
-            if installed_contract == NATIVE_DOCUMENT and not intent.recurring:
-                # The installed native document writer is NOT the legacy
-                # addTrigger/addAction compiler. In particular the dated
-                # form-field/value contract and readback are still unknown.
-                # Do not guess atTime#=ISO, date# or parent_id, and never
-                # queue an active half-authored rule. This refusal is an
-                # explicit diagnosis, not a successful schedule.
+        if native_mode:
+            if intent.recurring or intent.end_time is not None:
                 return RuleAuthoringDecision(
                     True,
-                    "native_oneshot_date_field_unverified: The installed "
-                    "Rule Machine server uses native operation='create' with parent_id but "
-                    "HomeBrain has no verified dated trigger field/value "
-                    "contract or approved native create/readback path. "
-                    "A read-only comparison of an existing dated Rule Machine "
-                    "form with an undated form is needed. No rule write was "
-                    "queued or executed.",
+                    legacy_rule_writer_incompatibility(NATIVE_DOCUMENT)
+                    or "Recurring native schedule not yet verified; no write queued.",
                 )
+            if not self._native_date_supported(self.mcp):
+                return RuleAuthoringDecision(
+                    True,
+                    "native_oneshot_date_field_unverified: Installed native MCP "
+                    "Rule Server version 5.1.6 or later has not been verified "
+                    "through MCP initialize. Native operation=create requires "
+                    "an independently verified parent_id and typed trigger "
+                    "fields. Upgrade/reconnect before scheduling. "
+                    "No rule write was queued or executed.",
+                )
+        elif incompatible:
             return RuleAuthoringDecision(True, incompatible)
 
         if not intent.recurring:
@@ -1424,13 +1540,43 @@ class RuleAuthoringService:
                     rule_names=(single_name,),
                     target=target,
                 )
-            create_action = self._action(
-                name=single_name,
-                at_time=intent.start_time,
-                device_id=device_id,
-                capability_filter=capability_filter,
-                command=intent.start_command,
-            )
+            if native_mode:
+                parent_id = await self._native_parent_id()
+                guide_key = await self._native_guide_key()
+                if parent_id is None:
+                    return RuleAuthoringDecision(
+                        True,
+                        "The native Rule Machine parent is not source-verified. "
+                        "No rule was queued.",
+                        rule_names=(single_name,), target=target,
+                    )
+                # The upstream guide acknowledges writes only when that
+                # setting is enabled. Do not invent a key when not advertised:
+                # upstream will refuse a required missing key before writing.
+                try:
+                    wall = datetime.fromisoformat(intent.start_time)
+                    if wall.tzinfo is not None:
+                        raise ValueError("expected hub-local wall clock")
+                    local_at = wall.replace(tzinfo=hub_now.tzinfo)
+                    create_action = create_dated_switch(
+                        name=single_name, parent_id=parent_id,
+                        device_id=str(device_id), command=intent.start_command,
+                        hub_local_at=local_at, best_practice_key=guide_key,
+                    )
+                except (TypeError, ValueError):
+                    return RuleAuthoringDecision(
+                        True,
+                        "Native dated Switch candidate could not be verified. "
+                        "No rule was queued.", target=target,
+                    )
+            else:
+                create_action = self._action(
+                    name=single_name,
+                    at_time=intent.start_time,
+                    device_id=device_id,
+                    capability_filter=capability_filter,
+                    command=intent.start_command,
+                )
             # One-time rules are deliberately left with only their dated
             # trigger and device action. The nightly HomeBrain cleanup removes
             # expired generated rules after the safety grace period; self-pause
