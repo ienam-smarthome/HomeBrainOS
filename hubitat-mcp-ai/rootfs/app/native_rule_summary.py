@@ -11,33 +11,26 @@ import re
 from datetime import date
 from typing import Any
 
-_SETTING_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.#-]{0,75}$")
+from native_rule_document_source import _simple_setting
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _DEVICE = re.compile(r"^[1-9]\d{0,8}$")
 _SECRET = re.compile(r"(?i)(?:password|secret|token|api.?key|credential|pin|authorization)")
 
 
 def _setting(row: Any) -> dict[str, Any] | None:
-    """Match the native reader's conservative simple-setting projection."""
-    if not isinstance(row, dict):
+    """Reuse the same privacy-safe projection as the native section reader.
+
+    Most native form settings have a null/absent device_ids field. The
+    underlying reader legitimately omits that metadata; a null optional
+    field must not invalidate the setting's typed value. Source values
+    remain whitelisted and credentials still fail closed.
+    """
+    safe = _simple_setting(row)
+    if safe is None:
         return None
-    name, typ = row.get("name"), row.get("type")
-    if (not isinstance(name, str) or not _SETTING_NAME.fullmatch(name)
-            or _SECRET.search(name) or not isinstance(typ, str)
-            or not _SETTING_NAME.fullmatch(typ)):
-        return None
-    raw = row.get("value")
-    if isinstance(raw, str) and (len(raw) > 100 or _SECRET.search(raw)):
-        return None
-    if type(raw) not in (bool, int, float, str, type(None)):
-        return None
-    ids = row.get("device_ids", [])
-    if (not isinstance(ids, list) or len(ids) > 24 or
-            any(not isinstance(i, (str, int)) or not _DEVICE.fullmatch(str(i))
-                for i in ids)):
-        return None
-    return {"name": name, "type": typ, "value": raw,
-            "device_ids": [str(i) for i in ids]}
+    # A missing/null/invalid device_ids field is not an attested device.
+    # Only a validated list of IDs from the canonical projector is usable.
+    return {**safe, "device_ids": safe.get("device_ids", [])}
 
 
 def _text(row: dict[str, Any] | None, typ: str) -> str | None:
