@@ -110,3 +110,53 @@ desired. Continue Q2 across multiple evidence domains; do not add
 another single-device publication patch. Roll back this offline tool
 if it can write raw answers into source control, call arbitrary URLs,
 retry silently, fake grades, or bypass cloud acknowledgement.
+
+## 4 November 2026 — first live local capture failure and bounded correction
+
+**Observed attempt (not a completed A/B):** On a Windows PC with
+`qwen3.5:4b` and `llama3.2:3b` in the local Ollama inventory, a
+one-case, local-only Q2 run returned
+`Q2 capture incomplete: No bounded text-only first model answer`.
+The old error combines empty content, oversized content and tool calls;
+without response metadata it **does not establish which model failed**.
+No complete model pair or independently human-reviewed quality result was
+captured. The failed invocation does not count as a valid first-answer
+comparison and may not be silently re-labelled a success on retry.
+
+**General provider-contract diagnosis:** Ollama /api/chat can return a
+separate `message.thinking` field for thinking-capable models. With
+`num_predict=320`, a model might use its available token budget before
+returning `message.content`. The prior capture tool omitted the
+top-level `think` parameter, leaving the model default in control.
+Official docs: <https://github.com/ollama/ollama/blob/main/docs/capabilities/thinking.mdx>.
+This is a plausible mechanism, **not an independently retained
+response from the failing PC**.
+
+**Tool change:** After verifying a tag in local `/api/tags`, the
+tool now reads local `/api/show` once per model. Where Boolean no-thinking
+control is supported, it requests `"think":false` at the **top level**
+of `/api/chat`, not inside `options`. Non-thinking models do not receive
+a thinking control. Models advertising only named thinking levels and no
+off toggle fail closed, without falling back or retrying. The private
+`session.json` records the new local policy. Identical frozen prompts,
+temperature/seed/context/output budget, one inference attempt per arm,
+raw-answer privacy and no-tool restrictions remain unchanged.
+The direct Ollama Cloud request contract is **unchanged**.
+The response validator differentiates thinking-only, empty text,
+tool calls and output too large, naming the failing comparison arm
+without printing raw model output.
+
+**Tradeoff:** This is an explicit **answer-only** mode for local
+thinking-capable models. It does not measure their quality with thinking
+enabled; other model/runtime settings still require actual provider
+attestation. A new invocation after the fix is a **new experiment**,
+not recovery of the failed first attempt. The original unsuccessful
+run retains no valid scored data.
+
+**Acceptance:** Syntax checks and local fake-transport checks are useful,
+but a genuine Windows Ollama rerun and exact-head CI are needed to
+confirm whether local Qwen actually returns a usable answer. Until then,
+Gemma-vs-local factual quality, local Qwen-vs-Llama quality and model
+first-answer reliability remain **not_measured**. Roll back if discovery
+breaks installed model calls, no-thinking controls are misapplied, or
+private prompts leak into GitHub logs.
