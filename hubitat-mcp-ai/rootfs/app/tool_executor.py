@@ -157,6 +157,45 @@ class ToolExecutor:
         data = result.data
         if result.name == LOCAL_HUB_INFO_TOOL:
             return hub_info_receipt_details(result.arguments, data)
+        if result.name in {"homebrain_active_lights", "homebrain_active_switches"}:
+            # A successful whole-inventory read is not necessarily evidence
+            # that every candidate reported its switch attribute. Retain only
+            # bounded structural counts, never the household device list.
+            if isinstance(data, dict):
+                coverage = data.get("state_coverage")
+                fields = ("candidate_count", "on_count", "off_count", "unknown_state_count")
+                if (
+                    isinstance(coverage, dict)
+                    and all(type(coverage.get(field)) is int
+                            and 0 <= coverage[field] <= 100000 for field in fields)
+                    and type(data.get("count")) is int
+                    and 0 <= data["count"] <= 100000
+                    and type(data.get("total_scanned")) is int
+                    and type(data.get("complete")) is bool
+                    and type(data.get("state_coverage_complete")) is bool
+                    and type(data.get("scopeVerified")) is bool
+                    and data.get("scope") in {"whole-home", "room", "unresolved-room"}
+                    and coverage["on_count"] == data["count"]
+                    and coverage["candidate_count"] == sum(
+                        coverage[field] for field in
+                        ("on_count", "off_count", "unknown_state_count")
+                    )
+                ):
+                    return {"aggregateState": {
+                        "category": (
+                            "lights" if result.name == "homebrain_active_lights"
+                            else "non_light_switches"
+                        ),
+                        "onCount": data["count"],
+                        "candidateCount": coverage["candidate_count"],
+                        "unknownStateCount": coverage["unknown_state_count"],
+                        "totalScanned": data["total_scanned"],
+                        "scope": data["scope"],
+                        "scopeVerified": data["scopeVerified"],
+                        "inventoryComplete": data["complete"],
+                        "stateCoverageComplete": data["state_coverage_complete"],
+                        "classification": "source light capability/label and switch",
+                    }}
         if result.name == "homebrain_resolve_device":
             snapshot = resolved_device_snapshot(data)
             if snapshot is not None:
@@ -296,6 +335,17 @@ class ToolExecutor:
                     "hub information driver: "
                     f"scope={details['requestedScope']}; "
                     f"reported fields={len(details['reported'])}"
+                )
+            aggregate = details.get("aggregateState")
+            if isinstance(aggregate, dict):
+                return (
+                    f"typed {aggregate['category']} aggregate: "
+                    f"on={aggregate['onCount']}, "
+                    f"candidates={aggregate['candidateCount']}, "
+                    f"unknown_switch={aggregate['unknownStateCount']}, "
+                    f"scope={aggregate['scope']}, "
+                    f"inventory_complete={aggregate['inventoryComplete']}, "
+                    f"state_coverage_complete={aggregate['stateCoverageComplete']}"
                 )
             temporal = details.get("temporalAnalysis")
             if isinstance(temporal, dict):
