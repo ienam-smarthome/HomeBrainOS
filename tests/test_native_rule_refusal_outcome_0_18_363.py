@@ -54,7 +54,14 @@ class Server:
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
-        assert name == "hub_get_tool_guide", "No write/device/inventory call allowed"
+        assert name in {"hub_get_tool_guide", "hub_get_info"}, (
+            "No write/device/inventory call allowed"
+        )
+        if name == "hub_get_info":
+            assert arguments == {}
+            return MCPToolResult(name, arguments, {}, "", {
+                "mcpServerVersion": "5.1.5",
+            })
         assert arguments == {"section": "set_rule_reference"}
         if self.guide is None:
             raise RuntimeError("Installed guide unavailable")
@@ -113,7 +120,14 @@ async def test_live_user_prompt_receives_write_and_unresolved_not_success(guide,
         assert metrics.completed_outcome() == "unresolved"
         assert metrics.snapshot()["counters"][expected_counter] == 1
         assert not any(c["mutates"] for c in result.evidence)
-        assert len(mcp.calls) == 1
+        assert mcp.calls == (
+            [
+                ("hub_get_tool_guide", {"section": "set_rule_reference"}),
+                ("hub_get_info", {}),
+            ] if guide else [
+                ("hub_get_tool_guide", {"section": "set_rule_reference"}),
+            ]
+        )
         assert "No rule write was queued or executed" in result.message if guide else "No write was queued or executed" in result.message
     finally:
         metrics.reset(token)
