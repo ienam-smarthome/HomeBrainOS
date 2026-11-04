@@ -4715,22 +4715,34 @@ class UnifiedMCPAgent:
             else None
         )
         if timer_args is not None:
+            # Only an independently identified Cudy Managed Device qualifies
+            # for the driver path. Other devices retain the existing native
+            # Rule Machine route (including its own confirmation and gates).
+            # This is capability dispatch, NOT mutation authorization.
             try:
                 available_devices = await self.timed_internet.list_devices()
-                selected, problems = self.timed_internet._targets(
-                    timer_args["targets"], available_devices, timer_args["action"],
+            except Exception as exc:
+                logger.debug("Driver timer inventory unavailable; retaining RM route: %s", exc)
+                available_devices = []
+            selected, problems = self.timed_internet._targets(
+                timer_args["targets"], available_devices, timer_args["action"],
+            )
+            if problems and any(
+                p.get("options") or "protected" in str(p.get("issue") or "")
+                for p in problems
+            ):
+                options = [str(x) for p in problems for x in p.get("options", [])]
+                return (
+                    "No Internet timer was queued: the Cudy target is "
+                    "ambiguous or protected. "
+                    + ("Choices: " + ", ".join(options[:8]) if options else
+                       "Protected network infrastructure cannot be timed-blocked.")
                 )
-                if problems or len(selected) != 1:
-                    options = [
-                        str(v) for p in problems for v in p.get("options", [])
-                    ]
-                    return (
-                        "No Internet timer was queued: the target must resolve "
-                        "uniquely to an unprotected Cudy Managed Device. "
-                        + ("Choices: " + ", ".join(options[:8]) if options else
-                           "Check the Block device name and driver.")
-                    )
-                current_mins, current_at = await self.timed_internet._read_state(selected[0])
+            if len(selected) == 1 and not problems:
+                try:
+                    current_mins, current_at = await self.timed_internet._read_state(selected[0])
+                except Exception:
+                    current_mins, current_at = None, None
                 if current_mins is None or current_at is None:
                     return (
                         "No Internet timer was queued: the target driver does not "
@@ -4738,45 +4750,39 @@ class UnifiedMCPAgent:
                         "test the Cudy Managed Device timer patch, then Save "
                         "Preferences on the device before retrying."
                     )
-            except Exception as exc:
-                logger.warning("Timed Internet target preflight failed: %s", exc)
-                return (
-                    "No Internet timer was queued: live driver identity and "
-                    "timer-readback preflight could not be verified."
+                timer_args = {**timer_args, "targets": [selected[0].label]}
+                decision = self.confirmation_policy.decide(
+                    session_id, [(TIMED_INTERNET_TOOL, timer_args)],
                 )
-            timer_args = {**timer_args, "targets": [selected[0].label]}
-            decision = self.confirmation_policy.decide(
-                session_id, [(TIMED_INTERNET_TOOL, timer_args)],
-            )
-            if decision.action is ConfirmationAction.REJECT:
-                return str(decision.message)
-            if decision.action is not ConfirmationAction.QUEUE:
-                return "Timed Internet confirmation gate was unavailable; no write queued."
-            self.confirmations.queue(
-                session_id,
-                [(TIMED_INTERNET_TOOL, timer_args)],
-                [{"role": "user", "content": str(user_prompt).strip()}],
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "timed_internet_proposal",
-                        "type": "function",
-                        "function": {
-                            "name": TIMED_INTERNET_TOOL,
-                            "arguments": json.dumps(timer_args),
-                        },
-                    }],
-                },
-            )
-            return (
-                f"Please confirm: schedule {selected[0].label} "
-                f"(Hubitat device {selected[0].id}) to block Internet "
-                f"{timer_args['minutes']} minutes AFTER approval. "
-                "This confirmation does not block it immediately. "
-                "The hub driver must report the scheduled deadline before "
-                "HomeBrain claims that a timer was armed."
-            )
+                if decision.action is ConfirmationAction.REJECT:
+                    return str(decision.message)
+                if decision.action is not ConfirmationAction.QUEUE:
+                    return "Timed Internet confirmation gate was unavailable; no write queued."
+                self.confirmations.queue(
+                    session_id,
+                    [(TIMED_INTERNET_TOOL, timer_args)],
+                    [{"role": "user", "content": str(user_prompt).strip()}],
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "timed_internet_proposal",
+                            "type": "function",
+                            "function": {
+                                "name": TIMED_INTERNET_TOOL,
+                                "arguments": json.dumps(timer_args),
+                            },
+                        }],
+                    },
+                )
+                return (
+                    f"Please confirm: schedule {selected[0].label} "
+                    f"(Hubitat device {selected[0].id}) to block Internet "
+                    f"{timer_args['minutes']} minutes AFTER approval. "
+                    "This confirmation does not block it immediately. "
+                    "The hub driver must report the scheduled deadline before "
+                    "HomeBrain claims that a timer was armed."
+                )
 
         # The user's explicit time-bound rule command is the authority for
         # authoring intent. Do NOT let the semantic planner's advisory
