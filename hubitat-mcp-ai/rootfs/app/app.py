@@ -881,11 +881,15 @@ def _needs_investigation_deadline(prompt: str) -> bool:
 
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     from scoped_app_status_read import scoped_status_app_id, read_scoped_app_status
+    from named_rule_document_read import parse_named_rule_read, read_named_rule_document
     tier_token = set_request_model_tier(request.model_tier)
     try:
         operation: Awaitable[Any]
+        named_rule = parse_named_rule_read(request.message)
         scoped_id = scoped_status_app_id(request.message)
-        if (scoped_id is not None
+        if named_rule is not None:
+            operation = read_named_rule_document(mcp, named_rule)
+        elif (scoped_id is not None
                 and not requires_rule_logic_inspection(request.message)
                 and not model_led_investigation_request(request.message)):
             operation = read_scoped_app_status(mcp, scoped_id)
