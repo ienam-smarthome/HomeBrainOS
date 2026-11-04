@@ -1,5 +1,59 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 command OFF provenance: real local answers reveal two causal errors and truncated Qwen output
+
+**New actual user-executed frozen local A/B:** `aq_command_issuer_vs_reporter`,
+packet SHA `fbe2452406077b244438396d54a73636d43b0f1d30212597c97c54c9798ba0ea`,
+checkout SHA `25a09d0ed5cd3f0bfdd2aac20147f50a0d719c29`.
+Both actual first-answer plaintexts were supplied and independently
+SHA-256 matched to the user-provided manifests (LF, no trailing newline).
+No Hubitat/HA tools, cloud models or real automation writes.
+
+- **Qwen3.5 4B local**: **26.344s**; answer hash
+  `a5479755e6b750941a1a283d00bdcc0ee1f90e31600f2c9e1008a239327fc064`.
+  Recognises app 4012 as command issuer, bridge as OFF reporter
+  and app 4012 as a notified report listener; nevertheless
+  infers bridge update from a received command without
+  evidence of physical delivery, invents possible integration
+  detail, and the **saved output stops mid-heading** at
+  `**Most Useful Next Read` (digest-verified).
+- **Llama3.2 3B local**: **10.594s**; answer hash
+  `fe3bdf3ce62350edf2d00de3d51ae501a26b0b84e612ce81a439807369a305c2`.
+  Conflates the report's listener with the separate command
+  issuer and falsely claims the device received the command,
+  was already OFF at receipt and app 4012 did not initiate
+  the OFF command. Contradicts the actual source record.
+  Llama was **15.750s faster** (~59.8% less wall time)
+  for one model-only request, not a quality victory.
+
+**New generic measurement defect discovered:** The private capture
+tool accepted `done:true` with nonempty text, but did not check
+Ollama `done_reason`; explicit `length` indicates a token-limit
+stop that can yield coherent-looking but incomplete text.
+Qwen's **historic provider stop reason was not recorded**:
+the truncated original is proven, but `length` is only a
+plausible explanation, not verified history. Candidate offline
+tool fix rejects explicit `length` and unexpected reasons
+without adding inference requests, changing `num_predict=320`,
+cloud policy or the original frozen packets. Old clients
+without done_reason remain compatible, without certifying
+they stopped normally. Tests cover local/cloud scenarios,
+normal stop, absent reason and safe error attribution.
+
+**Review status:** Preliminary assistant source review only.
+No separately completed/blinded human SHA-bound rubric;
+official Q2 accuracy, first-answer completeness metrics,
+Claude/Gemma parity, and p95 **not measured**. Both observed
+models have unsupported causal claims; no production provider
+change justified. Next independent source domain is
+`aq_early_heating_off_resume` as **one local-only pair**
+in a fresh private folder after exact-head CI/merge;
+then `aq_rule_parent_type_gap`. No Hubitat/HA/device/rule
+changes; add-on remains **v0.18.404**.
+[Detailed Q2 case review](ANSWER-QUALITY-Q2-LOCAL-COMMAND-ATTRIBUTION-20261104.md).
+
+---
+
 ## 2026-11-04 — Full Gemma Cloud MQTT first answer independently matches saved SHA; source comparison reviewed
 
 **Original answer integrity:** User now provided the complete

@@ -405,3 +405,77 @@ def test_filesystem_error_is_scoped_and_private(tmp_path, monkeypatch):
     with pytest.raises(CaptureTransportError, match="private-output: filesystem-write-failed") as exc:
         save_private(tmp_path / "new", left, right, session, raw)
     assert "PRIVATE_PATH_WITH_SECRET" not in str(exc.value)
+
+
+@pytest.mark.parametrize("provider,model", [
+    ("ollama-local", "qwen3.5:4b"),
+    ("ollama-cloud", "gemma4:31b"),
+])
+def test_done_true_length_stop_is_not_successful_first_answer(provider, model):
+    """A token cap can end a request with done=true but incomplete prose."""
+    tr = OllamaTransport(env={"OLLAMA_API_KEY":"PRIVATEKEY"})
+    response = {
+        "model": model,
+        "done": True,
+        "done_reason": "length",
+        "eval_count": 320,
+        "message": {"content":"**Next Read-Only Che", "thinking":""},
+    }
+    if provider == "ollama-local":
+        tr.local = FakeOpener([
+            {"models": [{"name": model}]},
+            {"capabilities": ["completion", "thinking"]},
+            response,
+        ])
+        opener = tr.local
+    else:
+        tr.cloud = FakeOpener([response])
+        opener = tr.cloud
+    with pytest.raises(ValueError, match="exhausted output token limit"):
+        tr(provider, model, "fixed evidence")
+    assert len(opener.requests) == (3 if provider == "ollama-local" else 1)
+
+
+def test_done_stop_is_accepted_and_length_never_promoted_to_success():
+    tr = OllamaTransport(env={"OLLAMA_API_KEY":"private"})
+    tr.cloud = FakeOpener([{
+        "model": "gemma4:31b",
+        "done": True, "done_reason": "stop",
+        "message": {"content":"complete answer"},
+    }])
+    assert tr("ollama-cloud", "gemma4:31b", "fixed evidence") == "complete answer"
+
+
+@pytest.mark.parametrize("reason", ["load", "unload", "nonstandard", 12, False])
+def test_unexpected_done_reason_fails_closed(reason):
+    tr = OllamaTransport(env={"OLLAMA_API_KEY":"private"})
+    tr.cloud = FakeOpener([{
+        "model": "gemma4:31b",
+        "done": True, "done_reason": reason,
+        "message": {"content":"not an accepted final answer"},
+    }])
+    with pytest.raises(ValueError, match="nonstandard completion reason"):
+        tr("ollama-cloud", "gemma4:31b", "fixed evidence")
+
+
+def test_incomplete_token_limit_is_attributed_to_model_case_without_leak():
+    calls = []
+    def invoke(provider, model, prompt):
+        calls.append((provider, model))
+        raise ValueError("Model generation exhausted output token limit; first answer incomplete (no automatic retry)")
+    with pytest.raises(ValueError, match="exhausted output token limit") as exc:
+        collect_pairs(packets()[:1], ("ollama-local", "qwen3.5:4b"),
+                      ("ollama-local", "llama3.2:3b"), "a" * 40, invoke)
+    assert "aq_command_issuer_vs_reporter" in str(exc.value)
+    assert "baseline (ollama-local/qwen3.5:4b)" in str(exc.value)
+    assert len(calls) == 1
+
+
+def test_missing_done_reason_remains_compatible_without_invented_stop_proof():
+    tr = OllamaTransport(env={"OLLAMA_API_KEY":"private"})
+    tr.cloud = FakeOpener([{
+        "model": "gemma4:31b",
+        "done": True,
+        "message": {"content":"provider omitted optional done_reason"},
+    }])
+    assert tr("ollama-cloud", "gemma4:31b", "fixed evidence") == "provider omitted optional done_reason"

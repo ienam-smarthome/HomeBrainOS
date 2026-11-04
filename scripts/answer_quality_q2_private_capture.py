@@ -51,6 +51,8 @@ SAFE_MODEL_ERRORS = frozenset({
     "Local model not present in local Ollama inventory; no pull attempted",
     "Local model does not expose a supported no-thinking mode",
     "Model response not marked complete",
+    "Model generation exhausted output token limit; first answer incomplete (no automatic retry)",
+    "Model finished with a nonstandard completion reason; answer not accepted",
     "Provider model identity does not match requested model",
     "Model returned tool calls instead of a text-only answer",
     "Model returned thinking only, no final answer (no automatic retry)",
@@ -234,6 +236,14 @@ class OllamaTransport:
                             stage="cloud-inference" if provider == "ollama-cloud" else "local-inference")
         if result.get("done") is not True:
             raise ValueError("Model response not marked complete")
+        # Ollama may report done=true even when num_predict is exhausted.
+        # A provider-reported length stop is not a complete first answer.
+        # Older providers can omit done_reason; absence is not proof of stop.
+        stop_reason = result.get("done_reason")
+        if stop_reason == "length":
+            raise ValueError("Model generation exhausted output token limit; first answer incomplete (no automatic retry)")
+        if stop_reason is not None and stop_reason != "stop":
+            raise ValueError("Model finished with a nonstandard completion reason; answer not accepted")
         if result.get("model") != model:
             raise ValueError("Provider model identity does not match requested model")
         msg = result.get("message")
