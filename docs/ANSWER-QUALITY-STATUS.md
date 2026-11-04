@@ -1,5 +1,51 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 three-case local capture: opaque transport/file failure; safe diagnostic repair candidate
+
+**Actual user observation:** Following the successful single
+`aq_network_broker_vs_device_health` Qwen3.5 4B vs Llama3.2
+3B pair, the user ran the next **three distinct frozen
+synthetic cases** (issuer vs reporter, heating return, Rule
+Machine native identity). The script returned
+`Q2 capture incomplete: private transport or file error`
+and did not provide paired first answers or scored outcomes.
+The previous MQTT case stays valid. This error is the
+tool's generic catch-all for a non-ValueError, including
+local Ollama connection/timeout/provider failures and
+private output filesystem errors; **the specific model,
+case, stage and environmental root cause were not captured**.
+Do not attribute it to Qwen, disk permission, network, or
+memory without discriminating evidence.
+
+**Proposed offline-tool correction:** Add a strictly
+sanitized stage/category transport and file failure
+type; preserve safe `case-id`, baseline/candidate and
+model identity on failures; distinguish HTTP status code,
+timeout, connection failure, opaque network/provider
+failure and local private write error. Never print
+exception bodies, raw answer, prompt, endpoint, auth
+token or filesystem path. Preserve existing no-retry,
+no-billing, frozen evidence, local/cloud segregation,
+bounded timeouts, answer-only mode, and refusal to
+overwrite prior private capture directories. Add
+synthetic regression tests for security and attribution.
+No changes to HomeBrain add-on v0.18.404 or Hubitat,
+HA, router, devices or automations.
+
+**Measurement boundary:** The multi-case run
+**did not complete**; no additional reviewed Q2 pairs,
+first-answer grounding, p50/p95 or model ranking are
+established. Once exact-head CI green, user updates
+checkout and runs the same three source packets in a
+new private directory **once** to see either completed
+first outputs or a safely classified failure. Avoid
+increasing the timeout or running retries before
+seeing which stage fails. Existing one-case MQTT
+observation remains separate from this run.
+[Error observability contract](ANSWER-QUALITY-Q2-PRIVATE-FIRST-ANSWER-CAPTURE-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 first successful **actual** local-model frozen MQTT pair; preliminary review only
 
 User completed the post-PR #1415 answer-only **local Ollama**
