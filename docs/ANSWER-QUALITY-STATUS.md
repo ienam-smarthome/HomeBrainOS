@@ -43,8 +43,16 @@ causal overclaims without taking over the model's answer. Synthetic
 negative tests include missing second-target historical receipts and
 actual historical comparisons. No write/tool authorization, Cudy driver,
 Hubitat, HA or router changes. [Q1 source review and acceptance](ANSWER-QUALITY-Q1-SNAPSHOT-COMPARISON-20261104.md).
-**Exact-head CI, PR, merge and installed after-response remain pending
-until independently verified.**
+**Verified green merge:** [PR #1400](https://github.com/ienam-smarthome/HomeBrainOS/pull/1400)
+tested at exact head `ab74c7c3008292dee993d4b51056b03a23c0b5ad`,
+passed all **four** required workflow runs (Release assurance,
+Hubitat MCP AI tests, Validate HomeBrain OS and Answer Quality integrity),
+including **6,363 passed, 2 warnings**, add-on container smoke, metadata
+and validation. Merged `30c9dffb22aa2f118c6bc1fa7f7d8b3541dc3d26`,
+with `hubitat-mcp-ai/config.yaml` on main verified as **0.18.400**.
+**Installed same-question after-response and actual improvement remain
+NOT MEASURED.** Tests show code-level distinction and safety only,
+not that Gemma's final natural language will improve in the field.
 
 **Next user acceptance after green merge/install:** Repeat exactly
 `Compare the states of Hallway Light 1 and Livingroom Light 2.` in
