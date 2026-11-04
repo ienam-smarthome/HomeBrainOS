@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.402**.
+Current add-on version: **0.18.403**.
+
+**Q1 source-qualified telemetry explanations (v0.18.403):** A real 0.18.402 read-only MQTT/health answer overstated physical device failure and unverified watchdog details despite independent evidence of 566.1h versus 45.1h conflicting metadata and recorded MQTT disconnects. A general final source-claim boundary now checks all device-telemetry explanations against typed clock, device identity, positive events and verified driver-method coverage, without extra model rounds or hub reads. Installed real answer quality/latency is **not yet measured**. [Source review](../docs/ANSWER-QUALITY-Q1-TELEMETRY-SOURCE-BOUNDARY-20261104.md) · [Release notes](CHANGELOG-0.18.403.md).
 
 **Q1 aggregate coverage (v0.18.402):** The first registered `Which lights are currently on?` response on v0.18.401 took 4.054s and used a 211-device bulk snapshot, but the Technical JSON did not expose the active-light count or ON/OFF completeness. Read-only light/non-light switch summaries now expose privacy-safe scoped counts of candidate/ON/OFF/unknown state, and a shared final guard qualifies unsupported absolute zero-active claims while preserving complete, reported ON=0 answers. No new MCP calls, model rounds or permissions. Actual post-update speed/accuracy is **not yet measured**. [Source review](../docs/ANSWER-QUALITY-Q1-AGGREGATE-COVERAGE-20261104.md) · [Release notes](CHANGELOG-0.18.402.md).
 
