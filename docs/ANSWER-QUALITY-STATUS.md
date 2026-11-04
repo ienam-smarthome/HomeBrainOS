@@ -1,5 +1,55 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 lighting inventory: zero-count source-completeness gap; v0.18.402 candidate
+
+**Observed installed 0.18.401:** Registered read-only case
+`all_lights_on`, exact question `Which lights are currently on?`.
+Gemma output `No lights are currently on.` in **4,054ms**
+(provider 2,668ms, MCP HTTP 1,332ms), 2 model rounds, 2
+tool calls. The bulk `hubitat://context` read returned **211**
+device records; `homebrain_active_lights` executed successfully,
+but the Technical JSON receipt exposed only `lights/count/complete`
+FIELD NAMES, not actual active-light count or completeness values.
+Thus the supplied evidence does not independently verify that
+zero is correct, nor prove that the answer was wrong. No physical
+light states were independently observed for this question.
+
+**Generic root cause:** Complete inventory IDs do not guarantee
+that every eligible light/switch emitted a usable `switch` value.
+The previous local aggregates mapped only reported ON devices
+and set `complete` from resolved room scope. An otherwise
+complete context could silently omit the state of an eligible
+device, and tool receipts prevented external audit of the
+aggregate's actual ON count. A nonzero retained dimmer level
+while OFF does not mean the light is ON.
+
+**Candidate 0.18.402:** Shared source-derived ON/OFF/unknown
+coverage for light and non-light switch aggregates, with
+room-verified filtering and label-only light-sensor protection.
+Retain the fast single bulk context; expose bounded, privacy-
+safe typed count/coverage receipts. A final publication check
+accepts zero-active conclusions only when actual ON count is
+zero, eligible candidates exist, inventory and switch coverage
+are verified; otherwise qualify the statement without
+fabricating device states. This is a general coverage/evidence
+mechanism, not an incident-specific rewrite or new model round.
+[Source review](ANSWER-QUALITY-Q1-AGGREGATE-COVERAGE-20261104.md).
+
+**Before time:** 4.054s single observed response meets the
+15s routine-status threshold, but accuracy and full source
+scope are not independently established by the provided
+receipt. Formal first-attempt and model-delivery verification
+flags false. **After deployment Q1 live result NOT MEASURED.**
+
+**Acceptance:** After all CI green and installing v0.18.402,
+repeat the exact registered question in a new topic, send
+the full answer and Technical JSON. Inspect typed
+`aggregateState.onCount`, `candidateCount`, `unknownStateCount`,
+`inventoryComplete`, `stateCoverageComplete` and source scope.
+Then continue independent cross-domain Q1 rather than
+claiming a population first-attempt score from repeated cases.
+
+---
 ## 2026-11-04 — Q1 Hub Health v0.18.401 live regression: FINAL grounding PASSED; draft still unverified
 
 **New same-question installed test (not a new first attempt):** The user
