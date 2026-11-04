@@ -44,7 +44,17 @@ Q1 causal-calibration failure. **After live result not measured**.
 No independent model first-attempt accuracy, p50/p95, source-code
 watchdog verification or Claude parity claim is supported.
 Do not manufacture a resolved cause from a coverage-unresolved
-result. Exact-head CI/merge pending until independently verified.
+result. **Verified v0.18.403 merge:** [PR #1407](https://github.com/ienam-smarthome/HomeBrainOS/pull/1407)
+passed all four required workflows on exact tested head
+`3e6eeda36fa78be3bcce8cbd5f59458585ba513c`: **6,410
+Python tests passed (2 warnings)**, container smoke, metadata,
+Hubitat MCP AI tests, validation and Answer Quality integrity.
+Merged `f9414b16f1d87a942af466488e9bbc318d3a2c0f`.
+Version **0.18.403** and the new source boundary were verified
+on `main`. **Installed post-update answer quality and latency
+remain NOT MEASURED.** This is a code-level claim-scope
+correction, not proof of restored physical MQTT connectivity
+or of independently grounded first-draft reasoning.
 
 **Next live read-only acceptance:** Repeat the frozen question
 after install only if needed for a paired same-question regression;
