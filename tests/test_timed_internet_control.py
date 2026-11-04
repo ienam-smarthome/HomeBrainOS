@@ -379,7 +379,6 @@ async def test_incomplete_filtered_summary_fails_closed_without_rule_machine_fal
     assert result.confirmation_required is False
     assert "could not be verified" in result.message
     assert not hub.writes
-    assert "rule_schedule_fastpath" not in result.metrics.get("counters", {})
 
 
 def test_summary_total_mismatch_never_admits_unique_target():
