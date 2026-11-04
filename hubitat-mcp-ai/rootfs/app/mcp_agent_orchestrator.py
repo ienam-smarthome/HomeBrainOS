@@ -4744,40 +4744,29 @@ class UnifiedMCPAgent:
                 if pending else
                 "No pending Internet block timers were reported by the Cudy Managed Device inventory."
             )
-        if timer_args is not None and timer_args["action"] != "status":
-            # Admission precheck uses the already-supported detailed device
-            # manifest, but this is not an authorisation or a write identity.
-            # The full exact-driver pagination below independently verifies
-            # the device before queuing any mutation. Preserve the legacy RM
-            # contract when no Cudy driver has been identified.
-            manifest_candidates = []
-            if "hub_read_devices" in catalog.available_names and hasattr(self.mcp, "get_cached_devices"):
-                try:
-                    manifest = await self.mcp.get_cached_devices()
-                    requested = self.timed_internet._words_for_candidate(timer_args["targets"])
-                    manifest_candidates = [
-                        row for row in manifest
-                        if isinstance(row, dict)
-                        and str(row.get("driver") or row.get("driverName") or "") == "Cudy Managed Device"
-                        and str(row.get("label") or row.get("name") or "").startswith("Block ")
-                        and (requested is None or requested.issubset(set(
-                            self.timed_internet._words_for_candidate([
-                                str(row.get("label") or row.get("name") or "")
-                            ]) or ()
-                        )))
-                    ]
-                except Exception as exc:
-                    logger.debug("Driver timer admission manifest unavailable: %s", exc)
-            if not manifest_candidates:
-                timer_args = None
-        if timer_args is not None:
-            # Re-fetch complete matching driver identity, never trusting
-            # cached-manifest content as the final target for a write.
+        if (
+            timer_args is not None
+            and "hub_read_devices" in catalog.available_names
+            and "hub_manage_devices" in catalog.available_names
+        ):
+            # This lightweight authorised, filtered SUMMARY read is the
+            # authoritative admission/ambiguity check. The old preflight
+            # fetched a full, detailed all-device manifest first, then
+            # repeated a summary scan; that cost ~38s on the live TV test.
+            # A missing driver-match retains the older Rule Machine route.
+            # A failed/incomplete summary read MUST NOT fall through to RM.
             try:
                 available_devices = await self.timed_internet.list_devices()
             except Exception as exc:
-                logger.debug("Driver timer inventory unavailable; retaining RM route: %s", exc)
-                available_devices = []
+                logger.warning("Timed Internet summary preflight unavailable: %s", exc)
+                increment_active_metric("timed_internet_summary_preflight_failure")
+                return (
+                    "No timed Internet action was queued: the authorised Cudy "
+                    "device inventory could not be verified. The request was "
+                    "not rerouted to Rule Machine; retry only after the MCP "
+                    "device read is working."
+                )
+            increment_active_metric("timed_internet_summary_preflight")
             selected, problems = self.timed_internet._targets(
                 timer_args["targets"], available_devices, timer_args["action"],
             )
