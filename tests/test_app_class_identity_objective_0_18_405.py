@@ -53,17 +53,17 @@ DEEP_RULE = (
 )
 
 
-@pytest.mark.parametrize("request", [
+@pytest.mark.parametrize("question", [
     IDENTITY_REQUEST,
     OTHER_IDENTITY,
     "Verify the native parent class for app 170 from a typed app catalog.",
     "Does installed app 169's appTypeId establish its native class relationship?",
 ])
-def test_class_identity_does_not_trigger_existing_rule_audit(request):
-    assert is_app_class_identity_question(request)
-    assert not is_existing_rule_verification_request(request)
-    assert resolve_primary_objective(request).domain == "app_class_identity"
-    plan = plan_investigation(request)
+def test_class_identity_does_not_trigger_existing_rule_audit(question):
+    assert is_app_class_identity_question(question)
+    assert not is_existing_rule_verification_request(question)
+    assert resolve_primary_objective(question).domain == "app_class_identity"
+    plan = plan_investigation(question)
     assert plan is not None and plan.domain == "app_class_identity"
     assert {r.key for r in plan.requirements} == {
         "instance_identity", "native_class_binding"
