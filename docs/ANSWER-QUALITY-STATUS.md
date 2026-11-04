@@ -1,5 +1,67 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 v0.18.402 installed active-light aggregate coverage VERIFIED
+
+**Same registered read-only question, paired regression (not a new
+independent first-attempt score):** In a fresh HomeBrain topic, user
+submitted exactly `Which lights are currently on?` on installed
+0.18.402. The API prompt digest matched the earlier 0.18.401
+`all_lights_on` case (SHA256
+`b355a6ac4b1dd90a2ed2d06ebff5b5880d80eabe14e9e5afe5dccc3410415272`).
+The natural answer was `2 lights are on: Bedroom 2 Light and Toilet Light.`
+These are the names supplied by the model, **not independently attested
+per-device identities in the sanitised Technical JSON**.
+
+**Source-completeness observation:** One successful read of
+`hubitat://context` returned **211 device records**. The
+`homebrain_active_lights` deterministic source returned and
+published typed `aggregateState` counts: `category=lights`,
+`onCount=2`, `candidateCount=13`, `unknownStateCount=0`,
+`totalScanned=211`, `scope=whole-home`, `scopeVerified=true`,
+`inventoryComplete=true`, `stateCoverageComplete=true`.
+The sanitised receipt now makes the on-count and recorded-state
+completeness independently inspectable without leaking the full
+household device list. It establishes **two ON among 13 recognised
+lighting candidates under HomeBrain's classification rules**,
+not whether every physical fixture was discovered, that the
+named two device labels were correct, or actual light emission.
+The source snapshot differs in time from the earlier v0.18.401
+zero-ON report; those differing ON counts are not an inherent
+contradiction, since lighting can change between observations.
+
+**Performance:** v0.18.401 wall **4,054ms**, provider 2,668ms,
+2 model rounds, 2 tool calls, no typed count receipts; v0.18.402
+wall **4,109ms**, provider 2,499ms, 2 rounds, 2 calls, newly
+auditable source count/coverage. The 55ms (1.36%) wall increase
+across two separate requests is not meaningful evidence of a
+systematic slowdown, and both meet the 15s routine-read target.
+No `aggregate_zero_claim_repairs` were recorded; the model's
+positive count matches the aggregate receipt. Zero repairs is
+not independently authenticated proof of first-draft quality.
+
+**Q1 acceptance:** Structural aggregate count and coverage
+instrumentation PASSED live acceptance, with no extra MCP or
+model calls. Individual name-to-source attribution and physical
+state verification remain OUTSIDE the presented receipt. Do
+not count this same-prompt repeat toward the first-attempt
+accuracy denominator; `first_attempt_verified=false`,
+`model_delivery_verified=false`, and
+`deployed_build_sha_verified=false`. Q1 population accuracy,
+cross-model parity, repeated-run p50/p95: NOT MEASURED.
+No new light-specific runtime patch is justified here.
+
+**Next registered, different-domain Q1 test:** In a NEW
+HomeBrain topic, submit EXACT unchanged legacy read-only case
+`device_mqtt_conflict`:
+`Why does Bedroom 3 Mesh show MQTT connected when its health is offline?`
+Provide the complete first natural-language answer and
+Technical JSON. Inspect broker session vs fresh endpoint
+telemetry, recent source timing, stale metadata and whether
+the answer invents a physical failure or cause. No device
+commands or writes are authorised. Continue Q1 independent
+source review before Q2 same-evidence model comparisons.
+
+---
 ## 2026-11-04 — Q1 lighting inventory: zero-count source-completeness gap; v0.18.402 candidate
 
 **Observed installed 0.18.401:** Registered read-only case
