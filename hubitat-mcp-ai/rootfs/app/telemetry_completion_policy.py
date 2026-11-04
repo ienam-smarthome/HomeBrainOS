@@ -130,8 +130,8 @@ def ready_for_bounded_telemetry_answer(
         isinstance(attrs, dict)
         and str(attrs.get("healthStatus") or "").casefold() == "offline"
         and str(attrs.get("mqttStatus") or "").casefold() == "connected"
-        and re.search(r"(?i)\\bmqtt\\b", request)
-        and re.search(r"(?i)\\boffline\\b", request)
+        and re.search(r"(?i)\bmqtt\b", request)
+        and re.search(r"(?i)\boffline\b", request)
         and isinstance(clock, dict)
         and str(clock.get("deviceId") or "") == target_id
         and clock.get("sourcesAgree") is False
