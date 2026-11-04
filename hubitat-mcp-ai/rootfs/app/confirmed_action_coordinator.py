@@ -345,6 +345,60 @@ class ConfirmedActionCoordinator:
         return " ".join(lines)
 
     @classmethod
+    def confirmed_virtual_device_create_report(
+        cls,
+        outcomes: list[tuple[str, dict[str, Any], ToolExecution | Any]],
+    ) -> str | None:
+        """Use the real native create receipt, never free-form model success.
+
+        A create response can report partialSuccess after a device was
+        already allocated. That is an UNKNOWN ownership/readback state,
+        not a safe basis for retrying and potentially duplicating it.
+        """
+        if len(outcomes) != 1:
+            return None
+        name, arguments, execution = outcomes[0]
+        if name != "hub_manage_virtual_device" or arguments.get("action") != "create":
+            return None
+        data = cls.rule_result_data(execution)
+        device = data.get("device") if isinstance(data.get("device"), dict) else {}
+        device_id = device.get("id")
+        dni = device.get("deviceNetworkId")
+        driver_type = device.get("driverType")
+        verified_receipt = (
+            bool(getattr(execution, "success", False))
+            and data.get("success") is True
+            and data.get("partialSuccess") is not True
+            and data.get("isError") is not True
+            and not data.get("warnings")
+            and device_id not in (None, "")
+            and isinstance(dni, str) and bool(dni.strip())
+            and driver_type == arguments.get("deviceType")
+        )
+        if verified_receipt:
+            return (
+                "The MCP server reports one new virtual device created "
+                f"(device ID **{device_id}**, network ID **{dni}**, "
+                f"driver **{driver_type}**). This is the native create receipt, "
+                "not yet an independent read-back of owned-device metadata. "
+                "No switch ON command, Rule Machine rule or router action "
+                "was included in this confirmed operation."
+            )
+        increment_active_metric("virtual_device_create_unverified")
+        suffix = (
+            f" The response included candidate device ID {device_id}; "
+            "its identity and ownership must be checked by read-only inventory."
+            if device_id not in (None, "") else ""
+        )
+        return (
+            "The native virtual-device creation outcome is **unverified**. "
+            "A partial response, missing device identity or transport failure "
+            "does not establish whether Hubitat saved a device. "
+            "Do not retry creation automatically or switch any device ON."
+            + suffix
+        )
+
+    @classmethod
     def confirmed_failure_report(
         cls,
         outcomes: list[tuple[str, dict[str, Any], ToolExecution | Any]],
@@ -614,6 +668,8 @@ class ConfirmedActionCoordinator:
         )
         if deterministic_report is None:
             deterministic_report = self.confirmed_firmware_report(outcomes)
+        if deterministic_report is None:
+            deterministic_report = self.confirmed_virtual_device_create_report(outcomes)
         if deterministic_report is None:
             deterministic_report = self.confirmed_failure_report(outcomes)
         if deterministic_report is not None:
