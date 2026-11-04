@@ -49,7 +49,11 @@ def requested_virtual_device_type(question: str) -> str | None:
         if _NEGATIVE_CLAUSE.match(clause) or not _POSITIVE_CREATE.search(clause):
             continue
         for match in _TYPE_PATTERN.finditer(clause):
-            if _POSITIVE_CREATE.search(clause[:match.start()]):
+            preceding = clause[:match.start()]
+            if (re.search(r"\b(?:rule|automation|routine)\b", preceding, re.I)
+                    and not re.search(r"\bvirtual\s+device\b", preceding, re.I)):
+                continue  # "create a Rule Machine rule for Virtual Switch" is NOT a device create
+            if _POSITIVE_CREATE.search(preceding):
                 return next(t for t in _TYPES if t.casefold() == match.group(1).casefold())
     return None
 
