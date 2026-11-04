@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
+from native_switch_schedule import create_dated_switch
+from native_rule_readiness_source import _server_version
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from hub_timezone import HubTimezoneResolver
@@ -1033,6 +1035,82 @@ class RuleAuthoringService:
         )
         return contract
 
+
+    @staticmethod
+    def _native_date_supported(mcp: Any) -> bool:
+        """Only installed MCP initialize identity attests upstream #575."""
+        version = _server_version(mcp)
+        if version is None:
+            return False
+        parts = version.split("-", 1)[0].split("+", 1)[0].split(".")
+        return len(parts) == 3 and tuple(int(x) for x in parts) >= (5, 1, 6)
+
+    async def _native_parent_id(self) -> int | None:
+        """Resolve a native Rule Machine parent using two read-only sources."""
+        try:
+            listed = await self.mcp.call_tool("hub_read_apps_code", {
+                "tool": "hub_list_apps",
+                "args": {"scope": "instances", "nameFilter": "Rule Machine"},
+            })
+            data = listed.data if not listed.is_error and isinstance(listed.data, dict) else {}
+            rows = data.get("apps")
+            if not isinstance(rows, list):
+                return None
+            candidates = [
+                row for row in rows if isinstance(row, dict)
+                and row.get("name") == "Rule Machine"
+                and row.get("type") == "Rule Machine"
+                and row.get("user") is False
+                and row.get("parentId") in (None, "")
+                and str(row.get("id") or "").isdigit()
+            ]
+            if len(candidates) != 1:
+                return None
+            parent_id = int(candidates[0]["id"])
+            detail_result = await self.mcp.call_tool("hub_read_apps_code", {
+                "tool": "hub_get_app_config",
+                "args": {"appId": str(parent_id), "summary": True},
+            })
+            detail = detail_result.data if not detail_result.is_error and isinstance(detail_result.data, dict) else {}
+            if (detail.get("success") is not True
+                    or str(detail.get("id")) != str(parent_id)
+                    or detail.get("type") != "Rule Machine"
+                    or detail.get("namespace") != "hubitat"
+                    or detail.get("user") is not False
+                    or detail.get("parentAppId") not in (None, "")):
+                return None
+            return parent_id
+        except Exception:
+            return None
+
+    async def _native_guide_key(self) -> str | None:
+        """Read the installed acknowledgement key, never invent one."""
+        try:
+            guide = await self.mcp.call_tool(
+                "hub_get_tool_guide", {"section": "set_rule_reference"}
+            )
+            if guide.is_error:
+                return None
+            def flatten(value: Any) -> str:
+                if isinstance(value, str):
+                    return value
+                if isinstance(value, dict):
+                    return "\n".join(
+                        flatten(value[k]) for k in
+                        ("content", "text", "guide", "result", "data")
+                        if k in value
+                    )
+                if isinstance(value, list):
+                    return "\n".join(flatten(v) for v in value)
+                return ""
+            match = re.search(
+                r"I-HAVE-READ-THE-GUIDE-set_rule_reference-[0-9a-fA-F]+",
+                flatten(guide.data),
+            )
+            return match.group(0) if match else None
+        except Exception:
+            return None
+
     async def duplicate_create_error(
         self,
         arguments: dict[str, Any],
@@ -1138,25 +1216,25 @@ class RuleAuthoringService:
         # its own read-only guide before resolving a target or queuing an
         # impossible/unsafe confirmed write. Never silently translate fields.
         installed_contract = await self._rule_writer_contract()
+        native_mode = installed_contract == NATIVE_DOCUMENT
         incompatible = legacy_rule_writer_incompatibility(installed_contract)
-        if incompatible:
-            if installed_contract == NATIVE_DOCUMENT and not intent.recurring:
-                # The installed native document writer is NOT the legacy
-                # addTrigger/addAction compiler. In particular the dated
-                # form-field/value contract and readback are still unknown.
-                # Do not guess atTime#=ISO, date# or parent_id, and never
-                # queue an active half-authored rule. This refusal is an
-                # explicit diagnosis, not a successful schedule.
+        if native_mode:
+            if not self._native_date_supported(self.mcp):
                 return RuleAuthoringDecision(
                     True,
-                    "native_oneshot_date_field_unverified: The installed "
-                    "Rule Machine server uses native operation='create' with parent_id but "
-                    "HomeBrain has no verified dated trigger field/value "
-                    "contract or approved native create/readback path. "
-                    "A read-only comparison of an existing dated Rule Machine "
-                    "form with an undated form is needed. No rule write was "
-                    "queued or executed.",
+                    "native_oneshot_date_field_unverified: Installed MCP Rule Server "
+                    "version 5.1.6 or later has not been verified through MCP "
+                    "initialize. Upgrade/reconnect before scheduling. No rule queued.",
                 )
+            if intent.recurring or intent.end_time is not None:
+                return RuleAuthoringDecision(
+                    True,
+                    "The native date-writer currently supports only a single "
+                    "dated Switch action. Daily repetition and multi-action "
+                    "block/restore require separate native verification. "
+                    "No rule was queued.",
+                )
+        elif incompatible:
             return RuleAuthoringDecision(True, incompatible)
 
         if not intent.recurring:
@@ -1424,13 +1502,40 @@ class RuleAuthoringService:
                     rule_names=(single_name,),
                     target=target,
                 )
-            create_action = self._action(
-                name=single_name,
-                at_time=intent.start_time,
-                device_id=device_id,
-                capability_filter=capability_filter,
-                command=intent.start_command,
-            )
+            if native_mode:
+                parent_id = await self._native_parent_id()
+                guide_key = await self._native_guide_key()
+                if parent_id is None or guide_key is None:
+                    return RuleAuthoringDecision(
+                        True,
+                        "The native Rule Machine parent or installed guide "
+                        "acknowledgement is not verified; nothing was queued.",
+                        rule_names=(single_name,), target=target,
+                    )
+                try:
+                    wall = datetime.fromisoformat(intent.start_time)
+                    if wall.tzinfo is not None:
+                        raise ValueError("expected hub-local wall clock")
+                    local_at = wall.replace(tzinfo=hub_now.tzinfo)
+                    create_action = create_dated_switch(
+                        name=single_name, parent_id=parent_id,
+                        device_id=str(device_id), command=intent.start_command,
+                        hub_local_at=local_at, best_practice_key=guide_key,
+                    )
+                except (TypeError, ValueError):
+                    return RuleAuthoringDecision(
+                        True,
+                        "Native dated Switch candidate could not be verified. "
+                        "No rule was queued.", target=target,
+                    )
+            else:
+                create_action = self._action(
+                    name=single_name,
+                    at_time=intent.start_time,
+                    device_id=device_id,
+                    capability_filter=capability_filter,
+                    command=intent.start_command,
+                )
             # One-time rules are deliberately left with only their dated
             # trigger and device action. The nightly HomeBrain cleanup removes
             # expired generated rules after the safety grace period; self-pause
