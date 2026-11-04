@@ -51,8 +51,19 @@ def _minutes(settings: dict[str, dict[str, Any]], action_id: str) -> str | None:
         if not isinstance(setting, dict) or setting.get("type") not in ("number", "decimal"):
             continue
         raw = setting.get("value")
-        if type(raw) in (float, int) and 0 <= raw <= 1440 and raw == int(raw) and raw != 0:
+        # Hubitat may serialize a typed number field as a numeric string.
+        # Only an integer-valued, bounded number under a numeric type can
+        # qualify as a duration; prose, empty strings and booleans cannot.
+        number: int | None = None
+        if type(raw) is int and 0 < raw <= 1440:
+            number = raw
+        elif type(raw) is float and raw.is_integer() and 0 < raw <= 1440:
             number = int(raw)
+        elif isinstance(raw, str) and re.fullmatch(r"[0-9]{1,4}(?:\.0+)?", raw):
+            candidate = int(raw.split(".", 1)[0])
+            if 0 < candidate <= 1440:
+                number = candidate
+        if number is not None:
             parts.append((str(number), label + ("" if number == 1 else "s")))
     return " ".join(f"{num} {unit}" for num, unit in parts) if parts else None
 
