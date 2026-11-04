@@ -39,6 +39,27 @@ def _leaf(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return str(raw.get("tool") or row.get("sub_tool") or ""), args
 
 
+def _typed_status_clock_contrast(
+    request: str, evidence: list[dict[str, Any]],
+    target_id: str, state: dict[str, Any],
+) -> bool:
+    """A positive source-clock discriminator, not an inferred physical fault."""
+    attrs = state.get("reportedAttributes")
+    clock = assess_telemetry_clock_consistency(evidence)
+    return bool(
+        isinstance(attrs, dict)
+        and str(attrs.get("healthStatus") or "").casefold() == "offline"
+        and str(attrs.get("mqttStatus") or "").casefold() == "connected"
+        and re.search(r"(?i)\bmqtt\b", request)
+        and re.search(r"(?i)\boffline\b", request)
+        and isinstance(clock, dict)
+        and str(clock.get("deviceId") or "") == target_id
+        and clock.get("sourcesAgree") is False
+        and clock.get("physicalTelemetryProven") is False
+    )
+
+
+
 def ready_for_bounded_telemetry_answer(
     request: str,
     evidence: list[dict[str, Any]],
@@ -124,18 +145,8 @@ def ready_for_bounded_telemetry_answer(
     # explain the *evidence discrepancy* provisionally. It does NOT
     # establish which driver callback, broker or hardware fault caused it.
     # Require both named statuses, a source-scoped read and actual history.
-    attrs = state.get("reportedAttributes")
-    clock = assess_telemetry_clock_consistency(evidence)
-    bounded_status_clock_discriminator = bool(
-        isinstance(attrs, dict)
-        and str(attrs.get("healthStatus") or "").casefold() == "offline"
-        and str(attrs.get("mqttStatus") or "").casefold() == "connected"
-        and re.search(r"(?i)\bmqtt\b", request)
-        and re.search(r"(?i)\boffline\b", request)
-        and isinstance(clock, dict)
-        and str(clock.get("deviceId") or "") == target_id
-        and clock.get("sourcesAgree") is False
-        and clock.get("physicalTelemetryProven") is False
+    bounded_status_clock_discriminator = _typed_status_clock_contrast(
+        request, evidence, target_id, state
     )
     return has_scoped_log and (
         has_discriminator or high_information_checkpoint_offered
@@ -166,13 +177,24 @@ def ready_after_bounded_telemetry_read(
         domain != "device_telemetry"
         or not had_tool_actions
         or round_has_mutation
-        # An optional failed source does not erase a complete, independently
-        # corroborated read set within the same round.
         or type(receipt_count_before_round) is not int
         or receipt_count_before_round < 0
         or receipt_count_before_round >= len(evidence)
     ):
         return False
+    if round_tool_failure:
+        # Preserve the existing strict contract for all other telemetry
+        # scenarios. A failed OPTIONAL companion read may be ignored only
+        # when independent, target-matched conflict evidence already
+        # qualifies this exact status-difference question for a bounded
+        # unresolved answer.
+        summary = normalize_target_device_history(evidence)
+        state = summary.get("reportedDeviceState") if isinstance(summary, dict) else None
+        ident = str(summary.get("deviceId") or "") if isinstance(summary, dict) else ""
+        if not (isinstance(state, dict) and ident.isdecimal()
+                and str(state.get("deviceId") or "") == ident
+                and _typed_status_clock_contrast(request, evidence, ident, state)):
+            return False
     new_reads = evidence[receipt_count_before_round:]
     if not any(
         isinstance(row, dict)
