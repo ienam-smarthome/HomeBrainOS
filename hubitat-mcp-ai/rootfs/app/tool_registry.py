@@ -764,7 +764,15 @@ def rule_machine_proposal_error(
         # A single narrow source-attested native document authoring contract.
         # No arbitrary native forms/updates or model-invented fields are
         # admitted by this path. This pure gate is rerun on confirmation.
-        return dated_switch_proposal_error(payload)
+        error = dated_switch_proposal_error(payload)
+        if error is not None:
+            return (
+                "Invalid Rule Machine proposal: hub_set_rule does not use an "
+                "operation/create/args envelope unless it meets the exact "
+                "source-typed native dated-Switch contract. "
+                + error
+            )
+        return None
     if "operation" in payload or isinstance(payload.get("args"), dict):
         return (
             "Invalid Rule Machine proposal: use the verified native "
