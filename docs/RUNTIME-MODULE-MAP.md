@@ -309,6 +309,7 @@ The repository drift test compares this table directly with the live directory. 
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
 | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
 | `tool_catalog_assembly.py` | Combines a request's already-fetched remote tools with the fixed local tool set into a ready `ToolDiscoveryCatalog`. |
+| `timed_internet_control.py` | Resolves driver-attested Block device IDs, schedules and verifies hub-resident delayed Internet actions through sequential MCP calls after host confirmation. |
 | `tool_executor.py` | Dispatches approved calls and records normalised results. |
 | `tool_registry.py` | Defines local schemas and structured tool effects. |
 | `webui.py` | Renders the Home Assistant ingress interface. |
