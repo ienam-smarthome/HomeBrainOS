@@ -228,7 +228,13 @@ def _metric_claim(label: str, raw: str, facts: Mapping[str, Any]) -> tuple[str |
         not _nonnull(units) or str(units).casefold() in raw.casefold()
     ):
         return None, None
-    return f"{distinct[0]} {units or '(unit unverified)'} (source-reported)", f"{issue}_source_mismatch"
+    if str(units or "").strip() == "%":
+        display = f"{distinct[0]}%"
+    elif _nonnull(units):
+        display = f"{distinct[0]} {units}"
+    else:
+        display = f"{distinct[0]} (unit unverified)"
+    return f"{display} (source-reported)", f"{issue}_source_mismatch"
 
 
 def _status_claim(label: str, raw: str, facts: Mapping[str, Any]) -> tuple[str | None, str | None]:
