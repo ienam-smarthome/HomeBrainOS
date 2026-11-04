@@ -48,7 +48,20 @@ rounds; no alteration to actual driver/Hubitat/HA/router.
 
 **After-live quality/latency unmeasured.** Synthetic CI
 is not physical or first-draft model verification.
-Exact-head CI and merge remain pending until green.
+**v0.18.404 code merged / all required CI green:**
+[PR #1409](https://github.com/ienam-smarthome/HomeBrainOS/pull/1409)
+passed all four workflows at exact tested head
+`b4047c136508c454a1898209e2557c3e739c4e9d`:
+**6,421 Python tests passed (2 warnings)**, release assurance,
+container smoke, Hubitat MCP AI, validation and Answer Quality
+integrity. Merge commit
+`f796b83fa6e8f5fbe1419d86d144f5b2d25e56c5`.
+Addon version **0.18.404** and both the source saturation
+rule and app/device identity guard are verified on main.
+**No installed after-response or actual latency improvement
+has been measured yet**. CI green is not a first-draft
+reasoning score, p95 measurement or a proof of physical
+MQTT responsiveness.
 After installing the release, run the exact frozen
 read-only question *once* as paired acceptance, inspect
 stop counters, answer and Technical JSON, then stop
