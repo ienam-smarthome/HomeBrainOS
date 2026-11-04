@@ -225,11 +225,15 @@ def test_missing_failed_or_conflicting_aggregate_proof_does_not_invent_counts():
             "inventoryComplete": True, "stateCoverageComplete": True,
         }},
     }
-    for evidence in ([], [{**r, "success": False}], [{**r, "mutates": True}],
-                     [r, r], [{**r, "details": {}}], [{**r, "supports_live_claim": False}]):
+    assert guard_aggregate_zero_claims(exact, []) == (exact, [])
+    for evidence in (
+        [{**r, "success": False}], [{**r, "mutates": True}],
+        [r, r], [{**r, "details": {}}],
+        [{**r, "supports_live_claim": False}],
+    ):
         output, issues = guard_aggregate_zero_claims(exact, evidence)
-        assert output == exact
-        assert issues == []
+        assert "do not verify a complete zero-active result" in output
+        assert issues == ["aggregate_zero_unverified_receipt"]
 
 
 def test_other_status_claims_are_untouched_by_aggregate_zero_guard():
