@@ -2,6 +2,33 @@
 
 **Date:** 2026-11-03 | **Production:** DISABLED | **No live Hubitat/HA writes performed**
 
+## New multi-source read-only readiness route — v0.18.388 candidate
+
+A fresh user result on v0.18.387 repeated native parent inventory,
+rather than checking the separately requested installed MCP server
+version, newest hub-local backup and tool-guide availability. The
+technical receipt contained **no** `hub_list_backups`,
+`hub_get_tool_guide`, or server-version projection; its prompt hash
+differed from the earlier parent-inventory prompt. The installed
+Rule Machine parent **remains verified**, but the readiness checks
+have **not** been performed.
+
+The v0.18.388 route is a **positive multi-objective read-only check**:
+source serverInfo from MCP initialize, a single
+`hub_list_backups(scope=hub_local)` read and the two guide sections
+`set_rule_reference` and `builtin_app_tools_rules`.
+No rotating guide-acknowledgement token, source filenames, raw backup
+payload or private configuration is published. Missing version,
+partial backups, unreadable timestamps or missing guide sections
+remain explicitly unverified. It does not create a backup or authorize
+a rule, switch, scheduled job, or router action.
+
+**Source gates for the later disposable BAT remain separate:** current
+hub backup freshness evaluated against independently observed hub time,
+native date write/readback, pending scheduled job, timed OFF evidence,
+non-reuse of existing MCP-owned switch and explicit user consent.
+Both offline native-rule writer scripts remain disabled.
+
 ## Installed HomeBrain v0.18.387 identity acceptance — VERIFIED (2026-11-04)
 
 The user supplied an exact same-question, read-only response:
