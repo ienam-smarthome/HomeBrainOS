@@ -105,6 +105,7 @@ class OllamaTransport:
         self.local = build_opener(ProxyHandler({}), NoRedirect())
         self.cloud = build_opener(NoRedirect())
         self._checked_local: set[str] = set()
+        self._local_think_disabled: dict[str, bool] = {}
 
     def _call(self, opener, req: Request) -> dict[str, Any]:
         try:
@@ -133,6 +134,30 @@ class OllamaTransport:
                  if isinstance(entry, dict)} if isinstance(tags.get("models"), list) else set()
         if model not in names:
             raise ValueError("Local model not present in local Ollama inventory; no pull attempted")
+        # Thinking models can spend a small output budget entirely in
+        # message.thinking, leaving message.content empty. This local
+        # /api/show call checks model support without invoking inference.
+        info = self._call(self.local, Request(
+            "http://127.0.0.1:11434/api/show",
+            data=json.dumps({"model": model}).encode("utf-8"),
+            method="POST", headers={"Content-Type": "application/json"}))
+        controls = info.get("thinking")
+        capabilities = info.get("capabilities")
+        if isinstance(controls, dict) and isinstance(controls.get("values"), list):
+            values = controls["values"]
+            if False in values:
+                # Ollama documents [false] alone as no thinking support.
+                disable_thinking = len(values) > 1
+            elif "thinking" in (capabilities if isinstance(capabilities, list) else []):
+                raise ValueError("Local model does not expose a supported no-thinking mode")
+            else:
+                disable_thinking = False
+        else:
+            # Older Ollama versions may expose only the broad capability.
+            disable_thinking = (
+                isinstance(capabilities, list) and "thinking" in capabilities
+            )
+        self._local_think_disabled[model] = disable_thinking
         self._checked_local.add(model)
 
     def __call__(self, provider: str, model: str, prompt: str) -> str:
@@ -140,12 +165,19 @@ class OllamaTransport:
             self._verify_local_installed(model)
         if provider not in PROVIDERS or not MODEL_RE.fullmatch(model):
             raise ValueError("Unknown provider/model")
-        payload = json.dumps({
+        request_fields = {
             "model": model,
             "stream": False,
             "messages": [{"role": "user", "content": prompt}],
             "options": OPTIONS,
-        }, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+        }
+        if provider == "ollama-local" and self._local_think_disabled[model]:
+            # Top-level API field, NOT options.think. Request answer-only
+            # output on thinking-capable local models without extra rounds.
+            request_fields["think"] = False
+        payload = json.dumps(
+            request_fields, ensure_ascii=True, separators=(",", ":")
+        ).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if provider == "ollama-cloud":
             headers["Authorization"] = "Bearer " + self.key
@@ -158,10 +190,14 @@ class OllamaTransport:
             raise ValueError("Provider model identity does not match requested model")
         msg = result.get("message")
         answer = msg.get("content") if isinstance(msg, dict) else None
-        if (not isinstance(answer, str) or not answer.strip()
-                or len(answer.encode("utf-8")) > MAX_ANSWER
-                or (isinstance(msg, dict) and msg.get("tool_calls"))):
-            raise ValueError("No bounded text-only first model answer")
+        if isinstance(msg, dict) and msg.get("tool_calls"):
+            raise ValueError("Model returned tool calls instead of a text-only answer")
+        if not isinstance(answer, str) or not answer.strip():
+            if isinstance(msg, dict) and isinstance(msg.get("thinking"), str) and msg["thinking"].strip():
+                raise ValueError("Model returned thinking only, no final answer (no automatic retry)")
+            raise ValueError("Model returned empty final answer (no automatic retry)")
+        if len(answer.encode("utf-8")) > MAX_ANSWER:
+            raise ValueError("Model final answer exceeded the private capture limit")
         return answer
 
 
@@ -181,7 +217,11 @@ def collect_pairs(packets: list[dict[str, Any]],
         prompt_hashes[case_id] = sha256(prompt)
         for side, (provider, model) in (("baseline", left), ("candidate", right)):
             start = clock()
-            answer = invoke(provider, model, prompt)  # one attempt, no retry
+            try:
+                answer = invoke(provider, model, prompt)  # one attempt, no retry
+            except ValueError as exc:
+                # Model tags are validated; no private prompt/response is shown.
+                raise ValueError(f"{side} ({provider}/{model}): {exc}") from None
             end = clock()
             elapsed = end - start
             if (not isinstance(answer, str) or not answer.strip()
@@ -207,6 +247,7 @@ def collect_pairs(packets: list[dict[str, Any]],
          "cases": [p["case_id"] for p in packets],
          "prompt_sha256_by_case": prompt_hashes,
          "requested_options": OPTIONS,
+         "local_thinking_policy": "request_no_thinking_if_model_supports_it; cloud_unchanged",
          "same_prompt_per_case": True,
          "complete_first_calls": len(raw),
          "quality_measurement": "not_measured",

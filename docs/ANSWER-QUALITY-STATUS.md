@@ -1,5 +1,47 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 Windows local-only capture: incomplete model output, bounded candidate fix
+
+**User-observed blocked first attempt:** From a valid local
+HomeBrainOS checkout on Windows, user had installed `qwen3.5:4b`
+and `llama3.2:3b`. The exact frozen MQTT case requested
+one Ollama-local first answer from each. The capture exited
+`Q2 capture incomplete: No bounded text-only first model answer`.
+The original error groups empty final content, tool calls
+and oversized response; **no proof identifies the failing arm**.
+No completed pair, raw-answer files, quality grades, or real
+first-answer latency comparison was established.
+
+**General cause hypothesis:** Ollama /api/chat thinking models can
+emit `message.thinking` separate from `message.content`; with
+`num_predict=320` the budget may expire before final prose.
+The tool did not set `think`; a thinking-only return is plausible
+but not confirmed from that user's hidden provider envelope.
+
+**Candidate non-runtime Q2 correction:** Probe each installed local
+model's /api/show thinking controls. For a model supporting
+Boolean off, send top-level `think:false` in its single /api/chat
+request; omit for non-thinking models; refuse unsupported named-only
+thinking controls rather than retry. Keep the same prompt,
+temperature/seed/context/output cap, no tools, private answers,
+no Cloud behaviour changes and no public capture. Distinguish
+thinking-only and other incomplete outputs with a safe
+model-arm-labelled error. This is an answer-only A/B mode,
+not a scored thinking-enabled comparison. Code,
+mocked tests and source-referenced review in
+[Q2 private capture protocol](ANSWER-QUALITY-Q2-PRIVATE-FIRST-ANSWER-CAPTURE-20261104.md).
+
+**Next live evidence:** If candidate CI passes, merge and rerun
+the frozen MQTT *local-only* pair once in a new private folder.
+Treat it as a fresh first attempt for the new run, not a recovery
+or improvement score from the failed attempt. Then privately
+review both exact model prose files against unchanged packet;
+Gemma/Claude parity, published Q2 grounding and latency
+distributions remain **NOT MEASURED**. No Hubitat/HA/router/device
+or add-on runtime changes.
+
+---
+
 ## 2026-11-04 — Q2 private first-answer capture merged; real paired scores pending
 
 **Merge verified on main:** [PR #1413](https://github.com/ienam-smarthome/HomeBrainOS/pull/1413)
