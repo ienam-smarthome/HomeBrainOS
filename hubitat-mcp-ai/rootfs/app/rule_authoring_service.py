@@ -1216,25 +1216,25 @@ class RuleAuthoringService:
         # its own read-only guide before resolving a target or queuing an
         # impossible/unsafe confirmed write. Never silently translate fields.
         installed_contract = await self._rule_writer_contract()
+        native_mode = installed_contract == NATIVE_DOCUMENT
         incompatible = legacy_rule_writer_incompatibility(installed_contract)
-        if incompatible:
-            if installed_contract == NATIVE_DOCUMENT and not intent.recurring:
-                # The installed native document writer is NOT the legacy
-                # addTrigger/addAction compiler. In particular the dated
-                # form-field/value contract and readback are still unknown.
-                # Do not guess atTime#=ISO, date# or parent_id, and never
-                # queue an active half-authored rule. This refusal is an
-                # explicit diagnosis, not a successful schedule.
+        if native_mode:
+            if not self._native_date_supported(self.mcp):
                 return RuleAuthoringDecision(
                     True,
-                    "native_oneshot_date_field_unverified: The installed "
-                    "Rule Machine server uses native operation='create' with parent_id but "
-                    "HomeBrain has no verified dated trigger field/value "
-                    "contract or approved native create/readback path. "
-                    "A read-only comparison of an existing dated Rule Machine "
-                    "form with an undated form is needed. No rule write was "
-                    "queued or executed.",
+                    "native_oneshot_date_field_unverified: Installed MCP Rule Server "
+                    "version 5.1.6 or later has not been verified through MCP "
+                    "initialize. Upgrade/reconnect before scheduling. No rule queued.",
                 )
+            if intent.recurring or intent.end_time is not None:
+                return RuleAuthoringDecision(
+                    True,
+                    "The native date-writer currently supports only a single "
+                    "dated Switch action. Daily repetition and multi-action "
+                    "block/restore require separate native verification. "
+                    "No rule was queued.",
+                )
+        elif incompatible:
             return RuleAuthoringDecision(True, incompatible)
 
         if not intent.recurring:
