@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from typed_device_history_evidence import normalize_target_device_history
+from telemetry_clock_consistency import assess_telemetry_clock_consistency
 
 _WIDE = re.compile(
     r"(?i)\b(?:compare|comparison|across|whole[- ]home|whole[- ]hub|"
@@ -118,7 +119,28 @@ def ready_for_bounded_telemetry_answer(
             has_discriminator = True
     if dependant_ids.intersection(scoped_configs):
         has_discriminator = True
-    return has_scoped_log and (has_discriminator or high_information_checkpoint_offered)
+    # For a question contrasting a device's offline health with its MQTT
+    # status, a verified, inconsistent source clock is itself enough to
+    # explain the *evidence discrepancy* provisionally. It does NOT
+    # establish which driver callback, broker or hardware fault caused it.
+    # Require both named statuses, a source-scoped read and actual history.
+    attrs = state.get("reportedAttributes")
+    clock = assess_telemetry_clock_consistency(evidence)
+    bounded_status_clock_discriminator = bool(
+        isinstance(attrs, dict)
+        and str(attrs.get("healthStatus") or "").casefold() == "offline"
+        and str(attrs.get("mqttStatus") or "").casefold() == "connected"
+        and re.search(r"(?i)\\bmqtt\\b", request)
+        and re.search(r"(?i)\\boffline\\b", request)
+        and isinstance(clock, dict)
+        and str(clock.get("deviceId") or "") == target_id
+        and clock.get("sourcesAgree") is False
+        and clock.get("physicalTelemetryProven") is False
+    )
+    return has_scoped_log and (
+        has_discriminator or high_information_checkpoint_offered
+        or bounded_status_clock_discriminator
+    )
 
 
 def ready_after_bounded_telemetry_read(
@@ -134,16 +156,18 @@ def ready_after_bounded_telemetry_read(
 ) -> bool:
     """Reuse source sufficiency immediately after a *new* safe read result.
 
-    Tool rounds need not end in a model no-tool response. At least one new
-    successful read receipt must have arrived in this round. Existing source
-    guards still decide sufficiency; a successful query is not evidence of a
-    physical packet, a complete history, or an established cause.
+    Tool rounds need not end in a model no-tool response. Require at least
+    one genuinely new successful read; an optional failed companion tool
+    does not invalidate previously checked scoped state/history/logs. This
+    is a bounded answer opportunity, not verified physical reachability or
+    a completed causal investigation.
     """
     if (
         domain != "device_telemetry"
         or not had_tool_actions
         or round_has_mutation
-        or round_tool_failure
+        # An optional failed source does not erase a complete, independently
+        # corroborated read set within the same round.
         or type(receipt_count_before_round) is not int
         or receipt_count_before_round < 0
         or receipt_count_before_round >= len(evidence)
