@@ -15,9 +15,14 @@ import re
 from typing import Literal
 
 from groovy_source_investigation import requested_groovy_app_id
-from targeted_rule_scope_policy import is_existing_rule_verification_request
+from targeted_rule_scope_policy import (
+    is_existing_rule_verification_request, is_app_class_identity_question,
+)
 
-PrimaryDomain = Literal["source_code", "existing_rule_verification", "targeted_device", "general"]
+PrimaryDomain = Literal[
+    "source_code", "existing_rule_verification", "app_class_identity",
+    "targeted_device", "general",
+]
 
 _METHOD = re.compile(
     r"(?i)\b(?:method|function|procedure)\s+[`*]*"
@@ -113,6 +118,8 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
     interpreted = active_request_interpretation(question)
     if interpreted is not None and interpreted.objective is not None:
         kind = interpreted.objective
+        if kind == "app_class_identity" or is_app_class_identity_question(question):
+            return InvestigationObjective(domain="app_class_identity", request=question)
         if kind == "existing_rule_verification":
             return InvestigationObjective(
                 domain="existing_rule_verification", request=question
@@ -152,6 +159,8 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
             domain="targeted_device", request=question,
             target_device_id=device_id,
         )
+    if is_app_class_identity_question(question):
+        return InvestigationObjective(domain="app_class_identity", request=question)
     if is_existing_rule_verification_request(question):
         return InvestigationObjective(
             domain="existing_rule_verification", request=question

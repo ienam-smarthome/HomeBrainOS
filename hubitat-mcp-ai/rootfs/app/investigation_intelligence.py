@@ -37,6 +37,35 @@ class InvestigationPlan:
 
 
 _PLANS = {
+    "app_class_identity": InvestigationPlan(
+        domain="app_class_identity",
+        objective="Verify the source-typed identity of a named installed app and "
+                  "its native/built-in class relationship, not its rule actions.",
+        requirements=(
+            EvidenceRequirement(
+                "instance_identity",
+                "Match the specific installed app ID to its source-provided "
+                "appTypeId, not just a display label",
+                "target-matched typed app inventory or app configuration",
+            ),
+            EvidenceRequirement(
+                "native_class_binding",
+                "Verify a source-attested instance/appTypeId to native "
+                "namespace and built-in class relationship",
+                "authoritative typed instance/type-class identity mapping",
+            ),
+        ),
+        stop_rule="Display name and a source-class read do not verify native "
+                  "class identity. An incomplete type catalog cannot prove a "
+                  "type is absent. Leave the parent unverified without a typed "
+                  "instance-to-native-class binding; never authorize writes.",
+        forbidden_inferences=(
+            "An installed app's display label is not a native class identity.",
+            "Missing type rows in a partial catalog do not prove type absence.",
+            "A successful app-config read is not native type attestation.",
+            "An action-tree/health audit is not an app parent identity check.",
+        ),
+    ),
     "existing_rule_verification": InvestigationPlan(
         domain="existing_rule_verification",
         objective="Verify an existing installed Rule Machine app from its current "
@@ -186,18 +215,25 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
     # category in every stage. Never reclassify "automation" + "read-only"
     # into rule creation, or MQTT offline into switch-command provenance.
     from ai_investigation_routing import active_request_interpretation
+    from targeted_rule_scope_policy import (
+        is_existing_rule_verification_request, is_app_class_identity_question,
+    )
     interpreted = active_request_interpretation(request)
+    # Source-class identity is a separate objective, even if an upstream
+    # advisory classifier assigned the broad "verify configuration" label.
+    if is_app_class_identity_question(request):
+        return _PLANS["app_class_identity"]
     if interpreted is not None and interpreted.objective is not None:
         contract_for_objective = {
             "device_connectivity": "device_telemetry",
             "existing_rule_verification": "existing_rule_verification",
+            "app_class_identity": "app_class_identity",
             "rule_design_review": "rule_design_review",
         }.get(interpreted.objective)
         return _PLANS.get(contract_for_objective)
     # Prioritise the actual requested scope, not the combination of the words
     # "read-only" and "do not create". Those occur in existing-rule audits too.
     # This changes investigation reporting only, not write authorisation.
-    from targeted_rule_scope_policy import is_existing_rule_verification_request
     if is_existing_rule_verification_request(request):
         return _PLANS["existing_rule_verification"]
     # Explicit future design with a separate no-write instruction is not a
@@ -311,7 +347,30 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
     lockout_times: list[datetime] = []
     for row in source:
         leaf, args, events = _leaf(row), _args(row), _events(row)
-        if plan.domain == "existing_rule_verification":
+        if plan.domain == "app_class_identity":
+            details = row.get("details") if isinstance(row.get("details"), dict) else {}
+            if leaf in ("hub_list_apps", "hub_get_app_config", "hub_get_rule_health"):
+                checked.add("instance_identity")
+            if leaf in ("hub_list_apps", "hub_get_app_config", "hub_list_app_types"):
+                checked.add("native_class_binding")
+            # A source-typed identity projection is required; generic
+            # field-name receipts cannot establish labels or appTypeId.
+            typed = (
+                row.get("evidence_kind") == "typed_app_class_identity"
+                and row.get("effect") == "read"
+                and row.get("mutates") is False
+                and str(details.get("appId") or "").isdigit()
+                and str(details.get("appTypeId") or "").isdigit()
+                and str(args.get("appId") or "") == str(details.get("appId"))
+            )
+            if typed:
+                found.add("instance_identity")
+                if (details.get("nativeClassBindingVerified") is True
+                        and details.get("namespace") == "hubitat"
+                        and isinstance(details.get("className"), str)
+                        and bool(details["className"].strip())):
+                    found.add("native_class_binding")
+        elif plan.domain == "existing_rule_verification":
             details = row.get("details") if isinstance(row.get("details"), dict) else {}
             if leaf in ("hub_list_apps", "hub_list_rules"):
                 checked.update(("identity", "duplicates"))

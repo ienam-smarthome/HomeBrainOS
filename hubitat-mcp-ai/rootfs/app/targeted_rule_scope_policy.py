@@ -108,6 +108,47 @@ _FUTURE_RULE_PROPOSAL = re.compile(
 )
 
 
+
+# A native app/type/parent *identity* question is not an audit of that app's
+# executable rule logic. Preserve this separate positive objective regardless
+# of the LLM's advisory classification. Require identity semantics and do not
+# override an explicit combined action-tree/trigger audit.
+_CLASS_IDENTITY_SUBJECT = re.compile(
+    r"(?i)\b(?:apps?|application|instances?|rule\s+machine|parent\s+apps?)\b"
+)
+_CLASS_IDENTITY_ATTRIBUTE = re.compile(
+    r"(?i)\b(?:native\s+(?:class|type|parent|rule\s+machine\s+parent)|"
+    r"app[\s-]*type(?:id)?|"
+    r"(?:type|class|namespace)\s+(?:identity|relationship|mapping|binding|catalog)|"
+    r"(?:parent|class)\s+(?:identity|verification)|"
+    r"built[\s-]*in\s+(?:type|class)|"
+    r"(?:source[\s-]*attested|independently\s+verified)\s+"
+    r"(?:native\s+)?(?:class|type|parent))\b"
+)
+_EXECUTABLE_LOGIC_REQUEST = re.compile(
+    r"(?i)\b(?:ordered\s+actions?|action\s+(?:tree|sequence|conditions?)|"
+    r"triggers?\s+(?:and|or|with)\s+actions?|"
+    r"(?:persisted|compiled)\s+(?:actions|triggers|rule\s+logic)|"
+    r"delay\s+cancellations?|controller\s+interference)\b"
+)
+
+
+def is_app_class_identity_question(question: str) -> bool:
+    """Positive app-class/parent typing objective, not stored-rule certification.
+
+    One source's display label and an incomplete type-class catalog do not
+    identify a native parent. This is only a read-only routing distinction.
+    """
+    text = str(question or "")
+    return bool(
+        _CLASS_IDENTITY_SUBJECT.search(text)
+        and _CLASS_IDENTITY_ATTRIBUTE.search(text)
+        and not _EXECUTABLE_LOGIC_REQUEST.search(text)
+        and not _EXPLICIT_GLOBAL_AUDIT.search(text)
+        and not _requests_future_rule_design(text)
+    )
+
+
 _DEEP_INSTALLED_RULE_EVIDENCE = re.compile(
     r"\b(?:persisted|ordered|duplicates?|exact[ -]?name|compare|"
     r"contradict\w*|overlap\w*|interfer\w*|cross[ -]?check|"
@@ -149,6 +190,10 @@ def is_existing_rule_verification_request(question: str) -> bool:
     text = str(question or "")
     from ai_investigation_routing import active_request_interpretation
     interpretation = active_request_interpretation(question)
+    # A mistaken model label must not turn native app identity verification
+    # into a complete executable-action/duplicate-controller audit.
+    if is_app_class_identity_question(text):
+        return False
     if interpretation is not None and interpretation.objective is not None:
         return interpretation.objective == "existing_rule_verification"
     return bool(
@@ -177,4 +222,5 @@ def is_new_rule_design_review_request(question: str) -> bool:
     return not named_rule_app_ids(question) or _requests_future_rule_design(question)
 
 __all__ = ["named_rule_app_ids", "is_targeted_rule_investigation",
-           "is_existing_rule_verification_request", "is_new_rule_design_review_request"]
+           "is_app_class_identity_question", "is_existing_rule_verification_request",
+           "is_new_rule_design_review_request"]

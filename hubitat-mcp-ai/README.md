@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.404**.
+Current add-on version: **0.18.405**.
+
+**Q2 native app-class identity scope (v0.18.405):** Independent verification of an installed app's native parent/type relationship is now a separate read-only investigation objective from verifying a rule's action tree. Generic successful field-name reads cannot prove a native class mapping; the existing-rule publisher no longer replaces identity explanations with unrelated trigger, delay and inactivity-OFF boilerplate. No writer permissions changed. The observed pre-update v0.18.404 identity run was unresolved at 33.825s/7 Gemma rounds; an after-update live run is still required. [Release notes](CHANGELOG-0.18.405.md).
 
 **Q1 telemetry source saturation (v0.18.404):** The installed v0.18.403 MQTT/health read-only test returned an appropriately grounded but slow 42.635s answer (8 free rounds, 13 calls), after redundant source exploration and use of a device ID as an app source ID. A general telemetry stop allows bounded answers once same-target history, scoped logs, and conflicting driver metadata establish a safe provisional status discrepancy, while a typed source-identity guard blocks wrong-namespace Groovy app reads. No new permissions, commands or MCP/model rounds are introduced. Live latency improvement is **not yet measured**. [Source review](../docs/ANSWER-QUALITY-Q1-TELEMETRY-STOP-20261104.md) · [Release notes](CHANGELOG-0.18.404.md).
 

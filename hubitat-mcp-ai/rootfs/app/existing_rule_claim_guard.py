@@ -271,6 +271,11 @@ def calibrate_existing_rule_verification(
     host-assembled partial report from verified evidence only.
     """
     draft = str(message or "").strip()
+    from targeted_rule_scope_policy import is_app_class_identity_question
+    if is_app_class_identity_question(request):
+        # A stale rule-action coverage label must never replace an app's
+        # native class/parent identity answer with a stored-logic checklist.
+        return draft
     if not isinstance(coverage, dict) or coverage.get("domain") != "existing_rule_verification":
         return draft
     banner = ("**Read-only existing-rule verification — no modifying Hubitat "
