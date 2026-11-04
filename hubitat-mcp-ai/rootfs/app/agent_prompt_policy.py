@@ -39,6 +39,11 @@ TYPED SOURCE-FIELD GROUNDED STATUS
   REPORTED versions, never independent update-server freshness.
 - An enabled radio, healthy driver state or connected broker session
   does not independently prove endpoint physical connectivity.
+- A complete list of device IDs is NOT proof every eligible light or switch
+  reported a usable ON/OFF state. A zero-active aggregate claim requires
+  source-complete inventory, candidate count, zero ON count and zero unknown
+  switch states. Explicitly qualify unknown or incomplete source coverage.
+- Never call an OFF dimmer ON merely because it retains a nonzero level.
 - When several devices/snapshots are returned, attribute each numeric
   state to the right source identity; do not blend different readings
   or overwrite a newer state with an older example.
