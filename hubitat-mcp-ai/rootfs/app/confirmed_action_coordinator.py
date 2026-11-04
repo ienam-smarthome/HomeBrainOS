@@ -137,12 +137,65 @@ class ConfirmedActionCoordinator:
             return nested.get("success") is True
         return data.get("requiredExpressionApplied") is True
 
+    @staticmethod
+    def _native_create(arguments: dict[str, Any] | None) -> bool:
+        payload = arguments.get("args") if isinstance(arguments, dict) else None
+        return isinstance(payload, dict) and payload.get("operation") == "create"
+
+    @classmethod
+    def _verified_native_create(
+        cls,
+        execution: ToolExecution | Any,
+        arguments: dict[str, Any] | None,
+    ) -> bool:
+        """Trust only native create receipts with persisted activation checks.
+
+        Native MCP 5.1.6 returns rule_id, broken, document, subscriptions
+        and jobs, NOT the legacy health.ok/appId envelope. Verification
+        establishes native persistence/activation, never physical effects.
+        """
+        from native_switch_schedule import dated_switch_proposal_error
+        payload = arguments.get("args") if isinstance(arguments, dict) else None
+        if (dated_switch_proposal_error(payload) is not None
+                or not bool(getattr(execution, "success", False))):
+            return False
+        data = cls.rule_result_data(execution)
+        rule_id = data.get("rule_id")
+        if (data.get("success") is not True or data.get("created") is not True
+                or type(rule_id) not in (str, int)
+                or not str(rule_id).isdigit()
+                or data.get("broken") is not False
+                or data.get("partial") is True
+                or data.get("error") or data.get("repairHints")
+                or data.get("stopped") is True or data.get("paused") is True):
+            return False
+        jobs, listeners = data.get("scheduledJobs"), data.get("eventSubscriptions")
+        if (not isinstance(jobs, list) or not isinstance(listeners, list)
+                or (not jobs and not listeners)):
+            return False
+        document = data.get("document")
+        if (not isinstance(document, dict)
+                or str(document.get("rule_id")) != str(rule_id)):
+            return False
+        triggers, actions = document.get("triggers"), document.get("actions")
+        if (not isinstance(triggers, dict) or not triggers
+                or not isinstance(actions, list) or not actions):
+            return False
+        methods = [
+            row.get("value", {}).get("method")
+            for row in actions
+            if isinstance(row, dict) and isinstance(row.get("value"), dict)
+        ]
+        return "getOnOffSwitch" in methods
+
     @classmethod
     def verified_rule_execution(
         cls,
         execution: ToolExecution | Any,
         arguments: dict[str, Any] | None = None,
     ) -> bool:
+        if cls._native_create(arguments):
+            return cls._verified_native_create(execution, arguments)
         data = cls.rule_result_data(execution)
         health = data.get("health") if isinstance(data.get("health"), dict) else {}
         incomplete = (
@@ -224,12 +277,22 @@ class ConfirmedActionCoordinator:
                 name = cls.queued_rule_name(arguments)
                 last_created_name = name
             data = cls.rule_result_data(execution)
-            app_id = data.get("appId") or data.get("ruleId")
+            app_id = data.get("appId") or data.get("ruleId") or data.get("rule_id")
             if cls.verified_rule_execution(execution, arguments):
                 if is_self_pause:
                     lines.append(
                         f"- **{name}** was configured to pause itself after its "
                         "one-time trigger executes, so it cannot fire again."
+                    )
+                elif cls._native_create(arguments):
+                    jobs = data.get("scheduledJobs")
+                    listeners = data.get("eventSubscriptions")
+                    lines.append(
+                        f"- Created **{name}** (native rule ID **{app_id}**). "
+                        "Hubitat returned a matching stored dated trigger and "
+                        "Switch action, nonbroken status, and "
+                        f"{len(jobs)} scheduled job(s) / {len(listeners)} "
+                        "subscription(s). Physical execution is not verified."
                     )
                 else:
                     lines.append(
@@ -607,7 +670,7 @@ class ConfirmedActionCoordinator:
                     break
                 if is_create:
                     data = self.rule_result_data(execution)
-                    new_id = data.get("appId") or data.get("ruleId")
+                    new_id = data.get("appId") or data.get("ruleId") or data.get("rule_id")
                     if new_id not in (None, ""):
                         resolved_new_rule_id = str(new_id)
         deterministic_report = self.confirmed_rule_report(
