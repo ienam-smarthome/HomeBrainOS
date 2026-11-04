@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
+from native_switch_schedule import create_dated_switch
+from native_rule_readiness_source import _server_version
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from hub_timezone import HubTimezoneResolver
@@ -1032,6 +1034,82 @@ class RuleAuthoringService:
             evidence_kind="rule_writer_contract_check",
         )
         return contract
+
+
+    @staticmethod
+    def _native_date_supported(mcp: Any) -> bool:
+        """Only installed MCP initialize identity attests upstream #575."""
+        version = _server_version(mcp)
+        if version is None:
+            return False
+        parts = version.split("-", 1)[0].split("+", 1)[0].split(".")
+        return len(parts) == 3 and tuple(int(x) for x in parts) >= (5, 1, 6)
+
+    async def _native_parent_id(self) -> int | None:
+        """Resolve a native Rule Machine parent using two read-only sources."""
+        try:
+            listed = await self.mcp.call_tool("hub_read_apps_code", {
+                "tool": "hub_list_apps",
+                "args": {"scope": "instances", "nameFilter": "Rule Machine"},
+            })
+            data = listed.data if not listed.is_error and isinstance(listed.data, dict) else {}
+            rows = data.get("apps")
+            if not isinstance(rows, list):
+                return None
+            candidates = [
+                row for row in rows if isinstance(row, dict)
+                and row.get("name") == "Rule Machine"
+                and row.get("type") == "Rule Machine"
+                and row.get("user") is False
+                and row.get("parentId") in (None, "")
+                and str(row.get("id") or "").isdigit()
+            ]
+            if len(candidates) != 1:
+                return None
+            parent_id = int(candidates[0]["id"])
+            detail_result = await self.mcp.call_tool("hub_read_apps_code", {
+                "tool": "hub_get_app_config",
+                "args": {"appId": str(parent_id), "summary": True},
+            })
+            detail = detail_result.data if not detail_result.is_error and isinstance(detail_result.data, dict) else {}
+            if (detail.get("success") is not True
+                    or str(detail.get("id")) != str(parent_id)
+                    or detail.get("type") != "Rule Machine"
+                    or detail.get("namespace") != "hubitat"
+                    or detail.get("user") is not False
+                    or detail.get("parentAppId") not in (None, "")):
+                return None
+            return parent_id
+        except Exception:
+            return None
+
+    async def _native_guide_key(self) -> str | None:
+        """Read the installed acknowledgement key, never invent one."""
+        try:
+            guide = await self.mcp.call_tool(
+                "hub_get_tool_guide", {"section": "set_rule_reference"}
+            )
+            if guide.is_error:
+                return None
+            def flatten(value: Any) -> str:
+                if isinstance(value, str):
+                    return value
+                if isinstance(value, dict):
+                    return "\n".join(
+                        flatten(value[k]) for k in
+                        ("content", "text", "guide", "result", "data")
+                        if k in value
+                    )
+                if isinstance(value, list):
+                    return "\n".join(flatten(v) for v in value)
+                return ""
+            match = re.search(
+                r"I-HAVE-READ-THE-GUIDE-set_rule_reference-[0-9a-fA-F]+",
+                flatten(guide.data),
+            )
+            return match.group(0) if match else None
+        except Exception:
+            return None
 
     async def duplicate_create_error(
         self,
