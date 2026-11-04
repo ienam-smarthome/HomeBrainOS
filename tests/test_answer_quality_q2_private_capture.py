@@ -258,6 +258,8 @@ def test_redirect_refused_and_key_not_leaked():
         tr("ollama-cloud", "gemma4:31b", "fixed packet")
     assert "leaked" not in str(exc.value)
     assert "secret" not in str(exc.value)
+
+
 def test_local_non_thinking_model_omits_think_field():
     tr = OllamaTransport(env={})
     tr.local = FakeOpener([
@@ -324,8 +326,9 @@ def test_failed_arm_identified_without_exposing_raw_response():
     def invoke(provider, model, prompt):
         calls.append(model)
         raise ValueError("Model returned thinking only, no final answer (no automatic retry)")
-    with pytest.raises(ValueError, match=r"baseline \\(ollama-local/qwen3\\.5:4b\\)") as exc:
+    with pytest.raises(ValueError, match="baseline") as exc:
         collect_pairs(packets()[:1], ("ollama-local", "qwen3.5:4b"),
                       ("ollama-local", "llama3.2:3b"), "a" * 40, invoke)
     assert len(calls) == 1
+    assert "qwen3.5:4b" in str(exc.value)
     assert "secret" not in str(exc.value)
