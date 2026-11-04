@@ -176,10 +176,12 @@ async def test_correct_native_creation_is_queued_then_executed_once_on_confirmat
     assert start.confirmation_count == 1
     assert "hub_manage_virtual_device" in start.message
     assert not any(n == "hub_manage_virtual_device" for n, _ in mcp.calls)
-    assert "hub_manage_virtual_device" in [
-        t["function"]["name"] for req in ai.requests
-        for t in req.get("tools", []) if isinstance(t, dict) and "function" in t
-    ] or True  # model declaration already checked via confirmation
+    assert any(
+        tool["function"]["name"] == "hub_manage_virtual_device"
+        for _url, kwargs in ai.requests
+        for tool in (kwargs.get("json") or {}).get("tools", [])
+        if isinstance(tool, dict) and "function" in tool
+    )
     finish = await agent.process_user_request_result(
         "confirm", session_id="virtual-bat-correct"
     )
@@ -190,6 +192,30 @@ async def test_correct_native_creation_is_queued_then_executed_once_on_confirmat
     assert sends[0]["deviceType"] == "Virtual Switch"
     assert "deviceNetworkId" not in sends[0]
     assert all(name != "hub_manage_devices" for name, _ in mcp.calls)
+    assert "device ID **8100**" in finish.message
+    assert "not yet an independent read-back" in finish.message
+
+
+def test_partial_native_create_receipt_never_becomes_success_or_retry():
+    from tool_executor import ToolExecution
+    from tool_registry import ToolEffect
+    receipt = MCPToolResult(
+        "hub_manage_virtual_device", GOOD, {}, "",
+        {"success": True, "partialSuccess": True,
+         "device": {"id": "8100", "deviceNetworkId": "mcp-virtual-synthetic"}},
+    )
+    action = ToolExecution(
+        name="hub_manage_virtual_device", arguments=GOOD,
+        effect=ToolEffect.SENSITIVE_WRITE,
+        success=True, elapsed_ms=3, content="{}", result=receipt,
+    )
+    answer = ConfirmedActionCoordinator.confirmed_virtual_device_create_report([
+        ("hub_manage_virtual_device", GOOD, action),
+    ])
+    assert "unverified" in answer
+    assert "Do not retry" in answer
+    assert "candidate device ID 8100" in answer
+    assert "created" not in answer
 
 
 @pytest.mark.asyncio
