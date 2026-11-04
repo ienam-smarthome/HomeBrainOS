@@ -2,6 +2,36 @@
 
 **Date:** 2026-11-03 | **Production:** DISABLED | **No live Hubitat/HA writes performed**
 
+## Installed HomeBrain v0.18.387 identity acceptance — VERIFIED (2026-11-04)
+
+The user supplied an exact same-question, read-only response:
+`parents=[{appId:"169",appTypeId:"18",namespace:"hubitat",
+proof:"source-typed-installed-app-summary"}]`,
+`summarySourceChecks.typeProofGap=null`,
+`catalogClassConflicts=[]`,
+`parentIdentityComplete=true`, and `oneTimeMatchCount=0`
+from complete current rule/app lists. It took 2.940s with no model
+rounds, five local/remote receipts and no write. The native *parent
+identity* gate is now **passed for this observed installed snapshot**.
+The installed software version is self-reported; deployed Git SHA
+is not independently authenticated.
+
+The exact-name absence establishes **no matching suffix now**, not
+a proof that no timed/recurring native rules exist or that one-shot
+scheduling and automatic cleanup work. No native dated rule has been
+created by HomeBrain. Do not infer BAT or real Internet-blocker success
+from an inventory check.
+
+**Next offline/read-only prerequisites:** current MCP Rule Server version,
+recent hub-local backup timestamp and current native rule guide
+availability. Source-reported version, not assumption from an upstream
+release or the 36-tool UI label. The previously verified **one existing
+MCP-owned Virtual Switch is not a new disposable switch and must not be
+repurposed**. Any newly created test switch, ON command or dated rule
+requires the user's separate explicit approval; no router changes.
+Both BAT scripts remain default-disabled. See the top of
+`docs/ANSWER-QUALITY-STATUS.md` for a single scoped read-only prompt.
+
 ## Developer fix is real — installed compatibility not yet verified
 
 - [Upstream PR #576](https://github.com/kingpanther13/Hubitat-local-MCP-server/pull/576) was merged and released as **MCP server v5.1.5**. It closes [issue #575](https://github.com/kingpanther13/Hubitat-local-MCP-server/issues/575).
