@@ -246,6 +246,7 @@ def _exact_source_error(reply: Any) -> tuple[str, str]:
 async def read_explicit_native_rule_document(
     mcp: Any, evidence: Any, *,
     prompt: str, available_names: set[str] | frozenset[str],
+    summary_mode: bool = False,
 ) -> str | None:
     """Read only requested native sections; never perform writes or retries.
 
@@ -350,6 +351,14 @@ async def read_explicit_native_rule_document(
             "This does not prove the rule is missing or incorrectly configured. "
             "No modifying calls were made."
         )
+    # Summarise source-backed saved semantics only for the named-rule flow.
+    # Explicit native document reads continue to return individual fields.
+    # A failed or sensitive projection never becomes a reassuring summary.
+    if summary_mode and {"actions", "settings", "triggers"}.issubset(sections):
+        from native_rule_summary import describe_native_rule
+        concise = describe_native_rule(data, app_id=app_id, methods=methods)
+        if concise is not None:
+            return header + "\n\n" + concise
     output = [header]
     if "actions" in sections:
         output.append("Native ordered action entries:")
