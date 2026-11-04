@@ -1,5 +1,52 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 heating restoration first answers: complete capture, Qwen speculative and Llama incomplete
+
+**Actual Windows local first-answer pair** on `aq_early_heating_off_resume`;
+one case, one model invocation per arm, no cloud or device calls.
+Same frozen evidence packet SHA
+`cb5153f5d4beb82491c34b619d8e64f8f46bec86962533db38ffb4124e8a3bb1`,
+checkout SHA `7e81e0411b50f814241a64c2406f7fe908fa95fd`,
+recorded attempt index 1 for both arms.
+
+- **Qwen3.5:4b local**: **22.672s**, answer SHA
+  `ea47ab547ef37fc6cc61e73f3cb8b46c312fc335451650cd9d41143988b0cb66`.
+  Correctly describes lowering the selected thermostat/TRV to 12°C,
+  restoration to 22°C at 30 minutes, and independent heat demand/protection,
+  but speculates on frost-protection floor and timer heartbeat
+  without evidence; does not explicitly separate target temperatures
+  from physical boiler operation.
+- **Llama3.2:3b local**: **6.406s**, answer SHA
+  `3da98ab387346a8b666f36b35ecdb0e63e9431be3d701658518b4a44b8ca9f1e`.
+  Provides only the initial 12°C override. Omits restoration,
+  separate demand logic and physical operation limitation:
+  **not a useful complete first answer**.
+  Llama was **16.266s faster** (~71.7% shorter model-request
+  latency) on this single local case, but speed is not accuracy.
+
+Both saved first-answer hashes were independently reproduced
+from user-pasted plaintext by correcting the **display-only**
+PowerShell mojibake `Â°C` to actual UTF-8 `°C`.
+Use `Get-Content -Encoding UTF8 -Raw` when displaying the
+private files on Windows; no output changed and no private
+responses were committed. The run records do not retain the
+server `done_reason`: do not guess why Llama stopped
+after one sentence.
+
+**Qualitative review only**, source-grounded against
+the existing versioned heating packet; no independently
+attested SHA-bound human grade, no formal model accuracy,
+useful-first-attempt percentage or production HomeBrain latency.
+No generic runtime prompt/patch or provider switch justified
+at this stage. Proceed with one local frozen
+`aq_rule_parent_type_gap` pair in a new external
+private folder, then compare the *four source domains*
+before considering general model/evidence/publisher
+improvements. HomeBrain add-on stays **v0.18.404**.
+[Full heating case review](ANSWER-QUALITY-Q2-LOCAL-HEATING-PAIR-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 explicit token-limit first-answer gate merged; issuer-vs-reporter results documented
 
 **Exact-head verification:** [PR #1422](https://github.com/ienam-smarthome/HomeBrainOS/pull/1422),
