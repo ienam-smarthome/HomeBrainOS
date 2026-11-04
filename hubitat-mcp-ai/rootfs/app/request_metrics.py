@@ -53,6 +53,7 @@ class RequestMetrics:
         "rule_night_idle_fastpath", "rule_create_timeout_found",
         "rule_create_timeout_unknown",
         "rule_schedule_fastpath", "rule_schedule_gateway_missing",
+        "timed_internet_summary_preflight", "timed_internet_summary_preflight_failure",
         "rule_writer_native_unsupported", "rule_writer_contract_unverified",
         "native_rule_document_prefetched",
         "task_evidence_retry", "task_evidence_incomplete",
@@ -225,6 +226,7 @@ class RequestMetrics:
         "provider", "tool_discovery", "mcp", "mcp_lock_wait",
         "mcp_queue_wait", "mcp_session_lock_wait", "mcp_http",
         "mcp_shared_wait", "local_tool", "verification", "total",
+        "timed_internet_preflight",
     })
     ALLOWED_PAID_GUARD_STATUSES = frozenset({
         "disabled", "zero_budget", "round_exceeds_budget", "invalid_ledger",
