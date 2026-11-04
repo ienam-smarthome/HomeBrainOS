@@ -1,5 +1,58 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 explicit token-limit first-answer gate merged; issuer-vs-reporter results documented
+
+**Exact-head verification:** [PR #1422](https://github.com/ienam-smarthome/HomeBrainOS/pull/1422),
+tested head `9b2fceef1bc90585a6734b5d9b945be85986298b`,
+merged commit `82540290f2400e2f792fd98ed63fe2545ab30daf`.
+All required CI passed (Validate HomeBrain OS, Release
+assurance, Answer Quality scorecard integrity). Full
+Python suite: **6,466 tests passed, 2 warnings**.
+Metadata validation and add-on container smoke checks green.
+
+**User's completed frozen `aq_command_issuer_vs_reporter`
+local A/B (same source packet and checkout SHA):**
+Qwen3.5:4b **26.344s**, answer digest
+`a5479755e6b750941a1a283d00bdcc0ee1f90e31600f2c9e1008a239327fc064`;
+Llama3.2:3b **10.594s**, digest
+`fe3bdf3ce62350edf2d00de3d51ae501a26b0b84e612ce81a439807369a305c2`.
+Both exact saved text hashes verified. Qwen identified issuer
+4012 vs Hue reporter but overclaimed a confirmed command
+receipt/bridge causal chain and its saved answer stopped
+mid-heading. Llama falsely inferred prior physical OFF
+and command delivery and confused notified listener with
+the separately recorded command issuer. This is **one
+source-based qualitative review**, not a blinded human
+grade or production provider recommendation.
+
+**General evaluator safety fix:** Accept `done:true` as
+first-answer completion only if provider does not
+explicitly report `done_reason=length` or an
+unexpected stop reason. Preserve compatibility with
+providers omitting optional `done_reason`, but
+absence does not prove complete prose. No retry,
+no extra cloud use, no higher output cap, no
+changed source packet. Qwen's historical `done_reason`
+was **not captured**, so its token-budget explanation
+is still a hypothesis, not a known provider reason.
+No live Hubitat/HA/devices/rules changes and no
+production add-on change; v0.18.404.
+
+**Next Q2 gate:** One fresh *local-only* Qwen/Llama
+run of `aq_early_heating_off_resume`; inspect
+actual answers, hashes and safe errors. If a model
+explicitly reaches a token cap, mark that run as
+incomplete rather than silently repeating or
+changing token settings. Follow with the
+`aq_rule_parent_type_gap` case. Factual grounding
+percentages, useful-first response rates,
+Gemma/Claude gap and p50/p95 remain
+**NOT MEASURED** without independent
+SHA-bound review and adequate sample count.
+[Full command provenance case](ANSWER-QUALITY-Q2-LOCAL-COMMAND-ATTRIBUTION-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 command OFF provenance: real local answers reveal two causal errors and truncated Qwen output
 
 **New actual user-executed frozen local A/B:** `aq_command_issuer_vs_reporter`,
