@@ -18,6 +18,41 @@ HISTORY_INVESTIGATION = re.compile(
     re.I,
 )
 
+# Comparison is NOT by itself a historical objective. Current-state/
+# brightness comparisons were unnecessarily sent through the history
+# investigation loop, causing unrequested event reads, additional model
+# rounds and a false "missing history" coverage flag.
+_SNAPSHOT_COMPARISON = re.compile(
+    r"\b(?:compare|contrast)\b[^.!?\n]{0,180}"
+    r"\b(?:(?:current|present|reported|switch)\s+){0,3}"
+    r"(?:states?|statuses|status|brightness|levels?)\b",
+    re.I,
+)
+_HISTORY_OR_CAUSE_CONTEXT = re.compile(
+    r"\b(?:history|historical|historic|previous|earlier|yesterday|"
+    r"past|before|after|recent(?:ly)?|events?|changes?|changed|"
+    r"transitions?|patterns?|trends?|over time|during|last week|"
+    r"last night|timeline|activity|activities|duration|on[- ]?off cycles?|"
+    r"commands?|logs?|cause|caused|trigger|triggered|why|"
+    r"normal|abnormal|unusual|expected|unexpected|correlat\w*)\b",
+    re.I,
+)
+
+
+def is_snapshot_comparison(prompt: str) -> bool:
+    """Read-only current-state comparison, without historical/cause claims.
+
+    Generic objective classification only. Never supplies tool authority,
+    device identity, or a claim that the returned attributes are fresh.
+    """
+    text = " ".join(str(prompt or "").split())
+    return (
+        _SNAPSHOT_COMPARISON.search(text) is not None
+        and _HISTORY_OR_CAUSE_CONTEXT.search(text) is None
+        and CAUSAL_INVESTIGATION.search(text) is None
+    )
+
+
 EXPLICIT_PROVENANCE_SOURCE = re.compile(
     r"\b(?:app|apps|automation|automations|rule|rules|log|logs)\b",
     re.I,
@@ -29,7 +64,13 @@ def is_causal_investigation(prompt: str) -> bool:
 
 
 def is_history_investigation(prompt: str) -> bool:
-    return HISTORY_INVESTIGATION.search(str(prompt or "")) is not None
+    # "Compare current states" requires two independent state receipts,
+    # not two historical event histories. Preserve historical comparisons
+    # whenever the user actually asks about events or causal context.
+    return (
+        not is_snapshot_comparison(prompt)
+        and HISTORY_INVESTIGATION.search(str(prompt or "")) is not None
+    )
 
 
 def uses_known_history_evidence_path(prompt: str) -> bool:
@@ -54,5 +95,6 @@ __all__ = [
     "EXPLICIT_PROVENANCE_SOURCE",
     "is_causal_investigation",
     "is_history_investigation",
+    "is_snapshot_comparison",
     "uses_known_history_evidence_path",
 ]
