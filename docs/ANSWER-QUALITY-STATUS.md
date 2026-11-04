@@ -1,5 +1,12 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — v0.18.393 named-rule read merged; v0.18.394 native scheduling candidate
+
+**Merged:** [PR #1389](https://github.com/ienam-smarthome/HomeBrainOS/pull/1389) passed 6/6 CI checks at head `703953c5a7e5e0d6cb142fd04dc9a0f812c8362f`, merged at `61a8a7c6d8090bac5df0b711db5c43f4e8b34326`. Release **0.18.393** routes a quoted named-rule details question to a source-unique ID and read-only native rule-document sections instead of the incorrect 165-item inventory. Installed same-question outcome **NOT MEASURED**.
+
+**Candidate release 0.18.394:** Upstream MCP issue #575 closed with a typed `atDate#` fix for 5.1.6. HomeBrain's previous legacy schedule writer correctly rejected native create but could not schedule Google TV Internet OFF after a relative delay or at a dated time. Candidate restricts native creation to one future dated Switch action after user confirmation, with installed version, typed Rule Machine parent, target resolution, duplicate checks, source-typed changes and confirmation replay. Native result requires a matching persisted rule document, nonbroken status and activation jobs before a success message; even those do not prove future execution/physical Internet effect. Multi-action OFF → 15-minute wait → ON and daily recurring native authoring remain **UNSUPPORTED** and will refuse. No GitHub PR changed live Hubitat/HA/router state. Real first-attempt success/latency, action correctness and model-evidence quality **NOT MEASURED**. See release notes and PR CI for final engineering gate. Roll back if unverified/partial writes occur.
+
+
 ## 2026-11-04 — Q1 first-round read-only tool admission v0.18.391 (GREEN MERGED)
 
 **Exact verified release:** [PR #1385](https://github.com/ienam-smarthome/HomeBrainOS/pull/1385) passed **7/7 GitHub checks** on head `ea10c23d16fb4bdc739b7600fe49de66b9f97d6e`, including **6,246 passed, 2 warnings** full Python suite, add-on smoke, metadata and two test/two validation jobs. It merged as `5a43893dc2efd4514a6def640aa2670239885f3c` and that SHA was independently verified at `main`. The maintained add-on version is **0.18.391**. CI proves engineering regressions pass; the new version has **not** been proved installed or evaluated against real household source claims.
