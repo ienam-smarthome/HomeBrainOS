@@ -4744,11 +4744,35 @@ class UnifiedMCPAgent:
                 if pending else
                 "No pending Internet block timers were reported by the Cudy Managed Device inventory."
             )
+        if timer_args is not None and timer_args["action"] != "status":
+            # Admission precheck uses the already-supported detailed device
+            # manifest, but this is not an authorisation or a write identity.
+            # The full exact-driver pagination below independently verifies
+            # the device before queuing any mutation. Preserve the legacy RM
+            # contract when no Cudy driver has been identified.
+            manifest_candidates = []
+            if "hub_read_devices" in catalog.available_names and hasattr(self.mcp, "get_cached_devices"):
+                try:
+                    manifest = await self.mcp.get_cached_devices()
+                    requested = self.timed_internet._words_for_candidate(timer_args["targets"])
+                    manifest_candidates = [
+                        row for row in manifest
+                        if isinstance(row, dict)
+                        and str(row.get("driver") or row.get("driverName") or "") == "Cudy Managed Device"
+                        and str(row.get("label") or row.get("name") or "").startswith("Block ")
+                        and (requested is None or requested.issubset(set(
+                            self.timed_internet._words_for_candidate([
+                                str(row.get("label") or row.get("name") or "")
+                            ]) or ()
+                        )))
+                    ]
+                except Exception as exc:
+                    logger.debug("Driver timer admission manifest unavailable: %s", exc)
+            if not manifest_candidates:
+                timer_args = None
         if timer_args is not None:
-            # Only an independently identified Cudy Managed Device qualifies
-            # for the driver path. Other devices retain the existing native
-            # Rule Machine route (including its own confirmation and gates).
-            # This is capability dispatch, NOT mutation authorization.
+            # Re-fetch complete matching driver identity, never trusting
+            # cached-manifest content as the final target for a write.
             try:
                 available_devices = await self.timed_internet.list_devices()
             except Exception as exc:
