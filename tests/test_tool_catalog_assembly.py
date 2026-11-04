@@ -36,5 +36,5 @@ def test_empty_remote_tools_still_yields_full_local_set() -> None:
     catalog = build_request_tool_catalog([])
 
     # Thirteen safe-read tools (including the model-selectable Groovy source
-    # evidence reader) plus the one control tool.
-    assert len(catalog.available_names) == 14
+    # evidence reader) plus the one control tool and the selectively-declared Internet-timer tool.
+    assert len(catalog.available_names) == 15
