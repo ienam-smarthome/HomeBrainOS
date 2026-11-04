@@ -1,6 +1,27 @@
 # Answer Quality — active status and cross-chat handoff
 
-## Internet-blocker native class catalog consistency — v0.18.387 candidate (2026-11-03)
+## Internet-blocker native class catalog consistency — v0.18.387 GREEN MERGED (2026-11-03)
+
+**Verified:** [PR #1373](https://github.com/ienam-smarthome/HomeBrainOS/pull/1373)
+merged as `2cf6399b090919aa51b3656748fe3385c82a0d7a`
+after **8/8 CI checks green on exact head**
+`2d1480f43f4e6f6d91c36494ae995ff751573d69`
+(**6,212 Python tests passed, 2 warnings**, including add-on smoke,
+validation, metadata, offline scorecard and repeated test gates).
+The maintained add-on source version is **0.18.387**.
+No live Hubitat/HA/OpenWrt/device/rule write occurred.
+
+**Next installed checkpoint:** install v0.18.387 and repeat the
+**exact v0.18.385/386 read-only native Rule Machine inventory question**
+in a fresh HomeBrain topic. Provide full natural answer and Technical
+Details JSON. Check `parents`, `summarySourceChecks`,
+`catalogClassConflicts` if any, and `oneTimeMatchCount`.
+If parent 169 remains unverified, the sanitized catalog witness,
+not another guessed source page, determines the next source-contract
+step. Do not submit a write or interpret a parent-resolution result
+as proof of a scheduled block. This is a paired repeat, not a fresh
+first-attempt acceptance sample.
+
 
 **Installed paired read-only test v0.18.386:** 3.611s, zero model
 rounds, five logical tool calls vs v0.18.385's 25.650s, six rounds,
@@ -13,13 +34,13 @@ parent remained unresolved due to `native-app-summary-catalog-conflict`.
 The private diagnostic JSON did not include raw catalog class entries;
 actual installed conflict details **are still unverified**.
 
-**General source-contract finding:** the upstream MCP
+**General source-contract finding and merged fix:** the upstream MCP
 `hub_list_apps(scope=types)` builds from community userAppTypes plus
 native systemAppTypes; the built-in class can have `system=true` and
 `isBuiltIn=true` with no `namespace`. HomeBrain 0.18.386 treated
 `namespace=None` as a contradictory namespace even when thin
 `hub_get_app_config(summary=true)` independently attested the
-installed app's namespace. The 0.18.387 candidate distinguishes
+installed app's namespace. The 0.18.387 merged implementation distinguishes
 **missing** from **explicitly conflicting** namespace, accepts a
 source-typed summary only with exact ID/type/user/root identity, and
 retains hard refusals for explicit foreign namespace, wrong class
