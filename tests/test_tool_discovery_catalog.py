@@ -337,3 +337,47 @@ def test_read_gateway_exposure_respects_registry_and_never_exposes_manage_tools(
     ]
     assert "hub_manage_rule_machine" not in catalog.declared_names
     assert "hub_read_disabled_gateway" not in catalog.declared_names
+
+
+def test_initial_read_only_prune_keeps_existing_source_choice_and_installed_registry():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"), tool("hub_read_diagnostics"),
+        tool("hub_read_devices"), tool("hub_manage_devices"),
+        tool("hub_manage_virtual_device"), tool("homebrain_control_devices"),
+    ])
+    catalog.expand(search_result({"results": [
+        {"tool": "hub_get_device", "gateway": "hub_read_devices"},
+        {"tool": "hub_create_device", "gateway": "hub_manage_devices"},
+    ]}), query="hub_get_device")
+
+    before = catalog.declared_names
+    assert "homebrain_control_devices" in before
+    kept = catalog.restrict_declared_to_read_only()
+    assert kept == catalog.declared_names
+    assert "hub_read_devices" in kept
+    assert "hub_read_diagnostics" in kept
+    assert "hub_search_tools" in kept
+    assert "homebrain_control_devices" not in kept
+    assert "hub_manage_devices" not in kept
+    assert "hub_manage_virtual_device" not in kept
+    assert catalog.available_tool("hub_manage_devices") is not None
+    assert catalog.available_tool("hub_manage_virtual_device") is not None
+    # Catalog pruning is model-presentation only, never a persistent removal
+    # from installed capabilities or a change to independently authorised writes.
+    catalog.replace_declared(["hub_manage_virtual_device"])
+    assert catalog.declared_names == ("hub_manage_virtual_device",)
+
+
+def test_new_write_discovery_remains_hidden_after_read_only_prune():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"), tool("hub_read_rules"),
+        tool("hub_manage_rule_machine"),
+    ])
+    catalog.restrict_declared_to_read_only()
+    catalog.expand(search_result({"results": [
+        {"tool": "hub_set_rule", "gateway": "hub_manage_rule_machine"},
+    ]}), query="hub_set_rule")
+    assert "hub_manage_rule_machine" in catalog.declared_names
+    catalog.restrict_declared_to_read_only()
+    assert "hub_manage_rule_machine" not in catalog.declared_names
+    assert "hub_search_tools" in catalog.declared_names
