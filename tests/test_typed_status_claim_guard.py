@@ -73,15 +73,15 @@ def test_real_hub_health_answer_rejects_missing_measurements_but_preserves_good_
     )
     output, issues = guard_typed_status_claims(answer, hub())
     assert "42.5" not in output
-    assert "**Temperature**: not reported in the checked source" in output
+    assert "**Temperature:** not reported in the checked source" in output
     assert "healthy with no active alerts" not in output
     assert "do not establish complete system health" in output
     assert "Firmware 2.5.3.117 matches" in output
     assert "external update freshness unverified" in output
-    assert "**Zigbee**: enabled (source-reported healthy=true)" in output
+    assert "**Zigbee:** enabled (source-reported healthy=true)" in output
     for supported in (
         "0.78 / 19.5%", "756.39 MB", "0d:18h:33m:54s",
-        "175 MB", "**Z-Wave**: Disabled", "**Matter**: online",
+        "175 MB", "**Z-Wave:** Disabled", "**Matter:** online",
     ):
         assert supported in output
     assert {"temperature_not_reported", "unverified_global_health",
@@ -146,8 +146,8 @@ def test_device_resolution_per_entity_does_not_use_another_devices_level():
     b = device("Test Light B", "702", {"switch": "off", "level": 60})
     text = "- **Test Light A:** on at 50%\n- **Test Light B:** off at 90%"
     out, issues = guard_typed_status_claims(text, [*a, *b])
-    assert "**Test Light A**: on at 50%" in out
-    assert "**Test Light B**: switch off, saved level 60%" in out
+    assert "**Test Light A:** on at 50%" in out
+    assert "**Test Light B:** switch off, saved level 60%" in out
     assert "90%" not in out
     assert "device_state_source_mismatch" in issues
 
