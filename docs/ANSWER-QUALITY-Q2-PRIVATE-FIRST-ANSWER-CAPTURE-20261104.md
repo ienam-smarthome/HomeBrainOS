@@ -160,3 +160,56 @@ Gemma-vs-local factual quality, local Qwen-vs-Llama quality and model
 first-answer reliability remain **not_measured**. Roll back if discovery
 breaks installed model calls, no-thinking controls are misapplied, or
 private prompts leak into GitHub logs.
+
+## 4 November 2026 — multi-case failure: safe stage diagnosis, not a quality verdict
+
+**Observed user attempt:** The user ran the next three frozen cases
+(`aq_command_issuer_vs_reporter`, `aq_early_heating_off_resume`,
+`aq_rule_parent_type_gap`) with `qwen3.5:4b` versus `llama3.2:3b`
+locally and received only
+`Q2 capture incomplete: private transport or file error`.
+The previously successful **single MQTT pair remains valid** and
+unchanged; the three-case attempt yielded **no complete new pair,
+no submitted outputs, and no scores**. The generic error hides whether
+the failure was a per-request timeout, Ollama HTTP/network response,
+Git checkout read, or private file write; **root cause is unverified**.
+No reported timestamp, elapsed time, or case/arm failure provenance
+was provided, so do not invent which case or model failed.
+
+**Generalised offline-tool fix:** Introduce internal safe
+`CaptureTransportError` categories and stage names, including
+`local-model-inventory`, `local-model-capabilities`,
+`local-inference`, `cloud-inference`, `local-git`,
+and `private-output`. Classify HTTP status code, timeout,
+connection failure, and opaque network/provider errors without
+displaying provider response bodies, request URLs, prompt text,
+authentication, local paths or raw socket messages. Attach the
+**frozen case ID**, model/provider and baseline/candidate arm
+to a sanitized failed model call. Block untrusted model
+`ValueError` strings from reaching stderr; only known static
+validation messages may appear. A failed output write now
+returns a bounded `private-output: filesystem-write-failed`
+message, acknowledging that an output folder might be partially
+created and must never be overwritten. The `--timeout-seconds`
+control remains bounded (1–180); don't change the budget
+or silently repeat a failed case until the actual error category
+is known.
+
+**No changes** to source packets, answer-only thinking policy,
+request model options, URL allowance, provider selection,
+model count, retry policy, cloud consent, paid routing, installed
+add-on v0.18.404, production publisher, Hubitat/HA/router/devices
+or rules. Existing successful answer files remain private
+outside the repository. Test the error taxonomy with fake
+provider timeouts, URL wrapper failures, HTTP errors, arbitrary
+secret-bearing exceptions and private filesystem errors.
+These are **diagnostic-contract tests**, not live inference,
+a real environmental root cause, a successful three-case trial
+or an evaluated model-quality score.
+
+**Next live action after code CI:** update the local checkout,
+run the same three-case selection in a **new**, uniquely named
+private directory once, and retain its response or sanitized
+error. If a timeout is actually reported, a later protocol
+may explicitly disclose an increased timeout for a separate
+run, rather than reclassifying a failed first attempt.

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from urllib.error import HTTPError, URLError
 from pathlib import Path
 import sys
 
@@ -14,7 +15,7 @@ from answer_quality_fixed_packets import build_fixed_packets, validate_run_manif
 from answer_quality_paired_reviews import build_paired_review_report
 from answer_quality_q2_private_capture import (
     CLOUD_URL, DEFAULT_CASES, LOCAL_URL, OPTIONS,
-    OllamaTransport, NoRedirect, check_private_path, collect_pairs,
+    OllamaTransport, NoRedirect, CaptureTransportError, check_private_path, collect_pairs,
     main, save_private, selected_packets, sha256, unfilled_review_template,
     validate_arms,
 )
@@ -125,9 +126,10 @@ def test_model_failure_fails_closed_and_does_not_retry():
         if len(calls) == 2:
             raise TimeoutError("no completion")
         return "first"
-    with pytest.raises(TimeoutError):
+    with pytest.raises(ValueError, match="unexpected-transport-error") as exc:
         collect_pairs(packets(), ("ollama-local","qwen3.5:4b"),
                       ("ollama-local","llama3.2:3b"), "a"*40, invoke)
+    assert "llama3.2:3b" in str(exc.value)
     assert calls == ["qwen3.5:4b", "llama3.2:3b"]
 
 
@@ -254,7 +256,7 @@ def test_redirect_refused_and_key_not_leaked():
             raise RuntimeError("leaked token secret here")
     tr = OllamaTransport(env={"OLLAMA_API_KEY":"secret"})
     tr.cloud = Fails()
-    with pytest.raises(RuntimeError, match="Model transport failed") as exc:
+    with pytest.raises(CaptureTransportError, match="cloud-inference: network-or-provider-failure") as exc:
         tr("ollama-cloud", "gemma4:31b", "fixed packet")
     assert "leaked" not in str(exc.value)
     assert "secret" not in str(exc.value)
@@ -332,3 +334,74 @@ def test_failed_arm_identified_without_exposing_raw_response():
     assert len(calls) == 1
     assert "qwen3.5:4b" in str(exc.value)
     assert "secret" not in str(exc.value)
+
+
+def test_transport_timeout_is_safe_and_identifies_exact_stage():
+    class TimeoutOpener:
+        def open(self, request, timeout):
+            raise TimeoutError("private prompt, key=LEAKED_SECRET")
+    tr = OllamaTransport(env={"OLLAMA_API_KEY": "LEAKED_SECRET"})
+    tr.cloud = TimeoutOpener()
+    with pytest.raises(CaptureTransportError, match="cloud-inference: timeout") as exc:
+        tr("ollama-cloud", "gemma4:31b", "frozen packet")
+    assert "private" not in str(exc.value)
+    assert "LEAKED_SECRET" not in str(exc.value)
+
+
+def test_wrapped_url_timeout_is_not_hidden():
+    class WrappedTimeout:
+        def open(self, request, timeout):
+            raise URLError(TimeoutError("SECRET-DETAIL"))
+    tr = OllamaTransport(env={})
+    tr.local = WrappedTimeout()
+    with pytest.raises(CaptureTransportError, match="local-model-inventory: timeout") as exc:
+        tr("ollama-local", "qwen3.5:4b", "frozen packet")
+    assert "SECRET-DETAIL" not in str(exc.value)
+
+
+def test_http_error_reports_safe_code_without_secret_response_body():
+    class Reject:
+        def open(self, request, timeout):
+            raise HTTPError(request.full_url, 503, "SECRET PROVIDER", {}, None)
+    tr = OllamaTransport(env={"OLLAMA_API_KEY": "SECRET-KEY"})
+    tr.cloud = Reject()
+    with pytest.raises(CaptureTransportError, match="cloud-inference: http-status-503") as exc:
+        tr("ollama-cloud", "gemma4:31b", "frozen packet")
+    assert "SECRET" not in str(exc.value)
+
+
+def test_case_model_stage_provenance_for_timeout_no_retry():
+    called = []
+    def failing(provider, model, prompt):
+        called.append((provider, model))
+        if len(called) == 2:
+            raise CaptureTransportError("local-inference", "timeout")
+        return "baseline answer held only in memory"
+    with pytest.raises(ValueError, match="aq_command_issuer_vs_reporter") as exc:
+        collect_pairs(packets()[:1], ("ollama-local", "qwen3.5:4b"),
+                      ("ollama-local", "llama3.2:3b"), "a" * 40, failing)
+    assert "candidate (ollama-local/llama3.2:3b)" in str(exc.value)
+    assert "local-inference: timeout" in str(exc.value)
+    assert "baseline answer" not in str(exc.value)
+    assert len(called) == 2
+
+
+def test_arbitrary_model_exception_is_redacted_not_logged():
+    def leak(provider, model, prompt):
+        raise ValueError("PRIVATE_UNTRUSTED_PROVIDER_OUTPUT")
+    with pytest.raises(ValueError, match="invalid-model-response") as exc:
+        collect_pairs(packets()[:1], ("ollama-local", "qwen3.5:4b"),
+                      ("ollama-local", "llama3.2:3b"), "a" * 40, leak)
+    assert "PRIVATE_UNTRUSTED_PROVIDER_OUTPUT" not in str(exc.value)
+
+
+def test_filesystem_error_is_scoped_and_private(tmp_path, monkeypatch):
+    left, right, session, raw = collect_pairs(packets()[:1],
+        ("ollama-local", "qwen3.5:4b"), ("ollama-local", "llama3.2:3b"),
+        "a" * 40, lambda *args: "answer", clock=lambda: 1.0)
+    def fail_write(path, text):
+        raise PermissionError("PRIVATE_PATH_WITH_SECRET")
+    monkeypatch.setattr("answer_quality_q2_private_capture._write_private_file", fail_write)
+    with pytest.raises(CaptureTransportError, match="private-output: filesystem-write-failed") as exc:
+        save_private(tmp_path / "new", left, right, session, raw)
+    assert "PRIVATE_PATH_WITH_SECRET" not in str(exc.value)

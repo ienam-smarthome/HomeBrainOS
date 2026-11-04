@@ -15,11 +15,13 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 from time import monotonic
 from typing import Any, Callable
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
+from urllib.error import HTTPError, URLError
 
 from answer_quality_comparison_prompt import render_comparison_prompt
 from answer_quality_fixed_packets import build_fixed_packets, RUN_SCHEMA
@@ -39,6 +41,31 @@ MAX_RESPONSE = 65536
 MAX_ANSWER = 16384
 SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 MODEL_RE = re.compile(r"^[a-zA-Z0-9_.:/-]{1,80}$")
+
+# Never show untrusted exception text from a model invocation: it can contain
+# private prompts, provider bodies, local paths, or API credentials.
+SAFE_MODEL_ERRORS = frozenset({
+    "Oversized provider response",
+    "Invalid model response JSON",
+    "Unexpected model response type",
+    "Local model not present in local Ollama inventory; no pull attempted",
+    "Local model does not expose a supported no-thinking mode",
+    "Model response not marked complete",
+    "Provider model identity does not match requested model",
+    "Model returned tool calls instead of a text-only answer",
+    "Model returned thinking only, no final answer (no automatic retry)",
+    "Model returned empty final answer (no automatic retry)",
+    "Model final answer exceeded the private capture limit",
+    "Unknown provider/model",
+})
+
+
+class CaptureTransportError(RuntimeError):
+    """Only enum-like stage/category tokens; never raw provider exceptions."""
+    def __init__(self, stage: str, category: str):
+        self.stage = stage
+        self.category = category
+        super().__init__(f"{stage}: {category}; no automatic retry")
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -90,8 +117,11 @@ def check_private_path(path: Path, repo: Path = REPO) -> Path:
 
 
 def current_build_sha() -> str:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO,
-                            capture_output=True, text=True, timeout=4, check=True)
+    try:
+        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO,
+                                capture_output=True, text=True, timeout=4, check=True)
+    except (OSError, subprocess.SubprocessError):
+        raise CaptureTransportError("local-git", "checkout-identity-failed") from None
     return result.stdout.strip()
 
 
@@ -107,15 +137,30 @@ class OllamaTransport:
         self._checked_local: set[str] = set()
         self._local_think_disabled: dict[str, bool] = {}
 
-    def _call(self, opener, req: Request) -> dict[str, Any]:
+    def _call(self, opener, req: Request, *, stage: str = "model-transport") -> dict[str, Any]:
         try:
             with opener.open(req, timeout=self.timeout) as response:
                 if response.status != 200:
-                    raise ValueError("Provider returned a non-success status")
+                    raise CaptureTransportError(stage, "unexpected-http-status")
                 raw = response.read(MAX_RESPONSE + 1)
+        except CaptureTransportError:
+            raise
         except Exception as exc:
-            # Never emit endpoint errors, request payloads or API secrets.
-            raise RuntimeError("Model transport failed; no automatic retry") from None
+            # Classify without exposing HTTP error bodies or URLError.reason.
+            # HTTPError is also a URLError, so check HTTP codes first.
+            if isinstance(exc, HTTPError):
+                category = f"http-status-{int(exc.code)}"
+            elif (isinstance(exc, (TimeoutError, socket.timeout))
+                  or (isinstance(exc, URLError)
+                      and isinstance(exc.reason, (TimeoutError, socket.timeout)))):
+                category = "timeout"
+            elif (isinstance(exc, (ConnectionRefusedError, ConnectionResetError))
+                  or (isinstance(exc, URLError)
+                      and isinstance(exc.reason, (ConnectionRefusedError, ConnectionResetError)))):
+                category = "connection-failed"
+            else:
+                category = "network-or-provider-failure"
+            raise CaptureTransportError(stage, category) from None
         if len(raw) > MAX_RESPONSE:
             raise ValueError("Oversized provider response")
         try:
@@ -129,7 +174,8 @@ class OllamaTransport:
     def _verify_local_installed(self, model: str) -> None:
         if model in self._checked_local:
             return
-        tags = self._call(self.local, Request("http://127.0.0.1:11434/api/tags"))
+        tags = self._call(self.local, Request("http://127.0.0.1:11434/api/tags"),
+                          stage="local-model-inventory")
         names = {entry.get("name") for entry in tags.get("models", [])
                  if isinstance(entry, dict)} if isinstance(tags.get("models"), list) else set()
         if model not in names:
@@ -140,7 +186,8 @@ class OllamaTransport:
         info = self._call(self.local, Request(
             "http://127.0.0.1:11434/api/show",
             data=json.dumps({"model": model}).encode("utf-8"),
-            method="POST", headers={"Content-Type": "application/json"}))
+            method="POST", headers={"Content-Type": "application/json"}),
+            stage="local-model-capabilities")
         controls = info.get("thinking")
         capabilities = info.get("capabilities")
         if isinstance(controls, dict) and isinstance(controls.get("values"), list):
@@ -183,7 +230,8 @@ class OllamaTransport:
             headers["Authorization"] = "Bearer " + self.key
         req = Request(CLOUD_URL if provider == "ollama-cloud" else LOCAL_URL,
                       method="POST", data=payload, headers=headers)
-        result = self._call(self.cloud if provider == "ollama-cloud" else self.local, req)
+        result = self._call(self.cloud if provider == "ollama-cloud" else self.local, req,
+                            stage="cloud-inference" if provider == "ollama-cloud" else "local-inference")
         if result.get("done") is not True:
             raise ValueError("Model response not marked complete")
         if result.get("model") != model:
@@ -219,9 +267,14 @@ def collect_pairs(packets: list[dict[str, Any]],
             start = clock()
             try:
                 answer = invoke(provider, model, prompt)  # one attempt, no retry
-            except ValueError as exc:
-                # Model tags are validated; no private prompt/response is shown.
-                raise ValueError(f"{side} ({provider}/{model}): {exc}") from None
+            except (ValueError, CaptureTransportError) as exc:
+                # Include exact frozen case and model arm without logging the
+                # prompt or any exception text from arbitrary model providers.
+                safe = (str(exc) if isinstance(exc, CaptureTransportError)
+                        or str(exc) in SAFE_MODEL_ERRORS else "invalid-model-response")
+                raise ValueError(f"{case_id}: {side} ({provider}/{model}): {safe}") from None
+            except Exception:
+                raise ValueError(f"{case_id}: {side} ({provider}/{model}): unexpected-transport-error; no automatic retry") from None
             end = clock()
             elapsed = end - start
             if (not isinstance(answer, str) or not answer.strip()
@@ -304,13 +357,17 @@ def _write_private_file(path: Path, text: str) -> None:
 def save_private(path: Path, baseline: dict, candidate: dict,
                  session: dict, answers: dict[str, str]) -> None:
     path = check_private_path(path)
-    path.mkdir(mode=0o700, parents=True, exist_ok=False)
-    for name, answer in answers.items():
-        _write_private_file(path / name, answer)
-    for name, payload in (("baseline.json", baseline), ("candidate.json", candidate),
-                          ("session.json", session),
-                          ("reviews-unfilled.json", unfilled_review_template(baseline, candidate))):
-        _write_private_file(path / name, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=False)
+        for name, answer in answers.items():
+            _write_private_file(path / name, answer)
+        for name, payload in (("baseline.json", baseline), ("candidate.json", candidate),
+                              ("session.json", session),
+                              ("reviews-unfilled.json", unfilled_review_template(baseline, candidate))):
+            _write_private_file(path / name, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    except OSError:
+        # The destination may be partially created; never overwrite on rerun.
+        raise CaptureTransportError("private-output", "filesystem-write-failed") from None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -345,9 +402,12 @@ def main(argv: list[str] | None = None) -> int:
         left_manifest, right_manifest, session, answers = collect_pairs(
             packets, left, right, build, transport)
         save_private(target, left_manifest, right_manifest, session, answers)
-    except Exception as exc:
-        # Don't print model responses, API keys, request contents, or paths.
-        print(f"Q2 capture incomplete: {str(exc) if isinstance(exc, ValueError) else 'private transport or file error'}", file=sys.stderr)
+    except (ValueError, CaptureTransportError) as exc:
+        # Only known, sanitised errors reach stderr; no provider bodies or paths.
+        print(f"Q2 capture incomplete: {exc}", file=sys.stderr)
+        return 2
+    except Exception:
+        print("Q2 capture incomplete: unexpected local setup or private file error", file=sys.stderr)
         return 2
     print("Q2 first-answer capture complete. Private files saved locally; "
           "factual/source review NOT MEASURED. Do not commit the output directory.")
