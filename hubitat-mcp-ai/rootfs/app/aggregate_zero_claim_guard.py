@@ -94,14 +94,14 @@ def guard_aggregate_zero_claims(
             info["scopeVerified"] and info["inventoryComplete"]
             and info["scope"] in {"whole-home", "room"}
         )
-        # A room-only read cannot support an unqualified whole-home "none".
-        if info["scope"] != "whole-home":
-            verified_scope = False
+        # An aggregate can be complete for a verified requested room as
+        # well as for the whole house. The original user intent sets scope;
+        # the guard must not silently broaden a valid room-specific answer.
         category_name = ("recognised light devices" if category == "lights"
                          else "recognised non-light switches")
         if not verified_scope:
             replacement = (
-                f"The complete whole-home {category_name} inventory was "
+                f"The requested {category_name} inventory was "
                 "not verified; a zero-active conclusion is not established."
             )
             issue = "aggregate_inventory_scope_unverified"
