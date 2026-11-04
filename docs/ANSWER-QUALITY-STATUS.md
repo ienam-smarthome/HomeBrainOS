@@ -46,9 +46,16 @@ source response to the **exact registered API prompt digest**, preserves
 only source-execution/timing/outcome metadata, and always leaves human
 source grading and first-attempt certification **not measured**.
 See [Q1 intake procedure](ANSWER-QUALITY-Q1-LIVE-SAMPLE-INTAKE.md).
-This is an **offline evaluation utility** only; no add-on runtime
-change, no further timer patch and **no version bump**. CI and merge
-for this candidate must be verified separately.
+**Verified merged Q1 tooling:** [PR #1398](https://github.com/ienam-smarthome/HomeBrainOS/pull/1398)
+passed all required workflows on exact head
+`13405be2777df55d22deed5041a5d3e753376970`, including **6,344
+Python tests passed (2 warnings)**, metadata, add-on smoke, Answer Quality
+integrity and validation. Merged to `main` as
+`852703ac4f35cdcbeead6a0688f8e583fa6bbb42`. This is an **offline
+evaluation utility** only, not a deployed answer-quality improvement or
+measured first-attempt score. No add-on runtime change, no further timer
+patch, no live Hubitat/HA/router actions and **no version bump**.
+Maintained add-on source remains **0.18.399**.
 
 **Next user-supplied acceptance (one read-only first response):** In a
 fresh HomeBrain topic, submit exactly the unchanged registered
