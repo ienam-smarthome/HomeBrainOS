@@ -113,7 +113,7 @@ def guard_aggregate_zero_claims(
             issue = "aggregate_zero_contradicted"
         elif info["candidateCount"] == 0:
             replacement = (
-                f"No {category_name} were recognised in the checked inventory; "
+                f"The checked inventory identified no {category_name}; "
                 "that does not prove every physical device is OFF."
             )
             issue = "aggregate_no_eligible_candidates"
