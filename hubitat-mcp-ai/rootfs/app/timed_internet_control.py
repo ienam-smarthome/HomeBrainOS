@@ -349,6 +349,16 @@ class TimedInternetControl:
         )
 
 
+_CANCEL_TIMER_PHRASE = re.compile(
+    r"^(?:please\s+)?(?:cancel|clear|stop)\s+"
+    r"(?:the\s+)?(?P<target>.+?)\s+(?:internet\s+)?timer\s*[.!]?$", re.I,
+)
+_STATUS_TIMERS_PHRASE = re.compile(
+    r"^(?:what|which)\s+(?:internet\s+)?timers?\s+"
+    r"(?:are\s+)?(?:running|pending|active)\s*[?!.]?$", re.I,
+)
+
+
 _TIMED_BLOCK_PHRASE = re.compile(
     r"^(?:please\s+)?(?:block|restrict|disable)\s+"
     r"(?:internet\s+(?:for\s+)?)?(?P<target>.+?)\s+"
@@ -370,6 +380,11 @@ def timed_internet_intent(prompt: str) -> dict[str, Any] | None:
     remain independent of this optional deterministic routing.
     """
     value = " ".join(str(prompt or "").split())
+    if _STATUS_TIMERS_PHRASE.fullmatch(value):
+        return {"action": "status"}
+    cancelling = _CANCEL_TIMER_PHRASE.fullmatch(value)
+    if cancelling:
+        return {"action": "cancel", "targets": [cancelling.group("target").strip(" ,.-")]}
     found = _TIMED_BLOCK_PHRASE.fullmatch(value)
     action = "block_in"
     if found is None:
