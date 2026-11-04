@@ -41,12 +41,15 @@ Correctly reports all three facts and says class resolution/verification is bloc
 **Qualitative assessment of the visible Llama first answer:**
 Correctly says a parent is not verified and recognises catalog omissions. Its claim that the system is **not recognising** Rule Machine type is not established; incomplete returned class inventory is a measurement limitation, not necessarily a runtime type-recognition failure. The suggested catalog check is relevant but insufficient to establish a native writer-parent class binding. It omits instance 901/type 718 and the required explicit *missing catalog cannot prove type absence* statement.
 
-**Important text-integrity limitation on fourth Llama response:**
-Independent SHA-256 over the **exact visible pasted candidate prose** with UTF-8/LF and no trailing newline yields
-`f88b1baf1eb1ead58147fb778a4b91ec7138b7ed933acc8abe631ff2c783b346`,
-which **does not match** the submitted candidate manifest digest `b8ee24d20674fb6d932027d11188cdc81e8b8d4b1078ea84ea5ecf8d221d5ca6`. Common trailing-newline and CRLF differences do not account for it. The original answer file was not available directly to the assistant; the discrepancy can reflect copy/paste/whitespace or an unobserved file difference. **Do not call the pasted Llama text independently hash-verified** or enter it into a SHA-bound human review until the original private file's hash is checked. The visible text is still suitable for **provisional** qualitative inspection, not formal attested grading.
+**Original-file integrity check resolved (user-executed PowerShell, 2026-11-04):**
+An earlier SHA-256 calculated over the **pasted Llama prose**
+(`f88b1baf1eb1ead58147fb778a4b91ec7138b7ed933acc8abe631ff2c783b346`)
+differed from the manifest; this was a **pasted-text representation mismatch**, not an observed corruption of the benchmark output. The user subsequently located the original private Rule Machine capture folder and ran `Get-FileHash -LiteralPath (Join-Path $PrivateDir "aq_rule_parent_type_gap.candidate.txt") -Algorithm SHA256`.
+The result was exactly
+`b8ee24d20674fb6d932027d11188cdc81e8b8d4b1078ea84ea5ecf8d221d5ca6`,
+**matching the original `candidate.json` SHA-256**. A subsequent UTF-8 read displayed the same substantive Llama explanation. The saved local file's byte integrity relative to the user's manifest is therefore **confirmed by the user's independent local file-hash check**. The exact originally pasted formatting remains non-byte-identical, so do not claim that *the paste itself* matches the digest.
 
-The visible Qwen text **does** SHA-256-match `3511c0f...` exactly in UTF-8/LF. This does not independently attest provider ingestion.
+The user-visible Qwen pasted text independently matched its saved-answer SHA `3511c0f...`. Neither file check independently attests provider model identity, source ingestion or answer accuracy. This resolves the **saved-file digest** blocker but does not substitute for a completed source-grounded human review rubric.
 
 **Grounded minimum response for the fourth case:** App 901 is only a *candidate* native RM parent. The missing type 718 row in a catalog known to omit built-in classes does **not** establish that type 718 does not exist. An independently source-attested mapping from instance 901 and type 718 to the built-in native Rule Machine class is required before claiming verification or authorizing native Rule Machine writes. No rules are created by this benchmark.
 
@@ -59,7 +62,7 @@ The visible Qwen text **does** SHA-256-match `3511c0f...` exactly in UTF-8/LF. T
 
 ## Next acceptance tasks
 
-1. Verify original local Llama Rule Machine answer file SHA against its manifest using `Get-FileHash -LiteralPath (Join-Path $PrivateDir "aq_rule_parent_type_gap.candidate.txt") -Algorithm SHA256`; do not post private file paths or secrets and do not rerun inference to resolve a paste mismatch.
+1. **Complete:** The user's original local Llama Rule Machine answer file SHA matches the existing manifest exactly; no further model inference or file integrity checks are required for this case.
 2. Consider source-backed **independent human SHA-bound pair reviews** for the four cases (not synthetic grades). Four pairs alone do not establish broad benchmark acceptance thresholds; publish accurate denominators and `not_measured` wherever appropriate.
 3. Use at least one new **read-only live HomeBrain Q&A with its diagnostic JSON** or a clearly consented fixed-packet Gemma Cloud cross-domain comparison to separate model reasoning gaps from real evidence-tool/source selection and publisher behaviour. Prefer the former before editing runtime code. Cloud runs require explicit billing/usage consent.
 4. Only after evidence review decide whether to experiment with model choice, source contracts or simplification. Keep command issuers, listener metadata, physical states, thermostat targets and typed parent identity separate without hardcoding room/phrase-specific output.
