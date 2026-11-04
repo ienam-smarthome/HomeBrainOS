@@ -92,6 +92,13 @@ class AutomationStatusService:
         )
         if targeted_history:
             return False
+        # A request to inspect one exact existing rule is never a global
+        # automation-status inventory, even if the user asks for its
+        # "scheduled job status" or "rule health". Route by objective,
+        # not incidental status/list keywords inside the requested fields.
+        from named_rule_document_read import parse_named_rule_read
+        if parse_named_rule_read(prompt) is not None:
+            return False
         # An explicit app ID selects one target, not the full population.
         if re.search(r"\bapp\s*#?\s*\d{3,7}\b", value):
             return False
