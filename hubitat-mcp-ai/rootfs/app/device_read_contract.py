@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-_IDENTITY_FIELDS = ("id", "name", "label", "room")
+_IDENTITY_FIELDS = ("id", "name", "label", "room", "driver")
 _DETAIL_ONLY_FIELDS = frozenset({"capabilities", "attributes", "commands"})
 
 LIVE_CONTEXT_RESOURCE_URI = "hubitat://context"
