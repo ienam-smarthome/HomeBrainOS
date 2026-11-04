@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.400**.
+Current add-on version: **0.18.401**.
+
+**Q1 universal typed-source grounding (v0.18.401):** After the first registered hub-health observation on 0.18.400, source evidence showed an unsupported temperature and overbroad global health/freshness claims. A cross-domain field-attestation boundary now checks model-authored status values against the actual source-reported measurements, units, and identity (hub snapshots and individual device/sensor states); missing measurements remain unverified. No new MCP reads, model rounds, or write permissions are added. Live improvement is **not yet measured**. [Source review](../docs/ANSWER-QUALITY-Q1-TYPED-REPORTS-20261104.md) · [Release notes](CHANGELOG-0.18.401.md).
 
 **Q1 current-state comparison scope (v0.18.400):** A user-supplied two-light read-only comparison on 0.18.399 correctly reported saved OFF/level attributes but unnecessarily entered history analysis, took 19.409s (6 model rounds), and reported incomplete history although no history was asked for. The shared objective policy now distinguishes current snapshot comparisons from requested historical or causal comparisons, without changing tool permissions or overwriting natural model synthesis. Post-update real answer and latency are **not yet measured**. [Source review](../docs/ANSWER-QUALITY-Q1-SNAPSHOT-COMPARISON-20261104.md) · [Release notes](CHANGELOG-0.18.400.md).
 

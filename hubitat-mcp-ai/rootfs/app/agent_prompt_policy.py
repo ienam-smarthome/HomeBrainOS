@@ -23,6 +23,30 @@ DEVICE FRESHNESS SEMANTICS
 """
 
 
+_TYPED_SNAPSHOT_POLICY = """
+TYPED SOURCE-FIELD GROUNDED STATUS
+- Report only values actually present in the current-turn typed source fields.
+  A missing/null measurement remains unverified even when the response
+  includes its unit, a successful refresh, or a previous known value.
+- Do not invent any missing temperature, power, humidity, battery,
+  alert count, memory, CPU, brightness, energy or status attribute. Units
+  and successful reads do not establish that a measurement is present.
+- A single Hubitat or Home Assistant source reporting healthy/online does
+  not establish complete system health or absence of alerts elsewhere;
+  state the checked source, identity, and scope. Do not infer an empty
+  alert list from an omitted field.
+- Installed and available firmware values can be compared as SOURCE-
+  REPORTED versions, never independent update-server freshness.
+- An enabled radio, healthy driver state or connected broker session
+  does not independently prove endpoint physical connectivity.
+- When several devices/snapshots are returned, attribute each numeric
+  state to the right source identity; do not blend different readings
+  or overwrite a newer state with an older example.
+- Preserve the useful supported numbers and their source-supplied units;
+  use natural concise prose and do not add invented health thresholds.
+"""
+
+
 _ROOM_STATUS_POLICY = """
 
 ROOM STATUS EVIDENCE
@@ -104,6 +128,7 @@ def build_system_prompt(
     return (
         base
         + _FRESHNESS_POLICY
+        + _TYPED_SNAPSHOT_POLICY
         + _ROOM_STATUS_POLICY
         + _RULE_INVESTIGATION_EVIDENCE_POLICY
         + _INTERNET_ACCESS_POLICY

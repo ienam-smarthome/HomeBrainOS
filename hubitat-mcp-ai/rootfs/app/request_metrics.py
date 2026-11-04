@@ -61,6 +61,7 @@ class RequestMetrics:
         "target_history_scope_retry", "unscoped_history_claim_rejected",
         "unified_investigation_evidence_bridge",
         "unified_group_timeline_reconciled",
+        "typed_status_source_claim_repairs",
         "v3_shadow_publications_seen",
         "v3_shadow_legacy_digest_replaced",
         "v3_shadow_legacy_ledger_replaced",
