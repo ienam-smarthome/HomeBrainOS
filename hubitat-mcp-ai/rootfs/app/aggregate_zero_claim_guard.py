@@ -76,7 +76,12 @@ def guard_aggregate_zero_claims(
     if not original.strip():
         return original, []
     scoped: dict[str, list[dict[str, Any]]] = {}
+    observed: dict[str, int] = {}
     for receipt in evidence:
+        if isinstance(receipt, Mapping):
+            category = _TOOLS.get(receipt.get("tool"))
+            if category:
+                observed[category] = observed.get(category, 0) + 1
         data = _typed_aggregate(receipt)
         if data is not None:
             scoped.setdefault(data["category"], []).append(data)
@@ -86,8 +91,18 @@ def guard_aggregate_zero_claims(
         if pattern.search(corrected) is None:
             continue
         options = scoped.get(category) or []
-        if len(options) != 1:
-            # Conflicting separate reads are not a complete zero proof.
+        if not observed.get(category):
+            # A different tool might supply valid evidence in another
+            # question; do not invent its missing aggregate contract.
+            continue
+        if observed[category] != 1 or len(options) != 1:
+            replacement = (
+                "The available aggregate receipts do not verify a complete "
+                "zero-active result. Check the underlying device states."
+            )
+            corrected, changed = pattern.subn(replacement, corrected)
+            if changed:
+                issues.append("aggregate_zero_unverified_receipt")
             continue
         info = options[0]
         verified_scope = (
