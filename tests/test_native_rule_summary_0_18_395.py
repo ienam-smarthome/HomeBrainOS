@@ -114,10 +114,22 @@ def test_large_native_editor_document_stays_short_with_redacted_count():
     # read-only native setting projection, not reject all those nulls.
     for row in item["settings"]:
         row.setdefault("device_ids", None)
+        # Real native Rule Machine form types do not guarantee JSON scalar
+        # booleans or numbers: submitted form values may be exact strings.
+        if row["name"] == "onOff.1":
+            row["value"] = "false"
+        if row["name"] == "onOff.4":
+            row["value"] = "true"
+        if row["name"] == "delayMin.3":
+            row["value"] = "15"
     answer = describe_native_rule(item, app_id="1234", methods=methods())
     assert "71 setting(s) returned; 6 settings redacted or unsupported" in answer
     assert "uiButton0" not in answer and "passwordField0" not in answer
     assert len(answer) < 1600
+    assert "Set switch **OFF**" in answer
+    assert "15 minutes configured" in answer
+    assert "Set switch **ON**" in answer
+    assert "**08:00**" in answer
 
 
 
@@ -149,3 +161,20 @@ def test_numeric_wait_requires_typed_strict_bounded_integer():
         summary = describe_native_rule(item, app_id="1234", methods=methods())
         assert "15 minutes configured" not in summary
         assert "duration not verified" in summary
+
+
+def test_native_boolean_strings_are_not_treated_as_truthy():
+    item = packet(dated=True)
+    by_name = {r["name"]: r for r in item["settings"]}
+    by_name["onOff.1"]["value"] = "false"
+    by_name["onOff.4"]["value"] = "true"
+    by_name["date1"]["value"] = "true"
+    summary = describe_native_rule(item, app_id="1234", methods=methods())
+    assert "Set switch **OFF**" in summary
+    assert "Set switch **ON**" in summary
+    assert "**2026-11-12 at 08:00**" in summary
+    by_name["onOff.1"]["value"] = "yes"
+    by_name["date1"]["value"] = "yes"
+    fallback = describe_native_rule(item, app_id="1234", methods=methods())
+    assert "target or ON/OFF value not verified" in fallback
+    assert "no dated one-time trigger verified" in fallback
