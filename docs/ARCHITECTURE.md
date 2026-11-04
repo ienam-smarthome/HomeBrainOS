@@ -33,6 +33,7 @@
 | `grounding_policy.py` | Owns request-local log and live-evidence retry state, exact log-call observation, and deterministic retry/refusal decisions when the model returns no tool calls. |
 | `capability_grounding.py` | Detects assistant-generated capability denials, permits one host-driven discovery recovery, and blocks unsupported limitation claims after known gateways were exposed. |
 | `hub_info_service.py` | Discovers the unique Hub Information Driver device, issues refresh and update-check commands, performs bounded polling, reconciles cached identity with live state, preserves units, and returns authoritative firmware/resource snapshots. |
+| `timed_internet_control.py` | Resolves driver-attested Cudy Block device IDs; sends sequential MCP device commands after host confirmation and checks driver-reported timer deadlines without claiming future execution. |
 | `tool_executor.py` | Dispatches one already-approved local or remote structured call, measures it, normalises success/failure, records its receipt, and prepares bounded model content. |
 | `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, local-wrapper precedence, deduplication, and request-local expansion. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |

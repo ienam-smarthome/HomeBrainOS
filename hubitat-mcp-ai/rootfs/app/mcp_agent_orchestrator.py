@@ -288,6 +288,7 @@ from stateful_rule_capabilities import (
 )
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
+from timed_internet_control import TimedInternetControl, TOOL_NAME as TIMED_INTERNET_TOOL, timed_internet_intent
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
 from mcp_skill_guidance import (
     build_mcp_skill_guidance,
@@ -837,6 +838,7 @@ class UnifiedMCPAgent:
             self.evidence.record,
             internet_control_aliases=internet_control_aliases,
         )
+        self.timed_internet = TimedInternetControl(self.mcp)
         self.device_history = DeviceHistoryService(
             self.mcp,
             self.evidence.record,
@@ -858,6 +860,7 @@ class UnifiedMCPAgent:
                 _LOCAL_ACTIVE_SWITCHES_TOOL: self._active_switches,
                 _LOCAL_HOME_SNAPSHOT_TOOL: self._home_snapshot,
                 _LOCAL_CONTROL_TOOL: self._control_devices,
+                TIMED_INTERNET_TOOL: self.timed_internet.handle,
                 _LOCAL_HUB_INFO_TOOL: self._hub_info_snapshot,
             },
             max_tool_result_chars=self.max_tool_result_chars,
@@ -4699,6 +4702,159 @@ class UnifiedMCPAgent:
                 increment_active_metric("rule_night_idle_fastpath")
                 return self._rule_proposal_confirmation.resolve(
                     intent, user_prompt=user_prompt, session_id=session_id,
+                )
+
+        # Hub-resident Cudy Internet timers take precedence over native Rule
+        # Machine dated-trigger authoring.  The strict grammar is only routing;
+        # user mutation authority and the structured sensitive-write gate remain
+        # separate and mandatory.  Unknown/non-Cudy/protected targets fail
+        # closed rather than falling through to a generic immediate OFF.
+        timer_candidate = timed_internet_intent(user_prompt)
+        timer_args = (
+            timer_candidate
+            if timer_candidate is not None and not review_first
+            and (
+                timer_candidate["action"] == "status"
+                or self._mutation_requested_by_user.get()
+                or timer_candidate["action"] == "cancel"
+            )
+            else None
+        )
+        if timer_args is not None and timer_args["action"] == "status":
+            read = await self.timed_internet.handle(timer_args)
+            data = read.data if isinstance(read.data, dict) else {}
+            verified_read = data.get("success") is True
+            self.evidence.record(
+                TIMED_INTERNET_TOOL, timer_args, success=verified_read,
+                elapsed_ms=0, summary="Driver timer status inventory",
+                supports_live_claim=verified_read,
+                evidence_kind="verified_driver_timer_state", mutates=False,
+            )
+            if not verified_read:
+                return ("The pending Internet timer inventory could not be verified "
+                        "from the Cudy Managed Device drivers; no status is inferred.")
+            pending = data.get("pending") or []
+            return (
+                "Pending hub-resident Internet block timers (driver reports):\n"
+                + "\n".join(
+                    f"- {row['label']} (device {row['id']}): "
+                    f"{row['fires_at']} Europe/London"
+                    for row in pending
+                )
+                if pending else
+                "No pending Internet block timers were reported by the Cudy Managed Device inventory."
+            )
+        if timer_args is not None and timer_args["action"] != "status":
+            # Admission precheck uses the already-supported detailed device
+            # manifest, but this is not an authorisation or a write identity.
+            # The full exact-driver pagination below independently verifies
+            # the device before queuing any mutation. Preserve the legacy RM
+            # contract when no Cudy driver has been identified.
+            manifest_candidates = []
+            if "hub_read_devices" in catalog.available_names and hasattr(self.mcp, "get_cached_devices"):
+                try:
+                    manifest = await self.mcp.get_cached_devices()
+                    requested = self.timed_internet._words_for_candidate(timer_args["targets"])
+                    manifest_candidates = [
+                        row for row in manifest
+                        if isinstance(row, dict)
+                        and str(row.get("driver") or row.get("driverName") or "") == "Cudy Managed Device"
+                        and str(row.get("label") or row.get("name") or "").startswith("Block ")
+                        and (requested is None or requested.issubset(set(
+                            self.timed_internet._words_for_candidate([
+                                str(row.get("label") or row.get("name") or "")
+                            ]) or ()
+                        )))
+                    ]
+                except Exception as exc:
+                    logger.debug("Driver timer admission manifest unavailable: %s", exc)
+            if not manifest_candidates:
+                timer_args = None
+        if timer_args is not None:
+            # Re-fetch complete matching driver identity, never trusting
+            # cached-manifest content as the final target for a write.
+            try:
+                available_devices = await self.timed_internet.list_devices()
+            except Exception as exc:
+                logger.debug("Driver timer inventory unavailable; retaining RM route: %s", exc)
+                available_devices = []
+            selected, problems = self.timed_internet._targets(
+                timer_args["targets"], available_devices, timer_args["action"],
+            )
+            if problems and any(
+                p.get("options") or "protected" in str(p.get("issue") or "")
+                for p in problems
+            ):
+                options = [str(x) for p in problems for x in p.get("options", [])]
+                return (
+                    "No Internet timer was queued: the Cudy target is "
+                    "ambiguous or protected. "
+                    + ("Choices: " + ", ".join(options[:8]) if options else
+                       "Protected network infrastructure cannot be timed-blocked.")
+                )
+            if selected and not problems:
+                # Recheck every verified driver before offering an action,
+                # leaving the entire group untouched if any member lacks
+                # the driver timer implementation.
+                states = []
+                for device in selected:
+                    try:
+                        states.append(await self.timed_internet._read_state(device))
+                    except Exception:
+                        states.append((None, None))
+                if any(m is None or at is None for m, at in states):
+                    return (
+                        "No Internet timer was queued: the target driver does not "
+                        "report both timedBlockMins and timedBlockAt. Install and "
+                        "test the Cudy Managed Device timer patch, then Save "
+                        "Preferences on the device before retrying."
+                    )
+                timer_args = {**timer_args, "targets": [d.label for d in selected],
+                              "_expected_ids": [d.id for d in selected]}
+                decision = self.confirmation_policy.decide(
+                    session_id, [(TIMED_INTERNET_TOOL, timer_args)],
+                )
+                if decision.action is ConfirmationAction.REJECT:
+                    return str(decision.message)
+                if decision.action is not ConfirmationAction.QUEUE:
+                    return "Timed Internet confirmation gate was unavailable; no write queued."
+                self.confirmations.queue(
+                    session_id,
+                    [(TIMED_INTERNET_TOOL, timer_args)],
+                    [{"role": "user", "content": str(user_prompt).strip()}],
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "timed_internet_proposal",
+                            "type": "function",
+                            "function": {
+                                "name": TIMED_INTERNET_TOOL,
+                                "arguments": json.dumps(timer_args),
+                            },
+                        }],
+                    },
+                )
+                targets_summary = "; ".join(
+                    f"{d.label} (device {d.id})" for d in selected
+                )
+                if timer_args["action"] == "cancel":
+                    return (
+                        f"Please confirm cancellation of the pending Internet "
+                        f"timer for {targets_summary}. No Internet block will "
+                        "be issued by this cancellation."
+                    )
+                behaviour = (
+                    "allow Internet immediately, then block it"
+                    if timer_args["action"] == "allow_for"
+                    else "block Internet"
+                )
+                return (
+                    f"Please confirm: {behaviour} for {targets_summary} "
+                    f"{timer_args['minutes']} minutes AFTER approval. "
+                    "A block_in confirmation does not block immediately. "
+                    "HomeBrain will require a matching driver-reported timer "
+                    "deadline before claiming a timer was armed."
                 )
 
         # The user's explicit time-bound rule command is the authority for

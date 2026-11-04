@@ -18,7 +18,7 @@ def test_summary_state_plan_uses_current_states() -> None:
 
     assert plan.detailed is False
     assert plan.state_field == "currentStates"
-    assert plan.fields == ("id", "name", "label", "room", "currentStates")
+    assert plan.fields == ("id", "name", "label", "room", "driver", "currentStates")
 
 
 def test_detailed_state_plan_uses_attributes() -> None:
@@ -35,6 +35,7 @@ def test_detailed_state_plan_uses_attributes() -> None:
         "name",
         "label",
         "room",
+        "driver",
         "capabilities",
         "attributes",
         "commands",
