@@ -209,7 +209,7 @@ def test_zero_candidates_cannot_prove_every_light_physically_off():
         "details": data,
     }
     output, issues = guard_aggregate_zero_claims("All lights are off.", [r])
-    assert "No recognised light devices were recognised" in output
+    assert "identified no recognised light devices" in output
     assert issues == ["aggregate_no_eligible_candidates"]
 
 
