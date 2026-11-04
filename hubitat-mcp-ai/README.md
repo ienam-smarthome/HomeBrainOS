@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.399**.
+Current add-on version: **0.18.400**.
+
+**Q1 current-state comparison scope (v0.18.400):** A user-supplied two-light read-only comparison on 0.18.399 correctly reported saved OFF/level attributes but unnecessarily entered history analysis, took 19.409s (6 model rounds), and reported incomplete history although no history was asked for. The shared objective policy now distinguishes current snapshot comparisons from requested historical or causal comparisons, without changing tool permissions or overwriting natural model synthesis. Post-update real answer and latency are **not yet measured**. [Source review](../docs/ANSWER-QUALITY-Q1-SNAPSHOT-COMPARISON-20261104.md) · [Release notes](CHANGELOG-0.18.400.md).
 
 **Timed Internet preflight optimisation (v0.18.399):** After live v0.18.398 testing verified the driver timer fired on device 6923, HomeBrain now resolves candidate Cudy Block devices with one lightweight, filtered summary inventory instead of the redundant detailed all-device manifest scan. It retains full driver identity, ambiguity and expected-ID guards, existing user confirmation, and post-write deadline verification. A partial summary fails closed. The observed prior confirmation delay was 38.16 s (37.95 s MCP HTTP); new live latency remains **not measured** until an installed comparison. [Release notes](CHANGELOG-0.18.399.md).
 
