@@ -1,5 +1,51 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Full Gemma Cloud MQTT first answer independently matches saved SHA; source comparison reviewed
+
+**Original answer integrity:** User now provided the complete
+Gemma Ollama Cloud `gemma4:31b` baseline text.
+Its UTF-8 SHA-256, calculated from exactly that text
+(LF, no trailing newline), is
+`5a09a7146dd7351168426851c6edbecb8e42663557b2de38d2cf972fa88b38ad`,
+matching the prior private `baseline.json` answer digest.
+This confirms the reviewed text is consistent with
+the user-provided capture manifest, **not** independently
+attested server model identity or prompt delivery.
+The earlier pasted broker-log excerpt is **not** part of
+this SHA-matched Gemma response: the matched answer
+recommends inspecting the driver's `mqttStatus` source
+definition.
+
+**Actual first-answer qualitative comparison, same frozen
+MQTT source packet:** Gemma was **0.828 seconds**
+(Cloud) and Qwen3.5 4B **22.750 seconds** (local).
+Both correctly distinguish a driver/broker session from
+offline/stale endpoint telemetry and avoid a verified
+physical root cause. The **Gemma response omits** the
+supplied driver's watchdog-written `lastActivity` with no
+endpoint messages; the **Qwen response covers** this
+important discriminator. Gemma is clearer and substantially
+faster on this request; Qwen is more evidence-complete.
+Their proposed next checks (driver source definition
+versus broker session logs) answer different limited
+questions; neither by itself verifies fresh endpoint
+telemetry or physical power/connectivity.
+
+**Boundary and next action:** This is a source-based
+assistant qualitative review of one actual matched
+frozen case; **not** an independently completed blinded
+human SHA-bound scorecard. Official first-answer grounding,
+usefulness, Claude parity and aggregate p50/p95 are still
+**NOT MEASURED**. Do not change production model routing
+or publisher based on one pair. Finish three *non-MQTT*
+frozen Q2 cases, ideally one case per new local-only
+private folder to avoid losing entire multi-case runs
+to a single Ollama failure. No paid Cloud call, live
+Hubitat/HA read/write, device or add-on change required.
+[Full evidence review](ANSWER-QUALITY-Q2-FIRST-CLOUD-LOCAL-MQTT-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 first actual Gemma Ollama Cloud vs local Qwen MQTT pair: latency measured, quality pending
 
 The user ran a **one-case same-frozen-source first-answer
