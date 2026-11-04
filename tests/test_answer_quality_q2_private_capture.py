@@ -168,7 +168,7 @@ def test_private_files_never_contain_raw_answers_in_manifests(tmp_path):
     if os.name != "nt":
         assert folder.stat().st_mode & 0o777 == 0o700
         assert (folder / "baseline.json").stat().st_mode & 0o777 == 0o600
-    with pytest.raises(FileExistsError):
+    with pytest.raises(ValueError, match="no overwrite"):
         save_private(folder, left, right, session, raw)
 
 
