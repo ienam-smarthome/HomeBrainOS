@@ -57,6 +57,8 @@ def validate_arms(left: tuple[str, str], right: tuple[str, str], *,
     for provider, model in (left, right):
         if provider not in PROVIDERS or not MODEL_RE.fullmatch(model):
             raise ValueError("Unknown or malformed comparison arm")
+        if provider == "ollama-local" and "cloud" in model.casefold():
+            raise ValueError("Cloud-tagged model cannot be used via local-only arm")
         if provider == "ollama-cloud":
             if not cloud_ack:
                 raise ValueError("Cloud use must be explicitly acknowledged; costs are possible")
@@ -260,6 +262,7 @@ def _write_private_file(path: Path, text: str) -> None:
 
 def save_private(path: Path, baseline: dict, candidate: dict,
                  session: dict, answers: dict[str, str]) -> None:
+    path = check_private_path(path)
     path.mkdir(mode=0o700, parents=True, exist_ok=False)
     for name, answer in answers.items():
         _write_private_file(path / name, answer)
