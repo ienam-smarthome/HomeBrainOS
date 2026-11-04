@@ -58,7 +58,7 @@ class ReadRouteDecision:
 
 _VALID_OBJECTIVES = frozenset((
     "device_connectivity", "source_code", "existing_rule_verification",
-    "rule_design_review", "historical_command", "general_investigation",
+    "app_class_identity", "rule_design_review", "historical_command", "general_investigation",
     "system_audit", "performance_report",
 ))
 _ANSWER_GOALS = frozenset((
@@ -231,14 +231,17 @@ async def decide_read_route(
         "Choose a specialist fast report ONLY if the objective matches that "
         "specialist route; do not omit the objective field. "
         "Include a single objective from: device_connectivity, source_code, "
-        "existing_rule_verification, rule_design_review, historical_command, "
-        "general_investigation, system_audit, performance_report. "
+        "existing_rule_verification, app_class_identity, rule_design_review, "
+        "historical_command, general_investigation, system_audit, performance_report. "
         "Classify the ANSWER the user wants independently from the type of "
         "entity being inspected. A question explaining why an existing "
         "automation behaved unexpectedly is a diagnosis, even if verifying "
         "its settings is part of the investigation. Formal existing-rule "
         "verification is only the primary objective when the user wants "
         "to certify its configuration or exact action logic. "
+        "Use app_class_identity when verifying an application's native class, "
+        "appTypeId, namespace, or parent identity rather than the installed "
+        "rule's executable triggers and actions. "
         "Offline-device causes are not historical ON/OFF command attribution. "
         "Set answer_goal to one of: diagnose_cause, verify_configuration, "
         "trace_event, inspect_implementation, describe_status, "
@@ -275,7 +278,12 @@ async def decide_read_route(
         # explanation into a strict configuration-certification report.
         # This arbitration is advisory and cannot expand read permissions.
         if proposal == "model_led":
-            if answer_goal == "diagnose_cause" and objective == "existing_rule_verification":
+            from targeted_rule_scope_policy import is_app_class_identity_question
+            if is_app_class_identity_question(question):
+                # Independent source-typed parent/class identity is not an
+                # action-tree certification. Correct advisory category drift.
+                objective = "app_class_identity"
+            elif answer_goal == "diagnose_cause" and objective == "existing_rule_verification":
                 objective = "general_investigation"
             elif answer_goal == "verify_configuration" and objective == "general_investigation":
                 objective = "existing_rule_verification"
