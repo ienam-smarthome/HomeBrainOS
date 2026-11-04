@@ -10,7 +10,18 @@
 - Built-in Rule Machine type rows may still be omitted from `hub_list_apps(scope="types")`. The disabled offline `find_parent` now accepts a **strict exact installed-app summary fallback** only when there is no matching type row, and otherwise refuses inconsistent/missing evidence. A name-only candidate or mere label/type ID is not enough.
 - **Do not assume the user's installed MCP version:** the user says their server was updated, but no authoritative installed v5.1.5 receipt or fresh source-typed Rule Machine summary has been supplied yet. MCP v5.1.5 fixes two previously established blockers, not every scheduling, ownership, execution or cleanup gap.
 
-## v0.18.387 native class namespace-absence distinction — candidate
+## v0.18.387 native class namespace-absence distinction — GREEN MERGED
+
+[PR #1373](https://github.com/ienam-smarthome/HomeBrainOS/pull/1373)
+merged at `2cf6399b090919aa51b3656748fe3385c82a0d7a`
+with 8/8 green CI and 6,212 Python tests passed. Both the maintained
+read-only inventory projector and the **disabled offline** BAT parent
+helper distinguish missing built-in namespace from explicit
+contradictions. This does not verify the installed native parent,
+MCP-server version, trigger firing or network enforcement. New evidence
+must come from the next exact read-only HomeBrain question after
+installing the add-on. Never silently enable a writer or use an
+unverified rule as a household Internet block.
 
 Upstream `hub_list_apps(scope=types)` can return `systemAppTypes` with
 `system/isBuiltIn=true` but **no namespace**; that absence is not a
