@@ -278,7 +278,7 @@ class NoModel:
 
 
 def test_driver_field_is_explicit_in_managed_device_manifest():
-    plan = device_read_plan(include_capabilities=True, include_commands=True)
+    plan = device_read_plan(include_states=False, include_capabilities=True, include_commands=True)
     assert "driver" in plan.fields
 
 
