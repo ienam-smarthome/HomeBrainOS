@@ -22,6 +22,14 @@ verified**. Guide availability is not a proof that every write field
 is supported. Source-complete preflight is **not** authorisation to
 run any live write or proof of native dated-rule firing/network blocking.
 
+**Offline discoverability fix merged GREEN:** [PR #1378](https://github.com/ienam-smarthome/HomeBrainOS/pull/1378)
+tested at exact head `c732a426f567ad0aca3204c3a0ecd0b9efc29a32`
+with **6/6 CI checks green**; the full Python suite reported
+**6,224 passed, 2 warnings**. Merged as
+`b8eb8c0c012ab1f0826da272c9d4005b654fa451`.
+Only the disabled offline BAT compiler/tests/documents changed;
+HomeBrain runtime is **still 0.18.388**.
+
 **Next offline preparation finding (not a live incident patch):**
 the disabled `scripts/native_rule_dated_candidate.py` generated a
 rule name with UTC slot and hash but no terminal
@@ -29,7 +37,7 @@ rule name with UTC slot and hash but no terminal
 `native_rule_inventory_source.py` checks exactly that suffix.
 A future BAT created under the old name would not be discoverable
 as a one-time rule in that routine's later read-only inventory.
-This candidate aligns the terminal suffix using the Hubitat-local
+The merged offline change aligns the terminal suffix using the Hubitat-local
 due minute, retaining the UTC slot and hash (including for DST
 ambiguous local minutes), and tests that the real inventory projector
 recognises the planned label while refusing the legacy form.
