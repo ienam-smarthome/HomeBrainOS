@@ -23,6 +23,8 @@ one-time rule exists. A tool discovery receipt does not certify direct
 writer availability or authorization. The six displayed answers are
 **not source-verified as a set**.
 
+**Verified CI/merge:** [PR #1383](https://github.com/ienam-smarthome/HomeBrainOS/pull/1383) passed **6/6 checks** at exact head `d3ecda6c6ffaa7ec2b9242ac66a1749e754b39d6`, including **6,243 passed, 2 warnings** full Python suite; merged into `main` as `c7aa3a4dbc04dc97596e3bf3a5d7224919641841`, independently confirmed as main head. Add-on version remains **0.18.390**; no runtime change and no independent human-graded factual correctness increase was established.
+
 **Q1 evaluation work:** [Qualitative live-pair review](ANSWER-QUALITY-Q1-PREFLIGHT-LIVE-PAIR-20261104.md)
 and generic privacy-bounded
 `scripts/answer_quality_live_receipt_diff.py` plus synthetic tests
