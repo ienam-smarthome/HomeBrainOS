@@ -18,7 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
-from native_switch_schedule import create_dated_switch
+from native_switch_schedule import create_dated_switch, dated_switch_proposal_error
+from native_rule_inventory_source import _native_parent_from_summary
 from native_rule_readiness_source import _server_version
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
@@ -1005,7 +1006,11 @@ class RuleAuthoringService:
         payload = arguments.get("args")
         if not isinstance(payload, dict) or payload.get("appId") not in {None, ""}:
             return None
-        name = str(payload.get("name") or "").strip()
+        source = (
+            payload.get("args")
+            if payload.get("operation") == "create" else payload
+        )
+        name = str(source.get("name") or "").strip() if isinstance(source, dict) else ""
         return name or None
 
     async def _rule_writer_contract(self) -> str:
@@ -1050,11 +1055,14 @@ class RuleAuthoringService:
         try:
             listed = await self.mcp.call_tool("hub_read_apps_code", {
                 "tool": "hub_list_apps",
-                "args": {"scope": "instances", "nameFilter": "Rule Machine"},
+                "args": {"scope": "instances"},
             })
             data = listed.data if not listed.is_error and isinstance(listed.data, dict) else {}
             rows = data.get("apps")
-            if not isinstance(rows, list):
+            if (not isinstance(rows, list) or len(rows) > 5000
+                    or data.get("truncated") is True or data.get("nextCursor")
+                    or (type(data.get("count")) is int
+                        and data["count"] != len(rows))):
                 return None
             candidates = [
                 row for row in rows if isinstance(row, dict)
@@ -1067,19 +1075,20 @@ class RuleAuthoringService:
             if len(candidates) != 1:
                 return None
             parent_id = int(candidates[0]["id"])
+            candidate_type = candidates[0].get("appTypeId")
+            if not str(candidate_type or "").isdigit():
+                return None
             detail_result = await self.mcp.call_tool("hub_read_apps_code", {
                 "tool": "hub_get_app_config",
                 "args": {"appId": str(parent_id), "summary": True},
             })
             detail = detail_result.data if not detail_result.is_error and isinstance(detail_result.data, dict) else {}
-            if (detail.get("success") is not True
-                    or str(detail.get("id")) != str(parent_id)
-                    or detail.get("type") != "Rule Machine"
-                    or detail.get("namespace") != "hubitat"
-                    or detail.get("user") is not False
-                    or detail.get("parentAppId") not in (None, "")):
-                return None
-            return parent_id
+            verified, _gap = _native_parent_from_summary(
+                detail,
+                candidate_id=str(parent_id),
+                candidate_type_id=str(candidate_type),
+            )
+            return parent_id if verified is not None else None
         except Exception:
             return None
 
