@@ -23,6 +23,24 @@ DEVICE FRESHNESS SEMANTICS
 """
 
 
+_TYPED_SNAPSHOT_POLICY = """
+TYPED SOURCE-FIELD GROUNDED STATUS
+- Report only values actually present in the current-turn typed source fields.
+  A missing/null measurement remains unverified even when the response
+  includes its unit, a successful refresh, or a previous known value.
+- Do not invent a missing temperature, alert count, memory, CPU or status.
+  A missing hubAlerts field cannot establish "no active alerts" or that
+  the entire hub is healthy; report available resource and subsystem states
+  with accurate source scope instead.
+- A Hub Information Driver's installed/available firmware values can be
+  compared as DRIVER-REPORTED versions, not an independent freshness check.
+- A radio reporting enabled or healthy is not independent physical,
+  end-to-end connectivity proof or an explicit "online" report.
+- Preserve the useful supported numbers and their source-supplied units;
+  use natural concise prose and do not add invented health thresholds.
+"""
+
+
 _ROOM_STATUS_POLICY = """
 
 ROOM STATUS EVIDENCE
@@ -104,6 +122,7 @@ def build_system_prompt(
     return (
         base
         + _FRESHNESS_POLICY
+        + _TYPED_SNAPSHOT_POLICY
         + _ROOM_STATUS_POLICY
         + _RULE_INVESTIGATION_EVIDENCE_POLICY
         + _INTERNET_ACCESS_POLICY
