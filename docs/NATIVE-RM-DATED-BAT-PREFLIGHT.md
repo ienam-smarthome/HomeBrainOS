@@ -1,5 +1,35 @@
 # Native one-time Internet-block rule — developer fix acceptance and safe BAT
 
+## Installed v0.18.388 three-source preflight PASSED — offline BAT naming alignment
+
+Source-supplied MCP Rule Server **5.1.5**; 21 hub-local backups with
+newest source timestamp **2026-11-03 17:37:05 UTC**; both
+`set_rule_reference` and `builtin_app_tools_rules` guide sections
+readable. The actual test response returned
+`preflightEvidenceComplete=true`, `readinessForMutation=false`,
+4.463-second wall-time and zero model rounds. No writes or router
+reads. Backup age was ~6h59m at the collector timestamp, but the
+hub's own clock was not independently checked.
+
+The offline dated BAT candidate previously generated a name without
+the exact terminal suffix recognised by the maintained live inventory
+reader. To avoid leaving an eventual disposable test rule
+undiscoverable during source-scoped audit, the candidate now adds
+`(One-time YYYY-MM-DD HH:MM)` at the end, in hub-local time, while
+preserving UTC time plus a unique digest. Synthetic cross-module
+tests verify the inventory would recognise the new format and not
+the old one. This is **not** an automatic cleanup mechanism or
+evidence that a real rule exists.
+
+**Safety gates remain unchanged:** BAT writer disabled, no live
+switch, rule, backup, HA/Hubitat or OpenWrt changes. Do not reuse
+the existing MCP-owned household switch. Obtain independent hub
+clock/backup verification and specific user approval for a new
+disposable target, an ON state and one native dated OFF rule.
+Verify scheduled job/readback and actual future OFF separately.
+No production Internet-block enablement from this preflight alone.
+
+
 **Date:** 2026-11-03 | **Production:** DISABLED | **No live Hubitat/HA writes performed**
 
 ## New multi-source read-only readiness route — v0.18.388 candidate
