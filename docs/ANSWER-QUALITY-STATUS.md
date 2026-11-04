@@ -1,5 +1,81 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — first live Rule Machine native parent-identity test: scope/publisher defect; v0.18.405 correction pending acceptance
+
+**Actual user-provided installed HomeBrain v0.18.404 read-only
+sample at 23:39 UTC:** Asked whether installed Rule Machine
+app instance **169** is independently verified as its native
+parent. Original request requires distinction among display
+label, appTypeId, built-in namespace/class and direct
+source-attested native parent identity; explicitly forbids
+creating, modifying or executing a rule.
+
+HomeBrain produced an **unresolved**, off-topic
+`existing_rule_verification` report enumerating ordered actions,
+nested IF, duplicate rule names, inactivity-OFF controller
+duration, delays and command execution. The main requested
+native parent/class identity was not addressed directly.
+A successful `hub_get_app_config(appId=169)` or
+`hub_get_rule_health(appId=169)` read cannot by itself
+establish a native type/class relationship when public
+evidence receipts expose only **field names**, not
+typed mapping values.
+
+**Diagnostic metrics:** model `gemma4:31b`, free Ollama
+allowance reported, **33.825s** end-to-end,
+**7 model rounds**, **4 MCP read-only calls** (two
+`hub_list_apps`, one `hub_get_app_config`, one
+`hub_get_rule_health`), provider ~**26.299s**.
+The Technical JSON did correctly retain both
+class hypotheses with `discriminator_verified=false`,
+`hypothesis_verdict=unverified`, but published
+an irrelevant canned report. Reported outcome `unresolved`
+is appropriately cautious. No modifying tool was recorded.
+Request diagnostics have `model_delivery_verified=false`,
+`first_attempt_verified=false`, and
+`deployed_build_sha_verified=false`; **do not**
+grade verified production first-attempt reasoning or
+claim the exact installed build SHA beyond v0.18.404.
+
+**Root-cause code path:** the advisory/model interpretation
+and `investigation_intelligence` used the
+`existing_rule_verification` plan for an **app class
+identity** question. Its `stored_logic` requirement
+was unverified (correct for the wrong scope),
+and `existing_rule_claim_guard.calibrate_existing_rule_verification`
+replaced the useful question's result with a
+prewritten action-tree/controller checklist. This is a
+**task/scope and publication problem**. It does not prove
+Hubitat/MCP lacks native parent data, or that Gemma
+would independently produce a correct answer from full
+typed evidence.
+
+**Pending v0.18.405 generalized fix:** Distinguish native
+installed-app type/parent **identity** from an actual
+rule's executable trigger/action audit, both in the
+advisory objective and the final proof contract.
+Do not mark identity verified from a display label,
+catalog omission, generic `success:true` or tool
+field-name list. Prevent stale action-tree coverage
+from overwriting identity answers. Protect existing
+stored-rule audits and preserve the no-write policy.
+Add targeted regression tests and require all CI green.
+See `hubitat-mcp-ai/CHANGELOG-0.18.405.md`.
+
+**Next after merge/update (not yet measured):**
+Install the newly released add-on and repeat this
+single **read-only** app 169 native parent-identity
+question with full answer + Technical JSON. Record
+correct objective, evidence coverage, model/tool rounds,
+end-to-end time and whether answer focuses on
+native class rather than unrelated rule logic.
+If source identity is still unverified, **say so**;
+do not enable any Rule Machine writer. Existing
+four-case offline Qwen/Llama outcomes stay independent;
+no Claude-like or target accuracy claims.
+
+---
+
 ## 2026-11-04 — Rule Machine Llama local saved-file SHA discrepancy resolved
 
 User reopened the original private local Q2 Rule Machine parent
