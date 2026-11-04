@@ -1026,11 +1026,10 @@ class RuleAuthoringService:
         # A successfully read guide is not a successful authoring request.
         # Distinguish a known incompatible contract from a failed/untrusted
         # guide and never advertise either refusal as a green success.
-        if contract == NATIVE_DOCUMENT:
-            # Native-document is a supported writer on attested 5.1.6+
-            # servers. Its presence alone is not an unsupported outcome.
-            increment_active_metric("rule_writer_native_document_detected")
-        elif contract == UNKNOWN:
+        # Native-document discovery is not an unsupported outcome by itself.
+        # Increment the incompatibility counter only when the native version
+        # check actually refuses the requested operation.
+        if contract == UNKNOWN:
             increment_active_metric("rule_writer_contract_unverified")
         self._record_evidence(
             "hub_get_tool_guide", arguments,
@@ -1361,7 +1360,10 @@ class RuleAuthoringService:
                 increment_active_metric("rule_writer_native_unsupported")
                 return RuleAuthoringDecision(
                     True,
-                    "native_oneshot_date_field_unverified: " + version_reason,
+                    "native_oneshot_date_field_unverified: " + version_reason
+                    + " No rule write was queued or executed. "
+                    "Native authoring also requires a verified parent_id "
+                    "and typed trigger fields.",
                 )
         elif incompatible:
             return RuleAuthoringDecision(True, incompatible)
