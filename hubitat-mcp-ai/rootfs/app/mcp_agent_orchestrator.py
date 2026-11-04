@@ -5536,6 +5536,7 @@ class UnifiedMCPAgent:
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
         source_checkpoint_budget = SourceCheckpointBudget(max_offers=3)
+        read_only_recovery_active = False
 
         def offer_source_checkpoint(kind: str) -> bool:
             # Model no-tool responses must not cascade through unrelated
@@ -5551,6 +5552,13 @@ class UnifiedMCPAgent:
             return allowed
 
         for round_index in range(active_round_budget):
+            # A blocked write must not reappear through subsequent discovery
+            # or source-followup tool expansions in the same read-only turn.
+            if read_only_recovery_active:
+                catalog.activate_investigation_read_view(
+                    max_declared=self.tool_limit
+                )
+                tools = catalog.schemas()
             if adaptive_investigation or review_first:
                 catalog.activate_investigation_read_view(max_declared=self.tool_limit)
                 if source_investigation:
@@ -6432,6 +6440,7 @@ class UnifiedMCPAgent:
                 # this does not execute the rejected companions, invent a
                 # capability, or relax the underlying mutation guard.
                 if not self._mutation_requested_by_user.get():
+                    read_only_recovery_active = True
                     read_names = catalog.activate_investigation_read_view(
                         max_declared=self.tool_limit
                     )
