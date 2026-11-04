@@ -92,6 +92,15 @@ def _parsed_deadline(raw: Any) -> datetime | None:
 
 
 class TimedInternetControl:
+    @staticmethod
+    def _words_for_candidate(targets: list[str]) -> set[str] | None:
+        """Manifest admission hint only; never sufficient for authorisation."""
+        if not isinstance(targets, list) or not targets:
+            return set()
+        if len(targets) == 1 and targets[0].casefold() in ("all", "everything", "all devices"):
+            return None
+        return set(word for target in targets for word in _words(target))
+
     def __init__(self, mcp: HubitatMCPClient) -> None:
         self.mcp = mcp
 
