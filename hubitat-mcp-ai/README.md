@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.393**.
+Current add-on version: **0.18.394**.
+
+**Native dated Switch schedule creation (v0.18.394):** On a source-attested Hubitat MCP Rule Server **5.1.6+**, eligible one-time fixed-time or relative-minute switch commands generate an approval-required native Rule Machine dated trigger and single Switch action; unsupported daily and compound temporary-block requests still refuse without writing. Native creation must return a matching persisted document and activated scheduled job/subscription before HomeBrain claims success. No spontaneous Hubitat/HA/router actions. Real live first-run success and device effect remain unmeasured. [Release notes](CHANGELOG-0.18.394.md).
 
 **Exact named Rule Machine reads (v0.18.393):** A request to inspect the stored triggers/actions/settings of one explicitly quoted, named existing Rule Machine rule now has priority over global automation-status inventory routing. The host resolves a unique source-listed rule ID, then calls only the existing safe native `hub_set_rule(operation="read")` path; incomplete/ambiguous reads are stated explicitly. It never writes a rule. This does not yet unblock native timed rule creation. [Release notes](CHANGELOG-0.18.393.md).
 
