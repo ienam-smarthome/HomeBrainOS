@@ -194,11 +194,14 @@ def test_local_transport_no_cloud_headers_and_no_tools():
     tr = OllamaTransport(env={})
     tr.local = FakeOpener([
         {"models": [{"name": "qwen3.5:4b"}]},
+        {"capabilities": ["completion", "thinking"], "thinking": {"values": [False, True]}},
         {"model":"qwen3.5:4b", "done":True, "message":{"content":"verified result"}},
     ])
     assert tr("ollama-local", "qwen3.5:4b", "fixed packet") == "verified result"
-    assert len(tr.local.requests) == 2
-    req = tr.local.requests[1]
+    assert len(tr.local.requests) == 3
+    assert tr.local.requests[1].full_url.endswith("/api/show")
+    assert json.loads(tr.local.requests[1].data) == {"model": "qwen3.5:4b"}
+    req = tr.local.requests[2]
     assert req.full_url == LOCAL_URL
     assert req.get_header("Authorization") is None
     body = json.loads(req.data)
@@ -206,6 +209,7 @@ def test_local_transport_no_cloud_headers_and_no_tools():
     assert body["messages"] == [{"role":"user", "content":"fixed packet"}]
     assert "tools" not in body
     assert body["options"] == OPTIONS
+    assert body["think"] is False
 
 
 def test_cloud_transport_exact_official_endpoint_token_not_logged():
@@ -218,6 +222,7 @@ def test_cloud_transport_exact_official_endpoint_token_not_logged():
     assert req.full_url == CLOUD_URL
     assert req.get_header("Authorization") == "Bearer TOP_SECRET"
     assert "TOP_SECRET" not in json.dumps(json.loads(req.data))
+    assert "think" not in json.loads(req.data)  # Cloud transport unchanged.
 
 
 def test_unknown_local_model_never_sends_chat_or_pulls():
@@ -252,4 +257,75 @@ def test_redirect_refused_and_key_not_leaked():
     with pytest.raises(RuntimeError, match="Model transport failed") as exc:
         tr("ollama-cloud", "gemma4:31b", "fixed packet")
     assert "leaked" not in str(exc.value)
+    assert "secret" not in str(exc.value)
+def test_local_non_thinking_model_omits_think_field():
+    tr = OllamaTransport(env={})
+    tr.local = FakeOpener([
+        {"models": [{"name": "llama3.2:3b"}]},
+        {"capabilities": ["completion", "tools"]},
+        {"model": "llama3.2:3b", "done": True, "message": {"content": "Llama answer"}},
+    ])
+    assert tr("ollama-local", "llama3.2:3b", "frozen prompt") == "Llama answer"
+    assert len(tr.local.requests) == 3
+    body = json.loads(tr.local.requests[2].data)
+    assert "think" not in body
+    assert body["options"] == OPTIONS
+
+
+def test_thinking_only_response_is_specific_failure_with_no_retry():
+    tr = OllamaTransport(env={})
+    tr.local = FakeOpener([
+        {"models": [{"name": "qwen3.5:4b"}]},
+        {"capabilities": ["thinking"], "thinking": {"values": [False, True]}},
+        {"model": "qwen3.5:4b", "done": True,
+         "message": {"content": "", "thinking": "secret hidden reason text"}},
+    ])
+    with pytest.raises(ValueError, match="thinking only, no final answer") as exc:
+        tr("ollama-local", "qwen3.5:4b", "frozen prompt")
+    assert "secret hidden" not in str(exc.value)
+    assert len(tr.local.requests) == 3
+
+
+def test_model_without_boolean_off_refuses_unsupported_thinking_mode():
+    tr = OllamaTransport(env={})
+    tr.local = FakeOpener([
+        {"models": [{"name": "reason-model:8b"}]},
+        {"capabilities": ["thinking"], "thinking": {"values": ["low", "high"]}},
+    ])
+    with pytest.raises(ValueError, match="does not expose a supported no-thinking mode"):
+        tr("ollama-local", "reason-model:8b", "frozen prompt")
+    assert len(tr.local.requests) == 2
+
+
+def test_legacy_capability_only_requests_top_level_no_thinking():
+    tr = OllamaTransport(env={})
+    tr.local = FakeOpener([
+        {"models": [{"name": "qwen3.5:4b"}]},
+        {"capabilities": ["completion", "thinking"]},
+        {"model": "qwen3.5:4b", "done": True, "message": {"content": "ok"}},
+    ])
+    assert tr("ollama-local", "qwen3.5:4b", "frozen prompt") == "ok"
+    assert json.loads(tr.local.requests[-1].data)["think"] is False
+
+
+def test_false_only_thinking_capability_disables_toggle_not_model():
+    tr = OllamaTransport(env={})
+    tr.local = FakeOpener([
+        {"models": [{"name": "llama3.2:3b"}]},
+        {"thinking": {"values": [False]}},
+        {"model": "llama3.2:3b", "done": True, "message": {"content": "ok"}},
+    ])
+    assert tr("ollama-local", "llama3.2:3b", "frozen prompt") == "ok"
+    assert "think" not in json.loads(tr.local.requests[-1].data)
+
+
+def test_failed_arm_identified_without_exposing_raw_response():
+    calls = []
+    def invoke(provider, model, prompt):
+        calls.append(model)
+        raise ValueError("Model returned thinking only, no final answer (no automatic retry)")
+    with pytest.raises(ValueError, match=r"baseline \\(ollama-local/qwen3\\.5:4b\\)") as exc:
+        collect_pairs(packets()[:1], ("ollama-local", "qwen3.5:4b"),
+                      ("ollama-local", "llama3.2:3b"), "a" * 40, invoke)
+    assert len(calls) == 1
     assert "secret" not in str(exc.value)
