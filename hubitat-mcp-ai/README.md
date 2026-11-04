@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.389**.
+Current add-on version: **0.18.390**.
+
+**Q1 generic read-only recovery (v0.18.390):** After any model-proposed write is atomically blocked in a read-only request, the remaining rounds now receive only actually installed, effect-classified read tools; rejected companion reads are not treated as executed. The read-only view persists across later discovery, so the model can continue verifying requested sources rather than repeatedly proposing an unauthorized action. No new provider round, device permission or deterministic answer template is introduced. The pre-change installed six-check receipt had only two actual reads and 25.9-second latency; installed improvement remains **unmeasured**. [Release notes](CHANGELOG-0.18.390.md).
 
 **HomeBrain vNext consolidated verified source finalization (v0.18.351):** Final answer generation now **coalesces two overlapping read-only app-decision log planners into one source obligation**, prioritizing a precisely source-backed historical command incident when one exists and otherwise using the independently verified issuing-app method-command plan. It performs at most one app-log query per finalization rather than independently entering two planners, while keeping the same app ID, incident time and prior failed-read no-retry constraints. Device log, source configuration, command history and app-log completion now share **one lazily fetched live capability catalog** in the finalization stage, avoiding repeat tool-schema retrieval within that stage. Source effect/schema checks, existing read-only permission gates, model-authored prose and factual limits are unchanged. This is incremental generic orchestration consolidation, **not** a verified <45-second model performance result or wholesale replacement of the existing multi-round planner. [Release notes](CHANGELOG-0.18.351.md).
 
