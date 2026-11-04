@@ -529,13 +529,13 @@ class AutomationStatusService:
         text = " ".join(str(prompt or "").casefold().split())
         return bool(
             re.search(
-                r"\b(?:all|every|entire|full|complete)\\b.{0,60}"
-                r"\b(?:automations?|rules?|apps?|inventory)\\b",
+                r"\b(?:all|every|entire|full|complete)\b.{0,60}"
+                r"\b(?:automations?|rules?|apps?|inventory)\b",
                 text,
             )
             or re.search(
-                r"\b(?:automations?|rules?|apps?)\\b.{0,35}"
-                r"\b(?:all|every|full|complete)\\b",
+                r"\b(?:automations?|rules?|apps?)\b.{0,35}"
+                r"\b(?:all|every|full|complete)\b",
                 text,
             )
         )
