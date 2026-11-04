@@ -288,6 +288,7 @@ from stateful_rule_capabilities import (
 )
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
+from timed_internet_control import TimedInternetControl, TOOL_NAME as TIMED_INTERNET_TOOL, timed_internet_intent
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
 from mcp_skill_guidance import (
     build_mcp_skill_guidance,
@@ -837,6 +838,7 @@ class UnifiedMCPAgent:
             self.evidence.record,
             internet_control_aliases=internet_control_aliases,
         )
+        self.timed_internet = TimedInternetControl(self.mcp)
         self.device_history = DeviceHistoryService(
             self.mcp,
             self.evidence.record,
@@ -858,6 +860,7 @@ class UnifiedMCPAgent:
                 _LOCAL_ACTIVE_SWITCHES_TOOL: self._active_switches,
                 _LOCAL_HOME_SNAPSHOT_TOOL: self._home_snapshot,
                 _LOCAL_CONTROL_TOOL: self._control_devices,
+                TIMED_INTERNET_TOOL: self.timed_internet.handle,
                 _LOCAL_HUB_INFO_TOOL: self._hub_info_snapshot,
             },
             max_tool_result_chars=self.max_tool_result_chars,
@@ -4700,6 +4703,80 @@ class UnifiedMCPAgent:
                 return self._rule_proposal_confirmation.resolve(
                     intent, user_prompt=user_prompt, session_id=session_id,
                 )
+
+        # Hub-resident Cudy Internet timers take precedence over native Rule
+        # Machine dated-trigger authoring.  The strict grammar is only routing;
+        # user mutation authority and the structured sensitive-write gate remain
+        # separate and mandatory.  Unknown/non-Cudy/protected targets fail
+        # closed rather than falling through to a generic immediate OFF.
+        timer_args = (
+            timed_internet_intent(user_prompt)
+            if self._mutation_requested_by_user.get() and not review_first
+            else None
+        )
+        if timer_args is not None:
+            try:
+                available_devices = await self.timed_internet.list_devices()
+                selected, problems = self.timed_internet._targets(
+                    timer_args["targets"], available_devices, timer_args["action"],
+                )
+                if problems or len(selected) != 1:
+                    options = [
+                        str(v) for p in problems for v in p.get("options", [])
+                    ]
+                    return (
+                        "No Internet timer was queued: the target must resolve "
+                        "uniquely to an unprotected Cudy Managed Device. "
+                        + ("Choices: " + ", ".join(options[:8]) if options else
+                           "Check the Block device name and driver.")
+                    )
+                current_mins, current_at = await self.timed_internet._read_state(selected[0])
+                if current_mins is None or current_at is None:
+                    return (
+                        "No Internet timer was queued: the target driver does not "
+                        "report both timedBlockMins and timedBlockAt. Install and "
+                        "test the Cudy Managed Device timer patch, then Save "
+                        "Preferences on the device before retrying."
+                    )
+            except Exception as exc:
+                logger.warning("Timed Internet target preflight failed: %s", exc)
+                return (
+                    "No Internet timer was queued: live driver identity and "
+                    "timer-readback preflight could not be verified."
+                )
+            timer_args = {**timer_args, "targets": [selected[0].label]}
+            decision = self.confirmation_policy.decide(
+                session_id, [(TIMED_INTERNET_TOOL, timer_args)],
+            )
+            if decision.action is ConfirmationAction.REJECT:
+                return str(decision.message)
+            if decision.action is not ConfirmationAction.QUEUE:
+                return "Timed Internet confirmation gate was unavailable; no write queued."
+            self.confirmations.queue(
+                session_id,
+                [(TIMED_INTERNET_TOOL, timer_args)],
+                messages,
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "timed_internet_proposal",
+                        "type": "function",
+                        "function": {
+                            "name": TIMED_INTERNET_TOOL,
+                            "arguments": json.dumps(timer_args),
+                        },
+                    }],
+                },
+            )
+            return (
+                f"Please confirm: schedule {selected[0].label} "
+                f"(Hubitat device {selected[0].id}) to block Internet "
+                f"{timer_args['minutes']} minutes AFTER approval. "
+                "This confirmation does not block it immediately. "
+                "The hub driver must report the scheduled deadline before "
+                "HomeBrain claims that a timer was armed."
+            )
 
         # The user's explicit time-bound rule command is the authority for
         # authoring intent. Do NOT let the semantic planner's advisory
