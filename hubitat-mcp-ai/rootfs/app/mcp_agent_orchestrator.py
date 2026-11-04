@@ -272,6 +272,11 @@ from native_rule_document_source import (
 from native_rule_inventory_source import (
     is_native_rule_inventory_question, read_native_rule_inventory,
 )
+from native_rule_readiness_source import (
+    is_native_rule_readiness_question,
+    read_native_rule_readiness,
+    native_rule_readiness_coverage,
+)
 from owned_device_inventory_source import (
     is_explicit_owned_device_inventory_request,
     read_owned_virtual_device_inventory,
@@ -4175,7 +4180,13 @@ class UnifiedMCPAgent:
                 explicit_native_read_coverage(user_prompt, evidence)
                 if request_class == "live-read" else None
             )
-            if exact_section is not None:
+            readiness_scope = (
+                native_rule_readiness_coverage(user_prompt, evidence)
+                if request_class == "live-read" else None
+            )
+            if readiness_scope is not None:
+                coverage = readiness_scope
+            elif exact_section is not None:
                 coverage = exact_section
             elif (request_class == "live-read" and contract is not None
                     and contract.domain == "existing_rule_verification"
@@ -4471,6 +4482,17 @@ class UnifiedMCPAgent:
         if (not self._mutation_requested_by_user.get()
                 and is_explicit_owned_device_inventory_request(user_prompt)):
             answer, _projection = await read_owned_virtual_device_inventory(
+                self.mcp, self.evidence,
+                available_names=catalog.available_names,
+            )
+            return answer
+
+        # A multi-source read-only preflight must not be hijacked by a
+        # stray "inventory" in "backup inventory" or "which tool guides".
+        # No model rounds, guide-token publication or write-tool dispatch.
+        if (not self._mutation_requested_by_user.get()
+                and is_native_rule_readiness_question(user_prompt)):
+            answer, _projection = await read_native_rule_readiness(
                 self.mcp, self.evidence,
                 available_names=catalog.available_names,
             )

@@ -73,6 +73,12 @@ RULES = {
     ("What triggered Rule Machine rule 4136 to turn off yesterday?", False),
     ("Read-only: explain nested IF and delay cancellation of rule 4136", False),
     ("Please turn off internet for this device", False),
+    ("Read-only preflight for a future disposable native Rule Machine timed-switch test. "
+     "Report the installed MCP Rule Server version only if its own read-only status/info "
+     "source exposes a version. Report the newest Hubitat local backup timestamp using "
+     "read-only backup inventory. Check whether the read-only MCP tool guides for "
+     "set_rule_reference and builtin_app_tools_rules are available; report which sections "
+     "are readable. Do not create a backup, virtual device or rule.", False),
     ("What are my current temperatures?", False),
 ])
 def test_inventory_objective_has_distinct_scope(q, expect):
