@@ -336,3 +336,44 @@ class TimedInternetControl:
             name=TOOL_NAME, arguments=dict(arguments), raw={},
             text=str(data), data=data, is_error=data.get("success") is not True,
         )
+
+
+_TIMED_BLOCK_PHRASE = re.compile(
+    r"^(?:please\s+)?(?:block|restrict|disable)\s+"
+    r"(?:internet\s+(?:for\s+)?)?(?P<target>.+?)\s+"
+    r"(?:in|after)\s+(?P<minutes>\d+)\s*"
+    r"(?P<unit>minutes?|mins?|hours?|hrs?)\s*[.!]?$", re.I,
+)
+_ALLOW_FOR_PHRASE = re.compile(
+    r"^(?:please\s+)?allow\s+(?:internet\s+(?:for\s+)?)?"
+    r"(?P<target>.+?)\s+for\s+(?P<minutes>\d+)\s*"
+    r"(?P<unit>minutes?|mins?|hours?|hrs?)"
+    r"\s+(?:then\s+block(?:\s+it)?|before\s+blocking(?:\s+it)?)\s*[.!]?$", re.I,
+)
+
+
+def timed_internet_intent(prompt: str) -> dict[str, Any] | None:
+    """Exact, bounded Internet-timer grammar, not an effect/authority classifier.
+
+    Host mutation authorization and the sensitive-write confirmation gate
+    remain independent of this optional deterministic routing.
+    """
+    value = " ".join(str(prompt or "").split())
+    found = _TIMED_BLOCK_PHRASE.fullmatch(value)
+    action = "block_in"
+    if found is None:
+        found = _ALLOW_FOR_PHRASE.fullmatch(value)
+        action = "allow_for"
+    if found is None:
+        return None
+    target = found.group("target").strip(" ,.-")
+    # Explicitly constrained to one natural-language device; mixed actions
+    # must not become an unintended partial single-target write.
+    if not target or re.search(r"\b(?:and then|and also)\b", target, re.I):
+        return None
+    minutes = int(found.group("minutes"))
+    if found.group("unit").casefold().startswith(("hour", "hr")):
+        minutes *= 60
+    if minutes < 1 or minutes > MAX_MINUTES:
+        return None
+    return {"action": action, "targets": [target], "minutes": minutes}
