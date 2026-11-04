@@ -1,5 +1,47 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 private first-answer capture merged; real paired scores pending
+
+**Merge verified on main:** [PR #1413](https://github.com/ienam-smarthome/HomeBrainOS/pull/1413)
+merged exact checked head `b15626708982514b8150275c876d1174b68b51f5`
+with merge commit `878783be6d56d656b72a8d8e1f81c9f11d9065da`.
+All three required workflows passed (Release assurance, Validate HomeBrain OS,
+Answer Quality scorecard integrity), including **6,444 Python tests passed,
+2 warnings**; add-on container smoke and metadata validation green.
+23 new Q2 Python tests are included in this total. This is a
+**non-runtime offline-evaluation tool**, not an installed release;
+add-on version remains **0.18.404**.
+
+**Delivered:** `scripts/answer_quality_q2_private_capture.py` can
+privately save the *actual first model prose* and exact-answer
+SHA-bound run metadata on 1–4 pre-existing fixed source packets
+for an explicitly invoked Ollama local or direct Ollama Cloud A/B.
+It keeps all response plaintext outside the public repo,
+requires a fresh private output directory, refuses public CI
+inference and provider redirects, disallows model-tool calls,
+uses no retries, checks installed local model tags, and explicitly
+refuses local-tagged `cloud` models bypassing cloud consent.
+Direct Ollama Cloud requires a separate explicit cost acknowledgement
+and environment API key; **no Cloud/Gemma inference was made during
+development or CI**. Prepopulated but **ungraded/null** SHA-matched
+review rows are created for human source review and rejected by
+the scorecard until evaluated. See
+[Q2 private capture protocol](ANSWER-QUALITY-Q2-PRIVATE-FIRST-ANSWER-CAPTURE-20261104.md).
+
+**Measurement boundary:** CI reports code contracts, not actual
+Gemma-vs-alternative quality. The previous Q1 MQTT and hub-health
+installed observations stand; **0 newly reviewed actual model A/B pairs**
+in this release, factual grounding/causal calibration/Claude parity
+and p50/p95 still `not_measured`. No Hubitat, HA, router, rule or
+device mutation. Next real Q2 action is an **explicitly consented
+actual first-response capture** against frozen evidence (local-only
+if avoiding possible Cloud charges), followed by **independent
+private answer/source review** and the existing
+`scripts/answer_quality_paired_reviews.py`. No unmeasured
+reasoning improvement claim.
+
+---
+
 ## 2026-11-04 — Q2 source-verified first-answer A/B: private capture workflow candidate
 
 **Next step after Q1:** Existing Q2 no-cloud GitHub runner recorded true
