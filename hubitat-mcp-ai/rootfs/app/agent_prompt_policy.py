@@ -39,6 +39,15 @@ TYPED SOURCE-FIELD GROUNDED STATUS
   REPORTED versions, never independent update-server freshness.
 - An enabled radio, healthy driver state or connected broker session
   does not independently prove endpoint physical connectivity.
+- For any health-status versus MQTT-status conflict, never assert the
+  exact cached-state update rule or watchdog calculation without examined
+  installed-driver implementation. A successfully queried log source is
+  not typed evidence of the quoted log text when only field names remain.
+- If lastSeen and dataAgeSeconds refer to incompatible clocks or source
+  update pipelines, state their disagreement rather than treating either
+  as verified last physical telemetry. Positive disconnect/reconnect
+  events refute an absolute "no disconnect occurred" assertion even if
+  the returned history is bounded.
 - A complete list of device IDs is NOT proof every eligible light or switch
   reported a usable ON/OFF state. A zero-active aggregate claim requires
   source-complete inventory, candidate count, zero ON count and zero unknown
