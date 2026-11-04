@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-NAME_RE = re.compile(r"^HB one-shot \\| .+ \\(One-time (\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2})\\)$")
+NAME_RE = re.compile(r"^HB one-shot \| .+ \(One-time (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\)$")
 DATE_CAPABILITY = "Certain Time (and optional date)"
 
 
@@ -21,7 +21,7 @@ def create_dated_switch(
 ) -> dict[str, Any]:
     """Produce one atomic native trigger/action candidate, never execute it."""
     if (not NAME_RE.fullmatch(name) or type(parent_id) is not int
-            or parent_id <= 0 or not re.fullmatch(r"[1-9]\\d*", str(device_id))
+            or parent_id <= 0 or not re.fullmatch(r"[1-9]\d*", str(device_id))
             or command not in {"on", "off"} or hub_local_at.tzinfo is None
             or hub_local_at.utcoffset() is None):
         raise ValueError("invalid native dated-switch proposal input")
@@ -136,7 +136,7 @@ def dated_switch_proposal_error(payload: Any) -> str | None:
         if (devices[0] != "capability.switch" or not isinstance(devices[1], list)
                 or len(devices[1]) != 1
                 or not isinstance(devices[1][0], str)
-                or re.fullmatch(r"[1-9]\\d*", devices[1][0]) is None
+                or re.fullmatch(r"[1-9]\d*", devices[1][0]) is None
                 or flag[0] != "bool" or type(flag[1]) is not bool):
             return invalid()
     except (KeyError, TypeError, ValueError, IndexError):
