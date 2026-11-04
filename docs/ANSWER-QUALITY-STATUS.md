@@ -1,5 +1,63 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 first read-only multi-device state sample; 0.18.400 candidate
+
+**Observed installed v0.18.399 (one user-supplied first-received response):**
+The frozen `multi_device_named` read-only prompt and API-bound SHA-256
+were supplied privately along with the full natural answer and technical
+trace. Two separate exact device resolution receipts established matching
+Hubitat reported `switch=off` and retained `level=50` / `level=60` for
+the two named lights. The answer accurately relayed those reported
+values but called dimmer levels 'brightness' while lights were off.
+
+**Evidence/coverage defect:** The model unnecessarily requested a bounded
+24-hour history for only the first light; five reported switch ON→OFF
+intervals summed to 465 seconds, with history source integrity marked
+unverified and observed event rows truncated. The answer added
+unrequested activity and an automation-issued command narrative which
+could not establish the upstream trigger for all five intervals.
+The host labelled `metrics.outcome=success` but separately reported
+`investigation_coverage.questionResolved=false` and
+`sourceScopeComplete=false` owing to missing *second-light history*,
+even though the original question asked for **current states**, not
+past activity. This is inaccurate objective classification and misleading
+coverage, not proof the two current state values were wrong.
+
+**Observed performance:** 19,409 ms wall, 18,143 ms agent,
+14,568 ms provider, 3,357 ms MCP HTTP, six Gemma free rounds
+and seven tool calls; the single observed status request exceeded
+the 15-second charter target. These are one execution's observations,
+not a median/p95 or a controlled before/after result. Published response
+`success=true` is a transport success; model delivery, independently
+attested deployed SHA and `first_attempt_verified` are all **false**.
+Formal independently source-reviewed first-attempt score remains
+**NOT MEASURED**; no Claude comparison has occurred.
+
+**General candidate v0.18.400:** Shared `investigation_policy` now treats
+comparisons of current status, switch state, saved levels and brightness
+as *snapshots*, not historical investigations just because they contain
+the word `compare`. Explicit events, timestamps, trends, past states,
+causal and unusual-behaviour comparisons keep their history requirements.
+Generic status prompt guidance discourages unrequested event reads and
+causal overclaims without taking over the model's answer. Synthetic
+negative tests include missing second-target historical receipts and
+actual historical comparisons. No write/tool authorization, Cudy driver,
+Hubitat, HA or router changes. [Q1 source review and acceptance](ANSWER-QUALITY-Q1-SNAPSHOT-COMPARISON-20261104.md).
+**Exact-head CI, PR, merge and installed after-response remain pending
+until independently verified.**
+
+**Next user acceptance after green merge/install:** Repeat exactly
+`Compare the states of Hallway Light 1 and Livingroom Light 2.` in
+a new HomeBrain topic, provide first full natural answer and Technical
+JSON. Check whether the model avoids unsolicited history, reads both
+current states, reports saved levels with correct off-state semantics,
+does not fabricate an automation cause, and falls under 15 seconds.
+Since this is a repeated prompt, it is **not** a new first-attempt
+benchmark. Continue cross-domain Q1 evidence before Q2 same-packet
+Gemma-vs-alternative reasoning. Roll back if actual historical
+comparisons lose required source coverage.
+
+---
 ## 2026-11-04 — timed Internet field validation DONE; permanent Q1 Answer Quality resumed
 
 **User-observed functional acceptance (not a Q1 answer-quality score):** The
