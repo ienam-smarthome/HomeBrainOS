@@ -12,6 +12,7 @@ from typing import Any
 
 from mcp_client import tool_succeeded
 from owned_device_inventory_source import is_explicit_owned_device_inventory_request
+from native_rule_readiness_source import is_native_rule_readiness_question
 
 _ONE_TIME = re.compile(r"\(One-time \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)$", re.I)
 _LOOKUP = re.compile(r"\b(?:list|find|identify|enumerate|show|locate|which|existing)\b", re.I)
@@ -41,6 +42,8 @@ def is_native_rule_inventory_question(question: str) -> bool:
     text = str(question or "")
     if is_explicit_owned_device_inventory_request(text):
         return False  # quoted Rule Machine exclusions are not the user objective
+    if is_native_rule_readiness_question(text):
+        return False  # backup inventory is not a Rule Machine parent/rule inventory
     return bool(_LOOKUP.search(text) and _TOPIC.search(text)
                 and _OBJECT.search(text) and not _DEEP.search(text)
                 and not _LITERAL_ID.search(text))
