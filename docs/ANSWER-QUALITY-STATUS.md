@@ -1,5 +1,52 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 first actual Gemma Ollama Cloud vs local Qwen MQTT pair: latency measured, quality pending
+
+The user ran a **one-case same-frozen-source first-answer
+comparison** through the private-capture script:
+`aq_network_broker_vs_device_health`, packet
+`74ccff7fa2c23852655d12b45f6f5cbb6a3315de8c7647cac7b03441282f7150`.
+Both metadata arms carry checkout SHA
+`0e71f92f380d21cfb2d3a17a66fbd40d85bd0684`
+and `attempt_index=1` (tool-recorded, not independently
+authenticated provider delivery).
+
+- **Gemma `gemma4:31b` on `ollama-cloud`**, baseline:
+  **0.828s**, answer SHA
+  `5a09a7146dd7351168426851c6edbecb8e42663557b2de38d2cf972fa88b38ad`.
+- **Qwen `qwen3.5:4b` on `ollama-local`**, candidate:
+  **22.750s**, answer SHA
+  `2a1843c20024a7e83428a70de59d52dc5ef19f7a87beee341f73cf9bb7da60aa`.
+
+Gemma was **21.922s faster** (~27.5×) for this one
+model-only capture, not production HomeBrain latency or
+a p50/p95. The Qwen answer digest exactly matches the
+previous local MQTT Qwen answer (previously 20.344s),
+consistent with identical first-answer content. The user
+pasted only a **trailing excerpt** ending in a proposed
+broker-log read-only check; the **full original Gemma
+answer is not available in this turn**. Thus Gemma
+factual grounding/causal-calibration/first-answer utility
+and overall model superiority remain **NOT MEASURED**.
+No blinded or human scorecard review, independently
+verified source delivery or provider cost receipt.
+Local Qwen answer-only thinking policy may differ from
+Cloud Gemma default; source packets match, internal
+provider execution settings are not independently attested.
+The prior failed three-case local-only trial remains
+a separate unresolved experiment.
+
+**Next, no new inference needed:** user sends both
+existing `<case-id>.baseline.txt` and
+`<case-id>.candidate.txt` from this private cloud/local
+run; privately grade against the fixed packet, then
+expand into non-MQTT frozen domains. Do not select a
+new production provider on a single faster result.
+No code or add-on update; v0.18.404 preserved.
+[Detailed evidence boundaries](ANSWER-QUALITY-Q2-FIRST-CLOUD-LOCAL-MQTT-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 safe transport diagnostics merged, real three-case failure still unresolved
 
 **Merged and exact-head CI:** [PR #1418](https://github.com/ienam-smarthome/HomeBrainOS/pull/1418)
