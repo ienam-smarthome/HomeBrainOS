@@ -29,6 +29,7 @@ from request_metrics import add_active_metric_ms, increment_active_metric
 from rule_authoring_service import NEW_RULE_ID_TOKEN
 from tool_discovery_catalog import ToolDiscoveryCatalog
 from tool_executor import ToolExecution, ToolExecutor
+from timed_internet_control import TOOL_NAME as TIMED_INTERNET_TOOL
 from tool_registry import (
     HUB_UPDATE_FIRMWARE_TOOL,
     normalize_rule_machine_proposal,
@@ -683,6 +684,40 @@ class ConfirmedActionCoordinator:
             deterministic_report = self.confirmed_firmware_report(outcomes)
         if deterministic_report is None:
             deterministic_report = self.confirmed_failure_report(outcomes)
+        if deterministic_report is None and len(outcomes) == 1:
+            tool_name, arguments, execution = outcomes[0]
+            if tool_name == TIMED_INTERNET_TOOL:
+                result = execution.result
+                data = result.data if result is not None and isinstance(result.data, dict) else {}
+                if execution.success and data.get("verified") is True:
+                    rows = data.get("confirmed") or []
+                    if arguments.get("action") == "cancel":
+                        deterministic_report = (
+                            "Hubitat driver read-back verified the pending timer "
+                            "was cancelled for: "
+                            + ", ".join(str(x.get("label")) for x in rows) + "."
+                        )
+                    else:
+                        deterministic_report = (
+                            "Hubitat driver read-back verified a timer was armed: "
+                            + "; ".join(
+                                f"{x.get('label')} (device {x.get('id')}) "
+                                f"reports a block deadline of {x.get('fires_at')} "
+                                "Europe/London"
+                                for x in rows
+                            )
+                            + ". Actual future execution and router Internet "
+                            "blocking have NOT yet been verified."
+                        )
+                else:
+                    deterministic_report = (
+                        "The timed Internet command was not verified. No "
+                        "scheduled-block success is claimed. A write may have "
+                        "reached the hub before a timeout; inspect the device "
+                        "timedBlockAt/timedBlockMins attributes before retrying. "
+                        + str(data.get("error") or data.get("unverified")
+                              or data.get("failed") or "")[:450]
+                    )
         if deterministic_report is not None:
             return deterministic_report
         response = await self._chat(messages, catalog.schemas())
