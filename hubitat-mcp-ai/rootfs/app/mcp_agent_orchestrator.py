@@ -4755,7 +4755,7 @@ class UnifiedMCPAgent:
             self.confirmations.queue(
                 session_id,
                 [(TIMED_INTERNET_TOOL, timer_args)],
-                messages,
+                [{"role": "user", "content": str(user_prompt).strip()}],
                 {
                     "role": "assistant",
                     "content": "",
