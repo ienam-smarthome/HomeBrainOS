@@ -227,10 +227,21 @@ class TimedInternetControl:
                     item["parameters"] = [str(minutes)]
                 commands.append(item)
             try:
-                result = await self._call("hub_manage_devices", {
+                response = await self.mcp.call_tool("hub_manage_devices", {
                     "tool": "hub_call_device_command",
                     "args": {"commands": commands, "bestPracticeKey": key},
                 })
+                # A partially failed batch can return success=false WITH
+                # per-device results. Preserve that evidence; never collapse
+                # known successes into misleading blanket failures.
+                if isinstance(response, MCPToolResult):
+                    if response.is_error:
+                        raise RuntimeError("Device command gateway reported an error")
+                    result = response.data
+                else:
+                    result = response
+                if not isinstance(result, dict):
+                    raise RuntimeError("No structured command result")
                 rows = result.get("results")
                 if not isinstance(rows, list) or len(rows) != len(subset):
                     raise RuntimeError("Missing or incomplete per-device command results")
