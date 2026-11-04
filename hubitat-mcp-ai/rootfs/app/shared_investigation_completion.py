@@ -604,7 +604,7 @@ def apply_shared_investigation_completion(
     # provenance and command-history requirements.
     specialist_domains = {
         "device_telemetry", "existing_rule_verification",
-        "manual_motion_lockout", "rule_design_review",
+        "app_class_identity", "manual_motion_lockout", "rule_design_review",
         "scheduler_ownership",
     }
     prior_domain = (
@@ -622,9 +622,15 @@ def apply_shared_investigation_completion(
         domain = "causal_provenance"
         required = CAUSAL_KINDS
 
-    if isinstance(prior, dict):
+    if isinstance(prior, dict) and (
+        goal is None or prior.get("domain") == goal.domain
+    ):
         existing = deepcopy(prior)
     elif goal is not None:
+        # The objective determined from the original user question wins
+        # over stale/misclassified specialist coverage from an earlier
+        # model-led stage. Reassess the same read-only receipts instead of
+        # inheriting unrelated rule-action requirements.
         existing = assess_investigation(goal, evidence)
     else:
         existing = {}
@@ -699,7 +705,7 @@ def apply_shared_investigation_completion(
     focal_events = reconcile_focal_device_events(request, evidence)
     if focal_events is not None:
         coverage["reconciledFocalEventEvidence"] = focal_events
-    if domain == "rule_design_review":
+    if domain in ("rule_design_review", "app_class_identity"):
         # The historical source-kind list is intentionally empty for design
         # reviews; vacuous empty-set coverage must not become a green
         # "sourceChecksComplete: true" result while the actual device, rule,
@@ -711,10 +717,14 @@ def apply_shared_investigation_completion(
             "missingSourceKinds": [],
             "sourceKindsChecked": None,
             "note": "Historical event source classes are not applicable to a "
-                    "future rule design. Inspect the domain-specific device, "
-                    "current-rule and native-capability requirements instead.",
+                    "future rule design or app native-class identity. "
+                    "Inspect the actual domain-specific typed requirements.",
         }
         coverage["completionNote"] = (
+            "An installed app's display label, partial catalog or field-name "
+            "receipt does not independently establish its native class/parent "
+            "identity. Require a source-attested instance-to-class binding."
+            if domain == "app_class_identity" else
             "Generic successful source reads establish that the records were "
             "queried, not that current rule actions, durations, device labels "
             "or the combined Rule Machine authoring schema were independently "
