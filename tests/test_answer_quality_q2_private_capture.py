@@ -57,6 +57,13 @@ def test_cloud_needs_explicit_ack_and_key():
         validate_arms(local, local, cloud_ack=True, env={})
 
 
+def test_cloud_tag_cannot_bypass_explicit_cloud_acknowledgement():
+    with pytest.raises(ValueError, match="Cloud-tagged"):
+        validate_arms(("ollama-local", "gemma4:31b-cloud"),
+                      ("ollama-local", "qwen3.5:4b"),
+                      cloud_ack=False, env={})
+
+
 def test_cloud_and_local_no_run_in_ci(monkeypatch):
     local1 = ("ollama-local", "qwen3.5:4b")
     local2 = ("ollama-local", "llama3.2:3b")
@@ -140,6 +147,12 @@ def test_private_dir_outside_repo_and_no_overwrite(tmp_path):
         check_private_path(new)
     with pytest.raises(ValueError, match="inside repository"):
         check_private_path(ROOT / "scripts" / "private-output-bad")
+
+
+def test_private_write_boundary_rejects_repo_path():
+    with pytest.raises(ValueError, match="inside repository"):
+        save_private(ROOT / "scripts" / "unsafe-private",
+                     {"runs": []}, {"runs": []}, {}, {})
 
 
 def test_private_files_never_contain_raw_answers_in_manifests(tmp_path):
