@@ -237,4 +237,37 @@ def test_never_echoes_raw_arguments_or_private_device_identity():
 def test_general_status_prompt_requires_actual_fields():
     prompt = build_system_prompt("", "")
     assert "missing/null measurement remains unverified" in prompt
-    assert "missing hubAlerts field cannot establish" in prompt
+    assert "single Hubitat or Home Assistant source reporting healthy/online" in prompt
+
+
+
+def test_conflicting_reads_of_same_identity_are_not_silently_reconciled():
+    before = device("Study Thermostat", "808", {"temperature": 19.0})
+    after = device("Study Thermostat", "808", {"temperature": 22.0})
+    claim = "- **Temperature:** 18.0 °C"
+    # Without a source clock/attribute event order, no answer field can
+    # be grounded by cherry-picking the more complete same-ID row.
+    observed, issues = guard_typed_status_claims(claim, [*before, *after])
+    assert observed == claim
+    assert issues == []
+
+
+def test_two_receipts_of_same_device_with_matching_overlap_are_compatible():
+    thin = device("Study Thermostat", "808", {"switch": "off"})
+    full = device("Study Thermostat", "808", {"switch": "off", "level": 55})
+    text = "- **Study Thermostat:** on at 78%"
+    out, issues = guard_typed_status_claims(text, [*thin, *full])
+    assert "**Study Thermostat:** switch off, saved level 55%" in out
+    assert issues == ["device_state_source_mismatch"]
+
+
+def test_units_in_screenshot_do_not_falsify_earlier_timestamped_values():
+    # Later Hubitat UI resource readings may differ as CPU, memory and DB
+    # change. Neither is a contradiction without a shared source timestamp.
+    prior = hub()
+    later = hub({**HUB, "cpu_5_min": 1.36, "cpu_percent": 34.0,
+                 "free_memory": 782.07, "database_size": 177})
+    draft = "- **Free memory:** 756.39 MB"
+    out, issues = guard_typed_status_claims(draft, [*prior, *later])
+    assert out == draft
+    assert issues == []
