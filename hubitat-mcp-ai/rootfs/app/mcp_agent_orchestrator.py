@@ -5578,12 +5578,13 @@ class UnifiedMCPAgent:
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
                 tools = catalog.schemas()
-            # Discovery and later source checkpoints may alter declarations.
-            # Re-apply the original user-authority boundary on EVERY round.
-            # Authorized write requests retain the unchanged normal catalog.
-            if not self._mutation_requested_by_user.get():
-                catalog.restrict_declared_to_read_only()
-                tools = catalog.schemas()
+            # Later explicit discovery may identify a mixed-purpose gateway
+            # that provides a verified read not available in pure read tools
+            # (for example a native Rule Machine document read). Preserve
+            # that schema for source completeness: the per-call effect guard
+            # still atomically rejects every unauthorized mutation. After a
+            # rejected batch, the sticky read-only recovery view below the
+            # existing guard continues to exclude management gateways.
             set_request_stage(
                 f"AI reasoning (round {round_index + 1}/{active_round_budget})"
             )
