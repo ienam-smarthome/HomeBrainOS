@@ -11,6 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import native_rule_dated_candidate as d
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"))
+from native_rule_inventory_source import project_rule_inventory
 from test_native_rule_delay_candidate import Hub
 
 UTC = timezone.utc
@@ -140,12 +142,14 @@ def test_plan_native_date_and_dst_never_before_requested_deadline():
     assert p.time_value == "2026-11-03T10:06:00.000+0000"
     assert p.due_utc > req.due_utc
     assert "| 2026-11-03T10:06Z" in p.label
+    assert p.label.endswith("(One-time 2026-11-03 10:06)")
 
     summer_now = datetime(2027, 3, 28, 0, 50, tzinfo=UTC)
     future = summer_now + timedelta(minutes=20)
     summer = d.plan(d.DatedRequest("9001", "BAT", future), summer_now)
     assert summer.time_value == "2027-03-28T02:10:00.000+0100"
     assert summer.date_value == "2027-03-28"
+    assert summer.label.endswith("(One-time 2027-03-28 02:10)")
     assert summer.due_utc == future
     assert future.astimezone(ZoneInfo("Europe/London")).hour == 2
 
@@ -155,6 +159,49 @@ def test_plan_native_date_and_dst_never_before_requested_deadline():
         fall_now,
     )
     assert repeated.time_value == "2027-10-31T01:10:00.000+0000"
+    assert repeated.label.endswith("(One-time 2027-10-31 01:10)")
+
+
+def test_offline_dated_bat_name_is_discoverable_by_the_runtime_inventory():
+    """The once-only BAT cannot become invisible to a subsequent read-only audit."""
+    p = d.plan(REQ, NOW)
+    assert len(p.label) <= 200
+    instances = {
+        "apps": [
+            {"id": 169, "name": "Rule Machine", "type": "Rule Machine",
+             "appTypeId": 18, "parentId": None},
+            {"id": 5000, "name": p.label, "type": "Rule-5.1",
+             "appTypeId": 19, "parentId": 169},
+        ], "count": 2, "totalOnHub": 2,
+    }
+    types = {
+        "apps": [
+            {"id": 18, "name": "Rule Machine", "namespace": "hubitat",
+             "system": True, "isBuiltIn": True},
+            {"id": 19, "name": "Rule-5.1", "namespace": "hubitat",
+             "system": True, "isBuiltIn": True},
+        ], "count": 2,
+    }
+    rules = {"rules": [{"id": 5000, "name": p.label}], "count": 1}
+    report = project_rule_inventory(instances, types, rules)
+    assert report["parentIdentityComplete"] is True
+    assert report["oneTimeMatchCount"] == 1
+    assert report["oneTimeRules"] == [{
+        "appId": "5000", "name": p.label,
+        "sourceKinds": ["hub_list_rules", "hub_list_apps"], "parentId": "169",
+    }]
+
+    # The terminal marker is required; an internal one-time phrase or
+    # UTC/hash metadata alone must not count as the inventory's exact suffix.
+    legacy_name = p.label.split(" (One-time ")[0]
+    inst_legacy = {**instances, "apps": [
+        instances["apps"][0], {**instances["apps"][1], "name": legacy_name},
+    ]}
+    old_report = project_rule_inventory(
+        inst_legacy, types, {"rules": [{"id": 5000, "name": legacy_name}],
+                             "count": 1}
+    )
+    assert old_report["oneTimeMatchCount"] == 0
 
 
 def test_plan_never_uses_naive_dates_invalid_targets_or_early_deadlines():

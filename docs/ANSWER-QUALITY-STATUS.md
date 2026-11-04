@@ -1,5 +1,57 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Internet-blocker read-only preflight PASSED on installed 0.18.388; isolated BAT discovery fix — 2026-11-04 00:36 UTC
+
+**Real user-provided acceptance:** v0.18.388 returned the previously
+missing three-source native Rule Machine readiness preflight in
+**4.463 seconds**, no language-model rounds and four evidence receipts
+(3 remote reads, one typed local projection). Sources:
+MCP `initialize.serverInfo.name=hubitat-mcp-rule-server`,
+`version=5.1.5`; `hub_list_backups(scope=hub_local)`
+returned **21** local backups and newest source-timestamp
+`2026-11-03T17:37:05+00:00`; both `hub_get_tool_guide` sections
+`set_rule_reference` and `builtin_app_tools_rules` were reported
+readable. `preflightEvidenceComplete=true`,
+`investigation_coverage.status=preflight-source-complete`,
+`questionResolved=true`, `readinessForMutation=false`.
+No backup, device, native rule or router setting changed.
+At the collector receipt `2026-11-04T00:36:01Z`, that source backup
+was ~6h59m earlier, but no independent **hub clock** was checked, so
+the installed writer's backup freshness prerequisite is **not fully
+verified**. Guide availability is not a proof that every write field
+is supported. Source-complete preflight is **not** authorisation to
+run any live write or proof of native dated-rule firing/network blocking.
+
+**Next offline preparation finding (not a live incident patch):**
+the disabled `scripts/native_rule_dated_candidate.py` generated a
+rule name with UTC slot and hash but no terminal
+`(One-time YYYY-MM-DD HH:MM)` marker. The maintained
+`native_rule_inventory_source.py` checks exactly that suffix.
+A future BAT created under the old name would not be discoverable
+as a one-time rule in that routine's later read-only inventory.
+This candidate aligns the terminal suffix using the Hubitat-local
+due minute, retaining the UTC slot and hash (including for DST
+ambiguous local minutes), and tests that the real inventory projector
+recognises the planned label while refusing the legacy form.
+Only the **offline, disabled** BAT candidate, tests and documents
+change. HomeBrain add-on stays **0.18.388**.
+
+**Still missing for a live harmless BAT:** independently observed hub
+clock and backup age; confirmed creation/ownership of a **new
+isolated** virtual test switch (never repurpose the existing
+MCP-managed household Virtual Switch); explicit user authorisation
+for creating that switch, changing it to ON and creating **one**
+scheduled OFF native rule; stored date/time/target readback,
+pending-job observation and future OFF command/state evidence.
+The BAT defaults to `NATIVE_DATED_ENABLED=False`, does not
+run actions immediately and does not automatically clean itself
+up; any future cleanup needs verified completion and separate
+authorisation. **Do not** enable production Internet blocking,
+change existing automations, or make router changes. Continue
+the Answer Quality roadmap without counting this read-only
+preflight as a first-attempt accuracy score.
+
+
 ## Native Rule Machine multi-source read-only preflight routing — v0.18.388 GREEN MERGED (2026-11-04)
 
 **Repository gate verified:** [PR #1376](https://github.com/ienam-smarthome/HomeBrainOS/pull/1376)
