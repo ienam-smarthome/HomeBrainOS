@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.396**.
+Current add-on version: **0.18.397**.
+
+**Native one-time scheduling preflight (v0.18.397):** When MCP initialize is missing, stale or below the required native Rule Machine dated-trigger release, HomeBrain checks the installed MCP server using read-only `hub_get_info.mcpServerVersion`. Older installations return explicit HPM upgrade/reconnect guidance. If the hub version is newer than a cached connection identity, the two sources must agree after reconnect before a dated rule can be queued. Already-supported sessions retain their fast path. No rule, device or router changes are made by this read. [Release notes](CHANGELOG-0.18.397.md).
 
 **Native Rule Machine scalar normalization (v0.18.396):** The named-rule summary now shares the privacy/field projection with the existing native section reader instead of rejecting optional `device_ids=null`. It recognizes only exact typed native boolean strings (`"true"`/`"false"`) and bounded integer numeric strings when interpreting rule Switch and elapsed-wait settings. It remains read-only, source-scoped and fails closed on ambiguous values. The raw native read mode remains available unchanged. [Release notes](CHANGELOG-0.18.396.md).
 
