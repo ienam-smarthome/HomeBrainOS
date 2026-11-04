@@ -252,7 +252,7 @@ from automation_diagnostic_policy import (
     is_automation_runtime_diagnostic,
     is_integration_runtime_diagnostic,
 )
-from request_metrics import increment_active_metric
+from request_metrics import add_active_metric_ms, increment_active_metric
 from request_runtime import set_request_stage
 from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 from night_idle_rule_authoring import propose_night_idle, recognise_night_idle_creation
@@ -4755,6 +4755,7 @@ class UnifiedMCPAgent:
             # repeated a summary scan; that cost ~38s on the live TV test.
             # A missing driver-match retains the older Rule Machine route.
             # A failed/incomplete summary read MUST NOT fall through to RM.
+            started_summary = time.monotonic()
             try:
                 available_devices = await self.timed_internet.list_devices()
             except Exception as exc:
@@ -4765,6 +4766,11 @@ class UnifiedMCPAgent:
                     "device inventory could not be verified. The request was "
                     "not rerouted to Rule Machine; retry only after the MCP "
                     "device read is working."
+                )
+            finally:
+                add_active_metric_ms(
+                    "timed_internet_preflight",
+                    (time.monotonic() - started_summary) * 1000,
                 )
             increment_active_metric("timed_internet_summary_preflight")
             selected, problems = self.timed_internet._targets(
