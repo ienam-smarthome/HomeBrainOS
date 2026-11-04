@@ -1,5 +1,59 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 fourth local Rule Machine identity case completed; four-domain descriptive review, no formal score
+
+**Actual Windows local A/B on the final four-case-set domain:**
+`aq_rule_parent_type_gap`, source packet
+`21542170532d34510b19613f6c7bd97958cf300aa8cf151e2649ef8328b14cf3`,
+recorded checkout SHA `659d3a3e3373b654a54439b37461a9e237aa2289`,
+one requested first answer per arm.
+- **Qwen3.5:4b local:** 19.657s, saved answer SHA
+  `3511c0f2604d4cbfcb0e5d7e1e76deb8ca9a3a776bc4a56d87a1fcf5af17aa96`.
+  Exact user-pasted UTF-8/LF text SHA matches; notes app 901/type 718
+  and incomplete built-in catalog but only suggests full catalog, rather
+  than direct source-attested native writer class identity.
+- **Llama3.2:3b local:** 8.297s, manifest answer SHA
+  `b8ee24d20674fb6d932027d11188cdc81e8b8d4b1078ea84ea5ecf8d221d5ca6`.
+  Pasted visible text provisionally concludes not verified but
+  speculates that system fails to recognise type and lacks explicit
+  native-class identity requirement. **Integrity discrepancy:**
+  exact visible pasted text SHA computes as
+  `f88b1baf1eb1ead58147fb778a4b91ec7138b7ed933acc8abe631ff2c783b346`,
+  **not** the recorded manifest hash; user should locally
+  `Get-FileHash` the saved original before any SHA-bound grading.
+  Do not silently call this response hash-verified.
+
+**Four distinct local Qwen-vs-Llama frozen pairs now exist**
+(MQTT, command-off provenance, heating restoration, native RM identity).
+Four-sample descriptive arithmetic means of *model-only* latency:
+**Qwen 22.254s**, **Llama 8.457s**, ratio ~**2.63×**
+(by total wall times). Llama is faster in all four, but missed
+important evidence in MQTT, heating and the RM explanation and
+made contradicted causality claims on the command case.
+Qwen generally covered more source facts but also speculated
+and issued unsupported causal/execution implications;
+one Qwen issuer answer visibly ended mid-heading. **Neither
+model has demonstrated reliable first-answer correctness
+or Claude-quality reasoning.** Across-case runner SHAs changed;
+only within-pair packet/settings equality is verified by
+tool metadata. Do not extrapolate measured latency p95,
+operational HomeBrain times or model SLA.
+
+**Quality status:** Source-based assistant qualitative review only,
+not a blinded or independently completed human SHA-bound review.
+Official grounding >=90%, useful-first >=80%, unsupported
+causal-claim rate, Gemma/Claude gap and p50/p95 continue
+**NOT MEASURED**. Keep installed add-on **v0.18.404**,
+production routing and device rules unchanged. Next: check
+original Llama saved text hash; seek real SHA-bound human
+reviews and one **read-only live HomeBrain answer + technical
+JSON** before implementation changes. Paid Gemma cross-domain
+calls require explicit separate authorization. Avoid
+single-device publication patches.
+[Four-domain source and limitation review](ANSWER-QUALITY-Q2-FOUR-DOMAIN-LOCAL-REVIEW-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 heating restoration first answers: complete capture, Qwen speculative and Llama incomplete
 
 **Actual Windows local first-answer pair** on `aq_early_heating_off_resume`;
