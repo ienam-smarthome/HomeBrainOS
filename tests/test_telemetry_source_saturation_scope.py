@@ -111,7 +111,7 @@ def test_no_history_or_scoped_logs_or_known_target_must_not_early_stop():
         all_rows[:1],
         all_rows[:3],
         [*all_rows[:2], logs()],
-        [*scoped_history(target="702"), logs("702")],
+        [*scoped_history(target="702", label="Different Socket"), logs("702")],
     ):
         assert ready_for_bounded_telemetry_answer(
             QUESTION, rows, domain="device_telemetry",
