@@ -1,5 +1,72 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Installed v0.18.387 native Rule Machine parent — SOURCE-VERIFIED PASS (2026-11-04 00:09 UTC)
+
+**Real user-supplied read-only acceptance:** exact repeated native Rule
+Machine inventory question under installed HomeBrain `version=0.18.387`
+returned `success=true`, `elapsed_ms=2940`, `model=null`,
+`tool_calls=5` (four successful read-only MCP calls plus local typed
+projection), `confirmation_required=false`. Exact identity:
+`parents=[{appId:"169",appTypeId:"18",namespace:"hubitat",
+name:"Rule Machine",proof:"source-typed-installed-app-summary"}]`,
+`candidateParents=[]`, `summarySourceChecks=[{appId:"169",
+typeProofGap:null}]`, `catalogClassConflicts=[]`,
+`parentIdentityComplete=true`. Under the returned **complete** current
+rule and app pages, `oneTimeRules=[]`, `oneTimeMatchCount=0`
+for the **exact** `(One-time YYYY-MM-DD HH:MM)` suffix.
+`investigation_coverage.status="inventory-complete"`,
+`questionResolved=true`, `evidenceComplete=true`. No writer, rule or
+device mutation. This **closes the installed native-parent source-identity
+preflight**, not native rule creation, date firing, one-time lifetime
+cleanup, or Internet blocking.
+
+**Paired repeated-question observations** (same
+`normalized_prompt_sha256=a1afac645cff64baed3516beacebb46431175834cd4c334457d141ab2f693a83`):
+v0.18.385 **25.650s**, 6 Gemma rounds, 10 tool calls, parent unverified;
+v0.18.386 **3.611s**, no model, 5 tools, parent unresolved due to
+a class-catalog conflict; v0.18.387 **2.940s**, no model, 5 tools,
+native parent verified. Observed end-to-end reduction **88.5%** from
+v0.18.385 to v0.18.387 (**n=1 paired question**, not a population
+distribution or first-attempt score). Independent first attempt and
+deployed commit cannot be certified because
+`request_provenance.first_attempt_verified=false` and
+`deployed_build_sha_verified=false`; user-submitted installed version
+is a self-reported app field. No model was invoked on the final read.
+Q1 quantitative acceptance thresholds are **not recalculated**.
+
+**Next missing gates, in priority order:** (1) read-only source-reported
+installed MCP server version / native rule tool-guide contract and
+fresh hub-backup timestamp; (2) confirm independent ownership and
+isolation of a **new** disposable test switch, *not* the one
+existing MCP-managed Virtual Switch verified under v0.18.381;
+(3) seek separate explicit user consent for that exact harmless
+switch ON and one native dated Rule Machine create; (4) verify stored
+date/action/readback, pending native job, independently timestamped
+future OFF transition, reboot/recovery and cleanup/ownership;
+(5) only later independently test and commission OpenWrt
+enforcement. `scripts/native_rule_dated_candidate.py` and
+`scripts/native_rule_delay_candidate.py` remain **OFFLINE ONLY**
+and disabled. No live HomeBrain/Hubitat/HA/router changes authorised
+by the identity result.
+
+**Next one read-only HomeBrain question** (new topic, complete answer
+and Technical Details JSON):
+```text
+Read-only preflight for a future disposable native Rule Machine timed-switch test.
+Report the installed MCP Rule Server version only if its own read-only
+status/info source exposes a version. Otherwise mark it unverified.
+Report the newest Hubitat local backup timestamp using read-only backup
+inventory, or say why backup freshness cannot be verified.
+Check whether the read-only MCP tool guides for set_rule_reference and
+builtin_app_tools_rules are available; report which sections are readable,
+without copying acknowledgement tokens or private configuration.
+Do not create a backup, virtual device or rule. Do not run, change,
+pause or delete anything and do not access router controls.
+```
+The preflight source response can be partial; missing fields must not
+be represented as passes. Retain the permanent Answer Quality roadmap.
+
+
 ## Internet-blocker native class catalog consistency — v0.18.387 GREEN MERGED (2026-11-03)
 
 **Verified:** [PR #1373](https://github.com/ienam-smarthome/HomeBrainOS/pull/1373)
