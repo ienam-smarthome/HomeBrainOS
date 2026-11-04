@@ -50,7 +50,6 @@ INITIAL_TOOL_ORDER = (
     LOCAL_HUB_INFO_TOOL,
     LOCAL_WEATHER_TOOL,
     LOCAL_CONTROL_TOOL,
-    LOCAL_TIMED_INTERNET_TOOL,
 )
 
 # Structured upstream operations covered by stricter local adapters. Discovery
