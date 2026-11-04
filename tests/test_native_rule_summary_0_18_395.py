@@ -64,7 +64,7 @@ def test_dated_one_time_only_with_both_date_flag_and_valid_date():
     yes = describe_native_rule(item, app_id="1234", methods=methods())
     assert "**2026-11-12 at 08:00**" in yes
     assert "no dated one-time trigger verified" not in yes
-    item["settings"][3] = {"name": "date1", "type": "bool", "value": ""}
+    item["settings"][2] = {"name": "date1", "type": "bool", "value": ""}
     no = describe_native_rule(item, app_id="1234", methods=methods())
     assert "no dated one-time trigger verified" in no
 
