@@ -1,5 +1,45 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 safe transport diagnostics merged, real three-case failure still unresolved
+
+**Merged and exact-head CI:** [PR #1418](https://github.com/ienam-smarthome/HomeBrainOS/pull/1418)
+tested head `2e859b73a4d665194cc6908f5a83cf50a40f83da`,
+merged commit `170090a810bf637fd76d08c0e99266eae42360f1`.
+All three required workflows passed: Release assurance, Validate
+HomeBrain OS and Answer Quality integrity. **6,456 Python tests passed,
+two warnings**; container smoke and metadata checks succeeded.
+This is an **offline benchmark tool correction**, not a production
+release; the HomeBrain add-on remains v0.18.404.
+
+**Verified scope:** The Q2 private first-answer capture now identifies
+a safely classified failure stage and, for model invocations,
+the frozen case ID, candidate/baseline role, provider and
+model. It distinguishes timeout, HTTP code, connection failure,
+opaque provider/network fault and private-output filesystem errors.
+Provider/OS exception details, raw answers, local file paths,
+prompts, endpoints and secrets are not emitted. Unit tests validate
+redaction for secret-bearing HTTP, URL, timeout and file exceptions.
+Fixed source packets, local-only no-tool policy, cloud opt-in,
+model settings, single-request/no-retry policy and private
+output rules are unchanged.
+
+**Live acceptance not yet observed:** The user's previous multi-case
+attempt aborted with the old catch-all `private transport or file
+error`. We do not know which case/arm or the environmental cause,
+and no new complete human-reviewed pairs or accuracy scores were
+received. The successful prior single-MQTT pair remains separate.
+The next user action is to update their Windows local checkout,
+run the same three-case selection in a fresh private directory
+**once**, and share the two model outputs plus manifests if it
+succeeds, or the safely classified failure if not. If the failure
+is a timeout, plan a separately disclosed test within the existing
+120–180s allowed timeout range. **Do not count this code
+change as model quality, latency or Claude parity improvement.**
+
+[Full Q2 source and limits](ANSWER-QUALITY-Q2-PRIVATE-FIRST-ANSWER-CAPTURE-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 three-case local capture: opaque transport/file failure; safe diagnostic repair candidate
 
 **Actual user observation:** Following the successful single
