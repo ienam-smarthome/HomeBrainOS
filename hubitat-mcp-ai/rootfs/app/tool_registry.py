@@ -861,6 +861,55 @@ def rule_machine_proposal_error(
     return None
 
 
+
+def requests_virtual_device_creation(prompt: str) -> bool:
+    """Identify an explicit virtual-device provisioning objective, not a write grant.
+
+    The orchestrator separately enforces actual user mutation intent, MCP
+    availability and sensitive-write confirmation. This affects only which
+    installed schema the model can see, never which actions are authorised.
+    """
+    text = str(prompt or "").casefold()
+    return bool(
+        re.search(r"\b(?:create|add|provision|make)\b", text)
+        and re.search(
+            r"\bvirtual\s+(?:(?:new|test|temporary|disposable)\s+){0,2}"
+            r"(?:device|switch|button|sensor|thermostat|dimmer|contact|lock)\b",
+            text,
+        )
+    )
+
+
+def virtual_device_creation_proposal_error(
+    tool_name: str, arguments: dict[str, Any],
+) -> str | None:
+    """Reject a display-name virtual driver as a native driver ID.
+
+    The direct MCP virtual-device tool takes a deviceType label; the generic
+    hub_create_device takes a supported native deviceTypeId. Never guess that
+    the two fields are interchangeable, or reinterpret a native driver ID.
+    This is checked both before queuing and again when approval is consumed.
+    """
+    if tool_name == "hub_manage_devices" and (
+        _normalized_operation(arguments.get("tool")) == "hub_create_device"
+    ):
+        payload = arguments.get("args")
+        if isinstance(payload, dict):
+            native_id = payload.get("deviceTypeId")
+            if isinstance(native_id, str) and re.match(
+                r"^\s*virtual\b", native_id, re.I
+            ):
+                return (
+                    "Invalid virtual-device creation proposal: a Virtual "
+                    "device type label is not a verified native deviceTypeId "
+                    "for hub_create_device. Use the installed direct "
+                    "hub_manage_virtual_device tool with its documented "
+                    "deviceType field; if it is unavailable, report that "
+                    "capability gap. No action was queued or executed."
+                )
+    return None
+
+
 def classify_tool_effect(
     tool: MCPTool | None,
     arguments: dict[str, Any] | None = None,
