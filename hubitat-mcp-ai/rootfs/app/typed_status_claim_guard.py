@@ -40,7 +40,7 @@ _TEMP_PROSE = re.compile(
 # Aliases are semantic field names, not driver-specific device identities.
 # No cached device state, expected value, or example measurement is stored.
 _FIELDS: dict[str, tuple[tuple[str, ...], str | None]] = {
-    "temperature": (("temperature", "temperatureC", "temperatureF", "temperature_unit"), "temperature_unit"),
+    "temperature": (("temperature", "temperatureC", "temperatureF"), "temperature_unit"),
     "temp": (("temperature", "temperatureC", "temperatureF"), "temperature_unit"),
     "free memory": (("free_memory", "freeMemory"), "free_memory_unit"),
     "database": (("database_size", "dbSize"), "database_size_unit"),
@@ -52,15 +52,15 @@ _FIELDS: dict[str, tuple[tuple[str, ...], str | None]] = {
     "brightness": (("level", "brightness"), "level_unit"),
     "level": (("level", "brightness"), "level_unit"),
     "voltage": (("voltage",), "voltage_unit"),
-    "cpu load (5 min)": (("cpu_5_min", "cpu5Min", "cpu_percent", "cpuPct"), None),
-    "cpu load (15 min)": (("cpu_15_min", "cpu15Min", "cpu_15_percent", "cpu15Pct"), None),
+    "cpu load 5 min": (("cpu_5_min", "cpu5Min", "cpu_percent", "cpuPct"), None),
+    "cpu load 15 min": (("cpu_15_min", "cpu15Min", "cpu_15_percent", "cpu15Pct"), None),
     "cpu load": (("cpu_5_min", "cpu5Min", "cpu_percent", "cpuPct"), None),
     "cpu usage": (("cpu_percent", "cpuPct"), None),
 }
 
 _STATUS_FIELDS: dict[str, tuple[str, ...]] = {
     "zigbee": ("zigbee_status", "zigbeeStatus"),
-    "z-wave": ("zwave_status", "zwaveStatus"),
+    "z wave": ("zwave_status", "zwaveStatus"),
     "matter": ("matter_status", "matterStatus"),
     "switch": ("switch",),
     "contact": ("contact",),
