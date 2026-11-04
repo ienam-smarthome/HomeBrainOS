@@ -64,6 +64,58 @@ def source_app_scope_error(
     require target-linked read evidence first. This never blocks an ordinary
     read of app configuration to discover that relationship.
     """
+    # A model may put the target DEVICE instance ID in a Groovy APP source
+    # workbench or app-config read. Those namespaces are not interchangeable.
+    # A positive, same-device dependent-app receipt can prove a real app
+    # linkage; raw numeric coincidence cannot. This is generic for any
+    # device telemetry investigation and does not block actual driver
+    # source operations with separately verified driver code IDs.
+    from typed_device_history_evidence import normalize_target_device_history
+    typed = normalize_target_device_history(receipts)
+    target_id = str(typed.get("deviceId") or "") if isinstance(typed, dict) else ""
+    attrs = typed.get("reportedDeviceState") if isinstance(typed, dict) else None
+    valid_target = bool(
+        target_id.isdecimal()
+        and isinstance(attrs, dict)
+        and str(attrs.get("deviceId") or "") == target_id
+        and str(typed.get("deviceLabel") or "").casefold()
+            in str(request or "").casefold()
+    )
+    if tool_name == "homebrain_read_groovy_source":
+        selected = str(arguments.get("appId") or "")
+    elif tool_name == "hub_read_apps_code" and arguments.get("tool") == "hub_get_app_config":
+        nested = arguments.get("args")
+        selected = str(nested.get("appId") or "") if isinstance(nested, dict) else ""
+    else:
+        return None
+    if valid_target and selected == target_id:
+        positively_linked = False
+        for row in receipts:
+            if (not isinstance(row, dict) or row.get("success") is not True
+                    or row.get("mutates") is True
+                    or row.get("sub_tool") != "hub_list_device_dependents"):
+                continue
+            args = row.get("arguments") or {}
+            inner = args.get("args") if isinstance(args, dict) else {}
+            if not isinstance(inner, dict) or str(inner.get("deviceId") or "") != target_id:
+                continue
+            details = row.get("details") or {}
+            if isinstance(details, dict) and details.get("verifiedDeviceTargetLinks") is True:
+                positively_linked = any(
+                    str(v.get("appId") or "") == selected
+                    for v in (details.get("appsUsing") or [])
+                    if isinstance(v, dict)
+                )
+        if not positively_linked:
+            return (
+                "The proposed app ID equals the verified target device ID, "
+                "but no typed evidence establishes that it is an installed "
+                "app instance controlling this device. The target device ID "
+                "cannot be substituted for an app or Groovy code ID. Use "
+                "driver code/source IDs only with verified installed driver "
+                "mapping, or conclude source behaviour is unverified. "
+                "No source/config read was executed."
+            )
     if tool_name != "homebrain_read_groovy_source":
         return None
     selected = str(arguments.get("appId") or "")
