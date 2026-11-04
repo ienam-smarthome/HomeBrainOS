@@ -528,6 +528,11 @@ class ConfirmedActionCoordinator:
                 or rule_machine_proposal_error(tool_name, arguments)
             )
             if proposal_error is not None:
+                if tool_name == "hub_manage_rule_machine":
+                    return (
+                        "The queued Rule Machine action was cancelled because its "
+                        f"payload is incomplete. {proposal_error}"
+                    )
                 return (
                     "The queued Hubitat action was cancelled before execution "
                     f"because its payload is invalid. {proposal_error}"
