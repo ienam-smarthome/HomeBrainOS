@@ -18,6 +18,7 @@ from tool_registry import (
     LOCAL_ACTIVE_ROOMS_TOOL,
     LOCAL_ACTIVE_SWITCHES_TOOL,
     LOCAL_CONTROL_TOOL,
+    LOCAL_TIMED_INTERNET_TOOL,
     LOCAL_DEVICE_HISTORY_TOOL,
     LOCAL_FILTER_TOOL,
     LOCAL_HOME_SNAPSHOT_TOOL,
@@ -49,6 +50,7 @@ INITIAL_TOOL_ORDER = (
     LOCAL_HUB_INFO_TOOL,
     LOCAL_WEATHER_TOOL,
     LOCAL_CONTROL_TOOL,
+    LOCAL_TIMED_INTERNET_TOOL,
 )
 
 # Structured upstream operations covered by stricter local adapters. Discovery
