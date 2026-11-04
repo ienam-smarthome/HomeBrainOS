@@ -105,7 +105,12 @@ async def test_unauthorized_write_batch_switches_to_installed_read_tools():
     second_tools = {
         t["function"]["name"] for t in ai.requests[1][1]["json"]["tools"]
     }
-    assert "hub_manage_devices" in first_tools
+    # v0.18.391: no unsupported first-round model write proposal should
+    # be invited by the schema. The fake model deliberately ignores the
+    # declared tool list to verify the independent atomic execution guard.
+    assert "hub_manage_devices" not in first_tools
+    assert "hub_manage_virtual_device" not in first_tools
+    assert "hub_read_diagnostics" in first_tools
     assert "hub_manage_devices" not in second_tools
     assert "hub_manage_virtual_device" not in second_tools
     assert "hub_read_diagnostics" in second_tools
@@ -140,3 +145,31 @@ async def test_recovery_never_invents_a_missing_read_tool():
     assert "HOST READ-ONLY RECOVERY" in str(
         ai.requests[1][1]["json"]["messages"]
     )
+
+
+@pytest.mark.asyncio
+async def test_read_only_first_round_preserves_normal_read_without_write_recovery():
+    mcp = ReadRecoveryMCP()
+    ai = FakeAI([
+        model_call("hub_read_diagnostics", {"tool": "hub_get_metrics"}),
+        {"message": {"role": "assistant", "content":
+            "A hub metrics read succeeded; no claim about other checks."}},
+    ] * 4)
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    result = await agent.process_user_request_result(
+        "Read-only: check hub metrics. Do not change anything.",
+        session_id="initial-read-only-tools",
+    )
+
+    visible = {
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    }
+    assert "hub_read_diagnostics" in visible
+    assert "hub_search_tools" in visible
+    assert "hub_manage_devices" not in visible
+    assert "hub_manage_virtual_device" not in visible
+    assert any(name == "hub_read_diagnostics" for name, _ in mcp.calls)
+    assert not any(name.startswith("hub_manage_") for name, _ in mcp.calls)
+    assert result.confirmation_required is False
