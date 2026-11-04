@@ -16,6 +16,7 @@ from tool_registry import (
     active_rooms_tool,
     active_switches_tool,
     control_devices_tool,
+    timed_internet_tool,
     device_history_tool,
     device_inventory_tool,
     device_filter_tool,
@@ -52,7 +53,7 @@ def build_request_tool_catalog(remote_tools: list) -> ToolDiscoveryCatalog:
         hub_info_tool(),
         weather_snapshot_tool(),
     ]
-    all_tools = [*remote_tools, *safe_read_tools, control_devices_tool()]
+    all_tools = [*remote_tools, *safe_read_tools, control_devices_tool(), timed_internet_tool()]
     return ToolDiscoveryCatalog(all_tools)
 
 
