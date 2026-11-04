@@ -1,5 +1,60 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 MQTT/health reasoning source-scope failure; v0.18.403 candidate
+
+**Live registered read-only case:** User submitted exactly
+`Why does Bedroom 3 Mesh show MQTT connected when its health is offline?`
+on installed HomeBrainOS **0.18.402**. Gemma returned an
+**unresolved** answer in **36,507 ms** (provider 29,747ms,
+6 free-model rounds, 8 read-only tool calls). It correctly
+recognised `healthStatus=offline` and `mqttStatus=connected`
+as distinct reported fields, and withheld a definite external
+power/WiFi/broker physical root cause at the end.
+
+**Core factual overclaims:** The published narrative nevertheless
+declared the device physically offline, `mqttStatus` definitively
+cached owing to a specific missing disconnect-message mechanism,
+and `healthStatus` a live watchdog calculation. It interpreted
+stored Oct12 `lastSeen` as definitive physical last contact
+and reported `dataAgeSeconds` (~45.1h) as actual last telemetry.
+Typed host telemetry-clock analysis instead reports **566.1h vs
+45.1h, `sourcesAgree=false`, physical telemetry not proven**.
+History included positive MQTT disconnect/reconnect events
+(Nov 3), contradicting the blanket no-disconnect assertion.
+Source coverage itself says `verifiedInstalledDriverBehaviour=false`,
+`driverMethodBehaviourVerified=false`, no independently retained
+broker packets, `rootCauseVerified=false` and
+`questionResolved=false`. Hub logs were queried, but the
+technical receipt did not retain typed watchdog executions or
+verified implementation. No live actions were performed.
+
+**General candidate 0.18.403:** New model-independent
+read-only telemetry publication gate consumes existing
+source-identity, attested clock consistency, driver-method
+coverage and positive event receipts. It corrects unsupported
+categorical physical/driver/last-packet/no-disconnect assertions
+while keeping qualified hypotheses and useful model-authored
+explanations. No new device-specific rule, MCP call, model round,
+configuration or device change. Generic synthetic tests cover
+other device IDs and malformed/mismatched evidence.
+[Source review](ANSWER-QUALITY-Q1-TELEMETRY-SOURCE-BOUNDARY-20261104.md).
+
+**Before measurement**: 36.507s/6 rounds/8 calls, substantive
+Q1 causal-calibration failure. **After live result not measured**.
+No independent model first-attempt accuracy, p50/p95, source-code
+watchdog verification or Claude parity claim is supported.
+Do not manufacture a resolved cause from a coverage-unresolved
+result. Exact-head CI/merge pending until independently verified.
+
+**Next live read-only acceptance:** Repeat the frozen question
+after install only if needed for a paired same-question regression;
+review clock conflict in final prose, no unverified driver
+methods, and no physical-status overclaim. Then continue Q1
+on a different source/domain without repeated device-specific
+patching. Q2 requires same-evidence model A/B, not synthetic
+CI success alone.
+
+---
 ## 2026-11-04 — Q1 v0.18.402 installed active-light aggregate coverage VERIFIED
 
 **Same registered read-only question, paired regression (not a new

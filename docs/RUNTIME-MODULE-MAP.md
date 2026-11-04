@@ -311,6 +311,7 @@ The repository drift test compares this table directly with the live directory. 
 | `tool_catalog_assembly.py` | Combines a request's already-fetched remote tools with the fixed local tool set into a ready `ToolDiscoveryCatalog`. |
 | `timed_internet_control.py` | Resolves driver-attested Block device IDs, schedules and verifies hub-resident delayed Internet actions through sequential MCP calls after host confirmation. |
 | `aggregate_zero_claim_guard.py` | Calibrates absolute ON=0 light/switch conclusions against source-verified inventory, candidate-state and scope coverage; read-only with no extra hub reads. |
+| `telemetry_source_claim_guard.py` | Generic read-only telemetry publication boundary for unverified physical/driver/last-packet assertions and positive event contradictions. |
 | `typed_status_claim_guard.py` | Cross-domain, source-typed final status assertion check over current-request read-only receipts; protects missing/contradicted measurements without extra reads or model rounds. |
 | `tool_executor.py` | Dispatches approved calls and records normalised results. |
 | `tool_registry.py` | Defines local schemas and structured tool effects. |

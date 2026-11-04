@@ -189,6 +189,7 @@ from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
 from typed_status_claim_guard import guard_typed_status_claims
 from aggregate_zero_claim_guard import guard_aggregate_zero_claims
+from telemetry_source_claim_guard import guard_telemetry_source_claims
 from evidence_source_scope import source_app_scope_error
 from target_history_scope import (
     render_target_scope_followup,
@@ -4286,6 +4287,23 @@ class UnifiedMCPAgent:
             )
             if confidence_aligned:
                 increment_active_metric("causal_coverage_confidence_aligned")
+            # The final model must not publish a certain physical failure,
+            # driver/watchdog method or last-packet timestamp when a scoped
+            # telemetry assessment itself says those sources are unverified.
+            # No extra provider or MCP round; applies to all device telemetry.
+            if (request_class == "live-read"
+                    and not self._mutation_call_seen.get()):
+                message, telemetry_issues = guard_telemetry_source_claims(
+                    message, evidence, coverage
+                )
+                if telemetry_issues:
+                    increment_active_metric(
+                        "telemetry_source_claim_repairs", len(telemetry_issues)
+                    )
+                    coverage = {
+                        **(coverage or {}),
+                        "telemetryPublicationCorrections": telemetry_issues,
+                    }
             # Publication is not permitted to silently discard repeated
             # independently sourced input/command timing evidence. Keep the
             # canonical, bounded observation separate from root-cause proof.

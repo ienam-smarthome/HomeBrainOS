@@ -63,6 +63,7 @@ class RequestMetrics:
         "unified_group_timeline_reconciled",
         "typed_status_source_claim_repairs",
         "aggregate_zero_claim_repairs",
+        "telemetry_source_claim_repairs",
         "v3_shadow_publications_seen",
         "v3_shadow_legacy_digest_replaced",
         "v3_shadow_legacy_ledger_replaced",
