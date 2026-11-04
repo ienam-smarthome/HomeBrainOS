@@ -1,5 +1,70 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 Hub Health v0.18.401 live regression: FINAL grounding PASSED; draft still unverified
+
+**New same-question installed test (not a new first attempt):** The user
+repeated the exact registered read-only `broad_hub_health` question
+`What is the hub health status?` on **HomeBrainOS 0.18.401**.
+The API's normalized-prompt SHA-256 matched the earlier 0.18.400
+request (`b586998f15c01644355754722ae36cce273a5026d2c436046e6a441b05ebf23c`).
+The API still reports `first_attempt_verified=false`,
+`model_delivery_verified=false`, and `deployed_build_sha_verified=false`;
+the exact deployed source SHA and independent draft correctness remain
+unattested. These flags and one repeated test do **not** establish
+first-attempt population accuracy.
+
+**Actual typed-source review:** One successful scoped, nonmutating
+`homebrain_hub_info_snapshot` with 18 reported fields supported:
+`cpu_5_min=0.41`, `cpu_percent=10.25`, `free_memory=792.21 MB`,
+`database_size=173 MB`, uptime `0d:19h:8m:47s`, installed and
+available firmware both `2.5.3.117`, Zigbee `enabled` with
+`healthy=true`, Z-Wave `disabled`, and Matter `online`.
+The source included `temperature_unit=°C` but no numeric
+`temperature` field; it could not verify complete alert absence,
+external firmware freshness or physical radio connectivity.
+
+**Published answer passed source-field grounding:** The output
+reported the supported scalars, explicitly said temperature was not
+reported, qualified global health/alert absence, described firmware
+as matching source-reported versions without independently verified
+external freshness, and called Zigbee enabled (healthy=true) instead
+of unqualified online. No unsupported temperature or global-health
+claim remained in the final message. The model's natural narrative
+was still somewhat mechanical due to correction text.
+
+**Important interpretation:**
+`metrics.counters.typed_status_source_claim_repairs=4` proves
+the publication guard applied FOUR source-claim corrections.
+It does **not** prove the underlying Gemma draft was already
+grounded. `evidence_validation.contradictions_corrected=[]` remains
+empty; this is a separate observation channel, not proof that
+zero source repairs happened. An independently attested first
+draft, paired model evidence and representative Q1 sample set
+are still needed before an accuracy/parity claim.
+
+**Measured single-test performance:** v0.18.400 wall **11,139ms**
+(provider 4,896ms, local tool 5,953ms, 2 rounds, 1 call) versus
+v0.18.401 wall **10,422ms** (provider 3,457ms, local tool
+6,568ms, aggregate MCP HTTP 6,867ms, 2 rounds, 1 call).
+This is **717ms (6.4%)** faster in two differing live observations,
+not a controlled benchmark or p50/p95. The later 10.4s answer
+meets the single routine-status 15s target. No new Hubitat, HA,
+router, device, or Rule Machine action was performed during
+this documentation work.
+
+**Next unchanged Q1 cross-domain live prompt:** Frozen legacy
+read-only case `all_lights_on`: `Which lights are currently on?`
+Open a NEW HomeBrain topic and submit exactly that question.
+Return the first complete natural-language answer and Technical JSON.
+Review inventory/source completeness, inclusion/exclusion of dimmers
+with saved nonzero levels while OFF, room/device identity, telemetry
+freshness, claim confidence, answer clarity, runtime, and tool
+efficiency. No devices may be changed and no write confirmation
+should be approved. Continue other Q1 domains before Q2
+same-evidence model comparison. **No further incident-specific
+Hub Info patches are justified by this successful final answer.**
+
+---
 ## 2026-11-04 — Q1 typed-source grounding: Hub health → cross-domain correction
 
 **New frozen Q1 domain observation:** Installed 0.18.400 responded
