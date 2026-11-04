@@ -11,6 +11,13 @@ readable. The actual test response returned
 reads. Backup age was ~6h59m at the collector timestamp, but the
 hub's own clock was not independently checked.
 
+[PR #1378](https://github.com/ienam-smarthome/HomeBrainOS/pull/1378)
+merged at `b8eb8c0c012ab1f0826da272c9d4005b654fa451`,
+after **6/6 CI checks green**, **6,224 Python tests passed**,
+two non-blocking warnings. The offline BAT naming/discovery contract
+is now aligned with the maintained read-only inventory. Add-on
+release stays **0.18.388**.
+
 The offline dated BAT candidate previously generated a name without
 the exact terminal suffix recognised by the maintained live inventory
 reader. To avoid leaving an eventual disposable test rule
