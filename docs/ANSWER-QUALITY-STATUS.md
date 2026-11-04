@@ -1,5 +1,50 @@
 # Answer Quality — active status and cross-chat handoff
 
+## Native Rule Machine multi-source read-only preflight routing — v0.18.388 candidate (2026-11-04)
+
+**Installed v0.18.387 user result at 00:19:25 UTC:** another read-only
+native Rule Machine parent inventory was returned in **2.970 seconds**
+with zero model rounds, five tool receipts (four remote rule/app
+inventory reads plus typed projection), native parent 169 verified and
+zero exact one-time suffix matches. The technical prompt fingerprint
+was **different** from the previous parent inventory question:
+`d166f6d6f0b6542856b4a39c54f4289b8f2d77573a67151014dba1533399360b`.
+The original text of this latest prompt is **not exposed** in its JSON;
+the sequence followed our explicit backup/version/tool-guide preflight
+question, but the response **did not read** MCP serverInfo, hub backups,
+or tool guides. Those three readiness obligations are **not measured**.
+No modifying tools were called and production Internet-blocker is
+**still disabled**.
+
+**Reproducible general routing defect:** the existing native inventory
+classifier independently matched `Rule Machine`, `backup inventory`
+and the question's `which` tool-guide sections, incorrectly treating
+a multi-source preflight as a rule/app inventory. The v0.18.388 candidate
+adds a **separately scoped read-only readiness objective** ahead of
+single-subject inventory, recognizing at least two positive read
+obligations (version, backup, guide) rather than negative instructions.
+It obtains MCP version from *serverInfo returned by MCP initialize*
+only with the exact upstream `hubitat-mcp-rule-server` identity;
+calls only `hub_list_backups(scope=hub_local)` and the two read-only
+`hub_get_tool_guide` sections, and publishes **only** timestamp/count,
+guide-availability booleans and version. No guide acknowledgements,
+backup filenames, private settings, cloud model rounds or write calls.
+Missing/partial source fields must be reported unverified; a completed
+readiness answer **never authorizes native writes**.
+
+**Baseline:** latest wrong-objective response in 2.970s with **0/3**
+readiness source classes covered. **Post-change installed performance,
+correctness, and exact MCP Rule Server version: NOT MEASURED.** Unit
+fixtures and CI verify only the new route's intent isolation, source
+shapes and no-write/redaction invariants. Runtime source version moves
+to 0.18.388 because the read-only behaviour changes. A future
+read-only answer+Technical JSON is still needed for live acceptance;
+a separately approved *new* disposable virtual-switch BAT remains
+necessary for execution verification. Never reuse the existing
+MCP-owned switch from v0.18.381. The permanent Answer Quality roadmap
+is preserved; this is one general objective-routing repair.
+
+
 ## Installed v0.18.387 native Rule Machine parent — SOURCE-VERIFIED PASS (2026-11-04 00:09 UTC)
 
 **Real user-supplied read-only acceptance:** exact repeated native Rule
