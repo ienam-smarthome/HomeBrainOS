@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.395**.
+Current add-on version: **0.18.396**.
+
+**Native Rule Machine scalar normalization (v0.18.396):** The named-rule summary now shares the privacy/field projection with the existing native section reader instead of rejecting optional `device_ids=null`. It recognizes only exact typed native boolean strings (`"true"`/`"false"`) and bounded integer numeric strings when interpreting rule Switch and elapsed-wait settings. It remains read-only, source-scoped and fails closed on ambiguous values. The raw native read mode remains available unchanged. [Release notes](CHANGELOG-0.18.396.md).
 
 **Readable native Rule Machine configuration (v0.18.395):** Exact named-rule reads now present verified trigger times, configured switch ON/OFF device IDs, elapsed wait settings and the uncertainty about one-time dates, schedule status and execution in a short natural-language sequence. Editor form internals and privacy-redacted settings remain omitted from the default answer; callers explicitly requesting raw native sections retain the earlier detailed format. Uses the same read-only MCP request, without additional tool or model rounds. [Release notes](CHANGELOG-0.18.395.md).
 
