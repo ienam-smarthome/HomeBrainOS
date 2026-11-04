@@ -33,6 +33,7 @@ from tool_registry import (
     HUB_UPDATE_FIRMWARE_TOOL,
     normalize_rule_machine_proposal,
     rule_machine_proposal_error,
+    virtual_device_creation_proposal_error,
 )
 
 
@@ -522,11 +523,19 @@ class ConfirmedActionCoordinator:
             arguments = normalize_rule_machine_proposal(
                 tool_name, raw_arguments
             )
-            proposal_error = rule_machine_proposal_error(tool_name, arguments)
+            proposal_error = (
+                virtual_device_creation_proposal_error(tool_name, arguments)
+                or rule_machine_proposal_error(tool_name, arguments)
+            )
             if proposal_error is not None:
+                if tool_name == "hub_manage_rule_machine":
+                    return (
+                        "The queued Rule Machine action was cancelled because its "
+                        f"payload is incomplete. {proposal_error}"
+                    )
                 return (
-                    "The queued Rule Machine action was cancelled because its "
-                    f"payload is incomplete. {proposal_error}"
+                    "The queued Hubitat action was cancelled before execution "
+                    f"because its payload is invalid. {proposal_error}"
                 )
             normalized_actions.append((tool_name, arguments))
         if self._rule_create_preflight is not None:

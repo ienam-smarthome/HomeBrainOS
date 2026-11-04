@@ -317,6 +317,8 @@ from tool_registry import (
     classify_tool_effect,
     normalize_rule_machine_proposal,
     rule_machine_proposal_error,
+    requests_virtual_device_creation,
+    virtual_device_creation_proposal_error,
 )
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -4831,6 +4833,20 @@ class UnifiedMCPAgent:
                     "Original-request discovery expanded registry with: %s",
                     ", ".join(item.name for item in capability_additions),
                 )
+        # The direct virtual-device writer is a top-level MCP operation, not a
+        # hub_manage_devices sub-operation. Fuzzy search can return the generic
+        # gateway instead. Reveal only the actually installed direct schema for
+        # an independently authorised creation objective; do not fabricate it,
+        # widen read-only tasks, or bypass the usual confirmation boundary.
+        direct_virtual_creation = bool(
+            self._mutation_requested_by_user.get()
+            and requests_virtual_device_creation(user_prompt)
+            and catalog.available_tool("hub_manage_virtual_device") is not None
+        )
+        if direct_virtual_creation:
+            catalog.replace_declared([
+                *catalog.declared_names, "hub_manage_virtual_device",
+            ])
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(
@@ -4838,6 +4854,17 @@ class UnifiedMCPAgent:
             conversation_history,
             skill_domains=task_plan.skill_domains if task_plan is not None else None,
         )
+        if direct_virtual_creation:
+            system_prompt += (
+                "\n\nVIRTUAL DEVICE TOOL CONTRACT\n"
+                "For virtual device creation, the installed direct "
+                "hub_manage_virtual_device tool is declared. Use its live "
+                "schema and deviceType field. The generic hub_create_device "
+                "requires a verified native deviceTypeId; a virtual type "
+                "display label is not such an ID. Never guess or translate "
+                "IDs. No tool selection itself authorises a write: retain "
+                "the host confirmation and source-read requirements.\n"
+            )
         if proposal_only:
             system_prompt += (
                 "\n\nHOST RULE DESIGN / REVIEW-ONLY BOUNDARY\n"
@@ -6341,7 +6368,9 @@ class UnifiedMCPAgent:
                     and effect.mutates
                 ):
                     return RULE_WRITES_DISABLED_MESSAGE
-                proposal_error = rule_machine_proposal_error(
+                proposal_error = virtual_device_creation_proposal_error(
+                    name, arguments,
+                ) or rule_machine_proposal_error(
                     name, arguments,
                     # A cumulative elapsed-usage budget is NOT a single
                     # delay step. Its separate topology validator enforces
