@@ -1,5 +1,50 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q2 first successful **actual** local-model frozen MQTT pair; preliminary review only
+
+User completed the post-PR #1415 answer-only **local Ollama**
+fixed case `aq_network_broker_vs_device_health` (new run,
+not a recovery of the failed pre-fix attempt). Actual original
+model answer texts were provided in conversation, alongside
+private-output SHA metadata for both arms and a single
+matched packet `74ccff7fa2c23852655d12b45f6f5cbb6a3315de8c7647cac7b03441282f7150`:
+
+- **Qwen 3.5 4B**, baseline, `ollama-local`, **20.344s**
+  response, answer SHA `2a1843c20024a7e83428a70de59d52dc5ef19f7a87beee341f73cf9bb7da60aa`.
+- **Llama 3.2 3B**, candidate, `ollama-local`, **8.531s**
+  response, answer SHA `e0cdb67452889dae74caa65122ba28907a605b56db245fb7060f54de163d6184`.
+
+Both carry checkout SHA `0e71f92f380d21cfb2d3a17a66fbd40d85bd0684`
+and self-recorded `attempt_index=1`. Measured speed delta:
+Llama **11.813s faster (58.1% less time)** for this *one*
+offline local request. No repeated-sample distribution and
+not HomeBrain production wall time.
+
+**Source comparison, not official human score:** Qwen correctly
+separated broker connection and stale endpoint and included
+the supplied watchdog-written `lastActivity` distinction,
+but used a speculative background-process explanation and a
+less targeted next read-only check (broker disconnect vs
+genuine endpoint payload / watchdog `lastActivity`). Llama
+answered the central MQTT/health contrast more briefly but
+omitted the watchdog fact and next read-only discriminator.
+Neither gives a verified physical root cause. No separately
+authenticated/blinded human review was supplied;
+formal Q2 quality score remains **NOT MEASURED**, as does
+model-first provider attestation, Gemma/Claude parity,
+p50/p95 and general model ranking.
+
+**Next:** Stop repeating the MQTT case. Run the other three
+unchanged frozen cases locally on the same pair: command
+issuer versus reporter; early heating-off return; Rule
+Machine parent/native identity gap. Retain fresh private
+raw answers and hashes; review with the existing
+SHA-bound rubric. No additional runtime/publisher
+patch or model switch is justified.
+[Full recorded review](ANSWER-QUALITY-Q2-FIRST-LOCAL-MQTT-PAIR-20261104.md).
+
+---
+
 ## 2026-11-04 — Q2 local answer-only capability correction merged; actual A/B still pending
 
 **Merged and exact-head CI verified:** [PR #1415](https://github.com/ienam-smarthome/HomeBrainOS/pull/1415)
