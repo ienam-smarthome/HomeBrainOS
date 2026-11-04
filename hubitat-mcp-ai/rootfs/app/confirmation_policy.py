@@ -97,6 +97,23 @@ def _rule_confirmation_prompt(
         payload = arguments.get("args")
         if not isinstance(payload, dict):
             return None
+        if payload.get("operation") == "create":
+            from native_switch_schedule import dated_switch_proposal_error
+            if dated_switch_proposal_error(payload) is not None:
+                return None
+            native = payload["args"]
+            trigger, switch = native["changes"]
+            timer = {f["name"]: f["value"] for f in trigger["value"]["fields"]}
+            controls = {f["name"]: f["value"] for f in switch["value"]["fields"]}
+            action_name = "ON (allow Internet)" if controls["onOff.#"] else "OFF (block Internet)"
+            summaries.append(
+                f"create **{native['name']}** at Hubitat-local "
+                f"**{timer['atDate#']} {timer['atTime#'][11:16]}** "
+                f"with device ID **{controls['onOffSwitch.#'][0]}** "
+                f"→ **{action_name}** (a dated native trigger, not a manual "
+                "command now; verify scheduled job after creation)"
+            )
+            continue
         name = str(payload.get("name") or "").strip()
         app_id = payload.get("appId")
         subject = (
