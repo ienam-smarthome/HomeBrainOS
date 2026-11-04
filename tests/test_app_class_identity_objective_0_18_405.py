@@ -104,6 +104,21 @@ def test_advisory_model_objective_corrected_for_identity_not_genuine_audit():
     assert still_rule.objective == "existing_rule_verification"
 
 
+def test_invalid_specialist_route_falls_back_to_targeted_native_identity():
+    async def overbroad_classifier(messages, tools):
+        return {"content": json.dumps({
+            "route": "system_audit",
+            "objective": "system_audit",
+            "answer_goal": "verify_configuration",
+            "target": "app 169",
+        })}
+    decision = asyncio.run(decide_read_route(
+        overbroad_classifier, IDENTITY_REQUEST,
+    ))
+    assert decision.route == "model_led"
+    assert decision.objective == "app_class_identity"
+
+
 def test_generic_field_names_do_not_establish_native_class_binding():
     plan = plan_investigation(IDENTITY_REQUEST)
     source = [
