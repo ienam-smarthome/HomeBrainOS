@@ -188,6 +188,7 @@ from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
 from typed_status_claim_guard import guard_typed_status_claims
+from aggregate_zero_claim_guard import guard_aggregate_zero_claims
 from evidence_source_scope import source_app_scope_error
 from target_history_scope import (
     render_target_scope_followup,
@@ -4178,6 +4179,15 @@ class UnifiedMCPAgent:
                 if typed_issues:
                     increment_active_metric(
                         "typed_status_source_claim_repairs", len(typed_issues)
+                    )
+                # Generic zero-count publication contract for source-complete
+                # light/switch aggregates; no extra MCP or model round.
+                message, aggregate_issues = guard_aggregate_zero_claims(
+                    message, evidence
+                )
+                if aggregate_issues:
+                    increment_active_metric(
+                        "aggregate_zero_claim_repairs", len(aggregate_issues)
                     )
             pending = self.confirmations.pending.get(str(session_id))
             contract = (
