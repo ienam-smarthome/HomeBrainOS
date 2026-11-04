@@ -1054,7 +1054,7 @@ class RuleAuthoringService:
     def _native_date_version_ok(version: str | None) -> bool:
         if not isinstance(version, str):
             return False
-        if not re.fullmatch(r"[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?", version):
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?", version):
             return False
         parts = version.split("-", 1)[0].split("+", 1)[0].split(".")
         return len(parts) == 3 and tuple(int(x) for x in parts) >= (5, 1, 6)
@@ -1080,7 +1080,7 @@ class RuleAuthoringService:
             data = receipt.data if tool_succeeded(receipt) and isinstance(receipt.data, dict) else {}
             candidate = data.get("mcpServerVersion")
             if isinstance(candidate, str) and re.fullmatch(
-                r"[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?",
+                r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?",
                 candidate.strip()
             ):
                 observed = candidate.strip()
