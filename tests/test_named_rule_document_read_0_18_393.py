@@ -52,11 +52,22 @@ class FakeMCP:
                 "triggers": {"1": "at 8:00 AM"},
                 "actions": [
                     {"id": "1", "value": {"method": "getOnOffSwitch"}},
-                    {"id": "2", "value": {"method": "getWaitEvents"}},
-                    {"id": "3", "value": {"method": "getOnOffSwitch"}},
+                    {"id": "3", "value": {"method": "getWaitEvents"}},
+                    {"id": "4", "value": {"method": "getOnOffSwitch"}},
                 ],
                 "settings": [
-                    {"name": "delayMinutes.2", "type": "number", "value": 15},
+                    {"name": "time1", "type": "enum", "value": "A specific time"},
+                    {"name": "atTime1", "type": "time", "value": "08:00"},
+                    {"name": "date1", "type": "bool", "value": ""},
+                    {"name": "onOff.1", "type": "bool", "value": False},
+                    {"name": "onOffSwitch.1", "type": "capability.switch",
+                     "value": "unavailable", "device_ids": ["6923"]},
+                    {"name": "delayAct.3", "type": "enum", "value": "hrs:min:sec"},
+                    {"name": "delayMin.3", "type": "number", "value": 15},
+                    {"name": "onOff.4", "type": "bool", "value": True},
+                    {"name": "onOffSwitch.4", "type": "capability.switch",
+                     "value": "unavailable", "device_ids": ["6923"]},
+                    {"name": "secretToken", "type": "text", "value": "do-not-expose"},
                 ],
                 "conditions": {}, "expressions": {}, "variables": {},
             }
@@ -78,9 +89,15 @@ async def test_named_read_has_exact_id_and_single_native_read():
     assert outcome.route == "named-rule-read"
     assert outcome.complete
     assert "4285" in outcome.message
-    assert "getWaitEvents" in outcome.message
-    assert "delayMinutes.2" in outcome.message
-    assert "15" in outcome.message
+    assert "15 minutes configured" in outcome.message
+    assert "Set switch **OFF**" in outcome.message
+    assert "Set switch **ON**" in outcome.message
+    assert "no dated one-time trigger verified" in outcome.message
+    assert "One-off" in outcome.message  # exact name, not temporal proof
+    assert "getWaitEvents" not in outcome.message
+    assert "secretToken" not in outcome.message
+    assert "do-not-expose" not in outcome.message
+    assert "delayMin.3" not in outcome.message
     assert len(mcp.calls) == 2
     assert all(x.get("mutates") is False for x in outcome.evidence)
     assert all(x.get("effect") == "read" for x in outcome.evidence)
