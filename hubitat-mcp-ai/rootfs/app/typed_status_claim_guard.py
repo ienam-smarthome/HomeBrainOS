@@ -161,6 +161,21 @@ def _numeric_claim(raw: str, source: Sequence[Any]) -> bool:
     )
 
 
+def _compatible_source(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Overlapping fresh field values must agree; never combine snapshots."""
+    observed: dict[str, str] = {}
+    for row in rows:
+        for key, value in row["facts"].items():
+            if not _nonnull(value):
+                continue
+            norm_key = _norm(key).replace(" ", "")
+            actual = str(value)
+            if norm_key in observed and observed[norm_key] != actual:
+                return None
+            observed[norm_key] = actual
+    return max(rows, key=lambda row: len(row["facts"])) if rows else None
+
+
 def _specific_source(label: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not candidates:
         return None
@@ -170,11 +185,10 @@ def _specific_source(label: str, candidates: list[dict[str, Any]]) -> dict[str, 
         ids = {r["identity"] for r in devices}
         if len(ids) != 1:
             return None
-        # Prefer the full verified resolution receipt over a thin lookup.
-        return max(devices, key=lambda r: len(r["facts"]))
+        return _compatible_source(devices)
     identities = {r["identity"] for r in candidates}
     if len(identities) == 1:
-        return max(candidates, key=lambda r: len(r["facts"]))
+        return _compatible_source(candidates)
     return None
 
 
@@ -286,7 +300,10 @@ def _global_claims(message: str, candidates: list[dict[str, Any]]) -> tuple[str,
     # A version match is not an independently fresh update-server check.
     if _FIRMWARE.search(out):
         if len({r["identity"] for r in candidates}) == 1:
-            facts = max(candidates, key=lambda r: len(r["facts"]))["facts"]
+            chosen = _compatible_source(candidates)
+            if chosen is None:
+                return out, issues
+            facts = chosen["facts"]
             installed = _field(facts, ("installed_firmware", "firmwareVersionString", "firmwareVersion"))
             available = _field(facts, ("available_firmware", "hubUpdateVersion"))
             if _nonnull(installed) and _nonnull(available):
@@ -350,8 +367,9 @@ def guard_typed_status_claims(
     output, global_issues = _global_claims("".join(lines), sources)
     issues.extend(global_issues)
     if _TEMP_PROSE.search(output) and len({s["identity"] for s in sources}) == 1:
-        facts = max(sources, key=lambda r: len(r["facts"]))["facts"]
-        if not _nonnull(_field(facts, ("temperature", "temperatureC", "temperatureF"))):
+        chosen = _compatible_source(sources)
+        facts = chosen["facts"] if chosen is not None else None
+        if facts is not None and not _nonnull(_field(facts, ("temperature", "temperatureC", "temperatureF"))):
             output, n = _TEMP_PROSE.subn(
                 "temperature not reported in the checked source", output
             )
