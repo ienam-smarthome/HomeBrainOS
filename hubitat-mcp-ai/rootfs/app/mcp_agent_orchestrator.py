@@ -277,6 +277,10 @@ from native_rule_readiness_source import (
     read_native_rule_readiness,
     native_rule_readiness_coverage,
 )
+from native_virtual_device_creation_contract import (
+    requested_virtual_device_type, needs_server_generated_dni,
+    virtual_device_creation_error,
+)
 from owned_device_inventory_source import (
     is_explicit_owned_device_inventory_request,
     read_owned_virtual_device_inventory,
@@ -4475,6 +4479,28 @@ class UnifiedMCPAgent:
         # The initial model view remains small and permission-filtered by MCP.
         all_tools = await self.mcp.list_tools()
         catalog = build_request_tool_catalog(all_tools)
+        requested_virtual_type = (
+            requested_virtual_device_type(user_prompt)
+            if self._mutation_requested_by_user.get() else None
+        )
+        if requested_virtual_type is not None:
+            # Native MCP-managed virtual device creation is a *direct* tool.
+            # Never let fuzzy discovery choose hub_create_device and fill
+            # deviceTypeId with a display driver type (real v0.18.388 failure).
+            # Expose only an already advertised, permission-available tool.
+            if "hub_manage_virtual_device" not in catalog.available_names:
+                return (
+                    "No Hubitat device action was queued or executed. The installed "
+                    "MCP catalog does not expose hub_manage_virtual_device, so "
+                    "the requested built-in virtual-device create cannot be "
+                    "performed safely. Do not fall back to "
+                    "hub_manage_devices/hub_create_device or invent a driver ID."
+                )
+            catalog.replace_declared([
+                *catalog.declared_names,
+                "hub_manage_virtual_device", "hub_read_devices",
+                "hub_get_tool_guide", "hub_read_apps_code",
+            ])
 
         # Honor a single, explicit device-only read before generic Rule
         # Machine discovery. "Do not call Rule Machine" is a restriction,
@@ -6321,6 +6347,20 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
                 arguments = normalize_rule_machine_proposal(name, arguments)
+                virtual_error = virtual_device_creation_error(
+                    name, arguments,
+                    requested_type=requested_virtual_type,
+                    server_generated_dni=(
+                        requested_virtual_type is not None
+                        and needs_server_generated_dni(user_prompt)
+                    ),
+                )
+                if virtual_error is not None:
+                    increment_active_metric("virtual_device_schema_guard_refusals")
+                    return (
+                        "No Hubitat action was queued or executed. "
+                        + virtual_error
+                    )
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
