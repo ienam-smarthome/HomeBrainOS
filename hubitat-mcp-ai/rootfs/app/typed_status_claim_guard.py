@@ -13,8 +13,9 @@ from typing import Any
 _NUM = re.compile(r"(?<![\w.])[-+]?\d+(?:\.\d+)?(?![\w.])")
 _LINE = re.compile(
     r"^(?P<prefix>\s*(?:[-*•]\s*)?)(?P<bold>\*\*)?"
-    r"(?P<label>[\w /()\-]{2,70})(?P<close>\*\*)?"
-    r"\s*:\s*(?P<value>.+?)(?P<newline>\r?\n?)$",
+    r"(?P<label>[\w /()\-]{2,70})"
+    r"(?P<separator>:\*\*|\*\*:|:)\s*"
+    r"(?P<value>.+?)(?P<newline>\r?\n?)$",
     re.I,
 )
 _HEALTH = re.compile(
@@ -340,7 +341,7 @@ def guard_typed_status_claims(
             # structure, including **bold label** and original line breaks.
             lines.append(
                 match.group("prefix") + (match.group("bold") or "")
-                + label + (match.group("close") or "") + ": "
+                + label + match.group("separator") + " "
                 + replacement + match.group("newline")
             )
             issues.append(reason)
