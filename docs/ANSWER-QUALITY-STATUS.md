@@ -1,5 +1,37 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-04 — Q1 v0.18.404 broad hub health: live snapshot good, alert coverage partial
+
+The exact registered read-only `broad_hub_health` question
+(`What is the hub health status?`) returned `success` with
+**9.376s wall-time**, **2** free Gemma model rounds, **1**
+read-only `homebrain_hub_info_snapshot(scope=full)` call,
+**3.019s provider** and **6.021s local tool**. Driver-source
+values supported CPU 0.67 / 16.75% reported CPU, free RAM
+767.41 MB, database 163 MB, uptime 22h39m22s,
+firmware installed/available 2.5.3.117, Zigbee enabled
+healthy=true, Z-Wave disabled, Matter online. No temperature
+value was present; published answer withheld it and avoided
+claiming complete health or no alerts.
+
+**Partial acceptance only**: one scalar snapshot, not an alert
+inventory or historical-log freshness check; full `live
+metrics and alerts` source coverage **not established**. Source
+timestamps, external firmware freshness and physical hub
+health unverified. `typed_status_source_claim_repairs=4`,
+`model_delivery_verified=false`, `first_attempt_verified=false`,
+`deployed_build_sha_verified=false`. No independent first-draft
+accuracy score. Driver diagnostics include 2 refresh commands
+and 1 poll read within read-classified snapshot. Routine
+under-15s target met on this one observation, **not p50/p95**.
+
+Next: move toward **Q2 frozen same-evidence model reasoning A/B**;
+preserve the generic hub-alert source coverage gap for later
+cross-case Q1/Q3 investigation, with no hub-specific wording patch.
+[Detailed review](ANSWER-QUALITY-Q1-HUB-HEALTH-V404-LIVE-20261104.md).
+
+---
+
 ## 2026-11-04 — Q1 v0.18.404 installed MQTT/health acceptance: measured improvement
 
 **Live installed paired case:** The unchanged read-only `device_mqtt_conflict`
