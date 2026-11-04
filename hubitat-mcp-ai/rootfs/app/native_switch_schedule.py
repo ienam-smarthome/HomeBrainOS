@@ -65,7 +65,7 @@ def create_dated_switch(
     return {"tool": "hub_set_rule", "args": native}
 
 
-def dated_switch_proposal_error(payload: Any) -> str | None:
+def dated_switch_proposal_error(payload: Any, *, approved: bool = False) -> str | None:
     """Strict syntactic gate on native create on proposal AND confirmation.
 
     This is not a source-attestation gate. The caller must separately verify
@@ -75,7 +75,13 @@ def dated_switch_proposal_error(payload: Any) -> str | None:
         return ("Invalid native dated Switch rule: require exactly one dated "
                 "Certain Time trigger and one verified switch action, with "
                 "matching calendar label/time. No write was queued.")
-    if not isinstance(payload, dict) or set(payload) - {"operation", "args", "bestPracticeKey"}:
+    allowed = {"operation", "args", "bestPracticeKey"}
+    if approved:
+        allowed.add("confirm")
+    if (not isinstance(payload, dict) or set(payload) - allowed
+            or ("confirm" in payload and (
+                not approved or payload["confirm"] is not True
+            ))):
         return invalid()
     if payload.get("operation") != "create":
         return invalid()
