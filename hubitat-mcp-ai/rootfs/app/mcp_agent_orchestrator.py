@@ -266,6 +266,7 @@ from rule_machine_analysis import requires_rule_logic_inspection
 from targeted_rule_scope_policy import (
     named_rule_app_ids, is_existing_rule_verification_request,
     is_new_rule_design_review_request,
+    is_native_rule_contract_review_request,
 )
 from native_rule_evidence_prefetch import prefetch_native_rule_evidence
 from native_rule_document_source import (
@@ -4479,16 +4480,21 @@ class UnifiedMCPAgent:
         # Interpreted read intent takes precedence over overlapping
         # diagnostic/app/rule words. On requests not arbitrated by the model,
         # retain the established specialist/factual fallback behavior.
+        native_contract_review = is_native_rule_contract_review_request(user_prompt)
         proposal_only = (
             not source_investigation
             and (
-                interpreted_kind == "rule_design_review"
-                if interpreted_kind is not None
-                else is_new_rule_design_review_request(user_prompt)
+                native_contract_review
+                or (
+                    interpreted_kind == "rule_design_review"
+                    if interpreted_kind is not None
+                    else is_new_rule_design_review_request(user_prompt)
+                )
             )
         )
         existing_rule_verification = (
             not source_investigation
+            and not native_contract_review
             and (
                 interpreted_kind == "existing_rule_verification"
                 if interpreted_kind is not None
@@ -4497,6 +4503,7 @@ class UnifiedMCPAgent:
         )
         deep_rule_review = (
             not source_investigation
+            and not native_contract_review
             and not _explicit_mutation_request(user_prompt)
             and (
                 interpreted_kind == "existing_rule_verification"
@@ -5098,7 +5105,23 @@ class UnifiedMCPAgent:
                 "IDs. No tool selection itself authorises a write: retain "
                 "the host confirmation and source-read requirements.\n"
             )
-        if proposal_only:
+        if proposal_only and native_contract_review:
+            system_prompt += (
+                "\n\nHOST NATIVE AUTHORING CONTRACT REVIEW (read-only)\n"
+                "The user requests a prospective Rule Machine authoring "
+                "schema/runbook assessment, not an existing rule audit. "
+                "Do not inspect unrelated app IDs, custom Groovy source, "
+                "device histories, app logs, duplicate controllers or "
+                "installed child action trees. Read the existing native "
+                "guide if necessary and distinguish its static examples "
+                "from installed-hub typed schema and scheduler execution. "
+                "A guide receipt alone does NOT verify field names, "
+                "date/time values, optional year semantics, log-action "
+                "encoding or scheduled firing. Never invent runnable "
+                "hub_set_rule JSON; report missing schema evidence "
+                "concisely. No Hubitat writes or confirmations.\n"
+            )
+        elif proposal_only:
             system_prompt += (
                 "\n\nHOST RULE DESIGN / REVIEW-ONLY BOUNDARY\n"
                 "The user explicitly requested a proposed automation plan "
