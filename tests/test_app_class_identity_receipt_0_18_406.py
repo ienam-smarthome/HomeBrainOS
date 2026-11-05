@@ -136,7 +136,7 @@ def test_positive_app_identity_is_separate_from_native_class_binding():
     coverage = assess_investigation(plan, [receipt])
     states = {r["key"]: r["state"] for r in coverage["requirements"]}
     assert states == {
-        "instance_identity": "verified",
+        "instance_identity": "observed",
         "native_class_binding": "checked-unverified",
     }
     assert coverage["evidenceComplete"] is False
