@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.414**.
+Current add-on version: **0.18.415**.
+
+**Automation-status fast-route correction (v0.18.415):** A v0.18.414 user-run exact-ID retry for the two incomplete existing native Rule Machine dated-trigger reads (2967/3985) incorrectly returned the entire Hubitat automation-status dashboard in ~1s, because the status matcher equated any prompt containing "rules" and the safety instruction "Keep native rule-writing authorisation disabled" with an explicit global status request. The deterministic automation-status inventory is retained **only for genuine broad list/status/count requests**; incidental words in read-only rule investigations can no longer hijack the request. The API selector also explicitly protects existing native dated-trigger discovery from the status route. Regression tests cover the actual full prompt, explicit status queries, advisory ideas and the /api/ask route. No changes to Hubitat rules, device state, native rule writer or permissions. [Release notes](CHANGELOG-0.18.415.md).
 
 **Native dated-trigger exact-ID read retry (v0.18.414):** Four installed v0.18.412/v0.18.413 read-only batches attempted all 42 visible Rule-5.1 native children; 40 document reads verified, two incomplete (IDs 2967 and 3985), no verified enabled date-specific trigger. A narrow, explicitly requested existing-trigger retry can now look up up to four exact positive rule IDs in a freshly returned native child-app inventory before issuing their individual `hub_set_rule(operation=read)` trigger/settings reads. Missing or malformed IDs do not result in arbitrary direct reads, and the prior offset-batch path is unchanged. The response distinguishes targeted read coverage from hub-wide absence, does not reveal unrelated native settings, and never opens forms or changes rules. Read-only date-field evidence is not a Rule Machine authoring contract; writing remains blocked. [Release notes](CHANGELOG-0.18.414.md).
 
