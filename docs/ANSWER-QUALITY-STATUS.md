@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 21:02 UTC — false native Rule Machine readiness in installed v0.18.423; v0.18.424 fix candidate
+
+**Live defect:** A read-only request to review MCP Server v5.1.6 native dated-trigger creation returned a model-authored, executable-looking payload with wrong date/time shapes (`HH:mm`, `MM/dd/yyyy`), fabricated `addTrigger`/`addAction` and `runCommand` syntax, top-level `parent_id`, and declared the proposal READY. The returned source receipts were only two `hub_list_apps(scope=instances)` inventory reads and two `hub_get_tool_guide` sections (4 MCP calls, 3 model rounds, 21.476s wall, 17.504s agent). Technical coverage reported `rule_design_review`, `sourceChecksComplete=false`, `evidenceComplete=false`, device/current-rule sources not checked and native capability source checked-unverified. The model claimed device/app pages and UK hub timezone without matching targeted evidence. An existing shared rule-design guard appended a fixed motion/inactivity/manual-lockout and 23:00–06:00 warning from an unrelated rule-design request. No automation or device was modified or queued.
+
+**Upstream distinction:** MCP Server merged PR #576, issue #575: native `atDate#` type `date` validates `yyyy-MM-dd`; its `atTime#` example is a full native time value, not a bare `HH:mm`. The installed `set_rule_reference` guide still omits a static typed date-trigger template; a successful guide read is not source-attested live authoring proof. The model's contradictory values are not evidence of Hubitat's behaviour.
+
+**v0.18.424 shared guard correction:** Remove unverified schema assertion/readiness sections and runnable native-write JSON from read-only proposals unless a trusted typed combined-schema receipt attests them. Derive evidence qualifications from actual targeted reads, not generic response field names. Choose overnight motion/light warnings only for matching user requests; other design reviews get domain-neutral contract and firing caveats. Keep no-new-tool-calls/no-new-model-rounds/no-writes, and retain original motion-design guard. Add a replay regression with the exact wrong field formats, false READY, fake JSON and injected motion note. This is not authorisation to test or enable native writing.
+
+**Evaluation:** CI and installed acceptance pending. Acceptance should show no false READY, no executable JSON unsupported by typed source, and no unrelated 23:00–06:00 appendix on the same read-only request; benchmark generality and latency against standing Answer Quality roadmap. No native scheduling was attempted.
+
+---
+
 ## 2026-11-05 — MCP native dated-trigger guide patch drafted; upstream write access remains unavailable
 
 **Following installed v0.18.423 acceptance:** The native read-only preflight correctly verified parent 169 / type 18, 42 returned child-parent references, MCP Server 5.1.6, and both tool-guide sections. Its `nativeGuideContract.inspectionStatus=checked` did not find `atDate#` typed declarations; `Unresolved` and `readinessForMutation=false` are expected. No further HomeBrainOS runtime patch is justified by this source gap. Continue the standing benchmark-first Answer Quality roadmap.

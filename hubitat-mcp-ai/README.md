@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.423**.
+Current add-on version: **0.18.424**.
+
+**Native proposal publication guard (v0.18.424):** A read-only runbook review in installed 0.18.423 invented HH:mm / MM/dd/yyyy date formats, an unsupported native addTrigger/addAction create payload, and declared READY despite incomplete schema evidence. It also appended an unrelated hard-coded overnight-lighting/motion caveat, and implied targeted app/device page reads when only inventory/guide calls occurred. The existing shared rule-design guard now withholds unverified executable native write JSON, replaces unverified upstream schema/readiness claims, differentiates targeted configuration reads, and scopes the feasibility appendix to the actual question. No native writer privileges or MCP calls are added. [Release notes](CHANGELOG-0.18.424.md).
 
 **Preflight source-coverage accuracy (v0.18.420):** The installed 0.18.419 preflight read both guides and verified parent 169, but a request to report `nativeGuideContract` and its evidence gaps did not trigger the contract check. Technical JSON misleadingly called a readable guide `guide_unavailable_or_oversized`, and completion labelled the requested proof complete. The existing read-only guide response is now always inspected at no extra MCP cost; an explicit contract or guide-gap reporting objective is graded as a required source check, while ordinary version/backup/guide checks remain simple. An omitted date declaration is marked unverified, not unsupported; no change to native writer permissions or rule/device state. [Release notes](CHANGELOG-0.18.420.md).
 
