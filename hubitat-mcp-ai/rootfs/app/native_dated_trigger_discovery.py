@@ -14,6 +14,9 @@ from typing import Any
 
 from mcp_client import MCPTool, tool_succeeded
 from tool_registry import ToolEffect, classify_tool_effect
+from native_dated_paged_reader import (
+    read_failure_category, read_paged_native_dated_document,
+)
 
 _READ_GATEWAYS = ("hub_manage_native_rules_and_apps", "hub_manage_rule_machine")
 _PAGE_LIMIT = 4
@@ -106,7 +109,7 @@ def project_existing_dated_fields(document: Any, rule_id: str) -> dict[str, Any]
     if document.get("truncated") is True or document.get("nextCursor") is not None:
         return None
     settings, triggers = document.get("settings"), document.get("triggers")
-    if not isinstance(settings, list) or len(settings) > 256:
+    if not isinstance(settings, list) or len(settings) > 400:
         return None
     if not isinstance(triggers, dict) or len(triggers) > 100:
         return None
@@ -164,7 +167,10 @@ def project_existing_dated_fields(document: Any, rule_id: str) -> dict[str, Any]
         })
     return {
         "ruleId": rule_id,
-        "source": "hub_set_rule:read",
+        "source": (
+            "hub_set_rule:paged-read" if document.get("_source") == "hub_set_rule:paged-read"
+            else "hub_set_rule:read"
+        ),
         "requestedSections": ["triggers", "settings"],
         "returnedDateFieldGroups": returned[:32],
         "projectionTruncated": len(returned) > 32,
@@ -276,6 +282,7 @@ async def read_existing_dated_triggers(
     gateway = next((g for g in _READ_GATEWAYS if g in available_names), None)
     scanned = []
     verified = []
+    read_diagnostics: list[dict[str, Any]] = []
     partial_fields: list[dict[str, Any]] = []
     if gateway:
         for candidate in selected:
@@ -287,14 +294,18 @@ async def read_existing_dated_triggers(
             if classify_tool_effect(MCPTool(gateway, gateway, {}), args) is not ToolEffect.READ:
                 break
             st = time.monotonic()
+            primary_failure: str | None = None
+            result: dict[str, Any] | None = None
             try:
                 reply = await mcp.call_tool(gateway, args)
                 success = tool_succeeded(reply)
                 result = project_existing_dated_fields(
                     getattr(reply, "data", None), rule_id,
                 ) if success else None
+                if result is None:
+                    primary_failure = read_failure_category(reply, rule_id)
             except Exception:
-                result = None
+                primary_failure = "tool_exception"
             recorder.record(
                 gateway, args, success=result is not None,
                 elapsed_ms=round((time.monotonic() - st) * 1000),
@@ -308,9 +319,47 @@ async def read_existing_dated_triggers(
                 evidence_kind="typed_native_dated_trigger_fields",
                 supports_live_claim=result is not None,
                 effect="read", mutates=False,
-                details=result if result is not None else {"ruleId": rule_id, "source": "hub_set_rule:read"},
+                details=result if result is not None else {
+                    "ruleId": rule_id, "source": "hub_set_rule:read",
+                    "failureCode": primary_failure or "unverified_document",
+                },
             )
+            # Upstream documents one-section cursor paging for native rule
+            # reads. Retry only *explicitly requested, inventory-matched*
+            # rule IDs when the full document fails. Never widen an ordinary
+            # 12-rule scan to additional reads or page an ID mismatch.
+            retry_allowed = targeted and result is None and primary_failure not in (
+                "rule_id_mismatch", "tool_exception",
+            )
+            retry_status = "not-needed" if result is not None else "not-attempted"
+            paged_sections_read: dict[str, int] = {}
+            if retry_allowed:
+                paged_doc, retry_status, paged_sections_read = await read_paged_native_dated_document(
+                    mcp, recorder, gateway=gateway, rule_id=rule_id,
+                )
+                if paged_doc is not None:
+                    result = project_existing_dated_fields(paged_doc, rule_id)
+                    if result is None:
+                        retry_status = "projection_rejected"
+                    else:
+                        retry_status = "complete"
+                        recorder.record(
+                            "homebrain_native_dated_paged_projection", {},
+                            success=True, elapsed_ms=0,
+                            evidence_kind="typed_native_dated_trigger_fields",
+                            supports_live_claim=True, effect="read", mutates=False,
+                            summary="Complete exact-ID native paged date-field projection",
+                            details=result,
+                        )
             scanned.append({"ruleId": rule_id, "readVerified": result is not None})
+            read_diagnostics.append({
+                "ruleId": rule_id,
+                "unpagedFailureCode": primary_failure,
+                "pagedAttempted": bool(retry_allowed),
+                "pagedOutcome": retry_status,
+                "pagedSectionsRead": paged_sections_read,
+                "readVerified": result is not None,
+            })
             if result is not None:
                 for group in result["returnedDateFieldGroups"]:
                     fields = group.get("fields") or {}
@@ -333,7 +382,11 @@ async def read_existing_dated_triggers(
             if result and result["savedDatedFieldSetObserved"]:
                 verified.append({"ruleId": rule_id, "label": candidate["label"],
                                  "evidence": result["returnedDateFieldGroups"]})
-                break
+                # A bounded discovery scan can stop at the first saved
+                # enabled date. An explicit multi-ID retry must still inspect
+                # EACH requested rule; never silently drop its other targets.
+                if not targeted:
+                    break
 
     more = bool(
         not pages_complete
@@ -352,6 +405,7 @@ async def read_existing_dated_triggers(
         "scanOffset": None if targeted else offset,
         "scanLimit": 4 if targeted else _SCAN_LIMIT,
         "scannedRuleIds": scanned,
+        "readDiagnostics": read_diagnostics,
         "partialTimeOrDateFieldGroups": partial_fields,
         "nativeReadGatewayAvailable": gateway is not None,
         "savedDatedFieldReadbackVerified": proof,
@@ -417,6 +471,17 @@ async def read_existing_dated_triggers(
                 "Requested rule IDs still lacking a complete typed read: "
                 + ", ".join(unreadable) + "."
             )
+            for item in read_diagnostics:
+                if item["ruleId"] in unreadable:
+                    lines.append(
+                        f"**Read diagnostic — rule {item['ruleId']}:** "
+                        f"full-document={item['unpagedFailureCode'] or 'unverified'}; "
+                        f"paged-read={item['pagedOutcome']}. "
+                        "These are non-sensitive failure categories, "
+                        "not native error messages."
+                    )
+        elif targeted:
+            lines.append("All requested exact-ID native document reads were verified.")
         lines.append(
             "This targeted retry does not assess other candidates; "
             "no hub-wide absence conclusion is supported."
