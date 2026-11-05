@@ -166,7 +166,19 @@ def reconcile_app_class_identity_answer(
         x.get("state") for x in requirements
         if isinstance(x, dict) and x.get("key") == "native_class_binding"
     ), None)
-    if class_state == "observed" or not _NATIVE_OVERCLAIM.search(draft):
+    # A negative sentence such as "not independently verified as native"
+    # must not trigger an otherwise unnecessary model-text replacement.
+    assertive = False
+    for match in _NATIVE_OVERCLAIM.finditer(draft):
+        before = draft[max(0, match.start() - 55):match.start()]
+        negated = re.search(
+            r"(?i)\b(?:not|never|without|unverified)\b"
+            r"(?:\W+\w+){0,3}\s*$", before,
+        )
+        if not negated:
+            assertive = True
+            break
+    if class_state == "observed" or not assertive:
         return draft, False
 
     ids = set(_EXPLICIT_APP_ID.findall(str(request or "")))
