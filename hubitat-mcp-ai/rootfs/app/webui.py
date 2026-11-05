@@ -230,6 +230,35 @@ def render_page(title: str, version: str) -> str:
 <div class="health-actions"><button id="runHealthAudit">🩺 Run system check now</button><button class="secondary" id="sendPushoverReport">📲 Send report to Pushover</button></div>
 <details class="health-details" id="healthAuditDetails"><summary>View system check details</summary><div id="healthAuditDetailsBody" class="muted">No audit has run yet.</div></details>
 </section>
+<section class="card" id="hubDiagnosticsCard">
+<div class="health-heading"><strong>🩺 Hub Diagnostics — external recorder</strong><span class="health-status-chip health-neutral" id="diagState">Loading</span></div>
+<div class="muted" id="diagSummary">Checking HomeBrain's locally recorded Hubitat health…</div>
+<div class="health-grid">
+<div class="health-stat"><div class="big" id="diagOS">—</div><div class="muted">Free OS memory (live probe)</div></div>
+<div class="health-stat"><div class="big" id="diagJava">—</div><div class="muted">Free Java (native 5m sample)</div></div>
+<div class="health-stat"><div class="big" id="diagHeap">—</div><div class="muted">Allocated Java heap used</div></div>
+<div class="health-stat"><div class="big" id="diagLatency">—</div><div class="muted">Last probe response</div></div>
+</div>
+<details class="health-details" id="diagDetails"><summary>View memory history &amp; connection incidents</summary>
+<div class="muted">External observations are not proof of a reboot cause. Java values come from Hubitat's native 5-minute history, not 30-second measurements.</div>
+<div class="row" style="margin-top:8px">
+<label>View <select id="diagMetric" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
+<option value="free_os_mb">Live Free OS memory (MB)</option><option value="java_free_mb">Native Free Java (MB)</option>
+<option value="java_allocated_heap_used_pct">Allocated heap used (%)</option>
+<option value="native_load5">5-minute CPU load average</option><option value="latency_ms">HTTP response time (ms)</option>
+</select></label>
+<label>Range <select id="diagHours" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
+<option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option>
+</select></label>
+<button type="button" class="secondary" id="diagRefresh" style="width:auto;margin:0;padding:7px 12px">↻ Refresh</button>
+</div>
+<div id="diagChartCaption" class="muted" style="margin:10px 0 4px">Expand to load locally stored observations.</div>
+<svg id="diagChart" viewBox="0 0 720 200" role="img" aria-label="Externally recorded Hubitat resource history" style="display:block;width:100%;height:auto;max-height:240px;background:#101114;border-radius:9px"></svg>
+<strong>Connectivity incidents</strong>
+<ul class="journal-gaps" id="diagIncidents"><li class="muted">No incident history loaded.</li></ul>
+<div class="journal-small">Incident detection requires two failed probes. Lost connectivity does not prove that Hubitat rebooted. For errors and hub events, inspect the Historical Journal and Hubitat's Hub Events.</div>
+</details>
+</section>
 <section class="card" id="journalCard">
 <div class="health-heading"><strong>Historical Journal</strong><span class="health-status-chip health-neutral" id="journalHealth">Loading</span></div>
 <div class="muted" id="journalMeta">Checking persistent evidence collection…</div>
@@ -1845,6 +1874,57 @@ document.getElementById('checkCloudConnection').onclick=async()=>{
 loadStage6Status();
 
 
+
+
+const diagUnit={free_os_mb:'MB',java_free_mb:'MB',java_allocated_heap_used_pct:'%',native_load5:'load',latency_ms:'ms'};
+let diagHistoryRows=[],diagIncidents=[];
+function diagDate(value){if(!value)return 'unavailable';const d=new Date(value);return isNaN(d.getTime())?String(value).slice(0,40):d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})}
+function diagNumber(value,unit){return typeof value==='number' && Number.isFinite(value)?value.toFixed(unit==='%'?1:unit==='load'?2:0)+' '+unit:'—'}
+function renderDiagnosticsStatus(data){
+const state=document.getElementById('diagState'),row=data.last||{},status=data.status||'unknown';
+state.textContent=status;state.className='health-status-chip '+(status==='online'?'health-ok':status==='disabled'?'health-neutral':'health-critical');
+document.getElementById('diagOS').textContent=diagNumber(row.free_os_mb,'MB');
+document.getElementById('diagJava').textContent=diagNumber(row.java_free_mb,'MB');
+document.getElementById('diagHeap').textContent=diagNumber(row.java_allocated_heap_used_pct,'%');
+document.getElementById('diagLatency').textContent=diagNumber(row.latency_ms,'ms');
+const details=status==='disabled'?'Enable external diagnostics in the add-on configuration.':(data.error||'');
+const age=row.recorded_at?'Last probe '+diagDate(row.recorded_at):'No saved probe yet';
+const source=row.native_sample_label?' · Java source '+row.native_sample_label:' · Java source not yet recorded';
+document.getElementById('diagSummary').textContent=age+source+' · '+(data.consecutive_failures||0)+' consecutive failures. '+details;
+}
+function drawDiagnosticsChart(){
+const svg=document.getElementById('diagChart'),metric=document.getElementById('diagMetric').value,unit=diagUnit[metric]||'',NS='http://www.w3.org/2000/svg';
+svg.replaceChildren();let pts=diagHistoryRows.filter(x=>x&&typeof x[metric]==='number'&&Number.isFinite(x[metric])&&(metric!=='free_os_mb'||x.reachable));
+if(metric.startsWith('java_')||metric==='native_load5'){
+ const seen=new Set();pts=pts.filter(x=>{const key=x.native_sample_label;if(!key||seen.has(key))return false;seen.add(key);return true});
+}
+document.getElementById('diagChartCaption').textContent=pts.length+' observed points · '+(diagHistoryRows.length-pts.length)+' other/unknown samples · '+(metric.startsWith('java_')||metric==='native_load5'?'Native 5-minute samples':'External probe samples');
+if(!pts.length){const t=document.createElementNS(NS,'text');t.setAttribute('x','24');t.setAttribute('y','95');t.setAttribute('fill','#a1a1aa');t.textContent='No recorded values for this metric in the selected range';svg.append(t);return}
+const ys=pts.map(x=>x[metric]),lo=Math.min(...ys),hi=Math.max(...ys),pad=Math.max(1,(hi-lo)*.15),min=lo-pad,max=hi+pad;
+const times=diagHistoryRows.map(x=>Date.parse(x.recorded_at)).filter(Number.isFinite);
+const start=Math.min(...times),end=Math.max(...times),duration=Math.max(1,end-start);
+function xy(x){return [35+(Date.parse(x.recorded_at)-start)/duration*662,170-(x[metric]-min)/(max-min)*145]}
+for(let i=0;i<4;i++){const y=25+i*48,ln=document.createElementNS(NS,'line');ln.setAttribute('x1','35');ln.setAttribute('x2','700');ln.setAttribute('y1',String(y));ln.setAttribute('y2',String(y));ln.setAttribute('stroke','#3f3f46');svg.append(ln)}
+// Only connect consecutive valid external samples. Gaps and failed probes break traces.
+let path='',previous=null;
+for(const p of pts){const [x,y]=xy(p),now=Date.parse(p.recorded_at),gap=previous!==null&&now-previous> (metric==='free_os_mb'||metric==='latency_ms'?120000:900000);path+=(path&&!gap?' L':' M')+x.toFixed(1)+' '+y.toFixed(1);previous=now}
+const line=document.createElementNS(NS,'path');line.setAttribute('d',path.trim());line.setAttribute('fill','none');line.setAttribute('stroke','#60a5fa');line.setAttribute('stroke-width','2');svg.append(line);
+for(let i=0;i<3;i++){const time=start+(end-start)*i/2,t=document.createElementNS(NS,'text');t.setAttribute('x',String(35+i*331));t.setAttribute('y','190');t.setAttribute('fill','#a1a1aa');t.setAttribute('font-size','12');t.setAttribute('text-anchor',i===0?'start':i===2?'end':'middle');t.textContent=diagDate(new Date(time).toISOString());svg.append(t)}
+const title=document.createElementNS(NS,'title');title.textContent=metric+' ('+unit+'): '+pts.length+' actual samples';svg.append(title);
+}
+async function loadDiagnosticsStatus(){try{const r=await fetch(apiPath('api/hub-diagnostics/status'));if(!r.ok)throw Error('HTTP '+r.status);renderDiagnosticsStatus(await jsonResponse(r))}catch(e){document.getElementById('diagState').textContent='Unavailable';document.getElementById('diagSummary').textContent='HomeBrain diagnostic API unavailable: '+e.message}}
+async function loadDiagnosticsHistory(){if(!document.getElementById('diagDetails').open)return;const button=document.getElementById('diagRefresh');button.disabled=true;try{
+const hours=document.getElementById('diagHours').value,r=await fetch(apiPath('api/hub-diagnostics/history?hours='+encodeURIComponent(hours)));if(!r.ok)throw Error('HTTP '+r.status);
+const data=await jsonResponse(r);diagHistoryRows=Array.isArray(data.samples)?data.samples:[];diagIncidents=Array.isArray(data.incidents)?data.incidents:[];drawDiagnosticsChart();
+const list=document.getElementById('diagIncidents');list.replaceChildren();if(!diagIncidents.length){const li=document.createElement('li');li.textContent='No connectivity incidents recorded in this period.';list.append(li)}
+for(const incident of diagIncidents){const li=document.createElement('li');li.textContent=diagDate(incident.started_at)+' — '+(incident.recovered_at?'recovered '+diagDate(incident.recovered_at):'recovery not yet recorded')+' · external connectivity loss (not a confirmed reboot)';list.append(li)}
+}catch(e){document.getElementById('diagChartCaption').textContent='Recorded history unavailable: '+e.message}finally{button.disabled=false}}
+document.getElementById('diagDetails').addEventListener('toggle',e=>{if(e.target.open)void loadDiagnosticsHistory()});
+document.getElementById('diagMetric').addEventListener('change',drawDiagnosticsChart);
+document.getElementById('diagHours').addEventListener('change',()=>void loadDiagnosticsHistory());
+document.getElementById('diagRefresh').addEventListener('click',()=>{void loadDiagnosticsStatus();void loadDiagnosticsHistory()});
+loadDiagnosticsStatus();
+setInterval(()=>{void loadDiagnosticsStatus();if(document.getElementById('diagDetails').open)void loadDiagnosticsHistory()},60000);
 
 status();setInterval(status,30000);
 </script></body></html>"""
