@@ -11,7 +11,9 @@ APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 
-from app_class_identity_receipt import project_app_class_identity_receipt
+from app_class_identity_receipt import (
+    project_app_class_identity_receipt, reconcile_app_class_identity_answer,
+)
 from investigation_intelligence import assess_investigation, plan_investigation
 from evidence_recorder import EvidenceRecorder
 from mcp_client import MCPToolResult
@@ -72,7 +74,6 @@ def test_target_matched_projection_preserves_only_reported_scalar_metadata():
     lambda d: d["app"].update(id=9999),
     lambda d: d["app"].update(id=True),
     lambda d: d["app"].update(appTypeId=True),
-    lambda d: d["app"].pop("appTypeId"),
     lambda d: d["app"].update(appTypeId="718x"),
 ])
 def test_malformed_or_mismatched_response_never_establishes_instance(edit):
@@ -189,3 +190,158 @@ def test_tool_execution_emits_source_typed_receipt_without_native_certification(
     assert observed["details"]["nativeClassBindingVerified"] is False
     assert "customSecret" not in str(observed)
     assert "childApps" not in observed["details"]
+
+
+
+def _summary_data():
+    # Real read shape from the v0.18.406 user trace; no nested app object
+    # and no appTypeId, even though the model asserted an appTypeId.
+    return {
+        "disabled": False, "id": 4216, "name": "Rule Machine",
+        "type": "Rule Machine", "user": False,
+        "namespace": "hubitat", "success": True,
+        "endpoint": "/app/config/4216",
+    }
+
+
+def test_flat_summary_without_type_id_retains_only_reported_fields():
+    details = _project(_summary_data(), arguments={
+        "tool": "hub_get_app_config",
+        "args": {"appId": 4216, "summary": True},
+    })
+    assert details == {
+        "appId": "4216",
+        "identitySource": "target-matched hub_get_app_config summary metadata",
+        "nativeClassBindingVerified": False,
+        "reportedName": "Rule Machine",
+        "reportedType": "Rule Machine",
+        "reportedUser": False,
+        "reportedNamespace": "hubitat",
+    }
+    assert "appTypeId" not in details
+    assert "endpoint" not in str(details)
+
+
+def test_nested_app_missing_type_id_is_partial_not_native_class_proof():
+    d = _data()
+    d["app"].pop("appTypeId")
+    details = _project(d)
+    assert details is not None
+    assert details["appId"] == "4216"
+    assert "appTypeId" not in details
+    assert details["nativeClassBindingVerified"] is False
+
+
+def test_summary_wrong_target_and_conflicting_nested_id_fail_closed():
+    d = _summary_data()
+    d["id"] = 999
+    assert _project(d) is None
+    d = _data()
+    d["id"] = 999
+    assert _project(d) is None
+
+
+def test_tool_execution_summary_read_is_partial_typed_receipt():
+    class FakeMCP:
+        async def call_tool(self, name, args):
+            return MCPToolResult(
+                name=name, arguments=args, raw={},
+                text="", data=_summary_data(), is_error=False,
+            )
+
+    recorder = EvidenceRecorder()
+    token = recorder.begin()
+    args = {"tool": "hub_get_app_config", "args": {"appId": 4216, "summary": True}}
+    try:
+        result = asyncio.run(
+            ToolExecutor(FakeMCP(), recorder).execute(
+                "hub_read_apps_code", args,
+            )
+        )
+        receipts = recorder.receipts()
+    finally:
+        recorder.reset(token)
+    assert result.success is True
+    assert len(receipts) == 1
+    assert receipts[0]["evidence_kind"] == "typed_app_instance_metadata"
+    assert receipts[0]["details"]["reportedUser"] is False
+    assert receipts[0]["details"]["nativeClassBindingVerified"] is False
+    assert "appTypeId" not in receipts[0]["details"]
+
+    question = (
+        "Investigate whether Rule Machine app instance 4216 is the independently "
+        "verified native class and appTypeId. Read only."
+    )
+    coverage = assess_investigation(plan_investigation(question), receipts)
+    assert coverage["evidenceComplete"] is False
+    assert {x["key"]: x["state"] for x in coverage["requirements"]} == {
+        "instance_identity": "checked-unverified",
+        "native_class_binding": "checked-unverified",
+    }
+
+
+def test_unsupported_native_certification_replaced_from_matching_summary_receipt():
+    question = (
+        "Investigate whether Rule Machine app instance 4216 is independently "
+        "verified as the native Rule Machine parent. Read only."
+    )
+    details = _project(_summary_data())
+    receipts = [{
+        "tool": "hub_read_apps_code",
+        "sub_tool": "hub_get_app_config",
+        "success": True, "mutates": False, "effect": "read",
+        "evidence_kind": "typed_app_instance_metadata",
+        "details": details,
+    }]
+    message = (
+        "App instance 4216 is verified as a native Hubitat application. "
+        "Its type ID 18 is confirmed as Rule Machine and user: false proves "
+        "that it is built-in. The type-to-class relationship is not checked."
+    )
+    coverage = assess_investigation(plan_investigation(question), receipts)
+    fixed, changed = reconcile_app_class_identity_answer(
+        message, receipts, coverage, question,
+    )
+    assert changed is True
+    assert fixed.startswith("**Native class identity: not independently verified.**")
+    assert "name 'Rule Machine'" in fixed
+    assert "user=false" in fixed
+    assert "appTypeId=18" not in fixed
+    assert "built-in Rule Machine parent" in fixed
+
+
+def test_calibrated_model_answer_is_preserved():
+    question = (
+        "Investigate whether app instance 4216 has an independently verified "
+        "native Rule Machine class; read only."
+    )
+    draft = (
+        "App 4216 reports namespace hubitat; this alone does not verify "
+        "the built-in class identity."
+    )
+    result, changed = reconcile_app_class_identity_answer(
+        draft, [], {"requirements": [
+            {"key": "native_class_binding", "state": "checked-unverified"},
+        ]}, question,
+    )
+    assert changed is False and result == draft
+
+
+def test_native_overclaim_fallback_does_not_reuse_unrelated_app_metadata():
+    request = (
+        "Check app instance 4216 native parent status without any writes."
+    )
+    details = _project(_summary_data())
+    details["appId"] = "9999"
+    receipts = [{
+        "sub_tool": "hub_get_app_config", "success": True,
+        "effect": "read", "mutates": False,
+        "evidence_kind": "typed_app_instance_metadata",
+        "details": details,
+    }]
+    fixed, changed = reconcile_app_class_identity_answer(
+        "App 4216 is verified as native.", receipts, {"requirements": []}, request,
+    )
+    assert changed is True
+    assert "name 'Rule Machine'" not in fixed
+    assert "do not contain enough target-matched" in fixed
