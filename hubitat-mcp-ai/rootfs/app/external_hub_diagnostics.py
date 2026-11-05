@@ -95,11 +95,15 @@ def utc_now() -> str:
 class ExternalHubDiagnostics:
     def __init__(self, *, enabled: bool = False, hub_url: str = "",
                  path: str | Path = "/data/homebrain-hub-diagnostics.sqlite3",
-                 probe_seconds: int = 30, retention_days: int = 30) -> None:
+                 probe_seconds: int = 30, retention_days: int = 30,
+                 cpu_cores: int = 4) -> None:
         self.enabled = bool(enabled)
         self.path = Path(path)
         self.probe_seconds = max(30, min(300, int(probe_seconds)))
         self.retention_days = max(1, min(90, int(retention_days)))
+        # Number of logical processors for converting load average to a
+        # processor-capacity equivalent, not measured CPU utilisation.
+        self.cpu_cores = max(1, min(64, int(cpu_cores)))
         self.hub_url = ""
         self.error: str | None = None
         if self.enabled:
@@ -275,12 +279,22 @@ class ExternalHubDiagnostics:
             with suppress(asyncio.CancelledError):
                 await task
 
+    def _with_load_pct(self, row: dict[str, Any]) -> dict[str, Any]:
+        result = dict(row)
+        load = result.get("native_load5")
+        if isinstance(load, (int, float)) and 0 <= load <= 1000:
+            result["native_load_pct"] = round(float(load) / self.cpu_cores * 100, 1)
+        else:
+            result["native_load_pct"] = None
+        return result
+
     def status(self) -> dict[str, Any]:
-        row = self._last or {}
+        row = self._with_load_pct(self._last or {})
         return {
             "enabled": self.enabled, "running": bool(self._task and not self._task.done()),
             "error": self.error, "probe_seconds": self.probe_seconds,
-            "retention_days": self.retention_days, "last": dict(row),
+            "retention_days": self.retention_days, "cpu_cores": self.cpu_cores,
+            "last": dict(row),
             "last_good_at": self._last_good,
             "consecutive_failures": self._failures,
             "status": (
@@ -291,13 +305,16 @@ class ExternalHubDiagnostics:
             ),
             "limitations": (
                 "Free OS memory is observed at probe time; Java/CPU are from "
-                "Hubitat's separate native five-minute sample. No direct Metaspace metric."
+                "Hubitat's separate native five-minute sample. CPU percent is "
+                "load average divided by configured core count, not utilisation. "
+                "No direct Metaspace metric."
             ),
         }
 
     def history(self, hours: int = 6) -> dict[str, Any]:
         if not self.enabled or not self.path.exists():
-            return {"samples": [], "incidents": [], "coverage": "not_recorded"}
+            return {"samples": [], "incidents": [], "coverage": "not_recorded",
+                    "cpu_cores": self.cpu_cores}
         window = max(1, min(24, int(hours)))
         cutoff = (datetime.now(timezone.utc) -
                   timedelta(hours=window)).isoformat(timespec="milliseconds")
@@ -311,7 +328,9 @@ class ExternalHubDiagnostics:
                 "ORDER BY started_at DESC LIMIT 40", (cutoff, cutoff),
             )]
         return {
-            "samples": rows, "incidents": incidents, "hours": window,
+            "samples": [self._with_load_pct(row) for row in rows],
+            "incidents": incidents, "hours": window,
+            "cpu_cores": self.cpu_cores,
             "coverage": "partial_observations_not_proof_of_cause",
             "native_java_resolution_seconds": 300,
         }

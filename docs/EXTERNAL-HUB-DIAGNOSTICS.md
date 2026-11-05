@@ -20,6 +20,7 @@ the recorder. Enable:
 - external_hub_diagnostics_enabled = true
 - external_hub_diagnostics_hub_url = http://192.168.1.239
 - external_hub_diagnostics_probe_seconds = 30
+- external_hub_diagnostics_cpu_cores = 4 (logical cores on the C8 Pro)
 - external_hub_diagnostics_retention_days = 30
 
 The recorder accepts only a literal private RFC1918 IPv4 address on
@@ -51,15 +52,16 @@ Do not restart or reconfigure Hubitat.
 Open the HomeBrain dashboard from the Home Assistant sidebar. Find
 **Hub Diagnostics — external recorder**, above Historical Journal.
 
-Four cards show (with real source timestamps):
+Five cards show (with actual source timestamps):
 1. Free OS memory, obtained externally on each probe.
 2. Free Java MB, from Hubitat's native ~5-minute sample.
 3. Used percent of currently allocated Java heap.
-4. HTTP probe response time.
+4. Five-minute CPU load equivalent (%) using the configured logical-core count.
+5. HTTP probe response time.
 
 Expand **View memory history & connection incidents** to show:
-- Free OS memory, Java memory, allocated heap %, native 5-minute load,
-  or response latency.
+- Free OS memory, Java memory, allocated heap %, 5-minute load equivalent
+  (%) or original 5-minute load average, and response latency.
 - Date windows of 1, 6, 24 hours.
 - Persisted connectivity loss and recovery episodes.
 
@@ -77,7 +79,14 @@ using a 3-second timeout, and /hub/advanced/freeOSMemoryLast no
 more frequently than every 300 seconds. No retries, no extra hub apps,
 no event subscriptions or adaptive high-frequency polling. Native Java
 and load samples remain five-minute source readings even when displayed
-beside more frequent OS observations. CPU load is not CPU utilisation.
+beside more frequent OS observations. CPU load equivalent is calculated
+as 5-minute load average / configured logical processor count × 100.
+For the C8 Pro with 4 logical cores, 0.76 load = 19.0% load equivalent.
+It is **not** measured processor utilisation and may exceed 100% if
+the system has more runnable tasks than processors. Adjust the configured
+core count if monitoring a different hub. The derived percentage uses
+existing native samples, makes no extra hub requests and is not written
+back into the retained raw samples.
 
 Two consecutive failed probes create a connectivity incident; that
 does NOT confirm a Hubitat reboot. Compare with Hub Events for
