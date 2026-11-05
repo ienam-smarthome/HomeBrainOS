@@ -280,6 +280,9 @@ from native_rule_readiness_source import (
     read_native_rule_readiness,
     native_rule_readiness_coverage,
 )
+from native_dated_trigger_discovery import (
+    is_existing_dated_trigger_question, read_existing_dated_triggers,
+)
 from owned_device_inventory_source import (
     is_explicit_owned_device_inventory_request,
     read_owned_virtual_device_inventory,
@@ -4541,6 +4544,19 @@ class UnifiedMCPAgent:
                 self.mcp, self.evidence,
                 available_names=catalog.available_names,
                 question=user_prompt,
+            )
+            return answer
+
+        # Discover only the EXISTING persisted dated-trigger fields from
+        # bounded native operation=read documents. A request mentioning
+        # "no test rule" is a prohibition, not future authoring. Never select
+        # an arbitrary rule for a generic action-tree/inactivity audit.
+        if (not self._mutation_requested_by_user.get()
+                and is_existing_dated_trigger_question(user_prompt)):
+            answer, _projection = await read_existing_dated_triggers(
+                self.mcp, self.evidence,
+                question=user_prompt,
+                available_names=catalog.available_names,
             )
             return answer
 
