@@ -39,8 +39,8 @@ def is_existing_dated_trigger_question(question: str) -> bool:
     return bool(
         re.search(r"\bread[ -]?only\b", text, re.I)
         and re.search(r"\bexisting\b|\balready[ -]?existing\b", text, re.I)
-        and re.search(r"\b(?:rule machine|native rule)\b", text, re.I)
-        and re.search(r"\b(?:dated triggers?|certain time|atDate#|date field)\b", text, re.I)
+        and re.search(r"\b(?:native\s+)?(?:rule machine|rule-machine)|\bnative\s+rules?\b", text, re.I)
+        and re.search(r"\b(?:dated[ -]?triggers?(?:[ -]?fields?)?|certain time|atDate#|date[ -]?fields?)\b", text, re.I)
         and re.search(r"\b(?:search|inspect|investigat|find|scan|readback|retry|recheck)\w*\b", text, re.I)
         # Prohibitions such as "Do not create a test rule" are restrictions,
         # not a positive creation intent. The explicit existing/read-only

@@ -234,3 +234,38 @@ def test_ordinary_offset_scan_does_not_retry_failed_reads():
     assert details["scanMode"] == "offset-batch"
     assert details["readDiagnostics"][0]["pagedAttempted"] is False
     assert details["scannedRuleIds"] == [{"ruleId": "2967", "readVerified": False}]
+
+# Reproduction from the 0.18.416 live acceptance: the earlier matcher
+# did not recognize "dated-trigger fields" or "native Rule Machine rules"
+# and allowed the generic model-led rule audit to consume the request.
+LIVE_416_PARAPHRASE = (
+    "Investigate existing native Rule Machine rules 2967 and 3985 for saved "
+    "dated-trigger fields. Retry both exact IDs using native read-only operations. "
+    "If a full document read fails, use bounded paginated trigger and settings "
+    "reads. Keep native rule-writing authorization disabled."
+)
+
+
+def test_live_416_paraphrase_dispatches_to_native_paged_reader():
+    from native_dated_trigger_discovery import is_existing_dated_trigger_question
+    assert is_existing_dated_trigger_question(LIVE_416_PARAPHRASE)
+    server = PagedServer()
+    answer, details, evidence = _run(server, question=LIVE_416_PARAPHRASE)
+    assert details["scanMode"] == "targeted-rule-ids"
+    assert details["requestedRuleIds"] == ["2967", "3985"]
+    assert len(details["readDiagnostics"]) == 2
+    assert all(item["pagedAttempted"] for item in details["readDiagnostics"])
+    assert all(item["pagedOutcome"] == "complete" for item in details["readDiagnostics"])
+    assert len([r for r in evidence if r["evidence_kind"] == "typed_native_dated_trigger_page"]) == 6
+    assert all(r["effect"] == "read" and r["mutates"] is False for r in evidence)
+
+
+def test_general_existing_rule_audit_is_not_hijacked_by_native_date_route():
+    from native_dated_trigger_discovery import is_existing_dated_trigger_question
+    assert not is_existing_dated_trigger_question(
+        "Investigate existing Rule Machine rules 2967 and 3985 for "
+        "ordered IF actions and inactivity OFF timers. Read-only."
+    )
+    assert not is_existing_dated_trigger_question(
+        "Create a native Rule Machine dated-trigger rule tomorrow."
+    )
