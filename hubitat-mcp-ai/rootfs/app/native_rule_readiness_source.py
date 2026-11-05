@@ -117,7 +117,7 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
     typed_fields: dict[str, str] = {}
     for field, expected in expected_types.items():
         types_seen = []
-        for match in re.finditer(re.escape(field), content, re.I):
+        for match in re.finditer(r"(?<![A-Za-z0-9_])" + re.escape(field), content, re.I):
             # Only a field's own declaration counts, not an unrelated
             # type=date example elsewhere in the source guide.
             row = content[match.end():].split("\n", 1)[0][:160]
