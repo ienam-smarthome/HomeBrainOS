@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — v0.18.405 live app-parent acceptance: relevance fixed, public scalar receipt gap remains
+
+The user supplied installed HomeBrain v0.18.405 live read-only natural-language answer and full Technical JSON for app 169. Reported runtime **22.568s**, **5 Gemma Cloud rounds**, **3 MCP read-only calls**, **1 discovery call**; free allowance, no paid rounds, no modifying receipts. The earlier v0.18.404 test was 33.825s, 7 rounds, 4 reads. One before/after pair cannot certify systemic latency improvement; provenance still reports model_delivery_verified=false, first_attempt_verified=false, deployed_build_sha_verified=false.
+
+**Success:** The live answer now directly separates displayed app name, reported app type, parent/system metadata and the separately unverified native Rule Machine class relationship. Technical coverage domain is **app_class_identity**, both obligations **checked-unverified**, outcome **unresolved**. The prior unrelated rule-action and inactivity-OFF checklist is absent. PR #1427's routing/publisher objective is supported by this observed test.
+
+**Remaining limitation:** The model answer says label and name are verified, reports Rule Machine in hubitat namespace, system=true, parentAppId=null and 42 child rules. The published receipts contain only success, tool name, target ID and response **field names** (not those identity scalar values). It is therefore not possible to audit those particular positive factual claims from the supplied Technical JSON. Do **not** call them hallucinations, because the model may have inspected the raw MCP output. The logically correct native parent verification remains **unresolved**; display labels, system/root status and reported children are not authoritative native class attestation.
+
+**v0.18.406 candidate correction:** Add an allowlisted, read-only, target-identity-matched typed receipt from hub_get_app_config, keeping source-reported ID/appTypeId separate from independently attested native class identity. Preserve only safe scalar metadata and returned-page child row count; never copy arbitrary settings/HTML or unlock rule writing. The existing evidence plan can then mark instance identity verified **only if** actual app ID and appTypeId are source-projected. Native binding remains checked-unverified until a separate authoritative class mapping exists. See CHANGELOG-0.18.406.md. No post-v0.18.406 installed result yet.
+
+---
+
 ## 2026-11-04 — v0.18.405 general app-class identity fix merged, live acceptance pending
 
 **Merged production-code fix:** [PR #1427](https://github.com/ienam-smarthome/HomeBrainOS/pull/1427)
