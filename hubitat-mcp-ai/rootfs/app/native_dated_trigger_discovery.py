@@ -202,6 +202,7 @@ async def read_existing_dated_triggers(
     gateway = next((g for g in _READ_GATEWAYS if g in available_names), None)
     scanned = []
     verified = []
+    partial_fields: list[dict[str, Any]] = []
     if gateway:
         for candidate in selected:
             rule_id = candidate["id"]
@@ -223,14 +224,38 @@ async def read_existing_dated_triggers(
             recorder.record(
                 gateway, args, success=result is not None,
                 elapsed_ms=round((time.monotonic() - st) * 1000),
-                summary=("Persisted native dated-field read verified"
-                         if result is not None else "Native dated-field read unavailable or incomplete"),
+                summary=(
+                    "Enabled native dated-trigger field set observed"
+                    if result and result["savedDatedFieldSetObserved"]
+                    else "Native trigger/settings inspected; no verified enabled date"
+                    if result is not None else
+                    "Native trigger/settings read unavailable or incomplete"
+                ),
                 evidence_kind="typed_native_dated_trigger_fields",
                 supports_live_claim=result is not None,
                 effect="read", mutates=False,
                 details=result if result is not None else {"ruleId": rule_id, "source": "hub_set_rule:read"},
             )
             scanned.append({"ruleId": rule_id, "readVerified": result is not None})
+            if result is not None:
+                for group in result["returnedDateFieldGroups"]:
+                    fields = group.get("fields") or {}
+                    if (isinstance(fields, dict)
+                            and any(name in fields for name in (
+                                "time", "atTime", "date", "atDate"
+                            ))
+                            and len(partial_fields) < 6):
+                        partial_fields.append({
+                            "ruleId": rule_id,
+                            "triggerId": group["triggerId"],
+                            "time": (fields.get("atTime") or {}).get("value"),
+                            "dateFlagPresent": "date" in fields,
+                            "dateEnabled": group.get("dateEnabled"),
+                            "atDatePresent": "atDate" in fields,
+                            "savedDatedFieldSetObserved": (
+                                group.get("savedDatedFieldSetObserved") is True
+                            ),
+                        })
             if result and result["savedDatedFieldSetObserved"]:
                 verified.append({"ruleId": rule_id, "label": candidate["label"],
                                  "evidence": result["returnedDateFieldGroups"]})
@@ -246,6 +271,7 @@ async def read_existing_dated_triggers(
         "scanOffset": offset,
         "scanLimit": _SCAN_LIMIT,
         "scannedRuleIds": scanned,
+        "partialTimeOrDateFieldGroups": partial_fields,
         "nativeReadGatewayAvailable": gateway is not None,
         "savedDatedFieldReadbackVerified": proof,
         "verifiedDatedRules": verified,
@@ -279,6 +305,21 @@ async def read_existing_dated_triggers(
         lines.append("The saved date/time fields and native trigger row are source-observed; actual scheduling, firing and one-shot semantics are NOT established.")
     else:
         lines.append("**No verified enabled dated-trigger field set was found in this bounded scan.** This is not evidence that none exist.")
+    if not verified and partial_fields:
+        for group in partial_fields[:4]:
+            flag = (
+                "enabled" if group["dateEnabled"] is True
+                else "disabled" if group["dateEnabled"] is False
+                else "value unverified"
+            )
+            lines.append(
+                f"**Partial stored field observation — rule {group['ruleId']}, "
+                f"trigger {group['triggerId']}:** time="
+                f"{group['time'] if group['time'] is not None else 'not verified'}; "
+                f"date flag={flag if group['dateFlagPresent'] else 'not returned'}; "
+                f"atDate={'present' if group['atDatePresent'] else 'not returned'}. "
+                "This does not verify an enabled dated trigger."
+            )
     if more:
         lines.append(f"Additional visible candidates or pages may remain. Resume with scan offset {offset + len(scanned)}; no absence verdict is possible.")
     lines.append("No modifying Hubitat calls, form opens, or writer authorization. Native dated-rule creation remains blocked.")

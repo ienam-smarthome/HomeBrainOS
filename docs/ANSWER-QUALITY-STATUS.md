@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — installed v0.18.412 native date scanner ran, but earlier generic publication overwrote its answer; v0.18.413 candidate
+
+**Actual installed source test (13:30 UTC):** HomeBrainOS **0.18.412**, total 4.671s, zero model rounds, 13 read-only MCP source calls and one local typed projection. Native rule inventory returned **42 visible Rule-5.1 children** with a single complete returned page; scanner read **12** sorted rule IDs (1881, 2075, 2084, 2217, 2305, 2706, 2710, 2817, 2843, 2844, 2967, 3055), 11 read-verified and one rule **2967** unavailable/incomplete. No enabled dated trigger observed, no absence proof, 30 visible candidate IDs uninspected. Scan offset 0, next offset **12**. No Hubitat writes.
+
+**Useful partial stored native evidence:** Rule **2710** has native trigger row 1, `time1` type enum/value "A specific time", `atTime1` type time/value "22:30", `date1` type bool **without a verified boolean value**, and no `atDate1` field. The typed source correctly says `savedDatedFieldSetObserved=false`. This is NOT a verified date-enabled trigger, persisted one-time date or runtime firing.
+
+**Diagnosed output defect:** The `_process_user_request` specialist route already performed the right scanner and recorded `typed_native_dated_trigger_discovery` with `domain=native_dated_trigger_discovery`; however `process_user_request_result` ran `calibrate_existing_rule_verification` under a broad existing-rule objective **before** shared completion set the correct domain. The result's *message* was overwritten with unrelated action-tree, inactivity-OFF, controller, duplicate-rule limitations; the Technical JSON domain remained correct. This proves specialist final coverage alone is insufficient to preserve the message.
+
+**0.18.413 candidate:** Prioritize only a genuinely recorded, read-only `homebrain_native_dated_trigger_discovery` typed receipt before the earlier generic result calibrator; add independent no-overwrite guard inside the generic existing-rule calibrator. Preserve normal calibration if the source receipt is absent. Also publish a small, allowlisted partial time/date observation when relevant fields exist without full enabled-date proof; honest summaries distinguish "native read parsed" from "enabled dated field set verified". Unit/regression tests reproduce the 42/12/11/one-failure live shape and publication order. No extra model/MCP rounds or writer changes. Live v0.18.413 test pending; after installation, rerun same read-only prompt and expect next scan offset 12.
+
+---
+
 ## 2026-11-05 — v0.18.411 existing dated-trigger investigation misrouted; candidate 0.18.412
 
 **Observed installed failure:** User tried read-only search for existing Rule Machine `Certain Time (and optional date)` native triggers and stored `time#`, `atTime#`, `date#`, `atDate#` fields. Installed **0.18.411** ran **40.751s**, **10 Gemma cloud rounds**, six nonmutating MCP calls; provider **36.552s**. Instead it selected app **4163** "Block Nest hub from 5.50pm", obtained thin identity+untyped config receipts, plus untyped `hub_list_rules`, health and app logs. It did **not** verify that app 4163 uses a dated trigger or expose persisted date fields. Shared completion selected `existing_rule_verification`, publishing unrelated inactivity-OFF/lockout, duplicate-rule, nested-IF and action-tree limitations. These were not the user's asked-for discriminators. No modifying Hubitat commands were recorded.

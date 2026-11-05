@@ -282,6 +282,7 @@ from native_rule_readiness_source import (
 )
 from native_dated_trigger_discovery import (
     is_existing_dated_trigger_question, read_existing_dated_triggers,
+    existing_dated_trigger_coverage,
 )
 from owned_device_inventory_source import (
     is_explicit_owned_device_inventory_request,
@@ -4215,7 +4216,25 @@ class UnifiedMCPAgent:
                 native_rule_readiness_coverage(user_prompt, evidence)
                 if request_class == "live-read" else None
             )
-            if readiness_scope is not None:
+            # The direct existing-dated-trigger scanner has already published
+            # a typed read-only receipt. Preserve its original source answer
+            # *here*, before the older generic existing-rule claim calibrator
+            # can replace it with unrelated action-tree/lockout requirements.
+            # Shared completion later applies the same typed source contract.
+            dated_scope = (
+                existing_dated_trigger_coverage(user_prompt, evidence)
+                if request_class == "live-read"
+                and any(isinstance(row, dict)
+                        and row.get("evidence_kind") == "typed_native_dated_trigger_discovery"
+                        and row.get("tool") == "homebrain_native_dated_trigger_discovery"
+                        and row.get("effect") == "read"
+                        and row.get("mutates") is False
+                        for row in evidence)
+                else None
+            )
+            if dated_scope is not None:
+                coverage = dated_scope
+            elif readiness_scope is not None:
                 coverage = readiness_scope
             elif exact_section is not None:
                 coverage = exact_section
