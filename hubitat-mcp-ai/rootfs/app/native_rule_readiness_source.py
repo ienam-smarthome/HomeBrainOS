@@ -102,22 +102,34 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
         "atDateNamed": False, "atDateTypeDateDeclared": False,
         "dateFormatDeclared": False, "documentedDateFormat": None,
         "nativeDateFieldGuideAttested": False,
-        "namedTriggerFields": [], "certainTimeTriggerNamed": False,
+        "namedTriggerFields": [], "typedTriggerFields": {},
+        "certainTimeTriggerNamed": False,
         "createOperationDocumented": False, "parentIdParameterDocumented": False,
         "createContractDocumented": False, "gapCodes": [],
     }
     if not isinstance(content, str) or not 0 < len(content) <= 50000:
         return {**empty, "gapCodes": ["guide_unavailable_or_oversized"]}
     has_field = bool(re.search(r"atDate#", content, re.I))
-    date_declaration = re.compile(
-        r"""(?i)\b(?:type|inputType|fieldType)\s*["']?\s*[:=]\s*["']?date\b"""
-    )
-    # A declaration for another unrelated field is not an atDate# contract.
-    typed = has_field and any(
-        date_declaration.search(content[max(0, m.start()-220):m.end()+220])
-        is not None
-        for m in re.finditer(r"atDate#", content, re.I)
-    )
+    expected_types = {
+        "time#": "enum", "atTime#": "time",
+        "date#": "bool", "atDate#": "date",
+    }
+    typed_fields: dict[str, str] = {}
+    for field, expected in expected_types.items():
+        types_seen = []
+        for match in re.finditer(re.escape(field), content, re.I):
+            # Only a field's own declaration counts, not an unrelated
+            # type=date example elsewhere in the source guide.
+            row = content[match.end():].split("\n", 1)[0][:160]
+            found = re.search(
+                r"""(?i)\b(?:type|inputType|fieldType)\s*["']?\s*[:=]\s*["']?([a-zA-Z]+)\b""",
+                row,
+            )
+            if found:
+                types_seen.append(found.group(1).casefold())
+        if types_seen and all(t == expected for t in types_seen):
+            typed_fields[field] = expected
+    typed = typed_fields.get("atDate#") == "date"
     fmt = bool(re.search(r"yyyy-MM-dd", content, re.I))
     explicit_refusal = bool(re.search(
         r"(?i)atDate#[^\n]{0,100}supported\s*[:=]\s*false", content,
@@ -137,7 +149,8 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
     parent = bool(re.search(r"\b(?:parent_id|parentId)\b", content))
     date_attested = has_field and typed and fmt and not explicit_refusal
     create_attested = bool(
-        date_attested and certain and create and parent and len(named) == 4
+        date_attested and certain and create and parent
+        and len(typed_fields) == 4
     )
     gaps = []
     for missing, code in (
@@ -148,7 +161,8 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
         (not certain, "certain_time_trigger_not_named"),
         (not create, "native_create_operation_not_documented"),
         (not parent, "parent_id_parameter_not_documented"),
-        (len(named) != 4, "required_trigger_field_names_incomplete"),
+        (len(named) != 4, "trigger_field_names_incomplete"),
+        (len(typed_fields) != 4, "typed_trigger_field_contract_incomplete"),
     ):
         if missing:
             gaps.append(code)
@@ -160,6 +174,7 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
         "documentedDateFormat": "yyyy-MM-dd" if fmt else None,
         "nativeDateFieldGuideAttested": bool(date_attested),
         "namedTriggerFields": named,
+        "typedTriggerFields": typed_fields,
         "certainTimeTriggerNamed": certain,
         "createOperationDocumented": create,
         "parentIdParameterDocumented": parent,
