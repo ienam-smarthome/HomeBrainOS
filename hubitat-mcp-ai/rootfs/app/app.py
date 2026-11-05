@@ -34,6 +34,7 @@ from device_state_summary import (
 )
 from health_audit_scheduler import MorningHealthScheduler
 from historical_evidence_journal import HistoricalEvidenceJournal
+from external_hub_diagnostics import ExternalHubDiagnostics
 from household_ollama_accounts import read_authorized_household_accounts
 from health_audit_service import (
     HealthAuditService,
@@ -172,6 +173,10 @@ def load_options() -> dict[str, Any]:
         "deterministic_reads_enabled": False,
         "causal_subject_prefetch_enabled": True,
         "historical_journal_enabled": False,
+        "external_hub_diagnostics_enabled": False,
+        "external_hub_diagnostics_hub_url": "",
+        "external_hub_diagnostics_probe_seconds": 30,
+        "external_hub_diagnostics_retention_days": 30,
         "historical_journal_hub_url": "",
         "historical_journal_retention_days": 30,
         "historical_journal_max_rows": 100000,
@@ -242,6 +247,15 @@ historical_journal = HistoricalEvidenceJournal(
     ),
     log_retention_hours=int(OPTIONS.get("historical_journal_log_retention_hours") or 48),
     log_max_rows=int(OPTIONS.get("historical_journal_log_max_rows") or 100000),
+)
+external_hub_diagnostics = ExternalHubDiagnostics(
+    enabled=_bool(OPTIONS.get("external_hub_diagnostics_enabled")),
+    hub_url=str(OPTIONS.get("external_hub_diagnostics_hub_url") or
+                OPTIONS.get("historical_journal_hub_url") or ""),
+    path=Path(os.getenv("EXTERNAL_HUB_DIAGNOSTICS_PATH",
+                        "/data/homebrain-hub-diagnostics.sqlite3")),
+    probe_seconds=int(OPTIONS.get("external_hub_diagnostics_probe_seconds") or 30),
+    retention_days=int(OPTIONS.get("external_hub_diagnostics_retention_days") or 30),
 )
 mcp = HubitatMCPClient(
     endpoint_url=str(OPTIONS.get("hubitat_mcp_url") or ""),
@@ -557,11 +571,13 @@ request_coordinator = RequestCoordinator()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await historical_journal.start()
+    await external_hub_diagnostics.start()
     health_scheduler.start()
     one_time_rule_cleanup_scheduler.start()
     try:
         yield
     finally:
+        await external_hub_diagnostics.close()
         await historical_journal.close()
         await one_time_rule_cleanup_scheduler.close()
         await health_scheduler.close()
@@ -1095,6 +1111,7 @@ async def health() -> dict[str, Any]:
         "tts": home_assistant_tts.status(),
         "one_time_rule_cleanup": one_time_rule_cleanup_scheduler.status(),
         "historical_journal": historical_journal.status(),
+        "hub_diagnostics": external_hub_diagnostics.status(),
     }
 
 
@@ -1485,6 +1502,18 @@ async def live_shadow_app_decision(
     identity["log_read_arguments"] = args
     projected = project_verified_app_logs(identity, app_result)
     return JSONResponse(projected, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/hub-diagnostics/status")
+async def hub_diagnostics_status() -> dict[str, Any]:
+    """Locally retained external samples. Does not query Hubitat."""
+    return external_hub_diagnostics.status()
+
+
+@app.get("/api/hub-diagnostics/history")
+async def hub_diagnostics_history(hours: int = 6) -> dict[str, Any]:
+    """Bounded read from the HomeBrain SQLite recorder only."""
+    return await asyncio.to_thread(external_hub_diagnostics.history, hours)
 
 
 @app.get("/api/evidence-journal/status")
