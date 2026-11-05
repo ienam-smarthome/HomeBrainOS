@@ -138,3 +138,47 @@ def test_positive_motion_design_still_has_historical_safety_gate():
     reply = calibrate_rule_design_review("Proposal.", [], request=question)
     assert "Wait for Event: motion active" in reply
     assert "23:00" in reply
+
+
+
+def test_retired_inventory_fast_path_has_no_runtime_module_or_special_completion():
+    """Inventory tools remain available, but cannot claim success for a contract review."""
+    from mcp_agent_orchestrator import AgentOutcome
+    from observed_agent_outcome import build_observed_agent_outcome
+    from shared_investigation_completion import apply_shared_investigation_completion
+
+    runtime = APP
+    assert not (runtime / ("native_rule_" + "inventory_source.py")).exists()
+    for source_name in ("mcp_agent_orchestrator.py",
+                        "shared_investigation_completion.py"):
+        source = (runtime / source_name).read_text(encoding="utf-8")
+        assert "is_native_rule_" + "inventory_question" not in source
+        assert "read_native_rule_" + "inventory" not in source
+        assert "typed_native_rule_" + "inventory" not in source
+
+    legacy_result = AgentOutcome(
+        message="Rule Machine parent ID 169, no matching one-time name.",
+        request_class="live-read", choices=[],
+        evidence=[{
+            "tool": "homebrain_native_rule_" + "inventory",
+            "success": True, "effect": "read", "mutates": False,
+            "evidence_kind": "typed_native_rule_" + "inventory",
+            "details": {
+                "source": "typed hub_list_apps instances/types + hub_list_rules",
+                "parents": [{"appId": "169", "appTypeId": "18",
+                             "namespace": "hubitat", "name": "Rule Machine"}],
+                "ruleListComplete": True, "appListComplete": True,
+                "oneTimeRules": [], "oneTimeMatchCount": 0,
+            },
+        }],
+        investigation_coverage=None,
+    )
+    observed = build_observed_agent_outcome(
+        legacy_result, {"outcome": "success", "counters": {},
+                        "timings_ms": {}},
+    )
+    assessed = apply_shared_investigation_completion(observed, QUESTION)
+    coverage = assessed.investigation_coverage
+    assert coverage is None or coverage.get("domain") != "native_rule_" + "inventory"
+    assert coverage is None or coverage.get("questionResolved") is not True
+    assert assessed.metrics.get("outcome") != "success"
