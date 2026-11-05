@@ -314,7 +314,7 @@ def test_unsupported_native_certification_replaced_from_matching_summary_receipt
     assert "Native class/parent verification: unresolved" in fixed
 
 
-def test_calibrated_model_answer_is_preserved():
+def test_model_caveat_cannot_publish_unreceipted_identity_claims():
     question = (
         "Investigate whether app instance 4216 has an independently verified "
         "native Rule Machine class; read only."
@@ -352,7 +352,7 @@ def test_native_overclaim_fallback_does_not_reuse_unrelated_app_metadata():
     assert "no target-matched typed app metadata" in fixed
 
 
-def test_explicit_not_verified_as_native_is_not_overwritten():
+def test_negated_class_statement_still_uses_source_publication():
     draft = "App 4216 is not independently verified as native."
     message, changed = reconcile_app_class_identity_answer(
         draft, [], {"requirements": [
@@ -496,3 +496,31 @@ def test_correctly_cautious_model_specifics_do_not_bypass_partial_evidence():
     assert "23 Rule-5.1" not in message
     assert "2 child-app rows returned in one page" in message
     assert "Native class/parent verification: unresolved" in message
+
+
+
+def test_mutating_or_unscoped_receipt_never_sources_identity_answer():
+    row = _receipt_for()
+    row["mutates"] = True
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 has been verified natively.",
+        [row], {"requirements": []}, "Verify native app 4216",
+    )
+    assert changed is True
+    assert "no target-matched typed app metadata" in message
+    assert "name 'Rule Machine'" not in message
+
+
+def test_valid_typed_app_type_id_is_reported_but_not_promoted_to_native_class():
+    row = _receipt_for()
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 is proven to be the built-in automation manager.",
+        [row], {"requirements": [
+            {"key": "native_class_binding", "state": "checked-unverified"}
+        ]}, "Inspect app instance 4216 built-in native class identity",
+    )
+    assert changed is True
+    assert "appTypeId=718" in message
+    assert "system=true" in message  # explicitly present in the typed receipt
+    assert "Native class/parent verification: unresolved" in message
+    assert "proven to be" not in message
