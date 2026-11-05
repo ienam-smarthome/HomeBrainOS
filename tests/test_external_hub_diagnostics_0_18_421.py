@@ -131,3 +131,22 @@ def test_default_disabled_and_ui_contract(tmp_path):
         "api/hub-diagnostics/status", "api/hub-diagnostics/history",
     ):
         assert marker in page
+
+
+def test_inline_browser_javascript_parses_when_node_available():
+    """The embedded HomeBrain UI has no build step; syntax-check the new JS."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js not installed")
+    page = render_page("HomeBrain", "0.18.421")
+    scripts = __import__("re").findall(r"<script[^>]*>([\s\S]*?)</script>", page)
+    assert scripts
+    for script in scripts:
+        p = subprocess.run(
+            [node, "--check", "-"], input=script, text=True,
+            capture_output=True, check=False,
+        )
+        assert p.returncode == 0, p.stderr[:2000]
