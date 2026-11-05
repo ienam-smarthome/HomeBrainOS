@@ -151,7 +151,8 @@ def test_even_typed_review_completion_is_not_write_authorisation():
         },
     ])
     assert coverage["readinessForMutation"] is False
-    assert coverage["typed_authoring_contract"] if False else True
+    states = {r["key"]: r["state"] for r in coverage["requirements"]}
+    assert states["typed_authoring_contract"] == "observed"
 
 
 def test_unrelated_rule_design_keeps_its_existing_warning_scope():
