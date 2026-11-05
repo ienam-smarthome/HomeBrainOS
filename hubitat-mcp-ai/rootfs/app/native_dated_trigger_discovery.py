@@ -22,6 +22,11 @@ _SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/()-]{0,95}$")
 _ID = re.compile(r"^[1-9][0-9]{0,8}$")
 _FIELD = re.compile(r"^(time|atTime|date|atDate)([1-9][0-9]{0,3})$")
 _OFFSET = re.compile(r"\b(?:scan\s+)?offset\s*[:=]?\s*([0-9]{1,4})\b", re.I)
+_TARGET_RULE_IDS = re.compile(
+    r"\b(?:rule\s+ids?|rules?)\s*[:#]?\s*"
+    r"([1-9][0-9]{0,8}(?:\s*(?:,|and|&)\s*[1-9][0-9]{0,8}){0,3})\b",
+    re.I,
+)
 _REDACT = re.compile(r"(?i)(password|secret|token|api.?key|credential)")
 
 
@@ -33,7 +38,7 @@ def is_existing_dated_trigger_question(question: str) -> bool:
         and re.search(r"\bexisting\b|\balready[ -]?existing\b", text, re.I)
         and re.search(r"\b(?:rule machine|native rule)\b", text, re.I)
         and re.search(r"\b(?:dated triggers?|certain time|atDate#|date field)\b", text, re.I)
-        and re.search(r"\b(?:search|inspect|investigat|find|scan|readback)\w*\b", text, re.I)
+        and re.search(r"\b(?:search|inspect|investigat|find|scan|readback|retry|recheck)\w*\b", text, re.I)
         # Prohibitions such as "Do not create a test rule" are restrictions,
         # not a positive creation intent. The explicit existing/read-only
         # requirements above are the authority for this narrow read route.
@@ -57,6 +62,24 @@ def _requested_offset(question: str) -> int:
     match = _OFFSET.search(question or "")
     value = int(match.group(1)) if match else 0
     return value if 0 <= value <= 500 else 0
+
+
+def _requested_rule_ids(question: str) -> list[str]:
+    """Explicit rule IDs only, not dates, trigger numbers or incidental counts.
+
+    If the request names more than four IDs, fail closed: do not interpret
+    the first four as a silently truncated request.
+    """
+    match = _TARGET_RULE_IDS.search(str(question or ""))
+    if match is None:
+        return []
+    trailing = (question or "")[match.end():]
+    if re.match(r"^\s*(?:,|and|&)\s*[0-9]", trailing, re.I):
+        return []
+    ids = re.findall(r"[1-9][0-9]{0,8}", match.group(1))
+    if not (1 <= len(ids) <= 4) or len(ids) != len(set(ids)):
+        return []
+    return ids
 
 
 def _date(value: Any) -> str | None:
@@ -198,7 +221,15 @@ async def read_existing_dated_triggers(
             cursor = next_cursor
 
     candidates.sort(key=lambda row: int(row["id"]))
-    selected = candidates[offset:offset + _SCAN_LIMIT]
+    requested_ids = _requested_rule_ids(question)
+    targeted = bool(requested_ids)
+    candidate_by_id = {candidate["id"]: candidate for candidate in candidates}
+    missing_ids = [rid for rid in requested_ids if rid not in candidate_by_id]
+    selected = (
+        [candidate_by_id[rid] for rid in requested_ids
+         if rid in candidate_by_id]
+        if targeted else candidates[offset:offset + _SCAN_LIMIT]
+    )
     gateway = next((g for g in _READ_GATEWAYS if g in available_names), None)
     scanned = []
     verified = []
@@ -261,15 +292,22 @@ async def read_existing_dated_triggers(
                                  "evidence": result["returnedDateFieldGroups"]})
                 break
 
-    more = bool(offset + len(scanned) < len(candidates) or not pages_complete)
+    more = bool(
+        not pages_complete
+        or (targeted and len(selected) < len(candidates))
+        or (not targeted and offset + len(scanned) < len(candidates))
+    )
     proof = bool(verified)
     details = {
         "source": "hub_list_apps children + hub_set_rule:read",
         "inventoryPagesRead": pages_read,
         "inventoryPageTraversalComplete": pages_complete,
         "eligibleVisibleNativeRules": len(candidates),
-        "scanOffset": offset,
-        "scanLimit": _SCAN_LIMIT,
+        "scanMode": "targeted-rule-ids" if targeted else "offset-batch",
+        "requestedRuleIds": requested_ids,
+        "requestedRuleIdsNotVisible": missing_ids,
+        "scanOffset": None if targeted else offset,
+        "scanLimit": 4 if targeted else _SCAN_LIMIT,
         "scannedRuleIds": scanned,
         "partialTimeOrDateFieldGroups": partial_fields,
         "nativeReadGatewayAvailable": gateway is not None,
@@ -290,8 +328,17 @@ async def read_existing_dated_triggers(
     lines = ["**Existing native dated-trigger discovery — read-only**",
              f"Visible native Rule-5.1 candidates in returned inventory: {len(candidates)}.",
              f"Inventory pages read: {pages_read}; page traversal complete: {'yes' if pages_complete else 'no'}.",
-             f"Scan offset: {offset}; attempted native rule reads: {len(scanned)}.",
+             (f"Exact-ID retry: requested {', '.join(requested_ids)}; "
+              f"attempted native rule reads: {len(scanned)}."
+              if targeted else
+              f"Scan offset: {offset}; attempted native rule reads: {len(scanned)}."),
              "Read source: hub_set_rule(operation=read), triggers and settings only; no editor form was opened."]
+    if missing_ids:
+        lines.append(
+            "Requested rule IDs not confirmed in the returned native child "
+            "inventory: " + ", ".join(missing_ids)
+            + ". No direct read was attempted for those IDs."
+        )
     if gateway is None:
         lines.append("Approved native rule-document read gateway unavailable; no trigger state was inspected.")
     if verified:
@@ -320,7 +367,18 @@ async def read_existing_dated_triggers(
                 f"atDate={'present' if group['atDatePresent'] else 'not returned'}. "
                 "This does not verify an enabled dated trigger."
             )
-    if more:
+    if targeted:
+        unreadable = [r["ruleId"] for r in scanned if not r["readVerified"]]
+        if unreadable:
+            lines.append(
+                "Requested rule IDs still lacking a complete typed read: "
+                + ", ".join(unreadable) + "."
+            )
+        lines.append(
+            "This targeted retry does not assess other candidates; "
+            "no hub-wide absence conclusion is supported."
+        )
+    elif more:
         lines.append(f"Additional visible candidates or pages may remain. Resume with scan offset {offset + len(scanned)}; no absence verdict is possible.")
     lines.append("No modifying Hubitat calls, form opens, or writer authorization. Native dated-rule creation remains blocked.")
     return "\n\n".join(lines), details
