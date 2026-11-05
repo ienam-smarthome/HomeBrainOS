@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 from api_response_builder import build_agent_response
 from automation_ideas_service import suggest_new_automations
 from automation_status_service import AutomationStatusService
+from native_dated_trigger_discovery import is_existing_dated_trigger_question
 from automation_diagnostic_policy import is_broad_automation_runtime_diagnostic
 from device_read_contract import live_context_devices, live_context_is_complete
 from device_state_summary import (
@@ -895,6 +896,10 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             operation = read_scoped_app_status(mcp, scoped_id)
         elif (
             automation_status.matches_request(request.message)
+            # Specialist source-backed existing-dated-trigger discovery must
+            # not be displaced by a generic status dashboard, even if future
+            # matcher changes introduce another incidental keyword collision.
+            and not is_existing_dated_trigger_question(request.message)
             and not requires_rule_logic_inspection(request.message)
             and requested_groovy_app_id(request.message) is None
             and plan_investigation(request.message) is None
