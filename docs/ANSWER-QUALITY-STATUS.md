@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — v0.18.411 existing dated-trigger investigation misrouted; candidate 0.18.412
+
+**Observed installed failure:** User tried read-only search for existing Rule Machine `Certain Time (and optional date)` native triggers and stored `time#`, `atTime#`, `date#`, `atDate#` fields. Installed **0.18.411** ran **40.751s**, **10 Gemma cloud rounds**, six nonmutating MCP calls; provider **36.552s**. Instead it selected app **4163** "Block Nest hub from 5.50pm", obtained thin identity+untyped config receipts, plus untyped `hub_list_rules`, health and app logs. It did **not** verify that app 4163 uses a dated trigger or expose persisted date fields. Shared completion selected `existing_rule_verification`, publishing unrelated inactivity-OFF/lockout, duplicate-rule, nested-IF and action-tree limitations. These were not the user's asked-for discriminators. No modifying Hubitat commands were recorded.
+
+**Confirmed upstream read-only capability:** `hub_list_apps(scope=instances,filter=children)` exposes visible child native app IDs, type and parent; `hub_set_rule(operation=read,rule_id,args:{sections:[triggers,settings]})` reads native state and typed settings without native editor/form opening. The upstream v5.1.5 tests document `date#` `bool` and `atDate#` `date`, as well as `time#`/`atTime#` fields; not yet proven from this user's saved native rule state.
+
+**Candidate 0.18.412:** Add strict positive existing-dated-trigger read-only route, bounded at 4 inventory pages and 12 exact-ID native `operation=read` calls per batch. Only safe allowlisted typed date/time fields, no raw private settings, no form open or writer calls. Require exact native rule-ID link, same trigger allocated index, `date#=true`, valid date, time and atTime values to mark a saved dated field-set observed; **do not claim runtime or one-shot execution**. If none found, publish an incomplete bounded scan with next offset rather than claiming absence. New source-typed completion domain `native_dated_trigger_discovery` supersedes unrelated generic rule-health audit. Tests replay original prompt and no-write invariants. Live outcome, actual target rule and latency remain unmeasured. **No change to authoring gate v5.1.6, confirmation, backup or duplicate checks.**
+
+---
+
 ## 2026-11-05 — Installed v0.18.411 native dated-rule preflight acceptance PASSED, authoring not yet proven
 
 **Installed response:** HomeBrainOS v0.18.411, same normalized request SHA `2d5f05da71d470ddf20f3a0e0b268af49df5336dd03ee88a7a4188c87dd9c81e`, **4.703s** overall, **1.703s** agent, zero model rounds, four successful read-only external MCP reads and one local typed source projection; no modifying receipts. The native readiness answer survived shared completion, and `investigation_coverage.domain=native_rule_readiness` was preserved (the 0.18.410 app-class-identity overwrite is fixed).
