@@ -252,7 +252,7 @@ def reconcile_app_class_identity_answer(
     return (
         "**Native class identity: not independently verified.** " + first
         + " These reported fields do not by themselves establish that the "
-        "instance is the built-in Rule Machine parent or bind its type ID "
+        "instance is a built-in application parent or bind its type ID "
         "to an authoritative native class. "
         + "A complete, authoritative instance-to-type-to-native-class mapping "
         "is still required; a display name, namespace or user/system flag "
