@@ -71,6 +71,7 @@ options:
   external_hub_diagnostics_enabled: false
   external_hub_diagnostics_hub_url: ""
   external_hub_diagnostics_probe_seconds: 30
+  external_hub_diagnostics_cpu_cores: 4
   external_hub_diagnostics_retention_days: 30
   historical_journal_hub_url: ""
   historical_journal_retention_days: 30
@@ -162,6 +163,7 @@ schema:
   external_hub_diagnostics_enabled: bool
   external_hub_diagnostics_hub_url: str
   external_hub_diagnostics_probe_seconds: int
+  external_hub_diagnostics_cpu_cores: int
   external_hub_diagnostics_retention_days: int
   historical_journal_hub_url: str
   historical_journal_retention_days: int
