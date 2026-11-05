@@ -593,7 +593,7 @@ async def read_native_rule_readiness(
         lines.append(
             "Requested native Rule Machine parent: app "
             + (parent_id or "ID not unambiguously supplied")
-            + ("; exact built-in type and parent role verified"
+            + ("; exact built-in type and returned child relationship verified"
                if parent_identity["verified"] else
                "; unverified ("
                + str(parent_identity["failureCode"]) + ")")
