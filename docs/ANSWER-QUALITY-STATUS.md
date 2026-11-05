@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — MCP native dated-trigger guide patch drafted; upstream write access remains unavailable
+
+**Following installed v0.18.423 acceptance:** The native read-only preflight correctly verified parent 169 / type 18, 42 returned child-parent references, MCP Server 5.1.6, and both tool-guide sections. Its `nativeGuideContract.inspectionStatus=checked` did not find `atDate#` typed declarations; `Unresolved` and `readinessForMutation=false` are expected. No further HomeBrainOS runtime patch is justified by this source gap. Continue the standing benchmark-first Answer Quality roadmap.
+
+**Upstream contribution draft:** Prepared [MCP Server 5.1.6 guide patch](upstream-patches/Hubitat-MCP-native-dated-trigger-guide-v5.1.6.patch) plus [submission/validation notes](upstream-patches/README-native-dated-trigger-guide.md). The patch edits the upstream served `set_rule_reference` guide source, corresponding generated `TOOL_GUIDE.md`, and a Spock guide regression. It documents the typed `time#`, `atTime#`, `date#`, `atDate#` pattern from upstream issue #575 / merged PR #576, explicitly separating static guide data from installed page validation and actual one-time runtime firing. Server-served wording contains no issue/PR numbers as required by upstream `AGENTS.md`.
+
+**Access limitation:** GitHub identity `ienam-smarthome` has read but not push access to `kingpanther13/Hubitat-local-MCP-server`, and no owned upstream fork is connected; issue creation previously failed HTTP 403. No upstream change or PR was made. Draft patch location was validated against exact upstream anchors and `git apply --check` on synthetic exact-context fixtures; **full upstream Groovy CI and required dedicated test-hub E2E have not run**. Await fork/maintainer involvement for upstream submission, not repeated live HomeBrain queries.
+
+**Safety unchanged:** No Hubitat read beyond user-supplied prior test data, no native rule/device writes or editor forms, no writer enablement, no create/execute authorization. No HomeBrainOS version bump for this docs-only handoff.
+
+---
+
 ## 2026-11-05 — installed v0.18.423 native preflight: evidence-scope correction accepted; upstream date-guide contract still unverified
 
 **Live installed result at 20:11 UTC:** HomeBrainOS reported `version=0.18.423` (the current version includes separate Hub Diagnostics releases 0.18.421–0.18.423). The read-only native Rule Machine preflight correctly returned **Unresolved** with `domain=native_rule_readiness`, `status=partial-evidence`, `evidenceComplete=false`, `questionResolved=false`, `preflightEvidenceComplete=true` and `readinessForMutation=false`. Previously, v0.18.419 incorrectly published guide unavailability and Success for a request explicitly asking for `nativeGuideContract`. The v0.18.420 scope correction has therefore **passed its relevant installed acceptance**.

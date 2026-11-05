@@ -1,0 +1,50 @@
+--- a/libraries/mcp-native-documents-lib.groovy
++++ b/libraries/mcp-native-documents-lib.groovy
+@@ -670,4 +670,11 @@
+ 
+ Typed fields use exact native names containing # for the allocated ID, for example logmsg.#. Expressions use existing native condition IDs and (, ), NOT, AND, OR, XOR. Omit an id to append; provide an existing native id to edit. Field names and capability/action variants require verified native contracts; not every capability-specific variant is supported. Discover native options through operation:"form" when a document contract is unavailable. Unknown fields cannot be assumed to compile correctly merely because a setting persists. A successful result establishes native model checks, typed readback, native editor diagnostics, expression-reference checks and nonbroken health with activation status; independently verify device behavior and native UI editing for the intended automation.
+ 
++Known native Rule Machine 5.1 example: the "Certain Time (and optional date)" trigger uses these page-declared typed field templates:
++- time#: type=enum; example value "A specific time".
++- atTime#: type=time; example native value "2026-11-10T15:35:00.000+0000" (a time string such as "15:35" alone is not the documented native field value).
++- date#: type=bool; value true to request the optional date.
++- atDate#: type=date; value yyyy-MM-dd, for example "2026-11-10". The date must be a valid calendar date.
++The # in each template is the allocated trigger ID in saved settings. Other settings such as year# and their conditional requirements depend on the installed Rule Machine page; do not infer them from this example. The server validates provided typed fields against that page when authoring. This read-only guide is a static example, not proof that the installed page offers the exact shape, that a dated trigger has been saved, or that a scheduled one-time action will fire. Form opening can execute app page code and is not a strict read-only operation.
++
+ Example changes: [{part:"action",value:{type:"messageActs",subtype:"getLogMsg",fields:[{name:"logmsg.#",type:"textarea",value:"Document action"}]}}]. Writes render the native trigger/action/main pages, check health, submit native Done, and read subscriptions plus a fresh document. These pages can mutate native state and are never part of document reads.
+--- a/TOOL_GUIDE.md
++++ b/TOOL_GUIDE.md
+@@ -27,4 +27,11 @@
+ 
+ Typed fields use exact native names containing # for the allocated ID, for example logmsg.#. Expressions use existing native condition IDs and (, ), NOT, AND, OR, XOR. Omit an id to append; provide an existing native id to edit. Field names and capability/action variants require verified native contracts; not every capability-specific variant is supported. Discover native options through operation:"form" when a document contract is unavailable. Unknown fields cannot be assumed to compile correctly merely because a setting persists. A successful result establishes native model checks, typed readback, native editor diagnostics, expression-reference checks and nonbroken health with activation status; independently verify device behavior and native UI editing for the intended automation.
+ 
++Known native Rule Machine 5.1 example: the "Certain Time (and optional date)" trigger uses these page-declared typed field templates:
++- time#: type=enum; example value "A specific time".
++- atTime#: type=time; example native value "2026-11-10T15:35:00.000+0000" (a time string such as "15:35" alone is not the documented native field value).
++- date#: type=bool; value true to request the optional date.
++- atDate#: type=date; value yyyy-MM-dd, for example "2026-11-10". The date must be a valid calendar date.
++The # in each template is the allocated trigger ID in saved settings. Other settings such as year# and their conditional requirements depend on the installed Rule Machine page; do not infer them from this example. The server validates provided typed fields against that page when authoring. This read-only guide is a static example, not proof that the installed page offers the exact shape, that a dated trigger has been saved, or that a scheduled one-time action will fire. Form opening can execute app page code and is not a strict read-only operation.
++
+ Example changes: [{part:"action",value:{type:"messageActs",subtype:"getLogMsg",fields:[{name:"logmsg.#",type:"textarea",value:"Document action"}]}}]. Writes render the native trigger/action/main pages, check health, submit native Done, and read subscriptions plus a fresh document. These pages can mutate native state and are never part of document reads.
+--- a/src/test/groovy/server/ToolGuideSubSectionsSpec.groovy
++++ b/src/test/groovy/server/ToolGuideSubSectionsSpec.groovy
+@@ -123,4 +123,19 @@
+     }
+ 
++    def "known native dated trigger field templates are documented without implying runtime verification"() {
++        when:
++        def guide = script.toolGetToolGuide('set_rule_reference')
++        def content = guide.content as String
++
++        then:
++        guide.success == true
++        content.contains('Certain Time (and optional date)')
++        ['time#: type=enum', 'atTime#: type=time', 'date#: type=bool',
++         'atDate#: type=date'].every { content.contains(it) }
++        content.contains('yyyy-MM-dd')
++        content.contains('not proof that the installed page offers the exact shape')
++        content.contains('not a strict read-only operation')
++    }
++
+     def "toolGetToolGuide serves a sub-section with its parent named, and the parent still serves the whole section"() {
+         when: 'a sub-key goes through the live dispatcher'
