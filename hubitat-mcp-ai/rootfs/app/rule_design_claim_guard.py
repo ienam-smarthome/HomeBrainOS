@@ -292,13 +292,29 @@ def calibrate_rule_design_review(
         and row["details"].get("semanticFieldsValidated") is True
         for row in receipts if isinstance(row, dict)
     )
+    device_read, app_read = _targeted_sources(receipts)
+    if not device_read and not app_read:
+        text, _ = _INSTALLED_HEADING.subn(
+            "### Installed-hub evidence — limited to recorded reads\n"
+            "The current receipts record no targeted device or complete "
+            "app-configuration reads. Inventory and tool-guide calls alone "
+            "cannot verify hub time zone, settings, device identity or "
+            "native authoring schema.\n\n", text,
+        )
     provenance = (
-        "**Evidence qualification:** Current device and app pages were "
-        "queried, but generic receipts listing response fields do not "
-        "independently certify their labels, rooms, current inactivity "
-        "duration, complete actions or lockout trigger settings. These "
-        "reported interpretations require typed source confirmation "
-        "before any new rule is authorised.\n\n"
+        "**Evidence qualification:** "
+        + (
+            "Targeted device and app configuration reads were recorded, "
+            "but generic field-name receipts cannot prove their "
+            "semantics or a complete native writer schema."
+            if device_read and app_read else
+            "The read receipts did not verify both targeted device and "
+            "complete app-configuration sources. An inventory or guide "
+            "read alone does not establish the current rule settings, "
+            "hub time zone or native authoring contract."
+        )
+        + " Typed source confirmation is required before any new rule "
+          "is authorised.\n\n"
     )
     if not typed_details_verified and "**Evidence qualification:**" not in text:
         # Keep the existing review/no-write banner as the first line.
