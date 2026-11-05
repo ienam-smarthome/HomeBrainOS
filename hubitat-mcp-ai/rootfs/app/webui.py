@@ -38,7 +38,9 @@ def render_page(title: str, version: str) -> str:
 .model-tier-note{font-size:11px;color:var(--muted);line-height:1.4}
 @media(max-width:520px){.model-tier-picker select{flex:1;min-width:185px}}
 .answer-text p{margin:0 0 10px}.answer-text p:last-child{margin-bottom:0}.answer-text h2,.answer-text h3{margin:14px 0 6px;font-size:18px}.answer-text ul,.answer-text ol{margin:6px 0 10px;padding-left:24px}.answer-text li{margin:5px 0}.status-label{display:inline-block;border-radius:999px;padding:2px 8px;margin-right:7px;font-size:11px;font-weight:700;letter-spacing:.03em;vertical-align:1px}.status-active{background:#14532d;color:#bbf7d0}.status-disabled{background:#3f3f46;color:#e4e4e7}.status-paused{background:#78350f;color:#fde68a}.status-broken{background:#7f1d1d;color:#fecaca}.status-unknown{background:#1e3a8a;color:#bfdbfe}.inline-critical{color:#f87171;font-weight:700}.heading-active{color:#4ade80}.heading-disabled{color:#a1a1aa}.heading-paused{color:#fbbf24}.heading-broken{color:#f87171}.heading-unknown{color:#60a5fa}
-.health-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.health-status-chip{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700}.health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.health-stat{background:#111;border-radius:10px;padding:10px}.health-ok{color:#4ade80}.health-warn{color:#fbbf24}.health-critical{color:#f87171}.health-neutral{color:#a1a1aa}.health-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.health-actions button{width:auto;margin:0}.health-details{margin-top:10px}.health-details summary{cursor:pointer}.health-domain-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0 12px}.health-domain{background:#111;border-radius:9px;padding:8px}.health-domain strong{display:block}.health-section{margin-top:10px}.health-list{margin:6px 0 0;padding-left:22px}.health-list li{margin:5px 0;color:#e5e7eb}.health-target-critical,.health-state-critical{color:#f87171;font-weight:600}.health-target-warning,.health-state-warning{color:#fbbf24;font-weight:600}.health-new{font-weight:700}.health-resolved{color:#4ade80}\n.automation-view{white-space:normal}.automation-summary{margin:0 0 10px}.automation-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.automation-toolbar input{flex:1 1 220px;margin:0;padding:10px}.automation-toolbar button{width:auto;margin:0;padding:9px 11px;font-size:12px}.automation-filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px}.automation-filter{width:auto;margin:0;padding:7px 10px;background:#27272a;font-size:12px}.automation-filter.selected{background:var(--blue)}.automation-section{border:1px solid #29292d;border-radius:10px;margin:8px 0;background:#111}.automation-section summary{cursor:pointer;padding:11px 12px;font-weight:700;list-style-position:inside}.automation-section ul{margin:0;padding:0 12px 10px 34px}.automation-section li{margin:6px 0}.automation-section[hidden]{display:none}.automation-kind{color:var(--muted);font-size:11px;margin-left:6px}.automation-empty{color:var(--muted);padding:8px 0}.automation-section-active summary{color:#4ade80}.automation-section-disabled summary{color:#a1a1aa}.automation-section-paused summary{color:#f87171}.automation-section-broken summary{color:#f87171}.automation-section-unknown summary{color:#60a5fa}
+.health-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.health-status-chip{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700}.health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+#hubDiagnosticsCard .health-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media(max-width:900px){#hubDiagnosticsCard .health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}.health-stat{background:#111;border-radius:10px;padding:10px}.health-ok{color:#4ade80}.health-warn{color:#fbbf24}.health-critical{color:#f87171}.health-neutral{color:#a1a1aa}.health-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.health-actions button{width:auto;margin:0}.health-details{margin-top:10px}.health-details summary{cursor:pointer}.health-domain-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0 12px}.health-domain{background:#111;border-radius:9px;padding:8px}.health-domain strong{display:block}.health-section{margin-top:10px}.health-list{margin:6px 0 0;padding-left:22px}.health-list li{margin:5px 0;color:#e5e7eb}.health-target-critical,.health-state-critical{color:#f87171;font-weight:600}.health-target-warning,.health-state-warning{color:#fbbf24;font-weight:600}.health-new{font-weight:700}.health-resolved{color:#4ade80}\n.automation-view{white-space:normal}.automation-summary{margin:0 0 10px}.automation-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.automation-toolbar input{flex:1 1 220px;margin:0;padding:10px}.automation-toolbar button{width:auto;margin:0;padding:9px 11px;font-size:12px}.automation-filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px}.automation-filter{width:auto;margin:0;padding:7px 10px;background:#27272a;font-size:12px}.automation-filter.selected{background:var(--blue)}.automation-section{border:1px solid #29292d;border-radius:10px;margin:8px 0;background:#111}.automation-section summary{cursor:pointer;padding:11px 12px;font-weight:700;list-style-position:inside}.automation-section ul{margin:0;padding:0 12px 10px 34px}.automation-section li{margin:6px 0}.automation-section[hidden]{display:none}.automation-kind{color:var(--muted);font-size:11px;margin-left:6px}.automation-empty{color:var(--muted);padding:8px 0}.automation-section-active summary{color:#4ade80}.automation-section-disabled summary{color:#a1a1aa}.automation-section-paused summary{color:#f87171}.automation-section-broken summary{color:#f87171}.automation-section-unknown summary{color:#60a5fa}
 .mic-fab{position:fixed;right:18px;bottom:18px;z-index:10;width:64px;height:64px;margin:0;border-radius:50%;font-size:27px;background:var(--green);box-shadow:0 10px 30px rgba(0,0,0,.5)}.mic-fab.listening{background:#dc2626}.copy-button{width:auto;display:block;margin:10px 0 0 auto;padding:7px 10px;font-size:12px}.technical-copy{margin-top:7px}.copy-ok{background:var(--green)}.copy-fail{background:var(--red)}
 @media(max-width:520px){.wrap{padding:8px 8px 82px}h1{font-size:23px;margin:2px 0 7px}.card{border-radius:10px;padding:8px;margin:6px 0}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.top-stats{grid-template-columns:repeat(4,minmax(0,1fr));padding:5px;gap:4px}.top-stats .tile{min-height:54px;padding:5px 3px;font-size:10px}.top-stats .big{font-size:17px}.top-stats .muted{display:none}.quick-grid{grid-template-columns:repeat(3,minmax(0,1fr));padding:5px;gap:4px}.quick-grid button,.quick-grid .quick-link{min-height:38px;padding:5px 3px;font-size:10px}.health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.health-stat{padding:7px}.mic-fab{right:12px;bottom:12px;width:58px;height:58px;font-size:23px}.automation-toolbar input{flex-basis:100%}}
 .answer-table-wrap{max-width:100%;overflow-x:auto;margin:8px 0 14px;border:1px solid #38383d;border-radius:9px}
@@ -237,15 +239,18 @@ def render_page(title: str, version: str) -> str:
 <div class="health-stat"><div class="big" id="diagOS">—</div><div class="muted">Free OS memory (live probe)</div></div>
 <div class="health-stat"><div class="big" id="diagJava">—</div><div class="muted">Free Java (native 5m sample)</div></div>
 <div class="health-stat"><div class="big" id="diagHeap">—</div><div class="muted">Allocated Java heap used</div></div>
+<div class="health-stat"><div class="big" id="diagCpuPercent">—</div><div class="muted">5m CPU load equivalent (%)</div></div>
 <div class="health-stat"><div class="big" id="diagLatency">—</div><div class="muted">Last probe response</div></div>
 </div>
 <details class="health-details" id="diagDetails"><summary>View memory history &amp; connection incidents</summary>
-<div class="muted">External observations are not proof of a reboot cause. Java values come from Hubitat's native 5-minute history, not 30-second measurements.</div>
+<div class="muted">External observations are not proof of a reboot cause. Java and CPU load values are native five-minute samples, not 30-second measurements.
+<div class="journal-small" id="diagCpuMethod">CPU load equivalent = 5-minute load average ÷ logical processor count × 100; not measured CPU utilisation.</div></div>
 <div class="row" style="margin-top:8px">
 <label>View <select id="diagMetric" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
 <option value="free_os_mb">Live Free OS memory (MB)</option><option value="java_free_mb">Native Free Java (MB)</option>
 <option value="java_allocated_heap_used_pct">Allocated heap used (%)</option>
-<option value="native_load5">5-minute CPU load average</option><option value="latency_ms">HTTP response time (ms)</option>
+<option value="native_load_pct">5-minute CPU load equivalent (%)</option>
+<option value="native_load5">5-minute CPU load average (raw)</option><option value="latency_ms">HTTP response time (ms)</option>
 </select></label>
 <label>Range <select id="diagHours" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
 <option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option>
@@ -1878,7 +1883,7 @@ loadStage6Status();
 
 
 
-const diagUnit={free_os_mb:'MB',java_free_mb:'MB',java_allocated_heap_used_pct:'%',native_load5:'load',latency_ms:'ms'};
+const diagUnit={free_os_mb:'MB',java_free_mb:'MB',java_allocated_heap_used_pct:'%',native_load_pct:'%',native_load5:'load',latency_ms:'ms'};
 let diagHistoryRows=[],diagIncidents=[];
 function diagDate(value){if(!value)return 'unavailable';const d=new Date(value);return isNaN(d.getTime())?String(value).slice(0,40):d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})}
 function diagNumber(value,unit){return typeof value==='number' && Number.isFinite(value)?value.toFixed(unit==='%'?1:unit==='load'?2:0)+' '+unit:'—'}
@@ -1888,6 +1893,9 @@ state.textContent=status;state.className='health-status-chip '+(status==='online
 document.getElementById('diagOS').textContent=diagNumber(row.free_os_mb,'MB');
 document.getElementById('diagJava').textContent=diagNumber(row.java_free_mb,'MB');
 document.getElementById('diagHeap').textContent=diagNumber(row.java_allocated_heap_used_pct,'%');
+document.getElementById('diagCpuPercent').textContent=diagNumber(row.native_load_pct,'%');
+document.getElementById('diagCpuMethod').textContent='CPU load equivalent = 5-minute load average ÷ '+
+ (Number(data.cpu_cores)||4)+' logical processors × 100; not measured CPU utilisation (can exceed 100% under heavy load).';
 document.getElementById('diagLatency').textContent=diagNumber(row.latency_ms,'ms');
 const details=status==='disabled'?'Enable external diagnostics in the add-on configuration.':(data.error||'');
 const age=row.recorded_at?'Last probe '+diagDate(row.recorded_at):'No saved probe yet';
@@ -1898,7 +1906,7 @@ const diagPlot={left:65,right:722,top:26,bottom:204,width:760,height:250};
 let diagPlottedPoints=[],diagActivePoint=0;
 function diagMetricValue(value,metric){
  if(!Number.isFinite(value))return '—';
- const digits=metric==='native_load5'?2:metric==='java_allocated_heap_used_pct'?1:1;
+ const digits=metric==='native_load5'?2:1;
  const unit=diagUnit[metric]||'';
  const formatted=new Intl.NumberFormat('en-GB',{maximumFractionDigits:digits}).format(value);
  return formatted+(unit?' '+unit:'');
@@ -1913,7 +1921,7 @@ function diagSelectPoint(index){
  if(!diagPlottedPoints.length)return;
  diagActivePoint=Math.max(0,Math.min(diagPlottedPoints.length-1,index));
  const point=diagPlottedPoints[diagActivePoint],row=point.row,metric=document.getElementById('diagMetric').value;
- const sourceNote=(metric.startsWith('java_')||metric==='native_load5')?
+ const sourceNote=(metric.startsWith('java_')||metric==='native_load5'||metric==='native_load_pct')?
    (' · native source '+String(row.native_sample_label||'unknown')):' · external probe';
  const label=document.getElementById('diagMetric').selectedOptions[0].textContent;
  const recorded=diagDate(row.recorded_at),value=diagMetricValue(row[metric],metric);
@@ -1938,7 +1946,7 @@ function diagSelectPoint(index){
 }
 function drawDiagnosticsChart(){
  const svg=document.getElementById('diagChart'),metric=document.getElementById('diagMetric').value;
- const nativeMetric=metric.startsWith('java_')||metric==='native_load5';
+ const nativeMetric=metric.startsWith('java_')||metric==='native_load5'||metric==='native_load_pct';
  svg.replaceChildren();
  let points=diagHistoryRows.filter(row=>row && typeof row[metric]==='number' &&
     Number.isFinite(row[metric]) && Number.isFinite(Date.parse(row.recorded_at)) &&
