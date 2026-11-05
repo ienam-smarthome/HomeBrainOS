@@ -155,11 +155,23 @@ class AutomationStatusService:
                 value,
             )
         )
+        # An explicit "recommend which of my existing automations need
+        # fixing" question is also a legitimate *broad* configuration review,
+        # even without literal "status" or "disabled" words. Preserve its
+        # established advisory inventory path; generic optimisation and
+        # specific/native rule investigations still use their own reasoning.
+        explicit_existing_review = bool(re.search(
+            r"^(?:please\s+)?(?:recommend|review|suggest)\b"
+            r".{0,100}\b(?:which|what)\b"
+            r".{0,90}\b(?:automations?|rules?|apps?)\b"
+            r".{0,75}\b(?:fix|fixing|repair|broken|problems?|issues?|attention)\b",
+            value,
+        ))
         explicit_new_ideas = (
             any(word in value for word in _ADVISORY_WORDS)
             and any(signal in value for signal in _NEW_IDEA_SIGNAL)
         )
-        return explicit_status or explicit_new_ideas
+        return explicit_status or explicit_existing_review or explicit_new_ideas
 
     @staticmethod
     def is_advisory_request(prompt: str) -> bool:
