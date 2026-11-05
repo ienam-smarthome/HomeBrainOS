@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — installed 0.18.408 exact-ID app class investigation and candidate 0.18.409
+
+**Observed test:** The user executed a more explicit read-only app 169 instance→type correlation prompt on installed HomeBrainOS **0.18.408**. Elapsed 28.661s (UI 28.7s), 8 free Gemma rounds, four successful read-only MCP calls; provider 24.483s, MCP HTTP 1.267s. No mutation. The new request SHA `b0050c45...` differs from the previous app identity question, so the latency difference is not a controlled version benchmark.
+
+**Source coverage defect:** Model-selected `hub_list_apps(scope='instances', nameFilter='Rule Machine')` and `hub_list_apps(scope='types', nameFilter='Rule Machine')` returned only generic root field-name Technical JSON receipts. A separate target-matched `hub_get_app_config(appId=169,summary=true)` receipt established reported `type='Rule Machine'`, `namespace='hubitat'`, `user=false` but did not expose the requested numeric `appTypeId` or independently matching type-catalog class. The final answer was correctly **unresolved**. Native Rule Machine writer remained blocked.
+
+**Upstream source path:** Upstream issue #526/PR #527 and v4.7.1 source code specify `appTypeId` in `hub_list_apps(scope='instances')` rows and a `scope='types'` class catalog with type ID, namespace, `system`, `isBuiltIn`. The current user's actual target type ID and matching catalog row have **not yet been inspected as typed evidence**.
+
+**0.18.409 candidate:** Add narrow typed receipt projections for successful, explicitly name-filtered app-inventory and type-catalog reads, with exact numeric ID joins, no name-only matching, source tags, bounded page rows and strict read-only validation. Shared completion may mark **instance-to-type ID observed** when the source-returned target app row includes a valid numeric type ID, while still leaving the independently certified **native class/parent** relationship unverified; show the exact catalog ID match and reported built-in flags only if they appear in matched typed catalog records. No extra model calls, MCP requests, rule writes, code execution or changes to permission gates. CI and installed acceptance pending; see `hubitat-mcp-ai/CHANGELOG-0.18.409.md`.
+
+---
+
 ## 2026-11-05 — installed v0.18.408 acceptance PASS for read-only source-backed app-identity answer
 
 **Installed evidence (app instance 169, same normalized request SHA):** version 0.18.408; total response **25.153s**, 5 free Gemma 31b rounds, 3 MCP read-only calls, **21.828s provider time**, 1.286s MCP execution, 1.501s MCP HTTP. Provider time is the dominant cost. This individual run took about 6.014s more than the single installed 0.18.407 sample (19.139s) while preserving the same 5 model rounds and 3 MCP calls; do not infer a systematic latency regression from two observations.
