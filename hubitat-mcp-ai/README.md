@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.424**.
+Current add-on version: **0.18.425**.
+
+**Native contract review routing (v0.18.425):** Installed 0.18.424 misclassified a read-only native dated-trigger runbook review as existing-rule verification and spent 11 model rounds/15 tool calls/78.7 seconds on unrelated app/source lookups. A source-scope-aware native authoring contract predicate now takes precedence over advisory model labels, without enabling writes or changing explicit installed-rule audits. Contract reviews require the guide and typed authoring schema, not unspecified device/controller action trees. The agent is instructed to avoid unrelated Groovy, logs and app reads; topic exclusions no longer activate motion/lockout guidance. [Release notes](CHANGELOG-0.18.425.md).
 
 **Native proposal publication guard (v0.18.424):** A read-only runbook review in installed 0.18.423 invented HH:mm / MM/dd/yyyy date formats, an unsupported native addTrigger/addAction create payload, and declared READY despite incomplete schema evidence. It also appended an unrelated hard-coded overnight-lighting/motion caveat, and implied targeted app/device page reads when only inventory/guide calls occurred. The existing shared rule-design guard now withholds unverified executable native write JSON, replaces unverified upstream schema/readiness claims, differentiates targeted configuration reads, and scopes the feasibility appendix to the actual question. No native writer privileges or MCP calls are added. [Release notes](CHANGELOG-0.18.424.md).
 
