@@ -388,9 +388,9 @@ async def read_native_rule_readiness(
     available_names: set[str] | frozenset[str],
     question: str = "",
 ) -> tuple[str, dict[str, Any]]:
-    """Core three source reads; optional hub_get_info for explicit cross-check.
+    """Three core source reads; optional version/identity evidence when requested.
 
-    No write, model round, confirmation, or secret guide token is published.
+    No writes, model rounds, editor forms, or raw guide content are published.
     """
     async def get(gateway: str, arguments: dict[str, Any], label: str) -> dict[str, Any] | None:
         request = arguments
@@ -416,7 +416,7 @@ async def read_native_rule_readiness(
     # MCP initialize serverInfo is an independent server-supplied identity,
     # not a hub firmware version nor the HomeBrain add-on's version number.
     version = _server_version(mcp)
-    want_version, want_date, want_readback = _extra_requested_checks(question)
+    want_version, want_date, want_readback, want_parent, want_create = _extra_requested_checks(question)
     hub_info_version: str | None = None
     if want_version:
         info = await get("hub_get_info", {}, "installed server version check")
@@ -434,15 +434,15 @@ async def read_native_rule_readiness(
     )
     timestamp, count, backup_gap = _backup_timestamp(backup)
     guide_availability: dict[str, bool] = {}
-    dated_field_attested = False
+    contract = _guide_contract_projection(None)
     for section in _GUIDES:
         result = await get(
             "hub_get_tool_guide", {"section": section},
             "tool guide " + section,
         )
         content = result.get("content") if isinstance(result, dict) else None
-        # Only a nonempty section-specific guide proves availability.
-        # The secret/rotating acknowledgement key is NEVER published.
+        # Only an actual section-specific guide proves availability.
+        # Never publish the rotating acknowledgement key or guide content.
         marker = re.compile(
             r"I-HAVE-READ-THE-GUIDE-" + re.escape(section) + r"-[0-9a-fA-F]+"
         )
@@ -450,11 +450,48 @@ async def read_native_rule_readiness(
             isinstance(content, str) and len(content) > 0
             and bool(marker.search(content))
         )
-        if section == "set_rule_reference" and want_date:
-            dated_field_attested = (
-                guide_availability[section]
-                and _guide_dated_field_attestation(content)
+        if section == "set_rule_reference" and (want_date or want_create):
+            contract = _guide_contract_projection(
+                content if guide_availability[section] else None
             )
+
+    parent_id = _requested_parent_id(question) if want_parent else None
+    parent_identity: dict[str, Any] = {
+        "appId": parent_id, "verified": False, "appTypeId": None,
+        "childRowsObserved": 0,
+        "failureCode": ("explicit_parent_id_required" if parent_id is None
+                        else "source_unavailable"),
+    }
+    if parent_id is not None:
+        # Each request is an existing, non-mutating Hubitat source read.
+        # Do not fall back to guessed parent IDs or rendered editor pages.
+        inst = await get(
+            "hub_read_apps_code",
+            {"tool": "hub_list_apps", "args": {"scope": "instances"}},
+            "native Rule Machine installed app identity",
+        )
+        types = await get(
+            "hub_read_apps_code",
+            {"tool": "hub_list_apps", "args": {"scope": "types"}},
+            "native Rule Machine built-in type identity",
+        )
+        summary = await get(
+            "hub_read_apps_code",
+            {"tool": "hub_get_app_config", "args": {
+                "appId": parent_id, "summary": True,
+            }},
+            "exact-ID app summary identity",
+        )
+        config = await get(
+            "hub_read_apps_code",
+            {"tool": "hub_get_app_config", "args": {
+                "appId": parent_id, "includeSettings": False,
+            }},
+            "exact-ID app parent-role metadata",
+        )
+        parent_identity = _native_parent_projection(
+            parent_id, inst, types, summary, config,
+        )
 
     complete = (version is not None and timestamp is not None
                 and all(guide_availability.values()))
@@ -464,7 +501,10 @@ async def read_native_rule_readiness(
         "mcpVersionSource": "MCP initialize serverInfo" if version else "unverified",
         "hubInfoMcpServerVersion": hub_info_version,
         "mcpVersionAgreement": version_agrees,
-        "nativeDatedFieldGuideAttested": dated_field_attested,
+        "nativeDatedFieldGuideAttested": contract["nativeDateFieldGuideAttested"],
+        "nativeCreateContractGuideAttested": contract["createContractDocumented"],
+        "nativeGuideContract": contract,
+        "nativeParentIdentity": parent_identity if want_parent else None,
         # No actual dated-rule ID was supplied for a read-back; do not
         # silently infer persistence from an installed guide or changelog.
         "nativeDatedDateReadbackVerified": False,
@@ -496,12 +536,48 @@ async def read_native_rule_readiness(
             + ("verified" if version_agrees is True else
                "conflict" if version_agrees is False else "not verified"),
         ])
-    if want_date:
+    if want_date or want_create:
         lines.append(
-            "Installed guide explicitly documents atDate# as a date field: "
-            + ("yes (guide only; no persisted date proven)"
-               if dated_field_attested else "not verified")
+            "Installed native date field declaration: "
+            + ("source-attested" if contract["nativeDateFieldGuideAttested"]
+               else "unverified")
         )
+        lines.append(
+            "Date guide checks: atDate# named="
+            + str(contract["atDateNamed"]).lower()
+            + "; atDate# type=date declared="
+            + str(contract["atDateTypeDateDeclared"]).lower()
+            + "; yyyy-MM-dd documented="
+            + str(contract["dateFormatDeclared"]).lower() + "."
+        )
+        if contract["gapCodes"]:
+            lines.append(
+                "Guide evidence gaps (safe codes): "
+                + ", ".join(contract["gapCodes"]) + "."
+            )
+    if want_create:
+        lines.append(
+            "Installed native dated-trigger creation guide contract: "
+            + ("documented (guide only; runtime untested)"
+               if contract["createContractDocumented"] else "unverified")
+        )
+    if want_parent:
+        lines.append(
+            "Requested native Rule Machine parent: app "
+            + (parent_id or "ID not unambiguously supplied")
+            + ("; exact built-in type and parent role verified"
+               if parent_identity["verified"] else
+               "; unverified ("
+               + str(parent_identity["failureCode"]) + ")")
+        )
+        if parent_identity["verified"]:
+            lines.append(
+                "Source-attested appTypeId="
+                + str(parent_identity["appTypeId"])
+                + "; returned child rows="
+                + str(parent_identity["childRowsObserved"])
+                + " (not a complete rule inventory)."
+            )
     if want_readback:
         lines.append(
             "Native dated-trigger saved-state readback: not checked; "
