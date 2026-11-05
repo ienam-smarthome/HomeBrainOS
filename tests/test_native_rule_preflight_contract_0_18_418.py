@@ -327,9 +327,9 @@ def test_419_live_guide_contract_request_cannot_return_false_success():
 
 
 @pytest.mark.parametrize("question", [
-    "Read-only native Rule Machine preflight: check version, backup and guide. "
+    "Read-only native Rule Machine preflight: check MCP Server version, latest hub-local backup and native tool guides. "
     "Report nativeGuideContract for the installed tool.",
-    "Read-only native Rule Machine preflight: check version, backup and guide. "
+    "Read-only native Rule Machine preflight: check MCP Server version, latest hub-local backup and native tool guides. "
     "Report guide evidence gaps, including any missing declarations.",
 ])
 def test_positive_guide_reporting_requires_actual_guide_evidence(question):
