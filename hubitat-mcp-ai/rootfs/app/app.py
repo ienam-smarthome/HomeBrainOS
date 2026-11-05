@@ -176,6 +176,7 @@ def load_options() -> dict[str, Any]:
         "external_hub_diagnostics_enabled": False,
         "external_hub_diagnostics_hub_url": "",
         "external_hub_diagnostics_probe_seconds": 30,
+        "external_hub_diagnostics_cpu_cores": 4,
         "external_hub_diagnostics_retention_days": 30,
         "historical_journal_hub_url": "",
         "historical_journal_retention_days": 30,
@@ -255,6 +256,7 @@ external_hub_diagnostics = ExternalHubDiagnostics(
     path=Path(os.getenv("EXTERNAL_HUB_DIAGNOSTICS_PATH",
                         "/data/homebrain-hub-diagnostics.sqlite3")),
     probe_seconds=int(OPTIONS.get("external_hub_diagnostics_probe_seconds") or 30),
+    cpu_cores=int(OPTIONS.get("external_hub_diagnostics_cpu_cores") or 4),
     retention_days=int(OPTIONS.get("external_hub_diagnostics_retention_days") or 30),
 )
 mcp = HubitatMCPClient(
