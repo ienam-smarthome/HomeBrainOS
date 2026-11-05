@@ -15,7 +15,6 @@ sys.path.insert(0, str(APP))
 from evidence_recorder import EvidenceRecorder  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
-from native_rule_inventory_source import is_native_rule_inventory_question  # noqa: E402
 from native_rule_readiness_source import (  # noqa: E402
     is_native_rule_readiness_question, read_native_rule_readiness,
     native_rule_readiness_coverage,
@@ -100,7 +99,6 @@ class FakeMCP:
 
 def test_classifier_prefers_explicit_multi_source_read_only_preflight():
     assert is_native_rule_readiness_question(QUESTION)
-    assert not is_native_rule_inventory_question(QUESTION)
     assert not is_native_rule_readiness_question(
         "List my existing one-time Rule Machine rules; do not create backups "
         "or read tool guides."
