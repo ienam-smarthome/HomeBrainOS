@@ -116,7 +116,7 @@ def test_actual_2026_11_05_request_keeps_readiness_domain_and_answer():
     assert is_native_rule_readiness_question(REQUEST)
     assert is_app_class_identity_question(REQUEST)  # overlapping trigger existed
     mcp, answer, details, evidence = _run()
-    assert len(mcp.calls) == 4
+    assert len(mcp.calls) == 4  # prior parent identity is referenced, not rechecked
     assert details["mcpServerVersion"] == "5.1.5"
     assert details["hubInfoMcpServerVersion"] == "5.1.5"
     assert details["mcpVersionAgreement"] is True
@@ -151,6 +151,7 @@ def test_actual_2026_11_05_request_keeps_readiness_domain_and_answer():
         "native_rule_tool_guides": "observed",
         "mcp_version_agreement": "observed",
         "native_dated_field_guide": "checked-unverified",
+        "native_dated_create_contract_guide": "checked-unverified",
         "native_dated_date_readback": "checked-unverified",
     }
     assert final.metrics["outcome"] == "unresolved"
