@@ -219,6 +219,38 @@ def plan_investigation(request: str, *, route_hint: str = "") -> InvestigationPl
         is_existing_rule_verification_request, is_app_class_identity_question,
     )
     interpreted = active_request_interpretation(request)
+    from targeted_rule_scope_policy import is_native_rule_contract_review_request
+    if is_native_rule_contract_review_request(request):
+        # The user asked about a prospective native API contract, not an
+        # installed rule, device, duplicate controller or action-tree audit.
+        # A tool guide can prove documentation was read, but generic field
+        # names cannot certify the compiled trigger+action schema.
+        return InvestigationPlan(
+            domain="rule_design_review",
+            objective="Assess the read-only native authoring/runbook contract; "
+                      "do not create a rule or certify runtime execution.",
+            requirements=(
+                EvidenceRequirement(
+                    "native_capabilities",
+                    "Read relevant installed native Rule Machine tool guidance",
+                    "hub_get_tool_guide / native rule authoring reference",
+                ),
+                EvidenceRequirement(
+                    "typed_authoring_contract",
+                    "Verify the precise native trigger/action field types, "
+                    "settings combinations and date/time encoding",
+                    "trusted typed native authoring-schema projection",
+                ),
+            ),
+            stop_rule="Guide availability is not an executable rule schema. "
+                      "Absent typed contract proof, report unresolved and do "
+                      "not propose runnable JSON or a confirmation.",
+            forbidden_inferences=(
+                "Do not infer field types from generic tool availability.",
+                "Do not infer a dated rule will fire from a static example.",
+                "Do not inspect unrelated existing rules or Groovy code.",
+            ),
+        )
     # Source-class identity is a separate objective, even if an upstream
     # advisory classifier assigned the broad "verify configuration" label.
     if is_app_class_identity_question(request):
@@ -431,6 +463,17 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
                 checked.add("current_rule")
             if leaf == "hub_get_tool_guide":
                 checked.add("native_capabilities")
+                if "typed_authoring_contract" in {
+                    requirement.key for requirement in plan.requirements
+                }:
+                    checked.add("typed_authoring_contract")
+            if (row.get("evidence_kind") == "typed_native_rule_design_schema"
+                    and row.get("effect") == "read"
+                    and row.get("mutates") is False
+                    and isinstance(row.get("details"), dict)):
+                checked.add("typed_authoring_contract")
+                if row["details"].get("completeCombinedSemanticsVerified") is True:
+                    found.add("typed_authoring_contract")
             if leaf == "hub_list_device_dependents" and args.get("deviceId") not in (None, ""):
                 checked.add("dependencies")
         elif plan.domain == "manual_motion_lockout":
