@@ -266,3 +266,104 @@ def test_no_rendered_config_read_even_when_sources_conflict():
         for _, a in source.calls
     )
 
+
+
+# Live 0.18.419 request: the question asks for the published contract and gap
+# evidence without spelling out atDate# or "creation". Those proof obligations
+# must not be silently dropped just because the core readiness checks succeed.
+LIVE_419_QUESTION = (
+    "Perform a READ-ONLY native Rule Machine scheduling preflight. "
+    "Verify MCP Server version, latest hub-local backup and Rule Machine "
+    "tool-guide availability. Verify native Rule Machine parent app 169 using "
+    "only non-rendering hub_list_apps instance/type records and "
+    "hub_get_app_config(summary=true). "
+    "Do not render full app configuration pages or open editor forms. "
+    "Report nativeParentIdentity, nativeGuideContract, observed child-parent "
+    "relationships, guide evidence gaps and readinessForMutation. "
+    "Distinguish missing guide declarations from unsupported server capabilities. "
+    "Do not create, modify, execute or delete rules. Do not change devices or "
+    "permissions. Include Technical JSON."
+)
+
+UNDOCUMENTED_GUIDE = (
+    "I-HAVE-READ-THE-GUIDE-set_rule_reference-a12f109e\n"
+    "hub_set_rule operation=create args:{parent_id,name,changes}.\n"
+)
+
+
+def test_419_live_guide_contract_request_cannot_return_false_success():
+    assert is_native_rule_readiness_question(LIVE_419_QUESTION)
+    assert _extra_requested_checks(LIVE_419_QUESTION) == (
+        False, True, False, True, True,
+    )
+    source = SourceOnly(guide=UNDOCUMENTED_GUIDE)
+    answer, details, evidence, coverage = _run(source, LIVE_419_QUESTION)
+    assert details["preflightEvidenceComplete"] is True
+    assert details["nativeParentIdentity"]["verified"] is True
+    assert details["nativeGuideContract"]["inspectionStatus"] == "checked"
+    assert details["nativeGuideContract"]["createOperationDocumented"] is True
+    assert details["nativeGuideContract"]["parentIdParameterDocumented"] is True
+    assert details["nativeDatedFieldGuideAttested"] is False
+    assert details["nativeCreateContractGuideAttested"] is False
+    assert "guide_unavailable" not in details["nativeGuideContract"]["gapCodes"]
+    assert "atdate_field_not_named" in details["nativeGuideContract"]["gapCodes"]
+    assert coverage["status"] == "partial-evidence"
+    assert coverage["evidenceComplete"] is False
+    assert coverage["questionResolved"] is False
+    assert coverage["readinessForMutation"] is False
+    req = {v["key"]: v["state"] for v in coverage["requirements"]}
+    assert req["native_parent_identity"] == "observed"
+    assert req["native_dated_field_guide"] == "checked-unverified"
+    assert req["native_dated_create_contract_guide"] == "checked-unverified"
+    assert "Date guide checks:" in answer
+    assert "guide_unavailable_or_oversized" not in answer
+    assert len(source.calls) == 6
+    assert all(r["effect"] == "read" and r["mutates"] is False for r in evidence)
+    assert all(
+        a.get("tool") != "hub_get_app_config"
+        or a["args"] == {"appId": "169", "summary": True}
+        for _, a in source.calls
+    )
+
+
+@pytest.mark.parametrize("question", [
+    "Read-only native Rule Machine preflight: check version, backup and guide. "
+    "Report nativeGuideContract for the installed tool.",
+    "Read-only native Rule Machine preflight: check version, backup and guide. "
+    "Report guide evidence gaps, including any missing declarations.",
+])
+def test_positive_guide_reporting_requires_actual_guide_evidence(question):
+    answer, details, evidence, coverage = _run(
+        SourceOnly(guide=UNDOCUMENTED_GUIDE), question
+    )
+    assert details["nativeGuideContract"]["inspectionStatus"] == "checked"
+    assert coverage["evidenceComplete"] is False
+    assert "native_dated_field_guide" in {
+        x["key"] for x in coverage["requirements"]
+    }
+    assert "atDate# named=false" in answer
+    assert coverage["readinessForMutation"] is False
+
+
+def test_simple_preflight_guide_was_checked_but_not_a_required_contract():
+    question = (
+        "Read-only native Rule Machine preflight: check MCP server version, "
+        "latest hub-local backup, and tool-guide availability."
+    )
+    source = SourceOnly(guide=UNDOCUMENTED_GUIDE)
+    answer, details, _, coverage = _run(source, question)
+    assert len(source.calls) == 3
+    assert details["nativeGuideContract"]["inspectionStatus"] == "checked"
+    assert coverage["evidenceComplete"] is True
+    assert "Date guide checks:" not in answer
+    assert coverage["readinessForMutation"] is False
+
+
+def test_prohibitions_are_not_positive_contract_requests():
+    question = (
+        "Read-only native Rule Machine preflight: verify MCP server version "
+        "and latest backup. Do not report nativeGuideContract or guide gaps."
+    )
+    assert _extra_requested_checks(question) == (
+        False, False, False, False, False
+    )
