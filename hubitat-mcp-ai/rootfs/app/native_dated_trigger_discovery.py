@@ -382,7 +382,11 @@ async def read_existing_dated_triggers(
             if result and result["savedDatedFieldSetObserved"]:
                 verified.append({"ruleId": rule_id, "label": candidate["label"],
                                  "evidence": result["returnedDateFieldGroups"]})
-                break
+                # A bounded discovery scan can stop at the first saved
+                # enabled date. An explicit multi-ID retry must still inspect
+                # EACH requested rule; never silently drop its other targets.
+                if not targeted:
+                    break
 
     more = bool(
         not pages_complete
