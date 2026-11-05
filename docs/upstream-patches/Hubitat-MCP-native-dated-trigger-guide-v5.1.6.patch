@@ -28,7 +28,7 @@
  Example changes: [{part:"action",value:{type:"messageActs",subtype:"getLogMsg",fields:[{name:"logmsg.#",type:"textarea",value:"Document action"}]}}]. Writes render the native trigger/action/main pages, check health, submit native Done, and read subscriptions plus a fresh document. These pages can mutate native state and are never part of document reads.
 --- a/src/test/groovy/server/ToolGuideSubSectionsSpec.groovy
 +++ b/src/test/groovy/server/ToolGuideSubSectionsSpec.groovy
-@@ -124,4 +124,19 @@
+@@ -123,4 +123,19 @@
      }
  
 +    def "known native dated trigger field templates are documented without implying runtime verification"() {
