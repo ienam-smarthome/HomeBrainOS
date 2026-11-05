@@ -294,6 +294,7 @@ def test_unsupported_native_certification_replaced_from_matching_summary_receipt
         "sub_tool": "hub_get_app_config",
         "success": True, "mutates": False, "effect": "read",
         "evidence_kind": "typed_app_instance_metadata",
+        "arguments": {"tool": "hub_get_app_config", "args": {"appId": 4216}},
         "details": details,
     }]
     message = (
