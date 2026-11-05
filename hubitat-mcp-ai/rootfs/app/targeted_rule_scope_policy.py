@@ -96,6 +96,72 @@ def is_targeted_rule_investigation(question: str) -> bool:
     )
 
 
+
+# An isolated native authoring/runbook review is about the *prospective API
+# contract*, not the saved action tree of an installed Rule Machine child.
+# Scope is explicit and read-only; this predicate never permits a write.
+_NATIVE_CONTRACT_SUBJECT = re.compile(
+    r"(?i)\b(?:Rule Machine|MCP Rule Server|hub_set_rule|"
+    r"native\s+(?:rule|trigger|automation)|"
+    r"dated[\s-]?trigger|one[\s-]?time\s+(?:rule|trigger))\b"
+)
+_NATIVE_CONTRACT_ARTIFACT = re.compile(
+    r"(?i)\b(?:runbook|authoring\s+contract|"
+    r"(?:native|typed)\s+(?:trigger|action|field|rule)\s+(?:schema|contract|types?)|"
+    r"(?:(?:trigger|action|input)\s+)?field\s+types?|"
+    r"date\s*(?:and|/)\s*time\s+formats?|"
+    r"creation\s+(?:payload|structure|schema|contract)|"
+    r"native\s+(?:create|creation)\s+(?:structure|schema|payload|contract)|"
+    r"one[\s-]?time\s+dated[\s-]?trigger)\b"
+)
+_NATIVE_CONTRACT_REVIEW = re.compile(
+    r"(?i)\b(?:review|validate|evaluate|assess|verify|compare|"
+    r"inspect|check|explain|audit)\b"
+)
+_NATIVE_READ_ONLY = re.compile(
+    r"(?i)\b(?:read[\s-]?only|do\s+not\s+(?:create|modify|execute|write|"
+    r"change|delete|schedule|queue)|without\s+(?:creating|modifying|"
+    r"executing|writing|changing|scheduling))\b"
+)
+_EXPLICIT_SAVED_RULE_TARGET = re.compile(
+    r"(?i)\b(?:existing|installed|saved|persisted|current)\s+"
+    r"(?:native\s+|Rule Machine\s+)?(?:rule|automation)\b"
+)
+
+
+def is_native_rule_contract_review_request(question: str) -> bool:
+    """Read-only native authoring *contract* review, not installed-rule audit.
+
+    An explicit saved child rule or its action tree takes precedence, even
+    if the authoring guide is mentioned as a comparison source. Parent app
+    identity may still be a prerequisite in a contract review.
+    """
+    text = str(question or "")
+    clauses = [
+        part for part in re.split(r"[.!?\n;]+", text)
+        if not re.match(
+            r"(?i)^\s*(?:do\s+not|don't|never|avoid|without|no)\b", part
+        )
+    ]
+    positive = " ".join(clauses)
+    if not (
+        _NATIVE_CONTRACT_SUBJECT.search(positive)
+        and _NATIVE_CONTRACT_ARTIFACT.search(positive)
+        and _NATIVE_CONTRACT_REVIEW.search(positive)
+        and _NATIVE_READ_ONLY.search(text)
+    ):
+        return False
+    if _EXPLICIT_SAVED_RULE_TARGET.search(positive):
+        return False
+    ids = named_rule_app_ids(positive, max_items=4)
+    if ids and not (
+        len(ids) == 1 and ids[0] == "169"
+        and re.search(r"(?i)\bparent\b", positive)
+    ):
+        return False
+    return True
+
+
 # A future-rule proposal can name an installed controller for comparison.
 # Such a proposal remains subject to the existing no-write design safeguards.
 _FUTURE_RULE_PROPOSAL = re.compile(
@@ -192,7 +258,7 @@ def is_existing_rule_verification_request(question: str) -> bool:
     interpretation = active_request_interpretation(question)
     # A mistaken model label must not turn native app identity verification
     # into a complete executable-action/duplicate-controller audit.
-    if is_app_class_identity_question(text):
+    if is_app_class_identity_question(text) or is_native_rule_contract_review_request(text):
         return False
     if interpretation is not None and interpretation.objective is not None:
         return interpretation.objective == "existing_rule_verification"
@@ -211,6 +277,8 @@ def is_new_rule_design_review_request(question: str) -> bool:
     that classifier can still independently block authoring in either case.
     """
     from rule_authoring_service import RuleAuthoringService
+    if is_native_rule_contract_review_request(question):
+        return True
     if not RuleAuthoringService.is_read_only_rule_design_request(question):
         return False
     if is_existing_rule_verification_request(question):
@@ -223,4 +291,4 @@ def is_new_rule_design_review_request(question: str) -> bool:
 
 __all__ = ["named_rule_app_ids", "is_targeted_rule_investigation",
            "is_app_class_identity_question", "is_existing_rule_verification_request",
-           "is_new_rule_design_review_request"]
+           "is_new_rule_design_review_request", "is_native_rule_contract_review_request"]

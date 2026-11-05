@@ -91,12 +91,22 @@ def _strip_unverified_json(match: re.Match[str]) -> str:
 
 
 def _motion_scope(request: str, answer: str) -> bool:
-    # An explicit request supersedes unrelated older model context.
+    # Explicit negative instructions such as "do not include motion or
+    # lockout guidance" must not *activate* those unrelated safety notes.
+    # Scope is the request when present, not any previous generated answer.
     scope = request if request.strip() else answer
-    return bool(re.search(
-        r"(?i)\b(?:motion|inactive|inactivity|lockout|"
-        r"light(?:s)?\b[^\n]{0,60}\boff)\b", scope,
-    ))
+    for clause in re.split(r"[.!?;\n]+", scope):
+        if re.match(
+            r"(?i)^\s*(?:do\s+not|don't|never|without|exclude|avoid|"
+            r"no\s+(?:motion|lockout|lighting))\b", clause,
+        ):
+            continue
+        if re.search(
+            r"(?i)\b(?:motion|inactive|inactivity|lockout|"
+            r"light(?:s)?\b[^\n]{0,60}\boff)\b", clause,
+        ):
+            return True
+    return False
 
 
 _GENERIC_SAFETY_NOTE = (

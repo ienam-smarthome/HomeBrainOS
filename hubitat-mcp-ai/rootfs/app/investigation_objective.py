@@ -116,6 +116,10 @@ def resolve_primary_objective(request: str) -> InvestigationObjective:
     question = str(request or "")
     from ai_investigation_routing import active_request_interpretation
     interpreted = active_request_interpretation(question)
+    from targeted_rule_scope_policy import is_native_rule_contract_review_request
+    if is_native_rule_contract_review_request(question):
+        # There is no specific installed Rule Machine child to certify.
+        return InvestigationObjective(domain="general", request=question)
     if interpreted is not None and interpreted.objective is not None:
         kind = interpreted.objective
         if kind == "app_class_identity" or is_app_class_identity_question(question):
