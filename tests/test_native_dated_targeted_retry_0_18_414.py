@@ -152,6 +152,23 @@ def test_ids_cannot_be_inferred_from_dates_or_other_numbers():
     assert _requested_rule_ids("Retry for rule IDs 3985 and 3985") == []
 
 
+def test_invalid_target_id_list_has_no_mcp_calls_or_unrelated_offset_scan():
+    bad = (
+        "Read-only retry of existing native Rule Machine dated triggers for "
+        "rule IDs 2967, 3985, 4000, 4001 and 4002. No changes."
+    )
+    assert is_existing_dated_trigger_question(bad)
+    mcp, msg, data, receipts = _run(question=bad)
+    assert not mcp.calls
+    assert data["scanMode"] == "invalid-target-rule-ids"
+    assert data["scanLimit"] == 0
+    assert data["scannedRuleIds"] == []
+    assert data["readinessForMutation"] is False
+    assert "No Hubitat inventory, native document or modifying calls" in msg
+    assert len(receipts) == 1
+    assert receipts[0]["mutates"] is False
+
+
 def test_simple_offset_mode_does_not_change_for_existing_scans():
     question = ("Read-only inspect existing native Rule Machine dated triggers "
                 "at scan offset 1 for atDate# settings.")
