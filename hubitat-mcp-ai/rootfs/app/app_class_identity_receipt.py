@@ -57,24 +57,40 @@ def project_app_class_identity_receipt(
     target_id = _positive_id(args.get("appId"))
     if target_id is None or not isinstance(data, dict) or data.get("success") is False:
         return None
-    app = data.get("app")
-    if not isinstance(app, dict):
+    # Hubitat exposes two genuinely different shapes: a full result with an
+    # app object, and a lightweight summary with fields at the top level.
+    # Never borrow a missing appTypeId from the model's narrative or a separate
+    # unconstrained catalog read.
+    nested = data.get("app")
+    if nested is not None and not isinstance(nested, dict):
         return None
+    app = nested if nested is not None else data
     if _positive_id(app.get("id")) != target_id:
         return None
-    type_id = _positive_id(app.get("appTypeId"))
-    if type_id is None:
-        return None
+    if nested is not None and data.get("id") is not None:
+        if _positive_id(data.get("id")) != target_id:
+            return None
+    if "appTypeId" in app:
+        type_id = _positive_id(app["appTypeId"])
+        if type_id is None:
+            return None
+    else:
+        type_id = None
 
-    # Native class attestation deliberately absent: an app can report its
-    # name and type, and be a system/root app, without establishing the
-    # built-in class mapping that is needed to authorize Rule Machine writes.
+    # Self-reported metadata never proves the independent native class.
+    # A summary lacking appTypeId still carries source-verifiable identity
+    # fields, but cannot satisfy the stronger instance-to-type requirement.
     receipt: dict[str, Any] = {
         "appId": target_id,
-        "appTypeId": type_id,
-        "identitySource": "target-matched hub_get_app_config app metadata",
+        "identitySource": (
+            "target-matched hub_get_app_config app metadata"
+            if nested is not None else
+            "target-matched hub_get_app_config summary metadata"
+        ),
         "nativeClassBindingVerified": False,
     }
+    if type_id is not None:
+        receipt["appTypeId"] = type_id
     for raw_field, receipt_field in (
         ("label", "reportedLabel"),
         ("name", "reportedName"),
@@ -89,6 +105,8 @@ def project_app_class_identity_receipt(
         receipt["reportedNamespace"] = namespace
     if type(app.get("system")) is bool:
         receipt["reportedSystem"] = app["system"]
+    if type(app.get("user")) is bool:
+        receipt["reportedUser"] = app["user"]
     if "parentAppId" in app:
         parent = app["parentAppId"]
         if parent is None:
@@ -109,4 +127,124 @@ def project_app_class_identity_receipt(
     return receipt
 
 
-__all__ = ["project_app_class_identity_receipt"]
+
+# A source's reported built-in-looking flags must not become a statement of
+# independently verified native identity. The model remains responsible for
+# selecting and synthesizing evidence; only an affirmative unsupported native
+# certification is repaired from existing, source-matched read receipts.
+_NATIVE_OVERCLAIM = re.compile(
+    r"(?i)(?:\b(?:verified|confirmed|proven|established)\s+as\s+(?:an?\s+)?"
+    r"(?:native|built[ -]?in|system)\b|"
+    r"\b(?:confirming|proving|establishing)\s+(?:that\s+)?(?:it\s+is\s+)?"
+    r"(?:an?\s+)?(?:native|built[ -]?in|system)\b|"
+    r"\b(?:instance|application|app)[^.\n]{0,100}\b(?:confirmed|verified)"
+    r"\s+to\s+be\s+(?:native|built[ -]?in|system)\b|"
+    r"\b(?:native|built[ -]?in|system)\s+(?:Hubitat\s+)?"
+    r"(?:class|parent|application|app)[^.\n]{0,75}\(Verified\))"
+)
+_EXPLICIT_APP_ID = re.compile(
+    r"(?i)\b(?:app(?:lication)?(?:\s+instance)?|instance)"
+    r"\s*(?:id\s*)?#?\s*([1-9][0-9]{0,8})\b"
+)
+
+
+def reconcile_app_class_identity_answer(
+    message: str,
+    receipts: list[dict[str, Any]],
+    coverage: dict[str, Any],
+    request: str,
+) -> tuple[str, bool]:
+    """Guard affirmative unsupported native class claims with typed facts.
+
+    Keep the model's own calibrated natural language unless it certifies a
+    native class despite the independently unverified source contract.
+    Never make new source reads, invent omitted type IDs, or grant write access.
+    """
+    draft = str(message or "").strip()
+    requirements = coverage.get("requirements") or []
+    class_state = next((
+        x.get("state") for x in requirements
+        if isinstance(x, dict) and x.get("key") == "native_class_binding"
+    ), None)
+    if class_state == "observed" or not _NATIVE_OVERCLAIM.search(draft):
+        return draft, False
+
+    ids = set(_EXPLICIT_APP_ID.findall(str(request or "")))
+    # A multi-target request is not safe for a one-app fallback summary.
+    target = next(iter(ids)) if len(ids) == 1 else None
+    valid = []
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("mutates") is not False or row.get("effect") != "read":
+            continue
+        if row.get("sub_tool") != "hub_get_app_config" or row.get("evidence_kind") not in (
+            "typed_app_instance_metadata", "typed_app_class_identity",
+        ):
+            continue
+        details = row.get("details")
+        if not isinstance(details, dict) or details.get("nativeClassBindingVerified") is not False:
+            continue
+        identifier = _positive_id(details.get("appId"))
+        if identifier is None or (target is not None and identifier != target):
+            continue
+        valid.append(details)
+
+    if not target and len(set(d["appId"] for d in valid)) == 1:
+        target = valid[0]["appId"]
+    details_set = [d for d in valid if target and d["appId"] == target]
+
+    def consistent(key: str) -> Any:
+        values = [d[key] for d in details_set if key in d]
+        if not values:
+            return None
+        return values[0] if all(v == values[0] for v in values) else None
+
+    phrase = ("App " + target) if target else "The queried app"
+    facts = []
+    for field, title in (
+        ("reportedName", "name"),
+        ("reportedLabel", "label"),
+        ("reportedType", "type"),
+        ("reportedNamespace", "namespace"),
+    ):
+        value = consistent(field)
+        if isinstance(value, str):
+            facts.append(title + " " + repr(value))
+    for field, title in (("reportedUser", "user"), ("reportedSystem", "system")):
+        value = consistent(field)
+        if isinstance(value, bool):
+            facts.append(title + "=" + str(value).lower())
+    if any("parentAppIdFieldPresent" in d for d in details_set):
+        parents = [
+            d.get("reportedParentAppId") for d in details_set
+            if d.get("parentAppIdFieldPresent") is True
+        ]
+        if parents and all(x == parents[0] for x in parents):
+            facts.append("parentAppId=" + ("null" if parents[0] is None else str(parents[0])))
+    type_id = consistent("appTypeId")
+    if type_id is not None:
+        facts.append("appTypeId=" + str(type_id))
+
+    if facts:
+        first = (
+            phrase + " has these **source-reported** fields: " +
+            ", ".join(facts) + "."
+        )
+    else:
+        first = (
+            phrase + " was queried, but the public read receipts do not "
+            "contain enough target-matched typed metadata to attest its "
+            "reported name, type ID or class."
+        )
+    return (
+        "**Native class identity: not independently verified.** " + first
+        + " These reported fields do not by themselves establish that the "
+        "instance is the built-in Rule Machine parent or bind its type ID "
+        "to an authoritative native class. "
+        + "A complete, authoritative instance-to-type-to-native-class mapping "
+        "is still required; a display name, namespace or user/system flag "
+        "alone is not sufficient."
+    ), True
+
+__all__ = ["project_app_class_identity_receipt", "reconcile_app_class_identity_answer"]
