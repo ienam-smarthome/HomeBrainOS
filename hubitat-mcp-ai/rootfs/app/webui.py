@@ -253,7 +253,9 @@ def render_page(title: str, version: str) -> str:
 <button type="button" class="secondary" id="diagRefresh" style="width:auto;margin:0;padding:7px 12px">↻ Refresh</button>
 </div>
 <div id="diagChartCaption" class="muted" style="margin:10px 0 4px">Expand to load locally stored observations.</div>
-<svg id="diagChart" viewBox="0 0 720 200" role="img" aria-label="Externally recorded Hubitat resource history" style="display:block;width:100%;height:auto;max-height:240px;background:#101114;border-radius:9px"></svg>
+<div id="diagChartStats" class="journal-small" role="status">Minimum — · Maximum — · Latest —</div>
+<svg id="diagChart" viewBox="0 0 760 250" role="img" aria-label="Externally recorded Hubitat resource chart; hover or touch to inspect values. Arrow keys move between readings." tabindex="0" style="display:block;width:100%;height:auto;max-height:290px;background:#101114;border-radius:9px"></svg>
+<div id="diagPointReadout" class="journal-small" aria-live="polite">Hover, touch or use the left/right arrow keys on the graph to inspect exact readings.</div>
 <strong>Connectivity incidents</strong>
 <ul class="journal-gaps" id="diagIncidents"><li class="muted">No incident history loaded.</li></ul>
 <div class="journal-small">Incident detection requires two failed probes. Lost connectivity does not prove that Hubitat rebooted. For errors and hub events, inspect the Historical Journal and Hubitat's Hub Events.</div>
@@ -1892,26 +1894,154 @@ const age=row.recorded_at?'Last probe '+diagDate(row.recorded_at):'No saved prob
 const source=row.native_sample_label?' · Java source '+row.native_sample_label:' · Java source not yet recorded';
 document.getElementById('diagSummary').textContent=age+source+' · '+(data.consecutive_failures||0)+' consecutive failures. '+details;
 }
+const diagPlot={left:65,right:722,top:26,bottom:204,width:760,height:250};
+let diagPlottedPoints=[],diagActivePoint=0;
+function diagMetricValue(value,metric){
+ if(!Number.isFinite(value))return '—';
+ const digits=metric==='native_load5'?2:metric==='java_allocated_heap_used_pct'?1:1;
+ const unit=diagUnit[metric]||'';
+ const formatted=new Intl.NumberFormat('en-GB',{maximumFractionDigits:digits}).format(value);
+ return formatted+(unit?' '+unit:'');
+}
+function diagChartSvgNode(tag,attributes,textValue){
+ const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+ for(const [k,v] of Object.entries(attributes||{}))node.setAttribute(k,String(v));
+ if(textValue!==undefined)node.textContent=String(textValue);
+ return node;
+}
+function diagSelectPoint(index){
+ if(!diagPlottedPoints.length)return;
+ diagActivePoint=Math.max(0,Math.min(diagPlottedPoints.length-1,index));
+ const point=diagPlottedPoints[diagActivePoint],row=point.row,metric=document.getElementById('diagMetric').value;
+ const sourceNote=(metric.startsWith('java_')||metric==='native_load5')?
+   (' · native source '+String(row.native_sample_label||'unknown')):' · external probe';
+ const label=document.getElementById('diagMetric').selectedOptions[0].textContent;
+ const recorded=diagDate(row.recorded_at),value=diagMetricValue(row[metric],metric);
+ document.getElementById('diagPointReadout').textContent=recorded+' — '+label+': '+value+sourceNote;
+ const marker=document.getElementById('diagChartMarker'),cross=document.getElementById('diagChartCrosshair');
+ if(marker&&cross){
+  marker.setAttribute('cx',point.x);marker.setAttribute('cy',point.y);
+  marker.setAttribute('visibility','visible');
+  cross.setAttribute('x1',point.x);cross.setAttribute('x2',point.x);
+  cross.setAttribute('visibility','visible');
+ }
+ const tip=document.getElementById('diagTooltip'),tipTime=document.getElementById('diagTipTime'),
+       tipValue=document.getElementById('diagTipValue');
+ if(tip&&tipTime&&tipValue){
+  const tipX=Math.max(diagPlot.left,Math.min(diagPlot.right-178,point.x-78));
+  const tipY=point.y<85?point.y+12:point.y-57;
+  tip.setAttribute('transform','translate('+tipX.toFixed(1)+','+tipY.toFixed(1)+')');
+  tip.setAttribute('visibility','visible');
+  tipTime.textContent=recorded;
+  tipValue.textContent=value;
+ }
+}
 function drawDiagnosticsChart(){
-const svg=document.getElementById('diagChart'),metric=document.getElementById('diagMetric').value,unit=diagUnit[metric]||'',NS='http://www.w3.org/2000/svg';
-svg.replaceChildren();let pts=diagHistoryRows.filter(x=>x&&typeof x[metric]==='number'&&Number.isFinite(x[metric])&&(metric!=='free_os_mb'||x.reachable));
-if(metric.startsWith('java_')||metric==='native_load5'){
- const seen=new Set();pts=pts.filter(x=>{const key=x.native_sample_label;if(!key||seen.has(key))return false;seen.add(key);return true});
+ const svg=document.getElementById('diagChart'),metric=document.getElementById('diagMetric').value;
+ const nativeMetric=metric.startsWith('java_')||metric==='native_load5';
+ svg.replaceChildren();
+ let points=diagHistoryRows.filter(row=>row && typeof row[metric]==='number' &&
+    Number.isFinite(row[metric]) && Number.isFinite(Date.parse(row.recorded_at)) &&
+    (!['free_os_mb','latency_ms'].includes(metric)||row.reachable));
+ if(nativeMetric){
+  const seen=new Set();
+  points=points.filter(row=>{const key=row.native_sample_label;if(!key||seen.has(key))return false;seen.add(key);return true});
+ }
+ points.sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
+ document.getElementById('diagChartCaption').textContent=points.length+' observed '+(nativeMetric?'native source':'external probe')+
+   ' points · '+(diagHistoryRows.length-points.length)+' other/unknown/duplicate samples · No interpolation across missing intervals';
+ const stats=document.getElementById('diagChartStats'),detail=document.getElementById('diagPointReadout');
+ diagPlottedPoints=[];
+ if(!points.length){
+  stats.textContent='Minimum — · Maximum — · Latest —';
+  detail.textContent='No actual readings for this metric yet. A blank period is not zero.';
+  svg.append(diagChartSvgNode('text',{x:diagPlot.left,y:114,fill:'#a1a1aa','font-size':15},
+    'No recorded values in the selected period'));
+  return;
+ }
+ const values=points.map(p=>p[metric]);
+ const rawMin=Math.min(...values),rawMax=Math.max(...values);
+ stats.textContent='Minimum: '+diagMetricValue(rawMin,metric)+' · Maximum: '+
+   diagMetricValue(rawMax,metric)+' · Latest: '+diagMetricValue(points[points.length-1][metric],metric)+
+   ' ('+diagDate(points[points.length-1].recorded_at)+')';
+ const padding=Math.max(metric==='native_load5'?0.1:metric==='java_allocated_heap_used_pct'?0.5:1,
+                        (rawMax-rawMin)*0.15);
+ const min=Math.max(0,rawMin-padding),max=rawMax+padding,span=Math.max(0.01,max-min);
+ const timestamps=diagHistoryRows.map(x=>Date.parse(x.recorded_at)).filter(Number.isFinite);
+ const first=Math.min(...timestamps),last=Math.max(...timestamps),duration=Math.max(1,last-first);
+ const xCoord=row=>diagPlot.left+(Date.parse(row.recorded_at)-first)/duration*(diagPlot.right-diagPlot.left);
+ const yCoord=row=>diagPlot.bottom-(row[metric]-min)/span*(diagPlot.bottom-diagPlot.top);
+ const group=diagChartSvgNode('g',{'aria-hidden':'true'});
+ const metricLabel=document.getElementById('diagMetric').selectedOptions[0].textContent;
+ group.append(diagChartSvgNode('text',{x:diagPlot.left,y:15,fill:'#cbd5e1','font-size':12},metricLabel));
+ for(let tick=0;tick<=4;tick++){
+  const y=diagPlot.top+(diagPlot.bottom-diagPlot.top)*tick/4;
+  const value=max-(max-min)*tick/4;
+  group.append(diagChartSvgNode('line',{x1:diagPlot.left,x2:diagPlot.right,y1:y,y2:y,
+      stroke:'#343c48','stroke-width':1}));
+  group.append(diagChartSvgNode('text',{x:diagPlot.left-10,y:y+4,fill:'#b4c1d3',
+      'text-anchor':'end','font-size':12},diagMetricValue(value,metric)));
+ }
+ for(let i=0;i<3;i++){
+  const when=first+(last-first)*i/2;
+  group.append(diagChartSvgNode('text',{x:diagPlot.left+
+      (diagPlot.right-diagPlot.left)*i/2,y:236,fill:'#b4c1d3','font-size':12,
+      'text-anchor':i===0?'start':i===2?'end':'middle'},diagDate(new Date(when).toISOString())));
+ }
+ svg.append(group);
+ let path='',previous=null;
+ for(const row of points){
+  const x=xCoord(row),y=yCoord(row),t=Date.parse(row.recorded_at);
+  const breakGap=previous!==null&&(t-previous>(nativeMetric?900000:120000));
+  path+=(path&&!breakGap?' L':' M')+x.toFixed(2)+' '+y.toFixed(2);
+  diagPlottedPoints.push({row,x,y});previous=t;
+ }
+ svg.append(diagChartSvgNode('path',{d:path.trim(),fill:'none',stroke:'#60a5fa',
+   'stroke-width':2.4,'stroke-linejoin':'round','stroke-linecap':'round'}));
+ // On short windows expose individual actual samples, not fabricated in-between values.
+ if(points.length<=80){
+  for(const p of diagPlottedPoints){
+   const circle=diagChartSvgNode('circle',{cx:p.x,cy:p.y,r:2.8,fill:'#93c5fd'});
+   circle.append(diagChartSvgNode('title',{},diagDate(p.row.recorded_at)+
+     ' — '+diagMetricValue(p.row[metric],metric)));
+   svg.append(circle);
+  }
+ }
+ svg.append(diagChartSvgNode('line',{id:'diagChartCrosshair',x1:0,x2:0,
+   y1:diagPlot.top,y2:diagPlot.bottom,stroke:'#fbbf24','stroke-width':1.3,
+   'stroke-dasharray':'4 4',visibility:'hidden','pointer-events':'none'}));
+ svg.append(diagChartSvgNode('circle',{id:'diagChartMarker',cx:0,cy:0,r:5.5,
+   stroke:'#101114','stroke-width':2,fill:'#fbbf24',visibility:'hidden','pointer-events':'none'}));
+ const tooltip=diagChartSvgNode('g',{id:'diagTooltip',visibility:'hidden','pointer-events':'none'});
+ tooltip.append(diagChartSvgNode('rect',{x:0,y:0,width:178,height:43,rx:7,fill:'#17263a',stroke:'#64748b'}));
+ tooltip.append(diagChartSvgNode('text',{id:'diagTipTime',x:9,y:16,fill:'#e2e8f0','font-size':11}));
+ tooltip.append(diagChartSvgNode('text',{id:'diagTipValue',x:9,y:33,fill:'#f8fafc','font-size':15,'font-weight':'bold'}));
+ svg.append(tooltip);
+ diagSelectPoint(diagPlottedPoints.length-1);
 }
-document.getElementById('diagChartCaption').textContent=pts.length+' observed points · '+(diagHistoryRows.length-pts.length)+' other/unknown samples · '+(metric.startsWith('java_')||metric==='native_load5'?'Native 5-minute samples':'External probe samples');
-if(!pts.length){const t=document.createElementNS(NS,'text');t.setAttribute('x','24');t.setAttribute('y','95');t.setAttribute('fill','#a1a1aa');t.textContent='No recorded values for this metric in the selected range';svg.append(t);return}
-const ys=pts.map(x=>x[metric]),lo=Math.min(...ys),hi=Math.max(...ys),pad=Math.max(1,(hi-lo)*.15),min=lo-pad,max=hi+pad;
-const times=diagHistoryRows.map(x=>Date.parse(x.recorded_at)).filter(Number.isFinite);
-const start=Math.min(...times),end=Math.max(...times),duration=Math.max(1,end-start);
-function xy(x){return [35+(Date.parse(x.recorded_at)-start)/duration*662,170-(x[metric]-min)/(max-min)*145]}
-for(let i=0;i<4;i++){const y=25+i*48,ln=document.createElementNS(NS,'line');ln.setAttribute('x1','35');ln.setAttribute('x2','700');ln.setAttribute('y1',String(y));ln.setAttribute('y2',String(y));ln.setAttribute('stroke','#3f3f46');svg.append(ln)}
-// Only connect consecutive valid external samples. Gaps and failed probes break traces.
-let path='',previous=null;
-for(const p of pts){const [x,y]=xy(p),now=Date.parse(p.recorded_at),gap=previous!==null&&now-previous> (metric==='free_os_mb'||metric==='latency_ms'?120000:900000);path+=(path&&!gap?' L':' M')+x.toFixed(1)+' '+y.toFixed(1);previous=now}
-const line=document.createElementNS(NS,'path');line.setAttribute('d',path.trim());line.setAttribute('fill','none');line.setAttribute('stroke','#60a5fa');line.setAttribute('stroke-width','2');svg.append(line);
-for(let i=0;i<3;i++){const time=start+(end-start)*i/2,t=document.createElementNS(NS,'text');t.setAttribute('x',String(35+i*331));t.setAttribute('y','190');t.setAttribute('fill','#a1a1aa');t.setAttribute('font-size','12');t.setAttribute('text-anchor',i===0?'start':i===2?'end':'middle');t.textContent=diagDate(new Date(time).toISOString());svg.append(t)}
-const title=document.createElementNS(NS,'title');title.textContent=metric+' ('+unit+'): '+pts.length+' actual samples';svg.append(title);
+function diagSelectNearPointer(event){
+ if(!diagPlottedPoints.length)return;
+ const svg=document.getElementById('diagChart'),box=svg.getBoundingClientRect();
+ if(!box.width)return;
+ const x=(event.clientX-box.left)*diagPlot.width/box.width;
+ if(x<diagPlot.left-24||x>diagPlot.right+24)return;
+ // Binary search keeps mouse/touch exploration cheap with 24 hours of 30-sec samples.
+ let low=0,high=diagPlottedPoints.length-1;
+ while(low<high){const middle=Math.floor((low+high)/2);
+  if(diagPlottedPoints[middle].x<x)low=middle+1;else high=middle}
+ const idx=low>0&&Math.abs(diagPlottedPoints[low-1].x-x)<Math.abs(diagPlottedPoints[low].x-x)?low-1:low;
+ diagSelectPoint(idx);
 }
+document.getElementById('diagChart').addEventListener('pointermove',event=>{
+ if(event.pointerType!=='touch')diagSelectNearPointer(event);
+});
+document.getElementById('diagChart').addEventListener('pointerdown',diagSelectNearPointer);
+document.getElementById('diagChart').addEventListener('keydown',event=>{
+ if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
+  event.preventDefault();
+  diagSelectPoint(diagActivePoint+(event.key==='ArrowLeft'?-1:1));
+ }
+});
 async function loadDiagnosticsStatus(){try{const r=await fetch(apiPath('api/hub-diagnostics/status'));if(!r.ok)throw Error('HTTP '+r.status);renderDiagnosticsStatus(await jsonResponse(r))}catch(e){document.getElementById('diagState').textContent='Unavailable';document.getElementById('diagSummary').textContent='HomeBrain diagnostic API unavailable: '+e.message}}
 async function loadDiagnosticsHistory(){if(!document.getElementById('diagDetails').open)return;const button=document.getElementById('diagRefresh');button.disabled=true;try{
 const hours=document.getElementById('diagHours').value,r=await fetch(apiPath('api/hub-diagnostics/history?hours='+encodeURIComponent(hours)));if(!r.ok)throw Error('HTTP '+r.status);
