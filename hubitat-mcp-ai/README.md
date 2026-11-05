@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.407**.
+Current add-on version: **0.18.408**.
+
+**Q2 source-only native app identity publication (v0.18.408):** Installed 0.18.407 produced target-matched typed metadata in 19.139s/5 Gemma rounds/3 MCP calls but its final prose asserted an unreceipted system flag, claimed 41 child rules when the receipt captured 42 child-app rows, and inferred all children were Rule-5.1. When authoritative native-class binding remains incomplete, this narrow verification objective now publishes a readable summary assembled solely from target-matched typed receipt fields, with explicit returned-page-only child counts and native-class uncertainty. The model still selects sources; no extra MCP/model calls, no rule authoring authority, and no cross-domain incident patch. Live deployment quality/latency remain unmeasured. [Release notes](CHANGELOG-0.18.408.md).
 
 **Q2 native app identity publication and summary receipts (v0.18.407):** A real v0.18.406 follow-up used `hub_get_app_config(summary=true)` returning a flat metadata object without `appTypeId`, bypassing the nested-only receipt projector. Its answer nevertheless declared app 169 a verified native system app even though both native-class and instance-to-type evidence requirements remained unverified. Flat and nested target-scoped metadata now receive separately scoped read-only receipts; missing type IDs remain unverified. Only affirmative, unsupported native-certification language is replaced with a concise source-grounded qualification. No extra tool/model calls or rule-write capability. The pre-update 36.567s/8-round sample is observational; post-update impact is not measured. [Release notes](CHANGELOG-0.18.407.md).
 
