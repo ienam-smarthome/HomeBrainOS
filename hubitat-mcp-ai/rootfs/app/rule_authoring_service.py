@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
 from native_switch_schedule import create_dated_switch, dated_switch_proposal_error
-from native_rule_inventory_source import _native_parent_from_summary
+from native_rule_parent_identity import _native_parent_from_summary
 from native_rule_readiness_source import _server_version
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate

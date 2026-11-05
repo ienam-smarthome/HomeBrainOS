@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT))
 from evidence_recorder import EvidenceRecorder
 from mcp_client import MCPTool, MCPToolResult
 from mcp_agent_orchestrator import UnifiedMCPAgent
-from native_rule_inventory_source import is_native_rule_inventory_question
 from owned_device_inventory_source import (
     is_explicit_owned_device_inventory_request,
     owned_device_coverage,
@@ -85,11 +84,8 @@ class FakeMCP:
         return MCPToolResult(gateway, args, {}, "", page)
 
 
-def test_requested_device_only_inventory_does_not_become_native_rule_lookup():
+def test_requested_device_only_inventory_has_exclusive_owned_scope():
     assert is_explicit_owned_device_inventory_request(PROMPT)
-    assert not is_native_rule_inventory_question(PROMPT)
-    assert is_native_rule_inventory_question(
-        "List my Rule Machine parent and exact one-time rules")
     assert not is_explicit_owned_device_inventory_request(
         'Do not call hub_list_devices scope="owned" format="detailed"; Virtual devices ONLY')
     assert not is_explicit_owned_device_inventory_request(

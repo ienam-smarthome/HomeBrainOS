@@ -189,7 +189,12 @@ async def test_scheduled_block_finds_the_capable_device_not_the_exact_name_match
         "commands": ["on", "off"],
         "capabilities": ["Switch"],
     }
-    service = RuleAuthoringService(RuleMCP([tv_switch, tv_streamer]), recorder)
+    # Pin the test clock: 22:00 becomes too close near real 22:00 UTC.
+    # Production's past/too-soon rejection is unchanged.
+    service = RuleAuthoringService(
+        RuleMCP([tv_switch, tv_streamer]), recorder,
+        now=lambda: datetime(2026, 11, 5, 12, 0),
+    )
 
     decision = await service.propose(
         "block the tv at 10pm",
