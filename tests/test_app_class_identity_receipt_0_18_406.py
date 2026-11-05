@@ -1,6 +1,7 @@
 """Regression: app metadata is auditable without inventing native-class proof."""
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -12,6 +13,9 @@ if str(APP) not in sys.path:
 
 from app_class_identity_receipt import project_app_class_identity_receipt
 from investigation_intelligence import assess_investigation, plan_investigation
+from evidence_recorder import EvidenceRecorder
+from mcp_client import MCPToolResult
+from tool_executor import ToolExecutor
 
 
 ARGUMENTS = {"tool": "hub_get_app_config", "args": {"appId": 4216}}
@@ -151,3 +155,37 @@ def test_fake_source_flag_cannot_turn_self_report_into_native_attestation():
     # establish the independently verified built-in namespace/class mapping.
     assert details["reportedSystem"] is True
     assert details["reportedParentAppId"] is None
+
+
+def test_tool_execution_emits_source_typed_receipt_without_native_certification():
+    class FakeMCP:
+        async def call_tool(self, name, args):
+            return MCPToolResult(
+                name=name, arguments=args, raw={},
+                text="", data=_data(), is_error=False,
+            )
+
+    recorder = EvidenceRecorder()
+    token = recorder.begin()
+    try:
+        result = asyncio.run(
+            ToolExecutor(FakeMCP(), recorder).execute(
+                "hub_read_apps_code", ARGUMENTS,
+            )
+        )
+        receipts = recorder.receipts()
+    finally:
+        recorder.reset(token)
+
+    assert result.success is True
+    assert len(receipts) == 1
+    observed = receipts[0]
+    assert observed["sub_tool"] == "hub_get_app_config"
+    assert observed["evidence_kind"] == "typed_app_class_identity"
+    assert observed["effect"] == "read"
+    assert observed["mutates"] is False
+    assert observed["details"]["appId"] == "4216"
+    assert observed["details"]["appTypeId"] == "718"
+    assert observed["details"]["nativeClassBindingVerified"] is False
+    assert "customSecret" not in str(observed)
+    assert "childApps" not in observed["details"]
