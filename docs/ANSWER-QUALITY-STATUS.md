@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — v0.18.409 installed live built-in type ID binding; 0.18.410 candidate
+
+**New live source evidence:** Installed HomeBrainOS **0.18.409** on the same read-only instance/type correlation question yielded **29.962s**, eight Gemma Cloud rounds, four read-only MCP calls (provider 25.999s). No device or rule change. Current-turn typed receipts show exact installed app **169** with appTypeId **18**, type `Rule Machine`, user=false, parentId=null; an exact source-backed type-catalog row **id=18** with name `Rule Machine`, system=true, isBuiltIn=true; another catalog row id=19 `Rule Machine Legacy` (separate type, correctly not joined); and a target-matched app config with parentAppId=null and 42 returned child-app rows. Type-catalog source `hub_api`, projection untruncated, no next cursor. No source-level namespace reported in the type record; don't invent it. Source-defined built-in classification is more specific and higher value than name-based inference.
+
+**Detected conservative-calibration false negative:** v0.18.409 marks `instance_identity=observed` and `typeIdJoinObserved=true` but continues to report the native type identity as unverified due to an older pre-ID-catalog assumption. The exact hub-provided type ID matches a built-in catalog entry, which **does source-verify built-in type membership**, while separately confirming the target is a root with returned children. Neither proves native Rule Machine authoring capability, dated trigger fields, rule creation safety or a rule writer contract.
+
+**0.18.410 candidate:** Treat exact-ID, unambiguous built-in catalog class match as verified native type membership when all source guards pass (consistent type name, system/isBuiltIn true, instance user false). Separately require matching root and child-app observations to establish the reported parent role. Only when both are present mark app identity domain complete. Continue publishing a bounded, receipt-backed narrative and record `nativeRuleWriterAuthorized=false` in `appIdentityCorrelation`. Incomplete or contradictory sources remain unresolved. No permission or writer changes. Installed acceptance and latency still pending; consult `hubitat-mcp-ai/CHANGELOG-0.18.410.md`.
+
+---
+
 ## 2026-11-05 — installed 0.18.408 exact-ID app class investigation and candidate 0.18.409
 
 **Observed test:** The user executed a more explicit read-only app 169 instance→type correlation prompt on installed HomeBrainOS **0.18.408**. Elapsed 28.661s (UI 28.7s), 8 free Gemma rounds, four successful read-only MCP calls; provider 24.483s, MCP HTTP 1.267s. No mutation. The new request SHA `b0050c45...` differs from the previous app identity question, so the latency difference is not a controlled version benchmark.
