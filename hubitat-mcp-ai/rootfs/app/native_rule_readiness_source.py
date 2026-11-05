@@ -54,10 +54,11 @@ def is_native_rule_readiness_question(question: str) -> bool:
 def _extra_requested_checks(question: str) -> tuple[bool, bool, bool, bool, bool]:
     """Independent preflight obligations; prohibitions never grant write intent."""
     q = str(question or "")
-    positive = " ".join(
+    positive_clauses = [
         part for part in re.split(r"[\n.!?]+", q)
         if not re.match(r"^\s*(?:do not|don't|never|without|no)\b", part, re.I)
-    )
+    ]
+    positive = " ".join(positive_clauses)
     version_comparison = bool(re.search(
         r"\bhub_get_info\b|(?:serverInfo|initialize)[^\n.]{0,100}"
         r"(?:agree|match|compare|cross.check)", positive, re.I,
@@ -71,12 +72,15 @@ def _extra_requested_checks(question: str) -> tuple[bool, bool, bool, bool, bool
         r"\bread[\s-]*back\b|\bpersisted\b|\b(saved|stored)\s+date\b",
         positive, re.I,
     ))
-    parent = bool(re.search(
-        r"\b(?:verify|confirm|inspect|check|establish|identify|validate)\b"
-        r"[^\n.]{0,160}\b(?:native\s+)?(?:Rule Machine\s+)?parent\b|"
-        r"\bparent\s+(?:app\s+)?(?:identity|verification)\b",
-        positive, re.I,
-    ))
+    # A clause that merely *references* an already-verified parent is not a
+    # request to re-run its app/type reads. Do not match verbs across periods.
+    parent = any(bool(re.search(
+        r"\b(?:verify|confirm|inspect|check|validate)\b"
+        r"[^.\n]{0,160}\b(?:native\s+)?(?:Rule Machine\s+)?parent\b|"
+        r"\b(?:verify|confirm|inspect|check|validate)\b"
+        r"[^.\n]{0,110}\bapp\s+\d{1,9}\b[^.\n]{0,110}\bparent\b",
+        clause, re.I,
+    )) for clause in positive_clauses)
     authoring_contract = bool(re.search(
         r"\b(?:create|creating|creation|authoring|supported creation operations)\b",
         positive, re.I,
@@ -552,6 +556,12 @@ async def read_native_rule_readiness(
                "conflict" if version_agrees is False else "not verified"),
         ])
     if want_date or want_create:
+        lines.append(
+            "Installed guide explicitly documents atDate# as a date field: "
+            + ("yes (guide only; no persisted date proven)"
+               if contract["nativeDateFieldGuideAttested"]
+               else "not verified")
+        )
         lines.append(
             "Installed native date field declaration: "
             + ("source-attested" if contract["nativeDateFieldGuideAttested"]
