@@ -48,6 +48,7 @@ from recorded_telemetry_freshness import (
 from investigation_intelligence import assess_investigation, plan_investigation
 from native_rule_inventory_source import is_native_rule_inventory_question
 from native_rule_readiness_source import native_rule_readiness_coverage
+from native_dated_trigger_discovery import existing_dated_trigger_coverage
 from owned_device_inventory_source import owned_device_coverage
 from native_rule_document_source import explicit_native_read_coverage
 from history_temporal_analysis import direct_recorded_duration_answer
@@ -170,6 +171,22 @@ def apply_shared_investigation_completion(
             metrics["outcome"] = "success"
         return _CoverageOutcome(
             outcome, readiness_coverage, metrics,
+            str(getattr(outcome, "message", "") or ""),
+        )
+
+    # A request to find persisted date fields across EXISTING native rules
+    # has a bounded source-typed contract. It must not inherit the
+    # existing-rule action-tree, device timeout, or duplicate-rule audit.
+    date_coverage = existing_dated_trigger_coverage(
+        request, list(getattr(outcome, "evidence", []) or []),
+    )
+    if date_coverage is not None:
+        resolved = date_coverage.get("questionResolved") is True
+        metrics = _safe_metrics(outcome, partial=not resolved)
+        if resolved and metrics.get("outcome") in (None, "unresolved", "success"):
+            metrics["outcome"] = "success"
+        return _CoverageOutcome(
+            outcome, date_coverage, metrics,
             str(getattr(outcome, "message", "") or ""),
         )
 
