@@ -712,7 +712,9 @@ class ToolExecutor:
                     summary=self.result_summary(result),
                     supports_live_claim=bool(supports_live_claim and success),
                     evidence_kind=(
-                        "typed_app_class_identity"
+                        ("typed_app_class_identity"
+                         if "appTypeId" in identity_details
+                         else "typed_app_instance_metadata")
                         if identity_details is not None
                         and evidence_kind == "tool_result"
                         else evidence_kind
