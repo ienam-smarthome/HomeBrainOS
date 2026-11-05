@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — fourth native date scan closed the 42-candidate inventory; v0.18.414 targeted retries
+
+**Installed v0.18.413 final batch, 14:26 UTC:** UI 4.7s, Technical JSON `elapsed_ms=4684`, no model rounds, 1 inventory + 6 non-mutating `hub_set_rule(operation=read)` + 1 local projection (8 metric calls, 7 external MCP calls). Returned inventory has 42 visible `Rule-5.1` native children and complete page traversal. Offset **36** returned final IDs **4206, 4207, 4239, 4241, 4246, 4259**, all 6 native trigger/settings reads verified. Rule **4246** trigger 3 `time3= A specific time` / `atTime3=23:00` and trigger 5 `time5= A specific time` / `atTime5=06:00`, neither a returned `date#` or `atDate#`. No enabled dated field-set established. `moreCandidatesMayExist=false`, `absenceProven=false`, `readinessForMutation=false`; no Hubitat write.
+
+**Cumulative four batches:** Sorted IDs from the same 42-visible-child inventory attempted exactly once at offsets **0,12,24,36**, **40** complete native read projections and **2** incomplete native reads (rule IDs **2967** and **3985**). These are not negative date-trigger observations, and 42 visible candidates do not attest inaccessible app classes or any runtime one-shot execution. No source-verified enabled dated trigger found in the readable sample.
+
+**Next rational investigation:** Retest the **two exact incomplete IDs**, without looping through 42 again or invoking editor/form routes. Existing v0.18.413 host-owned scanner accepted only numeric offsets, not requested IDs. v0.18.414 candidate adds a narrow explicit-rule-ID retry mode (at most four unique positive IDs) only after fresh visible-native-inventory membership and safe read operation validation. Unknown IDs are skipped, not read. Output separates targeted completeness from inventory absence. Regression includes one matching/mismatching native result and unchanged offset semantics. Native Rule Machine writer minimum MCP >=5.1.6, source/date contract, backup, confirmation, duplicate and write authorization remain unchanged. See `hubitat-mcp-ai/CHANGELOG-0.18.414.md`. CI and installed acceptance pending.
+
+---
+
 ## 2026-11-05 — v0.18.413 third native dated-trigger scan accepted (offset 24→36)
 
 **Installed live read at 14:12 UTC:** v0.18.413, 2.022s total, 2.002s agent, zero model rounds, 1 child-app inventory read + 12 native `hub_set_rule(operation=read)` rule reads + 1 locally generated typed summary receipt (14 metric tool calls, **13 external MCP reads**). All 12 native document reads succeeded, none mutated state. One inventory page fully traversed, **42 visible eligible native Rule-5.1 child rules**. This third batch scanned sorted rule IDs **3992, 3996, 4094, 4136, 4157, 4163, 4166, 4177, 4178, 4183, 4190, 4192**; `scanOffset=24`, `scanLimit=12`, `moreCandidatesMayExist=true`, next scan offset **36**.
