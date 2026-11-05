@@ -133,7 +133,6 @@ def native_rule_readiness_coverage(
         if (not isinstance(item, dict)
                 or item.get("evidence_kind") != "typed_native_rule_readiness"
                 or item.get("tool") != "homebrain_native_rule_readiness"
-                or item.get("success") is not True
                 or item.get("effect") != "read"
                 or item.get("mutates") is not False):
             continue
