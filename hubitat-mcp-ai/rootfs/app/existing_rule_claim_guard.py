@@ -271,6 +271,22 @@ def calibrate_existing_rule_verification(
     host-assembled partial report from verified evidence only.
     """
     draft = str(message or "").strip()
+    # This calibrator verifies a complete action-tree audit, not a discovery
+    # scan of persisted native date fields. Even if the planner assigned the
+    # broad existing_rule_verification domain, never overwrite a published
+    # source-typed date scan with controller/lockout/duplicate demands.
+    from native_dated_trigger_discovery import (
+        existing_dated_trigger_coverage,
+    )
+    if any(
+        isinstance(row, dict)
+        and row.get("evidence_kind") == "typed_native_dated_trigger_discovery"
+        and row.get("tool") == "homebrain_native_dated_trigger_discovery"
+        and row.get("effect") == "read"
+        and row.get("mutates") is False
+        for row in receipts
+    ) and existing_dated_trigger_coverage(request, receipts) is not None:
+        return draft
     from targeted_rule_scope_policy import is_app_class_identity_question
     if is_app_class_identity_question(request):
         # A stale rule-action coverage label must never replace an app's
