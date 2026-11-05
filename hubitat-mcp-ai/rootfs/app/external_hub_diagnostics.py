@@ -114,6 +114,7 @@ class ExternalHubDiagnostics:
         self._pending_failure_start: str | None = None
         self._native: dict[str, Any] = {}
         self._native_last_attempt: float = -1e12
+        self._last_prune_at: float = 0
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(str(self.path), timeout=5)
@@ -145,6 +146,10 @@ class ExternalHubDiagnostics:
                     "SELECT MAX(recorded_at) FROM samples WHERE reachable=1"
                 ).fetchone()[0]
             self._prune(db)
+            self._last_prune_at = time.monotonic()
+            if db.execute("SELECT 1 FROM incidents WHERE recovered_at IS NULL "
+                          "AND kind='hub-unreachable' LIMIT 1").fetchone():
+                self._pending_failure_start = "persisted-open-incident"
 
     def _prune(self, db: sqlite3.Connection) -> None:
         cutoff = (datetime.now(timezone.utc) -
@@ -155,7 +160,8 @@ class ExternalHubDiagnostics:
             (cutoff,),
         )
 
-    def _save(self, row: dict[str, Any], opened: str | None, recovered: bool) -> None:
+    def _save(self, row: dict[str, Any], opened: str | None,
+              recovered: bool, prune: bool = False) -> None:
         fields = ("recorded_at", "reachable", "latency_ms", "free_os_mb", "http_status",
                   "error_kind", "native_sample_label", "native_load5", "native_free_os_mb",
                   "java_total_mb", "java_free_mb", "java_direct_mb",
@@ -182,7 +188,7 @@ class ExternalHubDiagnostics:
                     "AND kind='hub-unreachable'",
                     (row["recorded_at"],),
                 )
-            if row["recorded_at"].endswith("00:00:00.000+00:00"):
+            if prune:
                 self._prune(db)
 
     async def _poll(self, client: httpx.AsyncClient) -> None:
@@ -233,7 +239,10 @@ class ExternalHubDiagnostics:
             row["native_sample_label"] = None
         opened = self._pending_failure_start if self._failures == 2 else None
         self._last = row
-        await asyncio.to_thread(self._save, row, opened, recovered)
+        prune = time.monotonic() - self._last_prune_at >= 86400
+        if prune:
+            self._last_prune_at = time.monotonic()
+        await asyncio.to_thread(self._save, row, opened, recovered, prune)
 
     async def _run(self) -> None:
         async with httpx.AsyncClient(
