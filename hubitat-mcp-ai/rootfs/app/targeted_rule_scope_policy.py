@@ -117,11 +117,11 @@ _CLASS_IDENTITY_SUBJECT = re.compile(
     r"(?i)\b(?:apps?|application|instances?|rule\s+machine|parent\s+apps?)\b"
 )
 _CLASS_IDENTITY_ATTRIBUTE = re.compile(
-    r"(?i)\b(?:native\s+(?:class|type|parent|rule\s+machine\s+parent)|"
+    r"(?i)\b(?:native\s+(?:built[\s-]*in\s+)?(?:class|type|parent|rule\s+machine\s+parent)|"
     r"app[\s-]*type(?:id)?|"
     r"(?:type|class|namespace)\s+(?:identity|relationship|mapping|binding|catalog)|"
     r"(?:parent|class)\s+(?:identity|verification)|"
-    r"built[\s-]*in\s+(?:type|class)|"
+    r"built[\s-]*in\s+(?:type|class|parent)|"
     r"(?:source[\s-]*attested|independently\s+verified)\s+"
     r"(?:native\s+)?(?:class|type|parent))\b"
 )

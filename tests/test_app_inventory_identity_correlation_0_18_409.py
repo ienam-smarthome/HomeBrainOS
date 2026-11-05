@@ -97,7 +97,9 @@ def test_exact_id_join_not_ambiguous_name_join():
     assert answer["typeIdJoinObserved"] is True
     assert len(answer["matchedTypeRows"]) == 1
     assert answer["matchedTypeRows"][0]["reportedNamespace"] == "hubitat"
-    assert answer["nativeClassBindingVerified"] is False
+    assert answer["nativeClassBindingVerified"] is True
+    assert answer["nativeParentRoleObserved"] is False
+    assert answer["nativeRuleWriterAuthorized"] is False
     message, changed = reconcile_app_class_identity_answer(
         "App 169 is native and confirmed.", receipts, {"requirements": []},
         "Read app instance 169 Rule Machine native parent",
@@ -108,7 +110,8 @@ def test_exact_id_join_not_ambiguous_name_join():
     assert "isBuiltIn=true" in message
     assert "namespace 'hubitat'" in message
     assert "type-catalog id=200" not in message
-    assert "Native class/parent verification: unresolved" in message
+    assert "Native built-in app-type identity: verified" in message
+    assert "Rule Machine writing remains unverified and unauthorized" in message
 
 
 def test_absent_or_malformed_type_id_stays_unverified():
@@ -226,10 +229,146 @@ def test_shared_completion_marks_instance_type_observed_but_native_unverified():
     assert coverage["domain"] == "app_class_identity"
     assert coverage["appIdentityCorrelation"]["sourceTypeId"] == "18"
     assert coverage["appIdentityCorrelation"]["typeIdJoinObserved"] is True
-    assert coverage["appIdentityCorrelation"]["nativeClassBindingVerified"] is False
+    assert coverage["appIdentityCorrelation"]["nativeClassBindingVerified"] is True
+    assert coverage["appIdentityCorrelation"]["nativeParentRoleObserved"] is False
+    assert coverage["appIdentityCorrelation"]["nativeRuleWriterAuthorized"] is False
     states = {r["key"]: r["state"] for r in coverage["requirements"]}
     assert states["instance_identity"] == "observed"
-    assert states["native_class_binding"] == "checked-unverified"
+    assert states["native_class_binding"] == "observed"
     assert coverage["evidenceComplete"] is False
     assert "isBuiltIn=true" in final.message
-    assert "Native class/parent verification: unresolved" in final.message
+    assert "Native built-in app-type identity: verified" in final.message
+    assert "Rule Machine writing remains unverified and unauthorized" in final.message
+
+
+
+def _target_config_receipt(children=42, *, parent=None):
+    return {
+        "tool": "hub_read_apps_code",
+        "sub_tool": "hub_get_app_config",
+        "success": True,
+        "effect": "read",
+        "mutates": False,
+        "evidence_kind": "typed_app_instance_metadata",
+        "arguments": {
+            "tool": "hub_get_app_config", "args": {"appId": 169},
+        },
+        "details": {
+            "appId": "169",
+            "nativeClassBindingVerified": False,
+            "reportedLabel": "Rule Machine",
+            "reportedName": "Rule Machine",
+            "reportedParentAppId": parent,
+            "parentAppIdFieldPresent": True,
+            "returnedChildAppRows": children,
+            "childCoverage": "returned-page-only",
+        },
+    }
+
+
+def test_live_0410_hub_shape_source_proves_builtin_parent_not_writes():
+    # Actual v0.18.409 source shape has no namespace in the matched
+    # type-catalog row. Both built-in flags and ID match are sufficient
+    # for a Hubitat-source built-in type classification.
+    receipts = [
+        _receipt("instances", _instance()),
+        _receipt("types", _types()),
+        _target_config_receipt(),
+    ]
+    match = match_app_inventory_receipts(receipts, "169")
+    assert match["instanceTypeId"] == "18"
+    assert match["nativeClassBindingVerified"] is True
+    assert match["nativeParentRoleObserved"] is True
+    assert match["nativeRuleWriterAuthorized"] is False
+
+    agent = AgentOutcome(
+        message="Native parent is unverified.",
+        request_class="live-read", choices=[], evidence=receipts,
+    )
+    request = (
+        "Investigate if Rule Machine app instance 169 is the native "
+        "built-in parent. Do not create or change rules."
+    )
+    # Natural 'native built-in parent' language must route to the
+    # identity objective, not a generic or rule-writing audit.
+    from targeted_rule_scope_policy import is_app_class_identity_question
+    assert is_app_class_identity_question(request) is True
+    observed = build_observed_agent_outcome(
+        agent, {"outcome": "unresolved", "counters": {}, "timings_ms": {}},
+    )
+    final = apply_shared_investigation_completion(observed, request)
+    coverage = final.investigation_coverage
+    assert coverage["evidenceComplete"] is True
+    assert coverage["questionResolved"] is True
+    assert coverage["status"] == "source-checks-complete"
+    assert coverage["appIdentityCorrelation"]["nativeClassBindingVerified"] is True
+    assert coverage["appIdentityCorrelation"]["nativeParentRoleObserved"] is True
+    assert coverage["appIdentityCorrelation"]["nativeRuleWriterAuthorized"] is False
+    assert {req["key"]: req["state"] for req in coverage["requirements"]} == {
+        "instance_identity": "observed",
+        "native_class_binding": "observed",
+    }
+    assert final.metrics["outcome"] == "success"
+    assert "Native built-in app-type identity: verified" in final.message
+    assert "root app with child-app rows" in final.message
+    assert "Rule Machine writing remains unverified" in final.message
+
+
+def test_parent_role_requires_matching_root_child_evidence():
+    rows = [_receipt("instances", _instance()), _receipt("types", _types())]
+    for extra in (
+        None, _target_config_receipt(children=0),
+        _target_config_receipt(parent="49"),
+        dict(_target_config_receipt(), arguments={
+            "tool": "hub_get_app_config", "args": {"appId": 999},
+        }),
+    ):
+        candidate = rows + ([extra] if extra is not None else [])
+        result = match_app_inventory_receipts(candidate, "169")
+        assert result["nativeClassBindingVerified"] is True
+        assert result["nativeParentRoleObserved"] is False
+        assert result["nativeRuleWriterAuthorized"] is False
+
+
+def test_id_match_without_consistent_builtin_flags_is_not_native_proof():
+    for change in (
+        lambda d: d["apps"][0].update(system=False),
+        lambda d: d["apps"][0].update(isBuiltIn=False),
+        lambda d: d["apps"][0].pop("isBuiltIn"),
+        lambda d: d["apps"][0].update(name="Other Class"),
+    ):
+        inst = _receipt("instances", _instance())
+        data = _types()
+        change(data)
+        cat = project_app_inventory_page(
+            "hub_read_apps_code", _call("types"), data,
+        )
+        if cat is None:
+            continue
+        type_receipt = {
+            "tool": "hub_read_apps_code",
+            "sub_tool": "hub_list_apps",
+            "success": True,
+            "effect": "read", "mutates": False,
+            "evidence_kind": "typed_app_type_catalog_page",
+            "arguments": _call("types"),
+            "details": cat,
+        }
+        result = match_app_inventory_receipts(
+            [inst, type_receipt, _target_config_receipt()], "169",
+        )
+        assert result["nativeClassBindingVerified"] is False
+        assert result["nativeParentRoleObserved"] is False
+
+
+def test_conflicting_same_id_catalog_flags_fail_closed():
+    inst = _receipt("instances", _instance())
+    types = _receipt("types", _types())
+    conflicting = _receipt("types", _types())
+    conflicting["details"]["rows"][0]["reportedIsBuiltIn"] = False
+    match = match_app_inventory_receipts(
+        [inst, types, conflicting, _target_config_receipt()], "169",
+    )
+    assert match["typeIdJoinObserved"] is True
+    assert match["nativeClassBindingVerified"] is False
+    assert match["nativeParentRoleObserved"] is False

@@ -636,6 +636,40 @@ def apply_shared_investigation_completion(
         existing = assess_investigation(goal, evidence)
     else:
         existing = {}
+    # A typed Hubitat instance->appTypeId->built-in type ID join is
+    # affirmative source identity evidence. A root instance with target-
+    # matched child-app rows also supplies a reported parent role. Neither
+    # independently authorizes creation of native Rule Machine rules.
+    identity_catalog = None
+    if domain == "app_class_identity":
+        identity_ids = set(re.findall(
+            r"(?i)\b(?:app(?:lication)?(?:\s+instance)?|instance)"
+            r"\s*(?:id\s*)?#?\s*([1-9][0-9]{0,8})\b", request,
+        ))
+        if len(identity_ids) == 1:
+            identity_catalog = match_app_inventory_receipts(
+                evidence, next(iter(identity_ids)),
+            )
+        if identity_catalog is not None:
+            observed_type = identity_catalog["instanceTypeId"] is not None and not identity_catalog["instanceTypeIdConflict"]
+            built_in = identity_catalog["nativeClassBindingVerified"]
+            parent = identity_catalog["nativeParentRoleObserved"]
+            for req in existing.get("requirements") or []:
+                if not isinstance(req, dict):
+                    continue
+                if req.get("key") == "instance_identity" and observed_type:
+                    req["state"] = "observed"
+                if req.get("key") == "native_class_binding" and built_in:
+                    req["state"] = "observed"
+            missing_sources = [
+                x["source"] for x in existing.get("requirements") or []
+                if isinstance(x, dict) and x.get("necessary") is True
+                and x.get("state") != "observed"
+            ]
+            if built_in and not parent:
+                missing_sources.append("target-matched parent and child-app evidence")
+            existing["nextMissingSources"] = missing_sources
+            existing["evidenceComplete"] = bool(built_in and parent)
     source_coverage = assess_task_source_coverage(required, evidence)
     # Positive, target-scoped command events are a different proof dimension
     # from source availability and physical/transport causation. In particular,
@@ -735,17 +769,7 @@ def apply_shared_investigation_completion(
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
     if domain == "app_class_identity":
-        # Correlate only a single explicitly named target. Inventory pages
-        # without the target or a usable numeric type ID cannot certify it.
-        target_ids = set(re.findall(
-            r"(?i)\b(?:app(?:lication)?(?:\s+instance)?|instance)"
-            r"\s*(?:id\s*)?#?\s*([1-9][0-9]{0,8})\b",
-            request,
-        ))
-        catalog = (
-            match_app_inventory_receipts(evidence, next(iter(target_ids)))
-            if len(target_ids) == 1 else None
-        )
+        catalog = identity_catalog
         if catalog is not None:
             observed_id = (
                 catalog["instanceTypeId"] is not None
@@ -756,7 +780,9 @@ def apply_shared_investigation_completion(
                 "sourceTypeId": catalog["instanceTypeId"],
                 "instanceTypeIdObserved": observed_id,
                 "typeIdJoinObserved": catalog["typeIdJoinObserved"],
-                "nativeClassBindingVerified": False,
+                "nativeClassBindingVerified": catalog["nativeClassBindingVerified"],
+                "nativeParentRoleObserved": catalog["nativeParentRoleObserved"],
+                "nativeRuleWriterAuthorized": False,
             }
             if observed_id:
                 for requirement in coverage.get("requirements") or []:
@@ -772,12 +798,20 @@ def apply_shared_investigation_completion(
         )
         if recalibrated:
             coverage["appIdentityPublication"] = {
-                "nativeCertification": "not-independently-verified",
+                "nativeCertification": (
+                    "built-in-type-id-verified"
+                    if catalog and catalog["nativeClassBindingVerified"]
+                    else "not-independently-verified"
+                ),
                 "sourceProjection": "only-target-matched-typed-read-receipts",
                 "mode": "bounded-source-identity-publication",
                 "modelProseReplaced": True,
+                "nativeRuleWriterAuthorized": False,
             }
-            metrics["outcome"] = "unresolved"
+            metrics["outcome"] = (
+                "success" if coverage.get("evidenceComplete") is True
+                else "unresolved"
+            )
             metrics.setdefault("counters", {})[
                 "app_identity_source_publications"
             ] = 1
@@ -1138,7 +1172,9 @@ def apply_shared_investigation_completion(
     # A successful source read must never convert an unresolved diagnosis to a
     # resolved physical/device cause.
     coverage["questionResolved"] = (
-        False if metrics.get("outcome") == "unresolved" or domain == "device_telemetry"
+        bool(coverage.get("evidenceComplete"))
+        if domain == "app_class_identity"
+        else False if metrics.get("outcome") == "unresolved" or domain == "device_telemetry"
         else None
     )
     if partial:

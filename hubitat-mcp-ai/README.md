@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.409**.
+Current add-on version: **0.18.410**.
+
+**Q2 built-in app identity proof vs native writer authorization (v0.18.410):** An installed v0.18.409 live read confirmed app 169's exact appTypeId=18 joins Hubitat's built-in Rule Machine catalog type id 18 (system=true/isBuiltIn=true) and app 169 is a root with 42 returned child-app rows. A source-attested numeric built-in type join is positive class evidence, not another missing mapping. A type's built-in identity is now separately recognized from parent-role evidence and independently unverified Rule Machine authoring. The domain answers with positive identity when both source relationships are present; missing/conflicting/partial evidence remains unresolved. No changes to Rule Machine writers, permissions, tool calls or model rounds. [Release notes](CHANGELOG-0.18.410.md).
 
 **Q2 exact-ID app/type inventory correlation (v0.18.409):** A live 0.18.408 read-only test called both `hub_list_apps(scope='instances',nameFilter='Rule Machine')` and `hub_list_apps(scope='types',nameFilter='Rule Machine')` but their published receipts listed only root field names. The app-configuration summary provided name/type/namespace/user without the numeric `appTypeId`. New bounded, allowlisted typed receipts now expose matching filtered instance and type rows, permit a source-reported numeric-ID join, and distinguish reported type-catalog classification from independently certified native parent identity. Missing pages, missing IDs and conflicting IDs remain unresolved; no new MCP calls, model rounds, permissions, rule writers or native class certification. Installed acceptance not yet measured. [Release notes](CHANGELOG-0.18.409.md).
 

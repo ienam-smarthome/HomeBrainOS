@@ -134,6 +134,59 @@ def match_app_inventory_receipts(
     candidate = next(iter(ids)) if len(ids) == 1 else None
     matches = [item for item in types
                if candidate is not None and _id(item.get("typeId")) == candidate]
+    # Source-class proof requires a consistent, exact ID join to a Hubitat
+    # catalog record explicitly tagged as both system and built-in, with
+    # consistent source type names. The catalog supplies a built-in
+    # classification, not the Rule Machine authoring/writer contract.
+    names = {
+        item.get("reportedTypeName") for item in matches
+        if isinstance(item.get("reportedTypeName"), str)
+    }
+    instance_types = {
+        item.get("reportedType") for item in instances
+        if isinstance(item.get("reportedType"), str)
+    }
+    built_in = bool(
+        candidate and matches and len(names) == 1
+        and len(instance_types) == 1
+        and next(iter(names)).casefold() == next(iter(instance_types)).casefold()
+        and all(item.get("reportedSystem") is True
+                and item.get("reportedIsBuiltIn") is True for item in matches)
+        and all(item.get("reportedUser") is False for item in instances)
+    )
+    parent_role = False
+    if built_in and all(
+        row.get("parentIdPresent") is True
+        and row.get("reportedParentId") is None for row in instances
+    ):
+        for receipt in receipts:
+            if not isinstance(receipt, dict):
+                continue
+            args, details = receipt.get("arguments"), receipt.get("details")
+            if not isinstance(args, dict) or not isinstance(details, dict):
+                continue
+            params = args.get("args")
+            if (
+                receipt.get("tool") == "hub_read_apps_code"
+                and receipt.get("sub_tool") == "hub_get_app_config"
+                and receipt.get("evidence_kind") in (
+                    "typed_app_instance_metadata", "typed_app_class_identity",
+                )
+                and receipt.get("success") is True
+                and receipt.get("effect") == "read"
+                and receipt.get("mutates") is False
+                and args.get("tool") == "hub_get_app_config"
+                and isinstance(params, dict)
+                and _id(params.get("appId")) == target
+                and _id(details.get("appId")) == target
+                and details.get("parentAppIdFieldPresent") is True
+                and details.get("reportedParentAppId") is None
+                and details.get("childCoverage") == "returned-page-only"
+                and type(details.get("returnedChildAppRows")) is int
+                and 0 < details["returnedChildAppRows"] <= 1000
+            ):
+                parent_role = True
+                break
     return {
         "appId": target,
         "inventoryInstanceRows": instances,
@@ -141,7 +194,9 @@ def match_app_inventory_receipts(
         "instanceTypeIdConflict": len(ids) > 1,
         "matchedTypeRows": matches,
         "typeIdJoinObserved": bool(candidate and matches),
-        "nativeClassBindingVerified": False,
+        "nativeClassBindingVerified": built_in,
+        "nativeParentRoleObserved": parent_role,
+        "nativeRuleWriterAuthorized": False,
     }
 
 
