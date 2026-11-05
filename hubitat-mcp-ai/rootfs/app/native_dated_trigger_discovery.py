@@ -34,9 +34,9 @@ def is_existing_dated_trigger_question(question: str) -> bool:
         and re.search(r"\b(?:rule machine|native rule)\b", text, re.I)
         and re.search(r"\b(?:dated triggers?|certain time|atDate#|date field)\b", text, re.I)
         and re.search(r"\b(?:search|inspect|investigat|find|scan|readback)\w*\b", text, re.I)
-        and not re.search(r"\b(?:create|write|update|delete|modify)\s+(?:a |an |the )?(?:new |test )?rule\b", text, re.I)
-        # A prohibition clause is not a prospective creation request;
-        # the positive question must be about existing saved state.
+        # Prohibitions such as "Do not create a test rule" are restrictions,
+        # not a positive creation intent. The explicit existing/read-only
+        # requirements above are the authority for this narrow read route.
     )
 
 
