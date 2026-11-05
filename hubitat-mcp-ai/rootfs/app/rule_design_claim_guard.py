@@ -31,6 +31,85 @@ _LOCKOUT_ABSOLUTE = re.compile(
     r"(?:or\s+trigger\s+)?(?:a|the)\s+(?:motion[- ]activation\s+)?lockout\b"
 )
 
+
+# Unverified native writer contracts cannot become executable JSON by adding
+# a caution after an otherwise actionable request.
+_SCHEMA_HEADING = re.compile(
+    r"^###\s*(?:\d+[.)]\s*)?(?:Upstream[- ]Tested Facts|"
+    r"Native(?: Rule Machine)? Contract Validation)\b[^\n]*\n"
+    r".*?(?=^###\s+|\Z)", re.I | re.M | re.S,
+)
+_READY_HEADING = re.compile(
+    r"^###\s*(?:\d+[.)]\s*)?Readiness Assessment\b[^\n]*\n"
+    r".*?(?=^###\s+|\Z)", re.I | re.M | re.S,
+)
+_INSTALLED_HEADING = re.compile(
+    r"^###\s*(?:\d+[.)]\s*)?Installed[- ]Hub Observations\b[^\n]*\n"
+    r".*?(?=^###\s+|\Z)", re.I | re.M | re.S,
+)
+_JSON_CODE = re.compile(r"(?ms)^\x60{3}json\s*\n.*?^\x60{3}\s*$")
+
+
+def _source_operation(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    args = row.get("arguments")
+    tool = row.get("sub_tool")
+    if not isinstance(args, dict):
+        args = {}
+    if tool is None:
+        tool = args.get("tool") or row.get("tool")
+    if isinstance(args.get("args"), dict):
+        args = args["args"]
+    return str(tool or ""), args
+
+
+def _targeted_sources(receipts: list[dict[str, Any]]) -> tuple[bool, bool]:
+    device = app = False
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if row.get("mutates") is True:
+            continue
+        tool, args = _source_operation(row)
+        device |= tool == "hub_get_device" and bool(
+            args.get("deviceId") or args.get("device_id")
+        )
+        app |= tool == "hub_get_app_config" and bool(
+            args.get("appId") or args.get("app_id")
+        ) and args.get("summary") is not True
+    return device, app
+
+
+def _strip_unverified_json(match: re.Match[str]) -> str:
+    code = match.group(0)
+    if re.search(r'"operation"\s*:\s*"(?:create|update|form|delete)"', code, re.I):
+        return (
+            "**Native write JSON withheld:** No current typed source receipt "
+            "establishes the installed trigger/action encoding. Obtain "
+            "independent schema evidence and separate authorisation."
+        )
+    return code
+
+
+def _motion_scope(request: str, answer: str) -> bool:
+    # An explicit request supersedes unrelated older model context.
+    scope = request if request.strip() else answer
+    return bool(re.search(
+        r"(?i)\b(?:motion|inactive|inactivity|lockout|"
+        r"light(?:s)?\b[^\n]{0,60}\boff)\b", scope,
+    ))
+
+
+_GENERIC_SAFETY_NOTE = (
+    "\n\n### Rule design feasibility gate (read-only)\n"
+    "**Native rule creation remains unverified.** An inventory and a "
+    "read-only guide acknowledgment do not establish an installed "
+    "trigger/action field schema or safe executable payload. Confirm "
+    "the precise types, time zone, parent ID, backup, guide key and "
+    "isolated action before separately authorising a test. Verify "
+    "persistence and scheduled jobs after creation, then separately "
+    "verify actual firing. No changes are authorised by this review."
+)
+
 # A disclaimer appended after an unsafe, allegedly executable sequence is
 # insufficient: users can follow the uncorrected earlier instructions. Replace
 # known plan/write sections as a whole, preserving independent device and
