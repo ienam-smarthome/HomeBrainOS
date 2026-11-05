@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.413**.
+Current add-on version: **0.18.414**.
+
+**Native dated-trigger exact-ID read retry (v0.18.414):** Four installed v0.18.412/v0.18.413 read-only batches attempted all 42 visible Rule-5.1 native children; 40 document reads verified, two incomplete (IDs 2967 and 3985), no verified enabled date-specific trigger. A narrow, explicitly requested existing-trigger retry can now look up up to four exact positive rule IDs in a freshly returned native child-app inventory before issuing their individual `hub_set_rule(operation=read)` trigger/settings reads. Missing or malformed IDs do not result in arbitrary direct reads, and the prior offset-batch path is unchanged. The response distinguishes targeted read coverage from hub-wide absence, does not reveal unrelated native settings, and never opens forms or changes rules. Read-only date-field evidence is not a Rule Machine authoring contract; writing remains blocked. [Release notes](CHANGELOG-0.18.414.md).
 
 **Native dated-trigger answer publication (v0.18.413):** Installed v0.18.412 ran the correct read-only native date-field scanner (42 visible Rule-5.1 candidates, 12 native reads, one unavailable) and produced source-typed `native_dated_trigger_discovery` coverage, but the earlier `existing_rule_verification` calibrator overwrote its answer with an unrelated action-tree/inactivity-controller template before shared completion. The specialist receipt now has priority at the **earlier** publication boundary, and the generic calibrator refuses to overwrite an existing source-typed dated scan. The scanner additionally reports bounded partial time/date observations (e.g. rule 2710 time 22:30 with date flag value unverified and no stored atDate), labels incomplete native reads honestly, and retains the next offset. No writer gate, read permissions, rule, device or router changes. [Release notes](CHANGELOG-0.18.413.md).
 
