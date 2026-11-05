@@ -51,6 +51,41 @@ def is_native_rule_readiness_question(question: str) -> bool:
     return sum((version, backup, guide)) >= 2
 
 
+def _extra_requested_checks(question: str) -> tuple[bool, bool, bool]:
+    """Additional read-only proof obligations beyond the core 3-source preflight."""
+    q = str(question or "")
+    version_comparison = bool(re.search(
+        r"\bhub_get_info\b|(?:serverInfo|initialize)[^\n.]{0,100}"
+        r"(?:agree|match|compare|cross.check)", q, re.I,
+    ))
+    dated_contract = bool(re.search(
+        r"atDate#|Certain Time\s*\(and optional date\)|"
+        r"\bdated\b[^\n.]{0,85}\b(?:trigger|one.time|rule)\b|"
+        r"\bdate[\s-]*field\b", q, re.I,
+    ))
+    readback = dated_contract and bool(re.search(
+        r"\bread[\s-]*back\b|\bpersisted\b|\b(saved|stored)\s+date\b",
+        q, re.I,
+    ))
+    return version_comparison, dated_contract, readback
+
+
+def _guide_dated_field_attestation(content: Any) -> bool:
+    """Only an explicit date *field* declaration attests documentation.
+
+    Generic 'date supported' or a release version is insufficient; neither
+    a guide nor this check attests persisted state or allows a rule write.
+    """
+    if not isinstance(content, str) or len(content) > 50000:
+        return False
+    return bool(
+        re.search(r"atDate#", content, re.I)
+        and re.search(r"(?i)\btype\s*[:=]\s*[\"']?date\b", content)
+        and re.search(r"yyyy-MM-dd|YYYY-MM-DD", content)
+        and not re.search(r"(?i)atDate#[^\n]{0,100}supported\s*[:=]\s*false", content)
+    )
+
+
 def _server_version(mcp: Any) -> str | None:
     info = getattr(mcp, "server_info", None)
     if not isinstance(info, dict) or info.get("name") != _EXPECTED_SERVER:
@@ -93,43 +128,72 @@ def native_rule_readiness_coverage(
 ) -> dict[str, Any] | None:
     if not is_native_rule_readiness_question(question):
         return None
+    want_version, want_date, want_readback = _extra_requested_checks(question)
     for item in reversed(evidence):
         if (not isinstance(item, dict)
                 or item.get("evidence_kind") != "typed_native_rule_readiness"
+                or item.get("tool") != "homebrain_native_rule_readiness"
+                or item.get("success") is not True
                 or item.get("effect") != "read"
                 or item.get("mutates") is not False):
             continue
         d = item.get("details")
         if not isinstance(d, dict):
             continue
-        complete = d.get("preflightEvidenceComplete") is True
+        # Keep the core preflight distinct from a request to establish actual
+        # native dated-field support, version agreement or persisted readback.
+        preflight_complete = d.get("preflightEvidenceComplete") is True
+        version_ok = d.get("mcpVersionAgreement") is True
+        guide_date_ok = d.get("nativeDatedFieldGuideAttested") is True
+        readback_ok = d.get("nativeDatedDateReadbackVerified") is True
+        complete = (
+            preflight_complete
+            and (not want_version or version_ok)
+            and (not want_date or guide_date_ok)
+            and (not want_readback or readback_ok)
+        )
+        checks = [
+            ("mcp_server_version", d.get("mcpServerVersion") is not None,
+             "MCP initialize serverInfo"),
+            ("hub_local_backup", d.get("latestHubLocalBackupUtc") is not None,
+             "read-only hub_list_backups(scope=hub_local)"),
+            ("native_rule_tool_guides",
+             isinstance(d.get("toolGuideAvailability"), dict)
+             and len(d["toolGuideAvailability"]) == 2
+             and all(v is True for v in d["toolGuideAvailability"].values()),
+             "read-only hub_get_tool_guide sections"),
+        ]
+        if want_version:
+            checks.append((
+                "mcp_version_agreement", version_ok,
+                "MCP initialize serverInfo and read-only hub_get_info.mcpServerVersion",
+            ))
+        if want_date:
+            checks.append((
+                "native_dated_field_guide", guide_date_ok,
+                "installed set_rule_reference explicit atDate# date declaration",
+            ))
+        if want_readback:
+            checks.append((
+                "native_dated_date_readback", readback_ok,
+                "read-only native dated Rule Machine trigger state",
+            ))
         return {
             "domain": "native_rule_readiness",
             "status": "preflight-source-complete" if complete else "partial-evidence",
             "evidenceComplete": complete,
             "questionResolved": complete,
+            "preflightEvidenceComplete": preflight_complete,
             "readinessForMutation": False,
             "requirements": [
-                {
-                    "key": key,
-                    "state": "observed" if value else "checked-unverified",
-                    "necessary": True,
-                    "source": source,
-                }
-                for key, value, source in (
-                    ("mcp_server_version", d.get("mcpServerVersion") is not None,
-                     "MCP initialize serverInfo"),
-                    ("hub_local_backup", d.get("latestHubLocalBackupUtc") is not None,
-                     "read-only hub_list_backups(scope=hub_local)"),
-                    ("native_rule_tool_guides", all(d.get("toolGuideAvailability", {}).values())
-                     and len(d.get("toolGuideAvailability", {})) == 2,
-                     "read-only hub_get_tool_guide sections"),
-                )
+                {"key": k, "state": "observed" if ok else "checked-unverified",
+                 "necessary": True, "source": origin}
+                for k, ok, origin in checks
             ],
             "limitations": [
-                "Source checks do not verify date-trigger execution, a fresh-backup "
-                "age against a live hub clock, disposable test-switch ownership "
-                "or Internet-blocking enforcement."
+                "Source checks do not authorise Rule Machine creation, confirm "
+                "a native date-trigger write/readback, prove a fresh backup "
+                "against live hub time, or verify target device ownership."
             ],
         }
     return {
@@ -137,16 +201,21 @@ def native_rule_readiness_coverage(
         "status": "partial-evidence",
         "evidenceComplete": False,
         "questionResolved": False,
+        "preflightEvidenceComplete": False,
         "readinessForMutation": False,
-        "limitations": ["The requested read-only preflight was not executed."],
+        "limitations": ["No typed native Rule Machine preflight receipt was published."],
     }
 
 
 async def read_native_rule_readiness(
     mcp: Any, recorder: Any, *,
     available_names: set[str] | frozenset[str],
+    question: str = "",
 ) -> tuple[str, dict[str, Any]]:
-    """At most three source calls; *only* the permitted read-only commands."""
+    """Core three source reads; optional hub_get_info for explicit cross-check.
+
+    No write, model round, confirmation, or secret guide token is published.
+    """
     async def get(gateway: str, arguments: dict[str, Any], label: str) -> dict[str, Any] | None:
         request = arguments
         data = None
@@ -171,6 +240,17 @@ async def read_native_rule_readiness(
     # MCP initialize serverInfo is an independent server-supplied identity,
     # not a hub firmware version nor the HomeBrain add-on's version number.
     version = _server_version(mcp)
+    want_version, want_date, want_readback = _extra_requested_checks(question)
+    hub_info_version: str | None = None
+    if want_version:
+        info = await get("hub_get_info", {}, "installed server version check")
+        candidate = info.get("mcpServerVersion") if isinstance(info, dict) else None
+        if isinstance(candidate, str) and _VERSION.fullmatch(candidate.strip()):
+            hub_info_version = candidate.strip()
+    version_agrees = (
+        version == hub_info_version
+        if version is not None and hub_info_version is not None else None
+    )
     backup = await get(
         "hub_read_apps_code",
         {"tool": "hub_list_backups", "args": {"scope": "hub_local"}},
@@ -178,6 +258,7 @@ async def read_native_rule_readiness(
     )
     timestamp, count, backup_gap = _backup_timestamp(backup)
     guide_availability: dict[str, bool] = {}
+    dated_field_attested = False
     for section in _GUIDES:
         result = await get(
             "hub_get_tool_guide", {"section": section},
@@ -193,6 +274,11 @@ async def read_native_rule_readiness(
             isinstance(content, str) and len(content) > 0
             and bool(marker.search(content))
         )
+        if section == "set_rule_reference" and want_date:
+            dated_field_attested = (
+                guide_availability[section]
+                and _guide_dated_field_attestation(content)
+            )
 
     complete = (version is not None and timestamp is not None
                 and all(guide_availability.values()))
@@ -200,6 +286,12 @@ async def read_native_rule_readiness(
         "source": "MCP serverInfo + hub-local backups + native tool-guide sections",
         "mcpServerVersion": version,
         "mcpVersionSource": "MCP initialize serverInfo" if version else "unverified",
+        "hubInfoMcpServerVersion": hub_info_version,
+        "mcpVersionAgreement": version_agrees,
+        "nativeDatedFieldGuideAttested": dated_field_attested,
+        # No actual dated-rule ID was supplied for a read-back; do not
+        # silently infer persistence from an installed guide or changelog.
+        "nativeDatedDateReadbackVerified": False,
         "latestHubLocalBackupUtc": timestamp,
         "hubLocalBackupCount": count,
         "backupTimestampGap": backup_gap,
@@ -219,6 +311,25 @@ async def read_native_rule_readiness(
         lines.append(
             "- " + section + ": "
             + ("readable" if guide_availability[section] else "unverified/unavailable")
+        )
+    if want_version:
+        lines.extend([
+            "MCP Rule Server version from hub_get_info: "
+            + (hub_info_version or "not verified"),
+            "Initialize/hub_get_info version agreement: "
+            + ("verified" if version_agrees is True else
+               "conflict" if version_agrees is False else "not verified"),
+        ])
+    if want_date:
+        lines.append(
+            "Installed guide explicitly documents atDate# as a date field: "
+            + ("yes (guide only; no persisted date proven)"
+               if dated_field_attested else "not verified")
+        )
+    if want_readback:
+        lines.append(
+            "Native dated-trigger saved-state readback: not checked; "
+            "no matching existing dated rule was identified by this preflight."
         )
     lines.extend([
         "",
