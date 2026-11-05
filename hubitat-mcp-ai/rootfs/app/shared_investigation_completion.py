@@ -669,6 +669,10 @@ def apply_shared_investigation_completion(
     focal_events = reconcile_focal_device_events(request, evidence)
     if focal_events is not None:
         coverage["reconciledFocalEventEvidence"] = focal_events
+    if domain == "rule_design_review":
+        # The read-only request cannot authorize a write, regardless of how
+        # much native schema documentation was reviewed.
+        coverage["readinessForMutation"] = False
     if domain in ("rule_design_review", "app_class_identity"):
         # The historical source-kind list is intentionally empty for design
         # reviews; vacuous empty-set coverage must not become a green
