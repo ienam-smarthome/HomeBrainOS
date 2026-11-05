@@ -332,9 +332,9 @@ async def read_existing_dated_triggers(
                 "rule_id_mismatch", "tool_exception",
             )
             retry_status = "not-needed" if result is not None else "not-attempted"
-            pages_read: dict[str, int] = {}
+            paged_sections_read: dict[str, int] = {}
             if retry_allowed:
-                paged_doc, retry_status, pages_read = await read_paged_native_dated_document(
+                paged_doc, retry_status, paged_sections_read = await read_paged_native_dated_document(
                     mcp, recorder, gateway=gateway, rule_id=rule_id,
                 )
                 if paged_doc is not None:
@@ -357,7 +357,7 @@ async def read_existing_dated_triggers(
                 "unpagedFailureCode": primary_failure,
                 "pagedAttempted": bool(retry_allowed),
                 "pagedOutcome": retry_status,
-                "pagedSectionsRead": pages_read,
+                "pagedSectionsRead": paged_sections_read,
                 "readVerified": result is not None,
             })
             if result is not None:
