@@ -350,6 +350,9 @@ class RuleAuthoringService:
         text = " ".join(str(prompt or "").split())
         from ai_investigation_routing import active_request_interpretation
         interpreted = active_request_interpretation(prompt)
+        from targeted_rule_scope_policy import is_native_rule_contract_review_request
+        if is_native_rule_contract_review_request(prompt):
+            return True  # Read-only contract review, never a write request.
         if interpreted is not None and interpreted.objective is not None:
             # This is an objective interpretation, NOT write permission.
             return interpreted.objective == "rule_design_review"
