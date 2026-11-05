@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — installed v0.18.407 live app-class result and v0.18.408 source publication
+
+**Observed live:** `/api/ask` for app 169 native parent class on reported installed HomeBrainOS **0.18.407**: 19.139s total, 5 Gemma free rounds, 3 MCP reads, 15.427s provider, 0.871s MCP agent, 1.114s MCP HTTP. Same exact normalized request SHA as prior tests. This individual result is faster than prior 0.18.405 (22.568s) and v0.18.406 (36.567s; 52.189s) samples, but these uncontrolled tests do NOT prove a latency regression or improvement.
+
+**Positive advancement:** Technical JSON contains actual source-typed `typed_app_instance_metadata` from `hub_get_app_config(appId:169)`. It attests `reportedLabel=Rule Machine`, `reportedName=Rule Machine`, explicit `parentAppId=null`, and **42 `childApps` rows in returned page**, with `nativeClassBindingVerified=false`; no appTypeId, source-reported namespace/type or reportedSystem is in that published receipt. Coverage remains `app_class_identity`, both `instance_identity` and `native_class_binding` checked-unverified. There were no mutating tool calls.
+
+**Remaining failure:** Model answer said `system:true` was explicitly marked, asserted **41 child rules**, and said all were `Rule-5.1`. This goes beyond published typed evidence. Not a proven hallucination: source raw payload may include extra details; 42 child-app rows need not all be rules. But public evidence does not authorize the definitive system flag, rule-total, or rule-type statements.
+
+**v0.18.408 general correction:** For the independent app-native-class verification domain, when binding is incomplete, produce a concise source-typed public answer from bounded target-matched current-turn receipts, not individual unreliable regexes for unsupported assertions. Preserve reported name, type, namespace, flags and child-app returned-page counts only when actually attested; never upgrade child-app rows to rule inventory, self-reported root to native class, or partial type catalog to full binding. Preserve model-driven source selection; no additional MCP/model rounds or writer authorization. New Technical JSON marker `appIdentityPublication.mode=bounded-source-identity-publication`. CI and installed post-update result pending. See `hubitat-mcp-ai/CHANGELOG-0.18.408.md`.
+
+---
+
 ## 2026-11-05 — v0.18.406 live app-parent acceptance: summary-shape gap and unsupported native certification
 
 The user's installed 0.18.406 free Gemma Cloud investigation of app 169 ran **36.567s**, **8 model rounds**, **5 read-only tool calls**, provider **31.994s**, MCP HTTP **1.705s**. Compared with v0.18.405's one 22.568s/5-round/3-read sample, it was slower in this individual run, chiefly from increased model time; no controlled regression is established.
