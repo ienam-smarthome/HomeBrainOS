@@ -18,6 +18,9 @@ from investigation_intelligence import assess_investigation, plan_investigation
 from evidence_recorder import EvidenceRecorder
 from mcp_client import MCPToolResult
 from tool_executor import ToolExecutor
+from mcp_agent_orchestrator import AgentOutcome
+from observed_agent_outcome import build_observed_agent_outcome
+from shared_investigation_completion import apply_shared_investigation_completion
 
 
 ARGUMENTS = {"tool": "hub_get_app_config", "args": {"appId": 4216}}
@@ -356,3 +359,38 @@ def test_explicit_not_verified_as_native_is_not_overwritten():
     )
     assert not changed
     assert message == draft
+
+
+def test_real_shared_completion_reconciles_model_native_certification():
+    request = (
+        "Investigate whether Rule Machine app instance 4216 is independently "
+        "verified as the native parent. Read-only; do not change any rule."
+    )
+    receipt = {
+        "tool": "hub_read_apps_code",
+        "sub_tool": "hub_get_app_config",
+        "success": True, "mutates": False, "effect": "read",
+        "evidence_kind": "typed_app_instance_metadata",
+        "arguments": {"tool": "hub_get_app_config",
+                      "args": {"appId": 4216, "summary": True}},
+        "details": _project(_summary_data()),
+    }
+    outcome = AgentOutcome(
+        message=(
+            "App instance 4216 is verified as a native Hubitat application. "
+            "It is from namespace hubitat and user false, confirming it is "
+            "a built-in system application. The type class isn't mapped."
+        ),
+        request_class="live-read", choices=[], evidence=[receipt],
+    )
+    observed = build_observed_agent_outcome(
+        outcome, {"outcome": "success", "counters": {}, "timings_ms": {}},
+    )
+    final = apply_shared_investigation_completion(observed, request)
+    assert final.investigation_coverage["domain"] == "app_class_identity"
+    assert final.investigation_coverage["evidenceComplete"] is False
+    assert final.metrics["outcome"] == "unresolved"
+    assert final.metrics["counters"]["app_identity_overclaim_reconciled"] == 1
+    assert final.message.startswith("**Native class identity: not independently verified.**")
+    assert "user=false" in final.message
+    assert "appTypeId=18" not in final.message
