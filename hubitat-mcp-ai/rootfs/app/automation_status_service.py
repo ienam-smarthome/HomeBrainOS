@@ -104,20 +104,74 @@ class AutomationStatusService:
             return False
         if is_automation_runtime_diagnostic(prompt):
             return False
+        # The caller asks for the OBJECT of the question, not for a word
+        # anywhere in an instruction. In particular "Keep rule-writing
+        # authorisation disabled" is a prohibition in a read-only native
+        # trigger investigation, never a request for 166 app status rows.
+        from native_dated_trigger_discovery import is_existing_dated_trigger_question
+        if is_existing_dated_trigger_question(prompt):
+            return False
+        if re.search(r"\b(?:rule\s+ids?|rules?)\s*[:#]?\s*[1-9]\d{2,8}\b", value):
+            return False
+        if re.search(r"\b(?:inspect|retry|investigate|readback|recheck)\b", value) and re.search(
+            r"\b(?:rule\s+machine|native\s+rule|atdate#|dated\s+triggers?)\b",
+            value,
+        ):
+            return False
         if any(word in value for word in ("enable ", "disable ", "pause ", "resume ")):
             return False
-        subject = any(word in value for word in ("automation", "automations", "rule", "rules", "apps"))
+        subject = re.search(r"\b(?:automations?|rules?|apps?)\b", value)
         if not subject:
             return False
-        explicit_status = any(
-            word in value
-            for word in ("list", "show", "which", "status", "active", "disabled", "paused", "broken")
+        # Positive inventory/status intent only. Standalone field words
+        # ('status', 'disabled', 'active', 'list') are NOT intent evidence.
+        # Preserve fast, deterministic answers for explicit broad listings,
+        # current inventory/state and counts, but allow targeted investigations
+        # and instructions to reach their actual read-only source handlers.
+        explicit_listing = re.search(
+            r"^(?:please\s+)?(?:list|show|display|enumerate)\b"
+            r".*\b(?:automations?|rules?|apps?)\b", value,
         )
+        explicit_status = bool(
+            explicit_listing
+            or re.search(
+                r"\b(?:automations?|rules?|apps?)\s+(?:status|statuses|inventory)\b"
+                r"|\b(?:status|inventory|summary)\s+(?:of|for)\s+"
+                r"(?:(?:my|all|the|current)\s+)?(?:automations?|rules?|apps?)\b",
+                value,
+            )
+            or re.search(
+                r"^(?:please\s+)?(?:which|what|how\s+many|are\s+any)\b"
+                r".{0,120}\b(?:automations?|rules?|apps?)\b"
+                r".{0,80}\b(?:active|enabled|disabled|paused|broken|running|"
+                r"statuses|status|there|installed)\b",
+                value,
+            )
+            or re.search(
+                r"^(?:please\s+)?(?:check|tell\s+me|give\s+me)\b"
+                r".{0,120}\b(?:automations?|rules?|apps?)\b"
+                r".{0,80}\b(?:status|statuses|inventory|active|"
+                r"disabled|paused|broken)\b",
+                value,
+            )
+        )
+        # An explicit "recommend which of my existing automations need
+        # fixing" question is also a legitimate *broad* configuration review,
+        # even without literal "status" or "disabled" words. Preserve its
+        # established advisory inventory path; generic optimisation and
+        # specific/native rule investigations still use their own reasoning.
+        explicit_existing_review = bool(re.search(
+            r"^(?:please\s+)?(?:recommend|review|suggest)\b"
+            r".{0,100}\b(?:which|what)\b"
+            r".{0,90}\b(?:automations?|rules?|apps?)\b"
+            r".{0,75}\b(?:fix|fixing|repair|broken|problems?|issues?|attention)\b",
+            value,
+        ))
         explicit_new_ideas = (
             any(word in value for word in _ADVISORY_WORDS)
             and any(signal in value for signal in _NEW_IDEA_SIGNAL)
         )
-        return explicit_status or explicit_new_ideas
+        return explicit_status or explicit_existing_review or explicit_new_ideas
 
     @staticmethod
     def is_advisory_request(prompt: str) -> bool:
