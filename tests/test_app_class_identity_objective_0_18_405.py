@@ -201,7 +201,10 @@ def test_shared_completion_does_not_retain_wrong_rule_action_requirements():
     }
     assert coverage["sourceChecksComplete"] is False
     assert tested.metrics["outcome"] == "unresolved"
-    assert tested.message == original_message
+    # New source-only publication may replace cautious model prose when
+    # no typed app metadata was captured; scope and uncertainty must survive.
+    assert "native class identity: not independently verified" in tested.message.lower()
+    assert "no target-matched typed app metadata" in tested.message
     assert "ordered actions" not in tested.message
     assert "inactivity-OFF" not in tested.message
 

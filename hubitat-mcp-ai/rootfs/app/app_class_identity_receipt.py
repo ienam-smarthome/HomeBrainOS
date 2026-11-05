@@ -128,24 +128,68 @@ def project_app_class_identity_receipt(
 
 
 
-# A source's reported built-in-looking flags must not become a statement of
-# independently verified native identity. The model remains responsible for
-# selecting and synthesizing evidence; only an affirmative unsupported native
-# certification is repaired from existing, source-matched read receipts.
-_NATIVE_OVERCLAIM = re.compile(
-    r"(?i)(?:\b(?:verified|confirmed|proven|established)\s+as\s+(?:an?\s+)?"
-    r"(?:native|built[ -]?in|system)\b|"
-    r"\b(?:confirming|proving|establishing)\s+(?:that\s+)?(?:it\s+is\s+)?"
-    r"(?:an?\s+)?(?:native|built[ -]?in|system)\b|"
-    r"\b(?:instance|application|app)[^.\n]{0,100}\b(?:confirmed|verified)"
-    r"\s+to\s+be\s+(?:native|built[ -]?in|system)\b|"
-    r"\b(?:native|built[ -]?in|system)\s+(?:Hubitat\s+)?"
-    r"(?:class|parent|application|app)[^.\n]{0,75}\(Verified\))"
-)
+# Identity answer publication uses the same narrow, source-typed receipt
+# contract as the technical coverage. Positive raw model assertions about
+# app types, child rules, flags or built-in status are not attested merely
+# because the model saw an unrestricted tool payload. Use a readable
+# source-derived synthesis for this one evidence-certification domain when
+# native class binding is incomplete. No extra model or MCP call is made.
 _EXPLICIT_APP_ID = re.compile(
     r"(?i)\b(?:app(?:lication)?(?:\s+instance)?|instance)"
     r"\s*(?:id\s*)?#?\s*([1-9][0-9]{0,8})\b"
 )
+_IDENTITY_KINDS = frozenset((
+    "typed_app_instance_metadata", "typed_app_class_identity",
+))
+
+
+def _matched_identity_receipts(
+    receipts: list[dict[str, Any]],
+    target: str | None,
+) -> list[dict[str, Any]]:
+    matched = []
+    for row in receipts:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        if (row.get("tool") != "hub_read_apps_code"
+                or row.get("sub_tool") != "hub_get_app_config"
+                or row.get("evidence_kind") not in _IDENTITY_KINDS
+                or row.get("effect") != "read"
+                or row.get("mutates") is not False):
+            continue
+        args = row.get("arguments")
+        if not isinstance(args, dict) or args.get("tool") != "hub_get_app_config":
+            continue
+        scoped = args.get("args")
+        details = row.get("details")
+        if not isinstance(scoped, dict) or not isinstance(details, dict):
+            continue
+        app_id = _positive_id(details.get("appId"))
+        if (app_id is None or _positive_id(scoped.get("appId")) != app_id
+                or (target is not None and target != app_id)
+                or details.get("nativeClassBindingVerified") is not False):
+            continue
+        if row["evidence_kind"] == "typed_app_class_identity":
+            if _positive_id(details.get("appTypeId")) is None:
+                continue
+        elif "appTypeId" in details:
+            # Do not silently upgrade summary-only evidence with an
+            # unvalidated number attached to a weaker receipt kind.
+            continue
+        matched.append(details)
+    return matched
+
+
+def _source_value(
+    rows: list[dict[str, Any]], key: str,
+) -> tuple[bool, Any, bool]:
+    """Return (present, value, conflicted), never resolve conflicting reads."""
+    values = [row[key] for row in rows if key in row]
+    if not values:
+        return False, None, False
+    if any(type(v) is not type(values[0]) or v != values[0] for v in values[1:]):
+        return False, None, True
+    return True, values[0], False
 
 
 def reconcile_app_class_identity_answer(
@@ -154,109 +198,143 @@ def reconcile_app_class_identity_answer(
     coverage: dict[str, Any],
     request: str,
 ) -> tuple[str, bool]:
-    """Guard affirmative unsupported native class claims with typed facts.
+    """Publish only exact target-matched, source-observed app identity facts.
 
-    Keep the model's own calibrated natural language unless it certifies a
-    native class despite the independently unverified source contract.
-    Never make new source reads, invent omitted type IDs, or grant write access.
+    The model selects relevant tools and reasons about which evidence to
+    pursue. For a *still-unverified native-class identity* its final factual
+    assertions cannot be audited from raw tool text, so publish the safe
+    verified observations rather than guessing which sentence might contain
+    an unsupported flag, type mapping or total child-rule claim.
+
+    An independently observed native-class binding is reserved for a future
+    separately validated source contract; this projector cannot create it.
     """
     draft = str(message or "").strip()
     requirements = coverage.get("requirements") or []
-    class_state = next((
-        x.get("state") for x in requirements
-        if isinstance(x, dict) and x.get("key") == "native_class_binding"
+    native_state = next((
+        entry.get("state") for entry in requirements
+        if isinstance(entry, dict) and entry.get("key") == "native_class_binding"
     ), None)
-    # A negative sentence such as "not independently verified as native"
-    # must not trigger an otherwise unnecessary model-text replacement.
-    assertive = False
-    for match in _NATIVE_OVERCLAIM.finditer(draft):
-        before = draft[max(0, match.start() - 55):match.start()]
-        negated = re.search(
-            r"(?i)\b(?:not|never|without|unverified)\b"
-            r"(?:\W+\w+){0,3}\s*$", before,
-        )
-        if not negated:
-            assertive = True
-            break
-    if class_state == "observed" or not assertive:
+    if native_state == "observed" and coverage.get("evidenceComplete") is True:
         return draft, False
 
-    ids = set(_EXPLICIT_APP_ID.findall(str(request or "")))
-    # A multi-target request is not safe for a one-app fallback summary.
-    target = next(iter(ids)) if len(ids) == 1 else None
-    valid = []
-    for row in receipts:
-        if not isinstance(row, dict) or row.get("success") is not True:
-            continue
-        if row.get("mutates") is not False or row.get("effect") != "read":
-            continue
-        if row.get("sub_tool") != "hub_get_app_config" or row.get("evidence_kind") not in (
-            "typed_app_instance_metadata", "typed_app_class_identity",
-        ):
-            continue
-        details = row.get("details")
-        if not isinstance(details, dict) or details.get("nativeClassBindingVerified") is not False:
-            continue
-        identifier = _positive_id(details.get("appId"))
-        if identifier is None or (target is not None and identifier != target):
-            continue
-        valid.append(details)
+    target_ids = set(_EXPLICIT_APP_ID.findall(str(request or "")))
+    if len(target_ids) > 1:
+        output = (
+            "**Native class identity remains unverified.** The question "
+            "names multiple app instances; each needs a separately "
+            "target-matched typed record and authoritative class mapping. "
+            "No type, system flag or child count is certified by an "
+            "unscoped app inventory."
+        )
+        return output, output != draft
 
-    if not target and len(set(d["appId"] for d in valid)) == 1:
-        target = valid[0]["appId"]
-    details_set = [d for d in valid if target and d["appId"] == target]
+    target = next(iter(target_ids)) if target_ids else None
+    observed = _matched_identity_receipts(receipts, target)
+    if not target:
+        candidates = {d["appId"] for d in observed}
+        if len(candidates) == 1:
+            target = next(iter(candidates))
+        else:
+            observed = []
+    if target is not None:
+        observed = [d for d in observed if d["appId"] == target]
 
-    def consistent(key: str) -> Any:
-        values = [d[key] for d in details_set if key in d]
-        if not values:
-            return None
-        return values[0] if all(v == values[0] for v in values) else None
+    subject = ("App " + target) if target else "The requested app"
+    if not observed:
+        output = (
+            "**Native class identity: not independently verified.** "
+            + subject
+            + " has no target-matched typed app metadata in the published "
+              "read-only evidence. A successful inventory query or a model "
+              "description cannot independently establish its name, type "
+              "ID, built-in status or native parent class. An authoritative "
+              "instance-to-type-to-native-class mapping is still needed."
+        )
+        return output, output != draft
 
-    phrase = ("App " + target) if target else "The queried app"
-    facts = []
-    for field, title in (
+    facts: list[str] = []
+    disputed: list[str] = []
+    for key, title in (
         ("reportedName", "name"),
         ("reportedLabel", "label"),
         ("reportedType", "type"),
-        ("reportedNamespace", "namespace"),
+        ("reportedAppTypeName", "app type name"),
     ):
-        value = consistent(field)
-        if isinstance(value, str):
-            facts.append(title + " " + repr(value))
-    for field, title in (("reportedUser", "user"), ("reportedSystem", "system")):
-        value = consistent(field)
-        if isinstance(value, bool):
-            facts.append(title + "=" + str(value).lower())
-    if any("parentAppIdFieldPresent" in d for d in details_set):
-        parents = [
-            d.get("reportedParentAppId") for d in details_set
-            if d.get("parentAppIdFieldPresent") is True
-        ]
-        if parents and all(x == parents[0] for x in parents):
-            facts.append("parentAppId=" + ("null" if parents[0] is None else str(parents[0])))
-    type_id = consistent("appTypeId")
-    if type_id is not None:
-        facts.append("appTypeId=" + str(type_id))
+        present, value, conflict = _source_value(observed, key)
+        if conflict:
+            disputed.append(title)
+        elif present and (safe := _safe_label(value)) is not None:
+            facts.append(f"{title} {safe!r}")
+    present, value, conflict = _source_value(observed, "reportedNamespace")
+    if conflict:
+        disputed.append("namespace")
+    elif present and isinstance(value, str) and _NAMESPACE.fullmatch(value):
+        facts.append(f"namespace {value!r}")
+    for key, title in (
+        ("reportedSystem", "system"),
+        ("reportedUser", "user"),
+    ):
+        present, value, conflict = _source_value(observed, key)
+        if conflict:
+            disputed.append(title)
+        elif present and type(value) is bool:
+            facts.append(f"{title}={str(value).lower()}")
 
-    if facts:
-        first = (
-            phrase + " has these **source-reported** fields: " +
-            ", ".join(facts) + "."
+    present, value, conflict = _source_value(observed, "appTypeId")
+    if conflict:
+        disputed.append("appTypeId")
+    elif present and (valid_type := _positive_id(value)) is not None:
+        facts.append(f"appTypeId={valid_type}")
+
+    parents = [
+        row["reportedParentAppId"] for row in observed
+        if row.get("parentAppIdFieldPresent") is True
+        and "reportedParentAppId" in row
+    ]
+    if parents and all(type(p) is type(parents[0]) and p == parents[0] for p in parents):
+        parent = parents[0]
+        if parent is None or _positive_id(parent) is not None:
+            facts.append(
+                "parentAppId=" + ("null" if parent is None else str(parent))
+            )
+    elif parents:
+        disputed.append("parentAppId")
+
+    # A childApps array describes rows returned in a bounded read, not
+    # complete rule inventory, child type, executable rule status or ownership.
+    child_counts = [
+        row["returnedChildAppRows"] for row in observed
+        if row.get("childCoverage") == "returned-page-only"
+        and type(row.get("returnedChildAppRows")) is int
+        and 0 <= row["returnedChildAppRows"] <= 1000
+    ]
+    if child_counts:
+        if len(set(child_counts)) == 1:
+            facts.append(f"{child_counts[0]} child-app rows returned in one page")
+        else:
+            disputed.append("returned child-app row count")
+
+    text = (
+        f"**{subject} — source-reported identity:** "
+        + (", ".join(facts) + "." if facts else
+           "No individual identity attributes were attested by the matching receipt.")
+    )
+    if disputed:
+        text += (
+            " Conflicting reads for " + ", ".join(disputed)
+            + " were not treated as established facts."
         )
-    else:
-        first = (
-            phrase + " was queried, but the public read receipts do not "
-            "contain enough target-matched typed metadata to attest its "
-            "reported name, type ID or class."
-        )
-    return (
-        "**Native class identity: not independently verified.** " + first
-        + " These reported fields do not by themselves establish that the "
-        "instance is a built-in application parent or bind its type ID "
-        "to an authoritative native class. "
-        + "A complete, authoritative instance-to-type-to-native-class mapping "
-        "is still required; a display name, namespace or user/system flag "
-        "alone is not sufficient."
-    ), True
+    text += (
+        "\n\n**Native class/parent verification: unresolved.** "
+        "These are reported fields from a target-matched read, not an "
+        "authoritative binding between an instance, its app-type definition "
+        "and a built-in native class. Child-app rows do not prove their "
+        "types or the total installed rule count. "
+        "A complete source-attested instance-to-type-to-native-class "
+        "mapping is still required before certifying a native parent."
+    )
+    return text, text != draft
+
 
 __all__ = ["project_app_class_identity_receipt", "reconcile_app_class_identity_answer"]

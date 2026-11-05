@@ -294,6 +294,7 @@ def test_unsupported_native_certification_replaced_from_matching_summary_receipt
         "sub_tool": "hub_get_app_config",
         "success": True, "mutates": False, "effect": "read",
         "evidence_kind": "typed_app_instance_metadata",
+        "arguments": {"tool": "hub_get_app_config", "args": {"appId": 4216}},
         "details": details,
     }]
     message = (
@@ -306,14 +307,14 @@ def test_unsupported_native_certification_replaced_from_matching_summary_receipt
         message, receipts, coverage, question,
     )
     assert changed is True
-    assert fixed.startswith("**Native class identity: not independently verified.**")
+    assert fixed.startswith("**App 4216 — source-reported identity:**")
     assert "name 'Rule Machine'" in fixed
     assert "user=false" in fixed
     assert "appTypeId=18" not in fixed
-    assert "built-in application parent" in fixed
+    assert "Native class/parent verification: unresolved" in fixed
 
 
-def test_calibrated_model_answer_is_preserved():
+def test_model_caveat_cannot_publish_unreceipted_identity_claims():
     question = (
         "Investigate whether app instance 4216 has an independently verified "
         "native Rule Machine class; read only."
@@ -327,7 +328,8 @@ def test_calibrated_model_answer_is_preserved():
             {"key": "native_class_binding", "state": "checked-unverified"},
         ]}, question,
     )
-    assert changed is False and result == draft
+    assert changed is True
+    assert "no target-matched typed app metadata" in result
 
 
 def test_native_overclaim_fallback_does_not_reuse_unrelated_app_metadata():
@@ -347,18 +349,18 @@ def test_native_overclaim_fallback_does_not_reuse_unrelated_app_metadata():
     )
     assert changed is True
     assert "name 'Rule Machine'" not in fixed
-    assert "do not contain enough target-matched" in fixed
+    assert "no target-matched typed app metadata" in fixed
 
 
-def test_explicit_not_verified_as_native_is_not_overwritten():
+def test_negated_class_statement_still_uses_source_publication():
     draft = "App 4216 is not independently verified as native."
     message, changed = reconcile_app_class_identity_answer(
         draft, [], {"requirements": [
             {"key": "native_class_binding", "state": "checked-unverified"},
         ]}, "Check app 4216 native class",
     )
-    assert not changed
-    assert message == draft
+    assert changed is True
+    assert "no target-matched typed app metadata" in message
 
 
 def test_real_shared_completion_reconciles_model_native_certification():
@@ -390,7 +392,135 @@ def test_real_shared_completion_reconciles_model_native_certification():
     assert final.investigation_coverage["domain"] == "app_class_identity"
     assert final.investigation_coverage["evidenceComplete"] is False
     assert final.metrics["outcome"] == "unresolved"
-    assert final.metrics["counters"]["app_identity_overclaim_reconciled"] == 1
-    assert final.message.startswith("**Native class identity: not independently verified.**")
+    assert final.metrics["counters"]["app_identity_source_publications"] == 1
+    assert final.message.startswith("**App 4216 — source-reported identity:**")
     assert "user=false" in final.message
     assert "appTypeId=18" not in final.message
+
+
+
+def _receipt_for(data=None, *, args=None):
+    arguments = args or {"tool": "hub_get_app_config", "args": {"appId": 4216}}
+    details = _project(data)
+    return {
+        "tool": "hub_read_apps_code",
+        "sub_tool": "hub_get_app_config",
+        "success": True, "mutates": False, "effect": "read",
+        "evidence_kind": (
+            "typed_app_class_identity" if "appTypeId" in details
+            else "typed_app_instance_metadata"
+        ),
+        "arguments": arguments,
+        "details": details,
+    }
+
+
+def test_live_shape_child_count_and_system_claim_are_source_bounded():
+    """A source returns childApps rows, not a certified rule inventory."""
+    data = _data()
+    data["app"].pop("appTypeId")
+    data["app"].pop("system")
+    data["app"].pop("namespace")
+    data["app"].pop("type")
+    data["childApps"] = [{"id": x} for x in range(41)]
+    receipt = _receipt_for(data)
+    draft = (
+        "The system app is explicitly marked system: true and manages "
+        "40 child rules (all Rule-5.1). This is the native application."
+    )
+    fixed, changed = reconcile_app_class_identity_answer(
+        draft, [receipt], {"requirements": [
+            {"key": "native_class_binding", "state": "checked-unverified"},
+        ]}, "Verify app instance 4216 native parent",
+    )
+    assert changed is True
+    assert "41 child-app rows returned in one page" in fixed
+    assert "40 child rules" not in fixed
+    assert "Rule-5.1" not in fixed
+    assert "system=true" not in fixed
+    assert "appTypeId=" not in fixed
+    assert "name 'Rule Machine'" in fixed
+    assert "parentAppId=null" in fixed
+    assert "Native class/parent verification: unresolved" in fixed
+
+
+def test_cross_app_and_conflicting_receipts_do_not_certify_an_identity():
+    valid = _receipt_for()
+    second = _receipt_for()
+    second["details"] = dict(valid["details"], reportedSystem=False)
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 is definitely native and system true.",
+        [valid, second], {"requirements": []},
+        "Verify native class of app 4216",
+    )
+    assert changed is True
+    assert "Conflicting reads for system" in message
+    assert "system=true" not in message
+    assert "system=false" not in message
+    assert "appTypeId=718" in message
+
+
+def test_mismatched_receipt_scope_rejected_even_if_details_claim_target():
+    receipt = _receipt_for()
+    receipt["arguments"]["args"]["appId"] = 9999
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 is native.", [receipt], {"requirements": []},
+        "Verify native class of app 4216",
+    )
+    assert changed is True
+    assert "no target-matched typed app metadata" in message
+    assert "name 'Rule Machine'" not in message
+
+
+def test_multiple_named_targets_do_not_select_one_app_facts():
+    receipt = _receipt_for()
+    message, changed = reconcile_app_class_identity_answer(
+        "Both apps are native.", [receipt], {"requirements": []},
+        "Are app 4216 and app 9999 both native parent classes?",
+    )
+    assert changed is True
+    assert "multiple app instances" in message
+    assert "name 'Rule Machine'" not in message
+
+
+def test_correctly_cautious_model_specifics_do_not_bypass_partial_evidence():
+    receipt = _receipt_for()
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 manages 23 Rule-5.1 automations. Its native class "
+        "is not independently verified.",
+        [receipt], {"requirements": [
+            {"key": "native_class_binding", "state": "checked-unverified"}
+        ]}, "Is app instance 4216 native?",
+    )
+    assert changed is True
+    assert "23 Rule-5.1" not in message
+    assert "2 child-app rows returned in one page" in message
+    assert "Native class/parent verification: unresolved" in message
+
+
+
+def test_mutating_or_unscoped_receipt_never_sources_identity_answer():
+    row = _receipt_for()
+    row["mutates"] = True
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 has been verified natively.",
+        [row], {"requirements": []}, "Verify native app 4216",
+    )
+    assert changed is True
+    assert "no target-matched typed app metadata" in message
+    assert "name 'Rule Machine'" not in message
+
+
+def test_valid_typed_app_type_id_is_reported_but_not_promoted_to_native_class():
+    row = _receipt_for()
+    message, changed = reconcile_app_class_identity_answer(
+        "App 4216 is proven to be the built-in automation manager.",
+        [row], {"requirements": [
+            {"key": "native_class_binding", "state": "checked-unverified"}
+        ]}, "Inspect app instance 4216 built-in native class identity",
+    )
+    assert changed is True
+    assert "appTypeId=718" in message
+    assert "system=true" in message  # explicitly present in the typed receipt
+    assert "Native class/parent verification: unresolved" in message
+    assert "proven to be" not in message
