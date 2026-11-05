@@ -4540,6 +4540,7 @@ class UnifiedMCPAgent:
             answer, _projection = await read_native_rule_readiness(
                 self.mcp, self.evidence,
                 available_names=catalog.available_names,
+                question=user_prompt,
             )
             return answer
 
