@@ -63,7 +63,14 @@ def _extra_requested_checks(question: str) -> tuple[bool, bool, bool, bool, bool
         r"\bhub_get_info\b|(?:serverInfo|initialize)[^\n.]{0,100}"
         r"(?:agree|match|compare|cross.check)", positive, re.I,
     ))
-    dated_contract = bool(re.search(
+    # A requested typed contract or its evidence gaps is itself a proof
+    # obligation, even when a caller does not repeat every date-field name.
+    # This is a generic reporting objective, not an authoring instruction.
+    contract_report = bool(re.search(
+        r"\bnativeGuideContract\b|\bguide\s+(?:evidence\s+)?gaps?\b|"
+        r"\bguide\s+declarations?\b", positive, re.I,
+    ))
+    dated_contract = contract_report or bool(re.search(
         r"atDate#|Certain Time\s*\(and optional date\)|"
         r"\bdated[ -]?trigger\b|\bdate[\s-]*(?:field|format)\b",
         positive, re.I,
@@ -81,7 +88,7 @@ def _extra_requested_checks(question: str) -> tuple[bool, bool, bool, bool, bool
         r"[^.\n]{0,110}\bapp\s+\d{1,9}\b[^.\n]{0,110}\bparent\b",
         clause, re.I,
     )) for clause in positive_clauses)
-    authoring_contract = bool(re.search(
+    authoring_contract = contract_report or bool(re.search(
         r"\b(?:create|creating|creation|authoring|supported creation operations)\b",
         positive, re.I,
     ) and re.search(
@@ -111,8 +118,12 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
         "createOperationDocumented": False, "parentIdParameterDocumented": False,
         "createContractDocumented": False, "gapCodes": [],
     }
-    if not isinstance(content, str) or not 0 < len(content) <= 50000:
-        return {**empty, "gapCodes": ["guide_unavailable_or_oversized"]}
+    if not isinstance(content, str) or not content:
+        return {**empty, "inspectionStatus": "guide-unavailable",
+                "gapCodes": ["guide_unavailable"]}
+    if len(content) > 50000:
+        return {**empty, "inspectionStatus": "guide-oversized",
+                "gapCodes": ["guide_oversized"]}
     has_field = bool(re.search(r"atDate#", content, re.I))
     expected_types = {
         "time#": "enum", "atTime#": "time",
@@ -183,6 +194,7 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
         "createOperationDocumented": create,
         "parentIdParameterDocumented": parent,
         "createContractDocumented": create_attested,
+        "inspectionStatus": "checked",
         "gapCodes": gaps,
     }
 
@@ -463,7 +475,13 @@ async def read_native_rule_readiness(
     )
     timestamp, count, backup_gap = _backup_timestamp(backup)
     guide_availability: dict[str, bool] = {}
-    contract = _guide_contract_projection(None)
+    # A guide may be readable without its dated schema being documented.
+    # Keep "not inspected" separate from "guide unavailable".
+    contract = {
+        **_guide_contract_projection(None),
+        "inspectionStatus": "not-inspected",
+        "gapCodes": [],
+    }
     for section in _GUIDES:
         result = await get(
             "hub_get_tool_guide", {"section": section},
@@ -479,7 +497,10 @@ async def read_native_rule_readiness(
             isinstance(content, str) and len(content) > 0
             and bool(marker.search(content))
         )
-        if section == "set_rule_reference" and (want_date or want_create):
+        if section == "set_rule_reference":
+            # Already retrieved as part of the baseline three-source preflight.
+            # Inspect without an additional hub request or publishing the
+            # guide's acknowledgement token and private text.
             contract = _guide_contract_projection(
                 content if guide_availability[section] else None
             )
