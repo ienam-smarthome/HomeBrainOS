@@ -72,6 +72,8 @@ def test_exact_live_retry_stays_an_exclusive_native_date_read_intent():
     "Status of my automations",
     "How many rules are active?",
     "Recommend useful automations for my home",
+    "recommend which of my automations need fixing",
+    "Review which of my rules have problems",
 ])
 def test_genuine_broad_status_and_ideas_queries_still_route_fast(prompt):
     assert AutomationStatusService.matches_request(prompt) is True
