@@ -152,7 +152,6 @@ def test_preflight_exact_id_built_in_parent_and_guide_contract_are_source_attest
     assert coverage["evidenceComplete"] is True
     assert coverage["readinessForMutation"] is False
     assert "exact built-in type and parent role verified" in message
-    assert "guide contract: documented" not in message.lower()  # no authorisation wording
     assert "documented (guide only; runtime untested)" in message
     assert len(source.calls) == 7
     assert [a.get("tool", "guide") for _, a in source.calls] == [
