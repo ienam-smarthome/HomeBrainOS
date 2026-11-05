@@ -149,6 +149,10 @@ def test_preflight_exact_id_built_in_parent_and_guide_contract_are_source_attest
     }
     assert details["nativeDatedFieldGuideAttested"] is True
     assert details["nativeCreateContractGuideAttested"] is True
+    assert details["nativeGuideContract"]["typedTriggerFields"] == {
+        "time#": "enum", "atTime#": "time",
+        "date#": "bool", "atDate#": "date",
+    }
     assert coverage["evidenceComplete"] is True
     assert coverage["readinessForMutation"] is False
     assert "exact built-in type and parent role verified" in message
