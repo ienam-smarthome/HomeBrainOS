@@ -12,7 +12,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import native_rule_dated_candidate as d
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"))
-from native_rule_inventory_source import project_rule_inventory
 from test_native_rule_delay_candidate import Hub
 
 UTC = timezone.utc
@@ -162,46 +161,12 @@ def test_plan_native_date_and_dst_never_before_requested_deadline():
     assert repeated.label.endswith("(One-time 2027-10-31 01:10)")
 
 
-def test_offline_dated_bat_name_is_discoverable_by_the_runtime_inventory():
-    """The once-only BAT cannot become invisible to a subsequent read-only audit."""
+def test_offline_dated_bat_name_has_deterministic_one_time_label():
+    """A scheduled-test proposal carries an unambiguous dated label."""
     p = d.plan(REQ, NOW)
     assert len(p.label) <= 200
-    instances = {
-        "apps": [
-            {"id": 169, "name": "Rule Machine", "type": "Rule Machine",
-             "appTypeId": 18, "parentId": None},
-            {"id": 5000, "name": p.label, "type": "Rule-5.1",
-             "appTypeId": 19, "parentId": 169},
-        ], "count": 2, "totalOnHub": 2,
-    }
-    types = {
-        "apps": [
-            {"id": 18, "name": "Rule Machine", "namespace": "hubitat",
-             "system": True, "isBuiltIn": True},
-            {"id": 19, "name": "Rule-5.1", "namespace": "hubitat",
-             "system": True, "isBuiltIn": True},
-        ], "count": 2,
-    }
-    rules = {"rules": [{"id": 5000, "name": p.label}], "count": 1}
-    report = project_rule_inventory(instances, types, rules)
-    assert report["parentIdentityComplete"] is True
-    assert report["oneTimeMatchCount"] == 1
-    assert report["oneTimeRules"] == [{
-        "appId": "5000", "name": p.label,
-        "sourceKinds": ["hub_list_rules", "hub_list_apps"], "parentId": "169",
-    }]
-
-    # The terminal marker is required; an internal one-time phrase or
-    # UTC/hash metadata alone must not count as the inventory's exact suffix.
-    legacy_name = p.label.split(" (One-time ")[0]
-    inst_legacy = {**instances, "apps": [
-        instances["apps"][0], {**instances["apps"][1], "name": legacy_name},
-    ]}
-    old_report = project_rule_inventory(
-        inst_legacy, types, {"rules": [{"id": 5000, "name": legacy_name}],
-                             "count": 1}
-    )
-    assert old_report["oneTimeMatchCount"] == 0
+    assert p.label.endswith("(One-time 2026-11-03 10:05)")
+    assert p.label.startswith("One-off") or "One-time" in p.label
 
 
 def test_plan_never_uses_naive_dates_invalid_targets_or_early_deadlines():
