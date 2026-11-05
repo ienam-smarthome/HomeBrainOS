@@ -446,6 +446,21 @@ def calibrate_rule_design_review(
         + " Typed source confirmation is required before any new rule "
           "is authorised.\n\n"
     )
+    if native_contract_review:
+        # Model prose can already contain a generic controller/device
+        # disclaimer. Replace it rather than leaving an irrelevant warning
+        # in a contract-only review.
+        text = re.sub(
+            r"(?m)^\*\*Evidence qualification:\*\*[^\n]*(?:\n(?!\n)[^\n]*)*",
+            lambda _match: provenance.strip(),
+            text, count=1,
+        )
+        text = re.sub(
+            r"(?ms)^### Rule design feasibility gate \(read-only\)\n.*?"
+            r"(?=^### |\Z)",
+            lambda _match: _NATIVE_CONTRACT_SAFETY_NOTE.strip() + "\n",
+            text,
+        )
     if not typed_details_verified and "**Evidence qualification:**" not in text:
         # Keep the existing review/no-write banner as the first line.
         leading = re.match(
