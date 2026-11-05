@@ -41,6 +41,7 @@ from request_metrics import add_active_metric_ms, increment_active_metric
 from source_evidence_metadata import source_read_metadata
 from existing_rule_page_evidence import existing_rule_page_metadata
 from app_class_identity_receipt import project_app_class_identity_receipt
+from app_identity_inventory_evidence import project_app_inventory_page
 from tool_registry import ToolEffect, classify_tool_effect, LOCAL_HUB_INFO_TOOL
 
 
@@ -699,9 +700,11 @@ class ToolExecutor:
                         logger.warning("Historical journal read-through unavailable")
             if record_evidence:
                 identity_details = (
-                    project_app_class_identity_receipt(
+                    (project_app_class_identity_receipt(
                         name, receipt_arguments, result.data,
-                    )
+                    ) or project_app_inventory_page(
+                        name, receipt_arguments, result.data,
+                    ))
                     if success and not effect.mutates else None
                 )
                 self.evidence.record(
@@ -712,7 +715,11 @@ class ToolExecutor:
                     summary=self.result_summary(result),
                     supports_live_claim=bool(supports_live_claim and success),
                     evidence_kind=(
-                        ("typed_app_class_identity"
+                        ("typed_app_inventory_page"
+                         if identity_details.get("inventoryScope") == "instances"
+                         else "typed_app_type_catalog_page"
+                         if identity_details.get("inventoryScope") == "types"
+                         else "typed_app_class_identity"
                          if "appTypeId" in identity_details
                          else "typed_app_instance_metadata")
                         if identity_details is not None
