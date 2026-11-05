@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.405**.
+Current add-on version: **0.18.406**.
+
+**Q2 typed app-instance metadata receipts (v0.18.406):** The first installed v0.18.405 live Rule Machine parent-identity test correctly used the dedicated `app_class_identity` objective and kept native parent certification unresolved (22.568s, 5 Gemma rounds, 3 read calls). However, its public field-name-only receipts did not independently expose the reported app ID/type, label, namespace, root/system status or child-page count claimed in the answer. A target-ID-matched `hub_get_app_config` read now records only bounded safe source-reported app metadata in a typed receipt; this verifies the observed instance/type fields when supplied but **never** certifies the native built-in class mapping, authorizes creation, or adds model/tool calls. Live post-update acceptance remains unmeasured. [Release notes](CHANGELOG-0.18.406.md).
 
 **Q2 native app-class identity scope (v0.18.405):** Independent verification of an installed app's native parent/type relationship is now a separate read-only investigation objective from verifying a rule's action tree. Generic successful field-name reads cannot prove a native class mapping; the existing-rule publisher no longer replaces identity explanations with unrelated trigger, delay and inactivity-OFF boilerplate. No writer permissions changed. The observed pre-update v0.18.404 identity run was unresolved at 33.825s/7 Gemma rounds; an after-update live run is still required. [Release notes](CHANGELOG-0.18.405.md).
 

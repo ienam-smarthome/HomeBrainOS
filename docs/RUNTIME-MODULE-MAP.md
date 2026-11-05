@@ -9,6 +9,7 @@ The repository drift test compares this table directly with the live directory. 
 | `agent_prompt_policy.py` | Builds the system prompt and optional identity manifests. |
 | `aggregate_fallback_policy.py` | Keeps generic value/valueStr aggregate fallbacks request-local and suppresses them after complete non-empty canonical meter evidence. |
 | `api_response_builder.py` | Builds the stable API response and presented metrics. |
+| `app_class_identity_receipt.py` | Projects bounded, target-matched app instance/type metadata from successful read-only MCP app configuration without certifying the native built-in class binding. |
 | `app.py` | Owns FastAPI routes, configuration, shared services, and request coordination. |
 | `automation_diagnostic_policy.py` | Distinguishes fast configuration inventories from evidence-first, read-only runtime automation investigation and model synthesis. |
 | `automation_ideas_service.py` | Asks the model for grounded, creative new-automation suggestions (never factual claims). |
