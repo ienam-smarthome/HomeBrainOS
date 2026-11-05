@@ -307,7 +307,7 @@ def test_unsupported_native_certification_replaced_from_matching_summary_receipt
     assert "name 'Rule Machine'" in fixed
     assert "user=false" in fixed
     assert "appTypeId=18" not in fixed
-    assert "built-in Rule Machine parent" in fixed
+    assert "built-in application parent" in fixed
 
 
 def test_calibrated_model_answer_is_preserved():
