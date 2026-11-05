@@ -741,11 +741,12 @@ def apply_shared_investigation_completion(
             coverage["appIdentityPublication"] = {
                 "nativeCertification": "not-independently-verified",
                 "sourceProjection": "only-target-matched-typed-read-receipts",
+                "mode": "bounded-source-identity-publication",
                 "modelProseReplaced": True,
             }
             metrics["outcome"] = "unresolved"
             metrics.setdefault("counters", {})[
-                "app_identity_overclaim_reconciled"
+                "app_identity_source_publications"
             ] = 1
     message, historical_window = calibrate_historical_incident_answer(
         request, evidence, message, causal=causal,
