@@ -426,12 +426,18 @@ def calibrate_rule_design_review(
             "cannot verify hub time zone, settings, device identity or "
             "native authoring schema.\n\n", text,
         )
+    guide_checked = any(
+        row.get("success") is True and _source_operation(row)[0] == "hub_get_tool_guide"
+        for row in receipts if isinstance(row, dict)
+    )
     provenance = (
         "**Evidence qualification:** "
         + (
             "This is a native authoring-contract review, not a device or "
-            "installed-rule configuration audit. Guide access was recorded, "
-            "but typed dated-trigger/action field proof and scheduler "
+            "installed-rule configuration audit. "
+            + ("Guide access was recorded, " if guide_checked else
+               "No successful guide read was recorded, ")
+            + "but typed dated-trigger/action field proof and scheduler "
             "execution are not source-attested by the receipts. "
             if native_contract_review else
             "Targeted device and app configuration reads were recorded, "
