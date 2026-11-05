@@ -40,6 +40,7 @@ from reasoning_policy import (
 from request_metrics import add_active_metric_ms, increment_active_metric
 from source_evidence_metadata import source_read_metadata
 from existing_rule_page_evidence import existing_rule_page_metadata
+from app_class_identity_receipt import project_app_class_identity_receipt
 from tool_registry import ToolEffect, classify_tool_effect, LOCAL_HUB_INFO_TOOL
 
 
@@ -697,6 +698,12 @@ class ToolExecutor:
                     except (OSError, ValueError, TypeError, AttributeError):
                         logger.warning("Historical journal read-through unavailable")
             if record_evidence:
+                identity_details = (
+                    project_app_class_identity_receipt(
+                        name, receipt_arguments, result.data,
+                    )
+                    if success and not effect.mutates else None
+                )
                 self.evidence.record(
                     name,
                     receipt_arguments,
@@ -704,11 +711,17 @@ class ToolExecutor:
                     elapsed_ms=elapsed_ms,
                     summary=self.result_summary(result),
                     supports_live_claim=bool(supports_live_claim and success),
-                    evidence_kind=evidence_kind,
+                    evidence_kind=(
+                        "typed_app_class_identity"
+                        if identity_details is not None
+                        and evidence_kind == "tool_result"
+                        else evidence_kind
+                    ),
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,
                     details=(source_read_metadata(name, receipt_arguments, result.data)
                              or existing_rule_page_metadata(name, receipt_arguments, result.data)
+                             or identity_details
                              or self.result_details(result)),
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
