@@ -51,39 +51,200 @@ def is_native_rule_readiness_question(question: str) -> bool:
     return sum((version, backup, guide)) >= 2
 
 
-def _extra_requested_checks(question: str) -> tuple[bool, bool, bool]:
-    """Additional read-only proof obligations beyond the core 3-source preflight."""
+def _extra_requested_checks(question: str) -> tuple[bool, bool, bool, bool, bool]:
+    """Independent preflight obligations; prohibitions never grant write intent."""
     q = str(question or "")
+    positive = " ".join(
+        part for part in re.split(r"[\n.!?]+", q)
+        if not re.match(r"^\s*(?:do not|don't|never|without|no)\b", part, re.I)
+    )
     version_comparison = bool(re.search(
         r"\bhub_get_info\b|(?:serverInfo|initialize)[^\n.]{0,100}"
-        r"(?:agree|match|compare|cross.check)", q, re.I,
+        r"(?:agree|match|compare|cross.check)", positive, re.I,
     ))
     dated_contract = bool(re.search(
         r"atDate#|Certain Time\s*\(and optional date\)|"
-        r"\bdated\b[^\n.]{0,85}\b(?:trigger|one.time|rule)\b|"
-        r"\bdate[\s-]*field\b", q, re.I,
+        r"\bdated[ -]?trigger\b|\bdate[\s-]*(?:field|format)\b",
+        positive, re.I,
     ))
     readback = dated_contract and bool(re.search(
         r"\bread[\s-]*back\b|\bpersisted\b|\b(saved|stored)\s+date\b",
-        q, re.I,
+        positive, re.I,
     ))
-    return version_comparison, dated_contract, readback
+    parent = bool(re.search(
+        r"\b(?:verify|confirm|inspect|check|establish|identify|validate)\b"
+        r"[^\n.]{0,160}\b(?:native\s+)?(?:Rule Machine\s+)?parent\b|"
+        r"\bparent\s+(?:app\s+)?(?:identity|verification)\b",
+        positive, re.I,
+    ))
+    authoring_contract = bool(re.search(
+        r"\b(?:create|creating|creation|authoring|supported creation operations)\b",
+        positive, re.I,
+    ) and re.search(
+        r"\b(?:dated[ -]?trigger|one[ -]?time|certain time|date format)\b",
+        positive, re.I,
+    ))
+    return version_comparison, dated_contract, readback, parent, authoring_contract
 
 
-def _guide_dated_field_attestation(content: Any) -> bool:
-    """Only an explicit date *field* declaration attests documentation.
+def _requested_parent_id(question: str) -> str | None:
+    """Only an unambiguous explicit app ID; never guess the user's parent."""
+    found = set(re.findall(
+        r"\b(?:app(?:lication)?|parent\s+app)\s*(?:id\s*)?[:#]?\s*"
+        r"([1-9][0-9]{0,8})\b", question or "", re.I,
+    ))
+    return next(iter(found)) if len(found) == 1 else None
 
-    Generic 'date supported' or a release version is insufficient; neither
-    a guide nor this check attests persisted state or allows a rule write.
-    """
-    if not isinstance(content, str) or len(content) > 50000:
-        return False
-    return bool(
-        re.search(r"atDate#", content, re.I)
-        and re.search(r"(?i)\btype\s*[:=]\s*[\"']?date\b", content)
-        and re.search(r"yyyy-MM-dd|YYYY-MM-DD", content)
-        and not re.search(r"(?i)atDate#[^\n]{0,100}supported\s*[:=]\s*false", content)
+
+def _guide_contract_projection(content: Any) -> dict[str, Any]:
+    """Safe structural guide diagnostics, never publish guide text or tokens."""
+    empty = {
+        "atDateNamed": False, "atDateTypeDateDeclared": False,
+        "dateFormatDeclared": False, "documentedDateFormat": None,
+        "nativeDateFieldGuideAttested": False,
+        "namedTriggerFields": [], "certainTimeTriggerNamed": False,
+        "createOperationDocumented": False, "parentIdParameterDocumented": False,
+        "createContractDocumented": False, "gapCodes": [],
+    }
+    if not isinstance(content, str) or not 0 < len(content) <= 50000:
+        return {**empty, "gapCodes": ["guide_unavailable_or_oversized"]}
+    has_field = bool(re.search(r"atDate#", content, re.I))
+    date_declaration = re.compile(
+        r"""(?i)\b(?:type|inputType|fieldType)\s*["']?\s*[:=]\s*["']?date\b"""
     )
+    # A declaration for another unrelated field is not an atDate# contract.
+    typed = has_field and any(
+        date_declaration.search(content[max(0, m.start()-220):m.end()+220])
+        is not None
+        for m in re.finditer(r"atDate#", content, re.I)
+    )
+    fmt = bool(re.search(r"yyyy-MM-dd", content, re.I))
+    explicit_refusal = bool(re.search(
+        r"(?i)atDate#[^\n]{0,100}supported\s*[:=]\s*false", content,
+    ))
+    named = [name for name in ("time#", "atTime#", "date#", "atDate#")
+             if re.search(re.escape(name), content, re.I)]
+    certain = bool(re.search(
+        r"Certain Time\s*\(and optional date\)", content, re.I,
+    ))
+    create = bool(
+        re.search(r"\bhub_set_rule\b", content, re.I)
+        and re.search(
+            r"""(?i)\boperation\s*["']?\s*[:=]\s*["']?create\b""",
+            content,
+        )
+    )
+    parent = bool(re.search(r"\b(?:parent_id|parentId)\b", content))
+    date_attested = has_field and typed and fmt and not explicit_refusal
+    create_attested = bool(
+        date_attested and certain and create and parent and len(named) == 4
+    )
+    gaps = []
+    for missing, code in (
+        (not has_field, "atdate_field_not_named"),
+        (not typed, "atdate_input_type_not_declared"),
+        (not fmt, "date_format_not_declared"),
+        (explicit_refusal, "atdate_explicitly_unsupported"),
+        (not certain, "certain_time_trigger_not_named"),
+        (not create, "native_create_operation_not_documented"),
+        (not parent, "parent_id_parameter_not_documented"),
+        (len(named) != 4, "required_trigger_field_names_incomplete"),
+    ):
+        if missing:
+            gaps.append(code)
+    return {
+        **empty,
+        "atDateNamed": has_field,
+        "atDateTypeDateDeclared": bool(typed),
+        "dateFormatDeclared": fmt,
+        "documentedDateFormat": "yyyy-MM-dd" if fmt else None,
+        "nativeDateFieldGuideAttested": bool(date_attested),
+        "namedTriggerFields": named,
+        "certainTimeTriggerNamed": certain,
+        "createOperationDocumented": create,
+        "parentIdParameterDocumented": parent,
+        "createContractDocumented": create_attested,
+        "gapCodes": gaps,
+    }
+
+
+def _native_parent_projection(
+    requested_id: str, instances: Any, types: Any,
+    summary: Any, config: Any,
+) -> dict[str, Any]:
+    """Attest exact built-in type join plus independently observed parent role.
+
+    Reuses the same Hubitat app/type evidence contract as native inventory,
+    without publishing unrelated application names or child-app details.
+    """
+    result: dict[str, Any] = {
+        "appId": requested_id, "verified": False, "appTypeId": None,
+        "childRowsObserved": 0, "failureCode": "source_unavailable",
+    }
+    if not (isinstance(instances, dict) and isinstance(types, dict)
+            and isinstance(instances.get("apps"), list)
+            and isinstance(types.get("apps"), list)):
+        return result
+    def ident(value: Any) -> str | None:
+        if type(value) not in (int, str):
+            return None
+        s = str(value)
+        return s if re.fullmatch(r"[1-9][0-9]{0,8}", s) else None
+
+    rows = [row for row in instances["apps"]
+            if isinstance(row, dict) and ident(row.get("id")) == requested_id]
+    if len(rows) != 1:
+        result["failureCode"] = "app_id_missing_or_ambiguous"
+        return result
+    row = rows[0]
+    typ = ident(row.get("appTypeId"))
+    if (not typ or row.get("name") != "Rule Machine"
+            or row.get("type") != "Rule Machine"
+            or row.get("user") is not False
+            or "parentId" not in row or row["parentId"] is not None):
+        result["failureCode"] = "installed_app_identity_unverified"
+        return result
+    result["appTypeId"] = typ
+    matched = [item for item in types["apps"]
+               if isinstance(item, dict) and ident(item.get("id")) == typ]
+    if len(matched) != 1:
+        result["failureCode"] = "native_type_id_missing_or_ambiguous"
+        return result
+    item = matched[0]
+    if (item.get("name") != "Rule Machine"
+            or item.get("namespace") not in (None, "", "hubitat")
+            or item.get("system") is not True
+            or item.get("isBuiltIn") is not True):
+        result["failureCode"] = "native_type_conflict_or_unverified"
+        return result
+    if not (isinstance(summary, dict) and summary.get("success") is True):
+        result["failureCode"] = "app_summary_unavailable"
+        return result
+    meta = summary.get("app") if isinstance(summary.get("app"), dict) else summary
+    if (ident(meta.get("id")) != requested_id
+            or meta.get("type") != "Rule Machine"
+            or meta.get("namespace") != "hubitat"
+            or meta.get("user") is not False
+            or (ident(meta["appTypeId"]) != typ
+                if meta.get("appTypeId") is not None else False)):
+        result["failureCode"] = "app_summary_identity_conflict"
+        return result
+    if not (isinstance(config, dict) and config.get("success") is True
+            and isinstance(config.get("app"), dict)):
+        result["failureCode"] = "parent_config_unavailable"
+        return result
+    root = config["app"]
+    children = config.get("childApps")
+    if (ident(root.get("id")) != requested_id
+            or "parentAppId" not in root or root["parentAppId"] is not None
+            or not isinstance(children, list) or not children
+            or any(not isinstance(child, dict) for child in children)):
+        result["failureCode"] = "parent_role_unverified"
+        return result
+    result.update(verified=True, childRowsObserved=min(len(children), 5000),
+                  failureCode=None)
+    return result
+
 
 
 def _server_version(mcp: Any) -> str | None:
