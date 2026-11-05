@@ -101,7 +101,7 @@ def _motion_scope(request: str, answer: str) -> bool:
 
 _GENERIC_SAFETY_NOTE = (
     "\n\n### Rule design feasibility gate (read-only)\n"
-    "**Native rule creation remains unverified.** An inventory and a "
+    "**Native rule creation is not yet validated.** An inventory and a "
     "read-only guide acknowledgment do not establish an installed "
     "trigger/action field schema or safe executable payload. Confirm "
     "the precise types, time zone, parent ID, backup, guide key and "
