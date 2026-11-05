@@ -64,6 +64,13 @@ def _requested_offset(question: str) -> int:
     return value if 0 <= value <= 500 else 0
 
 
+def _has_explicit_rule_id_list(question: str) -> bool:
+    return bool(re.search(
+        r"\b(?:rule\s+ids?|rules?)\s*[:#]?\s*(?=[0-9-])",
+        str(question or ""), re.I,
+    ))
+
+
 def _requested_rule_ids(question: str) -> list[str]:
     """Explicit rule IDs only, not dates, trigger numbers or incidental counts.
 
@@ -174,6 +181,43 @@ async def read_existing_dated_triggers(
 ) -> tuple[str, dict[str, Any]]:
     """At most four inventory pages and twelve approved native *read* calls."""
     offset = _requested_offset(question)
+    requested_ids = _requested_rule_ids(question)
+    # Never silently turn an invalid/excessive explicit-ID request into an
+    # offset-zero scan of unrelated native Rule Machine documents.
+    if _has_explicit_rule_id_list(question) and not requested_ids:
+        details = {
+            "source": "hub_list_apps children + hub_set_rule:read",
+            "scanMode": "invalid-target-rule-ids",
+            "requestedRuleIds": [],
+            "inventoryPagesRead": 0,
+            "inventoryPageTraversalComplete": False,
+            "eligibleVisibleNativeRules": 0,
+            "scanOffset": None,
+            "scanLimit": 0,
+            "scannedRuleIds": [],
+            "nativeReadGatewayAvailable": False,
+            "savedDatedFieldReadbackVerified": False,
+            "verifiedDatedRules": [],
+            "moreCandidatesMayExist": True,
+            "absenceProven": False,
+            "readinessForMutation": False,
+        }
+        recorder.record(
+            "homebrain_native_dated_trigger_discovery", {},
+            success=True, elapsed_ms=0, effect="read", mutates=False,
+            supports_live_claim=False,
+            evidence_kind="typed_native_dated_trigger_discovery",
+            summary="Invalid or excessive explicit native rule IDs; no reads",
+            details=details,
+        )
+        return (
+            "**Existing native dated-trigger discovery — read-only**\n\n"
+            "The explicit rule-ID list is invalid, duplicated or exceeds "
+            "four unique positive IDs. No Hubitat inventory, native "
+            "document or modifying calls were attempted. "
+            "Provide one to four exact native rule IDs to retry.",
+            details,
+        )
     seen_ids: set[str] = set()
     candidates: list[dict[str, str]] = []
     pages_read = 0
@@ -221,7 +265,6 @@ async def read_existing_dated_triggers(
             cursor = next_cursor
 
     candidates.sort(key=lambda row: int(row["id"]))
-    requested_ids = _requested_rule_ids(question)
     targeted = bool(requested_ids)
     candidate_by_id = {candidate["id"]: candidate for candidate in candidates}
     missing_ids = [rid for rid in requested_ids if rid not in candidate_by_id]
