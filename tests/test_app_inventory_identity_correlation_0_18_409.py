@@ -289,6 +289,10 @@ def test_live_0410_hub_shape_source_proves_builtin_parent_not_writes():
         "Investigate if Rule Machine app instance 169 is the native "
         "built-in parent. Do not create or change rules."
     )
+    # Natural 'native built-in parent' language must route to the
+    # identity objective, not a generic or rule-writing audit.
+    from targeted_rule_scope_policy import is_app_class_identity_question
+    assert is_app_class_identity_question(request) is True
     observed = build_observed_agent_outcome(
         agent, {"outcome": "unresolved", "counters": {}, "timings_ms": {}},
     )
