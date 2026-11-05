@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from app_class_identity_receipt import reconcile_app_class_identity_answer
+from app_identity_inventory_evidence import match_app_inventory_receipts
 import re
 from typing import Any
 
@@ -734,6 +735,38 @@ def apply_shared_investigation_completion(
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
     if domain == "app_class_identity":
+        # Correlate only a single explicitly named target. Inventory pages
+        # without the target or a usable numeric type ID cannot certify it.
+        target_ids = set(re.findall(
+            r"(?i)\b(?:app(?:lication)?(?:\s+instance)?|instance)"
+            r"\s*(?:id\s*)?#?\s*([1-9][0-9]{0,8})\b",
+            request,
+        ))
+        catalog = (
+            match_app_inventory_receipts(evidence, next(iter(target_ids)))
+            if len(target_ids) == 1 else None
+        )
+        if catalog is not None:
+            observed_id = (
+                catalog["instanceTypeId"] is not None
+                and not catalog["instanceTypeIdConflict"]
+            )
+            coverage["appIdentityCorrelation"] = {
+                "appId": catalog["appId"],
+                "sourceTypeId": catalog["instanceTypeId"],
+                "instanceTypeIdObserved": observed_id,
+                "typeIdJoinObserved": catalog["typeIdJoinObserved"],
+                "nativeClassBindingVerified": False,
+            }
+            if observed_id:
+                for requirement in coverage.get("requirements") or []:
+                    if (isinstance(requirement, dict)
+                            and requirement.get("key") == "instance_identity"):
+                        requirement["state"] = "observed"
+                coverage["nextMissingSources"] = [
+                    x for x in coverage.get("nextMissingSources") or []
+                    if x != "target-matched typed app inventory or app configuration"
+                ]
         message, recalibrated = reconcile_app_class_identity_answer(
             message, evidence, coverage, request,
         )

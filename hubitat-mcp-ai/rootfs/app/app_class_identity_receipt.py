@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app_identity_inventory_evidence import match_app_inventory_receipts
+
 
 _ID = re.compile(r"[1-9][0-9]{0,8}\Z")
 _NAMESPACE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,39}\Z")
@@ -239,6 +241,18 @@ def reconcile_app_class_identity_answer(
             observed = []
     if target is not None:
         observed = [d for d in observed if d["appId"] == target]
+    correlation = match_app_inventory_receipts(receipts, target)
+    if correlation is not None:
+        for instance_row in correlation["inventoryInstanceRows"]:
+            projected = {
+                "appId": correlation["appId"],
+                "identitySource": "target-matched installed-app inventory",
+                "nativeClassBindingVerified": False,
+            }
+            for key in ("reportedName", "reportedType", "reportedUser", "appTypeId"):
+                if key in instance_row:
+                    projected[key] = instance_row[key]
+            observed.append(projected)
 
     subject = ("App " + target) if target else "The requested app"
     if not observed:
@@ -315,6 +329,53 @@ def reconcile_app_class_identity_answer(
         else:
             disputed.append("returned child-app row count")
 
+    catalog_note = ""
+    if correlation is not None:
+        if correlation["instanceTypeIdConflict"]:
+            disputed.append("inventory appTypeId")
+        elif correlation["instanceTypeId"] is not None:
+            type_id = correlation["instanceTypeId"]
+            matches = correlation["matchedTypeRows"]
+            if matches:
+                catalog_bits = [f"type-catalog id={type_id}"]
+                for key, name in (
+                    ("reportedTypeName", "name"),
+                    ("reportedNamespace", "namespace"),
+                ):
+                    yes, val, conflict = _source_value(matches, key)
+                    if conflict:
+                        disputed.append("catalog " + name)
+                    elif yes and (safe := _safe_label(val)) is not None:
+                        catalog_bits.append(f"{name} {safe!r}")
+                for key, name in (
+                    ("reportedSystem", "system"),
+                    ("reportedIsBuiltIn", "isBuiltIn"),
+                ):
+                    yes, val, conflict = _source_value(matches, key)
+                    if conflict:
+                        disputed.append("catalog " + name)
+                    elif yes and type(val) is bool:
+                        catalog_bits.append(f"{name}={str(val).lower()}")
+                catalog_note = (
+                    "\n\n**Exact ID catalog correlation:** "
+                    + ", ".join(catalog_bits)
+                    + ". This is an observed ID match across reported "
+                      "inventory/type records, not independent native parent "
+                      "or rule-writer authorization."
+                )
+            else:
+                catalog_note = (
+                    "\n\n**Type-catalog correlation:** The instance inventory "
+                    f"reports appTypeId={type_id}, but no matching ID was "
+                    "observed in the returned filtered catalog pages. "
+                    "Partial reads do not establish that the type is absent."
+                )
+        else:
+            catalog_note = (
+                "\n\n**Type-catalog correlation:** The matching installed-app "
+                "inventory row did not provide a consistent numeric appTypeId."
+            )
+
     text = (
         f"**{subject} — source-reported identity:** "
         + (", ".join(facts) + "." if facts else
@@ -325,6 +386,7 @@ def reconcile_app_class_identity_answer(
             " Conflicting reads for " + ", ".join(disputed)
             + " were not treated as established facts."
         )
+    text += catalog_note
     text += (
         "\n\n**Native class/parent verification: unresolved.** "
         "These are reported fields from a target-matched read, not an "
