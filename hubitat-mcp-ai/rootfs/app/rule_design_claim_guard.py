@@ -227,27 +227,27 @@ def calibrate_rule_design_review(
     # A model's "upstream-tested facts" and READY conclusion are not
     # substitutes for a typed, source-attested native operation contract.
     text, _ = _SCHEMA_HEADING.subn(
-        "### Native authoring schema — unverified\\n"
+        "### Native authoring schema — unverified\n"
         "The current read receipts do not certify typed trigger/action "
         "fields, date/time formats, optional year conditions or native "
-        "runtime semantics. Treat any model-reported format as unverified.\\n\\n",
+        "runtime semantics. Treat any model-reported format as unverified.\n\n",
         text,
     )
     text, _ = _READY_HEADING.subn(
-        "### Readiness assessment — unverified\\n"
+        "### Readiness assessment — unverified\n"
         "The native authoring contract is not source-verified, so this "
         "proposal is NOT READY for an executable test and no rule "
-        "creation is authorised.\\n\\n",
+        "creation is authorised.\n\n",
         text,
     )
     text = _JSON_CODE.sub(_strip_unverified_json, text)
     # Standalone positive READY claims are also unsupported.
     text = re.sub(
-        r"(?im)^[^\\n]*(?:\\bplan\\b[^\\n]{0,80}\\bREADY\\b|"
-        r"\\bREADY\\b[^\\n]{0,80}\\bfor\\b[^\\n]{0,80}"
-        r"\\b(?:test|creation|implementation)\\b)[^\\n]*$",
+        r"(?im)^[^\n]*(?:\bplan\b[^\n]{0,80}\bREADY\b|"
+        r"\bREADY\b[^\n]{0,80}\bfor\b[^\n]{0,80}"
+        r"\b(?:test|creation|implementation)\b)[^\n]*$",
         lambda m: m.group(0) if re.search(
-            r"(?i)\\b(?:not|unverified|never)\\s+ready\\b",
+            r"(?i)\b(?:not|unverified|never)\s+ready\b",
             m.group(0),
         ) else "**Readiness unverified: no authorised native write.**",
         text,
