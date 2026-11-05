@@ -35,7 +35,7 @@ certification, and it kept native parent identity **unresolved**.
   configuration, settings, page HTML, child labels, secret-looking values or
   arbitrary tool text in public receipts.
 - Mark such a record as typed_app_class_identity, enabling the existing
-  source-coverage contract to distinguish verified **reported instance
+  source-coverage contract to distinguish **observed reported instance
   identity** from still-unverified **independent native class binding**.
 - Explicitly set nativeClassBindingVerified=false. Neither an app's
   self-reported type name, namespace=hubitat, system=true,
