@@ -217,9 +217,8 @@ def reconcile_app_class_identity_answer(
         entry.get("state") for entry in requirements
         if isinstance(entry, dict) and entry.get("key") == "native_class_binding"
     ), None)
-    if native_state == "observed" and coverage.get("evidenceComplete") is True:
-        return draft, False
-
+    # Even a positive cross-source identity finding must be presented from
+    # the typed receipts. Do not return an unverified model-only assertion.
     target_ids = set(_EXPLICIT_APP_ID.findall(str(request or "")))
     if len(target_ids) > 1:
         output = (
@@ -359,9 +358,14 @@ def reconcile_app_class_identity_answer(
                 catalog_note = (
                     "\n\n**Exact ID catalog correlation:** "
                     + ", ".join(catalog_bits)
-                    + ". This is an observed ID match across reported "
-                      "inventory/type records, not independent native parent "
-                      "or rule-writer authorization."
+                    + (
+                        ". The source-reported instance is matched to this "
+                        "built-in app type by its numeric ID, with both system "
+                        "and isBuiltIn explicitly true."
+                        if correlation["nativeClassBindingVerified"]
+                        else ". This is a source-reported ID match, not "
+                             "independent built-in classification."
+                    )
                 )
             else:
                 catalog_note = (
@@ -387,15 +391,36 @@ def reconcile_app_class_identity_answer(
             + " were not treated as established facts."
         )
     text += catalog_note
-    text += (
-        "\n\n**Native class/parent verification: unresolved.** "
-        "These are reported fields from a target-matched read, not an "
-        "authoritative binding between an instance, its app-type definition "
-        "and a built-in native class. Child-app rows do not prove their "
-        "types or the total installed rule count. "
-        "A complete source-attested instance-to-type-to-native-class "
-        "mapping is still required before certifying a native parent."
-    )
+    if correlation is not None and correlation["nativeClassBindingVerified"]:
+        text += (
+            "\n\n**Native built-in app-type identity: verified by the "
+            "source-reported numeric ID and Hubitat type catalog.** "
+        )
+        if correlation["nativeParentRoleObserved"]:
+            text += (
+                "The same target is reported as a root app with child-app "
+                "rows, supporting its parent role. "
+            )
+        else:
+            text += (
+                "Its individual parent/child role is not yet supported by "
+                "the required target-matched read-only records. "
+            )
+        text += (
+            "**Rule Machine writing remains unverified and unauthorized.** "
+            "A verified built-in type is not a validated native authoring "
+            "contract. Child-app rows do not prove child types or the "
+            "complete number of installed rules."
+        )
+    else:
+        text += (
+            "\n\n**Native class/parent verification: unresolved.** "
+            "The returned metadata do not establish a consistent "
+            "source-attested built-in app-type identity. Child-app rows "
+            "do not prove their types or the total installed rule count. "
+            "A validated instance-to-type-to-built-in-class binding "
+            "is still required before certifying native identity."
+        )
     return text, text != draft
 
 
