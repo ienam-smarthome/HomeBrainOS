@@ -289,7 +289,7 @@ def native_rule_readiness_coverage(
 ) -> dict[str, Any] | None:
     if not is_native_rule_readiness_question(question):
         return None
-    want_version, want_date, want_readback = _extra_requested_checks(question)
+    want_version, want_date, want_readback, want_parent, want_create = _extra_requested_checks(question)
     for item in reversed(evidence):
         if (not isinstance(item, dict)
                 or item.get("evidence_kind") != "typed_native_rule_readiness"
@@ -305,12 +305,16 @@ def native_rule_readiness_coverage(
         preflight_complete = d.get("preflightEvidenceComplete") is True
         version_ok = d.get("mcpVersionAgreement") is True
         guide_date_ok = d.get("nativeDatedFieldGuideAttested") is True
+        parent_ok = (d.get("nativeParentIdentity") or {}).get("verified") is True
+        create_ok = (d.get("nativeCreateContractGuideAttested") is True)
         readback_ok = d.get("nativeDatedDateReadbackVerified") is True
         complete = (
             preflight_complete
             and (not want_version or version_ok)
             and (not want_date or guide_date_ok)
             and (not want_readback or readback_ok)
+            and (not want_parent or parent_ok)
+            and (not want_create or create_ok)
         )
         checks = [
             ("mcp_server_version", d.get("mcpServerVersion") is not None,
@@ -333,6 +337,16 @@ def native_rule_readiness_coverage(
                 "native_dated_field_guide", guide_date_ok,
                 "installed set_rule_reference explicit atDate# date declaration",
             ))
+        if want_parent:
+            checks.append((
+                "native_parent_identity", parent_ok,
+                "exact-ID hub_list_apps instances/types + hub_get_app_config summary/full",
+            ))
+        if want_create:
+            checks.append((
+                "native_dated_create_contract_guide", create_ok,
+                "installed native set_rule_reference explicit create/date/parent declarations",
+            ))
         if want_readback:
             checks.append((
                 "native_dated_date_readback", readback_ok,
@@ -345,6 +359,8 @@ def native_rule_readiness_coverage(
             "questionResolved": complete,
             "preflightEvidenceComplete": preflight_complete,
             "readinessForMutation": False,
+            "nativeParentIdentity": d.get("nativeParentIdentity"),
+            "nativeGuideContract": d.get("nativeGuideContract"),
             "requirements": [
                 {"key": k, "state": "observed" if ok else "checked-unverified",
                  "necessary": True, "source": origin}
