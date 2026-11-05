@@ -278,8 +278,14 @@ async def decide_read_route(
         # explanation into a strict configuration-certification report.
         # This arbitration is advisory and cannot expand read permissions.
         if proposal == "model_led":
-            from targeted_rule_scope_policy import is_app_class_identity_question
-            if is_app_class_identity_question(question):
+            from targeted_rule_scope_policy import (
+                is_app_class_identity_question, is_native_rule_contract_review_request,
+            )
+            if is_native_rule_contract_review_request(question):
+                # A runbook/typed authoring contract is not an installed
+                # rule action-tree audit, regardless of advisory model label.
+                objective = "rule_design_review"
+            elif is_app_class_identity_question(question):
                 # Independent source-typed parent/class identity is not an
                 # action-tree certification. Correct advisory category drift.
                 objective = "app_class_identity"
@@ -302,8 +308,12 @@ async def decide_read_route(
         # Scope correction applies after specialist-route arbitration too.
         # A model's overbroad system/performance route cannot transform a
         # single app's source-typed native identity into an unrelated audit.
-        from targeted_rule_scope_policy import is_app_class_identity_question
-        if route == "model_led" and is_app_class_identity_question(question):
+        from targeted_rule_scope_policy import (
+            is_app_class_identity_question, is_native_rule_contract_review_request,
+        )
+        if route == "model_led" and is_native_rule_contract_review_request(question):
+            objective = "rule_design_review"
+        elif route == "model_led" and is_app_class_identity_question(question):
             objective = "app_class_identity"
         # A missing/invalid model objective must not re-enable downstream
         # keyword classifiers (notably rule authoring and ON/OFF causality).
