@@ -345,3 +345,14 @@ def test_native_overclaim_fallback_does_not_reuse_unrelated_app_metadata():
     assert changed is True
     assert "name 'Rule Machine'" not in fixed
     assert "do not contain enough target-matched" in fixed
+
+
+def test_explicit_not_verified_as_native_is_not_overwritten():
+    draft = "App 4216 is not independently verified as native."
+    message, changed = reconcile_app_class_identity_answer(
+        draft, [], {"requirements": [
+            {"key": "native_class_binding", "state": "checked-unverified"},
+        ]}, "Check app 4216 native class",
+    )
+    assert not changed
+    assert message == draft
