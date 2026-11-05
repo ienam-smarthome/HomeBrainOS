@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — v0.18.406 live app-parent acceptance: summary-shape gap and unsupported native certification
+
+The user's installed 0.18.406 free Gemma Cloud investigation of app 169 ran **36.567s**, **8 model rounds**, **5 read-only tool calls**, provider **31.994s**, MCP HTTP **1.705s**. Compared with v0.18.405's one 22.568s/5-round/3-read sample, it was slower in this individual run, chiefly from increased model time; no controlled regression is established.
+
+The answer remained on-topic but **overstated certainty**: it said app 169 was *verified native/built-in*, and assigned appTypeId 18, while the Technical JSON still recorded `app_class_identity` with `instance_identity=checked-unverified`, `native_class_binding=checked-unverified`, and `outcome=unresolved`. Positive claims of independently certified native class identity are not supported by the published receipts. This does not prove the model hallucinated the appTypeId because raw MCP source payloads may have supplied it.
+
+**Source-shape root:** The selected `hub_get_app_config({appId:169,summary:true})` returned a flat `id/name/type/user/namespace` summary with no appTypeId and no nested app. The 0.18.406 projector handled only a nested app with appTypeId, so emitted only a generic field-name receipt. The other inventory/type-catalog reads also emitted field names, not a matched authoritative class binding.
+
+**v0.18.407 candidate:** Accept both exact-ID-scoped nested/full and top-level/summary metadata as bounded typed **reported** fields. A missing type ID remains a partial source receipt, not verified instance-to-type mapping. A final read-only claim-calibration guard detects affirmative unsupported native certification and repairs it using only matching typed receipts, preserving calibrated model prose without any extra reads or model rounds. Rule writing remains closed. See CHANGELOG-0.18.407.md. Installed after-update quality and latency have not been measured; no first-model delivery/deployed-SHA attestation.
+
+---
+
 ## 2026-11-05 — v0.18.405 live app-parent acceptance: relevance fixed, public scalar receipt gap remains
 
 The user supplied installed HomeBrain v0.18.405 live read-only natural-language answer and full Technical JSON for app 169. Reported runtime **22.568s**, **5 Gemma Cloud rounds**, **3 MCP read-only calls**, **1 discovery call**; free allowance, no paid rounds, no modifying receipts. The earlier v0.18.404 test was 33.825s, 7 rounds, 4 reads. One before/after pair cannot certify systemic latency improvement; provenance still reports model_delivery_verified=false, first_attempt_verified=false, deployed_build_sha_verified=false.
