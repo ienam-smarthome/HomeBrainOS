@@ -146,6 +146,7 @@ def test_preflight_exact_id_built_in_parent_and_guide_contract_are_source_attest
     assert details["nativeParentIdentity"] == {
         "appId": "169", "verified": True, "appTypeId": "18",
         "childRowsObserved": 1, "failureCode": None,
+        "parentEvidenceMode": "inventory-and-non-rendering-summary",
     }
     assert details["nativeDatedFieldGuideAttested"] is True
     assert details["nativeCreateContractGuideAttested"] is True
@@ -155,15 +156,20 @@ def test_preflight_exact_id_built_in_parent_and_guide_contract_are_source_attest
     }
     assert coverage["evidenceComplete"] is True
     assert coverage["readinessForMutation"] is False
-    assert "exact built-in type and parent role verified" in message
+    assert "exact built-in type and returned child relationship verified" in message
     assert "documented (guide only; runtime untested)" in message
-    assert len(source.calls) == 7
+    assert len(source.calls) == 6
     assert [a.get("tool", "guide") for _, a in source.calls] == [
         "hub_list_backups", "guide", "guide", "hub_list_apps",
-        "hub_list_apps", "hub_get_app_config", "hub_get_app_config",
+        "hub_list_apps", "hub_get_app_config",
     ]
     assert all(row["effect"] == "read" and row["mutates"] is False
                for row in evidence)
+    assert all(
+        a.get("tool") != "hub_get_app_config"
+        or a["args"] == {"appId": "169", "summary": True}
+        for _, a in source.calls
+    ), "A strict preflight must never render a full app page"
     assert all("hub_manage" not in gateway and a.get("tool") not in {
         "hub_set_rule", "hub_set_native_app",
     } for gateway, a in source.calls)
@@ -178,8 +184,9 @@ def test_preflight_exact_id_built_in_parent_and_guide_contract_are_source_attest
      "native_type_conflict_or_unverified"),
     (dict(summary={**SUMMARY, "namespace": "community"}),
      "app_summary_identity_conflict"),
-    (dict(config={**CONFIG, "app": {"id": 169, "parentAppId": 100}}),
-     "parent_role_unverified"),
+    (dict(instances={**INST, "apps": [
+        {**INST["apps"][0], "parentId": 100}, INST["apps"][1]
+    ]}), "installed_app_identity_unverified"),
 ])
 def test_bad_parent_class_or_role_never_certified(broken, expected):
     source = SourceOnly(**broken)
@@ -233,6 +240,29 @@ async def test_native_preflight_router_uses_source_without_model_or_rule_writes(
     assert result.investigation_coverage["readinessForMutation"] is False
     assert "app 169" in result.message
     assert "MCP Rule Server version" in result.message
-    assert len(mcp.calls) == 7
+    assert len(mcp.calls) == 6
     assert all(row["mutates"] is False for row in result.evidence)
     assert SECRET not in str(result.evidence)
+
+def test_root_without_child_link_does_not_claim_parent_role():
+    root_only = {**INST, "apps": [INST["apps"][0]], "count": 1}
+    message, details, evidence, coverage = _run(SourceOnly(instances=root_only))
+    assert details["nativeParentIdentity"]["verified"] is False
+    assert details["nativeParentIdentity"]["failureCode"] == (
+        "child_parent_relationship_unverified"
+    )
+    assert coverage["readinessForMutation"] is False
+    assert coverage["evidenceComplete"] is False
+    assert "unverified" in message
+    assert all(row["mutates"] is False for row in evidence)
+
+
+def test_no_rendered_config_read_even_when_sources_conflict():
+    source = SourceOnly(summary={**SUMMARY, "namespace": "community"})
+    _run(source)
+    assert not any(
+        a.get("tool") == "hub_get_app_config"
+        and a["args"].get("summary") is not True
+        for _, a in source.calls
+    )
+

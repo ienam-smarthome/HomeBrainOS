@@ -188,22 +188,26 @@ def _guide_contract_projection(content: Any) -> dict[str, Any]:
 
 
 def _native_parent_projection(
-    requested_id: str, instances: Any, types: Any,
-    summary: Any, config: Any,
+    requested_id: str, instances: Any, types: Any, summary: Any,
 ) -> dict[str, Any]:
-    """Attest exact built-in type join plus independently observed parent role.
+    """Attest native type and parent role from non-rendering Hubitat sources.
 
-    Reuses the same Hubitat app/type evidence contract as native inventory,
-    without publishing unrelated application names or child-app details.
+    hub_get_app_config(full) renders the app page and can execute page code,
+    even with includeSettings=false. Strict read-only preflights must instead
+    use hub_list_apps instances/types and summary=true (/installedapp/json).
+    We only attest returned child references, never inventory completeness.
     """
     result: dict[str, Any] = {
         "appId": requested_id, "verified": False, "appTypeId": None,
         "childRowsObserved": 0, "failureCode": "source_unavailable",
+        "parentEvidenceMode": "inventory-and-non-rendering-summary",
     }
     if not (isinstance(instances, dict) and isinstance(types, dict)
             and isinstance(instances.get("apps"), list)
-            and isinstance(types.get("apps"), list)):
+            and isinstance(types.get("apps"), list)
+            and instances.get("truncated") is not True):
         return result
+
     def ident(value: Any) -> str | None:
         if type(value) not in (int, str):
             return None
@@ -245,23 +249,29 @@ def _native_parent_projection(
             or meta.get("namespace") != "hubitat"
             or meta.get("user") is not False
             or (ident(meta["appTypeId"]) != typ
-                if meta.get("appTypeId") is not None else False)):
+                if meta.get("appTypeId") is not None else False)
+            or (meta.get("parentId") not in (None, "")
+                if "parentId" in meta else False)):
         result["failureCode"] = "app_summary_identity_conflict"
         return result
-    if not (isinstance(config, dict) and config.get("success") is True
-            and isinstance(config.get("app"), dict)):
-        result["failureCode"] = "parent_config_unavailable"
+
+    # The same hub-returned inventory must actually contain at least one
+    # child reference to the root ID, with a distinct valid child identity.
+    # A root app name or a 'hasChildren' flag alone is insufficient.
+    children = [
+        ident(child.get("id"))
+        for child in instances["apps"] if isinstance(child, dict)
+        and ident(child.get("parentId")) == requested_id
+    ]
+    if (not children or any(child is None or child == requested_id
+                            for child in children)
+            or len(children) != len(set(children))):
+        result["failureCode"] = "child_parent_relationship_unverified"
         return result
-    root = config["app"]
-    children = config.get("childApps")
-    if (ident(root.get("id")) != requested_id
-            or "parentAppId" not in root or root["parentAppId"] is not None
-            or not isinstance(children, list) or not children
-            or any(not isinstance(child, dict) for child in children)):
-        result["failureCode"] = "parent_role_unverified"
-        return result
-    result.update(verified=True, childRowsObserved=min(len(children), 5000),
-                  failureCode=None)
+    result.update(
+        verified=True, childRowsObserved=min(len(children), 5000),
+        failureCode=None,
+    )
     return result
 
 
@@ -359,7 +369,7 @@ def native_rule_readiness_coverage(
         if want_parent:
             checks.append((
                 "native_parent_identity", parent_ok,
-                "exact-ID hub_list_apps instances/types + hub_get_app_config summary/full",
+                "hub_list_apps instances/types + non-rendering hub_get_app_config summary",
             ))
         if want_create:
             checks.append((
@@ -409,7 +419,7 @@ async def read_native_rule_readiness(
 ) -> tuple[str, dict[str, Any]]:
     """Three core source reads; optional version/identity evidence when requested.
 
-    No writes, model rounds, editor forms, or raw guide content are published.
+    No writes, rendered app/editor pages, model rounds, or guide contents.
     """
     async def get(gateway: str, arguments: dict[str, Any], label: str) -> dict[str, Any] | None:
         request = arguments
@@ -501,15 +511,8 @@ async def read_native_rule_readiness(
             }},
             "exact-ID app summary identity",
         )
-        config = await get(
-            "hub_read_apps_code",
-            {"tool": "hub_get_app_config", "args": {
-                "appId": parent_id, "includeSettings": False,
-            }},
-            "exact-ID app parent-role metadata",
-        )
         parent_identity = _native_parent_projection(
-            parent_id, inst, types, summary, config,
+            parent_id, inst, types, summary,
         )
 
     complete = (version is not None and timestamp is not None
@@ -590,7 +593,7 @@ async def read_native_rule_readiness(
         lines.append(
             "Requested native Rule Machine parent: app "
             + (parent_id or "ID not unambiguously supplied")
-            + ("; exact built-in type and parent role verified"
+            + ("; exact built-in type and returned child relationship verified"
                if parent_identity["verified"] else
                "; unverified ("
                + str(parent_identity["failureCode"]) + ")")

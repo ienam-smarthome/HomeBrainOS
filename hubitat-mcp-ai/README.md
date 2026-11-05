@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.418**.
+Current add-on version: **0.18.419**.
+
+**Non-rendering native parent preflight (v0.18.419):** Installed v0.18.418 verified parent app 169 but issued `hub_get_app_config(includeSettings=false)`, which upstream documents as rendering an app page and executing its page code. The strict read-only preflight now relies on `hub_list_apps` instance/type records plus `hub_get_app_config(summary=true)` (the non-rendering installed-app JSON identity source), and independently requires at least one distinct returned child row with `parentId` matching the root. Missing child evidence stays unverified. This eliminates one page-rendering source call without changing writer permissions, guides or backups. [Release notes](CHANGELOG-0.18.419.md).
 
 **Read-only native parent/date-contract preflight (v0.18.418):** An installed 0.18.417 preflight confirmed MCP Rule Server 5.1.6 and two readable tool guides but did not inspect parent app 169 or explain the missing atDate# declaration. When explicitly requested, the preflight now checks the exact parent ID against Hubitat installed-app and built-in type records plus targeted summary and child-role metadata. It emits only safe typed identity/guide booleans, field names and diagnostic codes; never raw guides, passwords or unrelated app names. Missing or conflicting evidence remains unverified. Basic preflights retain their original three source calls; no authoring permission is enabled. [Release notes](CHANGELOG-0.18.418.md).
 
