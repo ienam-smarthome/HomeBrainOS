@@ -224,6 +224,34 @@ def calibrate_rule_design_review(
     )
     if evidence_validates_compiler:
         return text
+    # A model's "upstream-tested facts" and READY conclusion are not
+    # substitutes for a typed, source-attested native operation contract.
+    text, _ = _SCHEMA_HEADING.subn(
+        "### Native authoring schema — unverified\\n"
+        "The current read receipts do not certify typed trigger/action "
+        "fields, date/time formats, optional year conditions or native "
+        "runtime semantics. Treat any model-reported format as unverified.\\n\\n",
+        text,
+    )
+    text, _ = _READY_HEADING.subn(
+        "### Readiness assessment — unverified\\n"
+        "The native authoring contract is not source-verified, so this "
+        "proposal is NOT READY for an executable test and no rule "
+        "creation is authorised.\\n\\n",
+        text,
+    )
+    text = _JSON_CODE.sub(_strip_unverified_json, text)
+    # Standalone positive READY claims are also unsupported.
+    text = re.sub(
+        r"(?im)^[^\\n]*(?:\\bplan\\b[^\\n]{0,80}\\bREADY\\b|"
+        r"\\bREADY\\b[^\\n]{0,80}\\bfor\\b[^\\n]{0,80}"
+        r"\\b(?:test|creation|implementation)\\b)[^\\n]*$",
+        lambda m: m.group(0) if re.search(
+            r"(?i)\\b(?:not|unverified|never)\\s+ready\\b",
+            m.group(0),
+        ) else "**Readiness unverified: no authorised native write.**",
+        text,
+    )
     # Replace the unsafe native plan itself. A correct caution appended after
     # an incorrect IF/WAIT/OFF recipe would still leave contradictory advice.
     text, _ = _PLAN_SECTION.subn(lambda _m: _safe_plan(request), text)
@@ -283,7 +311,8 @@ def calibrate_rule_design_review(
         else:
             text = provenance + text
     if "### Rule design feasibility gate (read-only)" not in text:
-        text += _SAFETY_NOTE
+        text += (_SAFETY_NOTE if _motion_scope(request, text)
+                 else _GENERIC_SAFETY_NOTE)
     return text
 
 
