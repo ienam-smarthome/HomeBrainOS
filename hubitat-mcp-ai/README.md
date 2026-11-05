@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.410**.
+Current add-on version: **0.18.411**.
+
+**Q2 read-only native Rule Machine preflight precedence (v0.18.411):** The 0.18.410 installed readiness request finished source reads (MCP initialize 5.1.5, hub-local backup 2026-11-05 03:02:31 UTC, both native guides), but the generic shared completion misclassified the combined parent mention as an app-class identity query and erased the readiness answer. Specialist typed readiness coverage now wins before unrelated identity assessment. An explicit request to compare initialize with hub_get_info performs one extra read-only check; requested dated atDate# guide evidence and any saved-state readback are separately marked unverified unless actually attested. Core preflight completeness never authorises native one-time rule writing, backup-age validation or date-trigger creation. No new writer permissions, version threshold change, device commands or rule mutations. [Release notes](CHANGELOG-0.18.411.md).
 
 **Q2 built-in app identity proof vs native writer authorization (v0.18.410):** An installed v0.18.409 live read confirmed app 169's exact appTypeId=18 joins Hubitat's built-in Rule Machine catalog type id 18 (system=true/isBuiltIn=true) and app 169 is a root with 42 returned child-app rows. A source-attested numeric built-in type join is positive class evidence, not another missing mapping. A type's built-in identity is now separately recognized from parent-role evidence and independently unverified Rule Machine authoring. The domain answers with positive identity when both source relationships are present; missing/conflicting/partial evidence remains unresolved. No changes to Rule Machine writers, permissions, tool calls or model rounds. [Release notes](CHANGELOG-0.18.410.md).
 

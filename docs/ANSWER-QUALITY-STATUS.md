@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — v0.18.410 native readiness preflight mispublished as app identity; v0.18.411 candidate
+
+**User-observed failed acceptance:** Read-only native Rule Machine *dated one-time authoring readiness* question on installed HomeBrainOS v0.18.410 (3.413s UI; 0.658s agent, zero model rounds, 3 read-only MCP source calls and one local typed projection). The typed_native_rule_readiness details established **MCP initialize version 5.1.5**, latest hub-local backup **2026-11-05T03:02:31+00:00** (24 returned backups), both native tool-guide sections readable, `preflightEvidenceComplete=true`, and `readinessForMutation=false`. No rule or device changed.
+
+**Root cause confirmed:** Shared read-only completion did not prioritize native_rule_readiness_coverage. The original question's reference to already verified *parent app 169* matched the generic app_class_identity keyword predicate; a second completion pass replaced the meaningful preflight answer with "Native class identity: not independently verified" and labeled previous identity observations "not-checked" for **this separate preflight turn**. Earlier v0.18.410 app-identity certification remains valid from its own receipts, not from the unrelated preflight.
+
+**Additional requested evidence omitted in v0.18.410:** The direct readiness path had only initialize/serverInfo version, not the independently requested `hub_get_info.mcpServerVersion` comparison. The native guides were readable, but no typed `atDate#` date declaration or persisted date readback was certified. Therefore `preflightEvidenceComplete` should not be misrepresented as complete *authoring* readiness.
+
+**v0.18.411 candidate:** Add early shared-completion specialist precedence using the already published typed native readiness receipt. Preserve original preflight answer and domain. Optionally read `hub_get_info` exactly once when the user explicitly requests version agreement; project missing/conflicting values. Track requested atDate# guide declaration and readback as independent evidence requirements, leaving unverifiable values unknown and `readinessForMutation=false`. Simple readiness keeps three source calls. The upstream changelog reports date support as of MCP 5.1.5, but HomeBrain's installed native writer still requires >=5.1.6; do **not** lower that threshold or create/delete any rule without a separate proven contract and explicit confirmation. See `hubitat-mcp-ai/CHANGELOG-0.18.411.md`. CI and installed post-update acceptance pending.
+
+---
+
 ## 2026-11-05 — installed v0.18.410 native app identity acceptance PASSED; writer remains blocked
 
 **Observed installed read-only acceptance, same exact-ID request SHA** `b0050c45bb76df89ec7f550f731d248a8765f59faea6cbf97ab884a1e70d924a`: HomeBrainOS **0.18.410**, 26.682s total, 8 free Gemma 31b rounds, 4 successful nonmutating MCP calls, 23.433s provider, 1.092s MCP execution, no paid rounds. Read-only typed receipts verify installed Rule Machine app **169** has **appTypeId=18** (user=false, parentId=null); the Hubitat-sourced type-catalog **id=18** reports **name=Rule Machine, system=true, isBuiltIn=true** (catalog also lists distinct legacy type 19); target-matched app configuration confirms **parentAppId=null** and **42 child-app rows returned in one page**. Do not convert child rows into a complete rule inventory, and do not invent a type namespace that is absent from the typed catalog receipt.

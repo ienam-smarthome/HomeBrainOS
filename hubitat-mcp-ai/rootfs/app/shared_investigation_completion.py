@@ -47,6 +47,7 @@ from recorded_telemetry_freshness import (
 )
 from investigation_intelligence import assess_investigation, plan_investigation
 from native_rule_inventory_source import is_native_rule_inventory_question
+from native_rule_readiness_source import native_rule_readiness_coverage
 from owned_device_inventory_source import owned_device_coverage
 from native_rule_document_source import explicit_native_read_coverage
 from history_temporal_analysis import direct_recorded_duration_answer
@@ -153,6 +154,24 @@ def apply_shared_investigation_completion(
         return outcome
     if str(getattr(outcome, "request_class", "")) != "live-read":
         return outcome
+
+    # A direct native Rule Machine read-only preflight has an independent
+    # source-typed contract. It must win before keyword-based class/parent
+    # identity planning, even if the question mentions an earlier verified
+    # app parent. Never replace its actual backup/version/guide answer with
+    # an unrelated app-class-identity verdict.
+    readiness_coverage = native_rule_readiness_coverage(
+        request, list(getattr(outcome, "evidence", []) or []),
+    )
+    if readiness_coverage is not None:
+        resolved = readiness_coverage.get("questionResolved") is True
+        metrics = _safe_metrics(outcome, partial=not resolved)
+        if resolved and metrics.get("outcome") in (None, "success", "unresolved"):
+            metrics["outcome"] = "success"
+        return _CoverageOutcome(
+            outcome, readiness_coverage, metrics,
+            str(getattr(outcome, "message", "") or ""),
+        )
 
     # Complete only the explicit requested source projection, not an
     # unrelated whole-rule investigation. Preserve the original direct-read
