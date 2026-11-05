@@ -101,6 +101,14 @@ def test_live_guide_only_review_does_not_publish_verified_native_fields():
     assert '"readinessForMutation": false' in answer
 
 
+def test_no_guide_receipt_does_not_claim_guide_access():
+    answer = calibrate_rule_design_review(
+        "Contract assessment unresolved.", [], request=REQUEST,
+    )
+    assert "No successful guide read was recorded" in answer
+    assert "Guide access was recorded" not in answer
+
+
 def test_guide_key_redaction_does_not_strip_non_contract_diagnostic_json():
     fence = chr(96) * 3
     text = "### Note\n" + fence + "json\n" + (
