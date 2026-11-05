@@ -8,6 +8,7 @@ visible regardless of which route produced the original answer.
 from __future__ import annotations
 
 from copy import deepcopy
+from app_class_identity_receipt import reconcile_app_class_identity_answer
 import re
 from typing import Any
 
@@ -732,6 +733,20 @@ def apply_shared_investigation_completion(
         )
     metrics = _safe_metrics(outcome, partial=partial)
     message = str(getattr(outcome, "message", "") or "")
+    if domain == "app_class_identity":
+        message, recalibrated = reconcile_app_class_identity_answer(
+            message, evidence, coverage, request,
+        )
+        if recalibrated:
+            coverage["appIdentityPublication"] = {
+                "nativeCertification": "not-independently-verified",
+                "sourceProjection": "only-target-matched-typed-read-receipts",
+                "modelProseReplaced": True,
+            }
+            metrics["outcome"] = "unresolved"
+            metrics.setdefault("counters", {})[
+                "app_identity_overclaim_reconciled"
+            ] = 1
     message, historical_window = calibrate_historical_incident_answer(
         request, evidence, message, causal=causal,
     )

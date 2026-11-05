@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.406**.
+Current add-on version: **0.18.407**.
+
+**Q2 native app identity publication and summary receipts (v0.18.407):** A real v0.18.406 follow-up used `hub_get_app_config(summary=true)` returning a flat metadata object without `appTypeId`, bypassing the nested-only receipt projector. Its answer nevertheless declared app 169 a verified native system app even though both native-class and instance-to-type evidence requirements remained unverified. Flat and nested target-scoped metadata now receive separately scoped read-only receipts; missing type IDs remain unverified. Only affirmative, unsupported native-certification language is replaced with a concise source-grounded qualification. No extra tool/model calls or rule-write capability. The pre-update 36.567s/8-round sample is observational; post-update impact is not measured. [Release notes](CHANGELOG-0.18.407.md).
 
 **Q2 typed app-instance metadata receipts (v0.18.406):** The first installed v0.18.405 live Rule Machine parent-identity test correctly used the dedicated `app_class_identity` objective and kept native parent certification unresolved (22.568s, 5 Gemma rounds, 3 read calls). However, its public field-name-only receipts did not independently expose the reported app ID/type, label, namespace, root/system status or child-page count claimed in the answer. A target-ID-matched `hub_get_app_config` read now records only bounded safe source-reported app metadata in a typed receipt; this verifies the observed instance/type fields when supplied but **never** certifies the native built-in class mapping, authorizes creation, or adds model/tool calls. Live post-update acceptance remains unmeasured. [Release notes](CHANGELOG-0.18.406.md).
 
