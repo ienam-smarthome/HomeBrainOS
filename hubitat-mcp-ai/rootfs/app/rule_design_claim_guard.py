@@ -464,7 +464,10 @@ def calibrate_rule_design_review(
         text = re.sub(
             r"(?ms)^### Rule design feasibility gate \(read-only\)\n.*?"
             r"(?=^### |\Z)",
-            lambda _match: _NATIVE_CONTRACT_SAFETY_NOTE.strip() + "\n",
+            lambda match: (
+                _NATIVE_CONTRACT_SAFETY_NOTE.strip()
+                + ("\n" if match.group(0).endswith("\n") else "")
+            ),
             text,
         )
     if not typed_details_verified and "**Evidence qualification:**" not in text:
