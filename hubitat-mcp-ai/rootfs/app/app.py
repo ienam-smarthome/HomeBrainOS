@@ -1513,9 +1513,13 @@ async def hub_diagnostics_status() -> dict[str, Any]:
 
 
 @app.get("/api/hub-diagnostics/history")
-async def hub_diagnostics_history(hours: int = 6) -> dict[str, Any]:
-    """Bounded read from the HomeBrain SQLite recorder only."""
-    return await asyncio.to_thread(external_hub_diagnostics.history, hours)
+async def hub_diagnostics_history(hours: int = 6,
+                                  metric: str = "free_os_mb") -> dict[str, Any]:
+    """Read retained hub diagnostics only; 30 days max, metric-specific sampling."""
+    try:
+        return await asyncio.to_thread(external_hub_diagnostics.history, hours, metric)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/evidence-journal/status")
