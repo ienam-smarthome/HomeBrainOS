@@ -94,6 +94,8 @@ No truth claim from the Claude screenshot alone. Repeat with at least
 one held-out different device attribute and one missing/ambiguous source.
 Do not publish first-answer or latency gains without matched evaluation.
 
+**Existing-installation activation:** An upgraded Home Assistant add-on may retain its previous option values rather than adopt the new defaults. The v0.18.443 live test must check that `general_task_engine_enabled` is set to true and that `unified_mcp_max_tool_rounds` reflects the intended read-only emergency ceiling; if saved as false/9, change only these options in the add-on Configuration and restart through ordinary add-on management. The global investigation deadline, confirmation controls and tool effects must remain intact. No installation change is made by this PR.
+
 ### Phase 2 — generic evidence obligations and temporal analytics
 
 - Replace source-class-only checks with a structured **question-to-proof
