@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Q1 source-scoped historical log reporting (v0.18.442 candidate)
+
+**New live read-only result:** The user submitted a v0.18.441 normal Ask response and full Technical JSON showing the intended history-loss causal claim was withheld. The independently typed Hubitat critical-memory/reboot warning at 16:41:40, sunrise/sunset update at 16:44:20 and startup at 16:52:15 UTC were retained. The MCP made two **different** successful native log reads: a bounded mode-omitted `hub_get_logs` query (upstream defaults to `past`), zero matches from 10,639 pre-filter source rows, and an explicit `past` unbounded limit-10 sample with 10 timestamped device-identified messages (10,640 raw source rows). **No source confirms the original memory consumer, missing-log purge mechanism or oldest retained timestamp.** The 40.3-second observation is not a complex-investigation quality threshold.
+
+**General evidence-presentation defect:** Although the two MCP calls were different, v0.18.441's guarded answer reused the bounded zero-match page under both query headings. Its next check also requested another recent sample even though one had just been checked. The fix is not additional case-specific model censorship, but preserving **mode-scoped historical-page attribution** and source-aware next checks. Candidate v0.18.442 keeps legacy aggregate source metadata while adding `mode_page_observations` to ordinary Ask and dedicated incident Technical JSON; recent explicit-past and bounded omitted-mode/default-past counts remain distinct. If a recent sample exists, next checks focus on verifying actual oldest/latest native source time and timezone, not repeating that small read.
+
+**Acceptance and measurement:** Add synthetic tests for the exact live call pair, separately scoped positive/empty pages and failed/unverified receipts. Do not introduce extra MCP/model calls, writes, timeout changes, historical absence conclusions or a fixed latency target. All required CI must pass before merge. Whether this improves live first-answer usefulness remains **NOT MEASURED**. Never interpret raw pre-filter row totals as the requested historic-window count or as proof of complete retention.
+
+---
+
 ## 2026-11-06 — General historical-loss claim coverage, v0.18.441 merged (live retest pending)
 
 **Merged code and CI:** [PR #1487](https://github.com/ienam-smarthome/HomeBrainOS/pull/1487), exact tested head `38f1b31aea10766e71d75add7d3221046661baf3`, four workflows green (Hubitat MCP AI tests; release assurance including full Python suite, metadata and add-on smoke; repository validation; Answer Quality scorecard integrity). Squash merge `e093bdf32cf60b6ff01b5dc93b3c1960e254da8a`; `main` packaged add-on version now `0.18.441`. **This is code-level verification only**; installed build SHA, live first-answer improvement, earliest retained log timestamp, log-purge mechanism and original memory consumer remain unverified. No Hubitat, HA, router or runtime deadline changes were executed by this PR.
