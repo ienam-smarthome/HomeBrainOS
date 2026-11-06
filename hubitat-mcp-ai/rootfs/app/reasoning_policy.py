@@ -89,7 +89,7 @@ def set_reasoning_profile(profile: str) -> None:
 
     normalized = str(profile or "standard").strip().casefold()
     _REASONING_PROFILE.set(
-        normalized if normalized in {"standard", "investigative", "deep"}
+        normalized if normalized in {"standard", "investigative", "deep", "autonomous"}
         else "standard"
     )
 
@@ -98,7 +98,9 @@ def reasoning_profile() -> str:
     return _REASONING_PROFILE.get()
 
 
-def _budget_limits() -> tuple[int, int]:
+def _budget_limits() -> tuple[int | None, int | None]:
+    if reasoning_profile() == "autonomous":
+        return None, None
     if reasoning_profile() == "deep":
         return DEEP_MAX_READ_TOOL_ROUNDS, DEEP_MAX_READ_TOOL_CALLS
     if reasoning_profile() == "investigative":
@@ -330,7 +332,7 @@ def register_model_tool_execution(
         return True
 
     _max_rounds, max_reads = _budget_limits()
-    if reads >= max_reads:
+    if max_reads is not None and reads >= max_reads:
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
     _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
@@ -348,7 +350,8 @@ def reasoning_budget_exhausted() -> bool:
         return False
 
     max_rounds, max_reads = _budget_limits()
-    return reads >= max_reads or rounds >= max_rounds
+    return ((max_reads is not None and reads >= max_reads)
+            or (max_rounds is not None and rounds >= max_rounds))
 
 
 def reasoning_budget_status() -> dict[str, Any]:
