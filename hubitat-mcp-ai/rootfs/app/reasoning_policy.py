@@ -61,6 +61,11 @@ FINAL_SYNTHESIS_INSTRUCTION = (
     "continuity, or absence. Be concise and do not reveal hidden reasoning."
 )
 
+# Compatibility budgets remain for non-autonomous and opt-out paths. In
+# autonomous read-only mode no fixed read-call/round limit is applied: source
+# progress, duplicate detection, model-tool schema, the configured outer
+# tool-round emergency ceiling, per-call timeouts and the overall operational
+# deadline still protect against runaway execution.
 # 0.10.453 proved that open-ended read investigations can become materially more
 # useful, but live tests also showed runaway evidence gathering (19-30 calls and
 # 5-7 model rounds). These are soft READ budgets, not action budgets. Writes and
