@@ -85,6 +85,19 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Empty native historical page semantics (v0.18.439):**
+Raw-source row totals in native past-log receipts represent records fetched
+before Hubitat's historical since/until filter, not records inside the
+requested window. A successful bounded page with
+returnedRowsInspected=matchedRowsReported=0 establishes only that this
+filtered query returned no matching rows. Ordinary Ask and the dedicated
+incident endpoint now report the pre-filter totals separately, retain
+bounded per-page numeric observations (without raw messages or continuation
+tokens), and direct subsequent read-only investigation to the available
+retention horizon and source-time basis. An empty result is not proof
+of historic absence, source exhaustiveness or an app/driver culprit.
+No extra model/MCP read, hub write or timeout change is introduced.
+
 **Typed native past-log receipt coverage (v0.18.438):**
 Successful read-only hub_get_logs(mode="past") responses now retain
 privacy-safe nativePastLog receipt metadata about the actual bounded
