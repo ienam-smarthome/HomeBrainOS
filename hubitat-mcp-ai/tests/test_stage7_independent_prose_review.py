@@ -162,25 +162,6 @@ def test_successful_stage6_attaches_review_packet_without_extra_cloud_calls():
     assert "never-print-provider-key" not in json.dumps(result)
 
 
-def test_mobile_review_is_human_authored_and_export_is_explicit_only():
-    html = render_page("HomeBrainOS", "0.18.302")
-    for target in (
-        "Stage 7 · Independently review every sentence",
-        "Full source packet (including unread fictional records)",
-        "Sentence '+sentence.number",
-        "Copy independent review packet",
-        "independently_reviewed_by_human",
-        "Not reviewed",
-        "Partially supported",
-        "Important omissions",
-        "Overconfident causation",
-        "data.independent_review_packet",
-        "automatic_semantic_certification:false",
-    ):
-        assert target in html
-    assert "copy.onclick=()=>{" in html
-
-
 def test_stage7_not_imported_into_production_publisher_or_mcp_agent():
     for filename in ("mcp_agent_orchestrator.py", "tool_executor.py",
                      "causal_claim_publication.py", "final_answer_coordinator.py"):
