@@ -201,7 +201,9 @@ def test_current_release_defaults_enable_planning_but_preserve_safety():
     assert "general_task_engine_enabled: true" in config
     assert "unified_mcp_max_tool_rounds: 18" in config
     assert "require_sensitive_confirmation: true" in config
-    assert "investigation_deadline_seconds: 180" in config
+    assert "investigation_deadline_seconds: 0" in config
+    assert "investigation_stall_timeout_seconds: 180" in config
+    assert "investigation_emergency_watchdog_seconds: 1800" in config
     source = (APP / "mcp_agent_orchestrator.py").read_text()
     assert "task_plan.read_requests" in source
     assert "classify_tool_effect(tool, request.arguments).mutates" in source
