@@ -1,0 +1,99 @@
+{
+  "schema": "homebrain-answer-quality-q2-recorded-pairs.v1",
+  "description": "Metadata reconstructed from prior user-supplied first-answer manifests and source-reviewed Q2 notes dated 2026-11-04. Not raw answers, attested model delivery, or human scores.",
+  "review_status": "qualitative_only_not_measured",
+  "pairs": [
+    {
+      "case_id": "aq_network_broker_vs_device_health",
+      "baseline": {
+        "case_id": "aq_network_broker_vs_device_health",
+        "packet_sha256": "74ccff7fa2c23852655d12b45f6f5cbb6a3315de8c7647cac7b03441282f7150",
+        "answer_sha256": "2a1843c20024a7e83428a70de59d52dc5ef19f7a87beee341f73cf9bb7da60aa",
+        "model": "qwen3.5:4b",
+        "provider": "ollama-local",
+        "build_sha": "0e71f92f380d21cfb2d3a17a66fbd40d85bd0684",
+        "attempt_index": 1,
+        "elapsed_ms": 20344
+      },
+      "candidate": {
+        "case_id": "aq_network_broker_vs_device_health",
+        "packet_sha256": "74ccff7fa2c23852655d12b45f6f5cbb6a3315de8c7647cac7b03441282f7150",
+        "answer_sha256": "e0cdb67452889dae74caa65122ba28907a605b56db245fb7060f54de163d6184",
+        "model": "llama3.2:3b",
+        "provider": "ollama-local",
+        "build_sha": "0e71f92f380d21cfb2d3a17a66fbd40d85bd0684",
+        "attempt_index": 1,
+        "elapsed_ms": 8531
+      }
+    },
+    {
+      "case_id": "aq_command_issuer_vs_reporter",
+      "baseline": {
+        "case_id": "aq_command_issuer_vs_reporter",
+        "packet_sha256": "fbe2452406077b244438396d54a73636d43b0f1d30212597c97c54c9798ba0ea",
+        "answer_sha256": "a5479755e6b750941a1a283d00bdcc0ee1f90e31600f2c9e1008a239327fc064",
+        "model": "qwen3.5:4b",
+        "provider": "ollama-local",
+        "build_sha": "25a09d0ed5cd3f0bfdd2aac20147f50a0d719c29",
+        "attempt_index": 1,
+        "elapsed_ms": 26344
+      },
+      "candidate": {
+        "case_id": "aq_command_issuer_vs_reporter",
+        "packet_sha256": "fbe2452406077b244438396d54a73636d43b0f1d30212597c97c54c9798ba0ea",
+        "answer_sha256": "fe3bdf3ce62350edf2d00de3d51ae501a26b0b84e612ce81a439807369a305c2",
+        "model": "llama3.2:3b",
+        "provider": "ollama-local",
+        "build_sha": "25a09d0ed5cd3f0bfdd2aac20147f50a0d719c29",
+        "attempt_index": 1,
+        "elapsed_ms": 10594
+      }
+    },
+    {
+      "case_id": "aq_early_heating_off_resume",
+      "baseline": {
+        "case_id": "aq_early_heating_off_resume",
+        "packet_sha256": "cb5153f5d4beb82491c34b619d8e64f8f46bec86962533db38ffb4124e8a3bb1",
+        "answer_sha256": "ea47ab547ef37fc6cc61e73f3cb8b46c312fc335451650cd9d41143988b0cb66",
+        "model": "qwen3.5:4b",
+        "provider": "ollama-local",
+        "build_sha": "7e81e0411b50f814241a64c2406f7fe908fa95fd",
+        "attempt_index": 1,
+        "elapsed_ms": 22672
+      },
+      "candidate": {
+        "case_id": "aq_early_heating_off_resume",
+        "packet_sha256": "cb5153f5d4beb82491c34b619d8e64f8f46bec86962533db38ffb4124e8a3bb1",
+        "answer_sha256": "3da98ab387346a8b666f36b35ecdb0e63e9431be3d701658518b4a44b8ca9f1e",
+        "model": "llama3.2:3b",
+        "provider": "ollama-local",
+        "build_sha": "7e81e0411b50f814241a64c2406f7fe908fa95fd",
+        "attempt_index": 1,
+        "elapsed_ms": 6406
+      }
+    },
+    {
+      "case_id": "aq_rule_parent_type_gap",
+      "baseline": {
+        "case_id": "aq_rule_parent_type_gap",
+        "packet_sha256": "21542170532d34510b19613f6c7bd97958cf300aa8cf151e2649ef8328b14cf3",
+        "answer_sha256": "3511c0f2604d4cbfcb0e5d7e1e76deb8ca9a3a776bc4a56d87a1fcf5af17aa96",
+        "model": "qwen3.5:4b",
+        "provider": "ollama-local",
+        "build_sha": "659d3a3e3373b654a54439b37461a9e237aa2289",
+        "attempt_index": 1,
+        "elapsed_ms": 19657
+      },
+      "candidate": {
+        "case_id": "aq_rule_parent_type_gap",
+        "packet_sha256": "21542170532d34510b19613f6c7bd97958cf300aa8cf151e2649ef8328b14cf3",
+        "answer_sha256": "b8ee24d20674fb6d932027d11188cdc81e8b8d4b1078ea84ea5ecf8d221d5ca6",
+        "model": "llama3.2:3b",
+        "provider": "ollama-local",
+        "build_sha": "659d3a3e3373b654a54439b37461a9e237aa2289",
+        "attempt_index": 1,
+        "elapsed_ms": 8297
+      }
+    }
+  ]
+}
