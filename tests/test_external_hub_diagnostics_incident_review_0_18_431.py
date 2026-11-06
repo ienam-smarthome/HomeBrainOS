@@ -144,7 +144,8 @@ def test_journal_report_is_partial_capped_and_never_includes_private_log_message
     assert result["app_log_apps"][0]["count"] == 2
     assert result["app_log_messages_included"] is False
     assert secret not in json.dumps(result)
-    assert "message" not in json.dumps(result)
+    assert all("message" not in row for row in result["events"])
+    assert all("message" not in row for row in result["app_log_apps"])
     assert len(result["gaps"]) == 1
     assert result["coverage_complete"] is False
     assert result["empty_means_inactivity"] is False
