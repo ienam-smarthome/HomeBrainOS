@@ -35,7 +35,7 @@ from device_state_summary import (
 )
 from health_audit_scheduler import MorningHealthScheduler
 from historical_evidence_journal import HistoricalEvidenceJournal
-from hub_incident_ai import (bind_incident, reset_incident, publish_incident_analysis, project_incident)
+from hub_incident_ai import (bind_incident, reset_incident, publish_incident_analysis, project_incident, guard_unresolved_causal_publication)
 from external_hub_diagnostics import ExternalHubDiagnostics
 from household_ollama_accounts import read_authorized_household_accounts
 from health_audit_service import (
@@ -1964,7 +1964,7 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
         submitted_question=request.message,
     )
     result["model_tier_requested"] = request.model_tier
-    return result
+    return guard_unresolved_causal_publication(result)
 
 
 if __name__ == "__main__":
