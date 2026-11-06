@@ -5,6 +5,8 @@ to kingpanther13's Hubitat MCP Rule Server.
 
 Current add-on version: **0.18.443**.
 
+**Upgrade note:** Home Assistant may preserve previous add-on option values. After upgrading, check `general_task_engine_enabled: true` and `unified_mcp_max_tool_rounds: 18` in the add-on Configuration; a saved `false`/`9` overrides the new packaged defaults. Do not modify `investigation_deadline_seconds`, write confirmations, provider quotas or per-tool timeouts to activate this feature.
+
 **Autonomous evidence-first planning, Phase 1 (v0.18.443):**
 The model can now plan the evidence needed for unfamiliar read-only
 questions and propose typed source reads using the installed
