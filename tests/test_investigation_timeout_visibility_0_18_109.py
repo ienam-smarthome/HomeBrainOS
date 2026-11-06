@@ -40,9 +40,13 @@ def test_release_defaults_give_source_investigation_more_room():
     # Current release is independently checked by test_changelog_index;
     # a deadline regression must not pin a previous release number.
     assert any(line.startswith('version: "') for line in config.splitlines())
-    assert "  investigation_deadline_seconds: 180" in config
-    assert '"investigation_deadline_seconds": 180' in app_source
-    assert 'OPTIONS.get("investigation_deadline_seconds") or 180' in app_source
+    assert "  investigation_deadline_seconds: 0" in config
+    assert "  investigation_stall_timeout_seconds: 180" in config
+    assert "  investigation_emergency_watchdog_seconds: 1800" in config
+    assert '"investigation_deadline_seconds": 0' in app_source
+    assert 'OPTIONS.get("investigation_stall_timeout_seconds") or 180' in app_source
+    assert 'OPTIONS.get("investigation_emergency_watchdog_seconds") or 1800' in app_source
+    assert 'deadline_seconds=max(10.0' not in app_source
 
 
 def test_round_phase_instrumentation_keeps_model_led_tools():
