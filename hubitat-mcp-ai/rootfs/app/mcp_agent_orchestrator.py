@@ -442,7 +442,7 @@ def _normalize_causal_log_call(
     # Do not attach causal timestamp bounds to current runtime stats or job
     # tables: they are not historical log-message sources, and the MCP server
     # explicitly rejects time arguments for them.
-    if not modes or any(m not in _DATE_SCOPED_LOG_MODES for m in modes):
+    if not modes or any(not isinstance(m, str) or m not in _DATE_SCOPED_LOG_MODES for m in modes):
         return arguments
 
     focused = explicitly_focused_event_rows(evidence, original_user)
