@@ -263,6 +263,7 @@ class ExternalHubDiagnostics:
         self._pending_failure_start: str | None = None
         self._native: dict[str, Any] = {}
         self._native_last_attempt: float = -1e12
+        self._events_last_attempt: float = -1e12
         self._last_prune_at: float = 0
 
     def _connect(self) -> sqlite3.Connection:
@@ -288,6 +289,12 @@ class ExternalHubDiagnostics:
                 detail TEXT NOT NULL
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS incident_by_start ON incidents(started_at)")
+            db.execute("""CREATE TABLE IF NOT EXISTS hub_startups (
+                occurred_at TEXT PRIMARY KEY,
+                firmware TEXT NOT NULL DEFAULT '',
+                observed_at TEXT NOT NULL,
+                source TEXT NOT NULL
+            )""")
             last = db.execute("SELECT * FROM samples ORDER BY recorded_at DESC LIMIT 1").fetchone()
             if last is not None:
                 self._last = dict(last)
@@ -304,13 +311,15 @@ class ExternalHubDiagnostics:
         cutoff = (datetime.now(timezone.utc) -
                   timedelta(days=self.retention_days)).isoformat(timespec="milliseconds")
         db.execute("DELETE FROM samples WHERE recorded_at < ?", (cutoff,))
+        db.execute("DELETE FROM hub_startups WHERE occurred_at < ?", (cutoff,))
         db.execute(
             "DELETE FROM incidents WHERE recovered_at IS NOT NULL AND recovered_at < ?",
             (cutoff,),
         )
 
     def _save(self, row: dict[str, Any], opened: str | None,
-              recovered: bool, prune: bool = False) -> None:
+              recovered: bool, prune: bool = False,
+              startups: tuple[dict[str, str], ...] = ()) -> None:
         fields = ("recorded_at", "reachable", "latency_ms", "free_os_mb", "http_status",
                   "error_kind", "native_sample_label", "native_load5", "native_free_os_mb",
                   "java_total_mb", "java_free_mb", "java_direct_mb",
@@ -337,6 +346,13 @@ class ExternalHubDiagnostics:
                     "AND kind='hub-unreachable'",
                     (row["recorded_at"],),
                 )
+            for event in startups:
+                db.execute(
+                    "INSERT OR IGNORE INTO hub_startups "
+                    "(occurred_at, firmware, observed_at, source) VALUES (?, ?, ?, ?)",
+                    (event["occurred_at"], event["firmware"],
+                     row["recorded_at"], event["source"]),
+                )
             if prune:
                 self._prune(db)
 
@@ -362,6 +378,7 @@ class ExternalHubDiagnostics:
         except (ValueError, httpx.RequestError):
             row["error_kind"] = "invalid_response_or_request"
 
+        startups: tuple[dict[str, str], ...] = ()
         if row["reachable"]:
             self._failures = 0
             self._last_good = row["recorded_at"]
@@ -379,6 +396,16 @@ class ExternalHubDiagnostics:
                     # imply the previous Java sample has been refreshed.
                     pass
             row.update(self._native)
+            if now - self._events_last_attempt >= 300:
+                self._events_last_attempt = now
+                try:
+                    response = await client.get(self.hub_url + _HUB_EVENTS)
+                    response.raise_for_status()
+                    startups = tuple(parse_system_start_events(response.text))
+                except (httpx.HTTPError, ValueError):
+                    # Failing to retrieve hub events never blocks resource
+                    # recording. Startup coverage is only partial.
+                    pass
         else:
             self._failures += 1
             recovered = False
@@ -391,7 +418,7 @@ class ExternalHubDiagnostics:
         prune = time.monotonic() - self._last_prune_at >= 86400
         if prune:
             self._last_prune_at = time.monotonic()
-        await asyncio.to_thread(self._save, row, opened, recovered, prune)
+        await asyncio.to_thread(self._save, row, opened, recovered, prune, startups)
 
     async def _run(self) -> None:
         async with httpx.AsyncClient(
@@ -456,27 +483,62 @@ class ExternalHubDiagnostics:
             ),
         }
 
-    def history(self, hours: int = 6) -> dict[str, Any]:
+    def history(self, hours: int = 6,
+                metric: str = "free_os_mb") -> dict[str, Any]:
+        if metric not in _HISTORY_METRICS:
+            raise ValueError("Unsupported diagnostic history metric")
+        window = max(1, min(720, self.retention_days * 24, int(hours)))
+        finish = datetime.now(timezone.utc)
+        start = finish - timedelta(hours=window)
+        cutoff = start.isoformat(timespec="milliseconds")
+        empty: dict[str, Any] = {
+            "samples": [], "incidents": [], "reboots": [],
+            "coverage": "not_recorded", "cpu_cores": self.cpu_cores,
+            "hours": window, "metric": metric, "retention_days": self.retention_days,
+            "source_sample_count": 0, "observed_metric_points": 0,
+            "downsampled": False,
+            "range_start": cutoff,
+            "range_end": finish.isoformat(timespec="milliseconds"),
+        }
         if not self.enabled or not self.path.exists():
-            return {"samples": [], "incidents": [], "coverage": "not_recorded",
-                    "cpu_cores": self.cpu_cores}
-        window = max(1, min(24, int(hours)))
-        cutoff = (datetime.now(timezone.utc) -
-                  timedelta(hours=window)).isoformat(timespec="milliseconds")
+            return empty
         with self._connect() as db:
-            rows = [dict(v) for v in db.execute(
-                "SELECT * FROM samples WHERE recorded_at>=? ORDER BY recorded_at ASC "
-                "LIMIT 3000", (cutoff,),
-            )]
+            sample_rows = (
+                self._with_load_pct(dict(row))
+                for row in db.execute(
+                    "SELECT * FROM samples WHERE recorded_at>=? ORDER BY recorded_at ASC",
+                    (cutoff,),
+                )
+            )
+            chart = summarize_history_samples(
+                sample_rows, metric=metric, start=start, finish=finish,
+                probe_seconds=self.probe_seconds,
+            )
             incidents = [dict(v) for v in db.execute(
                 "SELECT * FROM incidents WHERE started_at>=? OR recovered_at>=? "
-                "ORDER BY started_at DESC LIMIT 40", (cutoff, cutoff),
+                "OR recovered_at IS NULL "
+                "ORDER BY started_at DESC LIMIT 100", (cutoff, cutoff),
+            )]
+            reboots = [dict(v) for v in db.execute(
+                "SELECT occurred_at,firmware,observed_at,source "
+                "FROM hub_startups WHERE occurred_at>=? "
+                "ORDER BY occurred_at ASC LIMIT 200", (cutoff,),
             )]
         return {
-            "samples": [self._with_load_pct(row) for row in rows],
-            "incidents": incidents, "hours": window,
-            "cpu_cores": self.cpu_cores,
+            **chart,
+            "incidents": incidents,
+            "reboots": reboots,
+            "hours": window, "metric": metric, "cpu_cores": self.cpu_cores,
+            "retention_days": self.retention_days,
+            "range_start": cutoff,
+            "range_end": finish.isoformat(timespec="milliseconds"),
+            "display_point_count": len(chart["samples"]),
+            "summarization": ("first_last_min_max_actual_per_time_bucket"
+                              if chart["downsampled"] else "original_records"),
             "coverage": "partial_observations_not_proof_of_cause",
+            "reboot_coverage": (
+                "confirmed_systemStart_events_returned_by_hub_eventsJson"
+            ),
             "native_java_resolution_seconds": 300,
         }
 
@@ -484,4 +546,5 @@ class ExternalHubDiagnostics:
 __all__ = [
     "ExternalHubDiagnostics", "validate_hub_url",
     "parse_live_memory", "parse_native_sample",
+    "parse_system_start_events", "summarize_history_samples",
 ]
