@@ -2,8 +2,8 @@
 
 **Status:** Phase 1 v0.18.443 merged via PR #1490; documentation PR #1491 merged.
 A source-real first-answer test is still pending. Phase 2 source-neutral observed
-interval operator is under offline CI review and is **not integrated** with
-live source reads or model synthesis. Do not claim general-question mastery
+interval operator is merged as v0.18.444 via PR #1492 with four CI checks green,
+but is **not integrated** with live source reads or model synthesis. Do not claim general-question mastery
 until first-attempt, source-real tests prove it. This plan supplements
 the permanent [Answer Quality Charter](ANSWER-QUALITY-CHARTER.md), whose
 correctness/safety targets remain in force.
