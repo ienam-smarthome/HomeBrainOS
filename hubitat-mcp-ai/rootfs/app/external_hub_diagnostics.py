@@ -13,11 +13,13 @@ import asyncio
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 import ipaddress
+import json
+import math
 from pathlib import Path
 import re
 import sqlite3
 import time
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import urlsplit
 
 import httpx
@@ -88,6 +90,149 @@ def parse_native_sample(value: str) -> dict[str, Any]:
     }
 
 
+
+_HUB_EVENTS = "/hub/eventsJson"
+_HISTORY_METRICS = frozenset((
+    "free_os_mb", "java_free_mb", "java_allocated_heap_used_pct",
+    "native_load_pct", "native_load5", "latency_ms",
+))
+_NATIVE_METRICS = frozenset((
+    "java_free_mb", "java_allocated_heap_used_pct", "native_load_pct",
+    "native_load5",
+))
+
+
+def parse_system_start_events(payload: str) -> list[dict[str, str]]:
+    """Accept only Hubitat systemStart events with unambiguous source times.
+
+    Source date must contain an explicit timezone offset; never assume the
+    add-on's timezone is the same as the hub timezone.
+    """
+    if len(payload) > 1_000_000:
+        raise ValueError("Hub event response too large")
+    obj = json.loads(payload)
+    source = obj if isinstance(obj, list) else (
+        obj.get("events") if isinstance(obj, dict) else None
+    )
+    if not isinstance(source, list):
+        raise ValueError("Unexpected Hubitat Hub Events response")
+    found: dict[str, dict[str, str]] = {}
+    for event in source[:1000]:
+        if not isinstance(event, dict) or event.get("name") != "systemStart":
+            continue
+        try:
+            stamp = datetime.fromisoformat(str(event["date"]).replace("Z", "+00:00"))
+        except (ValueError, TypeError, KeyError):
+            continue
+        if stamp.tzinfo is None:
+            continue
+        at = stamp.astimezone(timezone.utc)
+        now = datetime.now(timezone.utc)
+        if at.year < 2020 or at > now + timedelta(minutes=5):
+            continue
+        occurred_at = at.isoformat(timespec="milliseconds")
+        value = str(event.get("value") or "")[:48]
+        if any(c not in "0123456789.abcdeABCDE-_ " for c in value):
+            value = ""
+        found[occurred_at] = {
+            "occurred_at": occurred_at, "firmware": value,
+            "source": "hub_events_json_systemStart",
+        }
+    return sorted(found.values(), key=lambda entry: entry["occurred_at"])
+
+
+def summarize_history_samples(
+    rows: Iterable[dict[str, Any]], *, metric: str,
+    start: datetime, finish: datetime, probe_seconds: int,
+    bucket_count: int = 440, raw_limit: int = 3000,
+) -> dict[str, Any]:
+    """Stream local SQLite samples with bounded memory for 30-day charts.
+
+    Preserve actual first/last/min/max observations per time bucket rather
+    than averages that could erase short OS-memory dips. Retain boundaries
+    around failed probes or long gaps so they cannot become solid lines.
+    """
+    if metric not in _HISTORY_METRICS:
+        raise ValueError("Invalid diagnostic metric")
+    native = metric in _NATIVE_METRICS
+    gap_seconds = 900 if native else max(120, probe_seconds * 3)
+    epoch_start = start.timestamp()
+    span = max(1, finish.timestamp() - epoch_start)
+    raw: list[dict[str, Any]] | None = []
+    groups: dict[int, dict[str, Any]] = {}
+    seen_native: set[str] = set()
+    previous: tuple[float, dict[str, Any]] | None = None
+    segment = 0
+    unknown = False
+    count = 0
+    observed = 0
+    for row in rows:
+        count += 1
+        if raw is not None:
+            if len(raw) < raw_limit:
+                raw.append(row)
+            else:
+                raw = None
+        try:
+            stamp = datetime.fromisoformat(str(row["recorded_at"])).timestamp()
+        except (KeyError, TypeError, ValueError):
+            unknown = True
+            continue
+        value = row.get(metric)
+        if (not row.get("reachable") or isinstance(value, bool) or
+                not isinstance(value, (int, float)) or
+                not math.isfinite(float(value))):
+            unknown = True
+            continue
+        if native:
+            label = str(row.get("native_sample_label") or "")
+            if not label:
+                unknown = True
+                continue
+            if label in seen_native:
+                continue
+            seen_native.add(label)
+        if previous and (unknown or stamp - previous[0] > gap_seconds):
+            segment += 1
+        row["diag_segment"] = segment
+        unknown = False
+        previous_row = previous[1] if previous else None
+        previous = (stamp, row)
+        observed += 1
+        bucket_id = min(bucket_count - 1,
+                        max(0, int((stamp - epoch_start) / span * bucket_count)))
+        bucket = groups.setdefault(bucket_id, {
+            "first": row, "last": row, "min": row, "max": row,
+            "edges": [],
+        })
+        if (previous_row is not None and
+                previous_row["diag_segment"] != segment):
+            # Keep the two real readings bordering a gap even when both are
+            # in a bucket whose extrema occur elsewhere.
+            bucket["edges"].append(previous_row)
+            bucket["edges"].append(row)
+        bucket["last"] = row
+        if row[metric] < bucket["min"][metric]:
+            bucket["min"] = row
+        if row[metric] > bucket["max"][metric]:
+            bucket["max"] = row
+    if raw is not None:
+        return {
+            "samples": raw, "source_sample_count": count,
+            "observed_metric_points": observed, "downsampled": False,
+        }
+    selected: dict[str, dict[str, Any]] = {}
+    for bucket in groups.values():
+        for sample in (bucket["first"], bucket["last"], bucket["min"],
+                       bucket["max"], *bucket["edges"]):
+            selected[sample["recorded_at"]] = sample
+    return {
+        "samples": [selected[key] for key in sorted(selected)],
+        "source_sample_count": count,
+        "observed_metric_points": observed,
+        "downsampled": True,
+    }
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
@@ -118,6 +263,7 @@ class ExternalHubDiagnostics:
         self._pending_failure_start: str | None = None
         self._native: dict[str, Any] = {}
         self._native_last_attempt: float = -1e12
+        self._events_last_attempt: float = -1e12
         self._last_prune_at: float = 0
 
     def _connect(self) -> sqlite3.Connection:
@@ -143,6 +289,12 @@ class ExternalHubDiagnostics:
                 detail TEXT NOT NULL
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS incident_by_start ON incidents(started_at)")
+            db.execute("""CREATE TABLE IF NOT EXISTS hub_startups (
+                occurred_at TEXT PRIMARY KEY,
+                firmware TEXT NOT NULL DEFAULT '',
+                observed_at TEXT NOT NULL,
+                source TEXT NOT NULL
+            )""")
             last = db.execute("SELECT * FROM samples ORDER BY recorded_at DESC LIMIT 1").fetchone()
             if last is not None:
                 self._last = dict(last)
@@ -159,13 +311,15 @@ class ExternalHubDiagnostics:
         cutoff = (datetime.now(timezone.utc) -
                   timedelta(days=self.retention_days)).isoformat(timespec="milliseconds")
         db.execute("DELETE FROM samples WHERE recorded_at < ?", (cutoff,))
+        db.execute("DELETE FROM hub_startups WHERE occurred_at < ?", (cutoff,))
         db.execute(
             "DELETE FROM incidents WHERE recovered_at IS NOT NULL AND recovered_at < ?",
             (cutoff,),
         )
 
     def _save(self, row: dict[str, Any], opened: str | None,
-              recovered: bool, prune: bool = False) -> None:
+              recovered: bool, prune: bool = False,
+              startups: tuple[dict[str, str], ...] = ()) -> None:
         fields = ("recorded_at", "reachable", "latency_ms", "free_os_mb", "http_status",
                   "error_kind", "native_sample_label", "native_load5", "native_free_os_mb",
                   "java_total_mb", "java_free_mb", "java_direct_mb",
@@ -192,6 +346,13 @@ class ExternalHubDiagnostics:
                     "AND kind='hub-unreachable'",
                     (row["recorded_at"],),
                 )
+            for event in startups:
+                db.execute(
+                    "INSERT OR IGNORE INTO hub_startups "
+                    "(occurred_at, firmware, observed_at, source) VALUES (?, ?, ?, ?)",
+                    (event["occurred_at"], event["firmware"],
+                     row["recorded_at"], event["source"]),
+                )
             if prune:
                 self._prune(db)
 
@@ -217,6 +378,7 @@ class ExternalHubDiagnostics:
         except (ValueError, httpx.RequestError):
             row["error_kind"] = "invalid_response_or_request"
 
+        startups: tuple[dict[str, str], ...] = ()
         if row["reachable"]:
             self._failures = 0
             self._last_good = row["recorded_at"]
@@ -234,6 +396,16 @@ class ExternalHubDiagnostics:
                     # imply the previous Java sample has been refreshed.
                     pass
             row.update(self._native)
+            if now - self._events_last_attempt >= 300:
+                self._events_last_attempt = now
+                try:
+                    response = await client.get(self.hub_url + _HUB_EVENTS)
+                    response.raise_for_status()
+                    startups = tuple(parse_system_start_events(response.text))
+                except (httpx.HTTPError, ValueError):
+                    # Failing to retrieve hub events never blocks resource
+                    # recording. Startup coverage is only partial.
+                    pass
         else:
             self._failures += 1
             recovered = False
@@ -246,7 +418,7 @@ class ExternalHubDiagnostics:
         prune = time.monotonic() - self._last_prune_at >= 86400
         if prune:
             self._last_prune_at = time.monotonic()
-        await asyncio.to_thread(self._save, row, opened, recovered, prune)
+        await asyncio.to_thread(self._save, row, opened, recovered, prune, startups)
 
     async def _run(self) -> None:
         async with httpx.AsyncClient(
@@ -311,27 +483,62 @@ class ExternalHubDiagnostics:
             ),
         }
 
-    def history(self, hours: int = 6) -> dict[str, Any]:
+    def history(self, hours: int = 6,
+                metric: str = "free_os_mb") -> dict[str, Any]:
+        if metric not in _HISTORY_METRICS:
+            raise ValueError("Unsupported diagnostic history metric")
+        window = max(1, min(720, self.retention_days * 24, int(hours)))
+        finish = datetime.now(timezone.utc)
+        start = finish - timedelta(hours=window)
+        cutoff = start.isoformat(timespec="milliseconds")
+        empty: dict[str, Any] = {
+            "samples": [], "incidents": [], "reboots": [],
+            "coverage": "not_recorded", "cpu_cores": self.cpu_cores,
+            "hours": window, "metric": metric, "retention_days": self.retention_days,
+            "source_sample_count": 0, "observed_metric_points": 0,
+            "downsampled": False,
+            "range_start": cutoff,
+            "range_end": finish.isoformat(timespec="milliseconds"),
+        }
         if not self.enabled or not self.path.exists():
-            return {"samples": [], "incidents": [], "coverage": "not_recorded",
-                    "cpu_cores": self.cpu_cores}
-        window = max(1, min(24, int(hours)))
-        cutoff = (datetime.now(timezone.utc) -
-                  timedelta(hours=window)).isoformat(timespec="milliseconds")
+            return empty
         with self._connect() as db:
-            rows = [dict(v) for v in db.execute(
-                "SELECT * FROM samples WHERE recorded_at>=? ORDER BY recorded_at ASC "
-                "LIMIT 3000", (cutoff,),
-            )]
+            sample_rows = (
+                self._with_load_pct(dict(row))
+                for row in db.execute(
+                    "SELECT * FROM samples WHERE recorded_at>=? ORDER BY recorded_at ASC",
+                    (cutoff,),
+                )
+            )
+            chart = summarize_history_samples(
+                sample_rows, metric=metric, start=start, finish=finish,
+                probe_seconds=self.probe_seconds,
+            )
             incidents = [dict(v) for v in db.execute(
                 "SELECT * FROM incidents WHERE started_at>=? OR recovered_at>=? "
-                "ORDER BY started_at DESC LIMIT 40", (cutoff, cutoff),
+                "OR recovered_at IS NULL "
+                "ORDER BY started_at DESC LIMIT 100", (cutoff, cutoff),
+            )]
+            reboots = [dict(v) for v in db.execute(
+                "SELECT occurred_at,firmware,observed_at,source "
+                "FROM hub_startups WHERE occurred_at>=? "
+                "ORDER BY occurred_at ASC LIMIT 200", (cutoff,),
             )]
         return {
-            "samples": [self._with_load_pct(row) for row in rows],
-            "incidents": incidents, "hours": window,
-            "cpu_cores": self.cpu_cores,
+            **chart,
+            "incidents": incidents,
+            "reboots": reboots,
+            "hours": window, "metric": metric, "cpu_cores": self.cpu_cores,
+            "retention_days": self.retention_days,
+            "range_start": cutoff,
+            "range_end": finish.isoformat(timespec="milliseconds"),
+            "display_point_count": len(chart["samples"]),
+            "summarization": ("first_last_min_max_actual_per_time_bucket"
+                              if chart["downsampled"] else "original_records"),
             "coverage": "partial_observations_not_proof_of_cause",
+            "reboot_coverage": (
+                "confirmed_systemStart_events_returned_by_hub_eventsJson"
+            ),
             "native_java_resolution_seconds": 300,
         }
 
@@ -339,4 +546,5 @@ class ExternalHubDiagnostics:
 __all__ = [
     "ExternalHubDiagnostics", "validate_hub_url",
     "parse_live_memory", "parse_native_sample",
+    "parse_system_start_events", "summarize_history_samples",
 ]

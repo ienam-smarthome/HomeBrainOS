@@ -62,12 +62,16 @@ Five cards show (with actual source timestamps):
 Expand **View memory history & connection incidents** to show:
 - Free OS memory, Java memory, allocated heap %, 5-minute load equivalent
   (%) or original 5-minute load average, and response latency.
-- Date windows of 1, 6, 24 hours.
-- Persisted connectivity loss and recovery episodes.
+- Date windows of **1, 6, 24, 72, 168, or 720 hours** (1 hour to 30 days), limited by the recorder's configured retention.
+- Persistent connectivity-loss and recovery episodes, independently labelled.
+- Confirmed **Hubitat systemStart** events as amber vertical chart markers, with captured firmware build when available. The marker's time is from Hubitat's timezone-aware event record; this does not prove why the hub restarted.
 
 HomeBrain's UI reads SQLite rather than making hub requests:
 - /api/hub-diagnostics/status
-- /api/hub-diagnostics/history?hours=6
+- /api/hub-diagnostics/history?hours=6&metric=free_os_mb
+- /api/hub-diagnostics/history?hours=720&metric=java_free_mb
+
+The 30-day graph **does not fetch tens of thousands of points into the browser**. Only actual first/last, minimum/maximum and gap-boundary observations from bounded time buckets are returned. Minima such as a short low-memory dip are preserved instead of averaged away, and missing intervals remain distinguishable. The original 30-second samples remain available in SQLite until retention expires.
 
 The database is stored under /data/homebrain-hub-diagnostics.sqlite3,
 including its SQLite WAL files, and pruned daily.
@@ -76,7 +80,7 @@ including its SQLite WAL files, and pruned daily.
 
 The recorder requests /hub/advanced/freeOSMemory every 30 seconds,
 using a 3-second timeout, and /hub/advanced/freeOSMemoryLast no
-more frequently than every 300 seconds. No retries, no extra hub apps,
+more frequently than every 300 seconds. It also reads `/hub/eventsJson` at most every 300 seconds to collect genuine systemStart records. A Hubitat event must include an explicit timezone-offset timestamp before being plotted as a reboot/startup. Events unavailable from the hub cannot be reconstructed. No retries, no extra hub apps,
 no event subscriptions or adaptive high-frequency polling. Native Java
 and load samples remain five-minute source readings even when displayed
 beside more frequent OS observations. CPU load equivalent is calculated
@@ -89,7 +93,7 @@ existing native samples, makes no extra hub requests and is not written
 back into the retained raw samples.
 
 Two consecutive failed probes create a connectivity incident; that
-does NOT confirm a Hubitat reboot. Compare with Hub Events for
+does NOT confirm a Hubitat reboot. A recorded `systemStart` event confirms a startup, not its cause; a missing event does not prove that no restart occurred. Compare with Hub Events for
 systemStart, lowMemory, severeLoad, update, manualReboot, and HPM logs.
 A missing Java sample does not imply that Free Java was zero.
 No direct JVM Metaspace metric is exposed.
