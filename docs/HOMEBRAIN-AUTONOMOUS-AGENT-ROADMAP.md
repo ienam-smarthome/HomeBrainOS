@@ -1,9 +1,10 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**Status:** Phase 1 v0.18.443 merged via PR #1490; documentation PR #1491 merged.
-A source-real first-answer test is still pending. Phase 2 source-neutral observed
-interval operator is merged as v0.18.444 via PR #1492 with four CI checks green,
-but is **not integrated** with live source reads or model synthesis. Do not claim general-question mastery
+**Status:** Phase 1 v0.18.443 and Phase 2 source-neutral arithmetic core
+v0.18.444 merged. v0.18.445 introduces progress-aware read-only request
+timing in the add-on without a fixed 180-second *total* deadline. A source-real
+first-answer test is still pending; the temporal operator is **not integrated**
+with live MCP evidence or model synthesis. Do not claim general-question mastery
 until first-attempt, source-real tests prove it. This plan supplements
 the permanent [Answer Quality Charter](ANSWER-QUALITY-CHARTER.md), whose
 correctness/safety targets remain in force.
@@ -164,17 +165,25 @@ source-real acceptance gate remains required before claiming any improvement.
 **Removed for autonomous read-only evidence collection:** arbitrary soft
 read-call counts and short causal/telemetry round/checkpoint ceilings.
 
-**Retained intentionally:** hard operational request deadline (currently
-180 seconds, configurable), per-tool timeout (30s model read), explicit
-outer tool-round emergency ceiling (configured to 18 for this candidate),
-tool context/result size limits, external provider quotas, MCP rate and
-concurrency controls, no-write/read-only enforcement, device identity
-verification, permission gates, confirmation for sensitive actions,
-duplicate/no-progress stopping and evidence privacy. None of these are
-quality pass/fail time targets; none authorise uncontrolled execution.
-Increasing them further requires tracing the actual failed evidence
-frontier and verifying resource/cancellation behaviour, not simply
-removing protections.
+**v0.18.445 adaptive request timing:** The fixed 180-second *total* deadline
+no longer applies to ordinary read-only investigations. The default
+180-second **stall** watchdog resets only when a distinct, actually
+successful, read-only tool/argument source scope is recorded. Duplicates,
+errors, model prose, stage updates and writes do not earn new time. An
+independent configurable 1800-second emergency watchdog protects against
+runaway execution. A successful new scope is not necessarily complete
+evidence or proof that returned history contains the requested event.
+Legacy saved `investigation_deadline_seconds` is ignored on the normal
+Ask path; no silent deadline-based quality target remains.
+
+**Retained intentionally:** individual model/MCP timeouts, an independent
+emergency watchdog, explicit outer tool-round ceiling (18), tool
+context/result sizes, provider quotas, MCP rate/concurrency controls,
+no-write/read-only enforcement, verified target identity, write
+confirmation, cancellation/disconnect, duplicate/no-progress stopping and
+evidence privacy. These are operational safety protections rather than
+a fixed three-minute goal for answering complex questions.
+Any external proxy/provider timeout still needs source-real verification.
 
 ## What was **not** done
 
