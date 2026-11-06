@@ -64,6 +64,23 @@ Angle-bracket placeholders above are **not valid input**; enter actual SHA-256 d
 - CI uses synthetic fixtures only to test validation, never invents a real reviewer or awards benchmark accuracy. `acceptance_gate_passed=false` is intentional.
 - Cost and provider settings remain a **separate disclosed requirement**, not guessed from model tag or network status. Do not invoke Gemma/Ollama Cloud automatically: any nonzero spend must be explicitly authorised.
 
+## Same-packet improvement accounting (6 November 2026)
+
+The offline paired report now also shows **reviewer-graded ordinal changes** for
+all five fixed quality dimensions (candidate better, baseline better, tied),
+the difference in counted unsupported **definitive** causal claims,
+and the median of per-case **candidate-minus-baseline model-request timings**.
+A negative latency delta means the candidate was faster on those reviewed
+source-identical cases; no production p95 or live service-level claim follows.
+
+The shared scorecard rejects contradictory input that marks causal calibration
+as pass while also reporting one or more unsupported definitive causal claims.
+A reviewer may still mark such a case partial or fail. Empty review
+manifests return null paired measurements rather than invented zero regressions.
+These are controls for **honest accounting**, not improvements in HomeBrain's
+reasoning or evidence completeness. No answer, paid model or hub operation is
+created by this reporting change. No add-on version bump.
+
 ## Next practical comparison
 
 Use an initial small, balanced sample across light-command provenance, heating, MQTT broker/endpoint freshness and Rule Machine missing native identity. Freeze the same model-visible source packet for both and preserve the first response in private storage. When consented actual model runs and human-source reviews exist, use this tool to calculate a defensible paired comparison; do not claim it is available merely because the CLI and CI pass. Continue Q3 only after assessing actual qualitative results and latency.
