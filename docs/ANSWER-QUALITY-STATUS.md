@@ -1,5 +1,18 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Q2 reviewed-pair integrity and general measurement deltas (offline only)
+
+**Base merged:** [PR #1457](https://github.com/ienam-smarthome/HomeBrainOS/pull/1457) at `59865dfeab4b033ff1da29fba7d35c41ab37e47d`, all **7 exact-head CI checks successful**. v0.18.427 is merged source; it has **not** been independently accepted against a newly installed HomeBrain natural answer. The native one-time schema still lacks installed-runtime proof; no writer is authorised.
+
+**Next permanent Answer Quality milestone:** Compare existing real, SHA-bound first model answers on the **same 40 frozen curated packets**, separately from the 13 live legacy tasks; establish genuinely source-reviewed, first-attempt denominators. The four privately captured local-model pairs remain descriptive qualitative observations, **not** a certified 53-case Q4 benchmark or evidence of Gemma/Claude parity. No raw answers or provider secrets are in the repo.
+
+**This candidate (no runtime version bump):** Harden the existing review scorecard to reject a `causal_calibration=pass` grade when unsupported definitive causes are counted. Add same-packet human-review ordinal changes for all five rubric dimensions, exact-pair unsupported-cause deltas and the median *per-case* offline request-time delta, preserving null outputs for zero reviewed pairs. Unit tests use synthetic reviews and cannot claim real answer gains. No model calls, external tool calls, Hubitat/HA read/writes, add-on routing or natural-language publication changes. Roll back if legitimate reviewed reports are rejected or paired case/provenance identity is degraded. **CI and actual semantic improvement are pending.**
+
+**Next:** After green CI and merge, independently source-review the four existing private local pairs (or obtain one new first-attempt read-only HomeBrain answer/JSON only if live provenance is needed); do not fill reviewer rubrics from synthetic tests, assume a measured baseline, or return to case-specific publication patches.
+
+---
+
+
 ## 2026-11-05 — installed v0.18.426 passed routing/no-write but overstated native contract evidence; v0.18.427 candidate
 
 **Acceptance:** Installed 0.18.426 answered the read-only MCP Rule Server 5.1.6 runbook as `rule_design_review` in 2 model rounds, 3 calls and 19.172s wall. The technical record correctly reported `evidenceComplete=false`, `typed_authoring_contract=checked-unverified`, `questionResolved=false` and Unresolved, with no Hubitat writes. The final text nevertheless labelled unverified typed fields, year# and log action as Verified, conflated numbered `logmsg.#` field placeholders with calendar-year handling, and exposed a guide acknowledgement key and contract-shaped JSON sketch. A generic controller/device evidence disclaimer was irrelevant to contract-only review.
