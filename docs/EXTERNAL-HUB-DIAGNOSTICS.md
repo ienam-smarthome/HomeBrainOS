@@ -85,6 +85,17 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Source-grounded purge assertion coverage (v0.18.441):** In unresolved
+historical-source investigations, the publication guard also detects
+unsupported direct assertions of retention loss, even without an explicit
+"reboot caused" clause. This includes nominal forms like "log purge occurred"
+and result-state assertions like "diagnostic log buffer has been cleared".
+Explicitly uncertain hypotheses and negative statements are not upgraded
+to definitive claims. Actual recent native past rows, bounded zero-match
+results and separately typed hub events are preserved; their presence or
+absence does not prove a purge mechanism. No new reads, writes, monitoring
+or model-cost changes.
+
 **Unverified historical retention causes (v0.18.440):** An empty
 bounded past-log query plus a nonempty recent unbounded page cannot
 prove that restart, update, firmware or a hub log-buffer rollover

@@ -3,7 +3,18 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.440**.
+Current add-on version: **0.18.441**.
+
+**General historical-loss claim coverage (v0.18.441):**
+The shared ordinary Ask publication guard now recognises unsupported,
+unqualified assertions such as "a log purge occurred" or "the diagnostic
+buffer has been cleared" even when the model omits an explicit reboot
+causal connector. The fix preserves independently verified source rows,
+recent and bounded past-log results, and typed system/location events in
+chronological order. Tentative/unverified hypotheses remain permitted;
+full log retention, a purge mechanism and the original memory consumer
+remain unverified. The guard adds no MCP calls or write actions.
+[Release notes](CHANGELOG-0.18.441.md).
 
 **Evidence-based historical-retention explanations (v0.18.440):**
 Ordinary Ask now withholds an unsupported *cause of missing historic
