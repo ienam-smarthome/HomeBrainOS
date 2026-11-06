@@ -3,7 +3,24 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.431**.
+Current add-on version: **0.18.432**.
+
+**Evidence-bound AI investigations (v0.18.432):** Hub Diagnostics now offers
+**AI investigate** on each timeline event, **AI investigate selected time**,
+and **Investigate with HomeBrain AI** in the bounded incident review.
+The explicit request passes a source-labelled local SQLite evidence capsule
+to the existing HomeBrain read-only MCP reasoning loop. The model may check
+Hub Events, app logs and native performance using ordinary read-only tools.
+The selected Free/Ollama, Paid or configured Claude tier is respected.
+No scheduled AI monitoring, automatic model escalation, Hubitat writes,
+new collectors or extra polling are introduced.
+
+**Answer Quality correction:** A model may not publish a definitive root
+cause if its typed hypothesis-discriminator evidence remains unverified.
+Unresolved ordinary Ask responses and the new incident AI path withhold
+overconfident causal drafts rather than incorrectly certifying firmware
+or memory as the cause. Historical timestamps prove sequence, not cause.
+[Release notes](CHANGELOG-0.18.432.md).
 
 **Incident evidence drill-down (v0.18.431):** Click **Investigate** on any timeline
 event or select a plotted time and choose **Investigate selected time**. The
