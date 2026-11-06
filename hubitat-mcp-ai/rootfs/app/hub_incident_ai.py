@@ -736,7 +736,7 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
     log_lines = []
     for name, label in (
         ("hubEvents", "Hub Events log"),
-        ("past", "Past historical log (explicit mode)"),
+        ("past", "Past historical log"),
         ("generic_bounded", "Past historical log (default mode; bounded)"),
         ("apps", "App runtime statistics"),
         ("devices", "Device runtime statistics"),
@@ -766,14 +766,14 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
                         if "sourceRowsReported" in page
                     ]
                     prefilter_note = (
-                        " Raw source rows before the time filter: "
+                        " Source response row count before the time filter: "
                         + ", ".join(str(x) for x in prefilter[:4])
                         + (" (separate reads, not summed)." if len(prefilter) > 1
                            else ".")
                     ) if prefilter else ""
                     qualifier = (
-                        "0 matching messages on this bounded query's returned "
-                        "page(s), not proof of historical absence."
+                        "0 matching messages in the returned bounded page(s) "
+                        "for this query, not proof of historical absence."
                         + prefilter_note
                         + " Retention range unverified."
                     )
@@ -787,9 +787,9 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
                         for page in bounded
                     )
                     qualifier = (
-                        f"{inspected} timestamped messages and {app_rows} "
-                        "app-identified rows observed on this bounded query's "
-                        "returned pages; history coverage unverified."
+                        f"{inspected} timestamped messages observed on this "
+                        f"bounded query's returned pages; {app_rows} "
+                        "app-identified rows; full historical coverage unverified."
                     )
                 if any(page.get("hasNextCursor") or
                        page.get("responseTruncated") or
