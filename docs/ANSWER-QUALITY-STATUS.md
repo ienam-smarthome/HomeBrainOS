@@ -1,6 +1,18 @@
 # Answer Quality — active status and cross-chat handoff
 
 
+## 2026-11-06 — Q2 real no-cloud evidence-first prompt A/B: 16 requests, no demonstrated semantic gain
+
+**Code GREEN MERGED:** [PR #1467](https://github.com/ienam-smarthome/HomeBrainOS/pull/1467), exact tested head `d7334993d5cbbde5538ffe7fc7020f724504360d`, merged `a6c87abdfefedc6e357a77d5bbbb96186c85ca16`; **8/8 CI checks passed**, including actual tiny-local-model inference. [Source-bounded results](ANSWER-QUALITY-Q2-EVIDENCE-FIRST-AB-RESULTS-20261106.md), [actual no-cloud trial](https://github.com/ienam-smarthome/HomeBrainOS/actions/runs/42234238612).
+
+**Measured transport only:** Four unchanged frozen source cases × two tiny local models (`qwen2.5:0.5b` and `llama3.2:1b`) × old vs optional evidence-first prompt. **16/16 requests returned nonempty text** without automatic retry; no raw model response published. Candidate minus baseline per-case request-time median **+346 ms** over eight matched model/source pairs, candidate faster **3/8**. Qwen: faster **3/4**, median **−61 ms**; Llama: faster **0/4**, median **+1,966 ms**. In two Qwen comparisons, both variant answer digests were identical. No provider finish reason independently attested, no repeated inference distribution. No model outputs or semantic reviewer grades were available; **grounding, causal correctness, first-answer usefulness and Claude/Gemma parity still NOT MEASURED**.
+
+**Decision:** **Do not promote the evidence-first prompt into production**; additional tokens slowed the Llama calibration model and no source-reviewed quality noninferiority has been established. The optional offline prompt experiment remains reproducible for future privacy-safe source review, but does not change HomeBrain runtime/model routing, installed version, Hubitat/HA, devices or any Cloud usage. Avoid further ungraded prompt iterations: next meaningful Q2 result requires privately retained full first answers and independently completed source review of the same model and same frozen packet. If unavailable, preserve `not_measured` rather than invent accuracy, or redirect development to general source-contract corrections substantiated across multiple live read-only cases.
+
+---
+
+
+
 ## 2026-11-06 — Q2 general evidence-first prompt A/B against identical source packets (candidate)
 
 **Source base:** `b6623ed9c1360ae14899ed3b0d239fe27e3e6830` (#1465). Production add-on stays at v0.18.427; no fresh installed-build attestation, no model-route change. Two of eight original archived Q2 answer texts have been independently rehashed; the other originals remain unavailable to this evaluation. Formal first-attempt semantic-quality reviews still have **0 independently authenticated grades**.
