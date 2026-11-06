@@ -195,3 +195,26 @@ def test_failed_bounded_log_query_never_counts_as_a_success():
     assert a["bounded_generic_log_reads"] == 1
     assert a["bounded_generic_log_read_successes"] == 0
     assert a["app_specific_logs"] == "not_verified"
+
+
+def test_typed_app_specific_log_status_requires_bounded_past_mode():
+    case = snapshot()
+    correct = {
+        "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+        "success": True, "mutates": False,
+        "arguments": {"args": {"mode": "past", "appId": "4151",
+                                "since": "2026-11-05T22:10:00Z",
+                                "until": "2026-11-05T22:40:00Z"}},
+        "summary": "object fields: mode, total, matched, entries, count",
+    }
+    assessment = assess_hub_event_trigger(case, [correct])
+    assert assessment["app_specific_log_attempts"] == 1
+    assert assessment["app_specific_logs"] == "read_succeeded_coverage_unverified"
+    assert assessment["app_runtime_stats_attempts"] == 0
+    assert "past-log query returned successfully" in render_hub_event_findings(assessment)
+    assert "complete historical" in render_hub_event_findings(assessment)
+    # Positive API return never verifies matching historical message contents.
+    failed = {**correct, "success": False}
+    a2 = assess_hub_event_trigger(case, [failed])
+    assert a2["app_specific_logs"] == "read_failed"
+    assert "past-log query scoped to one app failed" in render_hub_event_findings(a2)
