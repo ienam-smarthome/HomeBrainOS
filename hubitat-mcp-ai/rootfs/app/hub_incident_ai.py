@@ -235,6 +235,12 @@ def incident_read_only_next_checks(
             "verified read-only method; per-app journal receipt counts "
             "do not contain the messages needed to attribute a failure."
         )
+    if int(assessment.get("app_runtime_stats_attempts") or 0):
+        actions.append(
+            "- The apps tab supplies current runtime statistics, not historical "
+            "app messages. For retained app log messages use a time-bounded "
+            "past-mode query with appId when the owner is known."
+        )
     if int(recorder.get("sample_count") or 0) == 0:
         actions.append(
             "- There are no external resource samples in this window; "
@@ -302,7 +308,7 @@ def read_only_log_receipt_summary(
     """
     modes = {
         name: {"attempts": 0, "successes": 0}
-        for name in ("apps", "past", "hubEvents", "generic_bounded")
+        for name in ("apps", "devices", "hubActions", "past", "hubEvents", "generic_bounded")
     }
     verified_app_message_rows = 0
     for receipt in receipts or []:
@@ -317,7 +323,7 @@ def read_only_log_receipt_summary(
         if not isinstance(params, dict):
             continue
         mode = params.get("mode")
-        if mode in ("apps", "past", "hubEvents"):
+        if mode in ("apps", "devices", "hubActions", "past", "hubEvents"):
             key = mode
         elif mode in (None, "") and params.get("since") and params.get("until"):
             key = "generic_bounded"
@@ -333,7 +339,7 @@ def read_only_log_receipt_summary(
         # never satisfy this requirement.
         if (receipt.get("supports_live_claim") is not True
                 or not (params.get("since") and params.get("until"))
-                or key not in ("apps", "past", "generic_bounded")):
+                or key not in ("past", "generic_bounded")):
             continue
         details = receipt.get("details")
         entries = details.get("entries") if isinstance(details, dict) else None
@@ -372,8 +378,10 @@ def read_only_log_receipt_summary(
         "verified_bounded_app_message_rows": verified_app_message_rows,
         "complete_historical_app_log_coverage": False,
         "coverage_note": (
-            "A successful MCP query or summary-only receipt is not evidence "
-            "that matching historical app messages were returned or reviewed."
+            "Past-mode reads can return historical app/device messages, but "
+            "success and summary-only receipts never verify matching rows "
+            "or full retention. Apps/devices are current runtime statistics; "
+            "hubActions is a hub actions table, not historical log messages."
         ),
     }
 
@@ -382,7 +390,8 @@ def _authenticated_system_event_facts(
     receipts: list[dict[str, Any]] | None,
 ) -> list[str]:
     """Only quote a bounded event's safe type/time, never model assertions."""
-    rows: list[str] = []
+    rows: list[tuple[datetime, str]] = []
+    observed: list[tuple[str, datetime, bool]] = []
     seen: set[tuple[str, str]] = set()
     for receipt in receipts or []:
         if (not isinstance(receipt, dict) or receipt.get("mutates")
@@ -437,10 +446,32 @@ def _authenticated_system_event_facts(
                 qualifier = "recorded a system startup"
             else:
                 qualifier = "recorded a firmware update event"
-            rows.append(f"- {at}: Hubitat {qualifier}.")
-            if len(rows) >= 8:
-                return rows
-    return rows
+            rows.append((occurred, f"- {at}: Hubitat {qualifier}."))
+            observed.append((
+                name, occurred,
+                name == "lowMemory" and
+                "explicitly warned that memory was critically low" in qualifier,
+            ))
+    rendered = [line for _, line in sorted(rows, key=lambda pair: pair[0])[:8]]
+    startups = [when for name, when, _ in observed if name == "systemStart"]
+    explicit_low = [when for name, when, explicit in observed
+                    if name == "lowMemory" and explicit]
+    if any(0 <= (start - low).total_seconds() <= 1800
+           for low in explicit_low for start in startups):
+        rendered.append(
+            "**Verified reported restart context:** Hubitat explicitly "
+            "announced a critical-memory reboot before a recorded startup. "
+            "The original memory-consuming process is not established."
+        )
+    elif any(0 <= (start - changed).total_seconds() <= 1800
+             for name, changed, _ in observed if name == "update"
+             for start in startups):
+        rendered.append(
+            "**Verified update/startup sequence:** Hubitat recorded a firmware "
+            "update followed by startup; the exact restart initiator and any "
+            "earlier memory decline remain unverified."
+        )
+    return rendered
 
 
 def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, Any]:
@@ -484,17 +515,23 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
     modes = log_coverage["mode_reads"]
     log_lines = []
     for name, label in (
-        ("hubEvents", "Hub Events log"), ("past", "Past log"),
-        ("apps", "App-mode log"), ("generic_bounded", "Generic bounded log"),
+        ("hubEvents", "Hub Events log"), ("past", "Past historical log"),
+        ("generic_bounded", "Generic bounded historical log"),
+        ("apps", "App runtime statistics"),
+        ("devices", "Device runtime statistics"),
+        ("hubActions", "Hub actions table"),
     ):
         data = modes[name]
         if data["attempts"]:
             log_lines.append(
                 f"- {label}: {data['successes']}/{data['attempts']} "
-                "read requests succeeded; content/retention coverage unverified."
+                "read requests succeeded; "
+                + ("runtime/action data, not historical log-message coverage."
+                   if name in ("apps", "devices", "hubActions")
+                   else "historical content/retention coverage unverified.")
             )
     if log_lines:
-        sections.append("**Historical-log source checks**\n" + "\n".join(log_lines))
+        sections.append("**Log and runtime-source checks**\n" + "\n".join(log_lines))
     sections.append(
         "**Read-only next checks:** Examine the actual returned, time-bounded "
         "source messages and missing retention/collection intervals before "

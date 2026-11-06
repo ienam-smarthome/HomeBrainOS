@@ -191,6 +191,7 @@ class RequestMetrics:
         "historical_provenance_app_log_unavailable",
         "read_only_model_write_blocked", "read_only_write_recovery_view",
         "requested_device_drift_guard", "unscoped_historical_logs_blocked",
+        "invalid_log_mode_time_window_blocked",
         "causal_adaptive_expansion", "causal_adaptive_sensor_reads",
         "causal_focal_window_reads", "causal_focal_window_evidence_recovered",
         "causal_focal_history_gap_stop",

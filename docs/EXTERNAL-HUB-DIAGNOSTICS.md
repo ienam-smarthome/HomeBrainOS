@@ -85,6 +85,19 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Read-only log-mode compatibility (v0.18.436):** The MCP server's
+`hub_get_logs(mode="past")` reads historical app/device messages with
+optional source ID and time filters. `apps` and `devices` are current
+runtime statistics, not historical message streams, and `hubActions`
+does not accept a historical date bound. HomeBrain rejects invalid
+model-selected combinations before making an MCP call, retaining the
+correct read-only next steps. The existing causal log-window normalizer
+does not inject unsupported date parameters into non-temporal tabs.
+Authenticated Hub Events in withheld ordinary Ask answers now display in
+chronological order with explicit reboot-warning context, independently
+of the unresolved original memory consumer. Historical message bodies
+are not fabricated when the receipts only contain query summaries.
+
 **Shared Ask and incident source receipts (v0.18.435):** The ordinary
 `/api/ask` causal-claim guard now preserves verified bounded and typed
 `hub_list_device_events` system-event time/type facts if actually present in

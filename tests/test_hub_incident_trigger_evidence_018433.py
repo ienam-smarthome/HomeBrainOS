@@ -92,7 +92,8 @@ def test_low_memory_report_verifies_trigger_but_not_memory_consumer():
     assert assessment["typed_hub_events_checked"] is True
     assert assessment["restart_trigger"] == "hub_explicit_critical_low_memory_reboot"
     assert assessment["underlying_memory_cause"] == "unverified"
-    assert assessment["app_specific_logs"] == "read_failed"
+    assert assessment["app_specific_logs"] == "not_verified"
+    assert assessment["app_runtime_stats_attempts"] == 1
     answer, reason = publish_incident_analysis(
         snapshot, "Hubitat reported a low memory reboot. No app was identified.", sources)
     assert reason == "hypotheses_only"
@@ -100,7 +101,7 @@ def test_low_memory_report_verifies_trigger_but_not_memory_consumer():
     assert "16:52:15 UTC" in answer
     assert "critically low memory" in answer
     assert "which process consumed memory" in answer
-    assert "targeted app-mode log query failed" in answer
+    assert "App runtime statistics:** 0/1" in answer
     assert "uninterrupted connectivity outage" in answer
     assert "not recorded in this window" in fact_summary(snapshot)
 
@@ -187,6 +188,7 @@ def test_host_assessment_exposed_by_read_only_incident_api(monkeypatch, tmp_path
         app.IncidentAIRequest(at=snapshot["focus_at"]), None))
     assert output["restart_trigger_status"] == "hub_explicit_critical_low_memory_reboot"
     assert output["restart_trigger_evidence"]["observed_system_events"][0]["name"] == "lowMemory"
+    assert output["incident_source_coverage"]["app_runtime_stats_attempts"] == 1
     assert output["incident_source_coverage"]["log_query_modes"]["apps"]["attempts"] == 1
     assert output["incident_source_coverage"]["log_query_modes"]["apps"]["successes"] == 0
     assert output["incident_source_coverage"]["verified_bounded_app_message_rows"] == 0

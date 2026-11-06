@@ -3,7 +3,20 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.435**.
+Current add-on version: **0.18.436**.
+
+**Historical-log mode contract and chronological incident reporting (v0.18.436):**
+HomeBrain checks the upstream MCP log-mode/time-filter contract before executing
+model-selected historical reads. Only past/hubEvents/locationEvents tabs accept
+since/until; apps/devices are current runtime statistics, hubActions is a hub
+actions table. Invalid combinations are rejected without making an MCP call,
+with read-only guidance to use past with an optional appId/deviceId for
+historical messages. Causal log-window normalization no longer attaches dates
+to runtime/operation tabs. Safe typed Hub Events are rendered chronologically,
+and the explicit lowMemory/reboot warning followed by startup is distinguished
+from an unverified originating memory consumer. Technical coverage separates
+app runtime stats from bounded app-specific past logs. No extra polling or writes.
+[Release notes](CHANGELOG-0.18.436.md).
 
 **Shared Answer Quality and log-query receipt coverage (v0.18.435):**
 When ordinary Ask withholds an unsupported causal claim, the response keeps

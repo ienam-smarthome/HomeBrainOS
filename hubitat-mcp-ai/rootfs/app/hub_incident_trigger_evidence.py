@@ -51,6 +51,8 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
         "observed_system_events": [],
         "app_specific_logs": "not_verified",
         "app_specific_log_attempts": 0,
+        "app_runtime_stats_attempts": 0,
+        "app_runtime_stats_successes": 0,
         "bounded_generic_log_reads": 0,
         "bounded_generic_log_read_successes": 0,
         "hub_event_log_read_successes": 0,
@@ -65,6 +67,8 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
         return empty
     events: dict[tuple[str, datetime, str], dict[str, Any]] = {}
     attempts = 0
+    runtime_attempts = 0
+    runtime_successes = 0
     failures = 0
     successes = 0
     checked = False
@@ -82,6 +86,14 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
         if sub_tool == "hub_get_logs":
             mode = params.get("mode")
             if mode == "apps":
+                # Upstream MCP 'apps' returns current App Stats, not log lines.
+                runtime_attempts += 1
+                if receipt.get("success") is True:
+                    runtime_successes += 1
+            elif (mode in (None, "", "past") and params.get("appId")
+                  and params.get("since") and params.get("until")):
+                # Scoped historical app-message query; a successful call
+                # remains an unverified-content receipt until rows are read.
                 attempts += 1
                 if receipt.get("success") is True:
                     successes += 1
@@ -172,6 +184,8 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
             else "not_verified"
         ),
         "app_specific_log_attempts": attempts,
+        "app_runtime_stats_attempts": runtime_attempts,
+        "app_runtime_stats_successes": runtime_successes,
         "bounded_generic_log_reads": generic_attempts,
         "bounded_generic_log_read_successes": generic_successes,
         "hub_event_log_read_successes": event_log_successes,
@@ -233,7 +247,7 @@ def render_hub_event_findings(assessment: dict[str, Any]) -> str:
     generic_success = int(assessment.get("bounded_generic_log_read_successes") or 0)
     if app_status == "read_failed":
         rows.append(
-            "**App-log coverage:** A targeted app-mode log query failed."
+            "**App-log coverage:** A targeted past-log query scoped to one app failed."
             + (" A bounded generic log query also succeeded, but its"
                " receipt does not independently verify app-specific"
                " historical coverage." if generic_success else
@@ -243,7 +257,7 @@ def render_hub_event_findings(assessment: dict[str, Any]) -> str:
         )
     elif app_status == "read_succeeded_coverage_unverified":
         rows.append(
-            "**App-log coverage:** An app-mode query returned successfully,"
+            "**App-log coverage:** A targeted past-log query returned successfully,"
             " but its receipt alone does not verify complete historical"
             " app-message coverage."
         )
@@ -258,6 +272,16 @@ def render_hub_event_findings(assessment: dict[str, Any]) -> str:
             "**App-log coverage:** No successful app-specific historical"
             " message review is verified. Journal receipt counts cannot"
             " substitute for the message source."
+        )
+    runtime_attempts = int(assessment.get("app_runtime_stats_attempts") or 0)
+    if runtime_attempts:
+        rows.append(
+            "**App runtime statistics:** "
+            + str(assessment.get("app_runtime_stats_successes") or 0)
+            + "/" + str(runtime_attempts)
+            + " query attempts succeeded. The apps tab is runtime statistics,"
+              " not historical application log messages; date filters are"
+              " unsupported for that mode."
         )
     rows.append(
         "The time between a reboot message and systemStart does not, "

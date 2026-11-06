@@ -88,14 +88,15 @@ def test_22_25_live_pattern_targeted_failure_and_generic_fallback_are_separate()
     ]
     assessed = assess_hub_event_trigger(original, receipts)
     assert assessed["restart_trigger"] == "firmware_update_recorded_before_startup"
-    assert assessed["app_specific_log_attempts"] == 1
-    assert assessed["app_specific_logs"] == "read_failed"
+    assert assessed["app_specific_log_attempts"] == 0
+    assert assessed["app_runtime_stats_attempts"] == 1
+    assert assessed["app_specific_logs"] == "not_verified"
     assert assessed["bounded_generic_log_reads"] == 1
     assert assessed["bounded_generic_log_read_successes"] == 1
     rendered = render_hub_event_findings(assessed)
-    assert "targeted app-mode log query failed" in rendered
-    assert "bounded generic log query also succeeded" in rendered
-    assert "does not independently verify app-specific" in rendered
+    assert "App runtime statistics:** 0/1" in rendered
+    assert "Bounded generic log query succeeded" in rendered
+    assert "has not independently established historical app-log" in rendered
     assert "memory reduction are not established" in rendered
     model_draft = (
         "The firmware update was responsible for the earlier 220.96 MB "
@@ -107,7 +108,7 @@ def test_22_25_live_pattern_targeted_failure_and_generic_fallback_are_separate()
     assert "22:26:02 UTC" in answer
     assert "22:33:16 UTC" in answer
     assert "**Read-only next checks" in answer
-    assert "historical-log query contract" in answer
+    assert "past-mode query with appId" in answer
     assert "collection gaps" in answer
     assert "no proof" not in answer.lower() or "not proof" in answer.lower()
 
@@ -194,3 +195,26 @@ def test_failed_bounded_log_query_never_counts_as_a_success():
     assert a["bounded_generic_log_reads"] == 1
     assert a["bounded_generic_log_read_successes"] == 0
     assert a["app_specific_logs"] == "not_verified"
+
+
+def test_typed_app_specific_log_status_requires_bounded_past_mode():
+    case = snapshot()
+    correct = {
+        "tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+        "success": True, "mutates": False,
+        "arguments": {"args": {"mode": "past", "appId": "4151",
+                                "since": "2026-11-05T22:10:00Z",
+                                "until": "2026-11-05T22:40:00Z"}},
+        "summary": "object fields: mode, total, matched, entries, count",
+    }
+    assessment = assess_hub_event_trigger(case, [correct])
+    assert assessment["app_specific_log_attempts"] == 1
+    assert assessment["app_specific_logs"] == "read_succeeded_coverage_unverified"
+    assert assessment["app_runtime_stats_attempts"] == 0
+    assert "past-log query returned successfully" in render_hub_event_findings(assessment)
+    assert "complete historical" in render_hub_event_findings(assessment)
+    # Positive API return never verifies matching historical message contents.
+    failed = {**correct, "success": False}
+    a2 = assess_hub_event_trigger(case, [failed])
+    assert a2["app_specific_logs"] == "read_failed"
+    assert "past-log query scoped to one app failed" in render_hub_event_findings(a2)
