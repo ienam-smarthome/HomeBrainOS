@@ -1,5 +1,16 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Fixed 180s investigation deadline removal (v0.18.445 candidate, code verification pending)
+
+**User instruction:** Original exact wording: "Proceed with the development plans (remove any existing limiters) and write to the notes." Follow-up clarified that the 180-second hard-total investigation deadline had **not** been removed in v0.18.443/444. The accepted direction is adaptive, evidence-progress-based read-only execution, not unlimited uncontrolled calls.
+
+**Implementation proposal:** Replace `_answer_result` normal-investigation `deadline_seconds=180` with `idle_timeout_seconds=180`, resetting only after a distinct successful source-scoped read receipt; and an independent emergency watchdog default of 1800 seconds. Preserve `RequestCoordinator.run(deadline_seconds=...)` only as an explicit compatibility/test mechanism, not normal Ask routing. Failed/duplicate/mutating receipts and UI/model-stage updates never renew the idle timer. Keep bounded evidence-only cancellation results, HTTP 504 diagnostic fallback, per-model/tool timeouts, provider cost policy, permissions, confirmation, disconnection/superseding cancellation and the existing 18 outer tool-round emergency ceiling. Keep deprecated `investigation_deadline_seconds` option at 0 for upgrade compatibility; previously saved 180 must not be used by normal Ask. This is a general source-progress gate, not an incident-specific patch.
+
+**Verification gate:** Synthetic tests must demonstrate a request can finish after the old total limit with a fresh distinct read, duplicates/failed/writes/stage chatter do not prolong it, emergency watchdog always terminates, progress UI reveals only counts/timing, and old explicit deadline callers still behave. Mandatory CI must pass before merge; inspect release metadata, README, changelog and all existing deadline tests. Live Home Assistant add-on and any upstream ingress/proxy/provider timeout remain **NOT VERIFIED**; no source-real first-answer uplift is claimed. Device history, source sufficiency, pagination and Phase 2 deterministic arithmetic-to-MCP integration remain separate outstanding milestones. No live HA/Hubitat/router change.
+
+---
+
+
 ## 2026-11-06 — Phase 2 deterministic observed-time-series foundation (v0.18.444 merged; live acceptance pending)
 
 **Implementation scope:** New source-neutral `hubitat-mcp-ai/rootfs/app/observed_time_series.py` and `tests/test_observed_time_series_phase2.py` on `feature/autonomous-phase2-observed-series-core`. This offline operator can select a first/last reading satisfying a generic numeric predicate and the first strictly *later* reading satisfying another predicate, calculate the interval between **recorded samples**, reject invalid/non-timezone-aware samples, and report missing readings without claiming historical absence. The code explicitly sets `source_coverage_verified=false` and `exact_physical_crossing_verified=false`. No Hubitat, HA, router, MCP tool invocation, installed add-on, write permission or paid route was changed. New package version v0.18.444 is required by the runtime-file release gate even though production orchestration is unchanged; the source-real v0.18.443 acceptance remains pending.

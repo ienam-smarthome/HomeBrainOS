@@ -148,7 +148,11 @@ def load_options() -> dict[str, Any]:
         "ollama_local_connect_timeout_seconds": 3,
         "ollama_local_keep_alive_seconds": 120,
         "ollama_agent_timeout_seconds": 60,
-        "investigation_deadline_seconds": 180,
+        # Legacy fixed request deadline is disabled for normal investigations.
+        # Existing saved 180s options are ignored; use the two watchdogs.
+        "investigation_deadline_seconds": 0,
+        "investigation_stall_timeout_seconds": 180,
+        "investigation_emergency_watchdog_seconds": 1800,
         "performance_synthesis_timeout_seconds": 30,
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
@@ -446,6 +450,8 @@ class RequestCoordinator:
         connection: Request | None = None,
         request_id: str = "",
         deadline_seconds: float | None = None,
+        idle_timeout_seconds: float | None = None,
+        emergency_watchdog_seconds: float | None = None,
     ) -> Any:
         progress = RequestProgress(request_id=request_id or uuid.uuid4().hex)
 
@@ -473,39 +479,69 @@ class RequestCoordinator:
                 if task in done:
                     progress.completed = True
                     return task.result()
-                if (deadline_seconds is not None and
-                        time.monotonic() - progress.started >= deadline_seconds):
-                    last_stage = progress.stage
-                    progress.stage = "Investigation reached its time limit"
-                    logger.warning(
-                        "Investigation deadline: request_id=%s limit=%.1fs phase=%s "
-                        "verified_reads=%d checkpoint=%s",
-                        progress.request_id, deadline_seconds, last_stage,
-                        len(progress.verified_reads), progress.checkpoint is not None,
+                now = time.monotonic()
+                elapsed = now - progress.started
+                # Legacy explicit deadline is supported for callers/tests, but
+                # normal read-only investigations use progress-aware watchdogs.
+                # A new *successful, distinct* read scope renews only the idle
+                # window; it never overrides the emergency ceiling.
+                timeout_reason = None
+                setting = ""
+                if deadline_seconds is not None and elapsed >= deadline_seconds:
+                    timeout_reason = f"{deadline_seconds:g}s deadline"
+                    setting = "investigation_deadline_seconds"
+                elif (emergency_watchdog_seconds is not None
+                      and elapsed >= emergency_watchdog_seconds):
+                    timeout_reason = (
+                        f"{emergency_watchdog_seconds:g}s emergency watchdog"
                     )
-                    task.cancel("investigation deadline exceeded")
+                    setting = "investigation_emergency_watchdog_seconds"
+                elif (idle_timeout_seconds is not None
+                      and progress.seconds_since_source_progress(now)
+                          >= idle_timeout_seconds):
+                    timeout_reason = (
+                        f"{idle_timeout_seconds:g}s without a new verified read scope"
+                    )
+                    setting = "investigation_stall_timeout_seconds"
+                if timeout_reason is not None:
+                    last_stage = progress.stage
+                    progress.stage = "Investigation stopped: watchdog"
+                    logger.warning(
+                        "Investigation watchdog: request_id=%s reason=%s phase=%s "
+                        "verified_scopes=%d verified_reads=%d checkpoint=%s",
+                        progress.request_id, timeout_reason, last_stage,
+                        len(progress.observed_read_scopes),
+                        len(progress.verified_reads),
+                        progress.checkpoint is not None,
+                    )
+                    task.cancel("investigation watchdog: " + timeout_reason)
                     with suppress(asyncio.CancelledError, asyncio.TimeoutError):
                         await asyncio.wait_for(task, timeout=2.0)
                     progress.completed = True
                     if progress.checkpoint is not None:
                         return safe_partial_outcome(
                             progress.checkpoint,
-                            reason=f"{deadline_seconds:g}s time limit",
+                            reason=timeout_reason,
                             additional_reads=progress.verified_reads,
                         )
                     if progress.verified_reads:
                         return safe_receipt_partial_outcome(
                             progress.verified_reads,
-                            reason=f"{deadline_seconds:g}s time limit",
+                            reason=timeout_reason,
                         )
+                    prefix = (
+                        f"Investigation reached its {timeout_reason}"
+                        if deadline_seconds is not None and setting == "investigation_deadline_seconds"
+                        else f"Investigation stopped after {timeout_reason}"
+                    )
                     raise HTTPException(
                         status_code=504,
                         detail=(
-                            f"Investigation reached its {deadline_seconds:g}s deadline "
-                            f"during {last_stage}. No verified read-only results "
-                            "were available. Check the HomeBrain add-on Logs "
+                            f"{prefix} during {last_stage}. "
+                            "No verified read-only results were available. "
+                            "Check the HomeBrain add-on Logs "
                             f"using request ID {progress.request_id} and review "
-                            "investigation_deadline_seconds in the add-on settings."
+                            f"{setting} in the add-on settings."
                         ),
                     )
                 if connection is not None and await connection.is_disconnected():
@@ -938,8 +974,15 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
             operation,
             connection=connection,
             request_id=request.request_id or "",
-            deadline_seconds=max(10.0, float(
-                OPTIONS.get("investigation_deadline_seconds") or 180
+            # Do not apply the old 180s TOTAL time limit to investigations.
+            # New successful read scopes renew the idle window. No repeated
+            # read, AI stage message or write extends it, and cancellation,
+            # per-tool timeouts and an independent emergency cap still apply.
+            idle_timeout_seconds=max(10.0, float(
+                OPTIONS.get("investigation_stall_timeout_seconds") or 180
+            )) if _needs_investigation_deadline(request.message) else None,
+            emergency_watchdog_seconds=max(60.0, float(
+                OPTIONS.get("investigation_emergency_watchdog_seconds") or 1800
             )) if _needs_investigation_deadline(request.message) else None,
         )
         # Single cross-route evidence assessment: even early host completions,

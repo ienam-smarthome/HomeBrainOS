@@ -3,7 +3,16 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.444**.
+Current add-on version: **0.18.445**.
+
+**Adaptive investigation timing (v0.18.445):** Read-only investigations
+no longer have the fixed 180-second *total* deadline. Distinct successful
+read scopes renew a configurable 180-second **idle** watchdog; repeated
+reads, errors, AI chatter and writes never extend it. An independent
+1800-second emergency watchdog plus cancellation, per-tool timeouts,
+round ceilings and write confirmations remain. Legacy saved
+`investigation_deadline_seconds: 180` is ignored by the normal Ask route.
+[Release notes](CHANGELOG-0.18.445.md).
 
 **Phase 2 observed time-series core (v0.18.444):** Adds a tested pure
 operator for calculations between recorded numeric readings. This is not
