@@ -341,11 +341,12 @@ def read_only_log_receipt_summary(
             continue
         try:
             first = datetime.fromisoformat(
-                str(params["since"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+                str(params["since"]).replace("Z", "+00:00"))
             last = datetime.fromisoformat(
-                str(params["until"]).replace("Z", "+00:00")).astimezone(timezone.utc)
-            if first >= last or not first.tzinfo or not last.tzinfo:
+                str(params["until"]).replace("Z", "+00:00"))
+            if first.tzinfo is None or last.tzinfo is None or first >= last:
                 continue
+            first, last = first.astimezone(timezone.utc), last.astimezone(timezone.utc)
         except (TypeError, ValueError, OverflowError):
             continue
         for row in entries[:200]:
@@ -358,8 +359,10 @@ def read_only_log_receipt_summary(
                     and isinstance(stamp, str)):
                 continue
             try:
-                occurred = datetime.fromisoformat(
-                    stamp.replace("Z", "+00:00")).astimezone(timezone.utc)
+                occurred = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if occurred.tzinfo is None:
+                    continue
+                occurred = occurred.astimezone(timezone.utc)
             except (TypeError, ValueError, OverflowError):
                 continue
             if first <= occurred <= last:
