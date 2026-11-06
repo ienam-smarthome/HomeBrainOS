@@ -302,7 +302,7 @@ def read_only_log_receipt_summary(
     """
     modes = {
         name: {"attempts": 0, "successes": 0}
-        for name in ("apps", "past", "hubEvents", "generic_bounded")
+        for name in ("apps", "devices", "hubActions", "past", "hubEvents", "generic_bounded")
     }
     verified_app_message_rows = 0
     for receipt in receipts or []:
@@ -317,7 +317,7 @@ def read_only_log_receipt_summary(
         if not isinstance(params, dict):
             continue
         mode = params.get("mode")
-        if mode in ("apps", "past", "hubEvents"):
+        if mode in ("apps", "devices", "hubActions", "past", "hubEvents"):
             key = mode
         elif mode in (None, "") and params.get("since") and params.get("until"):
             key = "generic_bounded"
@@ -333,7 +333,7 @@ def read_only_log_receipt_summary(
         # never satisfy this requirement.
         if (receipt.get("supports_live_claim") is not True
                 or not (params.get("since") and params.get("until"))
-                or key not in ("apps", "past", "generic_bounded")):
+                or key not in ("past", "generic_bounded")):
             continue
         details = receipt.get("details")
         entries = details.get("entries") if isinstance(details, dict) else None
@@ -372,8 +372,10 @@ def read_only_log_receipt_summary(
         "verified_bounded_app_message_rows": verified_app_message_rows,
         "complete_historical_app_log_coverage": False,
         "coverage_note": (
-            "A successful MCP query or summary-only receipt is not evidence "
-            "that matching historical app messages were returned or reviewed."
+            "Past-mode reads can return historical app/device messages, but "
+            "success and summary-only receipts never verify matching rows "
+            "or full retention. Apps/devices are current runtime statistics; "
+            "hubActions is a hub actions table, not historical log messages."
         ),
     }
 
@@ -484,17 +486,23 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
     modes = log_coverage["mode_reads"]
     log_lines = []
     for name, label in (
-        ("hubEvents", "Hub Events log"), ("past", "Past log"),
-        ("apps", "App-mode log"), ("generic_bounded", "Generic bounded log"),
+        ("hubEvents", "Hub Events log"), ("past", "Past historical log"),
+        ("generic_bounded", "Generic bounded historical log"),
+        ("apps", "App runtime statistics"),
+        ("devices", "Device runtime statistics"),
+        ("hubActions", "Hub actions table"),
     ):
         data = modes[name]
         if data["attempts"]:
             log_lines.append(
                 f"- {label}: {data['successes']}/{data['attempts']} "
-                "read requests succeeded; content/retention coverage unverified."
+                "read requests succeeded; "
+                + ("runtime/action data, not historical log-message coverage."
+                   if name in ("apps", "devices", "hubActions")
+                   else "historical content/retention coverage unverified.")
             )
     if log_lines:
-        sections.append("**Historical-log source checks**\n" + "\n".join(log_lines))
+        sections.append("**Log and runtime-source checks**\n" + "\n".join(log_lines))
     sections.append(
         "**Read-only next checks:** Examine the actual returned, time-bounded "
         "source messages and missing retention/collection intervals before "
