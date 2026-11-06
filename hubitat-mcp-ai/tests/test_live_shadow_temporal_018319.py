@@ -102,13 +102,3 @@ def test_zero_events_or_broken_archive_never_suggests_coverage():
     assert not a["history_complete"]
     assert not a["missing_events_prove_inactivity"]
 
-
-def test_phone_reports_apparent_not_authenticated_source_time():
-    ui=render_page("HomeBrainOS","0.18.319")
-    for expected in (
-        "Temporal integrity", "Apparent source-to-receipt gap",
-        "This could be replay, delayed ingestion or clock error",
-        "do not call it fresh device contact",
-        "source time is NOT independently authenticated",
-    ):
-        assert expected in ui

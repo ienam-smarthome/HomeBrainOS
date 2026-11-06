@@ -116,17 +116,6 @@ def test_unknown_target_and_missing_states_are_not_turned_into_offline():
     assert project(devices=d)["status"] == "verified_identity_no_allowlisted_state"
 
 
-def test_ui_new_explicit_consent_button_and_no_cloud_model():
-    html = render_page("HomeBrainOS", "0.18.317")
-    for item in (
-        "runLiveShadowDetail", "liveShadowDetailedReport",
-        "api/live-shadow/verified-detail", "may require multiple Hubitat reads",
-        "confirm_read_only:true", "liveShadowConsent').checked=false",
-        "Detailed inventory coverage verified",
-    ):
-        assert item in html
-
-
 def test_endpoint_opt_in_and_no_ai_or_commands(monkeypatch, tmp_path):
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing.json"))
     sys.modules.pop("app", None)

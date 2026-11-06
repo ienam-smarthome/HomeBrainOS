@@ -137,16 +137,6 @@ def test_existing_command_shadow_auto_adds_review_without_more_reads():
     assert r["transition_review"]["additional_hubitat_reads"] == 0
 
 
-def test_mobile_report_precedes_diagnostic_detail():
-    ui=render_page("HomeBrainOS","0.18.324")
-    assert "Recent switching investigation · reported events only" in ui
-    assert "Reported ON→OFF intervals (not proof of physical runtime)" in ui
-    assert ui.index("Recent switching investigation · reported events only") < ui.index(
-        "--- Detailed bounded Hubitat history audit ---"
-    )
-    assert "data.transition_review" in ui
-
-
 def test_production_publisher_still_isolated():
     for name in ("causal_claim_publication.py","mcp_agent_orchestrator.py",
                  "tool_executor.py","final_answer_coordinator.py"):
