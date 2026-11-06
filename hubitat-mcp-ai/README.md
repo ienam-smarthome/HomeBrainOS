@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.438**.
+Current add-on version: **0.18.439**.
 
 **Typed historical past-log row receipts (v0.18.438):**
 Successful read-only hub_get_logs(mode="past") queries now retain
