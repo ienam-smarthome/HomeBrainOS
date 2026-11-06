@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from statistics import median
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from answer_quality_fixed_packets import (
     SHA256_RE, ScorecardInputError, build_fixed_packets,
     pair_metadata, validate_run_manifest,
 )
-from answer_quality_scorecard import build_scorecard, load_catalog
+from answer_quality_scorecard import REVIEW_KEYS, build_scorecard, load_catalog
 
 REVIEW_SCHEMA = "homebrain-answer-quality-paired-reviews.v1"
 REPORT_SCHEMA = "homebrain-answer-quality-paired-review-report.v1"
@@ -102,6 +103,14 @@ def build_paired_review_report(
     seen = set()
     left, right = [], []
     wins = losses = ties = 0
+    # Ordinal changes are reviewer judgements, never lexical model scores.
+    grade_rank = {"fail": 0, "partial": 1, "pass": 2}
+    dimension_changes = {
+        dimension: {"candidate_better": 0, "baseline_better": 0, "tied": 0}
+        for dimension in REVIEW_KEYS
+    }
+    paired_latency_deltas: list[float] = []
+    baseline_overclaims = candidate_overclaims = 0
     for item in review_payload["pairs"]:
         if not isinstance(item, dict) or set(item) != REVIEW_ENTRY_FIELDS:
             raise ScorecardInputError("Paired review fields must be metadata-only")
@@ -137,6 +146,20 @@ def build_paired_review_report(
         wins += int(later and not earlier)
         losses += int(earlier and not later)
         ties += int(earlier == later)
+        for dimension in REVIEW_KEYS:
+            baseline_grade = grade_rank[item["baseline_review"][dimension]]
+            candidate_grade = grade_rank[item["candidate_review"][dimension]]
+            outcome = (
+                "candidate_better" if candidate_grade > baseline_grade
+                else "baseline_better" if baseline_grade > candidate_grade
+                else "tied"
+            )
+            dimension_changes[dimension][outcome] += 1
+        baseline_overclaims += item["baseline_review"]["unsupported_definitive_causal_claims"]
+        candidate_overclaims += item["candidate_review"]["unsupported_definitive_causal_claims"]
+        paired_latency_deltas.append(
+            (after[case_id]["elapsed_ms"] - before[case_id]["elapsed_ms"]) / 1000
+        )
 
     # Reuse the permanent source-reviewed rubric and data validation.
     # Separate arm calls ensure the scorecard does not conflate model/build
@@ -174,6 +197,18 @@ def build_paired_review_report(
         "candidate_useful_first_attempt_wins": wins if reviewed else None,
         "candidate_useful_first_attempt_losses": losses if reviewed else None,
         "candidate_useful_first_attempt_ties": ties if reviewed else None,
+        "paired_review_dimension_changes": dimension_changes if reviewed else None,
+        "paired_unsupported_definitive_causes": ({
+            "baseline_count": baseline_overclaims,
+            "candidate_count": candidate_overclaims,
+            "candidate_minus_baseline": candidate_overclaims - baseline_overclaims,
+        } if reviewed else None),
+        "paired_latency_delta": ({
+            "sample_count": reviewed,
+            "median_candidate_minus_baseline_seconds": round(median(paired_latency_deltas), 3),
+            "negative_means_candidate_faster": True,
+            "scope": "offline_model_request_timing_not_homebrain_live_latency",
+        } if reviewed else None),
         "completeness": (
             "curated_cohort_reviewed_not_independently_audited"
             if reviewed == len(packets) else "partial_or_unmeasured"
@@ -188,6 +223,8 @@ def build_paired_review_report(
             "A human review is asserted, not independently authenticated by this script",
             "Both raw answers and complete source citations require private evidence review",
             "No unreviewed cases contribute to factual or first-attempt percentages",
+            "Paired grade changes are ordinal human judgements, not causal estimates of model quality",
+            "Paired latency differences describe these same offline cases only, not production timing",
             "A matching frozen hash does not prove what prompt the provider actually received",
             "The 13 legacy live tasks remain outside this offline paired sample",
             "No Claude equivalence or production HomeBrain answer improvement is established",
