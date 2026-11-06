@@ -35,7 +35,7 @@ from device_state_summary import (
 )
 from health_audit_scheduler import MorningHealthScheduler
 from historical_evidence_journal import HistoricalEvidenceJournal
-from hub_incident_ai import (bind_incident, reset_incident, publish_incident_analysis, project_incident, guard_unresolved_causal_publication)
+from hub_incident_ai import (bind_incident, reset_incident, publish_incident_analysis, project_incident, guard_unresolved_causal_publication, read_only_log_receipt_summary)
 from hub_incident_trigger_evidence import assess_hub_event_trigger
 from external_hub_diagnostics import ExternalHubDiagnostics
 from household_ollama_accounts import read_authorized_household_accounts
@@ -1649,11 +1649,15 @@ async def hub_diagnostics_investigate(payload: IncidentAIRequest,
         response["causal_verdict"] = "unverified"
         response["restart_trigger_evidence"] = trigger_assessment
         response["restart_trigger_status"] = trigger_assessment["restart_trigger"]
+        log_coverage = read_only_log_receipt_summary(receipts)
         response["incident_source_coverage"] = {
             "typed_hub_events_verified": trigger_assessment["typed_hub_events_checked"],
             "app_specific_log_status": trigger_assessment["app_specific_logs"],
             "app_specific_log_attempts": trigger_assessment["app_specific_log_attempts"],
             "bounded_generic_log_read_successes": trigger_assessment["bounded_generic_log_read_successes"],
+            "log_query_modes": log_coverage["mode_reads"],
+            "verified_bounded_app_message_rows": log_coverage["verified_bounded_app_message_rows"],
+            "historical_app_log_coverage_complete": False,
             "journal_is_complete": False,
             "model_hypothesis_comparisons_are_separate": True,
         }
