@@ -73,6 +73,19 @@ def render_page(title: str, version: str) -> str:
 .journal-browser-table th{position:sticky;top:0;background:#242428}
 @media(max-width:520px){.journal-browser-controls{grid-template-columns:1fr 1fr}.journal-browser-controls label:first-child{grid-column:span 2}}
 
+
+/* Unified read-only incident timeline: two independent metric scales, common x-axis. */
+.diag-timeline-legend{display:flex;gap:12px;flex-wrap:wrap;margin:7px 0;color:var(--muted);font-size:12px}
+.diag-timeline-legend .swatch{display:inline-block;width:13px;height:3px;margin-right:4px;vertical-align:middle}
+.diag-timeline-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:9px 0}
+.diag-timeline-actions button,.diag-timeline-actions a{width:auto;margin:0;padding:8px 11px;border-radius:9px;font-size:12px}
+.diag-timeline-actions a{background:#333;color:white;text-decoration:none}
+#diagTimelineChart{display:block;width:100%;height:auto;max-height:360px;background:#101114;border-radius:9px;touch-action:pan-y}
+#diagTimelineChart:focus{outline:2px solid #93c5fd;outline-offset:2px}
+#diagTimelineEvents{max-height:310px;overflow-y:auto}
+#diagTimelineEvents li{display:flex;gap:7px;align-items:flex-start;flex-wrap:wrap}
+#diagTimelineEvents button{width:auto;padding:5px 8px;margin:0 0 0 auto;border-radius:7px;font-size:11px}
+#diagTimelineEvents .timeline-evidence{flex:1 1 220px}
 </style>
 </head>
 <body><main class="wrap">
@@ -125,6 +138,27 @@ def render_page(title: str, version: str) -> str:
 <details class="health-details" id="diagDetails"><summary>View memory history &amp; connection incidents</summary>
 <div class="muted">External observations are not proof of a reboot cause. Java and CPU load values are native five-minute samples, not 30-second measurements.
 <div class="journal-small" id="diagCpuMethod">CPU load equivalent = 5-minute load average ÷ logical processor count × 100; not measured CPU utilisation.</div></div>
+
+<details class="health-details" id="diagTimelineDetails" open>
+<summary><strong>Unified incident timeline</strong> · memory, CPU, connection gaps and recorded startups</summary>
+<div class="journal-small" id="diagTimelineMeta" role="status">Expand Hub Diagnostics to load synchronized observations from local storage.</div>
+<div class="diag-timeline-legend">
+<span><span class="swatch" style="background:#60a5fa"></span>OS memory (external 30s probes)</span>
+<span><span class="swatch" style="background:#4ade80"></span>CPU load equivalent (native ~5m)</span>
+<span><span class="swatch" style="background:#f59e0b"></span>Confirmed startup</span>
+<span><span class="swatch" style="background:#f87171"></span>Connectivity loss</span>
+</div>
+<svg id="diagTimelineChart" viewBox="0 0 860 330" role="img" tabindex="0" aria-label="Synchronized Hubitat memory, CPU load, confirmed startups and connectivity incidents; hover or use arrow keys to inspect saved observations"></svg>
+<div class="journal-small" id="diagTimelineReadout" aria-live="polite">Hover, touch or use arrow keys to inspect source timestamps. No values are estimated between samples.</div>
+<div class="diag-timeline-actions">
+<button type="button" class="secondary" id="diagTimelineRefresh">↻ Refresh timeline</button>
+<button type="button" class="secondary" id="diagTimelineJournal">Inspect Historical Journal</button>
+<a id="diagTimelineEvidence" href="#" target="_blank" rel="noopener noreferrer">View source records (JSON)</a>
+</div>
+<div class="journal-small">Time alignment is for investigation, not causal attribution. Memory and connectivity times are external recorder observations; CPU readings are native five-minute samples shown at collector receipt times. Confirmed startups use offset-aware Hubitat systemStart times. Missing readings remain unknown.</div>
+<strong>Observed points and incidents</strong>
+<ul class="journal-gaps" id="diagTimelineEvents"><li class="muted">No incident timeline loaded.</li></ul>
+</details>
 <div class="row" style="margin-top:8px">
 <label>View <select id="diagMetric" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
 <option value="free_os_mb">Live Free OS memory (MB)</option><option value="java_free_mb">Native Free Java (MB)</option>
@@ -503,6 +537,248 @@ document.getElementById('journalBrowseCopy').onclick=async()=>{
 
 document.getElementById('journalDetails').addEventListener('toggle',event=>{if(event.target.open)void loadJournalRecent()});
 document.getElementById('journalRefresh').onclick=async()=>{const b=document.getElementById('journalRefresh');b.disabled=true;try{await loadJournal();await loadJournalRecent()}finally{b.disabled=false}};
+
+// Unified timeline reads only saved external diagnostics; no additional Hubitat requests.
+const timelinePlot={left:75,right:825,memTop:30,memBottom:142,cpuTop:188,cpuBottom:292,width:860};
+let timelineRows={memory:[],cpu:[]},timelineFocusTimes=[],timelineActiveTime=null;
+let timelineData=null,timelineRequestSeq=0,timelineLastRead=0;
+function timelineStamp(value){const stamp=Date.parse(value);return Number.isFinite(stamp)?stamp:null}
+function timelineRange(data){const first=timelineStamp(data.range_start),last=timelineStamp(data.range_end);
+ return first!==null&&last!==null&&last>first?[first,last]:null}
+function timelineX(t,first,last){return timelinePlot.left+(t-first)/(last-first)*(timelinePlot.right-timelinePlot.left)}
+function timelineMetricPoints(data,key,kind){
+ const metric=data.metrics&&data.metrics[key]||{},raw=Array.isArray(metric.samples)?metric.samples:[];
+ const seen=new Set();
+ return raw.filter(row=>{
+  const t=row&&timelineStamp(row.recorded_at),v=row&&row[key];
+  if(t===null||typeof v!=='number'||!Number.isFinite(v)||!row.reachable)return false;
+  if(kind==='native'){const label=String(row.native_sample_label||'');if(!label||seen.has(label))return false;seen.add(label)}
+  return true;
+ }).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
+}
+function timelineNear(rows,t){
+ if(!rows.length)return null;
+ let a=0,b=rows.length-1;
+ while(a<b){const m=Math.floor((a+b)/2);if(Date.parse(rows[m].recorded_at)<t)a=m+1;else b=m}
+ return a&&Math.abs(Date.parse(rows[a-1].recorded_at)-t)<Math.abs(Date.parse(rows[a].recorded_at)-t)?rows[a-1]:rows[a];
+}
+function timelineSelectAt(t){
+ if(!timelineData)return;
+ const range=timelineRange(timelineData);if(!range||!Number.isFinite(t))return;
+ const [first,last]=range;
+ const x=timelineX(Math.max(first,Math.min(last,t)),first,last);
+ const cross=document.getElementById('diagTimelineCursor');
+ if(cross){cross.setAttribute('x1',x);cross.setAttribute('x2',x);cross.setAttribute('visibility','visible')}
+ const parts=['Selected '+diagDate(new Date(t).toISOString())];
+ const selections=[['memory','free_os_mb','OS memory','external probe'],
+                   ['cpu','native_load_pct','5m CPU load equivalent','native report at collector receipt']];
+ for(const [group,key,label,basis] of selections){
+  const row=timelineNear(timelineRows[group],t);
+  const dot=document.getElementById('diagTimeline'+(group==='memory'?'MemoryDot':'CpuDot'));
+  const near=row&&Math.abs(timelineX(Date.parse(row.recorded_at),first,last)-x)<=18;
+  if(dot)dot.setAttribute('visibility',near?'visible':'hidden');
+  if(near){
+   const ygroup=group==='memory'?'memY':'cpuY';
+   if(dot){dot.setAttribute('cx',timelineX(Date.parse(row.recorded_at),first,last));
+    dot.setAttribute('cy',timelineData[ygroup](row[key]));}
+   parts.push(label+' '+diagMetricValue(row[key],key)+' at '+diagDate(row.recorded_at)+
+      ' ('+basis+(group==='cpu'?', native label '+String(row.native_sample_label||'unavailable'):'')+')');
+  }else parts.push(label+': no nearby displayed reading (not zero)');
+ }
+ document.getElementById('diagTimelineReadout').textContent=parts.join(' · ')+
+   ' · These observations do not establish a cause.';
+ timelineActiveTime=t;
+}
+function drawIncidentTimeline(data){
+ const svg=document.getElementById('diagTimelineChart');svg.replaceChildren();
+ timelineData=null;timelineRows={memory:[],cpu:[]};timelineFocusTimes=[];
+ const r=timelineRange(data),eventsNode=document.getElementById('diagTimelineEvents');
+ eventsNode.replaceChildren();
+ if(!r){
+  svg.append(diagChartSvgNode('text',{x:75,y:110,fill:'#cbd5e1','font-size':16},'No recorded interval available'));
+  document.getElementById('diagTimelineReadout').textContent='No timeline data recorded yet. Unknown periods are not zero.';
+  return;
+ }
+ const [first,last]=r,span=last-first;
+ const mem=timelineMetricPoints(data,'free_os_mb','external');
+ const cpu=timelineMetricPoints(data,'native_load_pct','native');
+ const memMeta=data.metrics&&data.metrics.free_os_mb||{},cpuMeta=data.metrics&&data.metrics.native_load_pct||{};
+ timelineRows={memory:mem,cpu:cpu};
+ const minMem=mem.length?mem.reduce((a,b)=>b.free_os_mb<a.free_os_mb?b:a):null;
+ const maxCpu=cpu.length?cpu.reduce((a,b)=>b.native_load_pct>a.native_load_pct?b:a):null;
+ document.getElementById('diagTimelineMeta').textContent=
+  String(memMeta.observed_metric_points??mem.length)+' OS memory observations · '+
+  String(cpuMeta.observed_metric_points??cpu.length)+' distinct 5m CPU readings · '+
+  (Array.isArray(data.reboots)?data.reboots.length:0)+' confirmed startup records · '+
+  (Array.isArray(data.incidents)?data.incidents.length:0)+' recorded connectivity episodes'+
+  ((memMeta.downsampled||cpuMeta.downsampled)?' · Display reduced using actual minimum/maximum and gap boundaries':'')+
+  ' · Partial historical coverage; time proximity is not proof of cause.';
+ const memoryLow=Math.max(0,(minMem?minMem.free_os_mb:0)-(mem.length?Math.max(20,(Math.max(...mem.map(p=>p.free_os_mb))-minMem.free_os_mb)*0.12):20));
+ const memoryHigh=mem.length?Math.max(...mem.map(p=>p.free_os_mb))+30:100;
+ const cpuHigh=Math.max(10,maxCpu?maxCpu.native_load_pct*1.15:10);
+ const memY=value=>timelinePlot.memBottom-(value-memoryLow)/Math.max(1,memoryHigh-memoryLow)*(timelinePlot.memBottom-timelinePlot.memTop);
+ const cpuY=value=>timelinePlot.cpuBottom-value/cpuHigh*(timelinePlot.cpuBottom-timelinePlot.cpuTop);
+ // Store only the two measured y transforms, never fabricated sample values.
+ // The helper is discarded on each refresh before new data becomes visible.
+ const graphData={...data,memY,cpuY};timelineData=graphData;
+ for(let i=0;i<=4;i++){
+  const t=first+span*i/4,x=timelineX(t,first,last);
+  svg.append(diagChartSvgNode('line',{x1:x,x2:x,y1:20,y2:timelinePlot.cpuBottom,
+    stroke:'#333c48','stroke-width':1,'stroke-dasharray':'2 5'}));
+  svg.append(diagChartSvgNode('text',{x:x,y:319,fill:'#b4c1d3','font-size':11,
+    'text-anchor':i===0?'start':i===4?'end':'middle'},diagDate(new Date(t).toISOString())));
+ }
+ for(const [y,axis] of [[timelinePlot.memBottom,'OS memory'],[timelinePlot.cpuBottom,'5m CPU load']]){
+  svg.append(diagChartSvgNode('line',{x1:timelinePlot.left,x2:timelinePlot.right,y1:y,y2:y,stroke:'#556070','stroke-width':1}));
+ }
+ svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:15,fill:'#93c5fd','font-size':13},
+   'OS memory · MB (external probe; independent scale)'));
+ svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:174,fill:'#86efac','font-size':13},
+   '5m CPU load equivalent · % (native source; independent scale)'));
+ for(const [top,bottom,lo,hi,color] of [
+  [timelinePlot.memTop,timelinePlot.memBottom,memoryLow,memoryHigh,'#93c5fd'],
+  [timelinePlot.cpuTop,timelinePlot.cpuBottom,0,cpuHigh,'#86efac']]){
+  for(const [y,value] of [[top,hi],[bottom,lo]]){
+   svg.append(diagChartSvgNode('text',{x:timelinePlot.left-7,y:y+4,fill:color,
+     'text-anchor':'end','font-size':11},value.toFixed(1)));
+  }
+ }
+ const incidents=(Array.isArray(data.incidents)?data.incidents:[]).filter(e=>e.kind==='hub-unreachable');
+ for(const incident of incidents){
+  const start=timelineStamp(incident.started_at),end=incident.recovered_at?timelineStamp(incident.recovered_at):last;
+  if(start===null||end===null||end<first||start>last)continue;
+  const left=timelineX(Math.max(first,start),first,last),right=timelineX(Math.min(last,end),first,last);
+  const shade=diagChartSvgNode('rect',{x:left,y:20,width:Math.max(1.5,right-left),height:timelinePlot.cpuBottom-20,
+    fill:'#ef4444','fill-opacity':0.11,stroke:'#ef4444','stroke-opacity':0.5,'stroke-width':0.75});
+  shade.append(diagChartSvgNode('title',{},'External connectivity loss: '+diagDate(incident.started_at)+
+    ' · '+(incident.recovered_at?'recovered '+diagDate(incident.recovered_at):'no recovery recorded')+
+    ' · not proof of a reboot'));
+  svg.append(shade);
+ }
+ const drawSeries=(rows,key,kind,color,fn,meta)=>{
+  let path='',prev=null,segment=null;
+  for(const row of rows){
+   const t=Date.parse(row.recorded_at);
+   const currSeg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
+   const gap=prev!==null&&((currSeg!==null&&segment!==null&&currSeg!==segment)||
+      (!meta.downsampled&&t-prev>(kind==='native'?900000:Math.max(120000,(Number(data.probe_seconds)||30)*3000))));
+   path+=(path&&!gap?' L':' M')+timelineX(t,first,last).toFixed(2)+' '+fn(row[key]).toFixed(2);
+   prev=t;segment=currSeg;
+  }
+  if(path)svg.append(diagChartSvgNode('path',{d:path.trim(),fill:'none',stroke:color,
+    'stroke-width':2.1,'stroke-linejoin':'round','stroke-linecap':'round'}));
+  if(rows.length<=55)for(const row of rows){
+   const dot=diagChartSvgNode('circle',{cx:timelineX(Date.parse(row.recorded_at),first,last),
+    cy:fn(row[key]),r:2.4,fill:color});
+   dot.append(diagChartSvgNode('title',{},diagDate(row.recorded_at)+' · '+diagMetricValue(row[key],key)+
+     (kind==='native'?' · native label '+String(row.native_sample_label||'unknown'):' · external probe')));
+   svg.append(dot);
+  }
+ };
+ drawSeries(mem,'free_os_mb','external','#60a5fa',memY,memMeta);
+ drawSeries(cpu,'native_load_pct','native','#4ade80',cpuY,cpuMeta);
+ const events=[];
+ for(const rec of (Array.isArray(data.reboots)?data.reboots:[])){
+  const t=timelineStamp(rec.occurred_at);if(t===null||t<first||t>last)continue;
+  const x=timelineX(t,first,last);
+  const marker=diagChartSvgNode('line',{x1:x,x2:x,y1:20,y2:timelinePlot.cpuBottom,
+     stroke:'#f59e0b','stroke-width':1.8,'stroke-dasharray':'4 4'});
+  marker.append(diagChartSvgNode('title',{},'Confirmed Hubitat systemStart at '+diagDate(rec.occurred_at)+
+    (rec.firmware?' · firmware '+rec.firmware:'')+' · cause unverified'));
+  svg.append(marker);
+  events.push({t,kind:'Confirmed startup',detail:'Hub Events systemStart'+
+    (rec.firmware?' · firmware '+rec.firmware:'')+' · cause not established'});
+ }
+ for(const inc of incidents){
+  const start=timelineStamp(inc.started_at),recovered=timelineStamp(inc.recovered_at);
+  if(start!==null&&start>=first&&start<=last)events.push({t:start,kind:'Connectivity loss detected',
+     detail:'External recorder · two failed probes · not a confirmed reboot'});
+  if(recovered!==null&&recovered>=first&&recovered<=last)events.push({t:recovered,kind:'Connectivity recovered',
+     detail:'External recorder · successful probe · cause not established'});
+ }
+ if(minMem)events.push({t:Date.parse(minMem.recorded_at),kind:'Lowest observed OS memory',
+   detail:diagMetricValue(minMem.free_os_mb,'free_os_mb')+' · external probe (not a diagnosis)'});
+ if(maxCpu)events.push({t:Date.parse(maxCpu.recorded_at),kind:'Highest observed 5m CPU load',
+   detail:diagMetricValue(maxCpu.native_load_pct,'native_load_pct')+' · native source '+String(maxCpu.native_sample_label||'unknown')+
+      ' · derived load, not measured CPU utilisation'});
+ for(const [row,key,fn,color] of [[minMem,'free_os_mb',memY,'#60a5fa'],[maxCpu,'native_load_pct',cpuY,'#4ade80']]){
+  if(!row)continue;
+  const dot=diagChartSvgNode('circle',{cx:timelineX(Date.parse(row.recorded_at),first,last),
+     cy:fn(row[key]),r:4.6,stroke:'#101114','stroke-width':1.6,fill:color});
+  dot.append(diagChartSvgNode('title',{},diagDate(row.recorded_at)+' · real observed extremum '+diagMetricValue(row[key],key)));
+  svg.append(dot);
+ }
+ svg.append(diagChartSvgNode('line',{id:'diagTimelineCursor',x1:0,x2:0,y1:20,y2:timelinePlot.cpuBottom,
+   stroke:'#e2e8f0','stroke-width':1.4,'stroke-dasharray':'2 4',visibility:'hidden','pointer-events':'none'}));
+ svg.append(diagChartSvgNode('circle',{id:'diagTimelineMemoryDot',cx:0,cy:0,r:5,fill:'#60a5fa',stroke:'#fff','stroke-width':1,
+   visibility:'hidden','pointer-events':'none'}));
+ svg.append(diagChartSvgNode('circle',{id:'diagTimelineCpuDot',cx:0,cy:0,r:5,fill:'#4ade80',stroke:'#fff','stroke-width':1,
+   visibility:'hidden','pointer-events':'none'}));
+ events.sort((a,b)=>b.t-a.t);
+ const visible=events.slice(0,35);
+ if(!visible.length){const li=document.createElement('li');li.textContent='No observed readings or confirmed incidents in this range. This does not establish uninterrupted uptime.';eventsNode.append(li)}
+ for(const evt of visible){
+  const li=document.createElement('li'),body=document.createElement('span'),strong=document.createElement('strong');
+  body.className='timeline-evidence';strong.textContent=diagDate(new Date(evt.t).toISOString())+' · '+evt.kind;
+  body.append(strong,document.createTextNode(' — '+evt.detail));
+  const button=document.createElement('button');button.className='secondary';button.type='button';
+  button.textContent='Inspect time';button.onclick=()=>{timelineSelectAt(evt.t);document.getElementById('diagTimelineChart').focus()};
+  li.append(body,button);eventsNode.append(li);
+ }
+ if(events.length>visible.length){const li=document.createElement('li');li.textContent=
+  'Showing '+visible.length+' of '+events.length+' observed points. View local source JSON for the bounded full set.';
+  eventsNode.append(li)}
+ timelineFocusTimes=[...new Set([...mem,...cpu].map(p=>Date.parse(p.recorded_at)).concat(events.map(e=>e.t)))].filter(Number.isFinite).sort((a,b)=>a-b);
+ document.getElementById('diagTimelineReadout').textContent=
+  'Hover, touch or use arrow keys to inspect exact observed timestamps. Empty intervals are unknown, not zero.';
+ timelineActiveTime=null;
+}
+function timelinePickPointer(event){
+ if(!timelineData)return;
+ const rect=document.getElementById('diagTimelineChart').getBoundingClientRect();
+ if(!rect.width)return;
+ const x=(event.clientX-rect.left)*timelinePlot.width/rect.width;
+ if(x<timelinePlot.left||x>timelinePlot.right)return;
+ const [first,last]=timelineRange(timelineData);
+ timelineSelectAt(first+(x-timelinePlot.left)/(timelinePlot.right-timelinePlot.left)*(last-first));
+}
+document.getElementById('diagTimelineChart').addEventListener('pointermove',e=>{if(e.pointerType!=='touch')timelinePickPointer(e)});
+document.getElementById('diagTimelineChart').addEventListener('pointerdown',timelinePickPointer);
+document.getElementById('diagTimelineChart').addEventListener('keydown',e=>{
+ if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&timelineFocusTimes.length){
+  e.preventDefault();
+  let i=timelineFocusTimes.findIndex(t=>t>= (timelineActiveTime===null?Infinity:timelineActiveTime));
+  if(i<0)i=timelineFocusTimes.length-1;
+  i=Math.max(0,Math.min(timelineFocusTimes.length-1,i+(e.key==='ArrowLeft'?-1:1)));
+  timelineSelectAt(timelineFocusTimes[i]);
+ }
+});
+async function loadIncidentTimeline(){
+ if(!document.getElementById('diagDetails').open||!document.getElementById('diagTimelineDetails').open)return;
+ const current=++timelineRequestSeq,hours=document.getElementById('diagHours').value;
+ const button=document.getElementById('diagTimelineRefresh');button.disabled=true;
+ document.getElementById('diagTimelineEvidence').href=apiPath('api/hub-diagnostics/timeline?hours='+encodeURIComponent(hours));
+ try{
+  const response=await fetch(apiPath('api/hub-diagnostics/timeline?hours='+encodeURIComponent(hours)));
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const data=await jsonResponse(response);
+  if(current!==timelineRequestSeq||hours!==document.getElementById('diagHours').value)return;
+  timelineLastRead=Date.now();drawIncidentTimeline(data);
+ }catch(error){
+  if(current===timelineRequestSeq){
+   timelineData=null;document.getElementById('diagTimelineChart').replaceChildren();
+   document.getElementById('diagTimelineMeta').textContent='Incident timeline unavailable: '+error.message;
+   document.getElementById('diagTimelineReadout').textContent='No observed values were loaded; do not infer zero.';
+  }
+ }finally{if(current===timelineRequestSeq)button.disabled=false}
+}
+document.getElementById('diagTimelineDetails').addEventListener('toggle',e=>{if(e.target.open)void loadIncidentTimeline()});
+document.getElementById('diagTimelineRefresh').addEventListener('click',()=>void loadIncidentTimeline());
+document.getElementById('diagTimelineJournal').addEventListener('click',()=>{
+ const journal=document.getElementById('journalDetails');journal.open=true;
+ document.getElementById('journalCard').scrollIntoView({behavior:'smooth',block:'start'});
+});
+
 const diagUnit={free_os_mb:'MB',java_free_mb:'MB',java_allocated_heap_used_pct:'%',native_load_pct:'%',native_load5:'load',latency_ms:'ms'};
 let diagHistoryRows=[],diagIncidents=[],diagReboots=[],diagHistoryMeta={};
 function diagDate(value){if(!value)return 'unavailable';const d=new Date(value);return isNaN(d.getTime())?String(value).slice(0,40):d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})}
@@ -765,12 +1041,22 @@ async function loadDiagnosticsHistory(){
   button.disabled=false;
  }
 }
-document.getElementById('diagDetails').addEventListener('toggle',e=>{if(e.target.open)void loadDiagnosticsHistory()});
+document.getElementById('diagDetails').addEventListener('toggle',e=>{
+ if(e.target.open){void loadDiagnosticsHistory();void loadIncidentTimeline()}
+});
 document.getElementById('diagMetric').addEventListener('change',()=>void loadDiagnosticsHistory());
-document.getElementById('diagHours').addEventListener('change',()=>void loadDiagnosticsHistory());
-document.getElementById('diagRefresh').addEventListener('click',()=>{void loadDiagnosticsStatus();void loadDiagnosticsHistory()});
+document.getElementById('diagHours').addEventListener('change',()=>{
+ void loadDiagnosticsHistory();void loadIncidentTimeline();
+});
+document.getElementById('diagRefresh').addEventListener('click',()=>{
+ void loadDiagnosticsStatus();void loadDiagnosticsHistory();void loadIncidentTimeline();
+});
 loadDiagnosticsStatus();
 setInterval(()=>{void loadDiagnosticsStatus();if(document.getElementById('diagDetails').open)void loadDiagnosticsHistory()},60000);
+setInterval(()=>{
+ if(document.getElementById('diagDetails').open&&document.getElementById('diagTimelineDetails').open&&
+    Date.now()-timelineLastRead>=300000)void loadIncidentTimeline();
+},300000);
 
 status();setInterval(status,30000);
 </script></body></html>"""

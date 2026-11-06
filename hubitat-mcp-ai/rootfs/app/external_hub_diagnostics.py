@@ -543,6 +543,76 @@ class ExternalHubDiagnostics:
         }
 
 
+    def timeline(self, hours: int = 24) -> dict[str, Any]:
+        """One aligned time window for external memory, native load and observed incidents.
+
+        Reads the same local SQLite recorder as history(); never contacts Hubitat.
+        CPU entries use original native labels but their x-coordinate is the
+        collector reception timestamp, not a fabricated native measurement time.
+        """
+        window = max(1, min(720, self.retention_days * 24, int(hours)))
+        finish = datetime.now(timezone.utc)
+        start = finish - timedelta(hours=window)
+        cutoff = start.isoformat(timespec="milliseconds")
+        end = finish.isoformat(timespec="milliseconds")
+        empty_metric = {
+            "samples": [], "source_sample_count": 0,
+            "observed_metric_points": 0, "downsampled": False,
+        }
+        output: dict[str, Any] = {
+            "range_start": cutoff, "range_end": end, "hours": window,
+            "retention_days": self.retention_days,
+            "cpu_cores": self.cpu_cores,
+            "metrics": {
+                "free_os_mb": dict(empty_metric),
+                "native_load_pct": dict(empty_metric),
+            },
+            "incidents": [], "reboots": [],
+            "coverage": "not_recorded",
+            "timestamp_basis": {
+                "free_os_mb": "external_probe_recorded_at",
+                "native_load_pct": "collector_recorded_at_with_native_sample_label",
+                "incidents": "external_probe_failure_and_recovery",
+                "reboots": "hub_events_json_systemStart_offset_aware",
+            },
+            "source_limits": {
+                "incidents_max": 100, "reboots_max": 200,
+                "historical_event_coverage": "partial",
+            },
+        }
+        if not self.enabled or not self.path.exists():
+            return output
+
+        with self._connect() as db:
+            for metric in ("free_os_mb", "native_load_pct"):
+                # Stream bounded display points. The summarizer preserves
+                # actual extrema and segment boundaries, not averaged values.
+                samples = (
+                    self._with_load_pct(dict(row))
+                    for row in db.execute(
+                        "SELECT * FROM samples WHERE recorded_at>=? "
+                        "AND recorded_at<=? ORDER BY recorded_at ASC",
+                        (cutoff, end),
+                    )
+                )
+                output["metrics"][metric] = summarize_history_samples(
+                    samples, metric=metric, start=start, finish=finish,
+                    probe_seconds=self.probe_seconds,
+                )
+            output["incidents"] = [dict(row) for row in db.execute(
+                "SELECT started_at,recovered_at,kind,detail FROM incidents "
+                "WHERE started_at<=? AND (recovered_at IS NULL OR recovered_at>=?) "
+                "ORDER BY started_at DESC LIMIT 100", (end, cutoff),
+            )]
+            output["reboots"] = [dict(row) for row in db.execute(
+                "SELECT occurred_at,firmware,observed_at,source FROM hub_startups "
+                "WHERE occurred_at>=? AND occurred_at<=? "
+                "ORDER BY occurred_at ASC LIMIT 200", (cutoff, end),
+            )]
+        output["coverage"] = "partial_observations_not_proof_of_cause"
+        return output
+
+
 __all__ = [
     "ExternalHubDiagnostics", "validate_hub_url",
     "parse_live_memory", "parse_native_sample",

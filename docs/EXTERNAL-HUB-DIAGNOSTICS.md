@@ -66,8 +66,28 @@ Expand **View memory history & connection incidents** to show:
 - Persistent connectivity-loss and recovery episodes, independently labelled.
 - Confirmed **Hubitat systemStart** events as amber vertical chart markers, with captured firmware build when available. The marker's time is from Hubitat's timezone-aware event record; this does not prove why the hub restarted.
 
+**Unified incident timeline (v0.18.430):** The top expandable section uses
+the same selected range as the existing detailed history. It plots real external
+free-OS-memory observations and distinct native five-minute CPU load-equivalent
+readings on two independent vertical scales, aligned to one timestamp axis.
+Red shaded intervals represent failed external probe episodes (not confirmed
+reboots); amber dashed lines represent offset-aware Hubitat `systemStart`
+records. The event list highlights the actual observed minimum OS memory,
+maximum CPU-load equivalent, startup records and incident start/recovery timestamps.
+Select **Inspect time** or hover/touch the graph to compare the nearest *saved*
+observations with their own original timestamps; unsampled periods remain
+unknown, never zero.
+
+Select **Inspect Historical Journal** to open the existing journal's review
+section, or **View source records (JSON)** to inspect the locally stored,
+bounded timeline payload. Those are context/evidence routes, not an automatic
+causal log join. The timeline may include an earlier incident overlapping the
+selected range. Initial history may be incomplete and older events are never
+synthesized.
+
 HomeBrain's UI reads SQLite rather than making hub requests:
 - /api/hub-diagnostics/status
+- /api/hub-diagnostics/timeline?hours=168
 - /api/hub-diagnostics/history?hours=6&metric=free_os_mb
 - /api/hub-diagnostics/history?hours=720&metric=java_free_mb
 

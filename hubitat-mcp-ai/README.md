@@ -3,7 +3,17 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.429**.
+Current add-on version: **0.18.430**.
+
+**Unified Hub Diagnostics incident timeline (v0.18.430):** An expandable two-track
+read-only timeline aligns real external free-OS-memory readings and distinct native
+five-minute CPU-load equivalents, with shaded external connectivity-loss intervals
+and orange confirmed systemStart markers. Hover/touch/keyboard inspection reports
+source timestamps and does not interpolate missing readings. Source JSON and a
+Historical Journal shortcut help investigate nearby observations without claiming
+a restart cause. The new `/api/hub-diagnostics/timeline` endpoint reads the
+existing SQLite recorder only; it does not request extra Hubitat telemetry.
+[Release notes](CHANGELOG-0.18.430.md).
 
 **Native contract claim calibration (v0.18.427):** Read-only runbook reviews now downgrade unverified table-level schema claims, withhold contract-shaped JSON projections, redact guide acknowledgement values, and report `readinessForMutation=false` in structured coverage. Existing installed-rule reads and authorisation protections are unchanged. [Release notes](CHANGELOG-0.18.427.md).
 

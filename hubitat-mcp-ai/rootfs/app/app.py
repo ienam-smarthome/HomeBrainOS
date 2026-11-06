@@ -1497,6 +1497,15 @@ async def hub_diagnostics_history(hours: int = 6,
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get("/api/hub-diagnostics/timeline")
+async def hub_diagnostics_timeline(hours: int = 24) -> dict[str, Any]:
+    """One local, time-aligned resource and incident evidence view; no hub calls."""
+    try:
+        return await asyncio.to_thread(external_hub_diagnostics.timeline, hours)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/api/evidence-journal/status")
 async def evidence_journal_status() -> dict[str, Any]:
     """Collection health, never a claim that historical coverage is complete."""
