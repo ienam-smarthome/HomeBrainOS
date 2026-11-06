@@ -1,6 +1,8 @@
 # Answer Quality — active status and cross-chat handoff
 
-## 2026-11-06 — Q1 typed native historical past-log coverage (candidate v0.18.438)
+## 2026-11-06 — Q1 typed native historical past-log coverage (green merged v0.18.438)
+
+**Merged and CI evidence:** [PR #1481](https://github.com/ienam-smarthome/HomeBrainOS/pull/1481), exact tested head `778671e5034533389325e34bd9f2a08d3e1292fc`, squash merge `fd5a2282010ed05127eccdbc077adf0a4179a4e6`. All required GitHub workflows passed after the architecture module-map entry was added (Hubitat MCP AI tests, release assurance including full Python suite, scorecard integrity and repository validation). Main's package version is 0.18.438. **No live deployment or native 5 Nov message recovery was verified by these tests.**
 
 **Live failure source:** The latest user-supplied 0.18.436 ordinary Ask (Gemma4:31b free) displayed ~35.0s, 7 model rounds and 5 MCP calls; Hubitat’s 05 Nov 16:41:40 critical-memory/reboot warning followed by 16:52:15 startup was verified from typed system events. The later memory-consuming app/process remains **unverified**. A past-log request succeeded but its public receipt had only keys/mode/count, not independently inspected messages; the published app-message evidence remained zero, meaning **unverified actual row coverage**, not proven absence. A synthesis repair failed; exact reason is unavailable in the supplied public receipt. This is one real observation, not a statistically controlled A/B or a source-complete Claude comparison.
 
