@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import contextvars
+import hashlib
+import json
 import logging
 import re
 import time
@@ -40,7 +42,16 @@ class RequestProgress:
     started: float = field(default_factory=time.monotonic)
     checkpoint: Any = None
     verified_reads: list[dict[str, Any]] = field(default_factory=list)
+    # Only a new verified read scope renews the watchdog (not model chatter).
+    last_source_progress: float | None = None
+    observed_read_scopes: set[str] = field(default_factory=set)
     completed: bool = False
+
+    def seconds_since_source_progress(self, now: float) -> float:
+        return max(0.0, now - (
+            self.last_source_progress
+            if self.last_source_progress is not None else self.started
+        ))
 
     def public(self) -> dict[str, Any]:
         return {
@@ -48,6 +59,10 @@ class RequestProgress:
             "stage": self.stage,
             "elapsed_seconds": round(time.monotonic() - self.started, 1),
             "completed": self.completed,
+            "verified_read_scopes": len(self.observed_read_scopes),
+            "seconds_since_source_progress": round(
+                self.seconds_since_source_progress(time.monotonic()), 1
+            ),
         }
 
 
@@ -79,14 +94,30 @@ def remember_verified_read_receipt(receipt: dict[str, Any]) -> None:
     """
     state = _ACTIVE.get()
     if (
-        state is not None
-        and len(state.verified_reads) < 64
-        and isinstance(receipt, dict)
-        and receipt.get("success") is True
-        and receipt.get("mutates") is False
-        and receipt.get("effect") == "read"
+        state is None or not isinstance(receipt, dict)
+        or receipt.get("success") is not True
+        or receipt.get("mutates") is not False
+        or receipt.get("effect") != "read"
     ):
+        return
+    # Preserve evidence-only recovery; do not add unbounded receipts.
+    if len(state.verified_reads) < 64:
         state.verified_reads.append(deepcopy(receipt))
+    # A success label is not proof of returned rows. Only new executed
+    # source scopes get time credit. No repeated/failed/write tool calls,
+    # model proposals or stage chatter can renew the window.
+    scope = {
+        "tool": receipt.get("tool"),
+        "sub_tool": receipt.get("sub_tool"),
+        "arguments": receipt.get("arguments"),
+    }
+    key = hashlib.sha256(
+        json.dumps(scope, sort_keys=True, separators=(",", ":"),
+                   ensure_ascii=False, default=str).encode("utf-8")
+    ).hexdigest()
+    if key not in state.observed_read_scopes and len(state.observed_read_scopes) < 256:
+        state.observed_read_scopes.add(key)
+        state.last_source_progress = time.monotonic()
 
 
 def _successful_read_receipt(row: Any) -> bool:
