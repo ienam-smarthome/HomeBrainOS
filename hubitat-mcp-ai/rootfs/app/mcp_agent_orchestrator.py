@@ -303,6 +303,7 @@ from mcp_skill_guidance import (
 from general_task_engine import GeneralTaskPlanner
 from general_evidence_completion import assess_task_source_coverage
 from tool_catalog_assembly import build_request_tool_catalog
+from hub_incident_ai import active_incident, incident_system_context
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
     LOCAL_ACTIVE_LIGHTS_TOOL as _LOCAL_ACTIVE_LIGHTS_TOOL,
@@ -4054,7 +4055,8 @@ class UnifiedMCPAgent:
         # This invocation performs stage-one review with read-only authority;
         # a later write still needs a fresh structured proposal and approval.
         mutation_request_token = self._mutation_requested_by_user.set(
-            not self._review_first_mode.get()
+            active_incident() is None
+            and not self._review_first_mode.get()
             and (
                 _explicit_mutation_request(user_prompt)
                 or _verified_schedule_write_intent(user_prompt, self.rule_authoring)
@@ -5046,6 +5048,12 @@ class UnifiedMCPAgent:
             conversation_history,
             skill_domains=task_plan.skill_domains if task_plan is not None else None,
         )
+        # One explicit, bound incident request may include independently
+        # stored local archive evidence. The source is host-owned and cannot
+        # create tools or grant mutation authority; no extra hub polling.
+        incident_snapshot = active_incident()
+        if incident_snapshot is not None:
+            system_prompt += incident_system_context(incident_snapshot)
         if direct_virtual_creation:
             system_prompt += (
                 "\n\nVIRTUAL DEVICE TOOL CONTRACT\n"

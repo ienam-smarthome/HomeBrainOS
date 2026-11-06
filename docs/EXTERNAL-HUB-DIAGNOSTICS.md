@@ -85,6 +85,34 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Evidence-bound AI incident investigation (v0.18.432):** Choose **AI investigate**
+beside an observed timeline incident, **AI investigate selected time** after
+selecting a graph timestamp, or **Investigate with HomeBrain AI** inside the
+read-only incident review. The existing Ask answer area receives the response.
+No inference starts until explicitly requested. Free/Ollama, Paid and
+configured Claude choices behave exactly as existing HomeBrain requests.
+
+Before model inference, the backend reads the bounded recorder and Journal
+SQLite snapshots and supplies a request-scoped, source-labelled JSON capsule
+to the existing MCP AI agent. The capsule does not include raw app-log
+message bodies. The agent may make additional read-only Hubitat MCP requests
+for original Hub Events, firmware update records, performance and app logs.
+Those MCP calls are separately accounted for in the evidence receipts.
+If both local archives are missing, no AI call is made.
+
+The root cause remains UNVERIFIED unless discriminating source evidence
+actually establishes it. A memory dip followed by a firmware update and
+restart is a temporal association; it cannot prove what consumed the
+memory. A Hubitat log explicitly saying critically low memory triggered
+a reboot is stronger evidence for the reboot trigger, not the identity
+of a memory-consuming app. Source-time limits, missing log windows and
+journal collection gaps must be preserved.
+
+Read-only endpoint: POST /api/hub-diagnostics/investigate accepts at as
+offset-aware ISO timestamp, window_minutes of 5/15/30/60 and model_tier
+free/paid/claude/auto. The ordinary Ask endpoint also blocks definitive
+model cause claims when its typed hypothesis comparisons are unresolved.
+No write permissions, autonomous scheduling or new polling are introduced.
 **Incident drill-down (v0.18.431):** Select **Investigate** beside a
 confirmed startup, connectivity failure/recovery, real OS-memory minimum or
 derived native CPU-load maximum. Alternatively select a timestamp on the
