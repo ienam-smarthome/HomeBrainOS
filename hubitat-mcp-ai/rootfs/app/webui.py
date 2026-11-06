@@ -1888,7 +1888,7 @@ loadStage6Status();
 
 
 const diagUnit={free_os_mb:'MB',java_free_mb:'MB',java_allocated_heap_used_pct:'%',native_load_pct:'%',native_load5:'load',latency_ms:'ms'};
-let diagHistoryRows=[],diagIncidents=[];
+let diagHistoryRows=[],diagIncidents=[],diagReboots=[],diagHistoryMeta={};
 function diagDate(value){if(!value)return 'unavailable';const d=new Date(value);return isNaN(d.getTime())?String(value).slice(0,40):d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})}
 function diagNumber(value,unit){return typeof value==='number' && Number.isFinite(value)?value.toFixed(unit==='%'?1:unit==='load'?2:0)+' '+unit:'—'}
 function renderDiagnosticsStatus(data){
@@ -1948,6 +1948,28 @@ function diagSelectPoint(index){
   tipValue.textContent=value;
  }
 }
+function drawDiagRebootMarkers(svg,first,last){
+ if(!Number.isFinite(first)||!Number.isFinite(last)||last<=first)return;
+ let previousX=-100;
+ for(const event of diagReboots.slice(0,120)){
+  const when=Date.parse(event.occurred_at);
+  if(!Number.isFinite(when)||when<first||when>last)continue;
+  const x=diagPlot.left+(when-first)/(last-first)*(diagPlot.right-diagPlot.left);
+  const line=diagChartSvgNode('line',{x1:x,x2:x,y1:diagPlot.top,y2:diagPlot.bottom,
+      stroke:'#f59e0b','stroke-width':1.5,'stroke-dasharray':'3 4',
+      'aria-label':'Hub startup '+diagDate(event.occurred_at)});
+  line.append(diagChartSvgNode('title',{},'Hubitat systemStart · '+diagDate(event.occurred_at)+
+      (event.firmware?' · firmware '+event.firmware:'')+
+      ' · restart cause not established'));
+  svg.append(line);
+  if(x-previousX>62){
+   const label=diagChartSvgNode('text',{x:Math.min(x+3,diagPlot.right-43),
+       y:diagPlot.top+12,fill:'#fbbf24','font-size':11},'Reboot');
+   label.append(diagChartSvgNode('title',{},'Confirmed systemStart · '+diagDate(event.occurred_at)));
+   svg.append(label);previousX=x;
+  }
+ }
+}
 function drawDiagnosticsChart(){
  const svg=document.getElementById('diagChart'),metric=document.getElementById('diagMetric').value;
  const nativeMetric=metric.startsWith('java_')||metric==='native_load5'||metric==='native_load_pct';
@@ -1960,8 +1982,13 @@ function drawDiagnosticsChart(){
   points=points.filter(row=>{const key=row.native_sample_label;if(!key||seen.has(key))return false;seen.add(key);return true});
  }
  points.sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
- document.getElementById('diagChartCaption').textContent=points.length+' observed '+(nativeMetric?'native source':'external probe')+
-   ' points · '+(diagHistoryRows.length-points.length)+' other/unknown/duplicate samples · No interpolation across missing intervals';
+ const summaryCount=diagHistoryMeta.observed_metric_points??points.length;
+ const sourceCount=diagHistoryMeta.source_sample_count??diagHistoryRows.length;
+ document.getElementById('diagChartCaption').textContent=diagHistoryMeta.downsampled?
+   'Displaying '+points.length+' preserved real '+(nativeMetric?'native':'external')+
+   ' readings from '+summaryCount+' observed points ('+sourceCount+' source probes) · Includes actual min/max and segment boundaries · No interpolated data':
+   points.length+' observed '+(nativeMetric?'native source':'external probe')+
+   ' points · '+(sourceCount-points.length)+' other/unknown/duplicate samples · No interpolation across missing intervals';
  const stats=document.getElementById('diagChartStats'),detail=document.getElementById('diagPointReadout');
  diagPlottedPoints=[];
  if(!points.length){
@@ -1969,6 +1996,8 @@ function drawDiagnosticsChart(){
   detail.textContent='No actual readings for this metric yet. A blank period is not zero.';
   svg.append(diagChartSvgNode('text',{x:diagPlot.left,y:114,fill:'#a1a1aa','font-size':15},
     'No recorded values in the selected period'));
+  drawDiagRebootMarkers(svg,Date.parse(diagHistoryMeta.range_start),
+                             Date.parse(diagHistoryMeta.range_end));
   return;
  }
  const values=points.map(p=>p[metric]);
@@ -1980,7 +2009,10 @@ function drawDiagnosticsChart(){
                         (rawMax-rawMin)*0.15);
  const min=Math.max(0,rawMin-padding),max=rawMax+padding,span=Math.max(0.01,max-min);
  const timestamps=diagHistoryRows.map(x=>Date.parse(x.recorded_at)).filter(Number.isFinite);
- const first=Math.min(...timestamps),last=Math.max(...timestamps),duration=Math.max(1,last-first);
+ const rStart=Date.parse(diagHistoryMeta.range_start),rEnd=Date.parse(diagHistoryMeta.range_end);
+ const first=Number.isFinite(rStart)?rStart:Math.min(...timestamps);
+ const last=Number.isFinite(rEnd)?rEnd:Math.max(...timestamps);
+ const duration=Math.max(1,last-first);
  const xCoord=row=>diagPlot.left+(Date.parse(row.recorded_at)-first)/duration*(diagPlot.right-diagPlot.left);
  const yCoord=row=>diagPlot.bottom-(row[metric]-min)/span*(diagPlot.bottom-diagPlot.top);
  const group=diagChartSvgNode('g',{'aria-hidden':'true'});
@@ -2001,12 +2033,16 @@ function drawDiagnosticsChart(){
       'text-anchor':i===0?'start':i===2?'end':'middle'},diagDate(new Date(when).toISOString())));
  }
  svg.append(group);
- let path='',previous=null;
+ drawDiagRebootMarkers(svg,first,last);
+ let path='',previous=null,previousSegment=null;
  for(const row of points){
   const x=xCoord(row),y=yCoord(row),t=Date.parse(row.recorded_at);
-  const breakGap=previous!==null&&(t-previous>(nativeMetric?900000:120000));
+  const breakGap=previous!==null&&(
+    (Number.isInteger(row.diag_segment)&&Number.isInteger(previousSegment)&&
+       row.diag_segment!==previousSegment)||
+    (!diagHistoryMeta.downsampled&&t-previous>(nativeMetric?900000:120000)));
   path+=(path&&!breakGap?' L':' M')+x.toFixed(2)+' '+y.toFixed(2);
-  diagPlottedPoints.push({row,x,y});previous=t;
+  diagPlottedPoints.push({row,x,y});previous=t;previousSegment=row.diag_segment;
  }
  svg.append(diagChartSvgNode('path',{d:path.trim(),fill:'none',stroke:'#60a5fa',
    'stroke-width':2.4,'stroke-linejoin':'round','stroke-linecap':'round'}));
@@ -2037,11 +2073,18 @@ function diagSelectNearPointer(event){
  if(!box.width)return;
  const x=(event.clientX-box.left)*diagPlot.width/box.width;
  if(x<diagPlot.left-24||x>diagPlot.right+24)return;
- // Binary search keeps mouse/touch exploration cheap with 24 hours of 30-sec samples.
+ // Binary search keeps interaction cheap even on 30-day min/max summaries.
  let low=0,high=diagPlottedPoints.length-1;
  while(low<high){const middle=Math.floor((low+high)/2);
   if(diagPlottedPoints[middle].x<x)low=middle+1;else high=middle}
  const idx=low>0&&Math.abs(diagPlottedPoints[low-1].x-x)<Math.abs(diagPlottedPoints[low].x-x)?low-1:low;
+ if(Math.abs(diagPlottedPoints[idx].x-x)>24){
+  document.getElementById('diagPointReadout').textContent='No observed sample near this time. Blank intervals are unknown, not zero.';
+  for(const id of ['diagTooltip','diagChartMarker','diagChartCrosshair']){
+   const item=document.getElementById(id);if(item)item.setAttribute('visibility','hidden');
+  }
+  return;
+ }
  diagSelectPoint(idx);
 }
 document.getElementById('diagChart').addEventListener('pointermove',event=>{
