@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Q1 shared guarded-answer and log-contract evidence review (candidate PR #1475)
+
+**Live evidence:** Two original v0.18.434 Hubitat restart investigations were submitted to ordinary `/api/ask` (`route=unified-mcp-agent`, `request_provenance.source=api_ask_request`). Neither tests the explicit `/api/hub-diagnostics/investigate` incident handler. The 16:52 low-memory report was replaced with a generic unresolved-claim rejection; the 22:33 firmware/startup report retained a useful but incomplete model timeline. The actual tool receipts show successful `hubEvents` and `past` queries in both, plus one successful unbounded `apps` query; their summaries do **not** certify historical app-message content or completeness. Version 0.18.434 is self-reported; deployed Git SHA and model first-attempt delivery remain explicitly unverified.
+
+**Candidate general correction:** [PR #1475](https://github.com/ienam-smarthome/HomeBrainOS/pull/1475) v0.18.435 adds source-qualified, read-only log-mode query coverage to both normal Ask causal guard and explicit incident response. It preserves authenticated bounded typed Hub Events facts only when real typed rows appear in receipts, and never promotes summary-only field names or an unbounded apps snapshot into proof of historical message review. Raw log messages and secrets are excluded from newly published metadata. No extra reads, writes, automatic polling, provider calls or paid escalation.
+
+**Hypothesis:** Keep independently verifiable evidence useful despite unsupported AI causality, without weakening the zero-unsupported-definitive-cause guard. **Baseline:** submitted 2 cases, no independent paired same-source v0.18.435 live retest. **Acceptance:** cross-path synthetic tests and all required CI green, then one read-only paired normal Ask/explicit incident examination with complete evidence/Technical JSON and build SHA where available. **First-answer quality, actual app memory consumer, root cause and model-comparison improvement: NOT MEASURED.** A green CI result is not a user-graded quality score.
+
+**Rollback:** Revert v0.18.435 if the guard promotes unverified source text, leaks messages, changes write permissions, or fails unrelated Answer Quality tests. Continue the standing frozen-case Q2 benchmark; do not manufacture missing old logs, grades or a source-trigger inference.
+
+---
+
 
 ## 2026-11-06 — Q2 real no-cloud evidence-first prompt A/B: 16 requests, no demonstrated semantic gain
 

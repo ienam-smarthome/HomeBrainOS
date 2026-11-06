@@ -85,6 +85,19 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Shared Ask and incident source receipts (v0.18.435):** The ordinary
+`/api/ask` causal-claim guard now preserves verified bounded and typed
+`hub_list_device_events` system-event time/type facts if actually present in
+the published receipts, while still withholding the model's unsupported cause.
+For successful or failed `hub_get_logs` calls, it reports separate
+`hubEvents`, `past`, `apps` and generic-bounded read counts under
+`causal_read_source_coverage`. The dedicated incident endpoint adds
+`log_query_modes` and bounded typed app-row counts to
+`incident_source_coverage`. Summary-only receipts, an app-mode snapshot and
+a successful generic request cannot certify historic app-message coverage.
+No additional MCP calls, background recording or Hubitat writes are added;
+missing original messages remain missing.
+
 **Source-qualified incident next checks (v0.18.434):** An unsafe model
 claim is still withheld, but the report does not stop at that warning.
 HomeBrain generates deterministic next read-only checks from the typed
