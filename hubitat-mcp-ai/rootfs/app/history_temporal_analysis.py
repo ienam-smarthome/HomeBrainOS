@@ -1248,6 +1248,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
                     "unit",
                     "description",
                     "date",
+                    "displayTime",
                     "isStateChange",
                     "source",
                     "type",
@@ -1392,6 +1393,15 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
     for key in (
         "analysisEventCount",
         "sourceEventCount",
+        "sampleBounds",
+        "sourcePagesFetched",
+        "sourcePageSize",
+        "sourceFirstPageAtLimit",
+        "sourceWindowBoundaryReached",
+        "sourceCoverageStopReason",
+        "sourceCoverageVerified",
+        "timeZone",
+        "timeZoneSource",
         "historySourceIntegrity",
         "historySourceIntegrityVerified",
     ):
