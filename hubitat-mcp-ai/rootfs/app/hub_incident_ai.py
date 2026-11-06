@@ -333,6 +333,8 @@ def read_only_log_receipt_summary(
     past_pages_with_more = 0
     past_pages_truncated = 0
     returned_timestamped_messages = 0
+    native_past_empty_bounded_pages = 0
+    native_past_page_observations: list[dict[str, Any]] = []
     for receipt in receipts or []:
         if (not isinstance(receipt, dict)
                 or receipt.get("mutates") is True
@@ -377,6 +379,23 @@ def read_only_log_receipt_summary(
                     native_past_pages_with_rows += 1
                     returned_timestamped_messages += total
                     verified_app_message_rows += apps
+                # Preserve small numeric facts from the actual native page.
+                # Total source rows are BEFORE date filtering; never call them
+                # entries in the requested historical window, or sum their
+                # totals across overlapping reads.
+                observed = {}
+                for source_key in (
+                    "returnedRowsInspected", "matchedRowsReported",
+                    "sourceRowsReported", "timeFilterUnparseable",
+                ):
+                    value = metadata.get(source_key)
+                    if type(value) is int and 0 <= value <= 1_000_000:
+                        observed[source_key] = value
+                if len(native_past_page_observations) < 8:
+                    native_past_page_observations.append(observed)
+                if (observed.get("returnedRowsInspected") == 0
+                        and observed.get("matchedRowsReported") == 0):
+                    native_past_empty_bounded_pages += 1
                 if metadata.get("hasNextCursor") is True:
                     past_pages_with_more += 1
                 if (metadata.get("responseTruncated") is True
@@ -421,6 +440,8 @@ def read_only_log_receipt_summary(
         "returned_timestamped_past_messages": returned_timestamped_messages,
         "past_pages_with_more": past_pages_with_more,
         "past_pages_truncated": past_pages_truncated,
+        "native_past_empty_bounded_pages": native_past_empty_bounded_pages,
+        "native_past_page_observations": native_past_page_observations,
         "complete_historical_app_log_coverage": False,
         "coverage_note": (
             "Past-mode reads can return historical app/device messages, but "
@@ -574,13 +595,37 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
                 else "historical content/retention coverage unverified."
             )
             if name in ("past", "generic_bounded") and log_coverage["verified_native_past_pages"]:
-                qualifier = (
-                    f"{log_coverage['returned_timestamped_past_messages']} "
-                    "timestamped messages observed on returned bounded pages, "
-                    f"{log_coverage['verified_bounded_app_message_rows']} "
-                    "app messages with source IDs; hub-local source time, "
-                    "full historical coverage unverified."
-                )
+                observations = log_coverage["native_past_page_observations"]
+                empty = (observations and all(
+                    page.get("matchedRowsReported") == 0
+                    and page.get("returnedRowsInspected") == 0
+                    for page in observations
+                ) and not log_coverage["returned_timestamped_past_messages"])
+                if empty:
+                    source_totals = [
+                        p["sourceRowsReported"] for p in observations
+                        if "sourceRowsReported" in p
+                    ]
+                    total_note = (
+                        " Source response row count before the time filter: "
+                        + ", ".join(map(str, source_totals[:4]))
+                        + (" (separate reads, not summed)." if len(source_totals) > 1
+                           else ".")
+                    ) if source_totals else ""
+                    qualifier = (
+                        "0 matching messages in the returned bounded "
+                        "page(s), not proof of historical absence."
+                        + total_note
+                        + " Historical retention and source time range unverified."
+                    )
+                else:
+                    qualifier = (
+                        f"{log_coverage['returned_timestamped_past_messages']} "
+                        "timestamped messages observed on returned bounded pages, "
+                        f"{log_coverage['verified_bounded_app_message_rows']} "
+                        "app messages with source IDs; hub-local source time, "
+                        "full historical coverage unverified."
+                    )
                 if log_coverage["past_pages_with_more"] or log_coverage["past_pages_truncated"]:
                     qualifier += " Pagination or truncation requires further reads."
             log_lines.append(
@@ -589,13 +634,36 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
             )
     if log_lines:
         sections.append("**Log and runtime-source checks**\n" + "\n".join(log_lines))
-    sections.append(
-        "**Read-only next checks:** Examine the actual returned, time-bounded "
-        "source messages and missing retention/collection intervals before "
-        "identifying a responsible process, app, driver or external initiator. "
-        "A successful log request does not prove matching historical messages "
-        "were returned. No Hubitat action was taken by this correction."
+    past_observations = log_coverage["native_past_page_observations"]
+    all_past_empty = (
+        bool(past_observations)
+        and not log_coverage["returned_timestamped_past_messages"]
+        and all(
+            p.get("returnedRowsInspected") == 0
+            and p.get("matchedRowsReported") == 0
+            for p in past_observations
+        )
     )
+    if all_past_empty:
+        sections.append(
+            "**Read-only next checks:** No historical messages were returned "
+            "by the checked bounded past-log page(s), so there are no "
+            "returned messages to analyse. Verify the hub timezone and "
+            "available retention horizon using a separate small recent "
+            "past-log sample; check retained local recorder or journal "
+            "coverage for the requested period. A zero-match page cannot "
+            "establish that the events never occurred or identify the "
+            "memory-consuming process. No Hubitat action was taken."
+        )
+    else:
+        sections.append(
+            "**Read-only next checks:** Examine the actually returned "
+            "time-bounded messages and missing retention/collection intervals "
+            "before identifying a responsible process, app, driver or "
+            "external initiator. A successful log request does not prove "
+            "matching historical messages were returned. "
+            "No Hubitat action was taken."
+        )
     corrected["message"] = "\n\n".join(sections)
     corrected["causal_read_source_coverage"] = log_coverage
     corrected["ai_claim_validation"] = "unresolved_cause_claim_withheld"
