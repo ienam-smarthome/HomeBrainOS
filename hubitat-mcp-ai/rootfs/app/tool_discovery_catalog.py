@@ -328,7 +328,10 @@ class ToolDiscoveryCatalog:
                 continue
             seen.add(name)
             names.append(name)
-            if len(names) >= MAX_DISCOVERED_GATEWAYS:
+            # Explicit exact operations are live-MCP-verified. Do not discard
+            # additional matching gateways because of the old fuzzy top-two
+            # heuristic; fuzzy discovery still controls unrelated noise.
+            if not exact_matches and len(names) >= MAX_DISCOVERED_GATEWAYS:
                 break
         return [available[name] for name in names]
 
@@ -453,7 +456,7 @@ class ToolDiscoveryCatalog:
         The effect classifier is the authority; neither names nor model hints
         can upgrade a management/write tool into a safe read.
         """
-        limit = max(1, min(32, int(max_declared)))
+        limit = max(1, int(max_declared))
         selected: list[str] = []
         # Keep already-visible tools first so the model does not lose its
         # discovered target context. Add other installed read sources next.
