@@ -242,7 +242,7 @@ def test_web_ui_adds_explicit_buttons_and_preserves_model_tiers():
         "session_id:requestSessionId",
         "request_id:requestId",
         "model_tier:selectedTier",
-        "async function submit(text,incidentAI=null)",
+        "async function submit(text){",
         'id="diagTimelineChart"', 'id="diagReviewDetails"',
     ):
         assert field in html, field
