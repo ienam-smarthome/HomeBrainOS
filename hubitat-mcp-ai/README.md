@@ -5,6 +5,20 @@ to kingpanther13's Hubitat MCP Rule Server.
 
 Current add-on version: **0.18.443**.
 
+**Autonomous evidence-first planning, Phase 1 (v0.18.443):**
+The model can now plan the evidence needed for unfamiliar read-only
+questions and propose typed source reads using the installed
+`homebrain_device_history` adapter. The host validates source identity,
+read-only tool effects, argument schema and returned evidence; the model
+may then reason over actual timestamped observations rather than stopping
+after device discovery. Autonomous read investigations no longer terminate
+solely because short profile-specific call, round or checkpoint soft ceilings
+are reached. The configurable operational deadline, write confirmations,
+read-permission restrictions and resource protections remain intact.
+**This is Phase 1 only**, not proof of universal first-answer accuracy.
+[Autonomous roadmap](../docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md) ·
+[Release notes](CHANGELOG-0.18.443.md).
+
 **Source-scoped native past-log reporting (v0.18.442):**
 Each successful historical-log page is now attributed to its own query
 mode/window rather than reusing global bounded-page counts across separate
