@@ -515,21 +515,29 @@ def read_only_log_receipt_summary(
                 for source_key in (
                     "returnedRowsInspected", "matchedRowsReported",
                     "sourceRowsReported", "timeFilterUnparseable",
+                ):
+                    value = metadata.get(source_key)
+                    if type(value) is int and 0 <= value <= 1_000_000:
+                        observed[source_key] = value
+                if len(native_past_page_observations) < 8:
+                    native_past_page_observations.append(observed)
+                # Extended, source-mode-scoped projection is separate from
+                # the established legacy aggregate field.
+                scoped_page = dict(observed)
+                for source_key in (
                     "timestampedMessageRows",
                     "appMessageRowsWithVerifiedSourceId",
                     "deviceMessageRowsWithVerifiedSourceId",
                 ):
                     value = metadata.get(source_key)
-                    if type(value) is int and 0 <= value <= 1_000_000:
-                        observed[source_key] = value
+                    if type(value) is int and 0 <= value <= 200:
+                        scoped_page[source_key] = value
                 for source_key in ("hasNextCursor", "responseTruncated",
                                    "returnedRowsCapped"):
                     if type(metadata.get(source_key)) is bool:
-                        observed[source_key] = metadata[source_key]
-                if len(native_past_page_observations) < 8:
-                    native_past_page_observations.append(observed)
+                        scoped_page[source_key] = metadata[source_key]
                 if len(mode_page_observations[key]["bounded"]) < 8:
-                    mode_page_observations[key]["bounded"].append(observed)
+                    mode_page_observations[key]["bounded"].append(scoped_page)
                 if (observed.get("returnedRowsInspected") == 0
                         and observed.get("matchedRowsReported") == 0):
                     native_past_empty_bounded_pages += 1
