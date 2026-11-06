@@ -158,7 +158,7 @@ def test_guard_preserves_actual_page_counts_but_no_private_text_or_invented_caus
     }
     verified = guard_unresolved_causal_publication(response)
     assert "3 timestamped messages" in verified["message"]
-    assert "1 app messages with source IDs" in verified["message"]
+    assert "1 app-identified rows" in verified["message"]
     assert "Pagination or truncation requires further reads" in verified["message"]
     assert "underlying cause" in verified["message"]
     assert "password" not in verified["message"]
