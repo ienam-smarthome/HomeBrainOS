@@ -3,7 +3,20 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.433**.
+Current add-on version: **0.18.434**.
+
+**Actionable, evidence-qualified incident AI reports (v0.18.434):**
+When the AI supplies an unsupported definitive cause, HomeBrain continues
+to withhold the model draft, but its host-authored report now includes
+tailored **Read-only next checks** based on the verified restart trigger,
+historical app-log access, external probe coverage and known Journal gaps.
+A failed `mode=apps` historical-log query is distinguished from any
+later successful, bounded generic log query. The latter is not silently
+treated as proof that app-specific messages were reviewed. Technical details
+also expose these distinct source receipt states. No extra Hubitat requests,
+automatic remediation or paid-model escalation are introduced.
+HomeBrain continues to treat the reboot trigger and memory-consuming culprit
+as separate questions. [Release notes](CHANGELOG-0.18.434.md).
 
 **Verified restart triggers vs unresolved root causes (v0.18.433):**
 The on-demand incident AI endpoint now reads the typed, successful, source-backed

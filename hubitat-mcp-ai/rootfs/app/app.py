@@ -1649,6 +1649,14 @@ async def hub_diagnostics_investigate(payload: IncidentAIRequest,
         response["causal_verdict"] = "unverified"
         response["restart_trigger_evidence"] = trigger_assessment
         response["restart_trigger_status"] = trigger_assessment["restart_trigger"]
+        response["incident_source_coverage"] = {
+            "typed_hub_events_verified": trigger_assessment["typed_hub_events_checked"],
+            "app_specific_log_status": trigger_assessment["app_specific_logs"],
+            "app_specific_log_attempts": trigger_assessment["app_specific_log_attempts"],
+            "bounded_generic_log_read_successes": trigger_assessment["bounded_generic_log_read_successes"],
+            "journal_is_complete": False,
+            "model_hypothesis_comparisons_are_separate": True,
+        }
         response["underlying_memory_cause"] = "unverified"
         response["read_only"] = True
         # This field qualifies only the local archive preflight. Any

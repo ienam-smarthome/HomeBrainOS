@@ -51,6 +51,9 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
         "observed_system_events": [],
         "app_specific_logs": "not_verified",
         "app_specific_log_attempts": 0,
+        "bounded_generic_log_reads": 0,
+        "bounded_generic_log_read_successes": 0,
+        "hub_event_log_read_successes": 0,
         "coverage_note": (
             "Unobserved source records and retained-history gaps cannot "
             "establish that an event never occurred."
@@ -65,6 +68,9 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
     failures = 0
     successes = 0
     checked = False
+    generic_attempts = 0
+    generic_successes = 0
+    event_log_successes = 0
     for receipt in (receipts or []):
         if not isinstance(receipt, dict) or receipt.get("mutates"):
             continue
@@ -73,12 +79,20 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
         if not isinstance(args, dict):
             args = {}
         params = args.get("args") if isinstance(args.get("args"), dict) else {}
-        if sub_tool == "hub_get_logs" and params.get("mode") == "apps":
-            attempts += 1
-            if receipt.get("success") is True:
-                successes += 1
-            else:
-                failures += 1
+        if sub_tool == "hub_get_logs":
+            mode = params.get("mode")
+            if mode == "apps":
+                attempts += 1
+                if receipt.get("success") is True:
+                    successes += 1
+                else:
+                    failures += 1
+            elif mode == "hubEvents" and receipt.get("success") is True:
+                event_log_successes += 1
+            elif mode in (None, "") and params.get("since") and params.get("until"):
+                generic_attempts += 1
+                if receipt.get("success") is True:
+                    generic_successes += 1
         # A successful generic log query or local archive counter does NOT
         # establish that Hubitat's relevant typed Hub Events were returned.
         if (sub_tool != "hub_list_device_events"
@@ -158,6 +172,9 @@ def assess_hub_event_trigger(snapshot: dict[str, Any],
             else "not_verified"
         ),
         "app_specific_log_attempts": attempts,
+        "bounded_generic_log_reads": generic_attempts,
+        "bounded_generic_log_read_successes": generic_successes,
+        "hub_event_log_read_successes": event_log_successes,
     }
 
 
@@ -212,11 +229,35 @@ def render_hub_event_findings(assessment: dict[str, Any]) -> str:
         "**Underlying memory-pressure cause: UNVERIFIED.** No individual "
         "application, driver, scheduled job or hardware event is proven responsible."
     )
-    if assessment.get("app_specific_logs") == "read_failed":
+    app_status = assessment.get("app_specific_logs")
+    generic_success = int(assessment.get("bounded_generic_log_read_successes") or 0)
+    if app_status == "read_failed":
         rows.append(
-            "**Evidence gap:** A targeted app-log read failed; "
-            "the retained Journal counts are not equivalent to actual "
-            "app-log message review."
+            "**App-log coverage:** A targeted app-mode log query failed."
+            + (" A bounded generic log query also succeeded, but its"
+               " receipt does not independently verify app-specific"
+               " historical coverage." if generic_success else
+               " No successful bounded generic fallback was recorded.")
+            + " Historical Journal receipt counts are not proof of"
+              " reviewed app-log messages."
+        )
+    elif app_status == "read_succeeded_coverage_unverified":
+        rows.append(
+            "**App-log coverage:** An app-mode query returned successfully,"
+            " but its receipt alone does not verify complete historical"
+            " app-message coverage."
+        )
+    elif generic_success:
+        rows.append(
+            "**App-log coverage:** Bounded generic log query succeeded;"
+            " it has not independently established historical app-log"
+            " message coverage."
+        )
+    else:
+        rows.append(
+            "**App-log coverage:** No successful app-specific historical"
+            " message review is verified. Journal receipt counts cannot"
+            " substitute for the message source."
         )
     rows.append(
         "The time between a reboot message and systemStart does not, "

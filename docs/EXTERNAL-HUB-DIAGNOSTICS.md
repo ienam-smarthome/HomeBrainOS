@@ -85,6 +85,26 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Source-qualified incident next checks (v0.18.434):** An unsafe model
+claim is still withheld, but the report does not stop at that warning.
+HomeBrain generates deterministic next read-only checks from the typed
+restart-trigger status, app-specific log-read attempts, time-bounded generic
+log-query receipts, recorder sample coverage and Historical Journal gaps.
+The checks do **not** name a responsible application without evidence.
+
+**Historical-log coverage:** The live 5 November investigations encountered
+failed `mode=apps` attempts. The 22:25 incident also contained a successful
+date-bounded generic `hub_get_logs` receipt. This newer report distinguishes
+these outcomes: success of a generic log request is not evidence that any
+particular app's historical log messages were retrieved or read. A Journal
+count of app-log receipts likewise does not establish message content.
+The response includes an `incident_source_coverage` object with explicit
+success/attempt counts and flags that model-proposed hypothesis source
+checks are independent from independently verified Hub Events.
+
+Unknown underlying cause remains UNVERIFIED. This update improves
+reporting and prioritisation, not the completeness of stored historical
+evidence, and introduces no additional Hubitat polling or mutations.
 **Source-backed restart trigger assessment (v0.18.433):** In the existing
 AI incident response, a separate deterministic evidence section now derives
 Hubitat restart context only from successful typed `hub_list_device_events`

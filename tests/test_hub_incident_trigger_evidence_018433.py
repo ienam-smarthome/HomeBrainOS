@@ -100,7 +100,7 @@ def test_low_memory_report_verifies_trigger_but_not_memory_consumer():
     assert "16:52:15 UTC" in answer
     assert "critically low memory" in answer
     assert "which process consumed memory" in answer
-    assert "targeted app-log read failed" in answer
+    assert "targeted app-mode log query failed" in answer
     assert "uninterrupted connectivity outage" in answer
     assert "not recorded in this window" in fact_summary(snapshot)
 
