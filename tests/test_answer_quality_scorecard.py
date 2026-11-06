@@ -171,6 +171,14 @@ def test_invalid_review_fails_closed(change):
         build_scorecard(reviews([item]), load_catalog())
 
 
+
+def test_reject_causal_pass_when_a_definitive_unsupported_cause_is_counted():
+    item = reviewed()
+    item["review"]["unsupported_definitive_causal_claims"] = 1
+    with pytest.raises(ScorecardInputError, match="causal_calibration cannot pass"):
+        build_scorecard(reviews([item]), load_catalog())
+
+
 def test_reject_duplicate_model_build_case_review():
     item = reviewed()
     with pytest.raises(ScorecardInputError, match="Duplicate"):
