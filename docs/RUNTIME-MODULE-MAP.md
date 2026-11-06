@@ -245,6 +245,7 @@ The repository drift test compares this table directly with the live directory. 
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
 | `hub_info_receipt_projection.py` | Allowlisted, source-scoped Hub Info metrics for private evidence grading; omits device identity, IP addresses, arbitrary alert text and unsupported numeric/status values. |
+| `hub_incident_trigger_evidence.py` | Extracts verified time-bounded Hubitat lowMemory/update/systemStart receipts for independent restart-trigger assessment, without claiming a root memory consumer. |
 | `hub_incident_ai.py` | Binds a request-scoped, privacy-limited local resource incident evidence capsule into existing MCP AI investigation prompts and guards unsupported definitive causal publication. |
 | `hub_timezone.py` | Resolves and briefly caches the authoritative Hubitat IANA timezone for semantic history windows. |
 | `live_evidence_authority.py` | Combines live evidence receipts with grounding decisions. |

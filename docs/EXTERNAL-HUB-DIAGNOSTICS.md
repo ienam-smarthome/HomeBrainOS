@@ -85,6 +85,24 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Source-backed restart trigger assessment (v0.18.433):** In the existing
+AI incident response, a separate deterministic evidence section now derives
+Hubitat restart context only from successful typed `hub_list_device_events`
+receipts with grounded timestamps in the requested window. A `lowMemory`
+message explicitly saying critically low memory and rebooting followed by
+a confirmed `systemStart` supports a **reported low-memory restart trigger**
+but not the identity of the process exhausting memory. A firmware `update`
+record followed by startup supports an **update-associated startup sequence**
+but does not demonstrate that firmware caused the preceding external OS
+memory reading. With missing, failed or truncated source access, absent
+events never establish absence of a trigger. Attempted failed app-log reads
+are shown as evidence gaps.
+
+The deterministic Hub Events summary is displayed even when the AI prose is
+withheld for an unsupported causal conclusion. This preserves useful verified
+facts without claiming the full root cause is known. The JSON response adds
+`restart_trigger_evidence`, `restart_trigger_status` and
+`underlying_memory_cause: unverified`. No new Hubitat polling or writes.
 **Evidence-bound AI incident investigation (v0.18.432):** Choose **AI investigate**
 beside an observed timeline incident, **AI investigate selected time** after
 selecting a graph timestamp, or **Investigate with HomeBrain AI** inside the
