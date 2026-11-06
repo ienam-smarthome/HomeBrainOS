@@ -180,3 +180,80 @@ def test_no_history_mode_contamination_and_no_mutation_to_verified_results():
     completed["message"] = "The app caused this."
     completed["outcome_presentation"] = {"value": "completed"}
     assert guard_unresolved_causal_publication(completed) is completed
+
+
+def test_empty_native_past_page_distinguishes_prefilter_total_from_zero_matches():
+    since, until = "2026-11-05T16:30:00Z", "2026-11-05T16:53:00Z"
+    native = receipt("past", since=since, until=until, details={
+        "nativePastLog": {
+            "requestDateBounded": True, "returnedRowsInspected": 0,
+            "matchedRowsReported": 0, "sourceRowsReported": 16893,
+            "timestampedMessageRows": 0,
+            "appMessageRowsWithVerifiedSourceId": 0,
+            "hasNextCursor": False, "responseTruncated": False,
+        }
+    })
+    status = read_only_log_receipt_summary([native])
+    assert status["verified_native_past_pages"] == 1
+    assert status["native_past_empty_bounded_pages"] == 1
+    assert status["native_past_page_observations"] == [
+        {"returnedRowsInspected": 0, "matchedRowsReported": 0,
+         "sourceRowsReported": 16893}
+    ]
+    answer = guard_unresolved_causal_publication(unresolved(
+        "A specific app caused the memory exhaustion.", [native]
+    ))["message"]
+    assert "0 matching messages in the returned bounded page" in answer
+    assert "Source response row count before the time filter: 16893" in answer
+    assert "No historical messages were returned" in answer
+    assert "verify the hub timezone".casefold() in answer.casefold()
+    assert "there are no returned messages to analyse" in answer.lower()
+    assert "Examine the actual returned, time-bounded source messages" not in answer
+    assert "16893 messages from the requested window" not in answer
+    assert "specific app caused" not in answer
+
+
+def test_partial_mixed_past_pages_do_not_claim_no_matching_history():
+    since, until = "2026-11-05T16:30:00Z", "2026-11-05T16:53:00Z"
+    base = {"requestDateBounded": True, "hasNextCursor": False,
+            "responseTruncated": False}
+    empty = receipt("past", since=since, until=until, details={
+        "nativePastLog": {
+            **base, "returnedRowsInspected": 0, "matchedRowsReported": 0,
+            "timestampedMessageRows": 0, "appMessageRowsWithVerifiedSourceId": 0
+        }
+    })
+    positive = receipt("past", since=since, until=until, details={
+        "nativePastLog": {
+            **base, "returnedRowsInspected": 2, "matchedRowsReported": 2,
+            "timestampedMessageRows": 2, "appMessageRowsWithVerifiedSourceId": 1
+        }
+    })
+    info = read_only_log_receipt_summary([empty, positive])
+    assert info["native_past_empty_bounded_pages"] == 1
+    assert info["returned_timestamped_past_messages"] == 2
+    rendered = guard_unresolved_causal_publication(unresolved(
+        "A particular driver caused the issue.", [empty, positive]
+    ))["message"]
+    assert "2 timestamped messages observed" in rendered
+    assert "No historical messages were returned" not in rendered
+    assert "full historical coverage unverified" in rendered
+
+
+def test_summary_only_or_failed_past_read_never_invents_empty_page():
+    since, until = "2026-11-05T16:30:00Z", "2026-11-05T16:53:00Z"
+    checked = [
+        receipt("past", since=since, until=until),
+        receipt("past", success=False, since=since, until=until, details={
+            "nativePastLog": {
+                "requestDateBounded": True,
+                "returnedRowsInspected": 0, "matchedRowsReported": 0,
+                "sourceRowsReported": 1234, "timestampedMessageRows": 0,
+                "appMessageRowsWithVerifiedSourceId": 0
+            }
+        }),
+    ]
+    info = read_only_log_receipt_summary(checked)
+    assert info["native_past_page_observations"] == []
+    assert info["native_past_empty_bounded_pages"] == 0
+    assert info["verified_native_past_pages"] == 0
