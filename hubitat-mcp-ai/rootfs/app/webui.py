@@ -433,8 +433,8 @@ async function submit(text){
     const response=await (async()=>{
       const networkFailure=error=>{
         if(error?.name==='AbortError')throw error;
-        // The backend might already have submitted a write before a
-        // disconnected ordinary Ask response. Never automatically retry.
+        // The backend may already have submitted a write
+        // before its HTTP response was lost. Never automatically retry.
         const failure=new Error(String(error?.message||'Network connection lost'));
         failure.name='HomeBrainNetworkError';
         throw failure;
