@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Q1 historical past-log zero-match semantics (v0.18.439 candidate)
+
+**Source-real observation:** The user's self-reported installed v0.18.438 ordinary Ask for 5 Nov 16:52 restarted from the Hubitat critical-memory warning (16:41:40 UTC) then systemStart (16:52:15 UTC). Read-only native `past` query of 5 Nov 16:30–16:53Z succeeded with `sourceRowsReported=16893` (unfiltered Hubitat source row count), `matchedRowsReported=0`, `returnedRowsInspected=0`, no continuation page and no truncation. The raw source total is **not** a count of rows in the requested incident window. The exact oldest/newest retained log times, hub timezone basis and original memory consumer remain **UNVERIFIED**. Two time-filter/mode calls were blocked before MCP execution. One run: 57.2 s displayed, 8 model rounds, 6 executed tool calls; descriptive, with no 45-second target.
+
+**General answer-quality gap:** v0.18.438's final source-check wording recommended examining returned messages even though the successful filtered `past` page contained none; it also omitted the pre-filter raw row total from the user-facing answer. Candidate v0.18.439 presents bounded numeric per-page observations and distinguishes an empty filtered page from missing/summary-only response and from full historical absence. It prioritises verifying retention horizon and source-time scope using separate read-only bounded source checks, not speculating about an app leak. Ordinary Ask and dedicated incident reports are both updated; no added read, write, polling or cloud escalation. Causal guard still withholds unsupported original-memory-consumer assertions.
+
+**Measurement and acceptance:** Expected improvement is truthful evidence-specific next steps on empty pages, not deeper historical evidence or faster execution. Synthetic empty/positive/failed page regressions and all required CI must pass before merge; future live first-answer usefulness and raw log retention remain NOT MEASURED. Preserve Q1 source-contract work, standing permanent benchmark, no fixed complex-investigation latency cutoff and read-only safety boundaries.
+
+---
+
 ## 2026-11-06 — Q1 typed native historical past-log coverage (green merged v0.18.438)
 
 **Merged and CI evidence:** [PR #1481](https://github.com/ienam-smarthome/HomeBrainOS/pull/1481), exact tested head `778671e5034533389325e34bd9f2a08d3e1292fc`, squash merge `fd5a2282010ed05127eccdbc077adf0a4179a4e6`. All required GitHub workflows passed after the architecture module-map entry was added (Hubitat MCP AI tests, release assurance including full Python suite, scorecard integrity and repository validation). Main's package version is 0.18.438. **No live deployment or native 5 Nov message recovery was verified by these tests.**
