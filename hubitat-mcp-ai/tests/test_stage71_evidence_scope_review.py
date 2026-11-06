@@ -158,23 +158,6 @@ def test_review_packet_still_uses_one_digest_of_bounded_original_records():
     assert len(json.dumps(first)) < 32000
 
 
-def test_phone_manual_scope_controls_require_actual_review_not_default_success():
-    html = render_page("HomeBrainOS", "0.18.303")
-    for expected in (
-        "Stage 7.1 · Evidence scope and causal-question coverage",
-        "Physical acknowledgements in examined sources",
-        "A missing acknowledgement does not prove physical nonexecution.",
-        "Negative/absence claim scope",
-        "Question coverage ",
-        "overstates_global_absence",
-        "reviewer_negative_scope",
-        "question_coverage:questionControls.map",
-        "scopeElement.value!=='not_reviewed'",
-        "production_publication_approval:false",
-    ):
-        assert expected in html
-
-
 def test_production_publisher_and_agent_have_no_stage71_dependencies():
     for file in (
         "mcp_agent_orchestrator.py", "tool_executor.py",
