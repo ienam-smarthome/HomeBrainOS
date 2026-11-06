@@ -416,11 +416,40 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
                 or args.get("source")
                 or "requested scope"
             )
-            key = (category, scope, "")
+            # Distinct time windows/pages are independent source reads; an
+            # identical scope is not proof that all retained history was seen.
+            key = (
+                category, scope,
+                ":".join(str(args.get(field) or "")
+                         for field in ("mode", "since", "until", "cursor")),
+            )
             if key in seen:
                 continue
             seen.add(key)
             details = receipt.get("details")
+            native = details.get("nativePastLog") if isinstance(details, dict) else None
+            if isinstance(native, dict):
+                message_rows = native.get("timestampedMessageRows")
+                app_rows = native.get("appMessageRowsWithVerifiedSourceId")
+                device_rows = native.get("deviceMessageRowsWithVerifiedSourceId")
+                if all(type(x) is int and 0 <= x <= 200
+                       for x in (message_rows, app_rows, device_rows)):
+                    summary = (
+                        f"{message_rows} timestamped message rows returned, "
+                        f"{app_rows} app-identified and "
+                        f"{device_rows} device-identified; "
+                        "hub-local times, not UTC-verified; "
+                        "historic retention unverified"
+                    )
+                    if native.get("hasNextCursor") is True:
+                        summary += "; more pages indicated"
+                    if (native.get("responseTruncated") is True
+                            or native.get("returnedRowsCapped") is True):
+                        summary += "; truncated response/projection"
+                    lines.append(
+                        f"- CHECKED native past-log page ({scope}): {summary}"
+                    )
+                    continue
             log_hints: list[str] = []
             if isinstance(details, dict) and isinstance(details.get("logs"), list):
                 for row in details.get("logs")[:4]:
