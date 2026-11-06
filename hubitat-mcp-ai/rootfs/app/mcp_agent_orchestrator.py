@@ -425,10 +425,10 @@ def _normalize_causal_log_call(
 ) -> dict[str, Any]:
     """Force native log reads onto observed causal boundary timestamps.
 
-    Native hub logs interpret timezone-free values as UTC. Model-authored
-    conversions can therefore shift a Hubitat-local +01:00 boundary by an hour.
-    The host owns this conversion because the actual device-history timestamp is
-    already structured evidence.
+    The MCP logs tool treats timezone-free values as hub-local times.
+    Model-authored conversions can shift an event boundary by an hour.
+    Preserve explicit offset-aware ISO time bounds derived from structured
+    evidence and only apply them to modes that support temporal filters.
     """
 
     leaf, inner = _gateway_leaf(arguments)
