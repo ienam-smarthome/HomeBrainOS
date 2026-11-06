@@ -194,6 +194,15 @@ class GeneralTaskPlan:
         kinds = tuple(x for x in _bounded_strings(
             value.get("requiredEvidenceKinds"), count=5, width=48,
         ) if x in EVIDENCE_KINDS)
+        read_requests = (
+            _read_requests(value.get("readRequests"))
+            if operation in ("read", "investigate") else ()
+        )
+        # A valid planned history read is itself a source obligation.
+        # Do not depend on the model redundantly spelling "device_history"
+        # in a separate field before executing its own safe proposal.
+        if read_requests and "device_history" not in kinds:
+            kinds = (*kinds, "device_history")
         hypotheses = (
             _bounded_hypotheses(value.get("candidateHypotheses"))
             if operation == "investigate" else ()
@@ -207,8 +216,7 @@ class GeneralTaskPlan:
             evidence_goals=goals,
             required_evidence_kinds=kinds,
             candidate_hypotheses=hypotheses,
-            read_requests=_read_requests(value.get("readRequests"))
-            if operation in ("read", "investigate") else (),
+            read_requests=read_requests,
         )
 
     def instruction(self) -> str:
