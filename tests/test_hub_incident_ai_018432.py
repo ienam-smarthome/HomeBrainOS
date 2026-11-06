@@ -248,3 +248,10 @@ def test_web_ui_adds_explicit_buttons_and_preserves_model_tiers():
         assert field in html, field
     assert 'id="oneTimeCleanupCard"' not in html
     assert 'id="advancedDiagnosticsCard"' not in html
+
+
+def test_bound_incident_hard_forces_model_catalogue_read_only():
+    source = (APP_DIR / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
+    assert "active_incident() is None" in source
+    assert "catalog.restrict_declared_to_read_only()" in source
+    assert "system_prompt += incident_system_context(incident_snapshot)" in source

@@ -4055,7 +4055,8 @@ class UnifiedMCPAgent:
         # This invocation performs stage-one review with read-only authority;
         # a later write still needs a fresh structured proposal and approval.
         mutation_request_token = self._mutation_requested_by_user.set(
-            not self._review_first_mode.get()
+            active_incident() is None
+            and not self._review_first_mode.get()
             and (
                 _explicit_mutation_request(user_prompt)
                 or _verified_schedule_write_intent(user_prompt, self.rule_authoring)
