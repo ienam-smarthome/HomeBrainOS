@@ -1,6 +1,8 @@
 # Answer Quality — active status and cross-chat handoff
 
-## 2026-11-06 — General historical-loss claim coverage, v0.18.441 candidate
+## 2026-11-06 — General historical-loss claim coverage, v0.18.441 merged (live retest pending)
+
+**Merged code and CI:** [PR #1487](https://github.com/ienam-smarthome/HomeBrainOS/pull/1487), exact tested head `38f1b31aea10766e71d75add7d3221046661baf3`, four workflows green (Hubitat MCP AI tests; release assurance including full Python suite, metadata and add-on smoke; repository validation; Answer Quality scorecard integrity). Squash merge `e093bdf32cf60b6ff01b5dc93b3c1960e254da8a`; `main` packaged add-on version now `0.18.441`. **This is code-level verification only**; installed build SHA, live first-answer improvement, earliest retained log timestamp, log-purge mechanism and original memory consumer remain unverified. No Hubitat, HA, router or runtime deadline changes were executed by this PR.
 
 **New live failure (v0.18.440):** The user submitted an ordinary Ask read-only investigation of 5 November 2026 16:30–16:53 GMT, with full technical JSON. A successful unbounded native past read returned 20 timestamped device-identified messages (9,866 pre-filter source rows). The bounded past query returned 0 matched entries (9,867 pre-filter source rows), while independent typed events returned lowMemory at 16:41:40.105, sunriseSunsetUpdated at 16:44:20.990 and systemStart at 16:52:15.774 UTC. The model asserted that a **log purge occurred, likely triggered by the reboot** and the diagnostic buffer **has been cleared**. Those conclusions do not follow from the checked source receipts. It also treated the location event as part of the overall reboot sequence; this is a timestamped observation, not causal evidence. Original memory consumer, actual native log retention horizon and purge mechanism remain unverified.
 
