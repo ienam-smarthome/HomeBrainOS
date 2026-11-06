@@ -1,5 +1,21 @@
 # Answer Quality — active status and cross-chat handoff
 
+
+## 2026-11-06 — Q2 original-answer byte gate, per-session independent review candidate
+
+**Current branch base:** `b6963fd80cbaedd766644b6065214f19ea673272` after green-merged PR #1462; maintained add-on remains 0.18.427. The existing frozen 40 offline/13 legacy cases and original four Qwen-vs-Llama session metadata are unchanged. No production answer-quality gain has been measured.
+
+**New evidence reused:** Two **verbatim earlier user-provided Llama first-answer texts** (MQTT broker/endpoint and OFF-command attribution) were retrieved from prior conversation context and independently rehashed to their original archive SHA-256 values. That verifies **2/8 original answer plaintext digests**, not provider delivery, physical truth, semantic correctness, or an independent reviewer. No model rerun, cloud call or live home-system tool was used. The other six originals are not verified by this newly created gate and must not be reconstructed from summaries.
+
+**General offline engineering:** Add `scripts/answer_quality_q2_original_reviews.py` and private-file adversarial tests. The tool validates actual locally supplied first-answer bytes against archived original digests before accepting *optional* user-supplied answer-SHA-bound independent source reviews. Each of the four historical sessions is scored, if at all, **separately** through the existing paired-review code; four distinct checkout SHAs cannot become one misleading same-build accuracy score. Absent grade manifest = `not_measured`. File paths, original raw response texts and answer digests do not enter published output. It introduces no automatic human grades, model calls, device writes, runtime changes, version bump or cloud cost. [Read-only gate notes](ANSWER-QUALITY-Q2-ORIGINAL-REVIEW-GATE-20261106.md).
+
+**Acceptance:** CI and exact-head regressions pending in this branch. These tests check source-data integrity, not the model's actual quality. No formal first-attempt Q4 percentage or Claude-parity result follows. Roll back if any original-byte/privacy gate is bypassed or cross-build grades are pooled.
+
+**Next:** Inspect truly accessible private original texts and independently reviewed source claims; count only exact digest-bound graded cases. If the remaining originals are not available, retain `not_measured`, then test a generalised evidence-first reasoning candidate on unchanged cross-domain packets without installing a live rule or adding another incident-specific output guard.
+
+---
+
+
 ## 2026-11-06 — Q2 four recorded local pairs reconciled to frozen evidence inputs (offline audit candidate)
 
 **Current source baseline:** `main` was `3e8b7cdde3e932291f95d375acec7b190e6d671a` after PR #1460, and installed HomeBrainOS 0.18.427 had a source-backed 7.069-second two-device live status sample. That single live read did not certify first-attempt delivery or a cross-version accuracy improvement.
