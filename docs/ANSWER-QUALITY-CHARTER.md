@@ -18,12 +18,12 @@ The user delegates repository inspection, implementation, PRs, CI diagnosis and 
 | Unsupported **definitive** causes | **0** in the evaluated set | Every definitive issuer vs. upstream trigger vs. execution claim separately reviewed |
 | Useful complete answer on first attempt | At least 80% | Frozen case/question; no retries or manual prompt repair counted as a first pass |
 | Common status/control latency | Under 15 seconds | Median and p95, sampled separately, actual wall-time; no invented baseline |
-| Complex investigation latency | Preferably under 45 seconds | Median and p95, actual wall-time; correct but slow is not conflated with correct and fast |
+| Complex investigation latency | **No fixed time-based acceptance target.** A thorough, verified answer is not a failure merely because it takes longer. | Record elapsed wall-time, provider and MCP time, model/tool rounds, redundant reads, median and p95 for comparable live samples; treat these as descriptive efficiency measures, not an answer-quality pass/fail gate. |
 | Read-only/control safety regression | **0** | Blocking mock execution/permission tests plus explicit live permission gate |
 | Evidence privacy | No secrets/raw private logs in benchmark outputs | Synthetic/anonymised fixtures by default; source citations, redacted excerpts |
 | Claude-like explanation quality | Gap narrows on the **same** blinded, comparable cases | Manual paired assessment; lexical indicator matching never passes for accuracy |
 
-Thresholds are **goals**, not assertions of current quality. Publish a denominator, sample count, date, model/provider, code SHA, build, repeatability, missing cases and limitations with every result.
+Numeric thresholds above are **goals**, not assertions of current quality. **Complex investigations deliberately have no numeric latency goal.** Publish a denominator, sample count, date, model/provider, code SHA, build, repeatability, missing cases and limitations with every result.
 
 ## Fixed evaluation protocol
 
@@ -45,6 +45,7 @@ Thresholds are **goals**, not assertions of current quality. Publish a denominat
 - Keep read-only diagnostics and no extra Cloud calls where possible. No local IPs, tokens, raw private logs or personal household records in public fixtures.
 - Treat `Hubitat MCP AI` as the maintained package (`hubitat-mcp-ai/`); keep existing CI/release gate, package version and compatibility intact.
 - Every meaningful PR must record **hypothesis, expected metric effect, tests, baseline/after case results, regression risk, rollback**, or explicitly state when real eval is pending. Merge only after all required CI checks pass.
+- **For complex investigations, completeness and causal safety take precedence over speed.** Still measure wall-time, provider/MCP breakdown, unnecessary tool calls, repeated reads and latency distributions. Improve avoidable delays only without weakening evidence or answer usefulness. Do not infer a Claude duration benchmark from anecdote or assert comparative parity without a same-task measurement. Keep operational timeouts/deadlines, cancellation and read-only safety safeguards separate from this quality acceptance policy; changing them requires its own source-verified engineering review.
 - **Two to three evaluation/improvement cycles**, then review whether quality gains justify further architecture changes or a different model. A plateau is a signal to experiment, not licence to accumulate ad hoc guards.
 
 ## Next milestones

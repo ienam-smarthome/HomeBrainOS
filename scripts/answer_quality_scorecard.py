@@ -30,7 +30,8 @@ LATENCY_COHORTS = (
 )
 LIVE_LATENCY_TARGET_SECONDS = {
     "live_status_control": 15,
-    "live_investigation": 45,
+    # Complex investigations are assessed for factual grounding, completeness
+    # and safety; their latency is observational, not a pass/fail threshold.
 }
 
 
@@ -38,7 +39,7 @@ def _latency_cohort(origin: str, domain: str) -> str:
     """Partition nominal case types; never infer actual run provenance.
 
     Offline packet model-only timings must never be judged against live
-    status/control and investigation latency thresholds.
+    status/control targets. Complex investigation duration is descriptive.
     """
     if origin == "curated_source_packet":
         return "offline_source_packet"
@@ -224,6 +225,8 @@ def build_scorecard(
                 "latency_sample_count": len(seconds),
                 "median_latency_seconds": _median(seconds),
                 "p95_latency_seconds": _p95(seconds),
+                # Keep the field for output compatibility; null means no fixed
+                # charter cutoff, rather than an unrecorded or passed target.
                 "charter_target_seconds": LIVE_LATENCY_TARGET_SECONDS.get(cohort),
                 "target_assessment": (
                     "not_measured" if not seconds else
@@ -285,8 +288,9 @@ def build_scorecard(
             "or a claim of Claude parity. Missing cases are not passes. "
             "For meaningful acceptance, evaluate the fixed full case set. "
             "Overall latency may mix live-category and offline-only observations; "
-            "use the separate latency cohorts, never the pooled median/p95, "
-            "when discussing live targets."
+            "use the separate latency cohorts, never the pooled median/p95. "
+            "Complex investigations have no fixed latency acceptance target; "
+            "their timing is observational."
         ),
         "legacy_cases": sum(x["origin"] == "legacy_golden_tasks" for x in catalog.values()),
         "curated_cases": sum(x["origin"] == "curated_source_packet" for x in catalog.values()),
