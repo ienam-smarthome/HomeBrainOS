@@ -270,6 +270,24 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
     assessment = assess_hub_event_trigger(snapshot, receipts)
     if receipts is not None:
         facts += "\n\n" + render_hub_event_findings(assessment)
+        observed_logs = read_only_log_receipt_summary(receipts)
+        if observed_logs["verified_native_past_pages"]:
+            facts += (
+                "\n\n**Returned native past-log evidence (bounded pages)**\n"
+                "- Timestamped message rows actually returned: "
+                + str(observed_logs["returned_timestamped_past_messages"])
+                + "; app-identified message rows: "
+                + str(observed_logs["verified_bounded_app_message_rows"])
+                + ". These timestamps use Hubitat local source time and "
+                  "are not independently UTC-aligned. No app or driver is "
+                  "proven to have caused this incident."
+            )
+            if (observed_logs["past_pages_with_more"]
+                    or observed_logs["past_pages_truncated"]):
+                facts += (
+                    "\n- Pagination/truncation was observed; further "
+                    "read-only pages would be needed to assess coverage."
+                )
     message = str(model_message or "").strip()
     next_checks = incident_read_only_next_checks(snapshot, assessment)
     # Overclaiming is a reason to withhold the draft, not automatically
@@ -311,6 +329,10 @@ def read_only_log_receipt_summary(
         for name in ("apps", "devices", "hubActions", "past", "hubEvents", "generic_bounded")
     }
     verified_app_message_rows = 0
+    native_past_pages_with_rows = 0
+    past_pages_with_more = 0
+    past_pages_truncated = 0
+    returned_timestamped_messages = 0
     for receipt in receipts or []:
         if (not isinstance(receipt, dict)
                 or receipt.get("mutates") is True
@@ -342,6 +364,25 @@ def read_only_log_receipt_summary(
                 or key not in ("past", "generic_bounded")):
             continue
         details = receipt.get("details")
+        metadata = details.get("nativePastLog") if isinstance(details, dict) else None
+        if key in ("past", "generic_bounded") and isinstance(metadata, dict):
+            # Only successful, explicitly bounded native past-log pages can
+            # prove that app-identified historical rows were returned.
+            # Their local timestamps are not independently UTC-qualified.
+            if metadata.get("requestDateBounded") is True:
+                total = metadata.get("timestampedMessageRows")
+                apps = metadata.get("appMessageRowsWithVerifiedSourceId")
+                if (type(total) is int and type(apps) is int
+                        and 0 <= apps <= total <= 200):
+                    native_past_pages_with_rows += 1
+                    returned_timestamped_messages += total
+                    verified_app_message_rows += apps
+                if metadata.get("hasNextCursor") is True:
+                    past_pages_with_more += 1
+                if (metadata.get("responseTruncated") is True
+                        or metadata.get("returnedRowsCapped") is True):
+                    past_pages_truncated += 1
+            continue
         entries = details.get("entries") if isinstance(details, dict) else None
         if not isinstance(entries, list):
             continue
@@ -376,6 +417,10 @@ def read_only_log_receipt_summary(
     return {
         "mode_reads": modes,
         "verified_bounded_app_message_rows": verified_app_message_rows,
+        "verified_native_past_pages": native_past_pages_with_rows,
+        "returned_timestamped_past_messages": returned_timestamped_messages,
+        "past_pages_with_more": past_pages_with_more,
+        "past_pages_truncated": past_pages_truncated,
         "complete_historical_app_log_coverage": False,
         "coverage_note": (
             "Past-mode reads can return historical app/device messages, but "
@@ -523,12 +568,24 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
     ):
         data = modes[name]
         if data["attempts"]:
+            qualifier = (
+                "runtime/action data, not historical log-message coverage."
+                if name in ("apps", "devices", "hubActions")
+                else "historical content/retention coverage unverified."
+            )
+            if name in ("past", "generic_bounded") and log_coverage["verified_native_past_pages"]:
+                qualifier = (
+                    f"{log_coverage['returned_timestamped_past_messages']} "
+                    "timestamped messages observed on returned bounded pages, "
+                    f"{log_coverage['verified_bounded_app_message_rows']} "
+                    "app messages with source IDs; hub-local source time, "
+                    "full historical coverage unverified."
+                )
+                if log_coverage["past_pages_with_more"] or log_coverage["past_pages_truncated"]:
+                    qualifier += " Pagination or truncation requires further reads."
             log_lines.append(
                 f"- {label}: {data['successes']}/{data['attempts']} "
-                "read requests succeeded; "
-                + ("runtime/action data, not historical log-message coverage."
-                   if name in ("apps", "devices", "hubActions")
-                   else "historical content/retention coverage unverified.")
+                "read requests succeeded; " + qualifier
             )
     if log_lines:
         sections.append("**Log and runtime-source checks**\n" + "\n".join(log_lines))

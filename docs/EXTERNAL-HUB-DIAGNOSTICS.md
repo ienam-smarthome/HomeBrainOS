@@ -85,6 +85,19 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Typed native past-log receipt coverage (v0.18.438):**
+Successful read-only hub_get_logs(mode="past") responses now retain
+privacy-safe nativePastLog receipt metadata about the actual bounded
+returned entries: timestamped message-row counts, verified numeric source
+markers (app/dev), pagination and truncation signals. No arbitrary
+message bodies, source names, cursors or secrets enter the new technical
+receipts. Hub-local timestamps remain hub-local; source UTC conversion is
+not assumed. The ordinary Ask causal guard and dedicated AI incident
+endpoint can show independently observed app-message rows even when
+the causal hypothesis is withheld. Their presence establishes only
+returned observations, never the cause or completeness of prior history.
+No historical backfill or hub device modification is introduced.
+
 **Read-only log-mode compatibility (v0.18.436):** The MCP server's
 `hub_get_logs(mode="past")` reads historical app/device messages with
 optional source ID and time filters. `apps` and `devices` are current

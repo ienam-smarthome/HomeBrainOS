@@ -254,6 +254,7 @@ The repository drift test compares this table directly with the live directory. 
 | `location_event_queries.py` | Parses and presents bounded hub location-event (mode change) follow-ups. |
 | `location_privacy.py` | Redacts precise-location device attributes (GPS, address, map tiles, journey logs) from provider-bound tool results. |
 | `log_evidence_compactor.py` | Keeps log evidence receipts bounded while preserving compact full-result Rule Machine threshold samples for final causality validation. |
+| `native_past_log_receipt.py` | Projects actual returned Hubitat past-log message counts, typed app/device source IDs and page status into bounded privacy-safe evidence receipts without exposing raw messages or falsely claiming complete history. |
 | `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. |
 | `mcp_client.py` | Implements Hubitat MCP JSON-RPC transport and tool access. |
 | `mcp_skill_guidance.py` | Provides general, Claude-skill-inspired live-MCP discovery, progressive evidence investigation, rule semantics and safety context, with explicit deep-investigation selection. |
