@@ -16,9 +16,14 @@ from webui import render_page  # noqa: E402
 
 
 def _chart_script(page: str) -> str:
+    # Chart rendering uses shared axis helpers declared above the timeline.
+    # Include those real production functions when isolating the lower chart,
+    # rather than duplicating them as test stubs.
+    axis_start = page.index("function diagNiceChartScale(")
+    axis_end = page.index("const timelinePlot=", axis_start)
     start = page.index("const diagUnit=")
     end = page.index("async function loadDiagnosticsStatus(){", start)
-    return page[start:end]
+    return page[axis_start:axis_end] + page[start:end]
 
 
 def test_chart_has_y_values_summary_and_accessible_point_inspection():
