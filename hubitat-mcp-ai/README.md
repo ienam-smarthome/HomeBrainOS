@@ -3,7 +3,18 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.445**.
+Current add-on version: **0.18.446**.
+
+**Source-qualified history and hub-local clocks (v0.18.446):** Model-planned
+read-only device-history requests resolve the hub IANA timezone to label
+recorded samples (for Europe/London: GMT in winter, BST in summer). When the
+newest 50 mixed events do not reach the requested lookback boundary, HomeBrain
+follows read-only `until` bookmarks within a finite source-row safety budget.
+The result now distinguishes fetched source rows, observed attribute samples,
+page/boundary reach and independent source integrity. Equal samples do not
+establish a constant physical reading between observations. Failed timezone
+or bookmark reads are disclosed, not guessed. No device or paid route changes.
+[Release notes](CHANGELOG-0.18.446.md).
 
 **Adaptive investigation timing (v0.18.445):** Read-only investigations
 no longer have the fixed 180-second *total* deadline. Distinct successful
