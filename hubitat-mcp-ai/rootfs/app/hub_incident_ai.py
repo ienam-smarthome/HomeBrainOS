@@ -272,16 +272,42 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
         facts += "\n\n" + render_hub_event_findings(assessment)
         observed_logs = read_only_log_receipt_summary(receipts)
         if observed_logs["verified_native_past_pages"]:
-            facts += (
-                "\n\n**Returned native past-log evidence (bounded pages)**\n"
-                "- Timestamped message rows actually returned: "
-                + str(observed_logs["returned_timestamped_past_messages"])
-                + "; app-identified message rows: "
-                + str(observed_logs["verified_bounded_app_message_rows"])
-                + ". These timestamps use Hubitat local source time and "
-                  "are not independently UTC-aligned. No app or driver is "
-                  "proven to have caused this incident."
+            pages = observed_logs["native_past_page_observations"]
+            all_zero = (
+                bool(pages)
+                and not observed_logs["returned_timestamped_past_messages"]
+                and all(
+                    p.get("returnedRowsInspected") == 0
+                    and p.get("matchedRowsReported") == 0
+                    for p in pages
+                )
             )
+            if all_zero:
+                totals = [p["sourceRowsReported"] for p in pages
+                          if "sourceRowsReported" in p]
+                facts += (
+                    "\n\n**Returned native past-log evidence (bounded pages)**\n"
+                    "- Zero matching historical messages returned in the "
+                    "requested time window. This is not proof that the "
+                    "historical event or its log messages never occurred."
+                )
+                if totals:
+                    facts += (
+                        "\n- Underlying source row count(s) reported before "
+                        "the time filter (not incident-window rows): "
+                        + ", ".join(str(n) for n in totals[:4]) + "."
+                    )
+            else:
+                facts += (
+                    "\n\n**Returned native past-log evidence (bounded pages)**\n"
+                    "- Timestamped message rows actually returned: "
+                    + str(observed_logs["returned_timestamped_past_messages"])
+                    + "; app-identified message rows: "
+                    + str(observed_logs["verified_bounded_app_message_rows"])
+                    + ". These timestamps use Hubitat local source time and "
+                      "are not independently UTC-aligned. No app or driver is "
+                      "proven to have caused this incident."
+                )
             if (observed_logs["past_pages_with_more"]
                     or observed_logs["past_pages_truncated"]):
                 facts += (
@@ -290,6 +316,21 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
                 )
     message = str(model_message or "").strip()
     next_checks = incident_read_only_next_checks(snapshot, assessment)
+    if receipts is not None:
+        past_observations = read_only_log_receipt_summary(
+            receipts
+        )["native_past_page_observations"]
+        if past_observations and all(
+            page.get("matchedRowsReported") == 0
+            and page.get("returnedRowsInspected") == 0
+            for page in past_observations
+        ):
+            next_checks += (
+                "\n- No messages exist in the returned filtered past-log "
+                "page(s) to inspect. Audit the available source-time range "
+                "and local retention using a separate bounded recent "
+                "read before interpreting the zero matches."
+            )
     # Overclaiming is a reason to withhold the draft, not automatically
     # rewrite a cause into a newly invented attribution.
     if _DEFINITIVE_CAUSAL.search(message):
