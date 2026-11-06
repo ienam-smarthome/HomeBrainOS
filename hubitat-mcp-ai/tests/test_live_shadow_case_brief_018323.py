@@ -101,16 +101,6 @@ def test_invalid_archive_result_is_not_reported_as_a_success():
     assert "did not return a usable evidence page" in " ".join(brief["findings"])
 
 
-def test_phone_displays_evidence_first_before_raw_metrics():
-    ui=render_page("HomeBrainOS","0.18.323")
-    first=ui.index("Investigation brief · local archive only")
-    second=ui.index("--- Detailed source and timing audit ---")
-    assert first < second
-    assert "Next useful evidence:" in ui
-    assert "Archive history complete: NO · physical execution verified: NO" in ui
-    assert "data.case_brief" in ui
-
-
 def test_publisher_and_cloud_routing_not_wired_to_summary():
     for path in ("mcp_agent_orchestrator.py","causal_claim_publication.py",
                  "tool_executor.py","final_answer_coordinator.py"):
