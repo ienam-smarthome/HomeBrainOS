@@ -162,7 +162,7 @@ def fact_summary(snapshot: dict[str, Any]) -> str:
         else:
             rows.append(
                 f"- {label}: {item['value']} {unit} at {item['recorded_at']} "
-                ("(external recorder probe; not native telemetry)."
+                + ("(external recorder probe; not native telemetry)."
                  if key == "memory_min_mb"
                  else "(native five-minute source, displayed at collector receipt; "
                       "not measured CPU utilisation)."
