@@ -1,5 +1,18 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 12:57 UTC — registered two-device live read on installed v0.18.427 (source-bounded review)
+
+**Case:** `multi_device_named`, unchanged registered question. User privately supplied the complete natural answer and Technical JSON plus a screenshot. Independently recomputing the registered question's `collapse-whitespace-v1` SHA-256 matches the response's `request_provenance.normalized_prompt_sha256`. This authenticates the **API-submitted question fingerprint**, not first attempt, actual model input delivery or running source SHA: the response explicitly reports `first_attempt_verified=false`, `model_delivery_verified=false` and `deployed_build_sha_verified=false`. Version `0.18.427` is **self-reported** by the response and is not independently mapped to a deployed commit.
+
+**Source-bounded answer review:** The final answer describes both targeted lights as Hubitat-reported OFF and distinguishes their two different **retained** brightness levels. Each of the **four published device attribute values** (two switches and two levels) agrees with its matching typed `homebrain_resolve_device` targeted Hubitat-state receipt, which has `supports_live_claim=true`; two preliminary targeted `hub_list_devices` receipts alone have `supports_live_claim=false`. No conflicting value was found. The answer attributes no physical outcome, command issuer or historical cause. These reported attributes are **not physical-connectivity proof**, and neither their individual change times nor physical actuation was independently verified.
+
+**Observed one-run efficiency:** user-visible elapsed **7,069 ms** (agent **7,003 ms**, provider **4,021 ms**), **3 model rounds**, **4 tool calls** in counters (2 external Hubitat list lookups and 2 local targeted resolver calls in the evidence), **1 tool discovery**, no write/confirmation and `request_class=live-read`. This single observation is below the charter's 15-second common-status target but cannot establish a latency distribution/p95 or prove improvement over another release. A first model round was recorded as an answer with zero tool calls before subsequent tool reads; the final published answer is grounded by later receipts, but the unattested initial draft must not be graded as the final answer.
+
+**Measurement boundary:** Four source-value matches are a **single observational attribute check**, not a 4/4 cross-case quality rate. The answer is useful and appropriately calibrated on this recorded evidence, but it is **not an authenticated frozen first-attempt review**. No formal scorecard row, factual-accuracy percentage, model-quality gain or cross-version speed win is claimed. Prior local-model four-pair Q2 comparisons remain descriptive until exact private answer/SHA-bound independent source reviews. No further user replay is needed for this case. Continue the permanent benchmark-first roadmap; make no device- or phrase-specific publication patch.
+
+---
+
+
 ## 2026-11-06 — Q2 reviewed-pair integrity and general measurement deltas (offline only)
 
 **Base merged:** [PR #1457](https://github.com/ienam-smarthome/HomeBrainOS/pull/1457) at `59865dfeab4b033ff1da29fba7d35c41ab37e47d`, all **7 exact-head CI checks successful**. v0.18.427 is merged source; it has **not** been independently accepted against a newly installed HomeBrain natural answer. The native one-time schema still lacks installed-runtime proof; no writer is authorised.

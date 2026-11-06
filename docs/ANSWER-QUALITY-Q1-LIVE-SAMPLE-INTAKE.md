@@ -63,3 +63,30 @@ not an answer-quality benchmark or proof of physical endpoint connectivity.
 The 07:00 driver auto-cancel setting, reboot-missed-job recovery and
 multi-device/cancellation live tests remain separate acceptance topics;
 no additional Internet-specific patch is implied by this Q1 milestone.
+
+## Supplied live result — 6 November 2026 at 12:57 UTC
+
+The requested `multi_device_named` read-only question, natural-language answer,
+and complete Technical JSON were received privately. The response reported
+HomeBrainOS `0.18.427`, Free Ollama Cloud `gemma4:31b`, 7,069 ms
+end-to-end elapsed, 7,003 ms agent, 4,021 ms provider,
+3 model rounds, 4 total tool calls, and zero writes or confirmations.
+
+The independently calculated registered-question fingerprint agrees with
+`request_provenance.normalized_prompt_sha256`. All **four** published
+Hubitat-reported switch/retained-level values agreed with matching typed
+targeted resolver receipts. The two other targeted list reads were discovery
+evidence, not independently sufficient to support the four final values.
+Neither reporter source nor a retained brightness level proves physical
+connectivity, actuation or attribute-change time.
+
+**Do not reinterpret this as a formally scored first attempt:** the response
+explicitly declares model delivery, first-attempt status, and deployed Git SHA
+unverified. A single 7.069-second observation is below the nominal 15-second
+common-status target but does not establish median, p95 or cross-version speed
+change. The captured final answer is source-consistent; this does not authenticate
+the first unaudited zero-tool model draft. No raw private device names/IDs,
+answer transcript, source payloads or request hash are committed here.
+See [dated handoff](ANSWER-QUALITY-STATUS.md) for the evidence-bound review.
+No repetition of this live question is needed. Continue Q2 fixed-evidence
+human source reviews before claiming measured model improvements.
