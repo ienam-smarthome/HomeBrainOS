@@ -1,6 +1,20 @@
 # Answer Quality — active status and cross-chat handoff
 
 
+## 2026-11-06 — Q2 general evidence-first prompt A/B against identical source packets (candidate)
+
+**Source base:** `b6623ed9c1360ae14899ed3b0d239fe27e3e6830` (#1465). Production add-on stays at v0.18.427; no fresh installed-build attestation, no model-route change. Two of eight original archived Q2 answer texts have been independently rehashed; the other originals remain unavailable to this evaluation. Formal first-attempt semantic-quality reviews still have **0 independently authenticated grades**.
+
+**Next permanent Q2 milestone:** Keep `render_comparison_prompt` frozen and introduce one optional **model-neutral evidence-first reasoning** candidate for comparative offline evaluation. The candidate encourages source-role distinctions, separates observation, intent, command, configuration and physical confirmation, refuses to infer causes from time order or absence from bounded data, and lets models write **natural** answers. Candidate tests prove the same question and full evidence packet for all **40** curated cases, excluding private reviewer rubrics.
+
+**Actual model experiment:** The isolated, public GitHub workflow will use two very small local models on **four fixed cases** to compare both prompt variants under equal sampling settings, with request order alternated. **16 total requests / 8 paired model-case comparisons** if all execute successfully. Only source/prompt/answer hashes and timing leave CI; raw model answers, keys, private logs and household data do not. **No automatic semantic scoring**, no Claude/Gemma inference, Cloud spending, MCP calls or live Hubitat/HA mutation. Source-based accuracy improvement and natural-answer noninferiority remain **NOT MEASURED** until actual answer texts are privately and independently reviewed.
+
+**Acceptance:** Focused tests + repo CI + actual isolated no-cloud model job required on exact PR head before merge. Passing CI proves safety, fixed source and transport, **not answer correctness**. Roll back optional prompt/runner if candidate causes unreliable completions, disclosure or regressions. See [Q2 experiment notes](ANSWER-QUALITY-Q2-EVIDENCE-FIRST-AB-20261106.md). Next practical gate is reviewed same-model/same-source output from this experiment, not hardcoded repairs to the four incident phrases.
+
+---
+
+
+
 ## 2026-11-06 — Q2 original-answer byte gate, per-session independent review candidate
 
 **Current branch base:** `b6963fd80cbaedd766644b6065214f19ea673272` after green-merged PR #1462; maintained add-on remains 0.18.427. The existing frozen 40 offline/13 legacy cases and original four Qwen-vs-Llama session metadata are unchanged. No production answer-quality gain has been measured.
