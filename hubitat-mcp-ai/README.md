@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.428**.
+Current add-on version: **0.18.429**.
 
 **Native contract claim calibration (v0.18.427):** Read-only runbook reviews now downgrade unverified table-level schema claims, withhold contract-shaped JSON projections, redact guide acknowledgement values, and report `readinessForMutation=false` in structured coverage. Existing installed-rule reads and authorisation protections are unchanged. [Release notes](CHANGELOG-0.18.427.md).
 
@@ -113,7 +113,7 @@ Current add-on version: **0.18.428**.
 
 **Answer Quality Q1 telemetry presentation:** Show the status distinction before a timestamp warning, keep source-code offsets and missing-depth bookkeeping under Technical details, and omit empty command sections. The model-led investigation and evidence-validity gates are unchanged; no claim of measured live accuracy, latency or Claude parity. [Release notes](CHANGELOG-0.18.332.md).
 
-**Answer Quality Q1 dashboard simplification:** Synthetic Ollama Cloud/Stage 5/Stage 6 experiments and Live Shadow are retained, but nested under a closed **Advanced testing & diagnostics** section. Their existing consent gates and endpoints are unchanged, and System Check remains visible. This release records an ungraded current-build bridge-reporter attribution weakness rather than asserting an accuracy increase. [Release notes](CHANGELOG-0.18.331.md).
+**Answer Quality Q1 dashboard simplification:** Synthetic Ollama Cloud/Stage 5/Stage 6 experiments and Live Shadow are removed from the everyday dashboard in v0.18.429; the independent read-only developer APIs remain for test compatibility. Their existing consent gates and endpoints are unchanged, and System Check remains visible. This release records an ungraded current-build bridge-reporter attribution weakness rather than asserting an accuracy increase. [Release notes](CHANGELOG-0.18.331.md).
 
 **Stage 9.5 cross-source causal evidence:** The investigation pipeline now correlates multiple source-linked motion/presence inactive reports with app-issued OFF commands across bounded episodes, preserving clock/provenance limitations and never interpreting timing as a proven cause. The model receives a concise evidence table before synthesis, and the final result retains a scoped cross-source finding and structured coverage even if the model overlooked it. No additional MCP reads, Cloud rounds or device commands. [Release notes](CHANGELOG-0.18.330.md).
 
@@ -639,7 +639,7 @@ The release also groups slow `/logs/json` warnings with different numerical dura
 
 0.16.101 fixes one-time cleanup rule discovery on live MCP servers. Cleanup now calls the Rule Machine gateway explicitly as `hub_read_rules -> hub_list_rules`, requires an authoritative `rules` collection before considering any deletion, and extracts only rule identity/name fields for the strict `(One-time YYYY-MM-DD HH:MM)` eligibility check. Missing or malformed list structure fails closed instead of being reported as a successful zero-rule scan.
 
-0.16.100 makes one-time-rule cleanup observable and manually testable. HomeBrain exposes the effective scheduler time, next run, last run, last trigger, last result and last error; the Web UI adds a guarded ‘Run cleanup now’ control and deletion details. Scheduler start/next-run/completion events are logged explicitly. Automatic cleanup remains strict and Hubitat-local, and there is still no destructive startup catch-up.
+Historical note: v0.16.100 previously made one-time-rule cleanup observable and manually testable; v0.18.429 retires the UI and background job. HomeBrain exposes the effective scheduler time, next run, last run, last trigger, last result and last error; the Web UI adds a guarded ‘Run cleanup now’ control and deletion details. Scheduler start/next-run/completion events are logged explicitly. Automatic cleanup remains strict and Hubitat-local, and there is still no destructive startup catch-up.
 
 0.16.99 aligns immediate Internet block/unblock with the authoritative Internet-room Switch semantics already used by scheduled control. Semantic `blockInternet`/`allowInternet` intent is now compiled to real `off`/`on`, target resolution stays inside the Hubitat `Internet` room, natural names such as `M6 Ultra PC` use the same conservative room-local token matching, and verification waits for literal `switch=off/on`. The model and synthetic Internet commands are no longer involved in this immediate path.
 
