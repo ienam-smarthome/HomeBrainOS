@@ -613,6 +613,101 @@ class ExternalHubDiagnostics:
         return output
 
 
+    def incident_evidence(self, start: datetime, end: datetime, focus: datetime) -> dict[str, Any]:
+        """Bounded local recorder evidence around one focus time; never polls Hubitat."""
+        output: dict[str, Any] = {
+            "status": "not_recorded", "samples": [], "sample_limit": 400,
+            "samples_truncated": False, "sample_count": 0,
+            "reachable_samples": 0, "failed_samples": 0,
+            "memory_min": None, "cpu_load_max": None, "java_free_min": None,
+            "last_success_before": None, "first_success_after": None,
+            "incidents": [], "incidents_truncated": False,
+            "startups": [], "startups_truncated": False,
+            "source_timestamp_basis": {
+                "memory": "external_probe_recorded_at",
+                "native_load": "collector_reception_plus_native_sample_label",
+                "startup": "hub_systemStart_offset_aware",
+                "connectivity": "external_two_failed_probes",
+            },
+            "causal_status": "unverified",
+        }
+        if not self.enabled or not self.path.exists():
+            return output
+        cutoff = start.astimezone(timezone.utc).isoformat(timespec="milliseconds")
+        until = end.astimezone(timezone.utc).isoformat(timespec="milliseconds")
+        with self._connect() as db:
+            samples = [self._with_load_pct(dict(row)) for row in db.execute(
+                "SELECT recorded_at,reachable,latency_ms,free_os_mb,error_kind,"
+                "native_sample_label,native_load5,java_free_mb,java_allocated_heap_used_pct "
+                "FROM samples WHERE recorded_at>=? AND recorded_at<=? "
+                "ORDER BY recorded_at ASC LIMIT 401", (cutoff, until),
+            )]
+            outages = [dict(row) for row in db.execute(
+                "SELECT started_at,recovered_at,kind,detail FROM incidents "
+                "WHERE started_at<=? AND (recovered_at IS NULL OR recovered_at>=?) "
+                "ORDER BY started_at ASC LIMIT 41", (until, cutoff),
+            )]
+            startups = [dict(row) for row in db.execute(
+                "SELECT occurred_at,firmware,observed_at,source FROM hub_startups "
+                "WHERE occurred_at>=? AND occurred_at<=? "
+                "ORDER BY occurred_at ASC LIMIT 41", (cutoff, until),
+            )]
+        output["status"] = "partial_observations_not_proof_of_cause"
+        output["samples_truncated"] = len(samples) > 400
+        output["samples"] = samples[:400]
+        output["sample_count"] = len(output["samples"])
+        output["incidents_truncated"] = len(outages) > 40
+        output["incidents"] = outages[:40]
+        output["startups_truncated"] = len(startups) > 40
+        output["startups"] = startups[:40]
+        seen_native: set[str] = set()
+        focus_time = focus.astimezone(timezone.utc)
+        for row in output["samples"]:
+            if not row.get("reachable"):
+                output["failed_samples"] += 1
+                continue
+            output["reachable_samples"] += 1
+            when = datetime.fromisoformat(row["recorded_at"]).astimezone(timezone.utc)
+            if when <= focus_time:
+                output["last_success_before"] = {
+                    "recorded_at": row["recorded_at"], "free_os_mb": row["free_os_mb"],
+                    "latency_ms": row["latency_ms"],
+                }
+            if when >= focus_time and output["first_success_after"] is None:
+                output["first_success_after"] = {
+                    "recorded_at": row["recorded_at"], "free_os_mb": row["free_os_mb"],
+                    "latency_ms": row["latency_ms"],
+                }
+            memory = row.get("free_os_mb")
+            if isinstance(memory, (int, float)) and math.isfinite(memory):
+                current = output["memory_min"]
+                if current is None or memory < current["value"]:
+                    output["memory_min"] = {
+                        "value": memory, "recorded_at": row["recorded_at"],
+                        "basis": "external_probe",
+                    }
+            native_label = str(row.get("native_sample_label") or "")
+            if not native_label or native_label in seen_native:
+                continue
+            seen_native.add(native_label)
+            for key, target in (("native_load_pct", "cpu_load_max"),
+                                ("java_free_mb", "java_free_min")):
+                value = row.get(key)
+                if not isinstance(value, (int, float)) or not math.isfinite(value):
+                    continue
+                current = output[target]
+                if current is None or (
+                    value > current["value"] if target == "cpu_load_max"
+                    else value < current["value"]
+                ):
+                    output[target] = {
+                        "value": value, "recorded_at": row["recorded_at"],
+                        "native_sample_label": native_label,
+                        "basis": "native_five_minute_sample_received",
+                    }
+        return output
+
+
 __all__ = [
     "ExternalHubDiagnostics", "validate_hub_url",
     "parse_live_memory", "parse_native_sample",
