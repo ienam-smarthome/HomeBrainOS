@@ -235,6 +235,12 @@ def incident_read_only_next_checks(
             "verified read-only method; per-app journal receipt counts "
             "do not contain the messages needed to attribute a failure."
         )
+    if int(assessment.get("app_runtime_stats_attempts") or 0):
+        actions.append(
+            "- The apps tab supplies current runtime statistics, not historical "
+            "app messages. For retained app log messages use a time-bounded "
+            "past-mode query with appId when the owner is known."
+        )
     if int(recorder.get("sample_count") or 0) == 0:
         actions.append(
             "- There are no external resource samples in this window; "
