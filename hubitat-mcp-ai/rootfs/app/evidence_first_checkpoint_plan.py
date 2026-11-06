@@ -64,8 +64,11 @@ class SourceCheckpointBudget:
     remain authoritative; this class never authorizes a tool operation.
     """
 
-    def __init__(self, max_offers: int = 3) -> None:
-        self.max_offers = max(0, int(max_offers))
+    def __init__(self, max_offers: int | None = 3) -> None:
+        # None removes the arbitrary offer count but still requires strictly
+        # new successful read scopes before each additional checkpoint.
+        self.max_offers = (None if max_offers is None
+                           else max(0, int(max_offers)))
         self.offered_kinds: list[str] = []
         self._last_scopes: frozenset[tuple[str, str]] | None = None
 
@@ -96,7 +99,8 @@ class SourceCheckpointBudget:
         if not isinstance(kind, str) or not kind:
             return False
         current = self.successful_read_scopes(receipts)
-        if len(self.offered_kinds) >= self.max_offers:
+        if (self.max_offers is not None
+                and len(self.offered_kinds) >= self.max_offers):
             return False
         if self._last_scopes is not None and not self._last_scopes < current:
             return False
