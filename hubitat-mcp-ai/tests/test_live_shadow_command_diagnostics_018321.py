@@ -122,15 +122,3 @@ def test_read_failures_are_distinguished_from_empty_pages():
     assert answer["read_status"]["command-off"] == "upstream_read_failed"
     assert answer["zero_match_explanation"].startswith("One or more upstream")
 
-
-def test_phone_explains_no_matching_events_and_bounded_source_page():
-    ui = render_page("HomeBrainOS", "0.18.321")
-    for phrase in (
-        "Source page coverage diagnostics",
-        "Why this test returned no evidence:",
-        "returned rows",
-        "matching day",
-        "page at 50-record cap",
-        "Visible target-row date range:",
-    ):
-        assert phrase in ui

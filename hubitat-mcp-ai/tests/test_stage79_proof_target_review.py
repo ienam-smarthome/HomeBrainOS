@@ -182,19 +182,6 @@ def test_four_calls_and_no_background_inference_or_publication():
     assert out["independent_review_packet"]["publisher_approval"] is False
 
 
-def test_mobile_independent_reviewer_displays_both_claim_and_uncertainty():
-    html = render_page("HomeBrainOS", "0.18.312")
-    for phrase in (
-        "Stage 7.9 · Does the proposed source support its claimed conclusion?",
-        "stage79_proof_target_review",
-        "insufficient_source_class_alone",
-        "Does the actual proposal imply stronger certainty",
-        "this check does NOT certify prose",
-        "production_publication_approval:false",
-    ):
-        assert phrase in html
-
-
 def test_production_modules_remain_isolated():
     for name in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):

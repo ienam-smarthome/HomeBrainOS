@@ -219,19 +219,6 @@ def test_api_returns_safe_partial_in_json_and_keeps_other_safety_gates(monkeypat
         assert len(fake.calls) == 4
 
 
-def test_dashboard_shows_failure_kind_and_selected_sources_with_no_rejected_prose():
-    html = render_page("HomeBrainOS", "0.18.301")
-    for phrase in (
-        "Final explanation rejected",
-        "data.partial_investigation",
-        "validation_category",
-        "Previously selected fictional sources:",
-        "No final AI explanation was published",
-        "model_ranking_consistency_failures",
-    ):
-        assert phrase in html
-
-
 def test_live_publisher_and_executor_never_import_diagnostics():
     for filename in ("mcp_agent_orchestrator.py", "tool_executor.py",
                      "causal_claim_publication.py", "final_answer_coordinator.py"):

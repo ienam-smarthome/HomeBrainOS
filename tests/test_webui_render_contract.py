@@ -20,7 +20,6 @@ def test_webui_core_controls_and_routes_remain_present() -> None:
         "api/ask",
         "api/status",
         "api/dashboard",
-        "api/refresh",
         "function showAnswer(data)",
         "function renderAutomationItems(data)",
         "function startVoice()",
@@ -54,20 +53,26 @@ def test_webui_dashboard_tiles_drop_switches_and_reorder_the_remaining_four() ->
     assert order == sorted(order), order
 
 
-def test_webui_shortcuts_keep_only_compact_high_value_actions() -> None:
-    """Low-value shortcuts stay removed and the compact top action strip
-    retains the useful hub/rule actions requested for the mobile layout."""
-
-    page = render_page("HomeBrain", "0.10.417")
-
-    assert "Hub resources" not in page
-    assert "Device health" not in page
-    assert "🌦️ Weather" not in page
-    assert "Open sensors" not in page
-    assert "Recommendations" not in page
-    assert "Firmware" in page
-    # Hub health remains a distinct high-value shortcut.
-    assert "Hub health" in page
+def test_webui_removes_retired_ui_controls_and_handlers() -> None:
+    """Removed controls must not leave query handlers or destructive cleanup routes."""
+    page = render_page("HomeBrain", "0.18.429")
+    for retired in (
+        'id="shortcuts"', 'quick-grid', 'id="refresh"',
+        'id="advancedDiagnosticsCard"', 'id="legacyCloudExperimentsCard"',
+        'id="liveShadowCard"', 'id="cloudBenchmarkCard"',
+        'runCloudBenchmark', 'runStage5', 'runStage6',
+        'id="oneTimeCleanupCard"', 'runOneTimeCleanup',
+        'loadOneTimeCleanup', 'api/one-time-rule-cleanup',
+        'api/refresh',
+    ):
+        assert retired not in page, retired
+    for retained in (
+        'id="query"', 'id="ask"', 'id="speak"',
+        'id="summaryTiles"', 'id="systemHealthCard"',
+        'id="hubDiagnosticsCard"', 'id="diagReboots"',
+        'id="journalDetails"', 'id="journalRefresh"',
+    ):
+        assert retained in page, retained
 
 
 def test_webui_title_is_html_escaped_and_script_values_are_json_encoded() -> None:
@@ -112,20 +117,14 @@ def test_read_answer_speech_normalizes_visual_arrows_and_percentages() -> None:
     assert ".replace(/(\\d+(?:\\.\\d+)?)\\s*%/g,'$1 percent')" in page
 
 
-def test_webui_compact_tiles_are_at_top_and_local_backup_is_available() -> None:
-    page = render_page("HomeBrain", "0.16.19")
-
+def test_webui_compact_tiles_are_above_query_and_monitoring() -> None:
+    page = render_page("HomeBrain", "0.18.429")
     title = page.index("<h1>")
     summary = page.index('id="summaryTiles"')
-    shortcuts = page.index('id="shortcuts"')
     query = page.index('id="query"')
     health = page.index('id="systemHealthCard"')
-
-    assert title < summary < shortcuts < query < health
+    diagnostics = page.index('id="hubDiagnosticsCard"')
+    assert title < summary < query < health < diagnostics
     assert 'class="card grid top-stats"' in page
-    assert 'class="card quick-grid"' in page
     assert "repeat(4,minmax(0,1fr))" in page
-    assert "repeat(3,minmax(0,1fr))" in page
-    assert 'href="http://192.168.1.239/hub2/createFullLocalBackup"' in page
-    assert 'target="_blank"' in page
-    assert "💾 Local backup" in page
+    assert 'hub2/createFullLocalBackup' not in page

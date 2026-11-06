@@ -96,16 +96,6 @@ def test_no_untrusted_strings_in_projected_values():
     assert p["events"] == []
     assert "private" not in str(p)
 
-def test_phone_ui_explicit_separate_archive_consent():
-    html=render_page("HomeBrainOS","0.18.318")
-    for word in (
-        "liveShadowHistoryConsent", "runLiveShadowHistory",
-        "api/live-shadow/journal-history", "x-homebrain-archive-readonly",
-        "confirm_archive_read:true", "source time is NOT independently authenticated",
-        "No retained, allowlisted device events returned",
-    ):
-        assert word in html
-
 def test_endpoint_is_read_only_with_explicit_consent(monkeypatch,tmp_path):
     monkeypatch.setenv("CONFIG_PATH",str(tmp_path/"missing.json"))
     sys.modules.pop("app",None)

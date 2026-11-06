@@ -178,15 +178,6 @@ def test_four_calls_no_extra_inference_or_device_control():
     assert result["publisher_approval"] is False
 
 
-def test_mobile_stage75_source_structure_and_obligation_review_separate():
-    html = render_page("HomeBrainOS", "0.18.307")
-    for phrase in ("Stage 7.5 · Source structure vs answer quality",
-                   "Host-observable evidence types:", "Model-declared types:",
-                   "Command-correlated execution proven:", "not independently fact-checked",
-                   "model_declared_reference_type_coverage"):
-        assert phrase in html
-
-
 def test_no_production_runtime_imports_stage75():
     for filename in ("mcp_agent_orchestrator.py", "tool_executor.py",
                      "causal_claim_publication.py", "final_answer_coordinator.py"):

@@ -100,14 +100,3 @@ def test_page_limit_does_not_certify_archived_history():
     assert answer["archive_page_limit_reached"] is True
     assert not answer["history_complete"]
 
-
-def test_phone_shows_archived_commands_with_explicit_caveat():
-    ui = render_page("HomeBrainOS", "0.18.322")
-    for phrase in (
-        "Archived native command records (bounded page)",
-        "Archived native state read-through reports",
-        "No native command records in returned archive page.",
-        "Recorded '+ev.attribute+' from app ID",
-        "not physical proof",
-    ):
-        assert phrase in ui

@@ -203,17 +203,6 @@ def test_no_retry_or_publisher_pass_from_missing_atoms(high_risk):
     assert "private-dummy-secret" not in json.dumps(result)
 
 
-def test_phone_ui_cannot_label_missing_atoms_as_source_verified():
-    html = render_page("HomeBrainOS", "0.18.305")
-    for phrase in (
-        "Declared atom coverage:",
-        "sentences_missing_declared_source_value_atoms",
-        "No declared source-value atoms — causal/negative prose not independently verified",
-        "prose still unverified",
-    ):
-        assert phrase in html
-
-
 def test_production_publisher_tool_and_agent_unchanged():
     for filename in (
         "mcp_agent_orchestrator.py", "tool_executor.py",

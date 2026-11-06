@@ -71,7 +71,6 @@ from ai_investigation_routing import (
 )
 from request_metrics import increment_active_metric
 from mcp_client import HubitatMCPClient
-from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
 from request_runtime import (
     RequestProgress, begin_progress, end_progress,
@@ -196,9 +195,6 @@ def load_options() -> dict[str, Any]:
         "internet_control_aliases_json": "{}",
         "morning_health_check_enabled": True,
         "morning_health_check_time": "07:00",
-        "one_time_rule_cleanup_enabled": True,
-        "one_time_rule_cleanup_time": "01:00",
-        "one_time_rule_cleanup_grace_minutes": 10,
         "health_check_log_hours": 24,
         "sensecap_d1_intentionally_powered_off": False,
         "comprehensive_audit_ai_analysis_enabled": True,
@@ -330,24 +326,6 @@ health_scheduler = MorningHealthScheduler(
     local_now=_health_scheduler_now,
     notifier=pushover_notifier,
 )
-one_time_rule_cleanup = OneTimeRuleCleanupService(
-    mcp,
-    local_now=_health_scheduler_now,
-    grace_minutes=int(OPTIONS.get("one_time_rule_cleanup_grace_minutes") or 10),
-)
-one_time_rule_cleanup_scheduler = OneTimeRuleCleanupScheduler(
-    one_time_rule_cleanup,
-    enabled=_bool(OPTIONS.get("one_time_rule_cleanup_enabled"), True),
-    daily_time=str(OPTIONS.get("one_time_rule_cleanup_time") or "01:00"),
-    local_now=_health_scheduler_now,
-    state_path=Path(
-        os.getenv(
-            "ONE_TIME_RULE_CLEANUP_STATE_PATH",
-            "/data/homebrain-one-time-rule-cleanup.json",
-        )
-    ),
-)
-
 agent = UnifiedMCPAgent(
     mcp_client=mcp,
     api_key=str(OPTIONS.get("ollama_direct_cloud_api_key") or ""),
@@ -575,13 +553,11 @@ async def lifespan(_: FastAPI):
     await historical_journal.start()
     await external_hub_diagnostics.start()
     health_scheduler.start()
-    one_time_rule_cleanup_scheduler.start()
     try:
         yield
     finally:
         await external_hub_diagnostics.close()
         await historical_journal.close()
-        await one_time_rule_cleanup_scheduler.close()
         await health_scheduler.close()
         await request_coordinator.close()
         await home_assistant_tts.close()
@@ -1111,7 +1087,6 @@ async def health() -> dict[str, Any]:
             "local_budget_enabled": False,
         },
         "tts": home_assistant_tts.status(),
-        "one_time_rule_cleanup": one_time_rule_cleanup_scheduler.status(),
         "historical_journal": historical_journal.status(),
         "hub_diagnostics": external_hub_diagnostics.status(),
     }
@@ -1722,32 +1697,6 @@ async def run_health_audit() -> dict[str, Any]:
     }
 
 
-@app.get("/api/one-time-rule-cleanup")
-async def one_time_rule_cleanup_status() -> dict[str, Any]:
-    return {
-        "success": True,
-        "schedule": one_time_rule_cleanup_scheduler.status(),
-    }
-
-
-@app.post("/api/one-time-rule-cleanup/run")
-async def run_one_time_rule_cleanup() -> dict[str, Any]:
-    try:
-        result = await request_coordinator.run(
-            "one-time-rule-cleanup",
-            one_time_rule_cleanup_scheduler.run_now(),
-        )
-    except Exception as exc:
-        logger.exception("Manual one-time rule cleanup failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    payload = result.as_dict()
-    return {
-        "success": not bool(result.list_error),
-        "result": payload,
-        "schedule": one_time_rule_cleanup_scheduler.status(),
-    }
-
-
 @app.post("/api/tts")
 async def speak_tts(payload: TTSRequest, request: Request) -> dict[str, Any]:
     try:
@@ -1843,14 +1792,6 @@ async def tools() -> dict[str, Any]:
             for tool in values
         ],
     }
-
-
-@app.post("/api/refresh")
-async def refresh() -> dict[str, Any]:
-    await mcp.initialize(force=True)
-    values = await mcp.list_tools(refresh=True)
-    await mcp.get_cached_devices(refresh=True)
-    return {"success": True, "tools": len(values), "version": VERSION}
 
 
 @app.post("/api/chat")

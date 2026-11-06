@@ -231,15 +231,6 @@ def test_model_planning_prompt_demands_check_for_unread_material_sources():
     assert "only a" not in source or "fictional" in source
 
 
-def test_stage61_dashboard_separates_types_from_values_and_stop_reason():
-    html = render_page("HomeBrain", "0.18.296")
-    for phrase in ("Source-type mismatches", "Cited source-value atoms",
-                   "Source label mismatch (not a proven false fact)",
-                   "Exact source-value checks", "model_stop_justification",
-                   "not automatically a false fact"):
-        assert phrase in html
-
-
 def test_production_publisher_still_does_not_load_stage61():
     for filename in ("mcp_agent_orchestrator.py", "tool_executor.py",
                      "causal_claim_publication.py", "final_answer_coordinator.py"):

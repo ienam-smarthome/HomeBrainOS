@@ -163,15 +163,6 @@ def test_four_cloud_calls_and_preserved_primary_answer():
         "model_proposal"]["field_status"]["next_evidence"] == "invalid_or_missing"
 
 
-def test_mobile_displays_invalid_optional_advice_without_false_approval():
-    html = render_page("HomeBrainOS", "0.18.311")
-    for item in ("No validated AI follow-up suggestion was provided",
-                 "The optional AI follow-up suggestion was missing or invalid",
-                 "still require independent review",
-                 "production_publication_approval:false"):
-        assert item in html
-
-
 def test_production_modules_remain_unmodified():
     for name in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):

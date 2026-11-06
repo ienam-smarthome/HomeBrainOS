@@ -176,17 +176,6 @@ def test_four_model_requests_no_extra_cloud_or_production_approval():
     assert result["independent_review_packet"]["publisher_approval"] is False
 
 
-def test_mobile_shows_followup_limitations_and_preserves_manual_review():
-    html = render_page("HomeBrainOS", "0.18.310")
-    for phrase in (
-        "Stage 7.8 · Can suggested evidence actually prove the claim?",
-        "could_establish", "cannot_establish", "additional_proof_needed",
-        "host_source_capability_reference", "next_evidence_quality:followupControl?",
-        "production_publication_approval:false",
-    ):
-        assert phrase in html
-
-
 def test_unchanged_production_modules_cannot_import_stage78():
     for file in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):

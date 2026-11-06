@@ -258,7 +258,6 @@ The repository drift test compares this table directly with the live directory. 
 | `mcp_retry_metrics.py` | Records actual retry attempts begun at the MCP transport boundary. |
 | `model_context_policy.py` | Bounds copied provider conversation and tool-result context. |
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
-| `one_time_rule_cleanup.py` | Soft-deletes expired HomeBrain-generated one-time Rule Machine rules on a guarded Hubitat-local nightly schedule. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `off_hypothesis_synthesis_guard.py` | Ensures final OFF explanations include material, evidence-backed timer feasibility and bounded command claims. |
 | `performance_api_finalizer.py` | Runs the bounded recent-log read and evidence-scoped performance synthesis directly on the production `/api/ask`/`/api/chat` request path, then applies the fail-closed live semantic guard before serialization. |

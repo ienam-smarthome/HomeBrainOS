@@ -211,20 +211,6 @@ def test_live_mock_integration_has_four_calls_and_hidden_rubric():
     assert "mock-credential" not in json.dumps(result)
 
 
-def test_stage72_phone_ratings_default_unreviewed_and_never_publish():
-    html = render_page("HomeBrainOS", "0.18.304")
-    for phrase in (
-        "Stage 7.2 · Did the answer resolve the actual question?",
-        "Independent answer assessment",
-        "Reference evidence IDs:",
-        "Citation overlap is not semantic answer verification.",
-        "answer_obligation_review:coverageControls.map",
-        "coverageControls.every(item=>item.element.value!=='not_reviewed')",
-        "production_publication_approval:false",
-    ):
-        assert phrase in html
-
-
 def test_no_production_module_imports():
     for filename in (
         "mcp_agent_orchestrator.py", "tool_executor.py",

@@ -209,15 +209,6 @@ def test_full_stage6_v3_keeps_gold_hidden_and_exposes_model_utility_error(
         assert "required_types" not in json.dumps(messages)
 
 
-def test_mobile_dashboard_explains_model_rankings_not_truth_oracle():
-    html = render_page("HomeBrainOS", "0.18.300")
-    for phrase in ("Question/value audit", "information_gain",
-                   "model_ranking_consistency_failures",
-                   "source choice", "model-authored question-linked",
-                   "Ranking accuracy is assessed separately"):
-        assert phrase in html
-
-
 def test_production_agent_and_publisher_unaffected():
     for filename in ("mcp_agent_orchestrator.py", "tool_executor.py",
                      "causal_claim_publication.py", "final_answer_coordinator.py"):

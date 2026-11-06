@@ -146,22 +146,6 @@ def test_untrusted_free_text_never_echoed_or_treated_as_state():
     assert "mqttStatus" not in p["device_reported_states"]
 
 
-def test_phone_controls_are_explicit_and_do_not_send_cloud_consent():
-    html = render_page("HomeBrainOS", "0.18.315")
-    for snippet in (
-        "Live Shadow · Read-only preflight",
-        'id="liveShadowDeviceId"',
-        'id="liveShadowConsent"',
-        'id="runLiveShadow" disabled',
-        "api/live-shadow/preflight",
-        "x-homebrain-live-readonly",
-        "confirm_read_only:true",
-        "liveShadowConsent').checked=false",
-        "No Ollama Cloud requests",
-    ):
-        assert snippet in html
-
-
 def test_endpoint_requires_consent_same_origin_and_returns_only_projection(monkeypatch, tmp_path):
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing.json"))
     sys.modules.pop("app", None)

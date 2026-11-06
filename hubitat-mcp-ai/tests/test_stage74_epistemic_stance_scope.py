@@ -218,22 +218,6 @@ def test_live_mock_stage6_v3_4_calls_and_independent_review_not_certified():
     assert "mock-key-private" not in json.dumps(result)
 
 
-def test_mobile_ui_requires_human_alignment_judgement_and_separate_epistemic_counts():
-    html = render_page("HomeBrainOS", "0.18.306")
-    for phrase in (
-        "Epistemic declarations:",
-        "scoped_unresolved_model_declarations",
-        "unscoped_unresolved_model_declarations",
-        "high_risk_assertion_or_refutation_declarations",
-        "Does sentence meaning match its declared position/scope?",
-        "reviewer_epistemic_alignment",
-        "meaningReview.value!=='not_reviewed'",
-        "stance-to-prose match NOT verified",
-        "production_publication_approval:false",
-    ):
-        assert phrase in html
-
-
 def test_production_publisher_mcp_and_agent_do_not_import_stance_pilot():
     for filename in (
         "mcp_agent_orchestrator.py", "tool_executor.py",

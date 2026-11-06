@@ -94,19 +94,6 @@ def test_empty_successful_history_not_global_absence():
     assert p["returned_event_count"]==0
     assert p["complete_history_proven"] is False
 
-def test_mobile_ui_has_independent_consent_and_date():
-    html=render_page("HomeBrainOS","0.18.320")
-    for snippet in (
-        'id="liveShadowIncidentDate" type="date"',
-        'id="liveShadowCommandConsent"',
-        'id="runLiveShadowCommands" disabled',
-        "api/live-shadow/command-events",
-        "x-homebrain-command-readonly",
-        "confirm_command_read:true",
-        "Historical completeness proven: NO",
-    ):
-        assert snippet in html
-
 def test_end_to_end_route_requires_consent_and_only_calls_three_read_subtools(monkeypatch,tmp_path):
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path/"missing.json"))
     sys.modules.pop("app",None)

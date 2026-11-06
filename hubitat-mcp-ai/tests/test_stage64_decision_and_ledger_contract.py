@@ -189,13 +189,6 @@ def test_incomplete_stop_is_scored_and_visible_without_hidden_gold_autoread():
     assert "fake-secret" not in json.dumps(output)
 
 
-def test_mobile_ui_warns_unaudited_plan_is_not_validated_reasoning():
-    page = render_page("HomeBrainOS", "0.18.299")
-    assert "planning_contract_complete" in page
-    assert "planning_contract_issues" in page
-    assert "do not interpret source decisions as fully reviewed" in page
-
-
 def test_production_publisher_never_imports_plan_recovery():
     for name in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):

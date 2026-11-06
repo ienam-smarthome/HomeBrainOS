@@ -202,23 +202,6 @@ def test_cloud_call_hourly_limit_counts_both_rounds():
     assert len(fake.calls) == 10
 
 
-def test_dashboard_stage5_separate_from_stage4_and_human_scores_private():
-    html = render_page("HomeBrain", "0.18.294")
-    for target in (
-        'id="stage5Card"', 'id="stage5Consent"', 'id="runStage5"',
-        "api/stage5-benchmark/status", "api/stage5-benchmark/run",
-        "up to two synthetic Ollama Cloud requests",
-        "Optional personal review (not sent or saved)",
-        "prose_semantics_independently_verified",
-        "runCloudBenchmark", "X-HomeBrain-Benchmark",
-    ):
-        if target == "prose_semantics_independently_verified":
-            assert "Stage 5 is a synthetic source-selection" in html
-        else:
-            assert target in html
-    assert "stage5Consent').checked=false" in html
-
-
 def test_stage5_endpoints_require_ui_header_origin_and_consent(monkeypatch, tmp_path):
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing.json"))
     sys.modules.pop("app", None)

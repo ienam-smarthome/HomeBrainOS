@@ -176,19 +176,6 @@ def test_hourly_limit_is_in_memory_and_no_automatic_retries():
     assert len(cloud.calls) == 8
 
 
-def test_webui_requires_explicit_consent_and_never_autoruns():
-    page = render_page("HomeBrainOS", "0.18.292")
-    for required in ('id="cloudBenchmarkCard"', 'id="cloudBenchmarkCase"',
-                     'id="runCloudBenchmark"', 'id="cloudBenchmarkConsent"',
-                     "api/cloud-benchmark/status", "api/cloud-benchmark/run",
-                     "X-HomeBrain-Benchmark", "updateCloudBenchmarkButton",
-                     "prose accuracy", "No live hub or device reads"):
-        assert required in page
-    assert "method:'POST'" in page
-    assert "cloudBenchmarkConsent').checked=false" in page
-    assert "<script src=" not in page
-
-
 def test_endpoints_require_same_origin_custom_header_and_explicit_confirmation(monkeypatch, tmp_path):
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "no-options.json"))
     sys.modules.pop("app", None)
