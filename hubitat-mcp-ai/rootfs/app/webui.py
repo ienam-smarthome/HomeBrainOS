@@ -2098,14 +2098,59 @@ document.getElementById('diagChart').addEventListener('keydown',event=>{
  }
 });
 async function loadDiagnosticsStatus(){try{const r=await fetch(apiPath('api/hub-diagnostics/status'));if(!r.ok)throw Error('HTTP '+r.status);renderDiagnosticsStatus(await jsonResponse(r))}catch(e){document.getElementById('diagState').textContent='Unavailable';document.getElementById('diagSummary').textContent='HomeBrain diagnostic API unavailable: '+e.message}}
-async function loadDiagnosticsHistory(){if(!document.getElementById('diagDetails').open)return;const button=document.getElementById('diagRefresh');button.disabled=true;try{
-const hours=document.getElementById('diagHours').value,r=await fetch(apiPath('api/hub-diagnostics/history?hours='+encodeURIComponent(hours)));if(!r.ok)throw Error('HTTP '+r.status);
-const data=await jsonResponse(r);diagHistoryRows=Array.isArray(data.samples)?data.samples:[];diagIncidents=Array.isArray(data.incidents)?data.incidents:[];drawDiagnosticsChart();
-const list=document.getElementById('diagIncidents');list.replaceChildren();if(!diagIncidents.length){const li=document.createElement('li');li.textContent='No connectivity incidents recorded in this period.';list.append(li)}
-for(const incident of diagIncidents){const li=document.createElement('li');li.textContent=diagDate(incident.started_at)+' — '+(incident.recovered_at?'recovered '+diagDate(incident.recovered_at):'recovery not yet recorded')+' · external connectivity loss (not a confirmed reboot)';list.append(li)}
-}catch(e){document.getElementById('diagChartCaption').textContent='Recorded history unavailable: '+e.message}finally{button.disabled=false}}
+async function loadDiagnosticsHistory(){
+ if(!document.getElementById('diagDetails').open)return;
+ const button=document.getElementById('diagRefresh');
+ button.disabled=true;
+ try{
+  const hours=document.getElementById('diagHours').value;
+  const metric=document.getElementById('diagMetric').value;
+  const url='api/hub-diagnostics/history?hours='+encodeURIComponent(hours)+
+            '&metric='+encodeURIComponent(metric);
+  const response=await fetch(apiPath(url));
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const data=await jsonResponse(response);
+  diagHistoryRows=Array.isArray(data.samples)?data.samples:[];
+  diagIncidents=Array.isArray(data.incidents)?data.incidents:[];
+  diagReboots=Array.isArray(data.reboots)?data.reboots:[];
+  diagHistoryMeta=data;
+  drawDiagnosticsChart();
+  const reboots=document.getElementById('diagReboots');
+  reboots.replaceChildren();
+  if(!diagReboots.length){
+   const li=document.createElement('li');
+   li.textContent='No confirmed systemStart events available in this range (absence does not prove no reboot).';
+   reboots.append(li);
+  }
+  for(const event of diagReboots.slice().reverse()){
+   const li=document.createElement('li');
+   li.textContent='Hub startup recorded '+diagDate(event.occurred_at)+
+     (event.firmware?' · firmware '+event.firmware:'')+' · systemStart (cause not established)';
+   reboots.append(li);
+  }
+  const list=document.getElementById('diagIncidents');
+  list.replaceChildren();
+  if(!diagIncidents.length){
+   const li=document.createElement('li');
+   li.textContent='No connectivity incidents recorded in this period.';
+   list.append(li);
+  }
+  for(const incident of diagIncidents){
+   const li=document.createElement('li');
+   li.textContent=diagDate(incident.started_at)+' — '+
+    (incident.recovered_at?'recovered '+diagDate(incident.recovered_at):'recovery not yet recorded')+
+    ' · external connectivity loss (not a confirmed reboot)';
+   list.append(li);
+  }
+ }catch(error){
+  document.getElementById('diagChartCaption').textContent=
+    'Recorded history unavailable: '+error.message;
+ }finally{
+  button.disabled=false;
+ }
+}
 document.getElementById('diagDetails').addEventListener('toggle',e=>{if(e.target.open)void loadDiagnosticsHistory()});
-document.getElementById('diagMetric').addEventListener('change',drawDiagnosticsChart);
+document.getElementById('diagMetric').addEventListener('change',()=>void loadDiagnosticsHistory());
 document.getElementById('diagHours').addEventListener('change',()=>void loadDiagnosticsHistory());
 document.getElementById('diagRefresh').addEventListener('click',()=>{void loadDiagnosticsStatus();void loadDiagnosticsHistory()});
 loadDiagnosticsStatus();
