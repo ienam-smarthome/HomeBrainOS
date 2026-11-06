@@ -254,6 +254,7 @@ def render_page(title: str, version: str) -> str:
 </select></label>
 <label>Range <select id="diagHours" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
 <option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option>
+<option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option>
 </select></label>
 <button type="button" class="secondary" id="diagRefresh" style="width:auto;margin:0;padding:7px 12px">↻ Refresh</button>
 </div>
@@ -261,6 +262,9 @@ def render_page(title: str, version: str) -> str:
 <div id="diagChartStats" class="journal-small" role="status">Minimum — · Maximum — · Latest —</div>
 <svg id="diagChart" viewBox="0 0 760 250" role="img" aria-label="Externally recorded Hubitat resource chart; hover or touch to inspect values. Arrow keys move between readings." tabindex="0" style="display:block;width:100%;height:auto;max-height:290px;background:#101114;border-radius:9px"></svg>
 <div id="diagPointReadout" class="journal-small" aria-live="polite">Hover, touch or use the left/right arrow keys on the graph to inspect exact readings.</div>
+<strong>Confirmed hub startups (Hubitat systemStart)</strong>
+<ul class="journal-gaps" id="diagReboots"><li class="muted">No confirmed startup events loaded.</li></ul>
+<div class="journal-small">Orange chart markers are actual Hubitat systemStart records. A startup does not reveal why the hub restarted; older events unavailable from the hub cannot be reconstructed.</div>
 <strong>Connectivity incidents</strong>
 <ul class="journal-gaps" id="diagIncidents"><li class="muted">No incident history loaded.</li></ul>
 <div class="journal-small">Incident detection requires two failed probes. Lost connectivity does not prove that Hubitat rebooted. For errors and hub events, inspect the Historical Journal and Hubitat's Hub Events.</div>
