@@ -6,10 +6,11 @@ import hmac
 import logging
 import os
 import re
+import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Literal
 
@@ -1504,6 +1505,58 @@ async def hub_diagnostics_timeline(hours: int = 24) -> dict[str, Any]:
         return await asyncio.to_thread(external_hub_diagnostics.timeline, hours)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/hub-diagnostics/incident")
+async def hub_diagnostics_incident(at: str, window_minutes: int = 15) -> JSONResponse:
+    """Bounded local evidence, no Hubitat calls, no raw app-log messages."""
+    if not isinstance(at, str) or len(at) > 64 or window_minutes not in (5, 15, 30, 60):
+        raise HTTPException(status_code=422, detail="Use an aware ISO focus time and 5, 15, 30 or 60 minutes")
+    try:
+        focus = datetime.fromisoformat(at.strip().replace("Z", "+00:00"))
+        if focus.tzinfo is None or focus.utcoffset() is None:
+            raise ValueError("A timezone offset is required")
+        focus = focus.astimezone(timezone.utc)
+    except (ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=422, detail="Focus time must be an offset-aware ISO timestamp") from exc
+    now = datetime.now(timezone.utc)
+    if focus > now + timedelta(minutes=2) or focus < now - timedelta(days=external_hub_diagnostics.retention_days):
+        raise HTTPException(status_code=422, detail="Focus time is outside recorder retention")
+    start = focus - timedelta(minutes=window_minutes)
+    end = min(now, focus + timedelta(minutes=window_minutes))
+    recorder_result, journal_result = await asyncio.gather(
+        asyncio.to_thread(external_hub_diagnostics.incident_evidence, start, end, focus),
+        asyncio.to_thread(historical_journal.incident_evidence, start, end),
+        return_exceptions=True,
+    )
+    if isinstance(recorder_result, Exception):
+        logger.warning("Incident recorder archive unavailable: %s", type(recorder_result).__name__)
+        recorder_result = {"status": "storage_unavailable", "samples": [],
+                           "incidents": [], "startups": [], "causal_status": "unverified"}
+    if isinstance(journal_result, Exception):
+        logger.warning("Incident journal archive unavailable: %s", type(journal_result).__name__)
+        journal_result = {"status": "storage_unavailable", "events": [],
+                          "app_log_apps": [], "gaps": [], "coverage_complete": False}
+    payload = {
+        "focus_at": focus.isoformat(timespec="milliseconds"),
+        "window_minutes_each_side": window_minutes,
+        "window_start": start.isoformat(timespec="milliseconds"),
+        "window_end": end.isoformat(timespec="milliseconds"),
+        "recorder": recorder_result,
+        "journal": journal_result,
+        "causal_verdict": "unverified",
+        "read_only": True,
+        "live_hubitat_requests": 0,
+        "limitations": [
+            "Temporal proximity is not proof of a restart cause.",
+            "Hubitat systemStart verifies startup, not the reason for restarting.",
+            "CPU is native five-minute load average divided by configured core count, not CPU utilisation.",
+            "Native samples use their collector-reception timestamp and preserve the native sample label.",
+            "Missing rows, stream gaps and truncated pages cannot establish inactivity or complete coverage.",
+            "App-log message bodies are never included; app counts reflect retained collector observations only.",
+        ],
+    }
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/evidence-journal/status")

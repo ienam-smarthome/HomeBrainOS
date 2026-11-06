@@ -550,6 +550,76 @@ class HistoricalEvidenceJournal:
             "empty_means_inactivity": False,
         }
 
+
+    def incident_evidence(self, start: datetime, end: datetime) -> dict[str, Any]:
+        """Summarise a bounded archived window, omitting all app-log message text.
+
+        This is a local SQLite read; streams can be disconnected and archived
+        events can be absent or incomplete. A zero row count proves no absence.
+        """
+        output: dict[str, Any] = {
+            "status": "not_recorded", "collection_running": bool(self._started),
+            "event_count": 0, "events": [], "events_truncated": False,
+            "event_limit": 40, "app_log_count": 0, "app_log_apps": [],
+            "app_log_apps_truncated": False, "app_log_messages_included": False,
+            "gaps": [], "gaps_truncated": False,
+            "log_retention_hours": self.log_retention_hours,
+            "capture_logs": bool(self.capture_logs and self.log_app_ids),
+            "coverage_complete": False, "empty_means_inactivity": False,
+        }
+        if not self.enabled or not self.path.exists():
+            output["status"] = "disabled" if not self.enabled else "not_recorded"
+            return output
+        since = start.astimezone(timezone.utc).isoformat(timespec="microseconds")
+        until = end.astimezone(timezone.utc).isoformat(timespec="microseconds")
+        log_cutoff = (datetime.now(timezone.utc) -
+                      timedelta(hours=self.log_retention_hours)).isoformat(timespec="microseconds")
+        with self._connect() as db:
+            db.row_factory = sqlite3.Row
+            total = db.execute(
+                "SELECT COUNT(*) FROM journal_events "
+                "WHERE stream='events' AND observed_at>=? AND observed_at<=?",
+                (since, until),
+            ).fetchone()[0]
+            events = [dict(row) for row in db.execute(
+                "SELECT device_id,attribute,value,display_name,source,"
+                "observed_at,received_at,timestamp_basis "
+                "FROM journal_events WHERE stream='events' "
+                "AND observed_at>=? AND observed_at<=? "
+                "ORDER BY observed_at DESC,id DESC LIMIT 40",
+                (since, until),
+            )]
+            log_count = db.execute(
+                "SELECT COUNT(*) FROM journal_events "
+                "WHERE stream='logs' AND observed_at>=? AND observed_at<=? "
+                "AND received_at>=?",
+                (since, until, log_cutoff),
+            ).fetchone()[0]
+            app_groups = [dict(row) for row in db.execute(
+                "SELECT app_id,COUNT(*) AS count,MIN(received_at) AS first_received,"
+                "MAX(received_at) AS last_received FROM journal_events "
+                "WHERE stream='logs' AND observed_at>=? AND observed_at<=? "
+                "AND received_at>=? "
+                "GROUP BY app_id ORDER BY count DESC,app_id LIMIT 13",
+                (since, until, log_cutoff),
+            )]
+            gaps = [dict(row) for row in db.execute(
+                "SELECT stream,started_at,ended_at,reason FROM journal_gaps "
+                "WHERE started_at<=? AND (ended_at IS NULL OR ended_at>=?) "
+                "ORDER BY started_at DESC LIMIT 31", (until, since),
+            )]
+        output.update(
+            status=("partial_recording" if self._started
+                    else "archived_only_recorder_not_running"),
+            event_count=int(total), events=list(reversed(events)),
+            events_truncated=total > len(events),
+            app_log_count=int(log_count), app_log_apps=app_groups[:12],
+            app_log_apps_truncated=len(app_groups) > 12,
+            gaps=gaps[:30], gaps_truncated=len(gaps) > 30,
+        )
+        return output
+
+
     def query(
         self, *, since: str, until: str,
         device_id: str = "", attribute: str = "", app_id: str = "",
