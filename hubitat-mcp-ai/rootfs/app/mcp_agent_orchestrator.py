@@ -5011,6 +5011,7 @@ class UnifiedMCPAgent:
             and not self._is_conversational_prompt(user_prompt)
             and not stateful_authoring
             and not review_first
+            and not self._mutation_requested_by_user.get()
             else None
         )
         # An explicitly requested comparison can use the existing planner
@@ -5438,6 +5439,55 @@ class UnifiedMCPAgent:
                         messages=messages,
                     )
         completed_calls: set[str] = set()
+        # The semantic model chooses the evidence *requirement* and attributes;
+        # the host, not the model, verifies installed read-only capability,
+        # target resolution and actual execution. This recovers novel temporal
+        # questions without encoding any room/sensor/threshold-specific rule.
+        # Failed reads remain failed receipts and are never treated as events.
+        if (task_plan is not None and task_plan.operation in ("read", "investigate")
+                and self.general_task_engine_enabled
+                and not self._mutation_requested_by_user.get()
+                and "device_history" in task_plan.required_evidence_kinds):
+            for request in task_plan.read_requests:
+                tool = catalog.available_tool(request.tool)
+                if (tool is None or request.tool != _LOCAL_DEVICE_HISTORY_TOOL
+                        or classify_tool_effect(tool, request.arguments).mutates):
+                    increment_active_metric("autonomous_planned_read_unavailable")
+                    continue
+                args = dict(request.arguments)
+                signature = json.dumps(
+                    [request.tool, args], sort_keys=True,
+                    ensure_ascii=False, default=str,
+                )
+                if signature in completed_calls:
+                    continue
+                completed_calls.add(signature)
+                execution = await self.executor.execute(
+                    request.tool, args, tool=tool,
+                    evidence_kind="authoritative_device_event_history",
+                )
+                increment_active_metric(
+                    "autonomous_planned_read_success" if execution.success
+                    else "autonomous_planned_read_failure"
+                )
+                # ToolExecutor's existing local service performs authoritative
+                # identity resolution and bounded MCP event reads; its result
+                # is not trusted just because the AI proposed it. The model
+                # receives the *actual* current-turn result, and must check
+                # timestamps, coverage and threshold calculations.
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "HOST AI-PLANNED READ RESULT (not model evidence): "
+                        + request.tool
+                        + ". The model proposed this source; the host verified "
+                          "the installed read-only adapter and executed it. "
+                          "Inspect returned events/coverage before answering. "
+                          "Do not assume event-stream completeness, exact physical "
+                          "crossing times or a causal explanation.\n"
+                        + str(execution.content or "")[:self.max_tool_result_chars]
+                    ),
+                })
         grounding = GroundingPolicy(
             logs_requested=_matches(user_prompt, _LOG_TERMS),
             conversational=self._is_conversational_prompt(user_prompt),
@@ -5491,8 +5541,16 @@ class UnifiedMCPAgent:
             or lockout_intent
             or contract is not None
         )
+        autonomous_read = bool(
+            self.general_task_engine_enabled
+            and not self._mutation_requested_by_user.get()
+            and (investigative_request
+                 or (task_plan is not None
+                     and bool(task_plan.required_evidence_kinds)))
+        )
         set_reasoning_profile(
-            "deep" if investigative_request and wants_deep_investigation(user_prompt)
+            "autonomous" if autonomous_read
+            else "deep" if investigative_request and wants_deep_investigation(user_prompt)
             else "investigative" if investigative_request else "standard"
         )
         investigative_subject_history_key: str | None = None
@@ -5802,7 +5860,11 @@ class UnifiedMCPAgent:
             and contract.domain == "device_telemetry"
             and not self._mutation_requested_by_user.get()
         )
+        # Autonomous READ investigations are evidence-driven. Do not impose
+        # arbitrary 3/6-round ceilings; existing actual request deadline,
+        # per-read timeout, duplicate detection and final safety gate remain.
         active_round_budget = (
+            self.max_tool_rounds if autonomous_read else
             min(self.max_tool_rounds, 3)
             if self._investigation_reflection_used.get()
             else min(self.max_tool_rounds, 6)
@@ -5813,7 +5875,9 @@ class UnifiedMCPAgent:
             increment_active_metric("telemetry_read_round_budget")
         if active_round_budget < self.max_tool_rounds:
             increment_active_metric("causal_read_round_budget")
-        source_checkpoint_budget = SourceCheckpointBudget(max_offers=3)
+        source_checkpoint_budget = SourceCheckpointBudget(
+            max_offers=None if autonomous_read else 3
+        )
         read_only_recovery_active = False
 
         def offer_source_checkpoint(kind: str) -> bool:
@@ -6487,8 +6551,9 @@ class UnifiedMCPAgent:
                 # conclusions. Check actual read receipts before allowing the
                 # model to stop after only an identity/room lookup. One bounded
                 # retry is permitted; absence of a source remains unresolved.
-                if (task_plan is not None and task_plan.operation == "investigate"
-                        and task_plan.required_evidence_kinds):
+                if (task_plan is not None and task_plan.operation in ("read", "investigate")
+                        and task_plan.required_evidence_kinds
+                        and not self._mutation_requested_by_user.get()):
                     source_coverage = assess_task_source_coverage(
                         task_plan.required_evidence_kinds, self.evidence.receipts(),
                     )
