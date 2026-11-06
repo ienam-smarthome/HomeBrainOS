@@ -270,6 +270,24 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
     assessment = assess_hub_event_trigger(snapshot, receipts)
     if receipts is not None:
         facts += "\n\n" + render_hub_event_findings(assessment)
+        observed_logs = read_only_log_receipt_summary(receipts)
+        if observed_logs["verified_native_past_pages"]:
+            facts += (
+                "\n\n**Returned native past-log evidence (bounded pages)**\n"
+                "- Timestamped message rows actually returned: "
+                + str(observed_logs["returned_timestamped_past_messages"])
+                + "; app-identified message rows: "
+                + str(observed_logs["verified_bounded_app_message_rows"])
+                + ". These timestamps use Hubitat local source time and "
+                  "are not independently UTC-aligned. No app or driver is "
+                  "proven to have caused this incident."
+            )
+            if (observed_logs["past_pages_with_more"]
+                    or observed_logs["past_pages_truncated"]):
+                facts += (
+                    "\n- Pagination/truncation was observed; further "
+                    "read-only pages would be needed to assess coverage."
+                )
     message = str(model_message or "").strip()
     next_checks = incident_read_only_next_checks(snapshot, assessment)
     # Overclaiming is a reason to withhold the draft, not automatically
