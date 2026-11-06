@@ -3,7 +3,17 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.436**.
+Current add-on version: **0.18.437**.
+
+**Read-only diagnostic chart readability (v0.18.437):**
+The synchronized hub timeline and the resource-history chart now use denser
+readable axis ticks, rounded y-axis intervals and matching horizontal/vertical
+gridlines. Time label density adapts to the rendered width and displayed date
+range. Both charts continue to plot only actual external or native readings,
+preserve gaps, confirmed startups, provenance and independent CPU/memory scales.
+No recorder cadence, Hubitat read, automation or device operation has changed.
+[Release notes](CHANGELOG-0.18.437.md).
+
 
 **Historical-log mode contract and chronological incident reporting (v0.18.436):**
 HomeBrain checks the upstream MCP log-mode/time-filter contract before executing
