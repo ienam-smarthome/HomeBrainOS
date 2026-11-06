@@ -384,7 +384,8 @@ def _authenticated_system_event_facts(
     receipts: list[dict[str, Any]] | None,
 ) -> list[str]:
     """Only quote a bounded event's safe type/time, never model assertions."""
-    rows: list[str] = []
+    rows: list[tuple[datetime, str]] = []
+    observed: list[tuple[str, datetime, bool]] = []
     seen: set[tuple[str, str]] = set()
     for receipt in receipts or []:
         if (not isinstance(receipt, dict) or receipt.get("mutates")
@@ -439,10 +440,32 @@ def _authenticated_system_event_facts(
                 qualifier = "recorded a system startup"
             else:
                 qualifier = "recorded a firmware update event"
-            rows.append(f"- {at}: Hubitat {qualifier}.")
-            if len(rows) >= 8:
-                return rows
-    return rows
+            rows.append((occurred, f"- {at}: Hubitat {qualifier}."))
+            observed.append((
+                name, occurred,
+                name == "lowMemory" and
+                "explicitly warned that memory was critically low" in qualifier,
+            ))
+    rendered = [line for _, line in sorted(rows, key=lambda pair: pair[0])[:8]]
+    startups = [when for name, when, _ in observed if name == "systemStart"]
+    explicit_low = [when for name, when, explicit in observed
+                    if name == "lowMemory" and explicit]
+    if any(0 <= (start - low).total_seconds() <= 1800
+           for low in explicit_low for start in startups):
+        rendered.append(
+            "**Verified reported restart context:** Hubitat explicitly "
+            "announced a critical-memory reboot before a recorded startup. "
+            "The original memory-consuming process is not established."
+        )
+    elif any(0 <= (start - changed).total_seconds() <= 1800
+             for name, changed, _ in observed if name == "update"
+             for start in startups):
+        rendered.append(
+            "**Verified update/startup sequence:** Hubitat recorded a firmware "
+            "update followed by startup; the exact restart initiator and any "
+            "earlier memory decline remain unverified."
+        )
+    return rendered
 
 
 def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, Any]:
