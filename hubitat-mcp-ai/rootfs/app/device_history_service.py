@@ -1274,6 +1274,36 @@ class DeviceHistoryService:
             for event in command_events
         )
 
+        # Put compact, source-qualified boundaries *ahead of* verbose event
+        # rows so truncated model context cannot hide the evidence needed for
+        # first/last sample comparisons. They are not physical extrema or a
+        # proof of a constant value between updates.
+        dated_samples = sorted(
+            (
+                (dt, event)
+                for event in filtered_events
+                if (dt := self._event_datetime(event.get("date"))) is not None
+                and dt.tzinfo is not None
+            ),
+            key=lambda pair: pair[0],
+        )
+        def sample_brief(event: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "date": event.get("date"),
+                "displayTime": event.get("displayTime"),
+                "value": event.get("value"),
+                "unit": event.get("unit"),
+            }
+        sample_bounds = {
+            "sampleCount": len(filtered_events),
+            "earliestReturned": (
+                sample_brief(dated_samples[0][1]) if dated_samples else None
+            ),
+            "latestReturned": (
+                sample_brief(dated_samples[-1][1]) if dated_samples else None
+            ),
+            "scope": "returned-recorded-samples-only",
+        }
         data = {
             "success": True,
             "requested": requested,
@@ -1288,7 +1318,8 @@ class DeviceHistoryService:
             "hoursBack": hours_back,
             "attribute": attribute or None,
             "count": len(events),
-            # These counts describe FETCHED rows, never a hub-wide total.
+            "sampleBounds": sample_bounds,
+            # Counts describe FETCHED rows, not a hub-wide total.
             "sourceEventCount": len(source_events),
             "analysisEventCount": len(filtered_events) if attribute else len(events),
             "sourcePagesFetched": source_pages_fetched,
@@ -1303,11 +1334,11 @@ class DeviceHistoryService:
                 else None
             ),
             "timeZoneSource": timezone_source,
-            "events": events,
             "newestFirst": True,
             "causationAvailable": causation_available,
             "historySourceIntegrity": "unverified",
             "historySourceIntegrityVerified": False,
+            "events": events,
         }
         if time_window is not None:
             data["timeWindow"] = {
