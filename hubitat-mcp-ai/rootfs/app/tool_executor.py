@@ -519,6 +519,8 @@ class ToolExecutor:
         receipt_arguments.pop("_include_command_provenance", None)
         receipt_arguments.pop("_causal_transition", None)
         receipt_arguments.pop("_causal_correlation_history", None)
+        receipt_arguments.pop("_include_hub_time_zone", None)
+        receipt_arguments.pop("_expand_history_coverage", None)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
