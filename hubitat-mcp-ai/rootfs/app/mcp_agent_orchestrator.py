@@ -362,6 +362,60 @@ def _is_broad_device_inventory_call(
     )
 
 
+# Contract from the MCP hub_get_logs tool: only the past and event tabs
+# accept a historical date window. The apps/devices tabs are *current runtime
+# statistics*, never a source of app/device log-message history.
+_DATE_SCOPED_LOG_MODES = frozenset({"past", "hubEvents", "locationEvents"})
+_UNTIMED_LOG_MODES = frozenset({
+    "apps", "devices", "cloudCalls", "scheduledJobs", "runningJobs",
+    "hubActions", "mcp", "status",
+})
+
+
+def _log_request_mode_arguments(
+    tool_name: str, arguments: dict[str, Any],
+) -> dict[str, Any] | None:
+    leaf, inner = _gateway_leaf(arguments)
+    if tool_name == "hub_get_logs":
+        return arguments
+    if leaf == "hub_get_logs":
+        return inner
+    return None
+
+
+def _log_mode_window_rejection(
+    tool_name: str, arguments: dict[str, Any],
+) -> str | None:
+    """Reject malformed temporal log queries before an unnecessary hub call.
+
+    This is not an opinion about historical availability: it only enforces the
+    mutually exclusive argument sets of the advertised hub_get_logs modes.
+    Unknown/new modes pass through so the live MCP schema remains authoritative.
+    """
+    args = _log_request_mode_arguments(tool_name, arguments)
+    if args is None or not any(args.get(k) not in (None, "") for k in ("since", "until")):
+        return None
+    modes = args.get("mode", "past")
+    modes = modes if isinstance(modes, list) else [modes]
+    if not modes or any(not isinstance(m, str) for m in modes):
+        return None
+    invalid = [m for m in modes if m in _UNTIMED_LOG_MODES]
+    if not invalid:
+        return None
+    extra = (" Modes apps/devices return current runtime statistics,"
+             " not historical message lines." if any(m in ("apps", "devices") for m in invalid)
+             else "")
+    return (
+        "The selected hub_get_logs mode(s) " + ", ".join(invalid)
+        + " do not accept since/until filters." + extra
+        + " For historical app/device messages use mode='past' with a"
+          " time window and optional appId/deviceId; for system-event"
+          " history use mode='hubEvents' with a time window."
+          " For current runtime statistics/actions omit since/until."
+          " No historical log result was obtained from this rejected call."
+    )
+
+
 def _normalize_causal_log_call(
     tool_name: str,
     arguments: dict[str, Any],
@@ -381,6 +435,14 @@ def _normalize_causal_log_call(
     direct = tool_name == "hub_get_logs"
     gateway = leaf == "hub_get_logs"
     if not (direct or gateway):
+        return arguments
+    params = arguments if direct else inner
+    mode = params.get("mode", "past")
+    modes = mode if isinstance(mode, list) else [mode]
+    # Do not attach causal timestamp bounds to current runtime stats or job
+    # tables: they are not historical log-message sources, and the MCP server
+    # explicitly rejects time arguments for them.
+    if not modes or any(m not in _DATE_SCOPED_LOG_MODES for m in modes):
         return arguments
 
     focused = explicitly_focused_event_rows(evidence, original_user)
@@ -6881,6 +6943,7 @@ class UnifiedMCPAgent:
                 source_scope_error = source_app_scope_error(
                     name, arguments, self.evidence.receipts(), user_prompt,
                 ) if investigative_request else None
+                log_mode_error = _log_mode_window_rejection(name, arguments)
                 if not tool:
                     round_tool_failure = True
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
@@ -6981,6 +7044,14 @@ class UnifiedMCPAgent:
                     round_tool_failure = True
                     increment_active_metric("investigation_source_target_mismatch")
                     content = json.dumps({"error": source_scope_error})
+                elif log_mode_error is not None:
+                    # A rejected invalid time filter is not evidence of
+                    # historical inactivity or missing past logs. Return a
+                    # correction to the model without running the MCP call.
+                    completed_calls.discard(signature)
+                    round_tool_failure = True
+                    increment_active_metric("invalid_log_mode_time_window_blocked")
+                    content = json.dumps({"error": log_mode_error})
                 elif gateway_error is not None:
                     # An invalid gateway operation was never executed. Do not
                     # poison duplicate-call deduplication: after exact tool
