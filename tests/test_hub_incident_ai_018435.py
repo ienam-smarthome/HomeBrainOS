@@ -61,7 +61,7 @@ def test_real_1652_ordinary_ask_pattern_keeps_qualified_log_receipts():
     assert "was responsible for" not in answer
     assert "authenticated Hubitat events" not in answer.lower()
     assert "Hub Events log: 1/1" in answer
-    assert "Past log: 1/1" in answer
+    assert "Past historical log: 1/1" in answer
     assert "App runtime statistics: 1/1" in answer
     assert "content/retention coverage unverified" in answer
     assert "Read-only next checks" in answer
@@ -158,7 +158,7 @@ def test_app_rows_need_bounded_actual_typed_message_not_just_summary_counts():
     assert assessed["verified_bounded_app_message_rows"] == 1
     assert assessed["mode_reads"]["apps"]["successes"] == 1
     assert assessed["mode_reads"]["past"]["successes"] == 2
-    assert assessed["mode_reads"]["past"]["successes"] == 1
+    assert assessed["mode_reads"]["past"]["successes"] == 2
     assert assessed["complete_historical_app_log_coverage"] is False
     result = guard_unresolved_causal_publication(unresolved(
         "The app caused this event.", rows
