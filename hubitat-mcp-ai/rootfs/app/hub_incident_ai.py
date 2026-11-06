@@ -39,18 +39,47 @@ _HISTORY_LOSS_CAUSAL = re.compile(
     r".{0,100}\b(?:purged|cleared|erased|deleted|removed|rotated)\b"
     r".{0,100}\b(?:logs?|records?|buffer|history)\b)"
 )
+# Historical loss may be asserted without a nearby "because reboot"
+# connector: "a log purge occurred", "the diagnostic buffer has been cleared".
+# Such claims are *also* unsupported by an empty bounded past-log page.
+# This is a general source-retention assertion check, not a reboot-specific fix.
+_HISTORY_LOSS_ASSERTION = re.compile(
+    r"(?is)(?:\b(?:logs?|log\s+(?:buffers?|history|records?)|"
+    r"diagnostic\s+(?:logs?|buffers?)|(?:past|historical)\s+"
+    r"(?:logs?|messages?|records?)|logging\s+data|history\s+records?)\b"
+    r".{0,175}\b(?:purg(?:e|ed|es|ing)|clear(?:ed|ing|s)?|"
+    r"eras(?:e|ed|es|ing)|delet(?:e|ed|es|ion)|rotat(?:e|ed|es|ion)|"
+    r"wip(?:e|ed|es|ing)|discard(?:ed|s)?|removed)\b"
+    r"|\b(?:purg(?:e|ed|es|ing)|clear(?:ed|ing|s)?|"
+    r"eras(?:e|ed|es|ing)|delet(?:e|ed|es|ion)|rotat(?:e|ed|es|ion)|"
+    r"wip(?:e|ed|es|ing)|discard(?:ed|s)?|removed)\b"
+    r".{0,100}\b(?:logs?|buffers?|records?|messages?|history)\b)"
+)
 _HISTORY_UNCERTAINTY = re.compile(
     r"(?i)\b(?:might|may|could|possibly|possible|hypothesis|hypothetical|"
     r"unverified|not established|not verified|not proven|unknown|"
     r"cannot conclude|cannot prove|no evidence|rather than proof)\b"
 )
+_HISTORY_NEGATED = re.compile(
+    r"(?i)\b(?:not|never)\s+(?:been\s+)?"
+    r"(?:purged|cleared|erased|deleted|rotated|wiped|discarded|removed)\b"
+    r"|\b(?:did|does|do)\s+not\s+"
+    r"(?:purge|clear|erase|delete|rotate|wipe|discard|remove)\b"
+)
 
 
 def _unsupported_historical_loss_claim(message: str) -> bool:
-    """Check unsupported confident retention-cause clauses, not hypotheses."""
+    """Flag unsupported asserted history loss, not qualified hypotheses.
+
+    Model suggestions such as 'likely purged' are *not* source verification.
+    Merely mentioning a reboot or observing zero matches is not enough to
+    assert that any earlier records were deleted, purged or cleared.
+    """
     for clause in re.split(r"[\n.!?]+", message):
-        if (_HISTORY_LOSS_CAUSAL.search(clause)
-                and not _HISTORY_UNCERTAINTY.search(clause)):
+        if ((_HISTORY_LOSS_CAUSAL.search(clause)
+             or _HISTORY_LOSS_ASSERTION.search(clause))
+                and not _HISTORY_UNCERTAINTY.search(clause)
+                and not _HISTORY_NEGATED.search(clause)):
             return True
     return False
 
