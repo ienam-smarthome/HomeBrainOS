@@ -1,7 +1,7 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
 **Status:** Phase 1 v0.18.443 and Phase 2 source-neutral arithmetic core
-v0.18.444 merged. v0.18.445 introduces progress-aware read-only request
+v0.18.444 merged. v0.18.445 merged through PR #1494 after four green CI checks, introducing progress-aware read-only request
 timing in the add-on without a fixed 180-second *total* deadline. A source-real
 first-answer test is still pending; the temporal operator is **not integrated**
 with live MCP evidence or model synthesis. Do not claim general-question mastery
