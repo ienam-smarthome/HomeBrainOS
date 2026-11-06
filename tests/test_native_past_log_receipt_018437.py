@@ -14,6 +14,7 @@ APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
 from evidence_recorder import EvidenceRecorder  # noqa: E402
+from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
 from hub_incident_ai import (  # noqa: E402
     guard_unresolved_causal_publication, read_only_log_receipt_summary,
 )
@@ -192,3 +193,34 @@ async def test_tool_executor_retains_projection_not_messages_in_evidence():
     assert "secret" not in json.dumps(receipt)
     # Preserve original data for the model under existing privacy controls.
     assert "PRIVATE password=secret" in result.content
+
+
+def test_final_synthesis_brief_keeps_distinct_past_log_pages_without_message_text():
+    data = past_data()
+    first_projection = native_past_log_receipt("hub_read_diagnostics", args(), data)
+    next_args = args(cursor="page-2-secret-do-not-expose")
+    second = {"mode": "past", "entries": [
+        native_row("app", 900, "2026-11-05 16:40:01", "PRIVATE ROW TWO")
+    ]}
+    second_projection = native_past_log_receipt("hub_read_diagnostics", next_args, second)
+    logs = [
+        {"tool": "hub_read_diagnostics", "sub_tool": "hub_get_logs",
+         "success": True, "mutates": False, "arguments": params,
+         "details": projection, "summary": "native log read"}
+        for params, projection in (
+            (args(), first_projection), (next_args, second_projection)
+        )
+    ]
+    history = {
+        "tool": "homebrain_device_history", "success": True, "mutates": False,
+        "arguments": {"deviceId": "7828"}, "summary": "bounded device history",
+        "details": {"label": "Example", "attribute": "switch"},
+    }
+    brief = build_current_turn_evidence_ledger([history, *logs])
+    assert brief is not None
+    assert brief.count("CHECKED native past-log page") == 2
+    assert "3 timestamped message rows returned" in brief
+    assert "1 timestamped message rows returned" in brief
+    assert "more pages indicated" in brief
+    assert "PRIVATE" not in brief
+    assert "page-2-secret" not in brief
