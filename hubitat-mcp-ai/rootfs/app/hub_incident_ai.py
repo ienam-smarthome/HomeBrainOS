@@ -8,7 +8,7 @@ certainty. No polling, scheduling or persistence is introduced here.
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import re
 from typing import Any
@@ -292,6 +292,154 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
     )
 
 
+def read_only_log_receipt_summary(
+    receipts: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Metadata-only, source-qualified log-query coverage from existing receipts.
+
+    A successful query proves access to an endpoint, not retrieval of historical
+    app messages or complete history. Never expose raw private message text.
+    """
+    modes = {
+        name: {"attempts": 0, "successes": 0}
+        for name in ("apps", "past", "hubEvents", "generic_bounded")
+    }
+    verified_app_message_rows = 0
+    for receipt in receipts or []:
+        if (not isinstance(receipt, dict)
+                or receipt.get("mutates") is True
+                or receipt.get("sub_tool") != "hub_get_logs"):
+            continue
+        arguments = receipt.get("arguments")
+        if not isinstance(arguments, dict):
+            continue
+        params = arguments.get("args")
+        if not isinstance(params, dict):
+            continue
+        mode = params.get("mode")
+        if mode in ("apps", "past", "hubEvents"):
+            key = mode
+        elif mode in (None, "") and params.get("since") and params.get("until"):
+            key = "generic_bounded"
+        else:
+            continue
+        modes[key]["attempts"] += 1
+        if receipt.get("success") is not True:
+            continue
+        modes[key]["successes"] += 1
+        # Actual app-message coverage requires typed rows, app identity,
+        # source time, an actual message, and an explicit bounded request.
+        # Summary field names, 'matched' counts and successful snapshots
+        # never satisfy this requirement.
+        if (receipt.get("supports_live_claim") is not True
+                or not (params.get("since") and params.get("until"))
+                or key not in ("apps", "past", "generic_bounded")):
+            continue
+        details = receipt.get("details")
+        entries = details.get("entries") if isinstance(details, dict) else None
+        if not isinstance(entries, list):
+            continue
+        try:
+            first = datetime.fromisoformat(
+                str(params["since"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+            last = datetime.fromisoformat(
+                str(params["until"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+            if first >= last or not first.tzinfo or not last.tzinfo:
+                continue
+        except (TypeError, ValueError, OverflowError):
+            continue
+        for row in entries[:200]:
+            if not isinstance(row, dict):
+                continue
+            app_id = row.get("appId", row.get("app_id"))
+            stamp = row.get("date", row.get("timestamp"))
+            message = row.get("message")
+            if not (app_id and isinstance(message, str) and message.strip()
+                    and isinstance(stamp, str)):
+                continue
+            try:
+                occurred = datetime.fromisoformat(
+                    stamp.replace("Z", "+00:00")).astimezone(timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if first <= occurred <= last:
+                verified_app_message_rows += 1
+    return {
+        "mode_reads": modes,
+        "verified_bounded_app_message_rows": verified_app_message_rows,
+        "complete_historical_app_log_coverage": False,
+        "coverage_note": (
+            "A successful MCP query or summary-only receipt is not evidence "
+            "that matching historical app messages were returned or reviewed."
+        ),
+    }
+
+
+def _authenticated_system_event_facts(
+    receipts: list[dict[str, Any]] | None,
+) -> list[str]:
+    """Only quote a bounded event's safe type/time, never model assertions."""
+    rows: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for receipt in receipts or []:
+        if (not isinstance(receipt, dict) or receipt.get("mutates")
+                or receipt.get("sub_tool") != "hub_list_device_events"
+                or receipt.get("success") is not True
+                or receipt.get("supports_live_claim") is not True):
+            continue
+        args = receipt.get("arguments") or {}
+        params = args.get("args") if isinstance(args, dict) else None
+        details = receipt.get("details")
+        if not (isinstance(params, dict) and isinstance(details, dict)
+                and isinstance(details.get("observedEvents"), list)):
+            continue
+        try:
+            first_s, last_s = params["since"], params["until"]
+            first = datetime.fromisoformat(str(first_s).replace("Z", "+00:00"))
+            last = datetime.fromisoformat(str(last_s).replace("Z", "+00:00"))
+            if (first.tzinfo is None or last.tzinfo is None or first >= last):
+                continue
+            first, last = first.astimezone(timezone.utc), last.astimezone(timezone.utc)
+        except (KeyError, ValueError, TypeError, OverflowError):
+            continue
+        for event in details["observedEvents"][:100]:
+            if not isinstance(event, dict):
+                continue
+            name = event.get("name")
+            if name not in ("lowMemory", "systemStart", "update"):
+                continue
+            try:
+                occurred = datetime.fromisoformat(
+                    str(event["date"]).replace("Z", "+00:00"))
+                if occurred.tzinfo is None:
+                    continue
+                occurred = occurred.astimezone(timezone.utc)
+            except (KeyError, ValueError, TypeError, OverflowError):
+                continue
+            if not first <= occurred <= last:
+                continue
+            at = occurred.strftime("%d %b %Y %H:%M:%S UTC")
+            key = (name, at)
+            if key in seen:
+                continue
+            seen.add(key)
+            if name == "lowMemory":
+                description = str(event.get("description") or "").casefold()
+                qualifier = ("explicitly warned that memory was critically low"
+                             " and the hub was rebooting"
+                             if ("memory is critically low" in description
+                                 and "rebooting now" in description)
+                             else "recorded a low-memory event")
+            elif name == "systemStart":
+                qualifier = "recorded a system startup"
+            else:
+                qualifier = "recorded a firmware update event"
+            rows.append(f"- {at}: Hubitat {qualifier}.")
+            if len(rows) >= 8:
+                return rows
+    return rows
+
+
 def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, Any]:
     """General Answer Quality gate: an unverified causal discriminator cannot
     authorise a definitive attribution in ordinary Ask responses.
@@ -316,14 +464,42 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
     if not _DEFINITIVE_CAUSAL.search(message):
         return response
     corrected = dict(response)
-    corrected["message"] = (
-        "**Cause remains unresolved.** The model drafted a definitive "
-        "causal attribution, but the technical evidence comparison still "
-        "contains unverified discriminating checks. That claim has been "
-        "withheld rather than reported as fact. Consult the recorded "
-        "Hubitat events, native performance statistics and retained "
-        "app-log evidence; missing sources must remain explicitly "
-        "unverified. No Hubitat action was taken by this correction."
+    receipts = response.get("evidence")
+    receipts = receipts if isinstance(receipts, list) else []
+    log_coverage = read_only_log_receipt_summary(receipts)
+    verified_events = _authenticated_system_event_facts(receipts)
+    sections = [
+        "**Cause remains unresolved.** The model's unsupported definitive "
+        "causal attribution was withheld. This does not invalidate separately "
+        "recorded source observations; it does not establish an underlying cause."
+    ]
+    if verified_events:
+        sections.append(
+            "**Authenticated Hubitat events (not proof of the original cause)**\n"
+            + "\n".join(verified_events)
+        )
+    modes = log_coverage["mode_reads"]
+    log_lines = []
+    for name, label in (
+        ("hubEvents", "Hub Events log"), ("past", "Past log"),
+        ("apps", "App-mode log"), ("generic_bounded", "Generic bounded log"),
+    ):
+        data = modes[name]
+        if data["attempts"]:
+            log_lines.append(
+                f"- {label}: {data['successes']}/{data['attempts']} "
+                "read requests succeeded; content/retention coverage unverified."
+            )
+    if log_lines:
+        sections.append("**Historical-log source checks**\n" + "\n".join(log_lines))
+    sections.append(
+        "**Read-only next checks:** Examine the actual returned, time-bounded "
+        "source messages and missing retention/collection intervals before "
+        "identifying a responsible process, app, driver or external initiator. "
+        "A successful log request does not prove matching historical messages "
+        "were returned. No Hubitat action was taken by this correction."
     )
+    corrected["message"] = "\n\n".join(sections)
+    corrected["causal_read_source_coverage"] = log_coverage
     corrected["ai_claim_validation"] = "unresolved_cause_claim_withheld"
     return corrected
