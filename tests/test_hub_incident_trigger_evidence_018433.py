@@ -187,6 +187,10 @@ def test_host_assessment_exposed_by_read_only_incident_api(monkeypatch, tmp_path
         app.IncidentAIRequest(at=snapshot["focus_at"]), None))
     assert output["restart_trigger_status"] == "hub_explicit_critical_low_memory_reboot"
     assert output["restart_trigger_evidence"]["observed_system_events"][0]["name"] == "lowMemory"
+    assert output["incident_source_coverage"]["log_query_modes"]["apps"]["attempts"] == 1
+    assert output["incident_source_coverage"]["log_query_modes"]["apps"]["successes"] == 0
+    assert output["incident_source_coverage"]["verified_bounded_app_message_rows"] == 0
+    assert output["incident_source_coverage"]["historical_app_log_coverage_complete"] is False
     assert output["underlying_memory_cause"] == "unverified"
     assert output["causal_verdict"] == "unverified"
     assert "16:41:40 UTC" in output["message"]
