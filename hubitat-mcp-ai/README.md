@@ -3,7 +3,19 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.434**.
+Current add-on version: **0.18.435**.
+
+**Shared Answer Quality and log-query receipt coverage (v0.18.435):**
+When ordinary Ask withholds an unsupported causal claim, the response keeps
+source-qualified, authenticated time-bounded Hubitat system-event facts if
+typed rows are actually available. It also reports counts of successful and
+failed requests for `hubEvents`, `past`, `apps` and generic bounded logs
+without pretending that a successful mode request proves app-message content
+or complete historical coverage. The dedicated incident endpoint exposes the
+same mode-specific receipt metadata. No raw private log messages are placed
+in the added response fields. These changes do not automatically retrieve
+missing historic messages or identify the original memory consumer.
+[Release notes](CHANGELOG-0.18.435.md).
 
 **Actionable, evidence-qualified incident AI reports (v0.18.434):**
 When the AI supplies an unsupported definitive cause, HomeBrain continues
