@@ -85,6 +85,18 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Mode-scoped native past-log receipts (v0.18.442):**
+The upstream MCP defaults a mode-omitted `hub_get_logs` read to `past`.
+A date-bounded default-mode read and an unbounded explicit `past` sample
+are distinct executed calls, not two copies of the same query. HomeBrain's
+legacy aggregate `native_past_page_observations` is preserved but the new
+`mode_page_observations` separates the page counts for source-accurate
+reporting in Ask and the dedicated incident Technical JSON. A zero-match
+bounded read must not be reprinted under the explicit unbounded sample's
+heading. A recent sample already read is not requested again as a next step;
+the remaining useful uncertainty is the native source retention boundary.
+No historical absence, memory consumer or purge mechanism is inferred.
+
 **Source-grounded purge assertion coverage (v0.18.441):** In unresolved
 historical-source investigations, the publication guard also detects
 unsupported direct assertions of retention loss, even without an explicit
