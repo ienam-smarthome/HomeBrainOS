@@ -1,5 +1,20 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Q2 four recorded local pairs reconciled to frozen evidence inputs (offline audit candidate)
+
+**Current source baseline:** `main` was `3e8b7cdde3e932291f95d375acec7b190e6d671a` after PR #1460, and installed HomeBrainOS 0.18.427 had a source-backed 7.069-second two-device live status sample. That single live read did not certify first-attempt delivery or a cross-version accuracy improvement.
+
+**Next permanent milestone executed:** Four previously provided local-only Qwen3.5:4b versus Llama3.2:3b first-answer pairs (MQTT, OFF-command provenance, heating and Rule Machine identity) have existing private/raw answer digest records and non-blinded qualitative source inspections. Their original model-only timings, answer SHA-256 and frozen packet hashes are transcribed as *metadata only* to `tests/fixtures/answer_quality_q2_recorded_pairs_v1.json`. `scripts/answer_quality_q2_recorded_pairs.py` now checks each recorded pair against the current immutable frozen packet and source-manifest schema, then reports original observed request timing and per-case checkout boundaries. These four sessions had **four different checkout SHAs**, so do not combine them into a same-build model quality score; within each pair the checkout matches.
+
+**Evidence and claim boundary:** The archived qualitative reviews already document Llama faster in all four recorded model-only calls but missing vital evidence/causal mistakes; Qwen generally covers more but overclaims mechanism or causal delivery in some cases. This script **does not** read private original answer bytes, assign rubric grades, authenticate provider ingestion, prove exact model identity or calculate factual accuracy. **0 independently authenticated human first-answer grade rows; official scorecard NOT MEASURED.** No repeat user request is justified just to obtain historical metadata. See [Q2 historical provenance audit](ANSWER-QUALITY-Q2-HISTORICAL-PROVENANCE-20261106.md).
+
+**Acceptance and rollback:** Branch-only candidate at this entry; CI pending. Regression tests must reject changed packet hash, original metadata rewrite, duplicated first attempt, checkout mismatch, same-model comparisons and raw private answer text. No production add-on version bump, Hubitat/HA interaction, writer or Cloud model spend. Roll back if recorded metadata fails source-fingerprint validation, or the audit claims an unsupported graded improvement.
+
+**Next:** Complete exact-head CI, merge only if all required checks are green; then attempt a truly SHA-bound source review *only* where original private answer files are accessible, without fabricating reviewer/claim counts. Continue comparable cross-domain reasoning evaluation, not case-specific publication patches.
+
+---
+
+
 ## 2026-11-06 12:57 UTC — registered two-device live read on installed v0.18.427 (source-bounded review)
 
 **Case:** `multi_device_named`, unchanged registered question. User privately supplied the complete natural answer and Technical JSON plus a screenshot. Independently recomputing the registered question's `collapse-whitespace-v1` SHA-256 matches the response's `request_provenance.normalized_prompt_sha256`. This authenticates the **API-submitted question fingerprint**, not first attempt, actual model input delivery or running source SHA: the response explicitly reports `first_attempt_verified=false`, `model_delivery_verified=false` and `deployed_build_sha_verified=false`. Version `0.18.427` is **self-reported** by the response and is not independently mapped to a deployed commit.
