@@ -26,6 +26,7 @@ from history_result_enrichment import enrich_history_result, prepare_history_arg
 from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
 from log_evidence_compactor import compact_log_evidence
+from native_past_log_receipt import native_past_log_receipt
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from performance_result_compat import normalize_performance_result
@@ -728,10 +729,15 @@ class ToolExecutor:
                     ),
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,
-                    details=(source_read_metadata(name, receipt_arguments, result.data)
-                             or existing_rule_page_metadata(name, receipt_arguments, result.data)
-                             or identity_details
-                             or self.result_details(result)),
+                    details=(
+                        (native_past_log_receipt(
+                            name, receipt_arguments, result.data
+                        ) if success and not effect.mutates else None)
+                        or source_read_metadata(name, receipt_arguments, result.data)
+                        or existing_rule_page_metadata(name, receipt_arguments, result.data)
+                        or identity_details
+                        or self.result_details(result)
+                    ),
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             if effect.mutates:
