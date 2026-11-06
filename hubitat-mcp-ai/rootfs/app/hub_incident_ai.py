@@ -188,7 +188,7 @@ def fact_summary(snapshot: dict[str, Any]) -> str:
     rows.append(
         "**Underlying memory/resource cause: UNVERIFIED.** The reported"
         " restart trigger is assessed separately from typed Hub Events."
-        " Temporal proximity cannot identify a memory consumer."
+        " Temporal proximity is not proof of the source of memory pressure."
     )
     return "\n".join(rows)
 
