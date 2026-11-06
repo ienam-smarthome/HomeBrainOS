@@ -1,6 +1,7 @@
-name: Q2 actual local first-answer frozen packet trial (no cloud)
+name: Q2 isolated local-model evidence-first prompt A/B (no cloud)
 
-# Runs only on an approved same-repo PR modifying this isolated runner.
+# Runs only on a same-repo PR modifying the isolated Q2 evaluation runners.
+# Compares prompt instructions on identical frozen packets, not semantic accuracy.
 # Real model answers are never uploaded or printed, even for public fixtures.
 on:
   pull_request:
@@ -8,7 +9,10 @@ on:
     paths:
       - '.github/workflows/q2-local-frozen-answers.yml'
       - 'hubitat-mcp-ai/tools/q2_local_frozen_answers.py'
+      - 'hubitat-mcp-ai/tools/q2_evidence_first_ab.py'
+      - 'scripts/answer_quality_evidence_first_prompt.py'
       - 'tests/test_q2_local_frozen_answers.py'
+      - 'tests/test_q2_evidence_first_ab.py'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +24,7 @@ concurrency:
 
 jobs:
   actual-local-first-answers:
-    name: Two actual tiny local models, identical frozen evidence (ungraded)
+    name: Counterbalanced tiny-local-model prompt A/B, fixed sources (ungraded)
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -43,9 +47,9 @@ jobs:
           set -euo pipefail
           test "${OLLAMA_HOST}" = "127.0.0.1:11434"
           test "${OLLAMA_NO_CLOUD}" = "1"
-          python -m compileall -q hubitat-mcp-ai/tools/q2_local_frozen_answers.py
+          python -m compileall -q hubitat-mcp-ai/tools/q2_local_frozen_answers.py hubitat-mcp-ai/tools/q2_evidence_first_ab.py scripts/answer_quality_evidence_first_prompt.py
           python -m pip install --disable-pip-version-check pytest
-          python -m pytest tests/test_q2_local_frozen_answers.py -q
+          python -m pytest tests/test_q2_local_frozen_answers.py tests/test_q2_evidence_first_ab.py -q
       - name: Install temporary local Ollama
         run: |
           set -euo pipefail
@@ -72,15 +76,15 @@ jobs:
           ollama pull llama3.2:1b
           ollama list | grep -F 'qwen2.5:0.5b'
           ollama list | grep -F 'llama3.2:1b'
-      - name: Run Q2 first-answer trial (no raw responses or source judgments)
+      - name: Run Q2 prompt A/B on unchanged sources (no raw responses or semantic scores)
         timeout-minutes: 18
         run: |
           set -euo pipefail
-          python hubitat-mcp-ai/tools/q2_local_frozen_answers.py \
+          python hubitat-mcp-ai/tools/q2_evidence_first_ab.py \
             --ack-no-cloud-synthetic-only --timeout-seconds 180
       - name: Declare measurement boundaries
         if: always()
         run: |
           echo "No Hubitat, Home Assistant, user data, API secrets or cloud inference."
-          echo "Real model first answers only; no independent human review or quality scoring."
+          echo "First response for each prompt arm only; source packet stays identical; no independent human review or quality scoring."
           echo "No production model-routing or publisher changes."
