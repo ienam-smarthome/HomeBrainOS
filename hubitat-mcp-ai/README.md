@@ -3,7 +3,20 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.438**.
+Current add-on version: **0.18.439**.
+
+**Empty historic past-log page coverage (v0.18.439):**
+A successful past-log query with a native bounded page reporting zero matches
+now produces an explicit no-returned-message result rather than generic
+instructions to inspect messages that were never returned. Separately retain
+the upstream pre-time-filter raw source row total, per-page match counts and
+time-parse diagnostic counters (all numbers, never private text). A large
+raw source-row total does not establish that the requested old records remain.
+Next checks prioritise source-time/retention verification and local journal
+coverage, not speculative app culprits. Synthesis still preserves verified
+critical-memory reboot events independently from the unknown original
+consumer; no new hub reads or latency targets.
+[Release notes](CHANGELOG-0.18.439.md).
 
 **Typed historical past-log row receipts (v0.18.438):**
 Successful read-only hub_get_logs(mode="past") queries now retain
