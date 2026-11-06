@@ -805,7 +805,7 @@ class UnifiedMCPAgent:
         claude_api_key: str = "",
         claude_model: str = "claude-sonnet-4-6",
         tool_limit: int = 48,
-        max_tool_rounds: int = 18,
+        max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
         confirmation_ttl_seconds: float = 120,
         rule_write_enabled: bool = True,
