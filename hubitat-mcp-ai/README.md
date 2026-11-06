@@ -5,6 +5,19 @@ to kingpanther13's Hubitat MCP Rule Server.
 
 Current add-on version: **0.18.438**.
 
+**Typed historical past-log row receipts (v0.18.438):**
+Successful read-only hub_get_logs(mode="past") queries now retain
+bounded, privacy-safe provenance about actual returned messages: count
+of timestamped rows, app/device source markers (numeric IDs only),
+page truncation and continuation status. Native Hubitat past-log times are
+hub-local; the output does not invent UTC conversions or publish raw app
+message text. The ordinary Ask causal-report guard, explicit incident
+Technical JSON and current-turn synthesis ledger can distinguish a
+successful empty/summary-only query from one that returned typed historical
+rows, without treating page coverage as complete retention or a causal verdict.
+No additional MCP reads, privileged actions or monitoring are introduced.
+[Release notes](CHANGELOG-0.18.438.md).
+
 **Read-only diagnostic chart readability (v0.18.437):**
 The synchronized hub timeline and the resource-history chart now use denser
 readable axis ticks, rounded y-axis intervals and matching horizontal/vertical
