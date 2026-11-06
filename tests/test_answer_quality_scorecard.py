@@ -76,7 +76,7 @@ def test_one_review_is_only_a_partial_sample_not_a_passed_quality_gate():
     assert model["p95_latency_seconds"] == 38.5
 
 
-def test_latency_cohorts_keep_offline_packets_out_of_live_charter_targets():
+def test_latency_cohorts_keep_investigation_timing_observational_without_cutoff():
     catalog = load_catalog()
     assert catalog["status_named_dimmer"]["latency_cohort"] == "live_status_control"
     assert catalog["causal_light2_off"]["latency_cohort"] == "live_investigation"
@@ -97,7 +97,8 @@ def test_latency_cohorts_keep_offline_packets_out_of_live_charter_targets():
     assert cohorts["live_status_control"]["p95_latency_seconds"] == 9.5
     assert cohorts["live_status_control"]["charter_target_seconds"] == 15
     assert cohorts["live_investigation"]["median_latency_seconds"] == 49.0
-    assert cohorts["live_investigation"]["charter_target_seconds"] == 45
+    assert cohorts["live_investigation"]["charter_target_seconds"] is None
+    assert cohorts["live_investigation"]["target_assessment"] == "observational_only_not_an_acceptance_verdict"
     assert cohorts["offline_source_packet"]["median_latency_seconds"] == 1.2
     assert cohorts["offline_source_packet"]["charter_target_seconds"] is None
     assert cohorts["live_rule_authoring"]["latency_sample_count"] == 0
