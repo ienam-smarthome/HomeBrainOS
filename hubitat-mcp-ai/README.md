@@ -5,6 +5,17 @@ to kingpanther13's Hubitat MCP Rule Server.
 
 Current add-on version: **0.18.442**.
 
+**Source-scoped native past-log reporting (v0.18.442):**
+Each successful historical-log page is now attributed to its own query
+mode/window rather than reusing global bounded-page counts across separate
+reads. An explicit unbounded `past` recent sample no longer inherits the
+zero matches from a separate date-bounded request whose omitted mode defaults
+to `past`. When a recent sample was already read, recommended next checks
+focus on actual oldest/latest retained source times and timezone instead of
+repeating the same read. Both normal Ask and dedicated incident Technical JSON
+retain source-scoped page observations with no private message content.
+[Release notes](CHANGELOG-0.18.442.md).
+
 **General historical-loss claim coverage (v0.18.441):**
 The shared ordinary Ask publication guard now recognises unsupported,
 unqualified assertions such as "a log purge occurred" or "the diagnostic
