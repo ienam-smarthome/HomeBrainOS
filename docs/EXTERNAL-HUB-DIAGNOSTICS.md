@@ -85,6 +85,19 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Unverified historical retention causes (v0.18.440):** An empty
+bounded past-log query plus a nonempty recent unbounded page cannot
+prove that restart, update, firmware or a hub log-buffer rollover
+purged specific historical messages. The ordinary Ask source guard
+now detects confidently asserted history-loss causes in unresolved
+source comparisons and publishes typed events, bounded zero-match
+counts, safe recent-page row counts and retention-horizon next
+checks without that unsupported claim. A reported sunrise/sunset
+update in an event timeline remains an observation only. The
+source-coverage footer no longer emits literal \n escape strings
+in rendered answers. No source-read or causal-verdict escalation,
+no private raw log text, no new polling or device mutation.
+
 **Empty native historical page semantics (v0.18.439):**
 Raw-source row totals in native past-log receipts represent records fetched
 before Hubitat's historical since/until filter, not records inside the

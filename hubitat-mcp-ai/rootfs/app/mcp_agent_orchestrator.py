@@ -6527,7 +6527,7 @@ class UnifiedMCPAgent:
                                 return completed_answer
                             current_missing = ", ".join(final_coverage.missing)
                             return completed_answer + (
-                                "\\n\\n**Evidence coverage incomplete:** Required "
+                                "\n\n**Evidence coverage incomplete:** Required "
                                 "read-source classes not verified as checked: "
                                 f"{current_missing}. This does not prove the "
                                 "historical event or cause."

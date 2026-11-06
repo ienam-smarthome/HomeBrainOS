@@ -28,6 +28,32 @@ _DEFINITIVE_CAUSAL = re.compile(
     r"\b(?:caused|triggered|responsible for)\b)"
 )
 
+# A different causal question from *why a device rebooted*: why a source
+# returns no historical rows. A zero-match page, a reboot event, and a live
+# uptime cannot by themselves establish that reboot/firmware purged history.
+_HISTORY_LOSS_CAUSAL = re.compile(
+    r"(?is)(?:\b(?:logs?|log\s+(?:buffer|history)|records?|messages?)\b"
+    r".{0,125}\b(?:purged|cleared|erased|deleted|removed|rotated)\b"
+    r".{0,100}\b(?:reboot|restart|firmware|update|reset)\b"
+    r"|\b(?:reboot|restart|firmware|update|reset)\b"
+    r".{0,100}\b(?:purged|cleared|erased|deleted|removed|rotated)\b"
+    r".{0,100}\b(?:logs?|records?|buffer|history)\b)"
+)
+_HISTORY_UNCERTAINTY = re.compile(
+    r"(?i)\b(?:might|may|could|possibly|possible|hypothesis|hypothetical|"
+    r"unverified|not established|not verified|not proven|unknown|"
+    r"cannot conclude|cannot prove|no evidence|rather than proof)\b"
+)
+
+
+def _unsupported_historical_loss_claim(message: str) -> bool:
+    """Check unsupported confident retention-cause clauses, not hypotheses."""
+    for clause in re.split(r"[\n.!?]+", message):
+        if (_HISTORY_LOSS_CAUSAL.search(clause)
+                and not _HISTORY_UNCERTAINTY.search(clause)):
+            return True
+    return False
+
 
 def bind_incident(snapshot: dict[str, Any]) -> Token:
     """Attach host-obtained evidence to this request; never client model text."""
@@ -376,6 +402,7 @@ def read_only_log_receipt_summary(
     returned_timestamped_messages = 0
     native_past_empty_bounded_pages = 0
     native_past_page_observations: list[dict[str, Any]] = []
+    native_past_recent_page_observations: list[dict[str, Any]] = []
     for receipt in receipts or []:
         if (not isinstance(receipt, dict)
                 or receipt.get("mutates") is True
@@ -402,12 +429,33 @@ def read_only_log_receipt_summary(
         # source time, an actual message, and an explicit bounded request.
         # Summary field names, 'matched' counts and successful snapshots
         # never satisfy this requirement.
-        if (receipt.get("supports_live_claim") is not True
-                or not (params.get("since") and params.get("until"))
-                or key not in ("past", "generic_bounded")):
+        if receipt.get("supports_live_claim") is not True:
             continue
         details = receipt.get("details")
         metadata = details.get("nativePastLog") if isinstance(details, dict) else None
+        # An unbounded recent sample proves rows on *that returned page*.
+        # It does not prove the earliest retained source timestamp.
+        if (key == "past" and isinstance(metadata, dict)
+                and metadata.get("requestDateBounded") is False
+                and not params.get("since") and not params.get("until")):
+            keys = (
+                "returnedRowsInspected", "timestampedMessageRows",
+                "appMessageRowsWithVerifiedSourceId",
+                "deviceMessageRowsWithVerifiedSourceId",
+                "matchedRowsReported", "sourceRowsReported",
+            )
+            recent = {k: metadata[k] for k in keys
+                      if type(metadata.get(k)) is int
+                      and 0 <= metadata[k] <= 1_000_000}
+            if (type(recent.get("returnedRowsInspected")) is int
+                    and type(recent.get("timestampedMessageRows")) is int
+                    and 0 <= recent["timestampedMessageRows"]
+                    <= recent["returnedRowsInspected"] <= 200
+                    and len(native_past_recent_page_observations) < 8):
+                native_past_recent_page_observations.append(recent)
+        if (not (params.get("since") and params.get("until"))
+                or key not in ("past", "generic_bounded")):
+            continue
         if key in ("past", "generic_bounded") and isinstance(metadata, dict):
             # Only successful, explicitly bounded native past-log pages can
             # prove that app-identified historical rows were returned.
@@ -483,6 +531,7 @@ def read_only_log_receipt_summary(
         "past_pages_truncated": past_pages_truncated,
         "native_past_empty_bounded_pages": native_past_empty_bounded_pages,
         "native_past_page_observations": native_past_page_observations,
+        "native_past_recent_page_observations": native_past_recent_page_observations,
         "complete_historical_app_log_coverage": False,
         "coverage_note": (
             "Past-mode reads can return historical app/device messages, but "
@@ -525,7 +574,7 @@ def _authenticated_system_event_facts(
             if not isinstance(event, dict):
                 continue
             name = event.get("name")
-            if name not in ("lowMemory", "systemStart", "update"):
+            if name not in ("lowMemory", "systemStart", "update", "sunriseSunsetUpdated"):
                 continue
             try:
                 occurred = datetime.fromisoformat(
@@ -551,6 +600,11 @@ def _authenticated_system_event_facts(
                              else "recorded a low-memory event")
             elif name == "systemStart":
                 qualifier = "recorded a system startup"
+            elif name == "sunriseSunsetUpdated":
+                qualifier = (
+                    "recorded a sunrise/sunset location update "
+                    "(no reboot causality established)"
+                )
             else:
                 qualifier = "recorded a firmware update event"
             rows.append((occurred, f"- {at}: Hubitat {qualifier}."))
@@ -602,18 +656,28 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
     ):
         return response
     message = str(response.get("message") or "")
-    if not _DEFINITIVE_CAUSAL.search(message):
+    historical_loss_overclaim = _unsupported_historical_loss_claim(message)
+    if not _DEFINITIVE_CAUSAL.search(message) and not historical_loss_overclaim:
         return response
     corrected = dict(response)
     receipts = response.get("evidence")
     receipts = receipts if isinstance(receipts, list) else []
     log_coverage = read_only_log_receipt_summary(receipts)
     verified_events = _authenticated_system_event_facts(receipts)
-    sections = [
-        "**Cause remains unresolved.** The model's unsupported definitive "
-        "causal attribution was withheld. This does not invalidate separately "
-        "recorded source observations; it does not establish an underlying cause."
-    ]
+    if historical_loss_overclaim:
+        sections = [
+            "**Historical log-retention cause is unverified.** "
+            "The model's explanation that a reboot, update or reset purged "
+            "the missing historical messages has been withheld. An empty "
+            "filtered page proves only that this query returned no matching "
+            "rows; it does not establish why the records are unavailable."
+        ]
+    else:
+        sections = [
+            "**Cause remains unresolved.** The model's unsupported definitive "
+            "causal attribution was withheld. This does not invalidate separately "
+            "recorded source observations; it does not establish an underlying cause."
+        ]
     if verified_events:
         sections.append(
             "**Authenticated Hubitat events (not proof of the original cause)**\n"
@@ -675,6 +739,28 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
             )
     if log_lines:
         sections.append("**Log and runtime-source checks**\n" + "\n".join(log_lines))
+    recent = log_coverage["native_past_recent_page_observations"]
+    if recent:
+        notes = []
+        for page in recent[:4]:
+            notes.append(
+                "- Recent unbounded past-log sample: "
+                + str(page["returnedRowsInspected"]) + " rows returned; "
+                + str(page["timestampedMessageRows"])
+                + " timestamped messages on that page, "
+                + str(page.get("appMessageRowsWithVerifiedSourceId", 0))
+                + " app-identified and "
+                + str(page.get("deviceMessageRowsWithVerifiedSourceId", 0))
+                + " device-identified. "
+                + (
+                    "Raw source rows reported before any query limit: "
+                    + str(page["sourceRowsReported"]) + ". "
+                    if "sourceRowsReported" in page else ""
+                )
+                + "This limited sample does not establish the oldest "
+                  "retained timestamp."
+            )
+        sections.append("**Returned recent-log evidence**\n" + "\n".join(notes))
     past_observations = log_coverage["native_past_page_observations"]
     all_past_empty = (
         bool(past_observations)
@@ -707,5 +793,8 @@ def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, A
         )
     corrected["message"] = "\n\n".join(sections)
     corrected["causal_read_source_coverage"] = log_coverage
-    corrected["ai_claim_validation"] = "unresolved_cause_claim_withheld"
+    corrected["ai_claim_validation"] = (
+        "unverified_historical_retention_cause_withheld"
+        if historical_loss_overclaim else "unresolved_cause_claim_withheld"
+    )
     return corrected

@@ -3,7 +3,22 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.439**.
+Current add-on version: **0.18.440**.
+
+**Evidence-based historical-retention explanations (v0.18.440):**
+Ordinary Ask now withholds an unsupported *cause of missing historic
+messages*, not only unsupported device/reboot causes. A zero-match
+past-log page and a successful recent sample cannot establish that
+reboot/firmware reset purged the old messages. The guarded report
+preserves independently typed Hubitat system events in time order,
+a distinct sunrise/sunset location event without implying reboot
+causality, actual recent native past-page counts and the bounded
+zero-match result. It directs read-only follow-up to earliest/oldest
+retained source times and available archives rather than inventing
+retention mechanics. The generic evidence-gap footer uses actual
+paragraph breaks instead of literal escaped newlines. No new
+MCP/model reads, polling, writes or operational deadline change.
+[Release notes](CHANGELOG-0.18.440.md).
 
 **Empty historic past-log page coverage (v0.18.439):**
 A successful past-log query with a native bounded page reporting zero matches
