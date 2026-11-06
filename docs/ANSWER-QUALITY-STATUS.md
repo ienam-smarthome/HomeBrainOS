@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — Q1 typed native historical past-log coverage (candidate v0.18.438)
+
+**Live failure source:** The latest user-supplied 0.18.436 ordinary Ask (Gemma4:31b free) displayed ~35.0s, 7 model rounds and 5 MCP calls; Hubitat’s 05 Nov 16:41:40 critical-memory/reboot warning followed by 16:52:15 startup was verified from typed system events. The later memory-consuming app/process remains **unverified**. A past-log request succeeded but its public receipt had only keys/mode/count, not independently inspected messages; the published app-message evidence remained zero, meaning **unverified actual row coverage**, not proven absence. A synthesis repair failed; exact reason is unavailable in the supplied public receipt. This is one real observation, not a statistically controlled A/B or a source-complete Claude comparison.
+
+**General fix hypothesis:** Source-qualified read-only native past-log receipts should distinguish actual returned timestamped app/device message rows from a successful summary-only request. Candidate 0.18.438 projects bounded numeric row counts, independently confirmed native app/dev numeric source markers and pagination/truncation without publishing raw private message text, names or cursors. Since native past logs may use hub-local clock text, no unverified UTC normalization or historical period completeness is inferred. Ordinary Ask causal guard, explicit incident AI output and final synthesis evidence ledger share this proof, with a source-scoped page key so independent page reads are not collapsed.
+
+**Expected effects / measurement:** Improve precision of technical historical-log coverage and reduce unsupported model statements about source absence. **Not yet measured:** source-real app messages recovered; original memory consumer; comparative first-answer usefulness, causal calibration, latency, failed synthesis repair rate or Claude gap. No additional reads, device changes, app settings changes, cloud spending or timeout adjustments. The 45-second complex-investigation quality cutoff remains retired; median/p95 stay observational. V0.18.437 chart/grid release is independent and preserved.
+
+**Acceptance / risk / rollback:** Source-shape and privacy tests, existing frozen synthetic suites and all repository CI required checks green before merging. The only positive row counts require actual successful read-only native returned entries with parseable source-local time and typed source markers; response summaries and app runtime stats cannot stand in for messages. Revert on raw log leakage, model cause overclaims, schema mismatch or new unrelated regressions. After merge and user deployment, compare one read-only test with full Technical JSON; evaluate source-row proof without assuming that records from 5 November still exist.
+
+---
+
 ## 2026-11-06 — Investigation latency acceptance policy revised after v0.18.436 live review
 
 **GREEN MERGED:** [PR #1478](https://github.com/ienam-smarthome/HomeBrainOS/pull/1478), exact CI-tested head `20b251eb7837e719c5f1977fba959a8aca69348c`, squash merge `4f87b3a5d88b38a993d3208a95a6b240bdaea6a1`. All required workflows completed successfully (scorecard integrity, repository validation and release assurance, including full Python tests, metadata and add-on smoke). This policy/scorecard edit does **not** update or deploy the HomeBrainOS add-on. No human-graded improvement to investigation correctness or latency has been measured.
