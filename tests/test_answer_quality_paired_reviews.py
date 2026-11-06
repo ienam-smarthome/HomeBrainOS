@@ -151,6 +151,15 @@ def test_paired_review_rejects_causal_pass_with_known_unsupported_cause():
         build_paired_review_report(before, after, bundle(item))
 
 
+def test_invalid_ordinal_grade_is_rejected_before_pairwise_arithmetic():
+    p = build_fixed_packets()[0]
+    before, after = manifests(p)
+    item = pair(p)
+    item["candidate_review"]["clarity"] = "ungraded"
+    with pytest.raises(ScorecardInputError, match="clarity must be pass, partial or fail"):
+        build_paired_review_report(before, after, bundle(item))
+
+
 def test_review_digest_must_match_actual_recorded_answer():
     p = build_fixed_packets()[0]
     before, after = manifests(p)
