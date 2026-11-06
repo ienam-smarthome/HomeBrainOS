@@ -48,6 +48,31 @@ Numeric thresholds above are **goals**, not assertions of current quality. **Com
 - **For complex investigations, completeness and causal safety take precedence over speed.** Still measure wall-time, provider/MCP breakdown, unnecessary tool calls, repeated reads and latency distributions. Improve avoidable delays only without weakening evidence or answer usefulness. Do not infer a Claude duration benchmark from anecdote or assert comparative parity without a same-task measurement. Keep operational timeouts/deadlines, cancellation and read-only safety safeguards separate from this quality acceptance policy; changing them requires its own source-verified engineering review.
 - **Two to three evaluation/improvement cycles**, then review whether quality gains justify further architecture changes or a different model. A plateau is a signal to experiment, not licence to accumulate ad hoc guards.
 
+## Autonomous evidence-first direction (6 November 2026)
+
+The user no longer wants to train HomeBrain with a sequence of example
+questions and targeted patches. The durable design is a model-driven
+planner that decides what source evidence is needed, a host executor that
+checks installed MCP schemas/identities and enforces read/write boundaries,
+an evaluator that continues missing evidence when real source progress is
+possible, and a natural grounded final answer. Follow the phased scope and
+explicit rollback/measurement criteria in
+[HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md](HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md).
+
+**Limit policy:** Retire arbitrary read-only call, round and checkpoint soft
+ceilings in the autonomous profile. Retain request cancellation, per-read
+operational timeouts, an emergency outer round guard, tool/context resource
+budgets, read-only MCP restrictions, sensitive write confirmations, provider
+spending controls and privacy. These are safety/operational boundaries,
+not an answer-quality latency target. Every source read must be verifiable;
+a model-proposed device name or source does not prove a real identity.
+
+The model's first answer must actually pursue required evidence, not merely
+produce a source-missing warning. New cases are evaluated as held-out tasks,
+not used as production room-specific routing rules. Default model quality is
+not assumed to be Claude-equivalent and live progress remains unmeasured until
+source-real paired evaluation.
+
 ## Next milestones
 
 **Q0 — reproducible baseline and continuity.** Frozen case inventory, review rubric, scorecard CLI and no-fabrication tests. Log `main` SHA and explicitly unmeasured cases. No model claim until measured.

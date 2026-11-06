@@ -37,6 +37,7 @@ DOMAIN_SKILL = {
     "code": "code_management",
 }
 EVIDENCE_ORIGINS = frozenset({"hubitat", "upstream", "physical", "unspecified"})
+SAFE_PLANNED_READ_TOOLS = frozenset({"homebrain_device_history"})
 ChatCallable = Callable[
     [list[dict[str, Any]], list[dict[str, Any]]],
     Awaitable[dict[str, Any]],
@@ -102,6 +103,54 @@ def _bounded_hypotheses(value: Any) -> tuple[InvestigativeHypothesis, ...]:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceReadRequest:
+    """A model-proposed read requirement, never proof or write authority."""
+    tool: str
+    arguments: dict[str, Any]
+
+
+def _read_requests(value: Any) -> tuple[EvidenceReadRequest, ...]:
+    if not isinstance(value, list):
+        return ()
+    selected: list[EvidenceReadRequest] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict) or item.get("tool") not in SAFE_PLANNED_READ_TOOLS:
+            continue
+        args = item.get("args")
+        if not isinstance(args, dict) or set(args) - {
+            "name", "attribute", "hours_back", "limit"
+        }:
+            continue
+        name, attribute = args.get("name"), args.get("attribute")
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
+            continue
+        if not isinstance(attribute, str) or not (
+            1 <= len(attribute.strip()) <= 70 and
+            attribute.strip().replace("_", "").isalnum()
+        ):
+            continue
+        hours, limit = args.get("hours_back", 168), args.get("limit", 50)
+        if (type(hours) is not int or not 1 <= hours <= 168
+                or type(limit) is not int or not 1 <= limit <= 50):
+            continue
+        fields = {
+            "name": name.strip(), "attribute": attribute.strip(),
+            "hours_back": hours, "limit": limit,
+        }
+        signature = json.dumps(fields, sort_keys=True)
+        if signature in seen:
+            continue
+        selected.append(EvidenceReadRequest(item["tool"], fields))
+        seen.add(signature)
+        # Bound how many distinct device results enter model context in
+        # one planned batch. This is not a reasoning/round stopping rule.
+        if len(selected) == 4:
+            break
+    return tuple(selected)
+
+
+@dataclass(frozen=True, slots=True)
 class GeneralTaskPlan:
     domain: str
     operation: str
@@ -111,6 +160,7 @@ class GeneralTaskPlan:
     evidence_goals: tuple[str, ...]
     required_evidence_kinds: tuple[str, ...] = ()
     candidate_hypotheses: tuple[InvestigativeHypothesis, ...] = ()
+    read_requests: tuple[EvidenceReadRequest, ...] = ()
 
     @classmethod
     def from_model(cls, response: str) -> "GeneralTaskPlan | None":
@@ -144,6 +194,15 @@ class GeneralTaskPlan:
         kinds = tuple(x for x in _bounded_strings(
             value.get("requiredEvidenceKinds"), count=5, width=48,
         ) if x in EVIDENCE_KINDS)
+        read_requests = (
+            _read_requests(value.get("readRequests"))
+            if operation in ("read", "investigate") else ()
+        )
+        # A valid planned history read is itself a source obligation.
+        # Do not depend on the model redundantly spelling "device_history"
+        # in a separate field before executing its own safe proposal.
+        if read_requests and "device_history" not in kinds:
+            kinds = (*kinds, "device_history")
         hypotheses = (
             _bounded_hypotheses(value.get("candidateHypotheses"))
             if operation == "investigate" else ()
@@ -157,6 +216,7 @@ class GeneralTaskPlan:
             evidence_goals=goals,
             required_evidence_kinds=kinds,
             candidate_hypotheses=hypotheses,
+            read_requests=read_requests,
         )
 
     def instruction(self) -> str:
@@ -167,6 +227,11 @@ class GeneralTaskPlan:
             "objective": self.objective,
             "evidence_goals": list(self.evidence_goals),
             "required_source_kinds": list(self.required_evidence_kinds),
+            "planned_read_requests": [
+                {"tool": item.tool, "args": item.arguments,
+                 "status": "model-proposed-not-yet-executed"}
+                for item in self.read_requests
+            ],
             "candidate_hypotheses": [
                 {"explanation": item.explanation,
                  "distinguishing_question": item.distinguishing_question,
@@ -215,6 +280,9 @@ class GeneralTaskPlanner:
         '"evidenceGoals":["Observed state transition",'
         '"Verified command provenance"],'
         '"requiredEvidenceKinds":["device_history","app_logs"],'
+        '"readRequests":[{"tool":"homebrain_device_history",'
+        '"args":{"name":"Livingroom Light 2","attribute":"switch",'
+        '"hours_back":168,"limit":50}}],'
         '"candidateHypotheses":['
         '{"explanation":"A hub command preceded the switch transition",'
         '"distinguishingQuestion":"Was a producer command recorded at the focal time?",'
@@ -230,8 +298,18 @@ class GeneralTaskPlanner:
         "Allowed requiredEvidenceKinds values: device_state, device_history, "
         "device_logs, app_config, app_logs, room_inventory, native_rules, "
         "scheduled_jobs, performance_stats, tool_guide, source_code. "
-        "For investigate operations choose 1-3 indispensable read-source "
-        "classes for requiredEvidenceKinds; for simple state reads use []. "
+        "Investigations AND temporal read questions must declare indispensable "
+        "requiredEvidenceKinds. Current state snapshots use []. Questions "
+        "about when a value crossed a threshold, time until another reading, "
+        "or changes over time require timestamped history, not just live state. "
+        "When a named device attribute has a relevant installed adapter, "
+        "propose readRequests with tool homebrain_device_history and args "
+        "name, attribute, hours_back 1..168 and limit 1..50. Use the user's "
+        "device wording; never invent a verified ID. This is for ANY matching "
+        "device attribute including humidity, temperature, power and switch, "
+        "not a special-case device. The host validates every request against "
+        "read-only tool schema and resolves identity. For unknown source kinds "
+        "propose capabilityQueries and let live MCP discovery decide. "
         "For investigate operations propose TWO or THREE genuinely competing "
         "candidateHypotheses when materially plausible, each with an explanation, "
         "distinguishingQuestion and evidenceKind from the allowed source kinds. "
@@ -297,5 +375,6 @@ class GeneralTaskPlanner:
 
 __all__ = [
     "GeneralTaskPlan", "GeneralTaskPlanner", "InvestigativeHypothesis",
+    "EvidenceReadRequest", "SAFE_PLANNED_READ_TOOLS",
     "DOMAINS", "OPERATIONS", "SKILLS",
 ]

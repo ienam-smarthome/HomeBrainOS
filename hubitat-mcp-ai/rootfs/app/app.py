@@ -159,7 +159,7 @@ def load_options() -> dict[str, Any]:
         "mcp_retry_backoff_seconds": 0.25,
         "confirmation_ttl_seconds": 120,
         "unified_mcp_tool_limit": 48,
-        "unified_mcp_max_tool_rounds": 9,
+        "unified_mcp_max_tool_rounds": 18,
         "max_tool_result_chars": 24000,
         "require_sensitive_confirmation": True,
         "rule_write_enabled": True,
@@ -190,7 +190,7 @@ def load_options() -> dict[str, Any]:
         "historical_journal_log_max_rows": 100000,
         "causal_deterministic_final_enabled": True,
         "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
-        "general_task_engine_enabled": False,
+        "general_task_engine_enabled": True,
         "model_first_investigations_enabled": False,
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
@@ -375,7 +375,7 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("stream_idle_timeout_seconds") or 20
     ),
     tool_limit=int(OPTIONS.get("unified_mcp_tool_limit") or 48),
-    max_tool_rounds=int(OPTIONS.get("unified_mcp_max_tool_rounds") or 9),
+    max_tool_rounds=int(OPTIONS.get("unified_mcp_max_tool_rounds") or 18),
     max_tool_result_chars=int(OPTIONS.get("max_tool_result_chars") or 24000),
     require_sensitive_confirmation=_bool(
         OPTIONS.get("require_sensitive_confirmation"), True
@@ -394,7 +394,7 @@ agent = UnifiedMCPAgent(
     known_automations=OPTIONS.get("causal_known_automations_json"),
     internet_control_aliases=OPTIONS.get("internet_control_aliases_json"),
     general_task_engine_enabled=_bool(
-        OPTIONS.get("general_task_engine_enabled"), False
+        OPTIONS.get("general_task_engine_enabled"), True
     ),
     model_first_investigations_enabled=_bool(
         OPTIONS.get("model_first_investigations_enabled"), False

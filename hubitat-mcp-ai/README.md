@@ -3,7 +3,23 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.442**.
+Current add-on version: **0.18.443**.
+
+**Upgrade note:** Home Assistant may preserve previous add-on option values. After upgrading, check `general_task_engine_enabled: true` and `unified_mcp_max_tool_rounds: 18` in the add-on Configuration; a saved `false`/`9` overrides the new packaged defaults. Do not modify `investigation_deadline_seconds`, write confirmations, provider quotas or per-tool timeouts to activate this feature.
+
+**Autonomous evidence-first planning, Phase 1 (v0.18.443):**
+The model can now plan the evidence needed for unfamiliar read-only
+questions and propose typed source reads using the installed
+`homebrain_device_history` adapter. The host validates source identity,
+read-only tool effects, argument schema and returned evidence; the model
+may then reason over actual timestamped observations rather than stopping
+after device discovery. Autonomous read investigations no longer terminate
+solely because short profile-specific call, round or checkpoint soft ceilings
+are reached. The configurable operational deadline, write confirmations,
+read-permission restrictions and resource protections remain intact.
+**This is Phase 1 only**, not proof of universal first-answer accuracy.
+[Autonomous roadmap](../docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md) ·
+[Release notes](CHANGELOG-0.18.443.md).
 
 **Source-scoped native past-log reporting (v0.18.442):**
 Each successful historical-log page is now attributed to its own query
