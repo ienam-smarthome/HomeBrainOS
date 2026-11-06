@@ -574,7 +574,7 @@ def _authenticated_system_event_facts(
             if not isinstance(event, dict):
                 continue
             name = event.get("name")
-            if name not in ("lowMemory", "systemStart", "update"):
+            if name not in ("lowMemory", "systemStart", "update", "sunriseSunsetUpdated"):
                 continue
             try:
                 occurred = datetime.fromisoformat(
@@ -600,6 +600,11 @@ def _authenticated_system_event_facts(
                              else "recorded a low-memory event")
             elif name == "systemStart":
                 qualifier = "recorded a system startup"
+            elif name == "sunriseSunsetUpdated":
+                qualifier = (
+                    "recorded a sunrise/sunset location update "
+                    "(no reboot causality established)"
+                )
             else:
                 qualifier = "recorded a firmware update event"
             rows.append((occurred, f"- {at}: Hubitat {qualifier}."))
