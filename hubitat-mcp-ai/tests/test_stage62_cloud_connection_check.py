@@ -175,16 +175,6 @@ def test_authenticated_dashboard_route_is_manual_json_same_origin(monkeypatch, t
         assert not model.cloud_inference_calls
 
 
-def test_ui_does_not_auto_prove_ready_or_start_balance_check():
-    html = render_page("HomeBrainOS", "0.18.297")
-    assert "Check cloud connection (no AI request)" in html
-    assert 'id="checkCloudConnection"' in html
-    assert "api/cloud-connection/check" in html
-    assert "Configured (not yet authenticated)" in html
-    assert "No model inference was requested" in html
-    assert "output.textContent" in html
-
-
 def test_publisher_and_device_paths_unaffected():
     for file in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):

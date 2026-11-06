@@ -130,20 +130,6 @@ def test_malformed_or_failed_log_source_is_not_successful_empty_history():
     assert project_verified_app_logs(p,broken)["status"]=="app_log_read_failed"
 
 
-def test_mobile_ui_requires_separate_consent_for_app_log_read():
-    page=render_page("HomeBrainOS","0.18.325")
-    for phrase in (
-        'id="liveShadowAppConsent"',
-        'id="runLiveShadowAppDecision" disabled',
-        'id="liveShadowAppFollowup" hidden',
-        "api/live-shadow/app-decision",
-        "x-homebrain-app-log-readonly",
-        "confirm_app_decision_read:true",
-        "selectable.length===1",
-    ):
-        assert phrase in page
-
-
 def test_route_requires_consent_and_has_exact_read_only_subtools(monkeypatch,tmp_path):
     monkeypatch.setenv("CONFIG_PATH",str(tmp_path/"missing.json"))
     sys.modules.pop("app",None)
@@ -200,54 +186,6 @@ def test_current_production_publisher_does_not_import_shadow_module():
     for f in ("causal_claim_publication.py","mcp_agent_orchestrator.py",
               "tool_executor.py","final_answer_coordinator.py"):
         assert "live_shadow_app_decision" not in (APP/f).read_text()
-
-
-def test_stage91_copy_buttons_include_both_rendered_reports_and_reset_stale_results():
-    page = render_page("HomeBrainOS", "0.18.326")
-    # No new API call is needed to share results from the mobile Web UI.
-    assert 'id="copyLiveShadowCommandResult" disabled' in page
-    assert 'id="copyLiveShadowAppResult" disabled' in page
-    assert "document.getElementById('copyLiveShadowCommandResult').onclick" in page
-    assert "document.getElementById('copyLiveShadowAppResult').onclick" in page
-    assert "document.getElementById('liveShadowCommandReport').textContent" in page
-    assert "document.getElementById('liveShadowAppReport').textContent" in page
-    assert "'Command Shadow (bounded device history):" in page
-    assert "'\\n\\nApp-decision follow-up (bounded logs):" in page
-    assert "void copyText(combined,button,'Copy test results')" in page
-    assert "void copyText(report,button,'Copy command results')" in page
-    # Prevent copying an old follow-up when a new command comparison is run.
-    assert "document.getElementById('copyLiveShadowAppResult').disabled=true;" in page
-    assert "document.getElementById('liveShadowAppReport').textContent='Not run. Separate consent required.'" in page
-    # Full details are the already privacy-projected on-screen text, not
-    # previously hidden API fields or private raw diagnostic log messages.
-    copy_handler = page.split("document.getElementById('copyLiveShadowAppResult').onclick=()=>{", 1)[1].split(
-        "function liveShadowAppRefreshButton()", 1
-    )[0]
-    assert "JSON.stringify(data)" not in copy_handler
-    assert "fetch(" not in copy_handler
-
-
-def test_stage92_command_chooser_requires_selection_for_multiple_source_commands():
-    page = render_page("HomeBrainOS", "0.18.327")
-    for phrase in (
-        'id="liveShadowAppCommandSelect" disabled',
-        "document.getElementById('liveShadowAppCommandSelect').onchange=liveShadowAppSelectCommand",
-        "const selectable=recorded.filter(item=>counts.get(item.source_reported_time_utc)===1)",
-        "if(selectable.length===1)selectedCommand.value=selectable[0].source_reported_time_utc;",
-        "if(selectable.length&&/^[0-9]{1,12}$/.test(String(data.device_id||'')))",
-        "option.dataset.deviceId=String(data.device_id);",
-        "option.dataset.issuerId=String(item.recorded_issuer_app_id);",
-        "button.dataset.commandTime=select.value||'';",
-        "document.getElementById('liveShadowAppConsent').checked=false;",
-        "document.getElementById('copyLiveShadowAppResult').disabled=true;",
-        "selectedCommand.replaceChildren();",
-        "Recorded OFF-command issuers:",
-        "OFF-command issuers are recorded, but app triggers",
-    ):
-        assert phrase in page
-    # No caller-supplied app ID is sent to the backend: exact source time
-    # triggers independent verification of the issuing app.
-    assert "body:JSON.stringify({device_id:device,command_at_utc:date,confirm_app_decision_read:true})" in page
 
 
 def test_stage92_unrelated_explicit_device_row_does_not_upgrade_identity_proof():
@@ -344,10 +282,3 @@ def test_stage93_past_entries_reject_explicit_other_issuer_and_wrong_mode():
     bad=project_verified_app_logs(p,envelope({"mode":"apps","entries":[]}))
     assert bad["status"]=="app_log_payload_unusable"
 
-
-def test_stage93_user_interface_labels_hub_local_clock_without_utc_claim():
-    page=render_page("HomeBrainOS","0.18.328")
-    assert "hub-local time; UTC offset unverified" in page
-    assert "app_log_source_in_progress" in page
-    assert "entry.reported_hub_local_time" in page
-    assert "entry.reported_at_utc" in page

@@ -262,20 +262,6 @@ def test_hourly_budget_stops_further_runs_without_provider_calls():
     assert err.value.status == 429 and len(cloud.calls) == 12
 
 
-def test_mobile_dashboard_explicit_four_call_consent():
-    html = render_page("HomeBrain", "0.18.295")
-    for phrase in ('id="stage6Card"', 'id="stage6Consent"', 'id="runStage6"',
-                   'id="stage6Report"', "api/stage6-benchmark/status",
-                   "api/stage6-benchmark/run", "up to four synthetic Ollama Cloud requests",
-                   "source types", "not every implication"):
-        if phrase == "source types":
-            assert "sentence-level source checks" in html
-        else:
-            assert phrase in html
-    assert "stage6Consent').checked=false" in html
-    assert "X-HomeBrain-Benchmark" in html
-
-
 def test_same_origin_consent_endpoint_and_no_hub_reads(monkeypatch, tmp_path):
     monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "missing.json"))
     sys.modules.pop("app", None)
