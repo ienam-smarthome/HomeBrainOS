@@ -202,3 +202,40 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str) -> t
         + "\n\n**Final status: cause unverified without discriminating evidence.**",
         "hypotheses_only",
     )
+
+
+def guard_unresolved_causal_publication(response: dict[str, Any]) -> dict[str, Any]:
+    """General Answer Quality gate: an unverified causal discriminator cannot
+    authorise a definitive attribution in ordinary Ask responses.
+
+    Trigger only when the response already carries an unresolved outcome and
+    a typed hypothesis comparison with an unverified discriminating check.
+    Verified investigations, status questions, and unrelated answers remain
+    unchanged. This is generic, not incident-/firmware-specific.
+    """
+    presentation = response.get("outcome_presentation")
+    if not isinstance(presentation, dict) or presentation.get("value") != "unresolved":
+        return response
+    coverage = response.get("investigation_coverage")
+    comparisons = (coverage.get("hypothesisComparisons") or []
+                   if isinstance(coverage, dict) else [])
+    if not isinstance(comparisons, list) or not any(
+        isinstance(item, dict) and not bool(item.get("discriminator_verified"))
+        for item in comparisons
+    ):
+        return response
+    message = str(response.get("message") or "")
+    if not _DEFINITIVE_CAUSAL.search(message):
+        return response
+    corrected = dict(response)
+    corrected["message"] = (
+        "**Cause remains unresolved.** The model drafted a definitive "
+        "causal attribution, but the technical evidence comparison still "
+        "contains unverified discriminating checks. That claim has been "
+        "withheld rather than reported as fact. Consult the recorded "
+        "Hubitat events, native performance statistics and retained "
+        "app-log evidence; missing sources must remain explicitly "
+        "unverified. No Hubitat action was taken by this correction."
+    )
+    corrected["ai_claim_validation"] = "unresolved_cause_claim_withheld"
+    return corrected
