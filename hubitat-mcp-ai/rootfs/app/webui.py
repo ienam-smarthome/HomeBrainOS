@@ -86,6 +86,19 @@ def render_page(title: str, version: str) -> str:
 #diagTimelineEvents li{display:flex;gap:7px;align-items:flex-start;flex-wrap:wrap}
 #diagTimelineEvents button{width:auto;padding:5px 8px;margin:0 0 0 auto;border-radius:7px;font-size:11px}
 #diagTimelineEvents .timeline-evidence{flex:1 1 220px}
+
+/* Explicit incident drill-down; local evidence only, never polling or commands. */
+#diagReviewDetails{margin:13px 0;border:1px solid #4b5563;padding:10px;border-radius:10px}
+#diagReviewDetails[hidden]{display:none}
+.diag-review-controls{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.diag-review-controls label{font-size:12px;color:var(--muted)}
+.diag-review-controls select{background:#333;color:white;border:1px solid #555;border-radius:7px;padding:7px}
+.diag-review-controls button,.diag-review-controls a{width:auto;margin:0;padding:7px 10px;font-size:12px}
+.diag-review-controls a{background:#333;border-radius:8px;color:white;text-decoration:none}
+.diag-review-list{max-height:230px;overflow-y:auto}
+.diag-review-list li{font-size:12px;line-height:1.4}
+.diag-review-stat{font-size:13px;color:#e5e7eb;line-height:1.6;margin:8px 0}
+.diag-review-stat strong{color:white}
 </style>
 </head>
 <body><main class="wrap">
@@ -152,12 +165,40 @@ def render_page(title: str, version: str) -> str:
 <div class="journal-small" id="diagTimelineReadout" aria-live="polite">Hover, touch or use arrow keys to inspect source timestamps. No values are estimated between samples.</div>
 <div class="diag-timeline-actions">
 <button type="button" class="secondary" id="diagTimelineRefresh">↻ Refresh timeline</button>
+<button type="button" class="secondary" id="diagReviewSelected" disabled>Investigate selected time</button>
 <button type="button" class="secondary" id="diagTimelineJournal">Inspect Historical Journal</button>
 <a id="diagTimelineEvidence" href="#" target="_blank" rel="noopener noreferrer">View source records (JSON)</a>
 </div>
 <div class="journal-small">Time alignment is for investigation, not causal attribution. Memory and connectivity times are external recorder observations; CPU readings are native five-minute samples shown at collector receipt times. Confirmed startups use offset-aware Hubitat systemStart times. Missing readings remain unknown.</div>
 <strong>Observed points and incidents</strong>
 <ul class="journal-gaps" id="diagTimelineEvents"><li class="muted">No incident timeline loaded.</li></ul>
+<details class="health-details" id="diagReviewDetails" hidden>
+<summary><strong>Incident investigation — read-only evidence</strong></summary>
+<div class="journal-small" id="diagReviewStatus" role="status">Select an observed point to inspect locally archived evidence.</div>
+<div class="diag-review-controls">
+<label>Each side of focus <select id="diagReviewMinutes">
+<option value="5">5 minutes</option>
+<option value="15" selected>15 minutes</option>
+<option value="30">30 minutes</option>
+<option value="60">60 minutes</option>
+</select></label>
+<button type="button" class="secondary" id="diagReviewReload">↻ Recheck archive</button>
+<button type="button" class="secondary" id="diagReviewCopy">Copy evidence summary</button>
+<a id="diagReviewJson" target="_blank" rel="noopener noreferrer" href="#">Source JSON</a>
+</div>
+<div class="journal-small">The review uses saved HomeBrain SQLite readings and journal records only. Native CPU readings are at collector reception time, not a verified five-minute measurement instant. App-log bodies are deliberately excluded. Proximity is not proof of a cause.</div>
+<div id="diagReviewStats" class="diag-review-stat"></div>
+<strong>Resource readings and recorded hub events</strong>
+<ul class="journal-gaps diag-review-list" id="diagReviewRecorder"><li>Nothing loaded yet.</li></ul>
+<strong>Historical Journal device observations</strong>
+<div class="journal-small" id="diagReviewJournalStatus"></div>
+<ul class="journal-gaps diag-review-list" id="diagReviewJournal"><li>Nothing loaded yet.</li></ul>
+<strong>App-log receipt counts (no message bodies)</strong>
+<ul class="journal-gaps diag-review-list" id="diagReviewAppCounts"><li>Nothing loaded yet.</li></ul>
+<strong>Journal collection gaps</strong>
+<ul class="journal-gaps diag-review-list" id="diagReviewGaps"><li>Nothing loaded yet.</li></ul>
+</details>
+
 </details>
 <div class="row" style="margin-top:8px">
 <label>View <select id="diagMetric" style="width:auto;margin:0;padding:7px;background:#333;color:white;border:1px solid #555">
@@ -588,10 +629,12 @@ function timelineSelectAt(t){
  document.getElementById('diagTimelineReadout').textContent=parts.join(' · ')+
    ' · These observations do not establish a cause.';
  timelineActiveTime=t;
+ document.getElementById('diagReviewSelected').disabled=false;
 }
 function drawIncidentTimeline(data){
  const svg=document.getElementById('diagTimelineChart');svg.replaceChildren();
  timelineData=null;timelineRows={memory:[],cpu:[]};timelineFocusTimes=[];
+ document.getElementById('diagReviewSelected').disabled=true;
  const r=timelineRange(data),eventsNode=document.getElementById('diagTimelineEvents');
  eventsNode.replaceChildren();
  if(!r){
@@ -723,7 +766,9 @@ function drawIncidentTimeline(data){
   body.append(strong,document.createTextNode(' — '+evt.detail));
   const button=document.createElement('button');button.className='secondary';button.type='button';
   button.textContent='Inspect time';button.onclick=()=>{timelineSelectAt(evt.t);document.getElementById('diagTimelineChart').focus()};
-  li.append(body,button);eventsNode.append(li);
+  const investigate=document.createElement('button');investigate.type='button';investigate.className='secondary';
+  investigate.textContent='Investigate';investigate.onclick=()=>{timelineSelectAt(evt.t);inspectIncidentAt(evt.t)};
+  li.append(body,button,investigate);eventsNode.append(li);
  }
  if(events.length>visible.length){const li=document.createElement('li');li.textContent=
   'Showing '+visible.length+' of '+events.length+' observed points. View local source JSON for the bounded full set.';
@@ -777,6 +822,144 @@ document.getElementById('diagTimelineRefresh').addEventListener('click',()=>void
 document.getElementById('diagTimelineJournal').addEventListener('click',()=>{
  const journal=document.getElementById('journalDetails');journal.open=true;
  document.getElementById('journalCard').scrollIntoView({behavior:'smooth',block:'start'});
+});
+
+
+let incidentReviewFocus=null,incidentReviewSeq=0,incidentReviewText='';
+function reviewList(id,lines,empty){
+ const list=document.getElementById(id);list.replaceChildren();
+ if(!lines.length){const li=document.createElement('li');li.textContent=empty;list.append(li);return}
+ for(const line of lines){const li=document.createElement('li');li.textContent=String(line);list.append(li)}
+}
+function reviewMetricText(value,unit){
+ return typeof value==='number'&&Number.isFinite(value)?
+   new Intl.NumberFormat('en-GB',{maximumFractionDigits:1}).format(value)+' '+unit:'unknown';
+}
+function reviewRender(data){
+ const rec=data.recorder||{},j=data.journal||{},lines=[];
+ const format=e=>e&&e.recorded_at?diagDate(e.recorded_at):'not recorded';
+ const eventLines=[];
+ eventLines.push('Focus: '+diagDate(data.focus_at)+' · '+data.window_minutes_each_side+
+   ' minutes on each side · interval '+diagDate(data.window_start)+' to '+diagDate(data.window_end));
+ eventLines.push('Recorder coverage: '+String(rec.status||'unavailable')+' · '+
+   String(rec.sample_count??0)+' retained probes ('+String(rec.reachable_samples??0)+
+   ' successful, '+String(rec.failed_samples??0)+' failed)'+
+   (rec.samples_truncated?' · response capped at '+rec.sample_limit+' rows':''));
+ for(const [key,title,unit] of [
+  ['memory_min','Lowest observed free OS memory','MB'],
+  ['cpu_load_max','Highest observed native 5m load equivalent','%'],
+  ['java_free_min','Lowest observed native Java free memory','MB']]){
+  const item=rec[key];
+  eventLines.push(title+': '+(item?reviewMetricText(item.value,unit)+' at '+
+    format(item)+(item.native_sample_label?' · source '+item.native_sample_label:''):
+    'not observed in this window (not zero)'));
+ }
+ for(const [key,label] of [['last_success_before','Last successful external probe at/before focus'],
+                           ['first_success_after','First successful external probe at/after focus']]){
+  const item=rec[key];eventLines.push(label+': '+(item?format(item)+' · free OS '+
+    reviewMetricText(item.free_os_mb,'MB')+' · latency '+reviewMetricText(item.latency_ms,'ms'):
+    'not recorded in this window'));
+ }
+ const occurrences=[];
+ for(const e of Array.isArray(rec.startups)?rec.startups:[]){
+  occurrences.push({time:e.occurred_at,text:'CONFIRMED STARTUP · systemStart'+
+    (e.firmware?' · firmware '+e.firmware:'')+' · cause unverified'});
+ }
+ for(const e of Array.isArray(rec.incidents)?rec.incidents:[]){
+  occurrences.push({time:e.started_at,text:'CONNECTIVITY LOSS · external probe failures · not proof of reboot'});
+  if(e.recovered_at)occurrences.push({time:e.recovered_at,text:'CONNECTIVITY RECOVERED · external successful probe'});
+ }
+ for(const [key,title,unit] of [
+  ['memory_min','OS MEMORY MINIMUM','MB'],
+  ['cpu_load_max','NATIVE 5M LOAD MAXIMUM','%']]){
+  const item=rec[key];if(item)occurrences.push({time:item.recorded_at,text:title+' · '+reviewMetricText(item.value,unit)});
+ }
+ occurrences.sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
+ reviewList('diagReviewRecorder',occurrences.map(e=>diagDate(e.time)+' — '+e.text),
+   'No saved startup, connectivity incident or observed extreme in this interval; absence is not proof of uninterrupted operation.');
+ const events=Array.isArray(j.events)?j.events:[],groups=Array.isArray(j.app_log_apps)?j.app_log_apps:[],
+       gaps=Array.isArray(j.gaps)?j.gaps:[];
+ const journalSummary='Journal: '+String(j.status||'unavailable')+
+   ' · '+String(j.event_count??0)+' retained device events'+
+   ' · '+String(j.app_log_count??0)+' retained app-log receipts'+
+   ' · '+String(gaps.length)+' listed collection gaps'+
+   (j.events_truncated?' · event preview capped at '+String(j.event_limit||40):'')+
+   (j.app_log_apps_truncated?' · app list capped':'')+
+   (j.gaps_truncated?' · gap list capped':'')+
+   ' · incomplete coverage; empty results do not prove inactivity.';
+ document.getElementById('diagReviewJournalStatus').textContent=journalSummary;
+ reviewList('diagReviewJournal',events.map(e=>diagDate(e.observed_at)+' · '+
+   String(e.display_name||'Device '+(e.device_id||'?'))+' (ID '+String(e.device_id||'?')+')'+
+   ' · '+String(e.attribute||'event')+' = '+String(e.value??'')+
+   ' · '+String(e.timestamp_basis==='source'?'source-timed':'collector received')+
+   ' · '+String(e.source||'Hubitat journal')),
+   'No matching retained device observations. This does not establish device inactivity.');
+ reviewList('diagReviewAppCounts',groups.map(e=>'App '+String(e.app_id||'?')+
+   ' · '+String(e.count??0)+' stored log receipts · '+diagDate(e.first_received)+
+   ' to '+diagDate(e.last_received)),
+   j.capture_logs===false?'App-log capture disabled or not configured.':
+    'No retained app-log receipts in this interval (or log retention already expired).');
+ reviewList('diagReviewGaps',gaps.map(e=>String(e.stream||'stream')+' · '+
+   diagDate(e.started_at)+' to '+(e.ended_at?diagDate(e.ended_at):'not recovered')+
+   ' · '+String(e.reason||'unspecified')),
+   'No journal gaps recorded in this interval; recording completeness is unverified.');
+ document.getElementById('diagReviewStats').textContent=
+  eventLines.join(' · ')+' · '+journalSummary;
+ document.getElementById('diagReviewStatus').textContent=
+  'Read-only archive received · all causal conclusions UNVERIFIED · no live Hubitat calls or automation changes.';
+ incidentReviewText=[...eventLines,...occurrences.map(e=>diagDate(e.time)+' — '+e.text),
+   journalSummary,'Journal device observations (preview):',
+   ...events.map(e=>diagDate(e.observed_at)+' · '+String(e.display_name||e.device_id)+
+     ' '+String(e.attribute||'')+'='+String(e.value??'')+' ('+String(e.timestamp_basis||'unknown')+')'),
+   'App log receipts (no message contents):',
+   ...groups.map(e=>'App '+String(e.app_id||'?')+': '+String(e.count??0)),
+   'Journal connection gaps:',...gaps.map(e=>String(e.stream||'stream')+
+     ' '+String(e.started_at||'')+' → '+String(e.ended_at||'open')),
+   'Root cause: UNVERIFIED. Retention, source clocks and stream gaps limit inference.'
+ ].join('\n');
+}
+async function loadIncidentReview(){
+ if(!incidentReviewFocus)return;
+ const current=++incidentReviewSeq,mins=document.getElementById('diagReviewMinutes').value;
+ const query='api/hub-diagnostics/incident?at='+encodeURIComponent(incidentReviewFocus)+
+       '&window_minutes='+encodeURIComponent(mins);
+ document.getElementById('diagReviewJson').href=apiPath(query);
+ const reload=document.getElementById('diagReviewReload'),status=document.getElementById('diagReviewStatus');
+ reload.disabled=true;status.textContent='Reading bounded local evidence…';
+ try{
+  const response=await fetch(apiPath(query),{cache:'no-store'});
+  const result=await jsonResponse(response);
+  if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'HTTP '+response.status);
+  if(current!==incidentReviewSeq||mins!==document.getElementById('diagReviewMinutes').value)return;
+  reviewRender(result);
+ }catch(error){
+  if(current===incidentReviewSeq){
+   incidentReviewText='';
+   status.textContent='Incident review unavailable: '+error.message+
+      '. No conclusions can be drawn from unavailable evidence.';
+   document.getElementById('diagReviewStats').textContent='';
+   for(const id of ['diagReviewRecorder','diagReviewJournal','diagReviewAppCounts','diagReviewGaps']){
+    reviewList(id,[],'Evidence unavailable (not an empty history).');
+   }
+  }
+ }finally{if(current===incidentReviewSeq)reload.disabled=false}
+}
+function inspectIncidentAt(timestamp){
+ if(!Number.isFinite(timestamp))return;
+ incidentReviewFocus=new Date(timestamp).toISOString();
+ const review=document.getElementById('diagReviewDetails');
+ review.hidden=false;review.open=true;
+ void loadIncidentReview();
+ review.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+document.getElementById('diagReviewSelected').addEventListener('click',()=>{
+ if(timelineActiveTime!==null)inspectIncidentAt(timelineActiveTime);
+});
+document.getElementById('diagReviewReload').addEventListener('click',()=>void loadIncidentReview());
+document.getElementById('diagReviewMinutes').addEventListener('change',()=>void loadIncidentReview());
+document.getElementById('diagReviewCopy').addEventListener('click',()=>{
+ const button=document.getElementById('diagReviewCopy');
+ if(incidentReviewText)void copyText(incidentReviewText,button,'Copy evidence summary');
 });
 
 const diagUnit={free_os_mb:'MB',java_free_mb:'MB',java_allocated_heap_used_pct:'%',native_load_pct:'%',native_load5:'load',latency_ms:'ms'};
