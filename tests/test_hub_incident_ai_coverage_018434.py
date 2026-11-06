@@ -88,12 +88,13 @@ def test_22_25_live_pattern_targeted_failure_and_generic_fallback_are_separate()
     ]
     assessed = assess_hub_event_trigger(original, receipts)
     assert assessed["restart_trigger"] == "firmware_update_recorded_before_startup"
-    assert assessed["app_specific_log_attempts"] == 1
-    assert assessed["app_specific_logs"] == "read_failed"
+    assert assessed["app_specific_log_attempts"] == 0
+    assert assessed["app_runtime_stats_attempts"] == 1
+    assert assessed["app_specific_logs"] == "not_verified"
     assert assessed["bounded_generic_log_reads"] == 1
     assert assessed["bounded_generic_log_read_successes"] == 1
     rendered = render_hub_event_findings(assessed)
-    assert "targeted app-mode log query failed" in rendered
+    assert "App runtime statistics: 0/1" in rendered
     assert "bounded generic log query also succeeded" in rendered
     assert "does not independently verify app-specific" in rendered
     assert "memory reduction are not established" in rendered
@@ -107,7 +108,7 @@ def test_22_25_live_pattern_targeted_failure_and_generic_fallback_are_separate()
     assert "22:26:02 UTC" in answer
     assert "22:33:16 UTC" in answer
     assert "**Read-only next checks" in answer
-    assert "historical-log query contract" in answer
+    assert "past-mode query with appId" in answer
     assert "collection gaps" in answer
     assert "no proof" not in answer.lower() or "not proof" in answer.lower()
 
