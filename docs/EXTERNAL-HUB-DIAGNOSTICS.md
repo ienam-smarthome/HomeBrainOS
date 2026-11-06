@@ -85,9 +85,32 @@ causal log join. The timeline may include an earlier incident overlapping the
 selected range. Initial history may be incomplete and older events are never
 synthesized.
 
+**Incident drill-down (v0.18.431):** Select **Investigate** beside a
+confirmed startup, connectivity failure/recovery, real OS-memory minimum or
+derived native CPU-load maximum. Alternatively select a timestamp on the
+timeline and press **Investigate selected time**. The view reads ±15 minutes
+by default (5, 30 and 60 minutes selectable) from local recorder and existing
+Historical Journal SQLite stores only. It shows exact source times and values,
+bounded successful/failed probes, the closest recorded probes before/after the
+focus, confirmed startups, recorded connectivity outages, and a preview of
+retained device events with their source-time/collector-received distinction.
+
+Historical app logs are represented **only by per-app receipt counts and first/last
+collector times**, not by message bodies. Known collection gaps and response caps
+are explicitly labelled. Choose **Copy evidence summary** for a bounded report
+or **Source JSON** for the exact local response. No AI/model calls, new Hubitat
+queries, device writes, scheduled tasks or threshold-based cause claims.
+
+If records fall outside retention or are missing, the interface shows unavailable
+evidence, not proven absence. The incident sequence from 5 November (22:25
+memory minimum, 22:27 connectivity loss, 22:32 recovery, 22:33 startup,
+22:37 native CPU load peak) is a good *example* for validation, but temporal
+association does not establish that low memory caused a restart.
+
 HomeBrain's UI reads SQLite rather than making hub requests:
 - /api/hub-diagnostics/status
 - /api/hub-diagnostics/timeline?hours=168
+- /api/hub-diagnostics/incident?at=2026-11-05T22%3A33%3A00%2B00%3A00&window_minutes=15
 - /api/hub-diagnostics/history?hours=6&metric=free_os_mb
 - /api/hub-diagnostics/history?hours=720&metric=java_free_mb
 

@@ -3,7 +3,19 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.430**.
+Current add-on version: **0.18.431**.
+
+**Incident evidence drill-down (v0.18.431):** Click **Investigate** on any timeline
+event or select a plotted time and choose **Investigate selected time**. The
+explicitly requested ±5/15/30/60-minute read-only review combines actual
+external recorder samples, native five-minute source-labelled CPU/Java values,
+confirmed Hubitat systemStart markers and recorded external probe failures.
+A separate Historical Journal projection shows retained device-event previews,
+app-log receipt counts grouped by app ID **without log message bodies**, and
+known collection gaps. The review is bounded, labels stream/retention limits,
+supports copying an evidence-first report and opening a read-only source JSON.
+No real-time Hubitat reads, actions or extra polling. A timestamp sequence never
+proves the cause of a reboot. [Release notes](CHANGELOG-0.18.431.md).
 
 **Unified Hub Diagnostics incident timeline (v0.18.430):** An expandable two-track
 read-only timeline aligns real external free-OS-memory readings and distinct native
