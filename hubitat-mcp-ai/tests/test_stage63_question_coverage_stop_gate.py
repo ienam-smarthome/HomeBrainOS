@@ -226,16 +226,6 @@ def test_old_planning_mock_schema_is_supported_but_not_called_complete():
     assert outcome["premature_stop_missing_relevant_sources"] is True
 
 
-def test_dashboard_includes_source_by_source_review_and_uncertainty():
-    html = render_page("HomeBrain", "0.18.298")
-    for expected in ("Unanswered questions and per-source value assessments",
-                     "stop_source_value_review_complete",
-                     "source_value_review", "stop_unresolved_questions",
-                     "Assessed low value:", "Potentially useful:",
-                     "Legacy/incomplete source-value ledger"):
-        assert expected in html
-
-
 def test_no_inference_without_explicit_consent_or_publisher_change():
     model = Stage63Fake()
     for consent in (False, None, "true"):

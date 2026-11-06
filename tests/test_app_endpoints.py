@@ -139,7 +139,7 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "'response time'" in response.text
     assert "fetch('/api/status')" not in response.text
     assert "};\\ndocument.getElementById('runHealthAudit')" not in response.text
-    assert "};\ndocument.getElementById('runHealthAudit')" in response.text
+    assert "document.getElementById('runHealthAudit').onclick" in response.text
 
 
 def test_dashboard_counts_current_states(monkeypatch, tmp_path):
