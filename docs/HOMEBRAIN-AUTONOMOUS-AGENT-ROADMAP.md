@@ -1,7 +1,10 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**Status:** Phase 1 candidate (v0.18.443); do not claim autonomous general-question
-mastery until first-attempt, source-real tests prove it. This plan supplements
+**Status:** Phase 1 v0.18.443 merged via PR #1490; documentation PR #1491 merged.
+A source-real first-answer test is still pending. Phase 2 source-neutral observed
+interval operator is under offline CI review and is **not integrated** with
+live source reads or model synthesis. Do not claim general-question mastery
+until first-attempt, source-real tests prove it. This plan supplements
 the permanent [Answer Quality Charter](ANSWER-QUALITY-CHARTER.md), whose
 correctness/safety targets remain in force.
 
@@ -97,6 +100,21 @@ Do not publish first-answer or latency gains without matched evaluation.
 **Existing-installation activation:** An upgraded Home Assistant add-on may retain its previous option values rather than adopt the new defaults. The v0.18.443 live test must check that `general_task_engine_enabled` is set to true and that `unified_mcp_max_tool_rounds` reflects the intended read-only emergency ceiling; if saved as false/9, change only these options in the add-on Configuration and restart through ordinary add-on management. The global investigation deadline, confirmation controls and tool effects must remain intact. No installation change is made by this PR.
 
 ### Phase 2 — generic evidence obligations and temporal analytics
+
+**First isolated increment (not deployed):** `rootfs/app/observed_time_series.py`
+computes a first/last matching recorded observation followed by the first
+strictly later matching observation. It supports generic numeric operators,
+UTC-offset timestamps, unsorted samples and deterministic observed elapsed
+seconds; rejects unparseable values and never marks provenance or complete
+history verified. Offline regression cases cover strict >70/<60, DST, no later
+reading, equal timestamps, invalid fields and alternate device-independent
+operators. This is a **pure calculation foundation** only: the host still
+needs verified source identity, event normalization, pagination/retention
+tracking, a structured question-to-proof contract and orchestration wiring.
+Do not present results from this module as live evidence, source-complete
+history or a real physical threshold-crossing time. The original v0.18.443
+source-real acceptance gate remains required before claiming any improvement.
+
 
 - Replace source-class-only checks with a structured **question-to-proof
   contract**: requested facts, target identity, source read, time scope,

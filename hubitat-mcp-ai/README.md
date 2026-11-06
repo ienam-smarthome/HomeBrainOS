@@ -3,7 +3,14 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.443**.
+Current add-on version: **0.18.444**.
+
+**Phase 2 observed time-series core (v0.18.444):** Adds a tested pure
+operator for calculations between recorded numeric readings. This is not
+yet integrated into live MCP orchestration and does not change the model's
+production answer flow. Source identity, history completeness and exact
+threshold crossing remain unverified without independent receipts.
+[Release notes](CHANGELOG-0.18.444.md).
 
 **Upgrade note:** Home Assistant may preserve previous add-on option values. After upgrading, check `general_task_engine_enabled: true` and `unified_mcp_max_tool_rounds: 18` in the add-on Configuration; a saved `false`/`9` overrides the new packaged defaults. Do not modify `investigation_deadline_seconds`, write confirmations, provider quotas or per-tool timeouts to activate this feature.
 
