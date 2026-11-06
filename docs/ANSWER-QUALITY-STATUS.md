@@ -1,5 +1,13 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-05 — installed v0.18.426 passed routing/no-write but overstated native contract evidence; v0.18.427 candidate
+
+**Acceptance:** Installed 0.18.426 answered the read-only MCP Rule Server 5.1.6 runbook as `rule_design_review` in 2 model rounds, 3 calls and 19.172s wall. The technical record correctly reported `evidenceComplete=false`, `typed_authoring_contract=checked-unverified`, `questionResolved=false` and Unresolved, with no Hubitat writes. The final text nevertheless labelled unverified typed fields, year# and log action as Verified, conflated numbered `logmsg.#` field placeholders with calendar-year handling, and exposed a guide acknowledgement key and contract-shaped JSON sketch. A generic controller/device evidence disclaimer was irrelevant to contract-only review.
+
+**Candidate repair:** Source-bounded table statuses and schema JSON, guide key redaction, contract-specific evidence qualification, and explicit `readinessForMutation=false` in technical coverage. Preserve actual source-attested findings, ordinary device and named-rule investigations and all no-write permissions. [Release notes](../hubitat-mcp-ai/CHANGELOG-0.18.427.md). CI and installed re-acceptance are separate; do not claim production success before retest.
+
+---
+
 ## 2026-11-05 21:42 UTC — installed v0.18.425 answered runbook with parent/name listing; removed fast path in v0.18.426
 
 **Observed live failure:** The exact read-only native dated-trigger contract-review request was intercepted by a deterministic Rule Machine parent/name inventory routine. v0.18.425 returned **Success** in **4.575s**, with **4 nonmutating MCP reads + 1 local typed projection**, 0 model rounds, parent ID **169**, and no exact one-time suffix matches. The requested native trigger types, time/date/year, log-only action and runtime scheduler proof were **not evaluated**. The `investigation_coverage.domain` and `questionResolved=true` were therefore for the wrong task. No rule/device changed or confirmation queued.

@@ -84,7 +84,19 @@ def test_external_probes_persist_and_native_source_does_not_poll_at_30s(tmp_path
     assert reply["coverage"] == "partial_observations_not_proof_of_cause"
 
 
-def test_two_failures_open_outage_and_recovery_closes_it(tmp_path):
+def test_two_failures_open_outage_and_recovery_closes_it(tmp_path, monkeypatch):
+    # Mock probes run faster than the recorder's millisecond timestamp
+    # resolution. Give each simulated 30-second polling cycle a distinct
+    # instant; otherwise INSERT OR REPLACE can overwrite a failure sample.
+    from datetime import datetime, timedelta, timezone
+    import external_hub_diagnostics as diagnostic_module
+
+    base = datetime.now(timezone.utc)
+    stamps = iter(
+        (base + timedelta(seconds=i * 30)).isoformat(timespec="milliseconds")
+        for i in range(3)
+    )
+    monkeypatch.setattr(diagnostic_module, "utc_now", lambda: next(stamps))
     rec = make_recorder(tmp_path)
     attempts = 0
 

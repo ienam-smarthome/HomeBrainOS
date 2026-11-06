@@ -646,6 +646,10 @@ def assess_investigation(plan: InvestigationPlan, receipts: list[dict[str, Any]]
         "warnings": list(dict.fromkeys(notes))[:3],
         "noCausalAttributionFromToolSuccess": True,
     }
+    if plan.domain == "rule_design_review":
+        # Evidence completeness answers the *read-only review* only. Even a
+        # future source-complete typed schema never grants mutation authority.
+        result["readinessForMutation"] = False
     if focal_evidence is not None:
         result["focalSourceEvidence"] = focal_evidence
     if plan.domain == "manual_motion_lockout":

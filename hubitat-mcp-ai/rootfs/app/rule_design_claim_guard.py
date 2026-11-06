@@ -109,6 +109,113 @@ def _motion_scope(request: str, answer: str) -> bool:
     return False
 
 
+
+# Contract-only reviews must never turn model-described guide snippets into
+# source-certified native fields. Generic guide receipts do not include a
+# typed field attestation, even when a model has read guide prose.
+_GUIDE_ACKNOWLEDGEMENT = re.compile(
+    r"(?i)I-HAVE-READ-THE-GUIDE-[A-Za-z0-9_.-]+"
+)
+
+_NATIVE_CONTRACT_SAFETY_NOTE = (
+    "\n\n### Rule design feasibility gate (read-only)\n"
+    "**Native authoring readiness is unverified.** The current receipts "
+    "do not attest the exact dated-trigger field schema, calendar-year "
+    "handling, log-action encoding or scheduler registration/firing. "
+    "Guide descriptions are not installed-runtime proof. No executable "
+    "payload, mutation readiness or confirmation is authorised by this review."
+)
+
+
+def _calibrate_native_contract_table(message: str) -> str:
+    """Demote unsupported table certainty without inventing field schemas."""
+    out = []
+    for line in message.splitlines(keepends=True):
+        if not line.lstrip().startswith("|"):
+            out.append(line)
+            continue
+        cells = line.rstrip("\n").split("|")
+        if len(cells) < 5:
+            out.append(line)
+            continue
+        status = cells[2].strip().strip("*" + chr(96)).casefold()
+        if status in ("verified", "fully verified", "confirmed", "proven"):
+            cells[2] = " Not source-verified "
+        # A numbered form-field placeholder is not a calendar-year field.
+        label = cells[1].casefold()
+        if re.search(r"\byear(?:\s*#|[ -]?field|[ -]?handling)?\b", label):
+            cells[2] = " Unverified "
+            cells[3] = (
+                " No source-attested dated-trigger year key or year semantics; "
+                "a numbered form-field placeholder does not establish this. "
+            )
+        elif re.search(r"date\s*(?:/|and)\s*time\s*format", label):
+            cells[2] = " Unverified "
+            cells[3] = (
+                " A variable timestamp example does not establish the "
+                "dated-trigger field encoding or timezone semantics. "
+            )
+        elif re.search(r"scheduler|schedul(?:ing|er)?\s+verif", label):
+            cells[2] = " Unverified "
+            cells[3] = (
+                " No source-attested scheduler registration or actual "
+                "trigger firing was observed. "
+            )
+        elif re.search(r"\bparent\s+id\b", label):
+            cells[3] = (
+                " The guide may require a parent ID; the installed parent "
+                "identity was not attested in this review. "
+            )
+        elif re.search(r"\bbackup\b", label):
+            cells[3] = (
+                " Backup requirements may be guide-described; no current "
+                "installed-hub backup was verified in this review. "
+            )
+        out.append("|".join(cells) + ("\n" if line.endswith("\n") else ""))
+    return "".join(out)
+
+
+def _calibrate_unverified_native_contract(message: str) -> str:
+    """Restrict a contract review to the evidence actually in receipts."""
+    text = _calibrate_native_contract_table(message)
+    text = re.sub(
+        r"(?im)^-\s*\*\*Upstream[- ]Tested Facts\*\*:[^\n]*",
+        "- **Documentation vs upstream tests:** Guide-access receipts are "
+        "not evidence that upstream integration tests validated these exact "
+        "dated-trigger fields or action semantics.",
+        text,
+    )
+    text = re.sub(
+        r"(?im)^(-\s*\*\*Evidence Complete\*\*:\s*)[^\n]*",
+        r"\g<1>No — the required typed native contract was not source-attested.",
+        text,
+    )
+    text = re.sub(
+        r"(?im)^(-\s*\*\*Readiness for Mutation\*\*:\s*)[^\n]*",
+        r"\g<1>NOT READY (readinessForMutation=false).",
+        text,
+    )
+    # A JSON sketch of trigger/action properties can be mistaken for an
+    # authorized encoding; retain a minimal evidence-only technical result.
+    def replace_contract_json(match: re.Match[str]) -> str:
+        block = match.group(0)
+        if not re.search(
+            r'"(?:authoring_contract|structural_types|write_requirements)"\s*:',
+            block, re.I,
+        ):
+            return block
+        fence = chr(96) * 3
+        return (
+            fence + 'json\n'
+            '{\n  "reviewDomain": "rule_design_review",\n'
+            '  "evidenceComplete": false,\n'
+            '  "typed_authoring_contract": "checked-unverified",\n'
+            '  "readinessForMutation": false\n'
+            '}\n' + fence
+        )
+    return _JSON_CODE.sub(replace_contract_json, text)
+
+
 _GENERIC_SAFETY_NOTE = (
     "\n\n### Rule design feasibility gate (read-only)\n"
     "**Native rule creation is not yet validated.** An inventory and a "
@@ -232,8 +339,16 @@ def calibrate_rule_design_review(
         and row["details"].get("completeCombinedSemanticsVerified") is True
         for row in receipts if isinstance(row, dict)
     )
+    # Guide acknowledgements are request-local credentials, never suitable
+    # for publication (including in Technical JSON). Preserve the fact that
+    # a key is required, not its actual value.
+    text = _GUIDE_ACKNOWLEDGEMENT.sub("[redacted-guide-key]", text)
+    from targeted_rule_scope_policy import is_native_rule_contract_review_request
+    native_contract_review = is_native_rule_contract_review_request(request)
     if evidence_validates_compiler:
         return text
+    if native_contract_review:
+        text = _calibrate_unverified_native_contract(text)
     # A model's "upstream-tested facts" and READY conclusion are not
     # substitutes for a typed, source-attested native operation contract.
     text, _ = _SCHEMA_HEADING.subn(
@@ -311,9 +426,20 @@ def calibrate_rule_design_review(
             "cannot verify hub time zone, settings, device identity or "
             "native authoring schema.\n\n", text,
         )
+    guide_checked = any(
+        row.get("success") is True and _source_operation(row)[0] == "hub_get_tool_guide"
+        for row in receipts if isinstance(row, dict)
+    )
     provenance = (
         "**Evidence qualification:** "
         + (
+            "This is a native authoring-contract review, not a device or "
+            "installed-rule configuration audit. "
+            + ("Guide access was recorded, " if guide_checked else
+               "No successful guide read was recorded, ")
+            + "but typed dated-trigger/action field proof and scheduler "
+            "execution are not source-attested by the receipts. "
+            if native_contract_review else
             "Targeted device and app configuration reads were recorded, "
             "but generic field-name receipts cannot prove their "
             "semantics or a complete native writer schema."
@@ -326,6 +452,24 @@ def calibrate_rule_design_review(
         + " Typed source confirmation is required before any new rule "
           "is authorised.\n\n"
     )
+    if native_contract_review:
+        # Model prose can already contain a generic controller/device
+        # disclaimer. Replace it rather than leaving an irrelevant warning
+        # in a contract-only review.
+        text = re.sub(
+            r"(?m)^\*\*Evidence qualification:\*\*[^\n]*(?:\n(?!\n)[^\n]*)*",
+            lambda _match: provenance.strip(),
+            text, count=1,
+        )
+        text = re.sub(
+            r"(?ms)^### Rule design feasibility gate \(read-only\)\n.*?"
+            r"(?=^### |\Z)",
+            lambda match: (
+                _NATIVE_CONTRACT_SAFETY_NOTE.strip()
+                + ("\n" if match.group(0).endswith("\n") else "")
+            ),
+            text,
+        )
     if not typed_details_verified and "**Evidence qualification:**" not in text:
         # Keep the existing review/no-write banner as the first line.
         leading = re.match(
@@ -337,7 +481,8 @@ def calibrate_rule_design_review(
         else:
             text = provenance + text
     if "### Rule design feasibility gate (read-only)" not in text:
-        text += (_SAFETY_NOTE if _motion_scope(request, text)
+        text += (_NATIVE_CONTRACT_SAFETY_NOTE if native_contract_review
+                 else _SAFETY_NOTE if _motion_scope(request, text)
                  else _GENERIC_SAFETY_NOTE)
     return text
 
