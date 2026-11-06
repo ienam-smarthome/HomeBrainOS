@@ -13,11 +13,13 @@ import asyncio
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 import ipaddress
+import json
+import math
 from pathlib import Path
 import re
 import sqlite3
 import time
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import urlsplit
 
 import httpx
@@ -87,6 +89,149 @@ def parse_native_sample(value: str) -> dict[str, Any]:
         "java_allocated_heap_used_pct": round(100 * (total - free) / total, 1),
     }
 
+
+
+_HUB_EVENTS = "/hub/eventsJson"
+_HISTORY_METRICS = frozenset((
+    "free_os_mb", "java_free_mb", "java_allocated_heap_used_pct",
+    "native_load_pct", "native_load5", "latency_ms",
+))
+_NATIVE_METRICS = frozenset((
+    "java_free_mb", "java_allocated_heap_used_pct", "native_load_pct",
+    "native_load5",
+))
+
+
+def parse_system_start_events(payload: str) -> list[dict[str, str]]:
+    """Accept only Hubitat systemStart events with unambiguous source times.
+
+    Source date must contain an explicit timezone offset; never assume the
+    add-on's timezone is the same as the hub timezone.
+    """
+    if len(payload) > 1_000_000:
+        raise ValueError("Hub event response too large")
+    obj = json.loads(payload)
+    source = obj if isinstance(obj, list) else (
+        obj.get("events") if isinstance(obj, dict) else None
+    )
+    if not isinstance(source, list):
+        raise ValueError("Unexpected Hubitat Hub Events response")
+    found: dict[str, dict[str, str]] = {}
+    for event in source[:1000]:
+        if not isinstance(event, dict) or event.get("name") != "systemStart":
+            continue
+        try:
+            stamp = datetime.fromisoformat(str(event["date"]).replace("Z", "+00:00"))
+        except (ValueError, TypeError, KeyError):
+            continue
+        if stamp.tzinfo is None:
+            continue
+        at = stamp.astimezone(timezone.utc)
+        now = datetime.now(timezone.utc)
+        if at.year < 2020 or at > now + timedelta(minutes=5):
+            continue
+        occurred_at = at.isoformat(timespec="milliseconds")
+        value = str(event.get("value") or "")[:48]
+        if any(c not in "0123456789.abcdeABCDE-_ " for c in value):
+            value = ""
+        found[occurred_at] = {
+            "occurred_at": occurred_at, "firmware": value,
+            "source": "hub_events_json_systemStart",
+        }
+    return sorted(found.values(), key=lambda entry: entry["occurred_at"])
+
+
+def summarize_history_samples(
+    rows: Iterable[dict[str, Any]], *, metric: str,
+    start: datetime, finish: datetime, probe_seconds: int,
+    bucket_count: int = 440, raw_limit: int = 3000,
+) -> dict[str, Any]:
+    """Stream local SQLite samples with bounded memory for 30-day charts.
+
+    Preserve actual first/last/min/max observations per time bucket rather
+    than averages that could erase short OS-memory dips. Retain boundaries
+    around failed probes or long gaps so they cannot become solid lines.
+    """
+    if metric not in _HISTORY_METRICS:
+        raise ValueError("Invalid diagnostic metric")
+    native = metric in _NATIVE_METRICS
+    gap_seconds = 900 if native else max(120, probe_seconds * 3)
+    epoch_start = start.timestamp()
+    span = max(1, finish.timestamp() - epoch_start)
+    raw: list[dict[str, Any]] | None = []
+    groups: dict[int, dict[str, Any]] = {}
+    seen_native: set[str] = set()
+    previous: tuple[float, dict[str, Any]] | None = None
+    segment = 0
+    unknown = False
+    count = 0
+    observed = 0
+    for row in rows:
+        count += 1
+        if raw is not None:
+            if len(raw) < raw_limit:
+                raw.append(row)
+            else:
+                raw = None
+        try:
+            stamp = datetime.fromisoformat(str(row["recorded_at"])).timestamp()
+        except (KeyError, TypeError, ValueError):
+            unknown = True
+            continue
+        value = row.get(metric)
+        if (not row.get("reachable") or isinstance(value, bool) or
+                not isinstance(value, (int, float)) or
+                not math.isfinite(float(value))):
+            unknown = True
+            continue
+        if native:
+            label = str(row.get("native_sample_label") or "")
+            if not label:
+                unknown = True
+                continue
+            if label in seen_native:
+                continue
+            seen_native.add(label)
+        if previous and (unknown or stamp - previous[0] > gap_seconds):
+            segment += 1
+        row["diag_segment"] = segment
+        unknown = False
+        previous_row = previous[1] if previous else None
+        previous = (stamp, row)
+        observed += 1
+        bucket_id = min(bucket_count - 1,
+                        max(0, int((stamp - epoch_start) / span * bucket_count)))
+        bucket = groups.setdefault(bucket_id, {
+            "first": row, "last": row, "min": row, "max": row,
+            "edges": [],
+        })
+        if (previous_row is not None and
+                previous_row["diag_segment"] != segment):
+            # Keep the two real readings bordering a gap even when both are
+            # in a bucket whose extrema occur elsewhere.
+            bucket["edges"].append(previous_row)
+            bucket["edges"].append(row)
+        bucket["last"] = row
+        if row[metric] < bucket["min"][metric]:
+            bucket["min"] = row
+        if row[metric] > bucket["max"][metric]:
+            bucket["max"] = row
+    if raw is not None:
+        return {
+            "samples": raw, "source_sample_count": count,
+            "observed_metric_points": observed, "downsampled": False,
+        }
+    selected: dict[str, dict[str, Any]] = {}
+    for bucket in groups.values():
+        for sample in (bucket["first"], bucket["last"], bucket["min"],
+                       bucket["max"], *bucket["edges"]):
+            selected[sample["recorded_at"]] = sample
+    return {
+        "samples": [selected[key] for key in sorted(selected)],
+        "source_sample_count": count,
+        "observed_metric_points": observed,
+        "downsampled": True,
+    }
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
