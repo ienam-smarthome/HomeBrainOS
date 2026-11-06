@@ -94,7 +94,7 @@ def test_22_25_live_pattern_targeted_failure_and_generic_fallback_are_separate()
     assert assessed["bounded_generic_log_reads"] == 1
     assert assessed["bounded_generic_log_read_successes"] == 1
     rendered = render_hub_event_findings(assessed)
-    assert "App runtime statistics: 0/1" in rendered
+    assert "App runtime statistics:** 0/1" in rendered
     assert "Bounded generic log query succeeded" in rendered
     assert "has not independently established historical app-log" in rendered
     assert "memory reduction are not established" in rendered
