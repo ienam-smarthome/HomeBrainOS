@@ -19,7 +19,7 @@ from answer_quality_fixed_packets import (
     SHA256_RE, ScorecardInputError, build_fixed_packets,
     pair_metadata, validate_run_manifest,
 )
-from answer_quality_scorecard import REVIEW_KEYS, build_scorecard, load_catalog
+from answer_quality_scorecard import REVIEW_KEYS, build_scorecard, load_catalog, validate_review
 
 REVIEW_SCHEMA = "homebrain-answer-quality-paired-reviews.v1"
 REPORT_SCHEMA = "homebrain-answer-quality-paired-review-report.v1"
@@ -139,6 +139,9 @@ def build_paired_review_report(
                 before[case_id] if side == "baseline" else after[case_id],
                 item, side=side, catalog=catalog,
             )
+            # Validate the fixed grade and numeric claim counts before deriving
+            # ordinal changes or arithmetic; malformed private reviews fail closed.
+            validate_review(item_grade, catalog)
             (left if side == "baseline" else right).append(item_grade)
 
         earlier = item["baseline_review"]["useful_first_attempt"] == "pass"
