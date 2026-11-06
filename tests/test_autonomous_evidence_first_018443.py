@@ -58,6 +58,18 @@ def test_planner_requests_real_history_for_noncausal_numeric_thresholds():
     assert "model-proposed-not-yet-executed" in parsed.instruction()
 
 
+def test_planner_cannot_drop_its_own_validated_history_requirement():
+    parsed = GeneralTaskPlan.from_model(
+        plan(operation="read", kinds=[])
+    )
+    assert parsed is not None
+    assert parsed.read_requests
+    assert parsed.required_evidence_kinds == ("device_history",)
+    # The host still must execute through installed read-only tools;
+    # inclusion in the plan cannot serve as evidence.
+    assert "model-proposed-not-yet-executed" in parsed.instruction()
+
+
 def test_planned_source_arguments_reject_writes_invalid_target_and_horizon():
     forbidden = [
         {"tool": "hub_manage_devices",
