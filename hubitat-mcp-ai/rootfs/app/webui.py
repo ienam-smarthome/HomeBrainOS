@@ -166,6 +166,7 @@ def render_page(title: str, version: str) -> str:
 <div class="diag-timeline-actions">
 <button type="button" class="secondary" id="diagTimelineRefresh">↻ Refresh timeline</button>
 <button type="button" class="secondary" id="diagReviewSelected" disabled>Investigate selected time</button>
+<button type="button" class="secondary" id="diagAiSelected" disabled>AI investigate selected time</button>
 <button type="button" class="secondary" id="diagTimelineJournal">Inspect Historical Journal</button>
 <a id="diagTimelineEvidence" href="#" target="_blank" rel="noopener noreferrer">View source records (JSON)</a>
 </div>
@@ -183,6 +184,7 @@ def render_page(title: str, version: str) -> str:
 <option value="60">60 minutes</option>
 </select></label>
 <button type="button" class="secondary" id="diagReviewReload">↻ Recheck archive</button>
+<button type="button" class="secondary" id="diagReviewAskAi">Investigate with HomeBrain AI</button>
 <button type="button" class="secondary" id="diagReviewCopy">Copy evidence summary</button>
 <a id="diagReviewJson" target="_blank" rel="noopener noreferrer" href="#">Source JSON</a>
 </div>
@@ -395,7 +397,7 @@ function askApiErrorMessage(response,data,length){
   }
   return typeof data?.detail==='string'?data.detail:'HTTP '+response.status;
 }
-async function submit(text){
+async function submit(text,incidentAI=null){
   text=(text||query.value).trim();if(!text)return;
   if(text.length>MAX_CHAT_PROMPT_CHARS){
     query.value=text;
@@ -425,10 +427,14 @@ async function submit(text){
     }catch(error){}
   },1500);
   try{
-    const response=await fetch(apiPath('api/ask'),{
+    const api=incidentAI?'api/hub-diagnostics/investigate':'api/ask';
+    const body=incidentAI?{
+      at:incidentAI.at,window_minutes:incidentAI.window_minutes,
+      session_id:requestSessionId,request_id:requestId,model_tier:selectedTier,
+    }:{query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier};
+    const response=await fetch(apiPath(api),{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier}),
-      signal:controller.signal,
+      body:JSON.stringify(body),signal:controller.signal,
     }).catch(error=>{
       if(error?.name==='AbortError')throw error;
       // A network/ingress disconnect is NOT evidence that a Hubitat
@@ -630,11 +636,13 @@ function timelineSelectAt(t){
    ' · These observations do not establish a cause.';
  timelineActiveTime=t;
  document.getElementById('diagReviewSelected').disabled=false;
+ document.getElementById('diagAiSelected').disabled=false;
 }
 function drawIncidentTimeline(data){
  const svg=document.getElementById('diagTimelineChart');svg.replaceChildren();
  timelineData=null;timelineRows={memory:[],cpu:[]};timelineFocusTimes=[];
  document.getElementById('diagReviewSelected').disabled=true;
+ document.getElementById('diagAiSelected').disabled=true;
  const r=timelineRange(data),eventsNode=document.getElementById('diagTimelineEvents');
  eventsNode.replaceChildren();
  if(!r){
@@ -768,7 +776,9 @@ function drawIncidentTimeline(data){
   button.textContent='Inspect time';button.onclick=()=>{timelineSelectAt(evt.t);document.getElementById('diagTimelineChart').focus()};
   const investigate=document.createElement('button');investigate.type='button';investigate.className='secondary';
   investigate.textContent='Investigate';investigate.onclick=()=>{timelineSelectAt(evt.t);inspectIncidentAt(evt.t)};
-  li.append(body,button,investigate);eventsNode.append(li);
+  const aiButton=document.createElement('button');aiButton.type='button';aiButton.className='secondary';
+  aiButton.textContent='AI investigate';aiButton.onclick=()=>void askAiIncident(evt.t);
+  li.append(body,button,investigate,aiButton);eventsNode.append(li);
  }
  if(events.length>visible.length){const li=document.createElement('li');li.textContent=
   'Showing '+visible.length+' of '+events.length+' observed points. View local source JSON for the bounded full set.';
@@ -957,6 +967,22 @@ document.getElementById('diagReviewSelected').addEventListener('click',()=>{
 });
 document.getElementById('diagReviewReload').addEventListener('click',()=>void loadIncidentReview());
 document.getElementById('diagReviewMinutes').addEventListener('change',()=>void loadIncidentReview());
+// Incidents are explicit user-initiated analyses, not automatic background work.
+async function askAiIncident(timestamp){
+ if(!Number.isFinite(timestamp))return;
+ const when=new Date(timestamp).toISOString();
+ const chosenMinutes=Number(document.getElementById('diagReviewMinutes').value)||15;
+ const prompt='Investigate the Hubitat resource/startup incident centered on '+when+
+  '. Use verified local recorder and Historical Journal evidence, compare with read-only Hub Events, app logs and performance history, and explain competing causes without assuming correlation proves causation. Do not change anything.';
+ document.getElementById('query').scrollIntoView({behavior:'smooth',block:'center'});
+ await submit(prompt,{at:when,window_minutes:chosenMinutes});
+}
+document.getElementById('diagAiSelected').addEventListener('click',()=>{
+ if(timelineActiveTime!==null)void askAiIncident(timelineActiveTime);
+});
+document.getElementById('diagReviewAskAi').addEventListener('click',()=>{
+ if(incidentReviewFocus)void askAiIncident(Date.parse(incidentReviewFocus));
+});
 document.getElementById('diagReviewCopy').addEventListener('click',()=>{
  const button=document.getElementById('diagReviewCopy');
  if(incidentReviewText)void copyText(incidentReviewText,button,'Copy evidence summary');
