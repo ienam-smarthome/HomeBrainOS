@@ -35,6 +35,7 @@ from device_state_summary import (
 )
 from health_audit_scheduler import MorningHealthScheduler
 from historical_evidence_journal import HistoricalEvidenceJournal
+from hub_incident_ai import (bind_incident, reset_incident, publish_incident_analysis, project_incident)
 from external_hub_diagnostics import ExternalHubDiagnostics
 from household_ollama_accounts import read_authorized_household_accounts
 from health_audit_service import (
@@ -613,6 +614,15 @@ class ChatRequest(BaseModel):
     @property
     def coordination_key(self) -> str:
         return self.session_id
+
+
+class IncidentAIRequest(BaseModel):
+    """Explicit, bounded and exclusively read-only AI incident investigation."""
+    at: str = Field(min_length=20, max_length=64)
+    window_minutes: Literal[5, 15, 30, 60] = 15
+    model_tier: Literal["auto", "free", "paid", "claude"] = "free"
+    session_id: str | None = Field(default=None, max_length=160)
+    request_id: str | None = Field(default=None, max_length=160)
 
 
 class Stage6BenchmarkRequest(BaseModel):
@@ -1557,6 +1567,87 @@ async def hub_diagnostics_incident(at: str, window_minutes: int = 15) -> JSONRes
         ],
     }
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/hub-diagnostics/investigate")
+async def hub_diagnostics_investigate(payload: IncidentAIRequest,
+                                    connection: Request) -> dict[str, Any]:
+    """Explicit AI review, binding local archive facts into existing MCP reasoning.
+
+    Uses the same model-tier choice as ordinary Ask and the same read-only
+    tool permissions. A release-gated source capsule is attached via context,
+    not via free-text user instructions or an arbitrary client-provided JSON.
+    """
+    source_response = await hub_diagnostics_incident(
+        at=payload.at, window_minutes=payload.window_minutes,
+    )
+    snapshot = json.loads(source_response.body)
+    rec = snapshot.get("recorder") or {}
+    journal = snapshot.get("journal") or {}
+    # Do not pay for model speculation when *both* local archive sources are
+    # unavailable. A user can still run a separate normal Hubitat inquiry.
+    if (rec.get("status") in ("not_recorded", "storage_unavailable")
+            and journal.get("status") in ("not_recorded", "disabled", "storage_unavailable")):
+        return {
+            "success": False, "route": "hub-incident-ai",
+            "message": "No retained local recorder or journal evidence is available "
+                       "for this incident. No AI investigation was attempted. "
+                       "Use read-only Hubitat event history to establish source coverage.",
+            "model_tier_requested": payload.model_tier,
+            "incident_evidence": project_incident(snapshot),
+            "causal_verdict": "unverified", "read_only": True,
+            "live_hubitat_requests": 0,
+            "ai_claim_validation": "not_attempted_no_local_evidence",
+        }
+    prompt = (
+        "Investigate the historical Hubitat hub resource/restart incident centered at "
+        + snapshot["focus_at"] + " (UTC). Use the host-provided local evidence "
+        "capsule, then independently check relevant Hubitat Hub Events, "
+        "firmware update records, performance history and app-log evidence "
+        "with READ-ONLY MCP tools when available. Distinguish an explicitly "
+        "logged low-memory reboot from a memory dip coinciding with a firmware "
+        "update. Compare competing explanations and say exactly which source "
+        "classes were not verified. Do not change any device, app, rule, hub "
+        "setting or firmware. Do not declare a cause based on coincidence."
+    )
+    token = bind_incident(snapshot)
+    try:
+        request = ChatRequest(
+            prompt=prompt, model_tier=payload.model_tier,
+            session_id=payload.session_id,
+            request_id=payload.request_id,
+        )
+        started = time.perf_counter()
+        outcome = await _answer_result(request, connection)
+        response = build_agent_response(
+            outcome, model=agent.model_name,
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
+            version=VERSION, submitted_question=request.message,
+        )
+        if (response.get("request_class") == "write"
+                or response.get("confirmation_required")
+                or any(receipt.get("mutates") for receipt in (response.get("evidence") or [])
+                       if isinstance(receipt, dict))):
+            raise HTTPException(status_code=409, detail=(
+                "The read-only incident AI guard rejected a mutation-path "
+                "result. No action is authorised by this request."
+            ))
+        message, validation = publish_incident_analysis(
+            snapshot, str(response.get("message") or "")
+        )
+        response["message"] = message
+        response["route"] = "hub-incident-ai"
+        response["model_tier_requested"] = payload.model_tier
+        response["incident_evidence"] = project_incident(snapshot)
+        response["ai_claim_validation"] = validation
+        response["causal_verdict"] = "unverified"
+        response["read_only"] = True
+        # This field qualifies only the local archive preflight. Any
+        # additional read-only MCP calls appear individually in receipts.
+        response["local_archive_additional_hub_calls"] = 0
+        return response
+    finally:
+        reset_incident(token)
 
 
 @app.get("/api/evidence-journal/status")
