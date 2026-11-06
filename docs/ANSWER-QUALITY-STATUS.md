@@ -1,6 +1,8 @@
 # Answer Quality — active status and cross-chat handoff
 
-## 2026-11-06 — Q1 historical past-log zero-match semantics (v0.18.439 candidate)
+## 2026-11-06 — Q1 historical past-log zero-match semantics (v0.18.439 merged; live retest pending)
+
+**CI and merge:** [PR #1483](https://github.com/ienam-smarthome/HomeBrainOS/pull/1483) was tested on exact head `7cac4c6832b26442866484f6dfc0bde5616193cd` and squash merged as `4716c7e63580a57456dc6107cdcc920a6f893e4e`. All four workflows passed (scorecard integrity, Hubitat MCP AI tests, repository validation and release assurance including smoke, metadata and full Python suite). Main package reports version `0.18.439`. These are **code-level test results only**, not evidence that the installed HomeBrain version updated or that retained November 5 log messages were recovered. Next safe evaluation is one read-only normal Ask comparison of the same incident with full Technical JSON, then human review of usefulness versus v0.18.438.
 
 **Source-real observation:** The user's self-reported installed v0.18.438 ordinary Ask for 5 Nov 16:52 restarted from the Hubitat critical-memory warning (16:41:40 UTC) then systemStart (16:52:15 UTC). Read-only native `past` query of 5 Nov 16:30–16:53Z succeeded with `sourceRowsReported=16893` (unfiltered Hubitat source row count), `matchedRowsReported=0`, `returnedRowsInspected=0`, no continuation page and no truncation. The raw source total is **not** a count of rows in the requested incident window. The exact oldest/newest retained log times, hub timezone basis and original memory consumer remain **UNVERIFIED**. Two time-filter/mode calls were blocked before MCP execution. One run: 57.2 s displayed, 8 model rounds, 6 executed tool calls; descriptive, with no 45-second target.
 
