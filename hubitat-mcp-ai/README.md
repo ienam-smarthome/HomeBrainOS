@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.427**.
+Current add-on version: **0.18.428**.
 
 **Native contract claim calibration (v0.18.427):** Read-only runbook reviews now downgrade unverified table-level schema claims, withhold contract-shaped JSON projections, redact guide acknowledgement values, and report `readinessForMutation=false` in structured coverage. Existing installed-rule reads and authorisation protections are unchanged. [Release notes](CHANGELOG-0.18.427.md).
 
