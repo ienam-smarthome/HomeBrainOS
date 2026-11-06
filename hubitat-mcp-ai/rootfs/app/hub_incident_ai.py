@@ -134,6 +134,12 @@ def incident_system_context(snapshot: dict[str, Any]) -> str:
         "with proof that it caused a preceding memory low. Distinguish "
         "a Hubitat explicit critically-low-memory reboot message (if actually "
         "read) from an external memory dip without an authenticated cause. "
+        "If the historical app-log mode is uncertain, check the MCP tool"
+        " contract before using a mode-specific request. A generic bounded"
+        " successful log query does not prove app-message coverage. "
+        "Report a Hubitat warning explicitly announcing a reboot as a"
+        " verified reported trigger only when the typed source and later"
+        " startup are available; never infer the responsible app. "
         "Native five-minute load at collector receipt is not source-time "
         "CPU utilisation. If missing performance stats or app-log coverage, "
         "say so. Format findings as Observed facts, Hypotheses, Missing "
@@ -180,10 +186,72 @@ def fact_summary(snapshot: dict[str, Any]) -> str:
         "These counts do not prove complete coverage."
     )
     rows.append(
-        "**Causal verdict: UNVERIFIED.** Time proximity alone is not "
-        "proof that a firmware update, app or memory condition caused a restart."
+        "**Underlying memory/resource cause: UNVERIFIED.** The reported"
+        " restart trigger is assessed separately from typed Hub Events."
+        " Temporal proximity cannot identify a memory consumer."
     )
     return "\n".join(rows)
+
+
+def incident_read_only_next_checks(
+    snapshot: dict[str, Any], assessment: dict[str, Any]
+) -> str:
+    """Grounded next checks chosen by available source coverage, not model claims."""
+    recorder = snapshot.get("recorder") or {}
+    journal = snapshot.get("journal") or {}
+    if not isinstance(recorder, dict):
+        recorder = {}
+    if not isinstance(journal, dict):
+        journal = {}
+    actions = ["**Read-only next checks (source coverage)**"]
+    trigger = assessment.get("restart_trigger")
+    if trigger == "hub_explicit_critical_low_memory_reboot":
+        actions.append(
+            "- The hub-reported low-memory reboot trigger is verified; "
+            "investigate *which app or process* consumed memory only with "
+            "time-specific driver/app evidence, not a guessed culprit."
+        )
+    elif trigger == "firmware_update_recorded_before_startup":
+        actions.append(
+            "- Review the verified update/startup sequence separately "
+            "from the earlier external OS-memory minimum; do not label "
+            "that minimum a firmware effect without discriminating evidence."
+        )
+    else:
+        actions.append(
+            "- Obtain an authenticated, time-bounded Hub Events source "
+            "before assigning a restart trigger."
+        )
+    if assessment.get("app_specific_logs") == "read_failed":
+        actions.append(
+            "- Verify the supported historical-log query contract; "
+            "the attempted app-mode request failed. "
+            "A successful generic date-scoped response, if present, "
+            "must be checked for actual app-message identity and coverage."
+        )
+    elif assessment.get("app_specific_logs") != "read_succeeded_coverage_unverified":
+        actions.append(
+            "- Check retained time-bounded application logs with a "
+            "verified read-only method; per-app journal receipt counts "
+            "do not contain the messages needed to attribute a failure."
+        )
+    if int(recorder.get("sample_count") or 0) == 0:
+        actions.append(
+            "- There are no external resource samples in this window; "
+            "past free-memory or native CPU curves cannot be reconstructed."
+        )
+    if journal.get("gaps") or journal.get("events_truncated") or journal.get("gaps_truncated"):
+        actions.append(
+            "- Account for Historical Journal collection gaps and "
+            "bounded/truncated event pages before evaluating absence "
+            "of app or device activity."
+        )
+    actions.append(
+        "- If the historical evidence is lost, preserve future external "
+        "probe and native performance baselines across restarts, and "
+        "compare read-only app-state/event volumes after a recurrence."
+    )
+    return "\n".join(actions)
 
 
 def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
@@ -197,6 +265,7 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
     if receipts is not None:
         facts += "\n\n" + render_hub_event_findings(assessment)
     message = str(model_message or "").strip()
+    next_checks = incident_read_only_next_checks(snapshot, assessment)
     # Overclaiming is a reason to withhold the draft, not automatically
     # rewrite a cause into a newly invented attribution.
     if _DEFINITIVE_CAUSAL.search(message):
@@ -207,16 +276,18 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
             "a recorded reboot trigger does not establish the application "
             "responsible for a memory decline. Further read-only app-log "
             "and historical-performance evidence is required. "
-            "Do not treat the withheld draft as a completed investigation.",
+            "Do not treat the withheld draft as a completed investigation."
+            + "\n\n" + next_checks,
             "draft_overclaim_withheld",
         )
     if not message:
-        return facts + "\n\nNo usable AI interpretation was returned.", "model_empty"
+        return facts + "\n\nNo usable AI interpretation was returned.\n\n" + next_checks, "model_empty"
     return (
         facts + "\n\n**AI interpretation — verified event triggers above; "
         "additional causes remain hypotheses**\n\n"
         + message
-        + "\n\n**Final status: cause unverified without discriminating evidence.**",
+        + "\n\n" + next_checks
+        + "\n\n**Final status: underlying cause unverified without discriminating evidence.**",
         "hypotheses_only",
     )
 
