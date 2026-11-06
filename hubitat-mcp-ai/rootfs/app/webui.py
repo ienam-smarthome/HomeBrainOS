@@ -397,8 +397,9 @@ function askApiErrorMessage(response,data,length){
   }
   return typeof data?.detail==='string'?data.detail:'HTTP '+response.status;
 }
-async function submit(text,incidentAI=null){
-  text=(text||query.value).trim();if(!text)return;
+async function submit(text){
+  const incidentAI=text&&typeof text==='object'?text.incidentAI||null:null;
+  text=(incidentAI?text.text:text||query.value).trim();if(!text)return;
   if(text.length>MAX_CHAT_PROMPT_CHARS){
     query.value=text;
     showAnswer({success:false,route:'validation-error',
@@ -427,23 +428,33 @@ async function submit(text,incidentAI=null){
     }catch(error){}
   },1500);
   try{
-    const api=incidentAI?'api/hub-diagnostics/investigate':'api/ask';
-    const body=incidentAI?{
-      at:incidentAI.at,window_minutes:incidentAI.window_minutes,
-      session_id:requestSessionId,request_id:requestId,model_tier:selectedTier,
-    }:{query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier};
-    const response=await fetch(apiPath(api),{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(body),signal:controller.signal,
-    }).catch(error=>{
-      if(error?.name==='AbortError')throw error;
-      // A network/ingress disconnect is NOT evidence that a Hubitat
-      // mutation failed. The backend may already have submitted a write
-      // before its HTTP response was lost. Never automatically retry.
-      const failure=new Error(String(error?.message||'Network connection lost'));
-      failure.name='HomeBrainNetworkError';
-      throw failure;
-    });
+    // Preserve the original Ask request contract and network-error policy.
+    // The alternative incident endpoint is invoked only by an explicit click.
+    const response=await (async()=>{
+      const networkFailure=error=>{
+        if(error?.name==='AbortError')throw error;
+        // The backend might already have submitted a write before a
+        // disconnected ordinary Ask response. Never automatically retry.
+        const failure=new Error(String(error?.message||'Network connection lost'));
+        failure.name='HomeBrainNetworkError';
+        throw failure;
+      };
+      if(incidentAI){
+        return await fetch(apiPath('api/hub-diagnostics/investigate'),{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            at:incidentAI.at,window_minutes:incidentAI.window_minutes,
+            session_id:requestSessionId,request_id:requestId,model_tier:selectedTier,
+          }),signal:controller.signal,
+        }).catch(networkFailure);
+      }
+      const response=await fetch(apiPath('api/ask'),{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:text,history,session_id:requestSessionId,request_id:requestId,model_tier:selectedTier}),
+        signal:controller.signal,
+      }).catch(networkFailure);
+      return response;
+    })();
     const data=await jsonResponse(response);if(!response.ok)throw new Error(askApiErrorMessage(response,data,text.length));
     if(sequence===requestSequence&&requestSessionId===sessionId){
       const reply=String(data.message||data.detail||'');
@@ -975,7 +986,7 @@ async function askAiIncident(timestamp){
  const prompt='Investigate the Hubitat resource/startup incident centered on '+when+
   '. Use verified local recorder and Historical Journal evidence, compare with read-only Hub Events, app logs and performance history, and explain competing causes without assuming correlation proves causation. Do not change anything.';
  document.getElementById('query').scrollIntoView({behavior:'smooth',block:'center'});
- await submit(prompt,{at:when,window_minutes:chosenMinutes});
+ await submit({text:prompt,incidentAI:{at:when,window_minutes:chosenMinutes}});
 }
 document.getElementById('diagAiSelected').addEventListener('click',()=>{
  if(timelineActiveTime!==null)void askAiIncident(timelineActiveTime);

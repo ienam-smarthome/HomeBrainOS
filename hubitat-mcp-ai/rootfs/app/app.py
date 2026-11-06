@@ -1964,7 +1964,8 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
         submitted_question=request.message,
     )
     result["model_tier_requested"] = request.model_tier
-    return guard_unresolved_causal_publication(result)
+    result.update(guard_unresolved_causal_publication(result))
+    return result
 
 
 if __name__ == "__main__":

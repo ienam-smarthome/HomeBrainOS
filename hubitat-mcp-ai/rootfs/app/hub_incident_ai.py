@@ -22,7 +22,6 @@ _LOCAL_INCIDENT: ContextVar[dict[str, Any] | None] = ContextVar(
 _DEFINITIVE_CAUSAL = re.compile(
     r"(?i)(?:\b(?:was|were|is|are|has been)\s+(?:directly\s+)?caused by\b"
     r"|\b(?:root|actual|underlying)\s+cause\s+(?:is|was)\b"
-    r"|\b(?:caused|triggered)\s+(?:the|this|that)\s+(?:memory|restart|reboot|crash|failure)\b"
     r"|\b(?:firmware|update|backup|driver|app|memory leak)\b.{0,45}"
     r"\b(?:caused|triggered|responsible for)\b)"
 )
