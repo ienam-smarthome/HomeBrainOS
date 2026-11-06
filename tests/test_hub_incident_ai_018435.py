@@ -157,7 +157,7 @@ def test_app_rows_need_bounded_actual_typed_message_not_just_summary_counts():
     assessed = read_only_log_receipt_summary(rows)
     assert assessed["verified_bounded_app_message_rows"] == 1
     assert assessed["mode_reads"]["apps"]["successes"] == 1
-    assert assessed["mode_reads"]["past"]["successes"] == 2
+    assert assessed["mode_reads"]["apps"]["attempts"] == 1
     assert assessed["mode_reads"]["past"]["successes"] == 2
     assert assessed["complete_historical_app_log_coverage"] is False
     result = guard_unresolved_causal_publication(unresolved(
