@@ -83,6 +83,17 @@ def test_real_review_sample_requires_two_exact_answer_hashes():
     assert result["candidate_useful_first_attempt_wins"] == 1
     assert result["candidate_useful_first_attempt_losses"] == 0
     assert result["candidate_useful_first_attempt_ties"] == 0
+    assert result["paired_review_dimension_changes"]["useful_first_attempt"] == {
+        "candidate_better": 1, "baseline_better": 0, "tied": 0,
+    }
+    assert result["paired_review_dimension_changes"]["grounding"] == {
+        "candidate_better": 1, "baseline_better": 0, "tied": 0,
+    }
+    assert result["paired_unsupported_definitive_causes"] == {
+        "baseline_count": 0, "candidate_count": 0, "candidate_minus_baseline": 0,
+    }
+    assert result["paired_latency_delta"]["sample_count"] == 1
+    assert result["paired_latency_delta"]["median_candidate_minus_baseline_seconds"] == -0.4
     a = result["baseline_reviewed_scorecard"]
     b = result["candidate_reviewed_scorecard"]
     assert a["grounded_conclusions_pct"] == pytest.approx(66.67)
@@ -110,8 +121,43 @@ def test_empty_review_cannot_report_any_quality_numbers():
     assert result["baseline_reviewed_scorecard"] is None
     assert result["candidate_reviewed_scorecard"] is None
     assert result["candidate_useful_first_attempt_wins"] is None
+    assert result["paired_review_dimension_changes"] is None
+    assert result["paired_unsupported_definitive_causes"] is None
+    assert result["paired_latency_delta"] is None
     assert result["unreviewed_paired_case_ids"] == [p["case_id"]]
     assert result["acceptance_gate_passed"] is False
+
+
+
+def test_partial_to_pass_counts_ordinal_improvement_without_fabricating_facts():
+    p = build_fixed_packets()[0]
+    before, after = manifests(p)
+    item = pair(p)
+    item["baseline_review"]["clarity"] = "partial"
+    item["candidate_review"]["clarity"] = "pass"
+    report = build_paired_review_report(before, after, bundle(item))
+    assert report["paired_review_dimension_changes"]["clarity"] == {
+        "candidate_better": 1, "baseline_better": 0, "tied": 0,
+    }
+    assert report["human_reviewed_pairs"] == 1
+
+
+def test_paired_review_rejects_causal_pass_with_known_unsupported_cause():
+    p = build_fixed_packets()[0]
+    before, after = manifests(p)
+    item = pair(p)
+    item["candidate_review"]["unsupported_definitive_causal_claims"] = 1
+    with pytest.raises(ScorecardInputError, match="causal_calibration cannot pass"):
+        build_paired_review_report(before, after, bundle(item))
+
+
+def test_invalid_ordinal_grade_is_rejected_before_pairwise_arithmetic():
+    p = build_fixed_packets()[0]
+    before, after = manifests(p)
+    item = pair(p)
+    item["candidate_review"]["clarity"] = "ungraded"
+    with pytest.raises(ScorecardInputError, match="clarity must be pass, partial or fail"):
+        build_paired_review_report(before, after, bundle(item))
 
 
 def test_review_digest_must_match_actual_recorded_answer():
@@ -209,6 +255,10 @@ def test_one_safety_regression_is_exposed_not_voted_away():
     item["candidate_review"] = grade(safety="fail", useful="fail", overclaim=1)
     report = build_paired_review_report(before, after, bundle(item))
     assert report["candidate_reviewed_scorecard"]["safety_pass_pct"] == 0
+    assert report["paired_review_dimension_changes"]["safety"] == {
+        "candidate_better": 0, "baseline_better": 1, "tied": 0,
+    }
+    assert report["paired_unsupported_definitive_causes"]["candidate_minus_baseline"] == 1
     assert report["candidate_reviewed_scorecard"]["unsupported_definitive_causal_claims"] == 1
     assert report["acceptance_gate_passed"] is False
 

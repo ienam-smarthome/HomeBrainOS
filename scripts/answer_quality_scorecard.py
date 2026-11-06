@@ -121,6 +121,12 @@ def validate_review(record: Any, catalog: dict[str, dict]) -> dict:
     overclaims = _number(result.get("unsupported_definitive_causal_claims"), "unsupported causal claims", integer=True)
     if grounded > claims:
         raise ScorecardInputError(f"{case_id}: grounded claims exceed evaluated claims")
+    # A positive causal grade cannot coexist with a known unsupported
+    # definitive cause. Keep qualitative partial/fail decisions with reviewers.
+    if overclaims > 0 and result["causal_calibration"] == "pass":
+        raise ScorecardInputError(
+            f"{case_id}: causal_calibration cannot pass with unsupported definitive causes"
+        )
     timing = record.get("metrics") or {}
     if not isinstance(timing, dict):
         raise ScorecardInputError(f"{case_id}: metrics must be an object")
