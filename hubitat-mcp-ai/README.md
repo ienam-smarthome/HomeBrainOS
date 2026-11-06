@@ -3,7 +3,22 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.432**.
+Current add-on version: **0.18.433**.
+
+**Verified restart triggers vs unresolved root causes (v0.18.433):**
+The on-demand incident AI endpoint now reads the typed, successful, source-backed
+Hubitat Hub Events receipts independently of the language model. A literal
+`lowMemory` event stating critically low memory and rebooting, followed by
+a time-bounded `systemStart`, supports the **reported low-memory reboot trigger**
+but does not identify which app, driver or process consumed memory. A recorded
+`update` followed by `systemStart` establishes an update-associated startup
+sequence, not that firmware caused a preceding externally measured memory dip.
+Both conclusions are reported alongside **underlying memory cause: UNVERIFIED**.
+If AI overstates causality, the unsafe draft stays withheld while the verified
+Hub Events timeline remains visible. The response includes typed trigger
+evidence and source-coverage information in Technical details.
+The existing incident-AI route remains read-only and on-demand.
+[Release notes](CHANGELOG-0.18.433.md).
 
 **Evidence-bound AI investigations (v0.18.432):** Hub Diagnostics now offers
 **AI investigate** on each timeline event, **AI investigate selected time**,

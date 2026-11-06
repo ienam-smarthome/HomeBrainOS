@@ -36,6 +36,7 @@ from device_state_summary import (
 from health_audit_scheduler import MorningHealthScheduler
 from historical_evidence_journal import HistoricalEvidenceJournal
 from hub_incident_ai import (bind_incident, reset_incident, publish_incident_analysis, project_incident, guard_unresolved_causal_publication)
+from hub_incident_trigger_evidence import assess_hub_event_trigger
 from external_hub_diagnostics import ExternalHubDiagnostics
 from household_ollama_accounts import read_authorized_household_accounts
 from health_audit_service import (
@@ -1632,8 +1633,13 @@ async def hub_diagnostics_investigate(payload: IncidentAIRequest,
                 "The read-only incident AI guard rejected a mutation-path "
                 "result. No action is authorised by this request."
             ))
+        receipts = [
+            entry for entry in (response.get("evidence") or [])
+            if isinstance(entry, dict)
+        ]
+        trigger_assessment = assess_hub_event_trigger(snapshot, receipts)
         message, validation = publish_incident_analysis(
-            snapshot, str(response.get("message") or "")
+            snapshot, str(response.get("message") or ""), receipts
         )
         response["message"] = message
         response["route"] = "hub-incident-ai"
@@ -1641,6 +1647,9 @@ async def hub_diagnostics_investigate(payload: IncidentAIRequest,
         response["incident_evidence"] = project_incident(snapshot)
         response["ai_claim_validation"] = validation
         response["causal_verdict"] = "unverified"
+        response["restart_trigger_evidence"] = trigger_assessment
+        response["restart_trigger_status"] = trigger_assessment["restart_trigger"]
+        response["underlying_memory_cause"] = "unverified"
         response["read_only"] = True
         # This field qualifies only the local archive preflight. Any
         # additional read-only MCP calls appear individually in receipts.

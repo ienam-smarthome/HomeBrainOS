@@ -13,6 +13,8 @@ import json
 import re
 from typing import Any
 
+from hub_incident_trigger_evidence import assess_hub_event_trigger, render_hub_event_findings
+
 _LOCAL_INCIDENT: ContextVar[dict[str, Any] | None] = ContextVar(
     "homebrain_verified_local_incident", default=None
 )
@@ -160,7 +162,12 @@ def fact_summary(snapshot: dict[str, Any]) -> str:
         else:
             rows.append(
                 f"- {label}: {item['value']} {unit} at {item['recorded_at']} "
-                "(native values displayed at collector receipt; not inferred)."
+                + ("(external recorder probe; not native telemetry)."
+                 if key == "memory_min_mb"
+                 else "(native five-minute source, displayed at collector receipt; "
+                      "not measured CPU utilisation)."
+                 if key == "cpu_load_equivalent_max_pct"
+                 else "(native source, displayed at collector receipt).")
             )
     rows.append(
         f"- Confirmed startup records in window: {len(data['confirmed_startups'])}; "
@@ -179,9 +186,16 @@ def fact_summary(snapshot: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
-def publish_incident_analysis(snapshot: dict[str, Any], model_message: str) -> tuple[str, str]:
+def publish_incident_analysis(snapshot: dict[str, Any], model_message: str,
+                              receipts: list[dict[str, Any]] | None = None
+                              ) -> tuple[str, str]:
     """Never publish a definitive unsupported source-to-cause leap as an answer."""
     facts = fact_summary(snapshot)
+    # Typed source assessment is deliberately computed by the host, not
+    # inferred from model narrative or the broad hypothesis coverage label.
+    assessment = assess_hub_event_trigger(snapshot, receipts)
+    if receipts is not None:
+        facts += "\n\n" + render_hub_event_findings(assessment)
     message = str(model_message or "").strip()
     # Overclaiming is a reason to withhold the draft, not automatically
     # rewrite a cause into a newly invented attribution.
@@ -189,14 +203,18 @@ def publish_incident_analysis(snapshot: dict[str, Any], model_message: str) -> t
         return (
             facts + "\n\n**AI review withheld:** The generated draft asserted "
             "a definitive cause without a verified causal warrant. "
-            "Re-run with additional read-only event/app-log evidence. "
-            "Do not treat this draft as a completed investigation.",
+            "The typed Hub Events interpretation above remains available; "
+            "a recorded reboot trigger does not establish the application "
+            "responsible for a memory decline. Further read-only app-log "
+            "and historical-performance evidence is required. "
+            "Do not treat the withheld draft as a completed investigation.",
             "draft_overclaim_withheld",
         )
     if not message:
         return facts + "\n\nNo usable AI interpretation was returned.", "model_empty"
     return (
-        facts + "\n\n**AI interpretation — hypotheses, not verified causes**\n\n"
+        facts + "\n\n**AI interpretation — verified event triggers above; "
+        "additional causes remain hypotheses**\n\n"
         + message
         + "\n\n**Final status: cause unverified without discriminating evidence.**",
         "hypotheses_only",
