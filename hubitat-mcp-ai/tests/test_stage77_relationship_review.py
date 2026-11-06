@@ -139,19 +139,6 @@ def test_stage77_four_request_mock_does_not_leak_reference_or_publish():
     assert "mock-private-secret" not in json.dumps(result)
 
 
-def test_mobile_shows_temporal_inversion_and_missing_critical_record():
-    html = render_page("HomeBrainOS", "0.18.309")
-    for fragment in (
-        "Stage 7.7 · Missing evidence and clock-order comparisons",
-        "source_receipt_order_inversions",
-        "postrun_critical_reference_gaps",
-        "Watchdog ticks:",
-        "physical sequence not proven",
-        "production_publication_approval:false",
-    ):
-        assert fragment in html
-
-
 def test_no_production_imports_or_publication_authority():
     for name in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):

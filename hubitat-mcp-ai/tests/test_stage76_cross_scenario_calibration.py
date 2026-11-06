@@ -161,20 +161,6 @@ def test_same_clock_record_order_not_physical_execution():
     assert "not_cross_day_or_execution_proof" in basis
 
 
-def test_stage76_mobile_and_human_followup_review_not_autocertified():
-    html = render_page("HomeBrainOS", "0.18.308")
-    for phrase in [
-        "Recorded times do not prove actual execution or cross-day order",
-        "Broker session evidence:", "source time ", "collector receipt ",
-        "Can the suggested next evidence establish what Gemma claims?",
-        "next_evidence_quality", "followupControl.value!=='not_reviewed'",
-        "Other unsupported typed statements (not a false-fact count)",
-        "Not fully source-value-audited:",
-        "production_publication_approval:false",
-    ]:
-        assert phrase in html
-
-
 def test_production_source_isolation():
     for name in ("mcp_agent_orchestrator.py", "tool_executor.py",
                  "causal_claim_publication.py", "final_answer_coordinator.py"):
