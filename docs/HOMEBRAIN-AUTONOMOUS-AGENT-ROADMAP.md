@@ -1,6 +1,6 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**v0.18.453 claim-evidence adapter and non-publishing shadow checkpoint (7 Nov, candidate):**
+**v0.18.453 merged — claim-evidence adapter and non-publishing shadow checkpoint (7 Nov):**
 Do not merge Claude's parallel claim-v2.1 validator even though its 21 condensed
 tests pass. Integrate into existing `claim_evidence_contract.py`: focal-time
 gating for absent-in-scope, Historical Journal collector-reception typed
@@ -14,8 +14,7 @@ sensor disposition separately from successful direct sensor windows.
 Evidence sample: 6 returned OFF boundaries, 2 paired, 4 unmatched within the
 returned records; 4 of 10 selection-stage probed, only 2 native sensor
 windows; none of four app-log requests covered the focal 00:30 OFF. This is
-not a root-cause finding. Test cross-domain claim semantics, then gate on all
-four CI workflows and an installed source-real response. Follow with
+not a root-cause finding. Synthetic cross-domain claim semantics passed with [PR #1511](https://github.com/ienam-smarthome/HomeBrainOS/pull/1511), all four exact-head CI checks green at `1600af59001959d37e3e86b79aa7db4931b32efd` (6,738 Python tests plus packaged add-on smoke), squash-merged to main as `755635e8fb08d8f976504a3f55ef145d21a30c6c`. Installed source-real v0.18.453 acceptance remains unverified. Follow with
 model-selected claim envelopes, reason-code repair and frozen held-out
 cross-domain benchmarking **before** replacing live prose or retiring guards.
 
