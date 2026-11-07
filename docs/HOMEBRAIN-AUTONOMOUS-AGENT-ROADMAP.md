@@ -1,5 +1,16 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**Source-real v0.18.448 acceptance failed (7 Nov 2026):** Six model rounds,
+16 calls and complete Technical JSON showed the newest OFF state report but
+not an independently verified upstream issuer. The answer still described a
+bridge report as external initiation, named an older event's subscriber as if
+focal, and called a sensor's recorded inactive state "activity". The merged
+v0.18.448 deduplicator improved presentation only. The next candidate
+(v0.18.449) addresses *focal identity and final source-bound publication*
+generically; its CI and real installed uplift must be evaluated separately.
+Do not conflate target event read success with historical completeness.
+
+
 **Merged general causal-answer presentation guard (v0.18.448, PR #1500, CI green):**
 The user's v0.18.447 multi-source Livingroom Light 2 OFF analysis correctly
 separated a Matter bridge's state-report role from a downstream SenseCap
