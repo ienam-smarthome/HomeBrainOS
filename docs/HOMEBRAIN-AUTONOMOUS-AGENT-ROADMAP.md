@@ -1,5 +1,18 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**v0.18.449 candidate — source-real v0.18.448 acceptance failed:** A held-out
+read-only OFF investigation returned plausible timestamps and no repetitive
+paragraphs, but promoted the reporting bridge to an unproven external cause,
+made an unqualified no-Hubitat-instruction claim despite bounded receipts,
+misstated inactive motion as generic activity and attached an older listener
+to the focal event. The complete Technical JSON also reported a failed
+synthesis repair. Candidate correction: focal direction and event-bound
+listener selection, read-only final publication proof checks and exact sensor
+value instructions. CI and measured live uplift are pending. Keep the
+model-led evidence-first roadmap, never add per-device source rules, and
+retain write/confirmation and resource safeguards.
+
+
 **Merged general causal-answer presentation guard (v0.18.448, PR #1500, CI green):**
 The user's v0.18.447 multi-source Livingroom Light 2 OFF analysis correctly
 separated a Matter bridge's state-report role from a downstream SenseCap
