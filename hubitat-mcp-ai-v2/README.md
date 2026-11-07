@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.4**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.5**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -8,6 +8,7 @@ The configured model uses native Ollama-compatible `/api/chat` function calling 
 
 - Refresh and paginate the live catalog for each request. Preserve server descriptions, schemas and annotations internally.
 - Support gateway schema discovery with empty arguments and invocation with `tool` / `args`, as well as flat catalogs. The server resolves gateway membership and enforces its permissions.
+- Validate calls against the live input schema, with no remote schema fetches. For gateway-shaped schemas, reject a selector incorrectly nested inside `args` with an actionable error; do not silently rewrite it. Empty discovery and valid gateway/flat calls remain supported.
 - Let the model select tools, follow up on evidence and write its answer. Execute calls sequentially; never automatically retry a tool call whose write outcome may be uncertain.
 - Load the unmodified upstream `SKILL.md`, `safety-guide.md` and `rule-patterns.md` from the bundled skill directory. These are guidance; the connected server's live schemas and guides remain authoritative. Native Rule Machine/Visual Rules are preferred for new automations; the patterns reference describes the legacy custom-rule engine.
 - Calls carrying `confirm=true` (including nested gateway arguments) pause for an explicit decision in the UI. Approval is bound to one exact pending call and request; stale approvals fail. A declined or timed-out call is not executed. The model cannot manufacture approval by setting the flag. Ordinary requested operations follow upstream device-identity and permission rules.
@@ -31,7 +32,7 @@ Installation, ingress and live model/MCP acceptance remain pending. Dedicated co
 
 ## Interface and receipts
 
-Ask/Chat displays the model answer, current tool operation and exact pending confirmation when required. Tool receipts include names, redacted arguments, success, elapsed time and the same bounded/redacted source response delivered to the model. Truncation is explicit. Completed receipts survive later model failures. Receipts are returned to the current browser session; they are not automatically persisted or included in later chat history.
+Ask/Chat displays the model answer, current tool operation and exact pending confirmation when required. Tool receipts include names, redacted arguments, success, elapsed time and the same bounded/redacted source response delivered to the model. Truncation is explicit. Schema-only gateway responses are labeled `tool_catalog` with `operation_executed: false`, and retain their original source inside the model-facing receipt. Local contract errors are marked as rejected before execution. Credential redaction preserves schema property definitions and JSON syntax, including credential-named parameters; actual credential values and samples are removed. Completed receipts survive later model failures. Receipts are returned to the current browser session; they are not automatically persisted or included in later chat history.
 
 The unchanged v1 external recorder is retained in an independent SQLite file. V2 starts new history; it does not import v1 samples automatically. The AI tool loop does not automatically ingest the recorder database. Diagnostics endpoints and graphs read the local recorder; MCP reads come from the connected server.
 
@@ -46,6 +47,8 @@ The unchanged v1 external recorder is retained in an independent SQLite file. V2
 Use Home Assistant ingress; the optional direct port is disabled by default. The custom mutation header prevents ordinary cross-origin forms/scripts from submitting actions; it is not authentication. Keep the direct interface on a trusted network if enabled.
 
 ## Validation and acceptance
+
+[PR #1528](https://github.com/ienam-smarthome/HomeBrainOS/pull/1528) reproduces the reported nested-selector/schema-corruption failure on the old code before fixing it. Scripted recovery and schema/privacy tests do not prove real-model answer quality.
 
 Mock protocol tests cover full and paginated catalogs, gateway discovery, flat writes, server refusals, catalog refresh, no automatic write retry, human confirmation/decline/expiry and source receipt retention. CI is necessary engineering evidence, not proof of model reasoning or answer quality.
 

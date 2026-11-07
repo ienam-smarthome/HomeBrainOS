@@ -63,8 +63,8 @@ def _redact_schema(value: Any, sensitive: bool = False) -> Any:
                     name: _redact_schema(schema, bool(_SECRET_KEY.search(name)))
                     for name, schema in item.items()
                 }
-            elif key in ("default", "examples") and sensitive:
-                result[key] = _secret_sample(item)
+            elif key in ("default", "examples"):
+                result[key] = _secret_sample(item) if sensitive else redact(item)
             else:
                 result[key] = _redact_schema(item, sensitive)
         return result

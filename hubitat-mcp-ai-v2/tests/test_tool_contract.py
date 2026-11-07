@@ -95,6 +95,8 @@ class GatewayContractRegressions(unittest.TestCase):
                 self.assertEqual(transport.calls, [])
                 discovered = await transport.client.call("hub_read_devices", {})
                 self.assertEqual(json.loads(discovered["content"][0]["text"])["mode"], "catalog")
+                await transport.client.call("hub_read_devices", {"args": {}})
+                await transport.client.call("hub_read_devices", {"tool": "hub_list_devices"})
                 await transport.client.call("hub_read_devices", {
                     "tool": "hub_list_devices", "args": {"include_token": False}})
                 self.assertEqual(transport.calls[-1], {
@@ -222,7 +224,9 @@ class SchemaPreservationRegressions(unittest.TestCase):
         schema["properties"]["access_token"]["default"] = "sample-private-key"
         schema["properties"]["access_token"]["examples"] = ["sample-other-key"]
         schema["properties"]["access_token"]["enum"] = ["none", "provided"]
+        schema["properties"]["settings"] = {"type": "object", "default": {"password": "nested-private"}}
         result = redact({"inputSchema": schema})
+        self.assertNotIn("nested-private", json.dumps(result))
         field = result["inputSchema"]["properties"]["access_token"]
         self.assertEqual(field["type"], "string")
         self.assertEqual(field["enum"], ["none", "provided"])
