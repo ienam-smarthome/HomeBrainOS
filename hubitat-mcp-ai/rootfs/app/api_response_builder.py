@@ -11,6 +11,7 @@ from typing import Any
 from causal_claim_verification import verify_causal_claims
 from causal_sensor_value_guard import guard_focal_sensor_value_precision
 from causal_verified_fallback import verified_failed_repair_answer
+from claim_evidence_adapter import assess_evidence_shadow
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
@@ -807,6 +808,21 @@ def build_agent_response(
         result["evidence_validation"]["claim_validated_factual_floor"] = (
             "synthesis_repair_failed"
         )
+    # Non-publishing, host-selected v2 evidence baseline. No model claims
+    # are evaluated or prompted here; only typed current-turn receipt
+    # quality, checked windows and returned-record pairing are measured.
+    # Fail closed without changing the answer if any unexpected source
+    # shape is encountered. Never run on writes or confirmations.
+    if causal_read:
+        try:
+            shadow = assess_evidence_shadow(evidence)
+            if shadow.get("focal_attested"):
+                result["evidence_validation"]["claim_evidence_shadow"] = shadow
+        except (TypeError, ValueError, KeyError, AttributeError, OverflowError):
+            result["evidence_validation"]["claim_evidence_shadow_error"] = (
+                "source_adapter_rejected"
+            )
+
     if interval_table_corrected:
         result["evidence_validation"]["interval_table_duration_corrected"] = True
     if occupancy_causal_claim_calibrated:
