@@ -11,6 +11,7 @@ sys.path.insert(0, str(APP))
 from claims_v2 import (
     SCHEMA, Coverage, EvidencePacket, Witness, assess_claims_shadow,
     packet_from_v1_ledger, publish, validate_claims,
+    coverage_from_verified_window_reads,
 )
 
 
@@ -216,3 +217,47 @@ def test_model_text_not_leaked_in_shadow_reason_codes_or_final_render():
     assert "MUST LEAK" not in publish(bad, packet).text
     assert verdict.rejected[0].reason == "unknown_claim_kind"
 
+
+
+def test_checked_scope_comes_only_from_verified_scoped_native_window():
+    raw = {
+        "tool": "hub_read_devices",
+        "sub_tool": "hub_list_device_events",
+        "success": True, "mutates": False, "effect": "read",
+        "evidence_kind": "authoritative_device_event_history",
+        "arguments": {
+            "tool": "hub_list_device_events",
+            "args": {
+                "deviceId": "9000", "attribute": "motion",
+                "since": "2026-11-07T00:20:00+00:00",
+                "until": "2026-11-07T00:40:00+00:00",
+                "limit": 100,
+            },
+        },
+        "details": {
+            "label": "Example Motion", "deviceId": "9000",
+            "attribute": "motion", "windowVerified": True,
+            "events": [], "eventCount": 0, "sourceHistoryComplete": False,
+        },
+    }
+    found = coverage_from_verified_window_reads([raw])
+    assert len(found) == 1
+    cov = found[0]
+    assert cov.successful and cov.pages_checked == 1
+    assert cov.matched_count == 0 and cov.complete is False
+    p = replace(_packet(), coverage={cov.coverage_id: cov})
+    cl = _claim("absent_in_scope", entity="9000", what="motion",
+                coverage_id=cov.coverage_id)
+    assert not _reason(cl, p)
+    assert "not proof it never happened" in publish(_env(cl), p).text
+
+    for change in (
+        {"success": False}, {"mutates": True},
+        {"evidence_kind": "tool_result"},
+        {"details": dict(raw["details"], windowVerified=False)},
+        {"details": dict(raw["details"], eventCount=1)},
+        {"details": dict(raw["details"], deviceId="9001")},
+        {"arguments": {"args": {"deviceId": "9000", "attribute": "motion",
+                                "hoursBack": 24}}},
+    ):
+        assert coverage_from_verified_window_reads([{**raw, **change}]) == []
