@@ -49,6 +49,21 @@ def _args(row: Mapping[str, Any]) -> Mapping[str, Any]:
     return inner if isinstance(inner, Mapping) else arguments
 
 
+def _state_history_rows(data: Mapping[str, Any]) -> list[Any]:
+    """Read both source projections; boundary rows may omit an unpaired edge.
+
+    Consumers validate source roles and deduplicate by state/time. Observed
+    rows are not automatically intervals or commands merely because they are
+    in the same returned page.
+    """
+    rows = []
+    for key in ("observedEvents", "boundaryEvents"):
+        batch = data.get(key)
+        if isinstance(batch, (list, tuple)):
+            rows.extend(batch[:150])
+    return rows
+
+
 def _latest_off_causal_question(question: str) -> bool:
     """Read-only historical causal intent, never proof of an OFF event."""
     from causal_completion_policy import requested_transition_scope
@@ -121,7 +136,7 @@ def _focal_and_target(
         if (not isinstance(data, Mapping) or _label(data.get("label")) != name
                 or data.get("attribute") != "switch"):
             continue
-        for event in (data.get("boundaryEvents") or [])[:150]:
+        for event in _state_history_rows(data):
             if (not isinstance(event, Mapping)
                     or event.get("name") != "switch"
                     or event.get("isStateChange") is not True
@@ -154,6 +169,7 @@ def packet_from_evidence(
     states: dict[tuple[datetime, str], Mapping[str, Any]] = {}
     for row in scoped:
         if (row.get("tool") != "homebrain_device_history"
+                or row.get("supports_live_claim") is False
                 or row.get("evidence_kind") not in {
                     "authoritative_device_event_history",
                     "deterministic_device_event_history",
@@ -165,7 +181,7 @@ def packet_from_evidence(
             or data.get("attribute") != "switch"
         ):
             continue
-        for event in (data.get("boundaryEvents") or [])[:150]:
+        for event in _state_history_rows(data):
             if (not isinstance(event, Mapping)
                     or event.get("isStateChange") is not True
                     or event.get("name") != "switch"

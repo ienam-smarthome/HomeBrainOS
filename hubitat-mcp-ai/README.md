@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.456**.
+Current add-on version: **0.18.457**.
+
+**Complete returned OFF sample (v0.18.457):** The adapter now reads both source `observedEvents` and boundary projections, deduplicating state/time witnesses. An unpaired older OFF can be present in raw returned observations but absent from interval boundaries; it must remain in the returned-sample denominator. The v0.18.455 private packet replays as six OFF reports, two matched commands and four unmatched returned records, without inferring external control. [Details](CHANGELOG-0.18.457.md).
 
 **Focal log request coverage (v0.18.456):** Default past-log mode is recognised even when omitted. Diagnostics distinguish executed reads, valid bounded windows, open-ended samples and app-specific focal requests. The synthesis and final read-only answer checks reject unsupported focal log absence, and issuing-app decision reads cannot use an unrelated historical command for an attested latest OFF. No extra model/tool calls or permission changes. [Details](CHANGELOG-0.18.456.md).
 

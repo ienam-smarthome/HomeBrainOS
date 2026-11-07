@@ -59,6 +59,20 @@ def test_default_past_mode_counts_all_reads_without_inventing_focal_coverage():
     assert shadow["model_claims_assessed"] is False
 
 
+def test_pairing_sample_includes_unpaired_raw_off_omitted_from_boundary_projection():
+    from copy import deepcopy
+    rows = receipts()
+    history = next(row for row in rows if row.get("tool") == "homebrain_device_history")
+    all_states = deepcopy(history["details"]["boundaryEvents"])
+    history["details"]["observedEvents"] = all_states
+    history["details"]["boundaryEvents"] = all_states[:-1]
+    shadow = assess_evidence_shadow(rows, original_question=QUESTION)
+    assert shadow["reported_off_count"] == 6
+    assert shadow["returned_command_pairing"]["matching_recorded_commands"] == 2
+    assert shadow["returned_command_pairing"]["unmatched_in_returned_records"] == 4
+    assert shadow["log_request_coverage"]["past_log_requests"] == 4
+
+
 @pytest.mark.parametrize("mode", [None, "past"])
 def test_default_and_explicit_past_accept_offset_aware_bounded_requests(mode):
     args = {} if mode is None else {"mode": mode}
