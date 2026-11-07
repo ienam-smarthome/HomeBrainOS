@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from causal_timeline import build_causal_timeline_rows
@@ -148,6 +149,65 @@ def _history_events(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _focal_physical_events(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Select only physical reports for a verified focal instant.
+
+    A history wrapper may contain many earlier switch boundaries. If a
+    unique focal instant cannot be established, only a single physical
+    instant is safe to use for an event-specific listener claim.
+    """
+    events = [
+        row for row in _history_events(evidence)
+        if str(row.get("type") or "").casefold() == "physical"
+    ]
+    requested: set[datetime] = set()
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if receipt.get("tool") != "homebrain_causal_secondary_correlation":
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        raw = str(details.get("requestedBoundary") or "")
+        try:
+            instant = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if instant.tzinfo is not None:
+            requested.add(instant.astimezone(timezone.utc))
+    if len(requested) > 1:
+        return []
+    focal = next(iter(requested)) if requested else None
+    if focal is None:
+        instants: set[datetime] = set()
+        for row in events:
+            try:
+                stamp = datetime.fromisoformat(
+                    str(row.get("date") or "").replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            if stamp.tzinfo is not None:
+                instants.add(stamp.astimezone(timezone.utc))
+        if len(instants) != 1:
+            return []
+        focal = next(iter(instants))
+    matched = []
+    for row in events:
+        try:
+            stamp = datetime.fromisoformat(
+                str(row.get("date") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        if stamp.tzinfo is not None and stamp.astimezone(timezone.utc) == focal:
+            matched.append(row)
+    return matched
+
+
 def _triggered_only_app_contexts(
     evidence: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
@@ -169,7 +229,7 @@ def _triggered_only_app_contexts(
 
     contexts: list[dict[str, str]] = []
     seen: set[tuple[str, str, str]] = set()
-    for event in events:
+    for event in _focal_physical_events(evidence):
         if str(event.get("type") or "").strip().casefold() != "physical":
             continue
         producer_type, _producer_id, producer_label = _producer_identity(
@@ -222,19 +282,63 @@ def guard_triggered_listener_causal_claim(
     """
 
     text = str(message or "")
+    focal_events = _focal_physical_events(evidence)
+    # Source-role claims in a final answer must refer to the same event.
+    # Reject even a previously inserted listener assertion if its name
+    # occurs only on a different returned history boundary.
+    focal_names = {
+        str(item.get("label") or item.get("name") or "").casefold()
+        for event in focal_events
+        for item in (event.get("triggered") or [])
+        if isinstance(item, dict)
+    }
+    historical_names = {
+        str(item.get("label") or item.get("name") or "").casefold()
+        for event in _history_events(evidence)
+        if event not in focal_events
+        for item in (event.get("triggered") or [])
+        if isinstance(item, dict)
+    }
+    corrected_lines = []
+    stale_fixed = False
+    for line in text.splitlines(keepends=True):
+        if "triggered[]" in line and re.search(
+            r"(?i)\b(?:this physical state event|focal event|latest (?:off|on) event)\b",
+            line,
+        ):
+            stale = [
+                name for name in historical_names - focal_names
+                if name and name in line.casefold()
+            ]
+            if stale:
+                # Only replace the assertion about the wrong focal listener,
+                # not preceding timing/causal facts or a Markdown table row.
+                pattern = re.compile(
+                    r"(?i)For this physical state event, [^.\n]+? "
+                    r"is recorded only as a downstream listener in triggered\[\];"
+                    r"[^.\n]*\."
+                )
+                rewritten = pattern.sub(
+                    "A listener recorded on another historical event does not "
+                    "establish a listener or initiating role on this focal transition.",
+                    line,
+                )
+                if rewritten != line:
+                    line = rewritten
+                    stale_fixed = True
+        corrected_lines.append(line)
+    text = "".join(corrected_lines)
     contexts = _triggered_only_app_contexts(evidence)
     if not contexts or not _CAUSAL_CLAIM.search(text):
-        return text, False
+        return text, stale_fixed
 
     by_label = {
         row["appLabel"].casefold(): row
         for row in contexts
         if row.get("appLabel")
     }
-    generic_context = contexts[0]
-
     pieces = re.split(r"(?P<space>(?<=[.!?])\s+|\n+)", text)
-    changed = False
+    changed = stale_fixed
     for index in range(0, len(pieces), 2):
         sentence = pieces[index]
         if not _CAUSAL_CLAIM.search(sentence):
@@ -250,12 +354,13 @@ def guard_triggered_listener_causal_claim(
             None,
         )
         if matched is None:
-            # Catch generic claims such as "directly triggered by an automation"
-            # when current evidence contains only downstream app listeners and a
-            # physical device/bridge producer.
-            if not _APP_TERM.search(sentence):
+            # Generic "the automation triggered it" claims still require
+            # disambiguation when there is exactly one listener-only context.
+            # Crucially, the context is *focal-scoped* whenever a verified
+            # requestedBoundary was supplied, never from an older event.
+            if not _APP_TERM.search(sentence) or len(contexts) != 1:
                 continue
-            matched = generic_context
+            matched = contexts[0]
 
         app_label = matched["appLabel"]
         producer_label = matched["producerLabel"]

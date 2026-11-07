@@ -51,8 +51,56 @@ def _scoped_question(
             when = datetime.fromisoformat(moment_text.replace("Z", "+00:00"))
         except ValueError:
             continue
+        transition = str(details.get("transition") or "").casefold()
+        # Older host correlation receipts did not carry transition=on/off.
+        # Infer direction only from an exact, target-matched switch report.
+        # Do not silently default every missing role to ON.
+        matched_values: set[str] = set()
+        source_transitions: dict[str, set[datetime]] = {"on": set(), "off": set()}
+        for source in evidence:
+            if (
+                not isinstance(source, dict)
+                or source.get("success") is not True
+                or source.get("tool") != "homebrain_device_history"
+            ):
+                continue
+            history = source.get("details")
+            if not isinstance(history, dict):
+                continue
+            if str(history.get("label") or "").casefold() != subject.casefold():
+                continue
+            for key in ("boundaryEvents", "observedEvents"):
+                for row in history.get(key) or []:
+                    if not isinstance(row, dict) or row.get("name") != "switch":
+                        continue
+                    value = str(row.get("value") or "").casefold()
+                    if value not in source_transitions:
+                        continue
+                    try:
+                        observed = datetime.fromisoformat(
+                            str(row.get("date") or "").replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        continue
+                    if observed.tzinfo is None or when.tzinfo is None:
+                        continue
+                    source_transitions[value].add(observed)
+                    if observed == when:
+                        matched_values.add(value)
+        if transition not in {"on", "off"}:
+            if len(matched_values) != 1:
+                continue
+            transition = next(iter(matched_values))
+        elif matched_values and transition not in matched_values:
+            # The model/host transition role contradicts the requested
+            # boundary timestamp. A unique source-observed transition
+            # is safe to re-anchor; otherwise refuse to guess a clock.
+            matching = source_transitions[transition]
+            if len(matching) != 1:
+                continue
+            when = next(iter(matching))
         candidates.add(
-            f"Why did {subject} turn on at {when:%H:%M:%S} "
+            f"Why did {subject} turn {transition} at {when:%H:%M:%S} "
             f"on {when.day} {when:%B %Y}?"
         )
     return next(iter(candidates)) if len(candidates) == 1 else ""

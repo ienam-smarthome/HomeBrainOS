@@ -1,5 +1,16 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — v0.18.448 real-source causal acceptance failed; v0.18.449 candidate CI pending
+
+**Live installed evidence:** v0.18.448 was confirmed through a read-only HomeBrain Ask result, with six Gemma cloud model rounds, 16 tool calls, roughly 35.6s elapsed and outcome=unresolved. The most recent switch OFF report was at 2026-11-07 00:30:00.023 GMT. A reporting bridge is not a verified initiating controller. A recorded command-off from an earlier boundary does not establish a matching command at the latest boundary, but incomplete command history also cannot establish that the latest cause was external. The response wrongly asserted definite external origin and no Hubitat instruction, described a source-observed motion=inactive event as generic activity, and referred to an app listener that was present on an older event but absent from the focal triggered[] list. Focal source integrity and upstream origin remain unverified. The repeated-long-prose bug did not reappear. This is one source-reviewed failure, **not** a measured production accuracy rate.
+
+**Engineering hypothesis:** Both model synthesis and final publication allowed event-source role confusion: the fallback focal-question reconstructed ON even when the verified correlation specified OFF; listener source contexts came from arbitrary earlier history; and the API finalizer omitted the existing upstream-initiator proof guard after synthesis reported one failed repair. The general candidate v0.18.449 binds direction/listeners to the focal event and reruns read-only causal-origin proof checks at the final boundary. Adds source-neutral synthetic tests and exact motion value prompt guidance. No real first-answer uplift is claimed until CI and a fresh held-out source-real test pass.
+
+**Gate:** Only merge after all four CI workflows green on the exact head. No live HA/Hubitat/router changes, no added source reads, no paid-route or watchdog change. Roll back the candidate if cross-event listener checks suppress correct independent source claims, if prompts lose useful observation detail, or if write/confirmation strings change.
+
+---
+
+
 ## 2026-11-07 — v0.18.448 generic causal-answer repetition and proof-boundary guard (merged; installed verification pending)
 
 **Held-out read-only test:** The installed HomeBrainOS v0.18.447 Livingroom Light 2 investigation reported a focal OFF at 2026-11-06 20:53:25 GMT and later ON at 20:58:15 GMT, while classifying the bridge as state-report producer and SenseCap D1 Settings as a downstream listener rather than a proved OFF initiator. The visible output duplicated the same source-role narrative multiple times, mixed an unsupported or at least unattributed assertion that an OFF command was recorded into its log-coverage note, and did not establish a definite upstream OFF initiator. These are **displayed-answer observations only**; full Technical JSON source rows and command issuer receipts were not supplied for this test. No new cause or decisive command proof can be inferred from the screenshot or text.

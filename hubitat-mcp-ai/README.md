@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.448**.
+Current add-on version: **0.18.449**.
+
+**Focal-event causal proof boundary (v0.18.449):** The final read-only API response now rechecks unsupported external-origin and command-absence claims even when model synthesis repair fails. The focal event uses the recorded ON/OFF direction rather than inventing ON, and listener claims must match the requested event instead of borrowing an app from another historical boundary. Model guidance requires exact sensor values rather than equating inactive with activity. Confirmation/write outputs remain exempt; read permissions, provider routing and watchdogs are unchanged. [Release notes](CHANGELOG-0.18.449.md).
 
 **Evidence-first causal answer hygiene (v0.18.448):** After all factual evidence guards, the API removes repeated *verbatim long prose sentences* within the same answer section, while preserving timelines, distinct timestamps, lists, tables, code, commands and new conclusions. Write/confirmation messages remain untouched. A transparent Technical JSON counter reports removed repeats. Model guidance explicitly separates command-issued records, downstream listeners and bridge-reported state changes; only typed matching command evidence can support a positive command-record claim. This is a general quality safeguard, not a Livingroom Light 2 special case. No new tool reads, writes, paid routing or changes to investigation watchdogs. [Release notes](CHANGELOG-0.18.448.md).
 
