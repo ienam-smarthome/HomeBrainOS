@@ -1,5 +1,20 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**Next incremental quality correction (v0.18.448 candidate):**
+The user's v0.18.447 multi-source Livingroom Light 2 OFF analysis correctly
+separated a Matter bridge's state-report role from a downstream SenseCap
+listener, but duplicated the same long factual paragraph and reported a
+command "captured" without showing the matching event/issuer. The
+screenshotted answer does not include full Technical JSON, so do not assert
+whether the command was independently verified or whether the unresolved
+initiator could have been determined. General solution: exact long-sentence
+de-duplication at the final API presentation boundary (after evidence
+guards), no modification of writes/confirmations/structured timeline
+rows, and generic prompt-level proof contract requiring target-matched
+command-off evidence for positive command claims. Keep an audit metric,
+CI-gated release and source-real held-out tests. No incident-specific
+patch, hard time cutoff or paid-route change.
+
 **Merged generic evidence-language increment (v0.18.447, PR #1498; CI green):**
 Never confuse time spanned by selected-attribute observations with the time
 spanned by all fetched raw device events. Source metadata must separately

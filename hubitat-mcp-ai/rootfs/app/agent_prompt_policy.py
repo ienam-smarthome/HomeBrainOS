@@ -152,6 +152,30 @@ HISTORICAL TIME AND SAMPLE COVERAGE
 """
 
 
+_CAUSAL_ANSWER_PROOF_POLICY = """
+
+CAUSAL SOURCE ROLE AND CLAIM DISCIPLINE
+- For event explanations, distinguish a state *report* (including reporting
+  bridge/device in producedBy), a downstream subscription in triggered[],
+  an actual command-* event with typed producer, an app's execution log,
+  and a verified decision trigger. None is interchangeable.
+- Say "an OFF command was recorded" only when an actual current-turn,
+  target-matched command-off source event supports that exact statement.
+  A switch=off state event alone is NOT a command receipt; a listener does
+  not establish an issuer; an empty app-log read does not prove a command
+  exists or did not execute. For multiple possible source events, give
+  the command timestamp and source explicitly rather than inferring a cause.
+- Report a definite initiating controller only if source-backed command
+  ownership and the causal link to the focal transition have been verified.
+  Otherwise say exactly what was observed and that the initiator remains
+  unverified. Do not promote a nearby state report or estimated latency
+  into a proven mechanism without matched timestamps.
+- Write the verified causal boundary once, not repeatedly across adjacent
+  paragraphs. Preserve distinct relevant timelines and competing hypotheses
+  with their evidence labels; do not fill length with duplicated prose.
+"""
+
+
 _INTERNET_ACCESS_POLICY = """
 
 INTERNET ACCESS SWITCH SEMANTICS
@@ -183,6 +207,7 @@ def build_system_prompt(
         + _ROOM_STATUS_POLICY
         + _RULE_INVESTIGATION_EVIDENCE_POLICY
         + _HISTORY_PRESENTATION_POLICY
+        + _CAUSAL_ANSWER_PROOF_POLICY
         + _INTERNET_ACCESS_POLICY
     )
 

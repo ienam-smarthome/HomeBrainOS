@@ -36,6 +36,77 @@ from technical_metrics_presenter import (
 )
 
 
+# Conservative prose-only final presentation hygiene. Exact long sentences
+# occasionally arrive multiple times from model synthesis plus independent
+# evidence calibrators. Keep the FIRST statement; never remove different
+# claims, short status text, table rows, command lists or code.
+_PROSE_SENTENCE_BOUNDARY = re.compile(
+    r"(?<=[.!?])(\s+)(?=(?:[A-Z]|\*\*[A-Z]))"
+)
+_PROTECTED_RESPONSE_LINE = re.compile(
+    r"^\s*(?:\||[-*+]\s+|\d+[.)]\s+|>| {4})"
+)
+_RESPONSE_HEADING = re.compile(
+    r"^\s*(?:#{1,6}\s+|\*\*[^*\n]{1,100}\*\*:?\s*$)"
+)
+
+
+def deduplicate_repeated_answer_prose(message: str) -> tuple[str, int]:
+    """Drop verbatim long sentence repetition within one prose section.
+
+    Presentation hygiene is not source verification. Distinct claims, tables,
+    lists and fenced examples survive unchanged. A heading resets the scope.
+    """
+    source = str(message or "")
+    seen: set[str] = set()
+    output: list[str] = []
+    removed = 0
+    fenced = False
+    fence_mark = ""
+
+    for raw in source.splitlines(keepends=True):
+        newline = "\n" if raw.endswith("\n") else ""
+        line = raw[:-1] if newline else raw
+        stripped = line.strip()
+        if stripped.startswith(chr(96) * 3) or stripped.startswith("~~~"):
+            mark = stripped[:3]
+            if not fenced:
+                fenced, fence_mark = True, mark
+            elif mark == fence_mark:
+                fenced, fence_mark = False, ""
+            output.append(raw)
+            continue
+        if fenced or not stripped or _PROTECTED_RESPONSE_LINE.match(line):
+            output.append(raw)
+            continue
+        if _RESPONSE_HEADING.match(line):
+            seen.clear()
+            output.append(raw)
+            continue
+
+        pieces = _PROSE_SENTENCE_BOUNDARY.split(line)
+        kept: list[str] = []
+        for i in range(0, len(pieces), 2):
+            fragment = pieces[i].strip()
+            if not fragment:
+                continue
+            signature = " ".join(fragment.split()).casefold()
+            # No fuzzy similarity: changing one timestamp, negation or source
+            # produces a different statement that we must preserve.
+            if len(signature) >= 72 and signature in seen:
+                removed += 1
+                continue
+            if len(signature) >= 72 and len(seen) < 256:
+                seen.add(signature)
+            if kept:
+                kept.append(pieces[i - 1] if i > 0 else " ")
+            kept.append(fragment)
+        if kept:
+            output.append("".join(kept) + newline)
+
+    return "".join(output), removed
+
+
 _NO_HISTORY_DATA = re.compile(
     r"\b(?:no\s+(?:recorded\s+)?data|no\s+history|no\s+(?:recorded\s+)?events?|"
     r"nothing\s+(?:was\s+)?recorded)\b",
@@ -606,6 +677,18 @@ def build_agent_response(
             guard_unverified_source_exception_mechanism(message, evidence)
         )
 
+    # Run after all model and source guards so duplicate repair prose cannot
+    # reappear downstream. Count removals without asserting evidence quality.
+    # Read-only/analytical presentation only. Preserve write/confirmation
+    # wording exactly; never edit safety-relevant action instructions.
+    repeated_prose_removed = 0
+    if (
+        str(getattr(outcome, "request_class", "")) not in
+        {"write", "confirmation"}
+        and not bool(getattr(outcome, "confirmation_required", False))
+    ):
+        message, repeated_prose_removed = deduplicate_repeated_answer_prose(message)
+
     result = {
         "success": True,
         "route": getattr(outcome, "route", "unified-mcp-agent"),
@@ -661,6 +744,10 @@ def build_agent_response(
                 # The globally configured model name is not evidence that a
                 # model answered this particular deterministic audit.
                 result["model"] = None
+    if repeated_prose_removed:
+        result["evidence_validation"]["repeated_long_prose_removed"] = (
+            repeated_prose_removed
+        )
     if interval_table_corrected:
         result["evidence_validation"]["interval_table_duration_corrected"] = True
     if occupancy_causal_claim_calibrated:
