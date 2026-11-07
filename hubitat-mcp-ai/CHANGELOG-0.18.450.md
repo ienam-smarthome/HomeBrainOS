@@ -46,7 +46,7 @@ establish any broader model-quality percentage.
 
 ## Quality and safety
 
-Require all four mandatory CI workflows on the exact PR head before merging.
+All four mandatory CI workflows passed on exact tested PR head `405f4fce996a86dacc37f41b8a70491224a8a055`; [PR #1505](https://github.com/ienam-smarthome/HomeBrainOS/pull/1505) squash-merged as `6264be5f646eadd0475d1d2bb58c3d0df0bce41b`. The first candidate run exposed one missing runtime-module-map entry, corrected before the final green run.
 A successful release proves the source-checking code paths, **not** first-pass
 model reasoning improvement. Preserve observed positive ON command, unknown
 OFF initiator, historical completeness limits, confirmed sensor value and
