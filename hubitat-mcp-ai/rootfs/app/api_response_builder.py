@@ -10,6 +10,7 @@ from typing import Any
 
 from causal_claim_verification import verify_causal_claims
 from causal_sensor_value_guard import guard_focal_sensor_value_precision
+from causal_verified_fallback import verified_failed_repair_answer
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
@@ -704,6 +705,27 @@ def build_agent_response(
             message, evidence,
         )
 
+    # A failed synthesis repair cannot justify publishing unsupported free
+    # prose about sensor event clocks or app-log windows. When current-turn
+    # source evidence uniquely identifies the requested OFF event, emit a
+    # deterministic claim-validated factual floor. Never touch writes,
+    # confirmations, other domains, or unverified focal source identities.
+    causal_fallback_published = False
+    failed_repairs = (metrics.get("counters") or {}).get("synthesis_repair_failed")
+    if (
+        causal_read
+        and outcome_coverage.get("rootCauseVerified") is False
+        and isinstance(failed_repairs, int)
+        and not isinstance(failed_repairs, bool)
+        and failed_repairs > 0
+    ):
+        trusted_floor = verified_failed_repair_answer(
+            evidence, original_question=str(submitted_question or ""),
+        )
+        if trusted_floor:
+            message = trusted_floor
+            causal_fallback_published = True
+
     # Run after all model and source guards so duplicate repair prose cannot
     # reappear downstream. Count removals without asserting evidence quality.
     # Read-only/analytical presentation only. Preserve write/confirmation
@@ -781,6 +803,10 @@ def build_agent_response(
         result["evidence_validation"]["focal_listener_scope_corrected"] = True
     if focal_sensor_value_repaired:
         result["evidence_validation"]["focal_sensor_value_corrected"] = True
+    if causal_fallback_published:
+        result["evidence_validation"]["claim_validated_factual_floor"] = (
+            "synthesis_repair_failed"
+        )
     if interval_table_corrected:
         result["evidence_validation"]["interval_table_duration_corrected"] = True
     if occupancy_causal_claim_calibrated:
