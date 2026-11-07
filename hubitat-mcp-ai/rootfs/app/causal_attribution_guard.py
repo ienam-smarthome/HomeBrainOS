@@ -336,7 +336,7 @@ def guard_triggered_listener_causal_claim(
                 aliases = [p for p in parts if len(p) >= 8]
                 if (
                     (app_id and re.search(
-                        rf"(?i)\\b(?:rule|app)\\s*#?\\s*{re.escape(app_id)}\\b",
+                        rf"(?i)\b(?:rule|app)\s*#?\s*{re.escape(app_id)}\b",
                         sentence,
                     ))
                     or any(alias in sentence_folded for alias in aliases)
