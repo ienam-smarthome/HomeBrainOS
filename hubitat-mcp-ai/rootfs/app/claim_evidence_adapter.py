@@ -48,24 +48,23 @@ def _args(row: Mapping[str, Any]) -> Mapping[str, Any]:
     return inner if isinstance(inner, Mapping) else arguments
 
 
+def _latest_off_causal_question(question: str) -> bool:
+    """Read-only historical causal intent, never proof of an OFF event."""
+    from causal_completion_policy import requested_transition_scope
+
+    q = str(question or "")
+    return (
+        requested_transition_scope(q) == "off"
+        and bool(re.search(r"\b(?:last|latest|most\s+recent(?:ly)?)\b", q, re.I))
+        and bool(re.search(r"\b(?:why|caus\w*|investigat\w*)\b", q, re.I))
+    )
+
+
 def _focal_and_target(
-    evidence: Sequence[Mapping[str, Any]],
-) -> tuple[str, str, datetime] | None:
-    focus = set()
-    for row in evidence[:200]:
-        if not _ok(row) or row.get("tool") != "homebrain_causal_secondary_correlation":
-            continue
-        data = row.get("details") or {}
-        if not isinstance(data, Mapping) or data.get("transition") != "off":
-            continue
-        boundary = _time(data.get("requestedBoundary"))
-        name = _label(data.get("subject"))
-        if boundary and name:
-            focus.add((name, boundary))
-    if len(focus) != 1:
-        return None
-    name, boundary = next(iter(focus))
-    ids = set()
+    evidence: Sequence[Mapping[str, Any]], *, original_question: str = "",
+) -> tuple[str, str, datetime, str] | None:
+    """Anchor to a trusted correlation OR unique device-history latest OFF."""
+    targets: set[tuple[str, str]] = set()
     for row in evidence[:200]:
         if not _ok(row) or row.get("evidence_kind") != "targeted_device_lookup":
             continue
@@ -76,24 +75,79 @@ def _focal_and_target(
         if not isinstance(state, Mapping):
             continue
         entity = str(state.get("deviceId") or "")
-        if _label(state.get("label")) == name and entity.isdecimal():
-            ids.add(entity)
-    if len(ids) != 1:
+        name = _label(state.get("label"))
+        if entity.isdecimal() and name:
+            targets.add((entity, name))
+    if len(targets) != 1:
         return None
-    return next(iter(ids)), name, boundary
+    entity, name = next(iter(targets))
+
+    hosts = set()
+    for row in evidence[:200]:
+        if not _ok(row) or row.get("tool") != "homebrain_causal_secondary_correlation":
+            continue
+        data = row.get("details") or {}
+        if not isinstance(data, Mapping) or data.get("transition") != "off":
+            continue
+        boundary = _time(data.get("requestedBoundary"))
+        label = _label(data.get("subject"))
+        if boundary and label:
+            hosts.add((label, boundary))
+    if hosts:
+        if len(hosts) != 1:
+            return None
+        label, boundary = next(iter(hosts))
+        if label != name:
+            return None
+        return entity, name, boundary, "host-correlation"
+
+    if (not _latest_off_causal_question(original_question)
+            or name.casefold() not in str(original_question).casefold()):
+        return None
+    # Source history is a host-built projection of native Hubitat state
+    # reports; it can verify a latest returned OFF without claiming complete
+    # historical coverage or identifying an upstream initiating controller.
+    off_instants = set()
+    for row in evidence[:200]:
+        if (not _ok(row) or row.get("tool") != "homebrain_device_history"
+                or row.get("supports_live_claim") is False
+                or row.get("evidence_kind") not in {
+                    "authoritative_device_event_history",
+                    "deterministic_device_event_history",
+                }):
+            continue
+        data = row.get("details") or {}
+        if (not isinstance(data, Mapping) or _label(data.get("label")) != name
+                or data.get("attribute") != "switch"):
+            continue
+        for event in (data.get("boundaryEvents") or [])[:150]:
+            if (not isinstance(event, Mapping)
+                    or event.get("name") != "switch"
+                    or event.get("isStateChange") is not True
+                    or event.get("value") != "off"):
+                continue
+            when = _time(event.get("date"))
+            producer = event.get("producedBy") or {}
+            if (when and isinstance(producer, Mapping)
+                    and producer.get("type") == "device"
+                    and str(producer.get("id") or "").isdecimal()):
+                off_instants.add(when)
+    if not off_instants:
+        return None
+    return entity, name, max(off_instants), "source-history-latest-off"
 
 
 def packet_from_evidence(
-    evidence: Sequence[Mapping[str, Any]],
+    evidence: Sequence[Mapping[str, Any]], *, original_question: str = "",
 ) -> EvidencePacket:
     """Trust no model prose, duplicate projected events or incomplete reads."""
     if not isinstance(evidence, (list, tuple)):
         return EvidencePacket({})
     scoped = [r for r in evidence[:200] if _ok(r)]
-    focal = _focal_and_target(scoped)
+    focal = _focal_and_target(scoped, original_question=original_question)
     if not focal:
         return EvidencePacket({})
-    ident, name, off_time = focal
+    ident, name, off_time, focal_origin = focal
     labels: dict[str, str] = {ident: name}
 
     states: dict[tuple[datetime, str], Mapping[str, Any]] = {}
@@ -323,6 +377,7 @@ def packet_from_evidence(
         witnesses=witnesses, coverage=coverage,
         focal_event_keys=frozenset(focus_keys),
         root_cause_verified=False, focal_time=off_time.isoformat(),
+        focal_source=focal_origin,
         journal_reception_event_keys=frozenset(journal_keys),
         eligible_transition_keys=frozenset(eligible),
         labels=labels, candidate_sensor_count=sensor_stats[0],
@@ -351,14 +406,14 @@ def witness_menu(packet: EvidencePacket, *, limit: int = 36) -> str:
 
 
 def assess_evidence_shadow(
-    evidence: Sequence[Mapping[str, Any]],
+    evidence: Sequence[Mapping[str, Any]], *, original_question: str = "",
 ) -> dict[str, Any]:
     """Pure shadow sidecar: summaries only, no question/model prompt or writes.
 
     No first-answer truth score is claimed; no natural-language model claims
     are evaluated until such an envelope actually exists.
     """
-    packet = packet_from_evidence(evidence)
+    packet = packet_from_evidence(evidence, original_question=original_question)
     if not packet.focal_time:
         return {"schema": SCHEMA, "shadow_only": True,
                 "focal_attested": False, "model_claims_assessed": False}
@@ -390,6 +445,7 @@ def assess_evidence_shadow(
     return {
         "schema": SCHEMA, "shadow_only": True,
         "focal_attested": off is not None,
+        "focal_source": packet.focal_source,
         "model_claims_assessed": False,
         "host_claims_supported": len(verdict.supported),
         "host_claims_rejected": len(verdict.rejected),
@@ -416,4 +472,5 @@ def assess_evidence_shadow(
     }
 
 
-__all__ = ["packet_from_evidence", "witness_menu", "assess_evidence_shadow"]
+__all__ = ["packet_from_evidence", "witness_menu", "assess_evidence_shadow",
+           "_latest_off_causal_question"]

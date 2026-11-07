@@ -1,5 +1,28 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**v0.18.455 real-world source-attestation routing checkpoint (7 Nov, candidate):**
+The first v0.18.453 live latest-OFF question returned a cautiously worded
+unknown-cause verdict but no `claim_evidence_shadow` diagnostics. Its
+`investigation_coverage` contained only `hypothesisComparisons` (no
+`domain=causal_provenance`) and did not run the optional secondary
+correlation tool. The new adapter was therefore doubly gated away from
+source-real calls. Device history independently contained a unique
+source-reported latest OFF and matching target ID; an actual bounded hub
+past-log request covered 23:50–00:40 while direct app-specific execution
+and sensor history remained unverified. General solution: infer eligible
+read-only latest-OFF investigation **only** with the requested target
+and host source history, preserve explicit causal-domain handling,
+separate "source-history-latest-off" and "host-correlation" provenance,
+share one packet for guard routing and non-publishing JSON, and never
+promote a general hub log request to complete app-rule execution coverage.
+Treat listener notifications as downstream observations, not proof they
+could not issue a separate command. No incident device-name routing,
+extra MCP/model calls or modifications. After all four exact-head CI
+gates and installed testing, continue broader model-proposed typed-claim
+shadow benchmarking, cross-domain evidence and final-answer usefulness
+before any general publisher promotion.
+
+
 **v0.18.453 merged — claim-evidence adapter and non-publishing shadow checkpoint (7 Nov):**
 Do not merge Claude's parallel claim-v2.1 validator even though its 21 condensed
 tests pass. Integrate into existing `claim_evidence_contract.py`: focal-time
