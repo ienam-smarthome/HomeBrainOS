@@ -135,7 +135,14 @@ class Agent:
                     "rounds": rounds,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
                 }
-            message = await self.round(messages, tools, remaining)
+            try:
+                message = await self.round(messages, tools, remaining)
+            except RuntimeError as exc:
+                return {
+                    "success": False, "answer": f"Model/transport failure: {redact(str(exc))}",
+                    "error": "model", "tool_calls": receipts, "rounds": rounds,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                }
             rounds += 1
             calls = message.get("tool_calls") or []
             text = str(message.get("content") or "").strip()
@@ -183,6 +190,8 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     content = json.dumps({"error": record["error"]})
+                # Preserve exactly the bounded, redacted source view sent to the model.
+                record["response"] = content
                 receipts.append(record)
                 messages.append({
                     "role": "tool", "tool_name": name, "content": content,

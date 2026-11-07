@@ -1,5 +1,12 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — Isolated v2 alpha pilot and verification corrections
+
+PR #1524 merged the separate experimental v2 add-on as `fd02765b2e4ffa328445e3b41abb9ce147e87749`, with v1 untouched. The v2 PR workflow log records 10 tests passing on synthetic merge `8215d43bc3635c08a00c381b02b5eddf50c1851e`. The direct check-runs endpoint confirms nine successful checks on final development head `2f390e65efa4fb1312c903118bafde9545101769`, including push and PR runs. The PR-only workflow query exposes only six jobs and undercounts the full checks. Dedicated amd64 build/import and unconfigured HTTP startup passed. HA installation/ingress, other architectures and live model/MCP evaluation are pending.
+
+[PR #1525](https://github.com/ienam-smarthome/HomeBrainOS/pull/1525) introduces alpha.2 corrections: it returns bounded, redacted source views in receipts, preserves receipts after model failures and freezes reviewed upstream read-tool/gateway membership. This is observability and execution-boundary work, not demonstrated answer-quality improvement. No incident-specific answer logic or v1 change. Correction CI and merge state are tracked on that PR. Next: require green correction CI, then installed read-only acceptance and matched-source first-answer comparisons. See [v2 status](HUBITAT-MCP-AI-V2-STATUS.md).
+
+
 ## 2026-11-07 — Core evidence-recovery lifecycle v0.18.459; heating failure and Claude skill review
 
 **User direction:** Stop relying on repeated incident patches; make a proper model-led Hubitat MCP assistant and evaluate reasoning against Claude on the same source evidence. Do not claim the current free Gemma model is Claude-equivalent or change paid routing without authorization.

@@ -17,15 +17,70 @@ class MCPError(RuntimeError):
     pass
 
 
-def is_read_tool(name: str) -> bool:
-    """Allow live read-only tool families, never manage/write/action tools.
+# Frozen upstream read surface, reviewed at 98bc7ca2d0f1bd2e2857962292b33d83683bc2b0.
+# Unknown names fail closed even if their names or annotations claim to be reads.
+READ_GATEWAYS = {
+    "hub_read_apps_code": [
+        "hub_list_apps",
+        "hub_list_drivers",
+        "hub_get_source",
+        "hub_list_libraries",
+        "hub_list_bundles",
+        "hub_list_backups",
+        "hub_get_backup",
+        "hub_list_device_dependents",
+        "hub_get_app_config",
+        "hub_list_hpm_packages"
+    ],
+    "hub_read_diagnostics": [
+        "hub_get_logs",
+        "hub_get_metrics",
+        "hub_get_memory_history",
+        "hub_get_device_health",
+        "hub_get_radio_details",
+        "hub_list_captured_states"
+    ],
+    "hub_read_rules": [
+        "hub_get_custom_rule",
+        "hub_list_rules",
+        "hub_get_rule_health",
+        "hub_list_rule_local_variables",
+        "hub_get_visual_rule"
+    ],
+    "hub_read_devices": [
+        "hub_list_devices",
+        "hub_get_device",
+        "hub_get_device_attribute",
+        "hub_list_device_events",
+        "hub_get_compatible_devices",
+        "hub_get_hub_mesh"
+    ],
+    "hub_read_rooms": [
+        "hub_list_rooms",
+        "hub_get_room"
+    ],
+    "hub_read_files": [
+        "hub_list_files",
+        "hub_read_file"
+    ],
+    "hub_read_variables": [
+        "hub_list_variables",
+        "hub_get_variable",
+        "hub_list_variable_changes"
+    ],
+    "hub_read_dashboards": [
+        "hub_list_dashboards",
+        "hub_get_dashboard"
+    ]
+}
+READ_TOOLS = frozenset({
+    "hub_search_tools", "hub_get_tool_guide", "hub_get_info",
+    "hub_list_modes", "hub_get_hsm_status",
+}).union(*(set(names) for names in READ_GATEWAYS.values()))
 
-    Upstream expressly guarantees read-only semantics for hub_read_ gateways.
-    Do not trust readOnlyHint by itself (servers can mislabel a write).
-    """
-    return name in {"hub_search_tools", "hub_get_tool_guide"} or name.startswith(
-        ("hub_read_", "hub_list_", "hub_get_", "hub_search_")
-    )
+
+def is_read_tool(name: str) -> bool:
+    return name in READ_TOOLS or name in READ_GATEWAYS
 
 
 _SECRET_KEY = re.compile(
@@ -184,6 +239,8 @@ class ReadOnlyMCP:
             raise MCPError("Tool is not available in the read-only v2 pilot")
         if not isinstance(arguments, dict):
             raise MCPError("MCP arguments must be an object")
+        if name in READ_GATEWAYS and arguments.get("tool") not in READ_GATEWAYS[name]:
+            raise MCPError("Sub-tool is not available in this read-only gateway")
         response = await self._post({
             "jsonrpc": "2.0", "id": self._next(), "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
