@@ -2,8 +2,9 @@
 
 Date: 2026-11-07
 Repository: `ienam-smarthome/HomeBrainOS`
-Development branch: `feat/hubitat-mcp-ai-v2-clean-rebuild`
-Version: `2.0.0-alpha.2` (correction candidate)
+Original development branch: `feat/hubitat-mcp-ai-v2-clean-rebuild`
+Correction branch: `fix/v2-receipts-verification-alpha2`
+Version: `2.0.0-alpha.2`
 
 ## Decision
 
@@ -48,7 +49,7 @@ The [v2 run](https://github.com/ienam-smarthome/HomeBrainOS/actions/runs/4238951
 Alpha.2 corrections preserve the same bounded, redacted response text delivered to the model in each returned receipt, including explicit truncation metadata. Completed receipts survive subsequent model/transport failures. The UI already displays these returned receipts; they are not automatically persisted or imported into later conversation context.
 The tool policy now uses fixed upstream read names and gateway-to-leaf membership reviewed from upstream commit `98bc7ca2d0f1bd2e2857962292b33d83683bc2b0`, rather than accepting arbitrary name prefixes. Live server schemas and permission gates remain authoritative; new upstream names require policy review. No case-specific answer patch is added.
 
-Correction CI is pending until recorded on the correction PR. Live first-answer usefulness, factual grounding and comparison against v1/Claude/Thaura remain **not measured**.
+Correction CI and merge state are tracked on [PR #1525](https://github.com/ienam-smarthome/HomeBrainOS/pull/1525); consult its final head and workflow logs. Live first-answer usefulness, factual grounding and comparison against v1/Claude/Thaura remain **not measured**.
 
 ## Current evidence and caveats
 

@@ -4,7 +4,7 @@
 
 PR #1524 merged the separate experimental v2 add-on as `fd02765b2e4ffa328445e3b41abb9ce147e87749`, with v1 untouched. The v2 PR workflow log records 10 tests passing on synthetic merge `8215d43bc3635c08a00c381b02b5eddf50c1851e`. Three associated workflows expose six successful jobs; do not repeat the unsubstantiated nine-check count. Dedicated amd64 build/import and unconfigured HTTP startup passed. HA installation/ingress, other architectures and live model/MCP evaluation are pending.
 
-Alpha.2 correction candidate returns bounded, redacted source views in receipts, preserves receipts after model failures and freezes reviewed upstream read-tool/gateway membership. This is observability and execution-boundary work, not demonstrated answer-quality improvement. No incident-specific answer logic or v1 change. Correction CI remains pending on its PR. Next: complete correction CI, then installed read-only acceptance and matched-source first-answer comparisons. See [v2 status](HUBITAT-MCP-AI-V2-STATUS.md).
+[PR #1525](https://github.com/ienam-smarthome/HomeBrainOS/pull/1525) introduces alpha.2 corrections: it returns bounded, redacted source views in receipts, preserves receipts after model failures and freezes reviewed upstream read-tool/gateway membership. This is observability and execution-boundary work, not demonstrated answer-quality improvement. No incident-specific answer logic or v1 change. Correction CI and merge state are tracked on that PR. Next: require green correction CI, then installed read-only acceptance and matched-source first-answer comparisons. See [v2 status](HUBITAT-MCP-AI-V2-STATUS.md).
 
 
 ## 2026-11-07 — Core evidence-recovery lifecycle v0.18.459; heating failure and Claude skill review
