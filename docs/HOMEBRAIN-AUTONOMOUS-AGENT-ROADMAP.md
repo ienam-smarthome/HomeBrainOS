@@ -1,5 +1,25 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**v0.18.453 claim-evidence adapter and non-publishing shadow checkpoint (7 Nov, candidate):**
+Do not merge Claude's parallel claim-v2.1 validator even though its 21 condensed
+tests pass. Integrate into existing `claim_evidence_contract.py`: focal-time
+gating for absent-in-scope, Historical Journal collector-reception typed
+quarantine, host-selected all-returned-OFF sample pairing with two-second
+Hubitat command matching and no inferred external controller. Build one
+`claim_evidence_adapter.py` from successful existing API receipts, not from
+model prose. Expose only privacy-limited diagnostics in read-only
+`evidence_validation.claim_evidence_shadow`, not a modified answer:
+model_claims_assessed=false, verified source and app log coverage, candidate
+sensor disposition separately from successful direct sensor windows.
+Evidence sample: 6 returned OFF boundaries, 2 paired, 4 unmatched within the
+returned records; 4 of 10 selection-stage probed, only 2 native sensor
+windows; none of four app-log requests covered the focal 00:30 OFF. This is
+not a root-cause finding. Test cross-domain claim semantics, then gate on all
+four CI workflows and an installed source-real response. Follow with
+model-selected claim envelopes, reason-code repair and frozen held-out
+cross-domain benchmarking **before** replacing live prose or retiring guards.
+
+
 **v0.18.452 merged — claim-validated failed-repair publication floor (7 Nov):**
 The v0.18.451 installed OFF investigation had the right top-level unknown-cause
 verdict but falsely promoted a collector-received FP400 motion=inactive

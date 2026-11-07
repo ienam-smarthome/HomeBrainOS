@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.452**.
+Current add-on version: **0.18.453**.
+
+**Claim-evidence adapter (v0.18.453):** The existing typed-claim contract now has a **read-only shadow sidecar** in Technical JSON, based only on a uniquely verified focal event, successful native source receipts, and actual requested log windows. It computes source-limited OFF-to-Hubitat-command pairing across the full returned sample, separates collector-received Historical Journal observations from native sensor event clocks, and distinguishes sensors marked `probed` from verified direct history reads. Look for `evidence_validation.claim_evidence_shadow` (with `shadow_only=true`, `model_claims_assessed=false`); this is diagnostic provenance, not model truth scoring. No change to user-facing answer, provider routing, command permissions or the v0.18.452 failed-repair floor. See [v0.18.453 notes](CHANGELOG-0.18.453.md).
 
 **Claim-validated failed-repair floor (v0.18.452):** A failed causal OFF synthesis repair now falls back to a concise deterministic response **only** when a unique trusted OFF boundary and source-reported switch history exist. It reuses the generic v2 typed-claim validator, reports bounded commands without proving global absence, does not promote collector reception to original sensor timing, and checks whether returned app logs actually overlap the focal time. The same original draft is never published on this fallback path. Successful model answers, writes, confirmations and other investigation domains remain unchanged; no extra MCP/AI requests are added. Runtime note: the v2 claim schema remains predominantly shadow-only; only host-built focal state/interval claims support this tightly gated safety fallback. [Details](CHANGELOG-0.18.452.md).
 
