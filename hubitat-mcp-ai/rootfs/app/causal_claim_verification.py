@@ -51,8 +51,12 @@ def _scoped_question(
             when = datetime.fromisoformat(moment_text.replace("Z", "+00:00"))
         except ValueError:
             continue
+        transition = str(details.get("transition") or "").casefold()
+        if transition not in {"on", "off"}:
+            # An absent transition role is not permission to fabricate ON.
+            continue
         candidates.add(
-            f"Why did {subject} turn on at {when:%H:%M:%S} "
+            f"Why did {subject} turn {transition} at {when:%H:%M:%S} "
             f"on {when.day} {when:%B %Y}?"
         )
     return next(iter(candidates)) if len(candidates) == 1 else ""
