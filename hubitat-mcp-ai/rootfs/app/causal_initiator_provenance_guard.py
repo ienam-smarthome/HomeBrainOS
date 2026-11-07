@@ -235,11 +235,11 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     re.I,
 )
 _STRONG_EXTERNAL_ACTION = re.compile(
-    r"\b(?:was|were|is|has\\s+been|had\\s+been)\\s+"
-    r"(?:directly\\s+)?(?:triggered|initiated|controlled|commanded|"
-    r"switched|operated|turned\\s+off)\\b"
-    r"[^.\\n]{0,70}?\\b(?:external(?:ly)?|outside\\s+(?:of\\s+)?hubitat|"
-    r"hue[- ]native|bridge[- ]native)\\b",
+    r"\b(?:was|were|is|has\s+been|had\s+been)\s+"
+    r"(?:directly\s+)?(?:triggered|initiated|controlled|commanded|"
+    r"switched|operated|turned\s+off)\b"
+    r"[^.\n]{0,70}?\b(?:external(?:ly)?|outside\s+(?:of\s+)?hubitat|"
+    r"hue[- ]native|bridge[- ]native)\b",
     re.I,
 )
 
