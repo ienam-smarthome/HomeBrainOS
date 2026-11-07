@@ -193,11 +193,7 @@ def _focal_physical_events(
             if stamp.tzinfo is not None:
                 instants.add(stamp.astimezone(timezone.utc))
         if len(instants) != 1:
-            # Without a verified request clock there is no unique focal
-            # event. Keep the earlier general listener-only guard available
-            # for explicitly named historical actors, but never use these
-            # rows for the strict focal-specific correction below.
-            return events
+            return []
         focal = next(iter(instants))
     matched = []
     for row in events:
