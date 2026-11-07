@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.449**.
+Current add-on version: **0.18.450**.
+
+**Source-bound final causal verdict (v0.18.450):** The publication guard now rejects source-report-to-external-control inferences and unqualified "no Hubitat command was issued" wording when only bounded command receipts exist. A controller correction cannot import an older interval into a new focal OFF question. Verified focal sensor reports retain their exact `motion=inactive` or other recorded state instead of ambiguous "activity". Synthesiser and API serialization use the same sensor-value guard with real-source agreement requirements and Technical JSON correction flags. No device writes, extra MCP reads, changed provider selection or watchdog limits. [Release notes](CHANGELOG-0.18.450.md).
 
 **Focal-event causal proof boundary (v0.18.449):** The final read-only API response now rechecks unsupported external-origin and command-absence claims even when model synthesis repair fails. The focal event uses the recorded ON/OFF direction rather than inventing ON, and listener claims must match the requested event instead of borrowing an app from another historical boundary. Model guidance requires exact sensor values rather than equating inactive with activity. Confirmation/write outputs remain exempt; read permissions, provider routing and watchdogs are unchanged. [Release notes](CHANGELOG-0.18.449.md).
 

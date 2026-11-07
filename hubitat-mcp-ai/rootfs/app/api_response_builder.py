@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from causal_sensor_value_guard import guard_focal_sensor_value_precision
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
@@ -685,6 +686,7 @@ def build_agent_response(
     # Never rewrite commands, confirmations, or unrelated read responses.
     causal_proof_repaired = False
     focal_listener_repaired = False
+    focal_sensor_value_repaired = False
     causal_read = (
         isinstance(outcome_coverage, dict)
         and outcome_coverage.get("domain") == "causal_provenance"
@@ -696,6 +698,9 @@ def build_agent_response(
             message, evidence, str(submitted_question or ""),
         )
         message, focal_listener_repaired = guard_triggered_listener_causal_claim(
+            message, evidence,
+        )
+        message, focal_sensor_value_repaired = guard_focal_sensor_value_precision(
             message, evidence,
         )
 
@@ -774,6 +779,8 @@ def build_agent_response(
         result["evidence_validation"]["unverified_causal_origin_corrected"] = True
     if focal_listener_repaired:
         result["evidence_validation"]["focal_listener_scope_corrected"] = True
+    if focal_sensor_value_repaired:
+        result["evidence_validation"]["focal_sensor_value_corrected"] = True
     if interval_table_corrected:
         result["evidence_validation"]["interval_table_duration_corrected"] = True
     if occupancy_causal_claim_calibrated:

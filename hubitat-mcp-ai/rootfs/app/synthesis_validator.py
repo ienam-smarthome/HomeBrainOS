@@ -20,6 +20,7 @@ from causal_attribution_guard import (
 )
 from causal_timeline import missing_material_timeline_rows, guard_focal_interval_duration
 from controller_correlation_guard import guard_controller_boundary_claim
+from causal_sensor_value_guard import guard_focal_sensor_value_precision
 from evidence_source_guard import (
     guard_checked_source_absence_claim,
     guard_positive_source_attribution,
@@ -331,6 +332,12 @@ def validate_synthesis(
         )
         if source_changed:
             issues.append("causal_source_attribution")
+
+        corrected, sensor_value_changed = guard_focal_sensor_value_precision(
+            corrected, evidence
+        )
+        if sensor_value_changed:
+            issues.append("causal_focal_sensor_value_precision")
 
         corrected, controller_boundary_changed = guard_controller_boundary_claim(corrected, evidence)
         if controller_boundary_changed:

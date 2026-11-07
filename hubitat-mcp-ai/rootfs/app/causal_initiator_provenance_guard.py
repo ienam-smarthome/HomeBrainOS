@@ -228,6 +228,9 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"no\s+hubitat\s+commands?\s+(?:were\s+)?(?:issued|sent|executed)|"
     r"there\s+(?:is|was)\s+no\s+(?:recorded|matching)\s+hubitat\s+"
     r"(?:command|command-off)|"
+    r"(?:there\s+(?:is|was)\s+)?no\s+(?:record|evidence)\s+of\s+"
+    r"(?:an?\s+|any\s+)?(?:matching\s+)?(?:hubitat[- ]issued\s+)?"
+    r"(?:off[- ]?)?commands?\s+(?:being\s+)?(?:issued|sent)\s+by\s+hubitat|"
     r"hubitat[^.\n]{0,160}\bit\s+did\s+not\s+issue\s+"
     r"(?:the\s+)?(?:instruction|command)|"
     r"hubitat\s+(?:only|never)\s+(?:acted|observed)\s+"
@@ -246,7 +249,19 @@ _STRONG_EXTERNAL_ACTION = re.compile(
 _UNPROVEN_LISTENER_EXCLUSION = re.compile(
     r"(?:\b(?:were|was|are|is)\s+notified\b.{0,150}?\b(?:did\s+not|"
     r"didn't|could\s+not|weren't|wasn't)\s+initiat(?:e|ed)\b|"
-    r"\b(?:were|was)\s+not\s+the\s+(?:initiating|commanding)\s+(?:app|controller)\b)",
+    r"\b(?:were|was)\s+not\s+the\s+(?:initiating|commanding)\s+(?:app|controller)\b|"
+    r"\b(?:acted|served)\s+as\s+(?:listeners?|subscribers?)"
+    r"[^.\n]{0,90}?\s+(?:rather|instead)\s+than\s+"
+    r"(?:the\s+)?(?:triggers?|initiators?|command\s+issuers?)\b)",
+    re.I,
+)
+# A reported bridge state is not evidence for where the *action* originated.
+# Keep the underlying state observation when rewriting a model's inference.
+_REPORT_TO_ORIGIN_LEAP = re.compile(
+    r"\b(?:this|which|that)\s+(?:indicates?|means?|implies?|"
+    r"demonstrates?|proves?|shows?)\s+(?:that\s+)?"
+    r"[^.!?\n]{0,150}?\b(?:outside\s+(?:of\s+)?hubitat"
+    r"(?:['\u2019]s)?(?:\s+control)?|external(?:ly)?)\b",
     re.I,
 )
 _EXTERNAL_VERDICT = re.compile(
@@ -294,6 +309,15 @@ def guard_unverified_initiator_claims(
         line = raw[:-1] if nl else raw
         stripped = line.strip()
         prefix = (_BULLET.match(line).group(1) if _BULLET.match(line) else "")
+        # Preserve a correctly reported bridge/source fact while removing
+        # the unsupported inference that the operation occurred externally.
+        # This is a source-role inference pattern, not a device-specific fix.
+        if _REPORT_TO_ORIGIN_LEAP.search(line):
+            line = _REPORT_TO_ORIGIN_LEAP.sub(
+                "This state report does not identify the initiating controller.",
+                line,
+            )
+            stripped = line.strip()
         # A verified direct command may establish who issued that *command*.
         # It still does not establish whether a Hue/Matter-native process
         # initiated a different physical report.
