@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hubitat MCP AI v2</title>
+<style>
+:root{color-scheme:dark;--bg:#0e1522;--panel:#172233;--edge:#2b3b4e;--txt:#eff4fb;--muted:#a8b6cb;--blue:#70b9ff;--green:#6ee7b7;--amber:#ffc76a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px system-ui,-apple-system,sans-serif;color:var(--txt)}
+header{padding:18px max(18px,calc((100vw - 1000px)/2));border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-size:21px;letter-spacing:-.5px;margin:0}header small,.muted{color:var(--muted)}
+main{max-width:1000px;margin:auto;padding:18px}section{display:none}section.active{display:block}
+nav{display:flex;gap:8px;margin:0 0 20px}
+button,select,textarea{font:inherit;color:var(--txt);background:var(--panel);border:1px solid var(--edge);border-radius:10px}
+button{cursor:pointer;padding:10px 14px}button.active,button.primary{background:#24629b;border-color:#3984c3}button:disabled{opacity:.6;cursor:wait}
+textarea{width:100%;height:96px;padding:13px;resize:vertical;outline:none;line-height:1.5}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:18px;margin-bottom:16px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.right{margin-left:auto}
+h2{font-size:18px;margin:0 0 12px}h3{font-size:14px;color:var(--muted);margin:0 0 8px;font-weight:550}
+#answer{white-space:pre-wrap;line-height:1.6;overflow-wrap:anywhere;min-height:48px}
+details{margin-top:12px}summary{cursor:pointer;color:var(--muted)}
+pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#101b2c;border-radius:8px;padding:12px;max-height:400px;overflow:auto}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:16px 0}
+.metric{padding:14px;background:var(--panel);border:1px solid var(--edge);border-radius:12px}
+.metric strong{font-size:21px;display:block;font-variant-numeric:tabular-nums;margin-top:7px}
+.metric small{color:var(--muted);font-size:12px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:12px 0}
+.dot{width:9px;height:9px;display:inline-block;border-radius:50%;margin-right:5px;background:var(--blue)}
+.chartshell{position:relative;margin-top:14px}#graph{width:100%;height:350px;display:block;touch-action:pan-y}
+#hint{position:absolute;top:8px;right:8px;max-width:250px;pointer-events:none;background:#0b1525f5;border:1px solid var(--edge);border-radius:8px;padding:9px;font-size:12px;line-height:1.5;display:none}
+#source{color:var(--muted);font-size:12px;line-height:1.5}
+@media(max-width:530px){h1{font-size:17px}header{padding:14px}main{padding:12px}.card{padding:13px}#graph{height:270px}}
+</style></head>
+<body>
+<header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · read-only pilot</small></div><small id="state">Checking configuration…</small></header>
+<main>
+<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
+<section id="ask" class="active">
+<div class="card"><h2>Ask Hubitat</h2>
+<textarea id="question" placeholder="What caused Livingroom Light 2 to turn off most recently?"></textarea>
+<div class="row"><small class="muted">The AI selects MCP read tools itself; no predefined investigation route.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
+</div>
+<div class="card"><h2>Answer</h2><div id="answer" class="muted">Your response will appear here.</div>
+<details><summary>Read-tool receipts</summary><pre id="receipts">No reads yet.</pre></details>
+</div></section>
+<section id="diagnostics">
+<div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
+<p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
+<div class="metrics" id="cards"></div>
+<div class="card">
+<div class="row"><strong>History</strong>
+<select id="range" class="right" onchange="refreshDiagnostics()">
+<option value="1">1 hour</option><option value="6">6 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option>
+</select>
+<select id="metric" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load5">Native 5m load</option></select>
+</div>
+<div class="legend"><span><i class="dot"></i>OS free memory (MB) / selected metric</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
+<div class="chartshell"><canvas id="graph" role="img" aria-label="Recorder history with aligned axes, confirmed startup markers and probe gaps"></canvas><div id="hint"></div></div>
+<div id="source">Select a window to inspect saved timestamps.</div>
+<details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
+</div></section></main>
+<script>
+const byId=id=>document.getElementById(id);
+let messages=[], payload=null, visual=null, hoverX=null;
+function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
+async function readJson(url, init){const r=await fetch(url,init);const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
+async function loadStatus(){try{const d=await readJson('api/status');byId('state').textContent=d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model')}catch(e){byId('state').textContent=String(e.message)}}
+async function submitAsk(){
+ const q=byId('question').value.trim();if(!q)return;const send=byId('send');send.disabled=true;
+ byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
+ try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,history:messages.slice(-12)})});
+ byId('answer').textContent=d.answer||'No answer returned.';byId('receipts').textContent=JSON.stringify({rounds:d.rounds,elapsed_ms:d.elapsed_ms,calls:d.tool_calls||[],error:d.error||null},null,2);
+ messages.push({role:'user',content:q},{role:'assistant',content:d.answer||''});
+ }catch(e){byId('answer').textContent='Request failed: '+e.message;byId('receipts').textContent='No verified read receipts returned.'}
+ finally{send.disabled=false;}
+}
+byId('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))submitAsk();});
+function fmt(value,digits=1){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'—'}
+function setCards(s){const l=s.last||{};const specs=[
+ ['Free OS memory',fmt(l.free_os_mb)+' MB'],['Free Java',fmt(l.java_free_mb)+' MB'],
+ ['Java heap used',fmt(l.java_allocated_heap_used_pct)+'%'],
+ ['CPU load equivalent',fmt(l.native_load_pct)+'%'],['HTTP latency',fmt(l.latency_ms)+' ms']
+ ];byId('cards').replaceChildren(...specs.map(([name,value])=>{const el=document.createElement('div');el.className='metric';const label=document.createElement('small');label.textContent=name;const val=document.createElement('strong');val.textContent=value;el.append(label,val);return el}));
+}
+async function refreshDiagnostics(){
+ try{const hours=+byId('range').value,metric=byId('metric').value;const [s,t]=await Promise.all([
+ readJson('api/diagnostics/status'),
+ readJson('api/diagnostics/'+(metric==='combined'?'timeline?hours='+hours:'history?hours='+hours+'&metric='+encodeURIComponent(metric)))
+ ]);setCards(s);
+ visual=metric==='combined'?{
+ start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:(t.metrics?.free_os_mb?.samples||[]),b:(t.metrics?.native_load_pct?.samples||[]),
+ ak:'free_os_mb',bk:'native_load_pct',reboots:t.reboots||[],incidents:t.incidents||[],description:'Memory is sampled externally; native 5m load is dated at collection.'
+ }:{
+ start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:t.samples||[],b:[],ak:metric,bk:null,reboots:t.reboots||[],incidents:t.incidents||[],description:'Native 5m readings retain their native sample labels. Source gaps stay blank.'
+ };
+ byId('source').textContent=(s.status||'unknown')+' · '+visual.description+(s.error?' · '+s.error:'');
+ byId('incidents').textContent=JSON.stringify({incidents:visual.incidents,reboots:visual.reboots},null,2);
+ draw();
+ }catch(e){byId('source').textContent='Unable to load recorder: '+e.message;visual=null;draw();}
+}
+function axis(rows,key){const data=rows.filter(r=>r.reachable&&Number.isFinite(+r[key])&&r[key]!=null).map(r=>+r[key]);if(!data.length)return [0,1];let min=Math.min(...data),max=Math.max(...data);const extra=Math.max((max-min)*.13,1);return [Math.max(0,min-extra),max+extra]}
+function draw(){
+ const c=byId('graph'),rect=c.getBoundingClientRect();if(!rect.width)return;
+ const dpr=Math.min(window.devicePixelRatio||1,2);c.width=Math.floor(rect.width*dpr);c.height=Math.floor(rect.height*dpr);
+ const g=c.getContext('2d');g.scale(dpr,dpr);const w=rect.width,h=rect.height;
+ g.clearRect(0,0,w,h);g.fillStyle='#121e2d';g.fillRect(0,0,w,h);
+ const left=46,right=visual?.bk?51:18,top=20,bottom=35,W=w-left-right,H=h-top-bottom;
+ if(!visual){g.fillStyle='#b2bfd2';g.fillText('No captured data yet',left+16,top+25);return;}
+ const [lo,hi]=axis(visual.a,visual.ak),[lo2,hi2]=axis(visual.b,visual.bk||visual.ak);
+ const x=t=>left+(t-visual.start)/Math.max(1,visual.end-visual.start)*W;
+ const y=(v,min,max)=>top+H-(v-min)/Math.max(.0001,max-min)*H;
+ g.font='11px system-ui';g.lineWidth=1;g.setLineDash([2,4]);g.strokeStyle='#35485d';g.fillStyle='#b6c4d5';
+ for(let i=0;i<=4;i++){const yy=top+H*i/4;g.beginPath();g.moveTo(left,yy);g.lineTo(left+W,yy);g.stroke();g.textAlign='right';g.fillText(fmt(hi-(hi-lo)*i/4,0),left-6,yy+4);if(visual.bk){g.textAlign='left';g.fillText(fmt(hi2-(hi2-lo2)*i/4,0),left+W+7,yy+4)}}
+ g.textAlign='center';for(let i=0;i<=4;i++){const t=visual.start+(visual.end-visual.start)*i/4;g.fillText(new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),x(t),h-13)}
+ for(const e of visual.incidents){const s=Date.parse(e.started_at),f=e.recovered_at?Date.parse(e.recovered_at):visual.end;if(!Number.isFinite(s)||!Number.isFinite(f))continue;g.fillStyle='#d7516330';g.fillRect(Math.max(left,x(s)),top,Math.max(0,Math.min(left+W,x(f))-Math.max(left,x(s))),H)}
+ for(const e of visual.reboots){const t=Date.parse(e.occurred_at);if(!Number.isFinite(t)||t<visual.start||t>visual.end)continue;g.strokeStyle='#ffc76a';g.setLineDash([4,4]);g.beginPath();g.moveTo(x(t),top);g.lineTo(x(t),top+H);g.stroke();}
+ function series(rows,key,min,max,color){const pts=rows.filter(r=>r.reachable&&r[key]!=null&&Number.isFinite(+r[key])).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));g.strokeStyle=color;g.lineWidth=1.65;g.setLineDash([]);g.beginPath();let prev=null;for(const p of pts){const stamp=Date.parse(p.recorded_at);if(!Number.isFinite(stamp))continue;const xx=x(stamp),yy=y(+p[key],min,max);if(prev&&prev.diag_segment===p.diag_segment&&stamp-Date.parse(prev.recorded_at)<(key.startsWith('native_')?1000000:350000))g.lineTo(xx,yy);else g.moveTo(xx,yy);prev=p;}g.stroke();return pts}
+ const a=series(visual.a,visual.ak,lo,hi,'#70b9ff'),b=visual.bk?series(visual.b,visual.bk,lo2,hi2,'#6ee7b7'):[];
+ if(hoverX!=null){const xx=Math.min(left+W,Math.max(left,hoverX));g.strokeStyle='#d9e3f1';g.setLineDash([3,4]);g.beginPath();g.moveTo(xx,top);g.lineTo(xx,top+H);g.stroke();const t=visual.start+(xx-left)/W*(visual.end-visual.start);
+ const nearest=rows=>rows.length?rows.reduce((best,r)=>Math.abs(Date.parse(r.recorded_at)-t)<Math.abs(Date.parse(best.recorded_at)-t)?r:best):null;const p=nearest(a),q=nearest(b);
+ for(const [item,key,min,max,col] of [[p,visual.ak,lo,hi,'#70b9ff'],[q,visual.bk,lo2,hi2,'#6ee7b7']])if(item){g.fillStyle=col;g.beginPath();g.arc(x(Date.parse(item.recorded_at)),y(+item[key],min,max),4,0,Math.PI*2);g.fill()}
+ const parts=[p&&new Date(p.recorded_at).toLocaleString('en-GB')+': '+fmt(+p[visual.ak])+' ('+visual.ak+')',q&&new Date(q.recorded_at).toLocaleString('en-GB')+': '+fmt(+q[visual.bk])+' ('+visual.bk+')'].filter(Boolean);
+ byId('hint').textContent=parts.join(' | ');byId('hint').style.display=parts.length?'block':'none';
+ }else byId('hint').style.display='none';
+}
+byId('graph').addEventListener('pointermove',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
+byId('graph').addEventListener('pointerleave',()=>{hoverX=null;draw()});
+window.addEventListener('resize',()=>{if(byId('diagnostics').classList.contains('active'))draw()});
+loadStatus();
+</script></body></html>
