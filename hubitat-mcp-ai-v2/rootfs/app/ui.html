@@ -63,7 +63,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#101b2c
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div></section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.4";
+const UI_VERSION="2.0.0-alpha.5";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}

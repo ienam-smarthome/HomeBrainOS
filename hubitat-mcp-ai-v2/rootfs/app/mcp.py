@@ -11,10 +11,18 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+from jsonschema.exceptions import SchemaError
+from jsonschema.validators import validator_for
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 
 
 class MCPError(RuntimeError):
     pass
+
+
+class MCPContractError(MCPError):
+    """Rejected locally before a tools/call request is sent."""
 
 
 _SECRET_KEY = re.compile(
@@ -22,22 +30,105 @@ _SECRET_KEY = re.compile(
     re.IGNORECASE,
 )
 _SECRET_TEXT = re.compile(
-    r'(?i)((?:"?)(?:access_token|api_key|password|secret|token)(?:"?)\s*[:=]\s*"?)([^\s&"\',}]+)'
+    r"""(?ix)(?<![\w-])
+    ((?:"?)(?:access_token|api_key|password|passwd|secret|token|authorization|credential)(?:"?)\s*[:=]\s*)
+    (?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s&"'{}\[\],]+)
+    """
 )
-_BEARER = re.compile(r"(?i)Bearer\s+[A-Za-z0-9._~+/-]{8,}")
+_BEARER = re.compile(r"(?i)Bearer\s+[A-Za-z0-9._~+/-]+")
+
+
+def _scrub_text(value: str) -> str:
+    return _SECRET_TEXT.sub(
+        lambda match: match[1] + '"[REDACTED]"',
+        _BEARER.sub("Bearer [REDACTED]", value),
+    )
+
+
+def _secret_sample(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _secret_sample(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_secret_sample(item) for item in value]
+    return "[REDACTED]" if isinstance(value, str) else value
+
+
+def _redact_schema(value: Any, sensitive: bool = False) -> Any:
+    """Preserve schema vocabulary/property names; redact credential samples."""
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            if key in ("properties", "patternProperties", "$defs", "definitions") and isinstance(item, dict):
+                result[key] = {
+                    name: _redact_schema(schema, bool(_SECRET_KEY.search(name)))
+                    for name, schema in item.items()
+                }
+            elif key in ("default", "examples"):
+                result[key] = _secret_sample(item) if sensitive else redact(item)
+            else:
+                result[key] = _redact_schema(item, sensitive)
+        return result
+    if isinstance(value, list):
+        return [_redact_schema(item, sensitive) for item in value]
+    return _scrub_text(value) if isinstance(value, str) else value
 
 
 def redact(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            str(key): ("[REDACTED]" if _SECRET_KEY.search(str(key)) else redact(item))
-            for key, item in value.items()
-        }
+        result = {}
+        for key, item in value.items():
+            key = str(key)
+            if key in ("inputSchema", "outputSchema") and isinstance(item, (dict, bool)):
+                result[key] = _redact_schema(item)
+            elif _SECRET_KEY.search(key) and not isinstance(item, bool):
+                result[key] = "[REDACTED]"
+            else:
+                result[key] = redact(item)
+        return result
     if isinstance(value, list):
         return [redact(item) for item in value]
     if isinstance(value, str):
-        return _BEARER.sub("Bearer [REDACTED]", _SECRET_TEXT.sub(r"\1[REDACTED]", value))
+        # MCP text blocks frequently contain JSON. Parse before redacting so
+        # object/array syntax and secret-named schema properties remain intact.
+        try:
+            parsed = json.loads(value)
+        except (ValueError, RecursionError):
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            cleaned = redact(parsed)
+            return value if cleaned == parsed else json.dumps(cleaned, ensure_ascii=False)
+        return _scrub_text(value)
     return value
+
+
+def is_tool_catalog(result: dict) -> bool:
+    """Distinguish upstream schema discovery from executed domain reads."""
+    for block in result.get("content", []) or []:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        try:
+            payload = json.loads(block.get("text", ""))
+        except (ValueError, TypeError):
+            continue
+        if (isinstance(payload, dict) and payload.get("mode") == "catalog"
+                and isinstance(payload.get("tools"), list)):
+            return True
+    return False
+
+
+def _validate_arguments(arguments: dict, schema: dict | bool) -> None:
+    try:
+        validator = validator_for(schema)
+        validator.check_schema(schema)
+        # Explicit registry never retrieves remote schema references.
+        errors = validator(schema, registry=Registry()).iter_errors(arguments)
+        error = next(errors, None)
+    except (SchemaError, Unresolvable, TypeError, ValueError):
+        raise MCPContractError("The live input schema could not be validated; inspect the server schema/guide") from None
+    if error:
+        path = "/".join(str(part) for part in error.absolute_path) or "<root>"
+        # Do not echo invalid argument values: they may be credentials.
+        raise MCPContractError(f"Arguments violate the live input schema at {path} ({error.validator}); inspect inputSchema")
 
 
 class MCPClient:
@@ -185,6 +276,19 @@ class MCPClient:
             raise MCPError("Tool is not in the connected server catalog")
         if not isinstance(arguments, dict):
             raise MCPError("MCP arguments must be an object")
+        schema = self._tools[name].get("inputSchema")
+        if isinstance(schema, (dict, bool)):
+            _validate_arguments(arguments, schema)
+            properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+            # Infer upstream gateway shape from its live schema, never names.
+            if "tool" in properties and "args" in properties:
+                if not arguments.get("tool") and arguments.get("args"):
+                    raise MCPContractError(
+                        "Gateway 'tool' must be a top-level sibling of 'args', not inside it. "
+                        'Use {"tool":"<name from catalog>","args":{...}} to execute, or {} for schema discovery.'
+                    )
+                if set(arguments) - set(properties):
+                    raise MCPContractError("Gateway tool parameters belong inside 'args'; use only the live top-level properties")
         # Preserve gateway discovery (empty args) and server-owned leaf routing.
         # Never retry a tools/call: an uncertain write outcome must be inspected.
         response = await self._post({
