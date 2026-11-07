@@ -62,9 +62,7 @@ tests protect absent/ambiguous target, unsuccessful history, wrong user
 intent, unrelated requests, writes and confirmations; existing broad
 tests cover normal host-correlation routing and other domains.
 
-Run the full repository Python suite, packaged add-on smoke, HomeBrain
-validation and scorecard integrity at the **same exact PR head** before
-merge. CI success alone is **not** acceptance of a deployed assistant.
+Merged [PR #1514](https://github.com/ienam-smarthome/HomeBrainOS/pull/1514) only after all four required checks passed on exact tested head `33d9d911377cb76c9a8fabcec56c25deaceca132`. Release assurance reported **6,747 passing Python tests**, two nonblocking warnings and successful container smoke/metadata; Hubitat MCP AI tests, HomeBrain validation and Answer Quality integrity also passed. Squash merge main commit: `adf9e5ca1ff046ca85c8687d5b4010e9bb8c76fc`. CI success alone is **not** acceptance of a deployed assistant.
 After installing v0.18.455, rerun the original latest-OFF question and
 check both the answer and typed shadow diagnostic. For that same historical
 packet, expect `focal_source=source-history-latest-off`, six reported OFF

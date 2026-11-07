@@ -1,6 +1,6 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**v0.18.455 real-world source-attestation routing checkpoint (7 Nov, candidate):**
+**v0.18.455 merged — real-world source-attested causal routing (7 Nov):**
 The first v0.18.453 live latest-OFF question returned a cautiously worded
 unknown-cause verdict but no `claim_evidence_shadow` diagnostics. Its
 `investigation_coverage` contained only `hypothesisComparisons` (no
@@ -17,8 +17,7 @@ share one packet for guard routing and non-publishing JSON, and never
 promote a general hub log request to complete app-rule execution coverage.
 Treat listener notifications as downstream observations, not proof they
 could not issue a separate command. No incident device-name routing,
-extra MCP/model calls or modifications. After all four exact-head CI
-gates and installed testing, continue broader model-proposed typed-claim
+extra MCP/model calls or modifications. All four CI workflows passed on [PR #1514](https://github.com/ienam-smarthome/HomeBrainOS/pull/1514) exact head `33d9d911377cb76c9a8fabcec56c25deaceca132` (6,747 Python tests plus smoke and metadata), merged main `adf9e5ca1ff046ca85c8687d5b4010e9bb8c76fc`. Installed live acceptance still pending. Continue broader model-proposed typed-claim
 shadow benchmarking, cross-domain evidence and final-answer usefulness
 before any general publisher promotion.
 
