@@ -690,7 +690,7 @@ def build_agent_response(
     focal_listener_repaired = False
     focal_sensor_value_repaired = False
     read_only_investigation = (
-        str(getattr(outcome, "request_class", "")) == "live-read"
+        str(getattr(outcome, "request_class", "")) not in {"write", "confirmation"}
         and not bool(getattr(outcome, "confirmation_required", False))
     )
     explicit_causal_read = (
@@ -704,6 +704,7 @@ def build_agent_response(
     # never from the model's prose or the response route label alone.
     requested_latest_off = (
         read_only_investigation
+        and str(getattr(outcome, "request_class", "")) == "live-read"
         and _latest_off_causal_question(str(submitted_question or ""))
     )
     shadow_requested = explicit_causal_read or requested_latest_off
