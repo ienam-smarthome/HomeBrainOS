@@ -31,6 +31,14 @@ def _source_packet():
             "signedDeltaSeconds": -19.087,
         }],
     }]
+    # Preserve independently typed positive command evidence even when
+    # the unrelated latest OFF initiator remains unresolved.
+    device = next(row for row in rows if row.get("tool") == "homebrain_device_history")
+    device["details"]["commandEvents"] = [{
+        "name": "command-on", "date": "2026-11-06T20:58:15.775+00:00",
+        "type": "command", "description": "Command called: on()",
+        "producedBy": {"id": "503", "type": "app", "label": "SenseCap Example"},
+    }]
     rows.append({
         "tool": "hub_read_devices", "sub_tool": "hub_list_device_events",
         "success": True, "mutates": False, "effect": "read",
