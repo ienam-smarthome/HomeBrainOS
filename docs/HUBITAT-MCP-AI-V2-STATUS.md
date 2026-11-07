@@ -43,7 +43,7 @@ The recorder implementation is retained, but v2 cannot read v1's `/data` by defa
 ## Verified baseline and correction candidate
 
 [PR #1524](https://github.com/ienam-smarthome/HomeBrainOS/pull/1524) merged as `fd02765b2e4ffa328445e3b41abb9ce147e87749`.
-Three PR workflows associated with final head `2f390e65efa4fb1312c903118bafde9545101769` reported six successful jobs, not a substantiated nine-check total.
+The GitHub check-runs endpoint for final head `2f390e65efa4fb1312c903118bafde9545101769` confirms **nine successful checks**, including push and PR runs. The PR-only workflow endpoint exposes three workflows/six jobs and is not the full check count.
 The [v2 run](https://github.com/ienam-smarthome/HomeBrainOS/actions/runs/42389513658) log checked out synthetic merge `8215d43bc3635c08a00c381b02b5eddf50c1851e`; it ran 10 passing tests. Its dedicated amd64 container build/import and unconfigured HTTP probes passed. This does not verify aarch64/armv7 installation or Home Assistant ingress.
 
 Alpha.2 corrections preserve the same bounded, redacted response text delivered to the model in each returned receipt, including explicit truncation metadata. Completed receipts survive subsequent model/transport failures. The UI already displays these returned receipts; they are not automatically persisted or imported into later conversation context.
