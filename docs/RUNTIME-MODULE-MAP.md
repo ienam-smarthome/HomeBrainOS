@@ -185,7 +185,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_claim_grounding.py` | Grounds a named-device claim in the final answer against this turn's device-scoped evidence. |
 | `device_command_receipts.py` | Adjudicates typed Hubitat device-command dispatch and state-verification receipts without treating accepted commands as physical proof. |
 | `device_control_service.py` | Executes bounded device-control operations. |
-| `device_history_service.py` | Resolves one device and reads bounded event history. |
+| `device_history_service.py` | Resolves one device and reads bounded event history. Host-opted recovery from rejected attributes discovers bounded raw events on the same resolved ID, with explicit mismatch and observed dimensions. |
 | `device_query_service.py` | Performs read-side inventory queries and aggregation. |
 | `room_scoped_live_aggregates.py` | Applies original-question room constraints to live ON-light and non-light-switch aggregates using authoritative Hubitat room identities, independently of optional model tool parameters. Rejects unresolved scope instead of leaking whole-home results. |
 | `device_read_contract.py` | Centralizes Hubitat device-list projection modes, state-field normalization, and projected-state shape validation. |
@@ -207,7 +207,7 @@ The repository drift test compares this table directly with the live directory. 
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
 | `health_audit_scheduler.py` | Runs the stored read-only system health audit on a configurable morning schedule using hub-local time. |
 | `health_audit_service.py` | Performs deterministic Hub/MCP/device/battery/automation/log health checks, persists snapshots, and tracks new/resolved findings. |
-| `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
+| `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. Infers uniquely observed thermostat operating state without treating configured heat mode as demand. |
 | `causal_sensor_candidate_priority.py` | Ranks capability-verified sensor candidates referenced by automations before generic room candidates, without treating configured sources as historical proof. |
 | `typed_device_history_evidence.py` | Extracts ID-scoped mixed command/state events from direct Hubitat history receipts and renders bounded diagnostic findings without inferred hardware outcomes. |
 | `recorded_telemetry_freshness.py` | Timestamps bounded device-attributed event history and stored age samples; distinguishes emitted attributes from proven physical connectivity. |
@@ -238,10 +238,10 @@ The repository drift test compares this table directly with the live directory. 
 | `model_first_publication.py` | Opt-in read-only model-authored telemetry output admission; verifies unchanged first model draft plus bounded high-risk source consistency; falls back without extra model calls or write permissions. |
 | `model_first_draft_provenance.py` | Private request-local provenance for the first no-tools provider completion, the coordinator output and author-boundary answer; exposes only privacy-safe transition booleans and never authorizes unsupported model prose. |
 | `answer_publication_policy.py` | Separates evidence validation from concise-versus-explicit-detailed response presentation for source-typed investigations; never certifies free-form model claims, changes device state or discards normalized evidence. |
-| `general_task_engine.py` | Validates model-proposed cross-domain objectives, explicit proposal-only intent, skill selections, live capability-search phrases and evidence goals; advisory-only and opt-in, never grants MCP write authority. |
+| `general_task_engine.py` | Validates model-proposed cross-domain objectives, explicit proposal-only intent, skill selections, live capability-search phrases and evidence goals; advisory-only and opt-in, never grants MCP write authority. Allows empty-attribute planned discovery and preserves multi-objective source goals. |
 | `gateway_argument_view.py` | Canonical read-only view of direct or one-level-wrapped MCP gateway operation envelopes so evidence, grounding, and gateway compatibility checks agree on the same sub-tool without rewriting provider payloads. |
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |
-| `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. |
+| `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. Computes heating/idle reported-demand intervals, refusing mixed thermostat states; retains discovery metadata and analyses. |
 | `interval_duration_guard.py` | Repairs model-written ON/OFF duration table rows using matching typed recorded intervals, preserving ordinary minute rounding and unrelated rows. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
 | `historical_evidence_journal.py` | Opt-in read-only Hubitat WebSocket collector with persistent bounded SQLite history, connection-gap tracking, privacy-filtered app logs and source-versus-reception timestamps; archived rows remain weaker evidence than direct command provenance. |
@@ -260,9 +260,9 @@ The repository drift test compares this table directly with the live directory. 
 | `location_privacy.py` | Redacts precise-location device attributes (GPS, address, map tiles, journey logs) from provider-bound tool results. |
 | `log_evidence_compactor.py` | Keeps log evidence receipts bounded while preserving compact full-result Rule Machine threshold samples for final causality validation. |
 | `native_past_log_receipt.py` | Projects actual returned Hubitat past-log message counts, typed app/device source IDs and page status into bounded privacy-safe evidence receipts without exposing raw messages or falsely claiming complete history. Normalizes default-past requests and counts bounded, open-ended/invalid and app-scoped focal request windows without inventing returned event coverage. |
-| `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. |
+| `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. Enables same-device source discovery for read-only history and lets autonomous multi-part tasks continue beyond the first interval. |
 | `mcp_client.py` | Implements Hubitat MCP JSON-RPC transport and tool access. |
-| `mcp_skill_guidance.py` | Provides general, Claude-skill-inspired live-MCP discovery, progressive evidence investigation, rule semantics and safety context, with explicit deep-investigation selection. |
+| `mcp_skill_guidance.py` | Provides general, Claude-skill-inspired live-MCP discovery, progressive evidence investigation, rule semantics and safety context, with explicit deep-investigation selection. Reviewed against supplied/upstream Claude MCP skills; prioritizes original objectives and recoverable source discovery. |
 | `mcp_retry_metrics.py` | Records actual retry attempts begun at the MCP transport boundary. |
 | `model_context_policy.py` | Bounds copied provider conversation and tool-result context. |
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
@@ -327,6 +327,6 @@ The repository drift test compares this table directly with the live directory. 
 | `evidence_source_scope.py` | Refuses Groovy app/config source reads that substitute a verified device instance ID without a typed device-to-app link. |
 | `telemetry_source_claim_guard.py` | Generic read-only telemetry publication boundary for unverified physical/driver/last-packet assertions and positive event contradictions. |
 | `typed_status_claim_guard.py` | Cross-domain, source-typed final status assertion check over current-request read-only receipts; protects missing/contradicted measurements without extra reads or model rounds. |
-| `tool_executor.py` | Dispatches approved calls and records normalised results. |
+| `tool_executor.py` | Dispatches approved calls and records normalised results. Strips the host-only history discovery hint from public call arguments. |
 | `tool_registry.py` | Defines local schemas and structured tool effects. |
 | `webui.py` | Renders the Home Assistant ingress interface. |

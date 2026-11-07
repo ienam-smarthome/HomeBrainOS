@@ -30,6 +30,7 @@ from natural_datetime import format_natural_datetime, normalize_iso_offset
 
 _STATE_PAIRS: dict[str, tuple[str, str]] = {
     "switch": ("on", "off"),
+    "thermostatoperatingstate": ("heating", "idle"),
     "contact": ("open", "closed"),
     "motion": ("active", "inactive"),
     "lock": ("unlocked", "locked"),
@@ -596,6 +597,16 @@ def _parsed_state_rows(
     if pair is None:
         return None
     active_state, inactive_state = pair
+    if attribute_name.casefold() == "thermostatoperatingstate":
+        # This pair describes reported heating demand, not boiler actuation.
+        # Do not bridge cooling/pending/custom states as if they were missing.
+        if any(
+            isinstance(event, dict)
+            and str(event.get("name") or "").casefold() == attribute_name.casefold()
+            and str(event.get("value") or "").strip().casefold() not in pair
+            for event in events
+        ):
+            return None
     parsed: list[tuple[datetime, int, str, dict[str, Any]]] = []
     ignored_rows = 0
     for index, event in enumerate(events):
@@ -1297,6 +1308,32 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         if bounded_command_events:
             details["commandEvents"] = bounded_command_events
             details["commandEventsTruncated"] = len(command_events) > 24
+
+    recovery = result_data.get("historyAttributeRecovery")
+    if isinstance(recovery, dict) and recovery.get("strategy") == "same-device-unfiltered-event-discovery":
+        details["historyAttributeRecovery"] = {
+            "strategy": "same-device-unfiltered-event-discovery",
+            "requestedAttribute": str(recovery.get("requestedAttribute") or "")[:70],
+            "requestedAttributeVerified": False,
+            "doesNotProveAttributeAbsence": True,
+        }
+        details["observedEventAttributes"] = [
+            name for name in result_data.get("observedEventAttributes", [])
+            if isinstance(name, str)
+        ][:40]
+        analyses = result_data.get("observedStateAnalyses")
+        if isinstance(analyses, dict):
+            details["observedStateAnalyses"] = {
+                name: {
+                    key: analysis[key] for key in (
+                        "attribute", "activeState", "inactiveState",
+                        "intervalCount", "intervals", "totalActiveSeconds",
+                        "durationReliability", "openActiveInterval",
+                    ) if key in analysis
+                }
+                for name, analysis in list(analyses.items())[:8]
+                if isinstance(name, str) and isinstance(analysis, dict)
+            }
 
     boundary_events = result_data.get("boundaryEvents")
     if isinstance(boundary_events, list):
