@@ -1,5 +1,14 @@
 # HomeBrainOS development agent instructions
 
+## V2 scope clarification — 7 November 2026
+
+The user explicitly requires `hubitat-mcp-ai-v2/` to be a clean start following the upstream Hubitat MCP server's intended behavior. Its scope includes investigation, device control, native automation and administration within the connected server/token permissions. Earlier v2 read-only-pilot restrictions and the alpha.2 frozen tool allowlist are superseded.
+
+Use the live catalog, exact schemas, gateway discovery and upstream skill/safety guidance. Keep model-selected tools and natural answers; no v1 planners, per-question patches, deterministic answer rewriting or fixed round quotas. Preserve upstream permission gates, explicit confirmation, backups, device identity, privacy and operational resource safeguards. Use a server-side read-only token for initial investigation acceptance. Repository authorization does not permit live hub/device changes without a specific user request.
+
+V1 instructions below continue to apply to v1; they must not silently narrow the independent v2 architecture. Current v2 scope and acceptance: [HUBITAT-MCP-AI-V2-STATUS.md](docs/HUBITAT-MCP-AI-V2-STATUS.md).
+
+
 ## Standing mandate — do not change direction between chats
 
 **New user direction (6 Nov 2026):** Do not keep adding per-question fixes or require the user to continually train the assistant. Build the autonomous evidence-first architecture in [docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md](docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md): model-selected evidence requirements, verified read-only execution, source-aware continuation, grounded synthesis, and evaluated improvement on unseen questions. Remove arbitrary soft limits on read-only inquiry, **not** operational deadlines, write permissions, user confirmation, privacy or resource safeguards. Phase 1 is only the first increment, not proof of general autonomy.

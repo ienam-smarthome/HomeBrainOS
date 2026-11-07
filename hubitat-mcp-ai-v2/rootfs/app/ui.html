@@ -31,16 +31,20 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#101b2c
 @media(max-width:530px){h1{font-size:17px}header{padding:14px}main{padding:12px}.card{padding:13px}#graph{height:270px}}
 </style></head>
 <body>
-<header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · read-only pilot</small></div><small id="state">Checking configuration…</small></header>
+<header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><small id="state">Checking configuration…</small></header>
 <main>
 <nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active">
 <div class="card"><h2>Ask Hubitat</h2>
 <textarea id="question" placeholder="What caused Livingroom Light 2 to turn off most recently?"></textarea>
-<div class="row"><small class="muted">The AI selects MCP read tools itself; no predefined investigation route.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
+<div class="row"><small class="muted">The AI selects MCP tools itself; no predefined investigation route.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
 </div>
+<div class="card" id="activityCard" hidden><h2>Current operation</h2><pre id="activity"></pre>
+<div id="approval" hidden><p>Review this operation and its effects. Approve only if you intend this exact change.</p>
+<button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
+<button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
 <div class="card"><h2>Answer</h2><div id="answer" class="muted">Your response will appear here.</div>
-<details><summary>Read-tool receipts</summary><pre id="receipts">No reads yet.</pre></details>
+<details><summary>Tool receipts</summary><pre id="receipts">No tool calls yet.</pre></details>
 </div></section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
@@ -60,18 +64,49 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#101b2c
 </div></section></main>
 <script>
 const byId=id=>document.getElementById(id);
-let messages=[], payload=null, visual=null, hoverX=null;
+let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
 async function readJson(url, init){const r=await fetch(url,init);const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 async function loadStatus(){try{const d=await readJson('api/status');byId('state').textContent=d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model')}catch(e){byId('state').textContent=String(e.message)}}
+async function pollActivity(){
+ if(!activeRequest)return;
+ const requestId=activeRequest;
+ try{
+  const d=await readJson('api/activity/'+requestId);
+  if(activeRequest!==requestId)return;
+  byId('activityCard').hidden=!d.current;
+  byId('activity').textContent=d.current?JSON.stringify(d.current,null,2):'';
+  pendingApproval=d.pending;
+  byId('approval').hidden=!pendingApproval;
+ }catch(e){byId('approvalError').textContent='Unable to refresh operation: '+e.message;}
+}
+async function decide(approved){
+ if(!activeRequest||!pendingApproval)return;
+ const requestId=activeRequest,approvalId=pendingApproval.id;
+ byId('approve').disabled=true;byId('decline').disabled=true;byId('approvalError').textContent='';
+ try{
+  await readJson('api/activity/'+requestId+'/confirm',{method:'POST',
+   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
+   body:JSON.stringify({id:approvalId,approved})});
+  pendingApproval=null;byId('approval').hidden=true;
+ }catch(e){byId('approvalError').textContent=e.message;}
+ finally{byId('approve').disabled=false;byId('decline').disabled=false;}
+}
+function newRequestId(){
+ const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+ const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+ return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
+}
 async function submitAsk(){
- const q=byId('question').value.trim();if(!q)return;const send=byId('send');send.disabled=true;
+ const q=byId('question').value.trim();if(!q)return;const send=byId('send');if(send.disabled)return;send.disabled=true;
+ activeRequest=newRequestId();pendingApproval=null;byId('approvalError').textContent='';
+ const activityTimer=setInterval(pollActivity,750);
  byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
- try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,history:messages.slice(-12)})});
+ try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({request_id:activeRequest,question:q,history:messages.slice(-12)})});
  byId('answer').textContent=d.answer||'No answer returned.';byId('receipts').textContent=JSON.stringify({rounds:d.rounds,elapsed_ms:d.elapsed_ms,calls:d.tool_calls||[],error:d.error||null},null,2);
  messages.push({role:'user',content:q},{role:'assistant',content:d.answer||''});
- }catch(e){byId('answer').textContent='Request failed: '+e.message;byId('receipts').textContent='No verified read receipts returned.'}
- finally{send.disabled=false;}
+ }catch(e){byId('answer').textContent='Request failed: '+e.message;byId('receipts').textContent='No verified tool receipts returned.'}
+ finally{clearInterval(activityTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;send.disabled=false;}
 }
 byId('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))submitAsk();});
 function fmt(value,digits=1){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'—'}

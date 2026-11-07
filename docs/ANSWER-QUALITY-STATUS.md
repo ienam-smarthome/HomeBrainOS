@@ -1,5 +1,14 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — V2 upstream architecture alignment (alpha.3)
+
+The user explicitly clarified that v2 is a clean start following upstream intended behavior across reads, control, native automation and administration within the connected server/token permissions. This supersedes the read-only pilot and alpha.2 frozen allowlist. V1 remains separate.
+
+Alpha.3 uses the complete refreshed/paginated live catalog, empty gateway discovery and server-owned leaf routing; it supports flat and gateway catalogs without fixed HomeBrain tool inventories. It loads the unmodified upstream skill, safety and rule-pattern reference with MIT attribution. Calls carrying confirm=true pause for a one-use, request-bound explicit UI decision; upstream gates, backups and device identity remain authoritative. Sequential execution, no automatic write retries, source receipts and operational/privacy safeguards remain. No v1 planners or per-question answer patches.
+
+Engineering validation and merge evidence are recorded on the focused architecture PR. Live model reasoning, ingress/deployment, device control, native automation and matched v1/Claude/Thaura acceptance remain unverified/not measured. First use a read-only upstream client token for frozen first-answer comparisons; live write tests require explicit operation-specific user authorization. See [v2 architecture and acceptance](HUBITAT-MCP-AI-V2-STATUS.md).
+
+
 ## 2026-11-07 — Isolated v2 alpha pilot and verification corrections
 
 PR #1524 merged the separate experimental v2 add-on as `fd02765b2e4ffa328445e3b41abb9ce147e87749`, with v1 untouched. The v2 PR workflow log records 10 tests passing on synthetic merge `8215d43bc3635c08a00c381b02b5eddf50c1851e`. The direct check-runs endpoint confirms nine successful checks on final development head `2f390e65efa4fb1312c903118bafde9545101769`, including push and PR runs. The PR-only workflow query exposes only six jobs and undercounts the full checks. Dedicated amd64 build/import and unconfigured HTTP startup passed. HA installation/ingress, other architectures and live model/MCP evaluation are pending.

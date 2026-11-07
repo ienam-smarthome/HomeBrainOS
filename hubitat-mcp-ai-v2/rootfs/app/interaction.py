@@ -1,0 +1,53 @@
+"""Per-request progress and explicit confirmation for upstream confirm flags."""
+from __future__ import annotations
+
+import asyncio
+import copy
+import uuid
+
+from mcp import MCPError, redact
+
+
+def needs_confirmation(value) -> bool:
+    if isinstance(value, dict):
+        return any(
+            (key == "confirm" and bool(item) and str(item).lower() != "false")
+            or needs_confirmation(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(needs_confirmation(item) for item in value)
+    return False
+
+
+class Interaction:
+    def __init__(self):
+        self.current = None
+        self.pending = None
+        self._decision = None
+
+    def status(self) -> dict:
+        return {"current": self.current, "pending": self.pending}
+
+    def decide(self, approval_id: str, approved: bool) -> None:
+        if (not self.pending or self.pending["id"] != approval_id
+                or self._decision is None or self._decision.done()):
+            raise ValueError("This confirmation is no longer pending")
+        self._decision.set_result(approved)
+
+    async def before_call(self, name: str, arguments: dict, explanation: str) -> None:
+        self.current = {
+            "name": name, "arguments": redact(copy.deepcopy(arguments)),
+            "explanation": redact(explanation),
+        }
+        if not needs_confirmation(arguments):
+            return
+        self._decision = asyncio.get_running_loop().create_future()
+        self.pending = {"id": str(uuid.uuid4()), **self.current}
+        try:
+            approved = await self._decision
+            if not approved:
+                raise MCPError("User declined this operation; do not retry it")
+        finally:
+            self.pending = None
+            self._decision = None
