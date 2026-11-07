@@ -192,12 +192,14 @@ def _pair(c, p):
         return None, err
     if ws[0].entity != ws[1].entity and c.get("kind") != "correlation":
         return None, "target_mismatch"
+    if any(w.role not in REPORTER_ROLES for w in ws):
+        return None, "wrong_witness_role"
     if not _clock_ok(ws):
         return None, "clock_unverified"
     if not _scope_ok(c, ws, p):
         return None, "out_of_scope_event"
     t1, t2 = _t(ws[0].time), _t(ws[1].time)
-    if c.get("kind") != "correlation" and t2 < t1:        # type: ignore
+    if c.get("kind") != "correlation" and t2 <= t1:
         return None, "bad_time_order"
     return ws, ""
 
@@ -206,27 +208,37 @@ def _observed_interval(c, p):
     ws, err = _pair(c, p)
     if err:
         return err, {}
-    s = (_t(ws[1].time) - _t(ws[0].time)).total_seconds()  # type: ignore
-    return "", {"entity": ws[0].entity, "start": ws[0].time,
-                "end": ws[1].time, "seconds": s}
+    start, end = ws
+    if (start.event_class != end.event_class
+            or (start.value.lower(), end.value.lower()) not in {
+                ("on", "off"), ("active", "inactive"),
+                ("present", "not present"), ("open", "closed"),
+            }):
+        return "invalid_event_pair", {}
+    elapsed = (_t(end.time) - _t(start.time)).total_seconds()
+    return "", {"entity": start.entity, "start": start.time,
+                "end": end.time, "seconds": elapsed}
 
 
 def _calculation(c, p):
     ws, err = _pair(c, p)
     if err:
         return err, {}
+    first, second = ws
     op = c.get("op")
     if op == "elapsed":
-        s = (_t(ws[1].time) - _t(ws[0].time)).total_seconds()  # type: ignore
-        return "", {"op": op, "seconds": s, "start": ws[0].time,
-                    "end": ws[1].time, "entity": ws[0].entity}
+        seconds = (_t(second.time) - _t(first.time)).total_seconds()
+        return "", {"op": op, "seconds": seconds, "start": first.time,
+                    "end": second.time, "entity": first.entity}
     if op == "delta":
-        a, b = _num(ws[0].value), _num(ws[1].value)
+        if first.event_class != second.event_class or first.unit != second.unit:
+            return "unit_mismatch", {}
+        a, b = _num(first.value), _num(second.value)
         if a is None or b is None:
             return "not_numeric", {}
-        return "", {"op": op, "delta": round(b - a, 6), "from": ws[0].value,
-                    "to": ws[1].value, "entity": ws[0].entity,
-                    "attribute": ws[0].event_class}
+        return "", {"op": op, "delta": round(b - a, 6),
+                    "from": first.value, "to": second.value,
+                    "entity": first.entity, "attribute": first.event_class}
     return "unknown_operation", {}
 
 
@@ -237,12 +249,14 @@ def _command_issued(c, p):
     w = ws[0]
     if w.entity != str(c.get("entity")):
         return "target_mismatch", {}
-    if w.role != "initiator":
+    if w.role != "command-issuer":
         return "wrong_witness_role", {}
     if w.event_class != f"command-{str(c.get('command')).lower()}":
         return "value_mismatch", {}
     if not c.get("app_id") or w.app_issuer != str(c.get("app_id")):
         return "app_mismatch", {}
+    if not _clock_ok(ws, command=True):
+        return "clock_unverified", {}
     if not _scope_ok(c, ws, p):
         return "out_of_scope_event", {}
     return "", {"entity": w.entity, "command": c.get("command"),
@@ -256,6 +270,8 @@ def _listener_notified(c, p):
     w = ws[0]
     if w.role != "listener":
         return "wrong_witness_role", {}
+    if not _clock_ok(ws):
+        return "clock_unverified", {}
     if w.app_issuer != str(c.get("app_id")):
         return "app_mismatch", {}
     if not _scope_ok(c, ws, p):
@@ -273,19 +289,34 @@ def _correlation(c, p):
     return "", {"a": ws[0], "b": ws[1], "lag_s": lag}
 
 
+_ABSENCE_FILTERS = frozenset({
+    "command-off", "command-on", "command-setlevel",
+    "switch", "motion", "presence", "occupancy", "temperature",
+    "humidity", "power", "energy", "app-log",
+})
+
+
 def _absent(c, p):
     cov = p.coverage.get(str(c.get("coverage_id")))
     if cov is None:
         return "missing_coverage", {}
     if cov.entity != str(c.get("entity")):
         return "coverage_target_mismatch", {}
-    return "", {"what": str(c.get("what") or "matching record"),
-                "coverage": cov}
+    if (not cov.successful or cov.pages_checked < 1
+            or cov.matched_count != 0
+            or cov.query_kind not in _ABSENCE_FILTERS
+            or c.get("what") != cov.query_kind
+            or not _t(cov.window_start) or not _t(cov.window_end)
+            or _t(cov.window_start) >= _t(cov.window_end)):
+        return "coverage_unverified", {}
+    return "", {"what": cov.query_kind, "coverage": cov}
 
 
 def _cause_unverified(c, p):
     if p.root_cause_verified:
         return "cause_already_verified", {}
+    if not p.focal_event_keys:
+        return "out_of_scope_event", {}
     return "", {}
 
 
