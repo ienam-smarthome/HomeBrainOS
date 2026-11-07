@@ -193,7 +193,11 @@ def _focal_physical_events(
             if stamp.tzinfo is not None:
                 instants.add(stamp.astimezone(timezone.utc))
         if len(instants) != 1:
-            return []
+            # Without a verified request clock there is no unique focal
+            # event. Keep the earlier general listener-only guard available
+            # for explicitly named historical actors, but never use these
+            # rows for the strict focal-specific correction below.
+            return events
         focal = next(iter(instants))
     matched = []
     for row in events:
@@ -354,9 +358,13 @@ def guard_triggered_listener_causal_claim(
             None,
         )
         if matched is None:
-            # An unrelated listener is not a source-backed actor for this
-            # focal event; never substitute an arbitrary historical app.
-            continue
+            # Generic "the automation triggered it" claims still require
+            # disambiguation when there is exactly one listener-only context.
+            # Crucially, the context is *focal-scoped* whenever a verified
+            # requestedBoundary was supplied, never from an older event.
+            if not _APP_TERM.search(sentence) or len(contexts) != 1:
+                continue
+            matched = contexts[0]
 
         app_label = matched["appLabel"]
         producer_label = matched["producerLabel"]
