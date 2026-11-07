@@ -17,6 +17,8 @@ on:
       - "requirements.txt"
       - "requirements-test.txt"
       - "scripts/run_release_gate.py"
+      - "scripts/answer_quality_capture.py"
+      - "tests/test_answer_quality_capture.py"
       - ".github/workflows/hubitat-mcp-ai-tests.yml"
   pull_request:
     paths:
@@ -33,6 +35,8 @@ on:
       - "requirements.txt"
       - "requirements-test.txt"
       - "scripts/run_release_gate.py"
+      - "scripts/answer_quality_capture.py"
+      - "tests/test_answer_quality_capture.py"
       - ".github/workflows/hubitat-mcp-ai-tests.yml"
 
 concurrency:

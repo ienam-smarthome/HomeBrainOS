@@ -78,6 +78,40 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _claim_shadow_summary(response: dict[str, Any]) -> dict[str, Any]:
+    """Preserve diagnostic presence, never promote it to an answer grade.
+
+    Only a known schema's strict booleans and fixed source names survive.
+    Rejection text, witness IDs, reason strings and unknown fields may be
+    private and must never be copied into a portable capture.
+    """
+    validation = response.get("evidence_validation")
+    validation = validation if isinstance(validation, dict) else {}
+    present = "claim_evidence_shadow" in validation
+    raw = validation.get("claim_evidence_shadow")
+    known = isinstance(raw, dict) and raw.get("schema") == "homebrain-claims.v2"
+    summary = {
+        "diagnostic_reporting": (
+            "provided" if known else "invalid" if present else "not_provided"
+        ),
+        "rejection_status_reported": "claim_evidence_shadow_status" in validation,
+        "focal_attested_reported": None,
+        "shadow_only_reported": None,
+        "model_claims_assessed_reported": None,
+        "focal_source_reported": None,
+        "independently_verified": False,
+    }
+    if known:
+        for field in ("focal_attested", "shadow_only", "model_claims_assessed"):
+            value = raw.get(field)
+            summary[field + "_reported"] = value if type(value) is bool else None
+        summary["focal_source_reported"] = _safe_str(
+            raw.get("focal_source"),
+            {"host-correlation", "source-history-latest-off"},
+        )
+    return summary
+
+
 def _normalized_prompt(prompt: str) -> str:
     return " ".join(prompt.strip().split())
 
@@ -231,6 +265,7 @@ def extract_capture(
         "mutating_receipt_count": read_mutations,
         **_missing_source_summary(coverage),
         "source_packet_completeness": "not_independently_verified",
+        "claim_evidence_shadow": _claim_shadow_summary(response),
         "source_checks_complete_reported": (
             coverage["sourceChecksComplete"]
             if isinstance(coverage.get("sourceChecksComplete"), bool) else None
@@ -278,6 +313,7 @@ def extract_capture(
             "API-reported prompt hashes attest only submission at the HTTP boundary, not model input, first attempt, deployed build or source truth",
             "Missing-source categories are self-reported and are not proof of complete or absent history",
             "Self-reported source checks, completeness and synthesis repair counters are not model-quality scores",
+            "Claim-evidence shadow presence and attestation are reported diagnostics, not independent evidence verification or model-claim grading",
             "A clean mutating-receipt count is not an independently proven safety audit",
         ],
     }

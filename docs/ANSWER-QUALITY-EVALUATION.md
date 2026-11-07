@@ -76,6 +76,10 @@ A missing separate `--question-file` may now still yield `api_submitted_prompt_m
 5. Run the scorecard. Compare measured sample size, grounded claims, first-attempt usefulness, overclaims, safety and latency. Reject improvements that merely make an answer sound more confident or add redundant tool calls.
 6. Once a meaningful before/after effect is demonstrated, update the [status](ANSWER-QUALITY-STATUS.md), CI/PR and next action. This becomes the next chat's starting point.
 
+## Claim-evidence shadow capture (v0.18.455 observation checkpoint)
+
+The capture's additive `claim_evidence_shadow` summary distinguishes `not_provided`, `invalid` (unrecognised schema/shape), and `provided`. It retains rejection-status **presence**, strict reported booleans and only `host-correlation` / `source-history-latest-off` source labels. Missing fields remain null; unattested false is distinct from missing. No arbitrary reason strings, witness payloads or raw diagnostic objects are exported. These are self-reported observations; `independently_verified=false` and all existing pending-review/first-attempt qualifications remain in force. A sidecar with `model_claims_assessed=false` cannot grade the model's answer. The registered legacy prompt below differs from the longer current installed acceptance question: preserve each submitted question/hash rather than relabelling them as identical.
+
 ## Q1: privacy-minimal HomeBrain live capture
 
 The HomeBrain technical JSON includes actual device labels, IP addresses, command arguments, event payloads and potentially private logs. **Do not commit unredacted output to public GitHub**.
