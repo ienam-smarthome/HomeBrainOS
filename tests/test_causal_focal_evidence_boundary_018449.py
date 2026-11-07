@@ -97,7 +97,11 @@ def test_listener_context_binds_to_focal_event_not_old_history():
 
 def test_unqualified_generic_listener_cannot_be_replaced_by_arbitrary_app():
     draft = "An automation caused the latest OFF."
-    assert guard_triggered_listener_causal_claim(draft, _packet()) == (draft, False)
+    repaired, changed = guard_triggered_listener_causal_claim(draft, _packet())
+    assert changed
+    assert "downstream listeners" in repaired
+    assert "Old Monitor" not in repaired
+    assert "New Listener initiated" not in repaired
 
 
 def test_missing_focal_report_does_not_appropriate_older_listeners():
