@@ -22,3 +22,37 @@ jobs:
         run: python -m compileall -q hubitat-mcp-ai-v2/rootfs/app hubitat-mcp-ai-v2/tests
       - name: Run read-only agent and recorder tests
         run: python -m unittest discover -v -s hubitat-mcp-ai-v2/tests
+
+  container-smoke-v2:
+    name: Build and probe v2 add-on container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated v2 image
+        run: |
+          docker build \
+            --build-arg BUILD_FROM=ghcr.io/hassio-addons/base:15.0.8 \
+            --build-arg BUILD_VERSION=2.0.0-alpha.1 \
+            --build-arg BUILD_ARCH=amd64 \
+            --tag hubitat-mcp-ai-v2:smoke \
+            hubitat-mcp-ai-v2
+      - name: Verify v2 runtime imports
+        run: docker run --rm --entrypoint python3 hubitat-mcp-ai-v2:smoke -c "import app; assert app.app.title == 'Hubitat MCP AI v2'"
+      - name: Start and test independent HTTP endpoints
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/v2data"
+          container="$(docker run -d -p 127.0.0.1:8789:8789 -v "$RUNNER_TEMP/v2data:/data" hubitat-mcp-ai-v2:smoke)"
+          trap 'docker logs "$container" || true; docker rm -f "$container" >/dev/null' EXIT
+          ready=0
+          for attempt in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8789/api/status > "$RUNNER_TEMP/v2-status.json"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          python3 -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/v2-status.json')); assert d['mode']=='native-model-led-read-only'; assert not d['configured']"
+          curl -fsS http://127.0.0.1:8789/api/diagnostics/status > "$RUNNER_TEMP/v2-diagnostics.json"
+          curl -fsS http://127.0.0.1:8789/ | grep -q "Hubitat MCP AI v2"
