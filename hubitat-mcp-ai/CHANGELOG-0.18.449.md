@@ -40,8 +40,11 @@ external control. The precise upstream cause remains unverified.
 
 ## Release gate
 
-Require all mandatory workflows on the exact PR head before merging.
-This code-level protection is not proof of improved first-pass model
+All four mandatory workflows passed on exact tested PR head
+`dcf50f86381f959c9cde8eda5287f1da27d08a34`; PR #1503
+squash-merged to main as `5ff4c1127b54a85afc7b5c53386dd4e8e97d0980`.
+The first CI run failed five existing regressions; the revised code passed
+the complete second run. This code-level protection is not proof of improved first-pass model
 reasoning, complete historical source retention or discovered causality.
 Post-installation verify an unfamiliar read-only incident with full
 Technical JSON. No live device, Hubitat or HA state was changed by this PR;

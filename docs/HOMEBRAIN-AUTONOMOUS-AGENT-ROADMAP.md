@@ -1,14 +1,18 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**v0.18.449 candidate — source-real v0.18.448 acceptance failed:** A held-out
+**v0.18.449 merged — source-real v0.18.448 acceptance failed:** A held-out
 read-only OFF investigation returned plausible timestamps and no repetitive
 paragraphs, but promoted the reporting bridge to an unproven external cause,
 made an unqualified no-Hubitat-instruction claim despite bounded receipts,
 misstated inactive motion as generic activity and attached an older listener
 to the focal event. The complete Technical JSON also reported a failed
-synthesis repair. Candidate correction: focal direction and event-bound
+synthesis repair. Merged correction: focal direction and event-bound
 listener selection, read-only final publication proof checks and exact sensor
-value instructions. CI and measured live uplift are pending. Keep the
+value instructions. [PR #1503](https://github.com/ienam-smarthome/HomeBrainOS/pull/1503)
+passed all four required CI workflows on tested head
+`dcf50f86381f959c9cde8eda5287f1da27d08a34` and squash-merged as
+`5ff4c1127b54a85afc7b5c53386dd4e8e97d0980`.
+Measured installed live uplift is still pending. Keep the
 model-led evidence-first roadmap, never add per-device source rules, and
 retain write/confirmation and resource safeguards.
 
