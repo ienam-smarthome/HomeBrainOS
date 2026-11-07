@@ -1,5 +1,36 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — installed v0.18.448 causal investigation: source-real answer FAILED
+
+**Actual read-only response:** Installed `version=0.18.448` returned 16 tool calls,
+six Gemma cloud model rounds, 35.565 s elapsed, `outcome=unresolved`,
+`synthesis_validation_issues=4` and `synthesis_repair_failed=1`.
+The target-reported OFF event at 2026-11-07 00:30:00.023 GMT is sourced to a
+Matter bridge *state reporter*. The bounded command-off history returned
+prior commands but no command-off matching the focal moment; historical
+completeness is expressly unverified. No independent upstream initiator
+or external control path was established. The narrative nevertheless
+asserted "triggered externally", and categorical Hubitat non-involvement.
+An FP400 sensor's typed `inactive` observation was called "activity".
+One old event's triggered[] monitor was carried forward into the newest
+OFF event's conclusion even though that listener was not in the focal row.
+The reported ON interval (12,704 s) and focal OFF timestamp were accurate;
+repeated long paragraphs were no longer visible. These are factual failures,
+not merely awkward wording or a success attributable to CI.
+
+**General corrective candidate:** v0.18.449 source-focal proof guard in
+`fix/focal-causal-verification-v018449`. Reconstruct ON/OFF from the
+actual focal metadata, bind triggered[] listeners to the focal device,
+state and instant, prevent arbitrary generic listener substitution, carry
+unverified-external source boundaries through final read-only serialization,
+and retain typed inactive sensor values. Fictional regression cases required;
+exact-head CI, PR and installed quality acceptance pending. No real Hubitat,
+HA, router, model spending or live configuration change. Keep the original
+incident initiator **unverified** until its source witnesses prove more.
+
+---
+
+
 ## 2026-11-07 — v0.18.448 generic causal-answer repetition and proof-boundary guard (merged; installed verification pending)
 
 **Held-out read-only test:** The installed HomeBrainOS v0.18.447 Livingroom Light 2 investigation reported a focal OFF at 2026-11-06 20:53:25 GMT and later ON at 20:58:15 GMT, while classifying the bridge as state-report producer and SenseCap D1 Settings as a downstream listener rather than a proved OFF initiator. The visible output duplicated the same source-role narrative multiple times, mixed an unsupported or at least unattributed assertion that an OFF command was recorded into its log-coverage note, and did not establish a definite upstream OFF initiator. These are **displayed-answer observations only**; full Technical JSON source rows and command issuer receipts were not supplied for this test. No new cause or decisive command proof can be inferred from the screenshot or text.
