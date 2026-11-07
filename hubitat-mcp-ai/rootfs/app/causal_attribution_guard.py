@@ -326,18 +326,43 @@ def guard_triggered_listener_causal_claim(
             None,
         )
         if matched is None:
-            # Without a named app match there is no source-grounded reason
-            # to substitute an arbitrary listener from any event.
-            continue
+            # App/rule numeric IDs and substantial app-label fragments are
+            # legitimate identity references; they are not a reason to choose
+            # a different arbitrary listener from another event.
+            for row in contexts:
+                app_id = str(row.get("appId") or "")
+                full = str(row.get("appLabel") or "")
+                parts = [p.strip().casefold() for p in re.split(r"[-–—]", full)]
+                aliases = [p for p in parts if len(p) >= 8]
+                if (
+                    (app_id and re.search(
+                        rf"(?i)\\b(?:rule|app)\\s*#?\\s*{re.escape(app_id)}\\b",
+                        sentence,
+                    ))
+                    or any(alias in sentence_folded for alias in aliases)
+                ):
+                    matched = row
+                    break
 
-        app_label = matched["appLabel"]
-        producer_label = matched["producerLabel"]
-        guarded_claim = (
-            f"For this physical state event, {app_label} is recorded only as a "
-            f"downstream listener in triggered[]; the event itself was produced "
-            f"by {producer_label}. This evidence does not establish that "
-            f"{app_label} initiated the transition."
-        )
+        if matched is None and not _APP_TERM.search(sentence):
+            continue
+        if matched is not None:
+            app_label = matched["appLabel"]
+            producer_label = matched["producerLabel"]
+            guarded_claim = (
+                f"For this physical state event, {app_label} is recorded only as a "
+                f"downstream listener in triggered[]; the event itself was produced "
+                f"by {producer_label}. This evidence does not establish that "
+                f"{app_label} initiated the transition."
+            )
+        else:
+            # Generic claims must be calibrated without inventing a specific
+            # app identity. Never choose contexts[0] as a named issuer.
+            guarded_claim = (
+                "For this physical state event, triggered[] lists downstream "
+                "listeners of a state report, not evidence that an automation "
+                "initiated the transition."
+            )
         # A claim guard must never erase a timeline row, its date columns,
         # duration, or Markdown pipes. The earlier implementation replaced
         # an entire 4-column row with prose, leaving a dangling closing pipe
