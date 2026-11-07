@@ -168,15 +168,17 @@ class Agent:
                     result = await asyncio.wait_for(mcp.call(name, args), timeout=max(0.1, deadline - time.monotonic()))
                     tool_error = bool(result.get("isError"))
                     record = {
-                        "name": name, "success": not tool_error,
+                        "name": name, "arguments": redact(args),
+                        "success": not tool_error,
                         "elapsed_ms": round((time.monotonic() - started_call) * 1000),
                     }
                     if tool_error:
                         record["error"] = "MCP tool reported isError"
                     content = compact_tool_result(result)
+                    record["response_characters"] = len(content)
                 except (MCPError, ValueError, asyncio.TimeoutError) as exc:
                     record = {
-                        "name": name, "success": False,
+                        "name": name, "arguments": redact(args), "success": False,
                         "elapsed_ms": round((time.monotonic() - started_call) * 1000),
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
