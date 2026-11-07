@@ -468,6 +468,65 @@ def publish(
 
 
 # -------------------------------------------------------- v1 migration helper
+def coverage_from_verified_window_reads(
+    receipts: Sequence[Mapping[str, Any]],
+) -> list[Coverage]:
+    """Attest exact zero-result scope only from verified native read windows.
+
+    This accepts positive checked pages, never asserts complete retention,
+    and refuses unbounded/newest-N results or incomplete tool metadata.
+    An empty source page is a narrow no-match result, not proof of an
+    absent command at every upstream integration.
+    """
+    verified: list[Coverage] = []
+    for receipt in receipts[:160]:
+        if (not isinstance(receipt, Mapping)
+                or receipt.get("tool") != "hub_read_devices"
+                or receipt.get("sub_tool") != "hub_list_device_events"
+                or receipt.get("success") is not True
+                or receipt.get("mutates") is True
+                or receipt.get("effect") not in (None, "read")
+                or receipt.get("evidence_kind") not in {
+                    "authoritative_device_event_history",
+                    "authoritative_command_event_history",
+                }):
+            continue
+        arguments = receipt.get("arguments")
+        if not isinstance(arguments, Mapping):
+            continue
+        args = arguments.get("args")
+        if not isinstance(args, Mapping):
+            continue
+        entity = str(args.get("deviceId") or "")
+        kind = str(args.get("attribute") or "")
+        start = str(args.get("since") or "")
+        end = str(args.get("until") or "")
+        if (not entity.isdecimal() or kind not in _ABSENCE_FILTERS
+                or not _t(start) or not _t(end)
+                or _t(start) >= _t(end)):
+            continue
+        details = receipt.get("details")
+        if (not isinstance(details, Mapping)
+                or details.get("windowVerified") is not True
+                or str(details.get("deviceId") or "") != entity
+                or str(details.get("attribute") or "") != kind
+                or not isinstance(details.get("events"), list)):
+            continue
+        events = details["events"]
+        if (not isinstance(details.get("eventCount"), int)
+                or isinstance(details.get("eventCount"), bool)
+                or details["eventCount"] != len(events)):
+            continue
+        verified.append(Coverage(
+            coverage_id=f"{entity}|{kind}|{start}|{end}",
+            entity=entity, source="verified native device-event page",
+            window_start=start, window_end=end, pages_checked=1,
+            complete=False, successful=True, matched_count=len(events),
+            query_kind=kind,
+        ))
+    return verified
+
+
 def packet_from_v1_ledger(
     ledger: Mapping[str, Any], *, coverage: Sequence[Coverage] = (),
     focal_event_keys: frozenset[str] = frozenset(),
