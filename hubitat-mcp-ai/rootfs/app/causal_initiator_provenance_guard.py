@@ -226,10 +226,23 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"no\s+internal\s+hubitat\s+commands?\s+preceded|"
     r"(?:there\s+were\s+)?no\s+hubitat[- ]issued\s+commands?|"
     r"no\s+hubitat\s+commands?\s+(?:were\s+)?(?:issued|sent|executed)|"
+    r"there\s+(?:is|was)\s+no\s+(?:recorded|matching)\s+hubitat\s+"
+    r"(?:command|command-off)|"
+    r"hubitat[^.\n]{0,160}\bit\s+did\s+not\s+issue\s+"
+    r"(?:the\s+)?(?:instruction|command)|"
     r"hubitat\s+(?:only|never)\s+(?:acted|observed)\s+"
     r"(?:passively|in\s+a\s+reactionary\s+capacity))\b",
     re.I,
 )
+_STRONG_EXTERNAL_ACTION = re.compile(
+    r"\b(?:was|were|is|has\\s+been|had\\s+been)\\s+"
+    r"(?:directly\\s+)?(?:triggered|initiated|controlled|commanded|"
+    r"switched|operated|turned\\s+off)\\b"
+    r"[^.\\n]{0,70}?\\b(?:external(?:ly)?|outside\\s+(?:of\\s+)?hubitat|"
+    r"hue[- ]native|bridge[- ]native)\\b",
+    re.I,
+)
+
 _UNPROVEN_LISTENER_EXCLUSION = re.compile(
     r"(?:\b(?:were|was|are|is)\s+notified\b.{0,150}?\b(?:did\s+not|"
     r"didn't|could\s+not|weren't|wasn't)\s+initiat(?:e|ed)\b|"
@@ -284,14 +297,29 @@ def guard_unverified_initiator_claims(
         # A verified direct command may establish who issued that *command*.
         # It still does not establish whether a Hue/Matter-native process
         # initiated a different physical report.
+        strong_external = _STRONG_EXTERNAL_ACTION.search(stripped)
+        # An unqualified claim that a transition *was* externally triggered
+        # stays an assertion even if a later clause admits the actor is
+        # unknown. A modal qualifier before the verb remains permitted.
+        external_assertion = bool(
+            strong_external
+            and not _SCOPE_QUALIFIER.search(
+                stripped[:strong_external.start()]
+            )
+        )
         external_guess = (
             not external_verified
             and bool(_EXTERNAL.search(stripped))
-            and (bool(_ASSERTION.search(stripped))
-                 or bool(_EXTERNAL_VERDICT.search(stripped))
-                 or ("conclusion:" in stripped.casefold()
-                     and bool(_EXTERNAL.search(stripped))))
-            and not bool(_SCOPE_QUALIFIER.search(stripped))
+            and (
+                external_assertion
+                or (
+                    (bool(_ASSERTION.search(stripped))
+                     or bool(_EXTERNAL_VERDICT.search(stripped))
+                     or ("conclusion:" in stripped.casefold()
+                         and bool(_EXTERNAL.search(stripped))))
+                    and not bool(_SCOPE_QUALIFIER.search(stripped))
+                )
+            )
             and bool(re.search(r"\b(?:caus\w*|initiat\w*|"
                                r"trigger\w*|command\w*|logic|"
                                r"automatio\w*|controlled|toggled|operated|switched|responsible|interaction)\b",
