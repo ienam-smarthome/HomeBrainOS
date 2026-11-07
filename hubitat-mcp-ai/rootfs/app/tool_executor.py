@@ -500,6 +500,7 @@ class ToolExecutor:
         evidence_kind: str = "tool_result",
         mutates: bool | None = None,
         record_evidence: bool = True,
+        history_discovery: bool = False,
     ) -> ToolExecution:
         # Claim the exact model-emitted signature before applying deterministic
         # execution-time normalization. Otherwise adding a 50-row semantic-history
@@ -508,6 +509,10 @@ class ToolExecutor:
         model_arguments = deepcopy(arguments)
         reasoning_round_size = claim_model_tool_call(name, model_arguments)
         safe_arguments = prepare_history_arguments(name, model_arguments)
+        if history_discovery and name == "homebrain_device_history":
+            safe_arguments["_discover_rejected_attribute"] = True
+            safe_arguments["_include_hub_time_zone"] = True
+            safe_arguments["_expand_history_coverage"] = True
         safe_arguments = normalize_gateway_read(name, safe_arguments)
         safe_arguments = _normalize_device_command_parameters(name, safe_arguments)
         receipt_arguments = deepcopy(safe_arguments)

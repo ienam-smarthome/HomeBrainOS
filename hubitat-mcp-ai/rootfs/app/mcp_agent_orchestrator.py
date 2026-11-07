@@ -7139,18 +7139,16 @@ class UnifiedMCPAgent:
                         )
                     })
                 else:
-                    execution_arguments = dict(arguments)
-                    if (name == _LOCAL_DEVICE_HISTORY_TOOL
-                            and not self._mutation_requested_by_user.get()):
-                        execution_arguments["_discover_rejected_attribute"] = True
-                        execution_arguments["_include_hub_time_zone"] = True
-                        execution_arguments["_expand_history_coverage"] = True
                     execution = await self.executor.execute(
                         name,
-                        execution_arguments,
+                        dict(arguments),
                         tool=tool,
                         supports_live_claim=name != "hub_search_tools",
                         evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
+                        **({"history_discovery": True}
+                           if (name == _LOCAL_DEVICE_HISTORY_TOOL
+                               and not self._mutation_requested_by_user.get())
+                           else {}),
                     )
                     if execution.effect.mutates:
                         self._mark_mutation()
