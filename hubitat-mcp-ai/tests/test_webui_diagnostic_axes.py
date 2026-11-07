@@ -27,9 +27,10 @@ def test_both_diagnostic_charts_use_dense_axes_and_source_boundaries():
     assert "diagChartYGrid(svg,timelinePlot.left,timelinePlot.right," in page
     assert "diagChartYGrid(group,diagPlot.left,diagPlot.right," in page
     assert "diagChartTimeGrid(svg,group,first,last,diagPlot.left,diagPlot.right," in page
-    assert "diagNiceChartScale(memoryLow,memoryHigh,8)" in page
-    assert "diagNiceChartScale(0,cpuHigh,8)" in page
-    assert "diagNiceChartScale(Math.max(0,rawMin-padding),rawMax+padding,10)" in page
+    assert "diagNiceChartScale(memoryLow,memoryHigh,combined?6:8)" in page
+    assert "diagNiceChartScale(0,cpuHigh,combined?6:8)" in page
+    assert "diagNiceChartScale(Math.max(0,rawMin-padding),rawMax+padding,pixelWidth<480?6:9)" in page
+    assert "diagChartYGridRight(" in page
     assert "t-prev>(kind==='native'?900000:" in page
     assert "diag_segment!==previousSegment" in page
     assert "These observations do not establish a cause." in page
