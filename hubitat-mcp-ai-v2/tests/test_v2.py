@@ -221,6 +221,8 @@ class InteractionTests(unittest.TestCase):
     def test_confirm_flag_requires_explicit_one_use_decision(self):
         self.assertTrue(needs_confirmation({"tool": "hub_reboot", "args": {"confirm": True}}))
         self.assertFalse(needs_confirmation({"confirm": False}))
+        self.assertTrue(needs_confirmation({"args": json.dumps({"confirm": True})}))
+        self.assertTrue(needs_confirmation({"confirm": "false"}))
         async def run():
             interaction = Interaction()
             task = asyncio.create_task(interaction.before_call(

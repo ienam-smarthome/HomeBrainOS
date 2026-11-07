@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import uuid
 
 from mcp import MCPError, redact
@@ -11,12 +12,19 @@ from mcp import MCPError, redact
 def needs_confirmation(value) -> bool:
     if isinstance(value, dict):
         return any(
-            (key == "confirm" and bool(item) and str(item).lower() != "false")
+            (key == "confirm" and bool(item))
             or needs_confirmation(item)
             for key, item in value.items()
         )
     if isinstance(value, list):
         return any(needs_confirmation(item) for item in value)
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return False
+        if isinstance(decoded, (dict, list)):
+            return needs_confirmation(decoded)
     return False
 
 

@@ -6,7 +6,7 @@ The user explicitly clarified that v2 is a clean start following upstream intend
 
 Alpha.3 uses the complete refreshed/paginated live catalog, empty gateway discovery and server-owned leaf routing; it supports flat and gateway catalogs without fixed HomeBrain tool inventories. It loads the unmodified upstream skill, safety and rule-pattern reference with MIT attribution. Calls carrying confirm=true pause for a one-use, request-bound explicit UI decision; upstream gates, backups and device identity remain authoritative. Sequential execution, no automatic write retries, source receipts and operational/privacy safeguards remain. No v1 planners or per-question answer patches.
 
-Engineering validation and merge evidence are recorded on the focused architecture PR. Live model reasoning, ingress/deployment, device control, native automation and matched v1/Claude/Thaura acceptance remain unverified/not measured. First use a read-only upstream client token for frozen first-answer comparisons; live write tests require explicit operation-specific user authorization. See [v2 architecture and acceptance](HUBITAT-MCP-AI-V2-STATUS.md).
+Engineering validation and merge evidence are recorded on [PR #1526](https://github.com/ienam-smarthome/HomeBrainOS/pull/1526). Live model reasoning, ingress/deployment, device control, native automation and matched v1/Claude/Thaura acceptance remain unverified/not measured. First use a read-only upstream client token for frozen first-answer comparisons; live write tests require explicit operation-specific user authorization. See [v2 architecture and acceptance](HUBITAT-MCP-AI-V2-STATUS.md).
 
 
 ## 2026-11-07 — Isolated v2 alpha pilot and verification corrections
