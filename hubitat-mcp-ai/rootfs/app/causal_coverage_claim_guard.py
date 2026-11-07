@@ -89,4 +89,64 @@ def guard_causal_controller_history_coverage(
     return "".join(out), changed
 
 
-__all__ = ["guard_causal_controller_history_coverage"]
+def guard_focal_log_coverage_claims(
+    message: str, evidence: list[dict[str, Any]], original_user: str = "",
+) -> tuple[str, bool]:
+    """Require attested focal request scope for historical log absence claims.
+
+    A successful read, its requested window and the returned event population
+    are different facts. Even a correctly bounded request cannot prove global
+    event absence. Preserve explicitly scoped returned-sample observations.
+    """
+    from claim_evidence_adapter import packet_from_evidence
+    packet = packet_from_evidence(evidence, original_question=original_user)
+    original = str(message or "")
+    if not packet.focal_time:
+        return original, False
+    scope = packet.log_request_coverage
+    bounded = scope.get("bounded_log_requests_covering_focal", 0)
+    apps = scope.get("bounded_app_log_requests_covering_focal", 0)
+    changed = False
+    pieces = re.split(r"(\n|(?<=[.!?])[ \t]+)", original)
+    # Work by line/sentence without deleting valid timeline rows or positives.
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        if sentence.lstrip().startswith("|") or not re.search(r"\blogs?\b", sentence, re.I):
+            continue
+        negative = re.search(
+            r"\b(?:no|zero)\b.{0,100}\b(?:events?|entries|messages?|records?|commands?|execution)\b"
+            r"|\blogs?\b.{0,80}\b(?:empty|no|zero)\b"
+            r"|\b(?:not|never)\s+(?:captured|recorded|found)\b", sentence, re.I)
+        if not negative:
+            continue
+        # A limitation is not an assertion of absence.
+        if re.search(r"\b(?:cannot|can't|does\s+not|do\s+not)\s+(?:prove|establish|rule\s+out)\b"
+                     r"|\bnot\s+(?:proof|evidence)\s+(?:of|that)\b", sentence, re.I):
+            continue
+        returned_scope = re.search(r"\b(?:returned|retrieved|sample|query|queries)\b", sentence, re.I)
+        focal_scope = re.search(
+            r"\b(?:focal|corresponding|surrounding|around|at\s+(?:the|this)\s+(?:event|timestamp)|"
+            r"for\s+(?:that|this|the\s+event)\s+window)\b", sentence, re.I)
+        app_scope = re.search(r"\b(?:apps?|rules?|automation)\b", sentence, re.I)
+        checked_focal = apps if app_scope else bounded
+        if returned_scope and (not focal_scope or checked_focal):
+            continue
+        prefix = re.match(r"\s*(?:[-*+]\s+)?", sentence).group(0)
+        if not checked_focal:
+            correction = (
+                "The returned log reads do not establish event absence at the focal time. "
+                "Open-ended samples and queries for other times cannot exclude "
+                "automation execution during this transition."
+            )
+        else:
+            correction = (
+                "A bounded log request included the focal time, but only its returned "
+                "records were checked; historical completeness and automation "
+                "non-execution remain unverified."
+            )
+        pieces[index] = prefix + correction
+        changed = True
+    return "".join(pieces), changed
+
+
+__all__ = ["guard_causal_controller_history_coverage", "guard_focal_log_coverage_claims"]

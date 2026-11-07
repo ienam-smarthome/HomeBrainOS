@@ -1,5 +1,7 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**v0.18.456 candidate — log request/focal evidence scope:** Installed v0.18.455 now passes the missing-shadow integration check. Full answer acceptance remains partial: implicit default past mode was lost from shadow counts, three since-only samples did not establish focal log coverage, and the bounded app query concerned another time. Normalize actual requests once, keep executed counts distinct from bounded and app-specific focal coverage, enforce the same source scope during synthesis/final publication, and reject unrelated historical command selection for focal issuing-app reads. Local private-packet adapter replay yields 4 reads, 1 bounded, 3 unbounded and 0 focal. Required candidate CI and installed v0.18.456 acceptance remain pending. Keep model_claims_assessed=false and the frozen cross-domain typed-claim migration direction.
+
 **v0.18.455 merged — real-world source-attested causal routing (7 Nov):**
 The first v0.18.453 live latest-OFF question returned a cautiously worded
 unknown-cause verdict but no `claim_evidence_shadow` diagnostics. Its

@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 from claim_evidence_contract import SCHEMA, Witness, EvidencePacket, validate_claims
+from native_past_log_receipt import summarize_past_log_requests
 
 
 def _time(raw: Any) -> datetime | None:
@@ -221,29 +222,21 @@ def verified_failed_repair_answer(
             + str(len(observed)) + " sensor-event rows. An empty "
             "window does not prove that no motion occurred."
         )
-    log_windows = set()
-    focal_log_windows = set()
-    for row in evidence:
-        if not _ok(row) or row.get("sub_tool") != "hub_get_logs":
-            continue
-        a = (row.get("arguments") or {}).get("args") or {}
-        if a.get("mode") != "past":
-            continue
-        start, end = _time(a.get("since")), _time(a.get("until"))
-        if start and end:
-            key = (str(a.get("appId") or a.get("deviceId") or "all"), start, end)
-            log_windows.add(key)
-            if start <= focal <= end:
-                focal_log_windows.add(key)
-    if log_windows and not focal_log_windows:
-        parts.append(
-            "**App-log coverage:** The returned past-log queries were for "
-            "other times, not the focal OFF instant. Their empty results "
-            "cannot establish app execution or non-execution at this OFF."
+    log_scope = summarize_past_log_requests(evidence, focal.isoformat())
+    if log_scope["past_log_requests"] and not log_scope["bounded_log_requests_covering_focal"]:
+        limitation = (
+            "The returned past-log queries were for other times, not the focal OFF instant. "
+            if not log_scope["unbounded_or_invalid_window_requests"] else
+            "No verified bounded past-log request included the focal OFF instant. "
         )
-    elif focal_log_windows:
         parts.append(
-            "**App-log coverage:** " + str(len(focal_log_windows))
+            "**App-log coverage:** " + limitation + "Open-ended samples or queries "
+            "for other times cannot establish app execution or non-execution "
+            "at this OFF."
+        )
+    elif log_scope["bounded_log_requests_covering_focal"]:
+        parts.append(
+            "**App-log coverage:** " + str(log_scope["bounded_log_requests_covering_focal"])
             + " time-bounded log request(s) included the OFF instant; "
             "a checked request is not proof of a historical initiating action."
         )

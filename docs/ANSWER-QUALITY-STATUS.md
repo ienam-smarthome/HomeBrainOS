@@ -1,5 +1,19 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — Installed v0.18.455 shadow passed; focal log scope correction v0.18.456
+
+**New full installed evidence:** v0.18.455 response at 11:45–11:46 GMT, 49.911s, five Gemma rounds, 13 tool calls, free route and read-only receipts. The previously missing sidecar now reports `focal_attested=true`, `focal_source=source-history-latest-off`, `shadow_only=true`, `model_claims_assessed=false`. This is a **passed installed shadow integration check**, not full answer acceptance. Returned projected history supplies five eligible OFF transitions, two paired commands and three unmatched in those records; this sample differs from the previous six-OFF packet and must not be forced to the previous denominator. The reported ON/OFF interval and recorded preceding ON command are supported; upstream OFF initiation remains unverified. API first-attempt, model-delivery and deployed-build-SHA verification flags remain false.
+
+**Confirmed gaps:** Four successful native past-log reads omitted explicit mode. Three had only a since bound and each returned 100 of more than 15,000 matching rows; none established an inspected focal window. One app-specific read covered an unrelated historical interval. The shadow incorrectly counted zero requests because it required explicit mode=past and both bounds before counting a read. Final wording claimed no corresponding event in hub logs for the focal window, beyond source support. No direct sensor windows or relevant app/rule configuration were verified. A generic method-command completion chose an unrelated historical command for its issuing-app decision read.
+
+**General v0.18.456 repair:** Reuse `native_past_log_receipt.py` for canonical request normalisation: omitted native mode means past; failed/mutating/nonpast calls are excluded; one-sided, naive, invalid or rejected bounds count as reads but not verified focal windows. Expose privacy-safe `log_request_coverage` separating total reads, bounded requests, unbounded/invalid samples and bounded app-specific focal requests. Legacy `app_log_requests` remains the total native past-read counter for compatibility. The supplied private packet replays locally as **4 total / 1 bounded / 3 unbounded / 0 focal / 0 app-specific focal**. Never promote these counts to event absence or historical completeness.
+
+Share focal log scope checks at synthesis and final read-only API publication; preserve explicit returned-sample observations, positive state/issuer facts and write/confirmation paths. Bound unqualified hub-command absence to queried records. Prevent a latest-OFF issuing-app decision read unless the command actually matches the source-attested focal OFF. Reuse normalised scope in the failed-repair factual floor and source-role instructions. No new runtime modules, extra model/MCP calls, provider changes or live writes.
+
+**Verification:** Local Python compilation and original private-packet adapter replay passed. Local bundled Python lacks pytest; full synthetic/API regression, packaging, metadata and required exact-head CI remain to be verified before merge. Frozen tests use fictional sources, not the private attachment. Installed v0.18.456 answer quality remains pending; broader typed-claim cross-domain evaluation is still the next migration milestone, not another per-device wording stage.
+
+---
+
 ## 2026-11-07 — Current development audit and privacy-safe shadow capture
 
 Reviewed main `070f6f9b19248868ef4d44096425629b9cab2b9f`, permanent direction, current claim integration, evaluation tooling, recent merged work and all three open PRs. [Development review](DEVELOPMENT-REVIEW-2026-11-07.md) records priorities and limits. Independently verified all four required workflows passed on #1514 head `33d9d911377cb76c9a8fabcec56c25deaceca132`. Installed v0.18.455 acceptance remains pending; the user's supplied summary adds no new installed test or full source JSON.

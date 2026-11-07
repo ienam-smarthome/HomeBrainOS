@@ -95,6 +95,7 @@ class EvidencePacket:
     internal_configuration_inspected: bool = False
     log_reads_total: int = 0
     log_reads_containing_focal: int = 0
+    log_request_coverage: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -11,8 +11,8 @@ retention, absolute UTC source times or causal significance.
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Mapping, Sequence
 
 _MAX_SCAN = 200
 _MAX_ID_SUMMARY = 12
@@ -132,4 +132,79 @@ def native_past_log_receipt(
     return result
 
 
-__all__ = ["native_past_log_receipt"]
+def _absolute_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo else None
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def past_log_request_scope(row: Any) -> dict[str, Any] | None:
+    """Normalize an executed past-log request, not returned event coverage.
+
+    The native contract defaults omitted mode to past. Never invent an until
+    time from execution time, source rows or model text. Invalid/one-sided
+    bounds remain counted reads but cannot attest a focal bounded window.
+    """
+    if (not isinstance(row, Mapping) or row.get("success") is not True
+            or row.get("mutates") is True
+            or row.get("effect") not in (None, "read")):
+        return None
+    outer = row.get("arguments")
+    if not isinstance(outer, Mapping):
+        return None
+    operation = row.get("sub_tool") or outer.get("tool") or row.get("tool")
+    if operation != "hub_get_logs":
+        return None
+    args = outer.get("args", outer)
+    if not isinstance(args, Mapping) or args.get("mode", "past") != "past":
+        return None
+    start, end = _absolute_time(args.get("since")), _absolute_time(args.get("until"))
+    bounded = start is not None and end is not None and start <= end
+    detail = row.get("details")
+    native = detail.get("nativePastLog") if isinstance(detail, Mapping) else None
+    native = native if isinstance(native, Mapping) else {}
+    # Unknown source filter interpretation cannot attest that the requested
+    # window was applied, even though the read itself really happened.
+    filter_ok = native.get("timeFilterUnparseable") in (None, 0)
+    app = str(args.get("appId") or "")
+    device = str(args.get("deviceId") or "")
+    return {
+        "since": start, "until": end,
+        "bounded": bounded and filter_ok,
+        "app_scoped": app.isdecimal() and int(app) > 0,
+        "device_scoped": device.isdecimal() and int(device) > 0,
+        "supports_live_claim": row.get("supports_live_claim") is not False,
+        "historical_completeness_verified": False,
+    }
+
+
+def summarize_past_log_requests(
+    evidence: Sequence[Mapping[str, Any]], focal_time: str = "",
+) -> dict[str, Any]:
+    """Privacy-safe request counts; no private IDs, messages or absence proof."""
+    focal = _absolute_time(focal_time)
+    scopes = [scope for row in evidence[:200]
+              if (scope := past_log_request_scope(row)) is not None]
+    bounded = [scope for scope in scopes if scope["bounded"]]
+    focal_scopes = [scope for scope in bounded if focal is not None
+                    and scope["since"] <= focal <= scope["until"]
+                    and scope["supports_live_claim"]]
+    return {
+        "past_log_requests": len(scopes),
+        "bounded_log_requests": len(bounded),
+        "unbounded_or_invalid_window_requests": len(scopes) - len(bounded),
+        "app_scoped_log_requests": sum(scope["app_scoped"] for scope in scopes),
+        "bounded_log_requests_covering_focal": len(focal_scopes),
+        "bounded_app_log_requests_covering_focal": sum(
+            scope["app_scoped"] for scope in focal_scopes),
+        "historical_completeness_verified": False,
+        "returned_focal_event_absence_verified": False,
+    }
+
+
+__all__ = ["native_past_log_receipt", "past_log_request_scope",
+           "summarize_past_log_requests"]

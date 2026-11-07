@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.455**.
+Current add-on version: **0.18.456**.
+
+**Focal log request coverage (v0.18.456):** Default past-log mode is recognised even when omitted. Diagnostics distinguish executed reads, valid bounded windows, open-ended samples and app-specific focal requests. The synthesis and final read-only answer checks reject unsupported focal log absence, and issuing-app decision reads cannot use an unrelated historical command for an attested latest OFF. No extra model/tool calls or permission changes. [Details](CHANGELOG-0.18.456.md).
 
 **Latest-OFF claim-shadow routing (v0.18.455):** HomeBrain now recognises a read-only latest-OFF causal investigation using the unique targeted device and its authoritative native-derived switch history even when autonomous answer coverage omits the `causal_provenance` domain marker and the optional secondary-correlation tool is not run. The same source-attested packet feeds existing source-role safeguards and a non-publishing Technical JSON `evidence_validation.claim_evidence_shadow` receipt; `focal_source=source-history-latest-off` discloses this fallback. It distinguishes returned command pairings, actual focal past-log windows, and absent direct sensor reads without claiming unknown actors or historical completeness. If source identity is insufficient, it reports an allowlisted shadow status, not invented certainty. No new MCP/model reads or device writes. [Details](CHANGELOG-0.18.455.md).
 
