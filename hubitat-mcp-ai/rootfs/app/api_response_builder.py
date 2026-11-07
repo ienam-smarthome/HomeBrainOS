@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
@@ -615,6 +616,16 @@ def build_agent_response(
     # requestedBoundary receipt safely resolves the focal event when the
     # original question is not carried into the API builder.
     message, _ = verify_causal_claims(message, evidence)
+    coverage_for_causality = getattr(outcome, "investigation_coverage", None)
+    causal_initiator_corrected = False
+    if (
+        isinstance(coverage_for_causality, dict)
+        and coverage_for_causality.get("domain") == "causal_provenance"
+        and str(getattr(outcome, "request_class", "")) not in {"write", "confirmation"}
+    ):
+        message, causal_initiator_corrected = guard_unverified_initiator_claims(
+            message, evidence, str(submitted_question or "")
+        )
 
     # Post-synthesis API serialization enforces the same causal claim
     # integrity contract: model revisions must not restore unsupported
@@ -744,6 +755,8 @@ def build_agent_response(
                 # The globally configured model name is not evidence that a
                 # model answered this particular deterministic audit.
                 result["model"] = None
+    if causal_initiator_corrected:
+        result["evidence_validation"]["causal_initiator_claim_corrected"] = True
     if repeated_prose_removed:
         result["evidence_validation"]["repeated_long_prose_removed"] = (
             repeated_prose_removed
