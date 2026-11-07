@@ -59,7 +59,12 @@ Synthetic, device-neutral regression tests cover failed-repair fallback,
 unverified archived clocks, incorrect log windows, validated durations,
 positive/negative bounded command evidence, native source-timed sensor
 history, missing focal source, successful repair and write/confirmation
-exemptions. CI on the final PR head is required before merge; CI success
-is not a source-real quality measurement. Install v0.18.452 and rerun
+exemptions. Merged [PR #1509](https://github.com/ienam-smarthome/HomeBrainOS/pull/1509)
+after all four CI workflows passed on exact head
+`07b40c87af6834e45ebcdbe22daea32d9786f629`.
+The full Python suite passed **6,727 tests** and add-on container smoke
+and metadata checks succeeded. Main merge commit
+`6b858876b127340cf41602fcbfe3f5ee92184510`.
+CI success is not a source-real quality measurement. Install v0.18.452 and rerun
 the same read-only question with complete Technical JSON to verify the
 fallback flag and factual content before widening claims publication.
