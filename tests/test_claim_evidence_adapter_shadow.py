@@ -322,3 +322,66 @@ def test_hub_health_warning_is_not_root_cause_of_reboot():
     assert not _one({"kind": "observed_value", "entity": "hub",
                      "attribute": "memory_warning", "value": "low",
                      "witness_ids": ["warn"]}, p).reason
+
+
+def test_api_json_has_shadow_receipt_without_altering_answer_or_mcp_calls():
+    from types import SimpleNamespace
+    from api_response_builder import build_agent_response
+
+    raw = packet_receipts()
+    outcome = SimpleNamespace(
+        message="The initiating controller is unverified.",
+        evidence=raw, request_class="live-read",
+        confirmation_required=False, confirmation_count=0,
+        choices=[], automation_items=[],
+        metrics={"outcome": "unresolved", "counters": {
+            "synthesis_repair_failed": 0, "tool_calls": len(raw)}},
+        investigation_coverage={
+            "domain": "causal_provenance", "rootCauseVerified": False,
+        },
+    )
+    result = build_agent_response(
+        outcome, model="test-model", elapsed_ms=5, version="0.18.453",
+        submitted_question="Why did Example Lamp turn off most recently?",
+    )
+    diagnostics = result["evidence_validation"]["claim_evidence_shadow"]
+    assert diagnostics["model_claims_assessed"] is False
+    assert diagnostics["shadow_only"] is True
+    assert diagnostics["returned_command_pairing"]["off_transitions"] == 6
+    assert diagnostics["returned_command_pairing"]["unmatched_in_returned_records"] == 4
+    assert diagnostics["app_log_requests_covering_focal"] == 0
+    assert result["evidence"] == raw
+    assert result["metrics"]["counters"]["tool_calls"] == len(raw)
+    assert "claim_validated_factual_floor" not in result["evidence_validation"]
+
+    for kind, confirmation in (("write", False), ("live-read", True)):
+        changed = replace_outcome(outcome, request_class=kind,
+                                  confirmation_required=confirmation)
+        answer = build_agent_response(
+            changed, model="test-model", elapsed_ms=5,
+            version="0.18.453", submitted_question="Turn off Example Lamp",
+        )
+        assert "claim_evidence_shadow" not in answer["evidence_validation"]
+
+
+def replace_outcome(outcome, **changes):
+    from types import SimpleNamespace
+    return SimpleNamespace(**{**vars(outcome), **changes})
+
+
+def test_failed_extraction_never_adds_shadow_diagnostic_to_live_api():
+    from types import SimpleNamespace
+    from api_response_builder import build_agent_response
+    outcome = SimpleNamespace(
+        message="No recent data could be verified.", evidence=[],
+        request_class="live-read", confirmation_required=False,
+        confirmation_count=0, choices=[], automation_items=[],
+        metrics={"outcome": "unresolved", "counters": {}},
+        investigation_coverage={"domain": "causal_provenance",
+                                "rootCauseVerified": False},
+    )
+    result = build_agent_response(
+        outcome, model="test-model", elapsed_ms=5, version="0.18.453",
+        submitted_question="Why did Example Lamp turn off?",
+    )
+    assert "claim_evidence_shadow" not in result["evidence_validation"]
