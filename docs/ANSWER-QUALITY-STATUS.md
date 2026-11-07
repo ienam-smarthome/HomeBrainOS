@@ -6,7 +6,7 @@ A deeper replay of the same private v0.18.455 attachment corrected the earlier f
 
 v0.18.457 reuses both source projections for focal attestation and state pairing, validates switch-state/clock/reporter fields and deduplicates by state/time. Source observations are not automatically intervals or command issuers. Reject explicitly non-authoritative projected receipts. No new read, model call, runtime module or mutation. One fictional regression removes the unpaired older OFF only from the boundary projection and requires it to remain in the all-returned sample.
 
-Local original-packet replay now reports **6 OFF / 2 paired / 4 unmatched returned records**, alongside v0.18.456's **4 past-log reads / 1 bounded / 3 unbounded / 0 focal / 0 app-specific focal**. Compilation/replay passed; exact-head required CI and installed v0.18.457 acceptance remain pending. These are source-replay facts, not proof of the historical initiating controller or measured general first-answer quality.
+Local original-packet replay now reports **6 OFF / 2 paired / 4 unmatched returned records**, alongside v0.18.456's **4 past-log reads / 1 bounded / 3 unbounded / 0 focal / 0 app-specific focal**. Compilation/replay passed. [PR #1519](https://github.com/ienam-smarthome/HomeBrainOS/pull/1519) passed all four required workflows on exact head `951e32d7d5d3d29eff389c59b5857d2b5b82abed`, including **6,782 Python tests**, two nonblocking warnings, container smoke and metadata. Squash-merged as `525dccb86f0d082cfc7a085f9643a9d655c4a7a5`. Installed v0.18.457 acceptance remains pending. These are source-replay facts, not proof of the historical initiating controller or measured general first-answer quality.
 
 ---
 
