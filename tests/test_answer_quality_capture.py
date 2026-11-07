@@ -13,6 +13,77 @@ from answer_quality_capture import extract_capture, main
 from answer_quality_scorecard import ScorecardInputError
 
 
+def test_shadow_capture_distinguishes_missing_rejected_and_unattested():
+    data = response()
+    missing = extract_capture(data, case_id="causal_light2_off",
+                              actual_question=None, root=ROOT)
+    assert missing["claim_evidence_shadow"]["diagnostic_reporting"] == "not_provided"
+    assert missing["claim_evidence_shadow"]["focal_attested_reported"] is None
+    data["evidence_validation"] = {"claim_evidence_shadow_status": "SECRET-STATUS"}
+    rejected = extract_capture(data, case_id="causal_light2_off",
+                               actual_question=None, root=ROOT)
+    assert rejected["claim_evidence_shadow"]["rejection_status_reported"] is True
+    assert rejected["claim_evidence_shadow"]["diagnostic_reporting"] == "not_provided"
+    data["evidence_validation"]["claim_evidence_shadow"] = {
+        "schema": "homebrain-claims.v2", "focal_attested": False,
+        "shadow_only": True, "model_claims_assessed": False,
+    }
+    unattested = extract_capture(data, case_id="causal_light2_off",
+                                 actual_question=None, root=ROOT)
+    assert unattested["claim_evidence_shadow"]["diagnostic_reporting"] == "provided"
+    assert unattested["claim_evidence_shadow"]["focal_attested_reported"] is False
+    assert "SECRET-" not in json.dumps(rejected)
+
+
+@pytest.mark.parametrize("source", ["host-correlation", "source-history-latest-off"])
+def test_shadow_capture_preserves_reported_flags_without_grading(source):
+    data = response()
+    data["evidence_validation"] = {"claim_evidence_shadow": {
+        "schema": "homebrain-claims.v2", "focal_attested": True,
+        "shadow_only": True, "model_claims_assessed": False,
+        "focal_source": source, "reason_codes": ["SECRET-REASON"],
+        "witnesses": {"SECRET-ID": "SECRET-LOG"},
+    }}
+    out = extract_capture(data, case_id="causal_light2_off",
+                          actual_question=None, root=ROOT)
+    assert out["claim_evidence_shadow"] == {
+        "diagnostic_reporting": "provided", "rejection_status_reported": False,
+        "focal_attested_reported": True, "shadow_only_reported": True,
+        "model_claims_assessed_reported": False, "focal_source_reported": source,
+        "independently_verified": False,
+    }
+    assert out["capture_is_quality_review"] is False
+    assert out["first_attempt_verified"] is False
+    assert out["review"]["grounding"] is None
+    assert "SECRET-" not in json.dumps(out)
+
+
+@pytest.mark.parametrize("shadow", [None, [], "SECRET-RAW", {},
+    {"schema": "SECRET-SCHEMA", "focal_attested": True}])
+def test_shadow_capture_unknown_or_malformed_schema_is_not_attested(shadow):
+    data = response()
+    data["evidence_validation"] = {"claim_evidence_shadow": shadow}
+    out = extract_capture(data, case_id="causal_light2_off",
+                          actual_question=None, root=ROOT)
+    assert out["claim_evidence_shadow"]["diagnostic_reporting"] == "invalid"
+    assert out["claim_evidence_shadow"]["focal_attested_reported"] is None
+    assert "SECRET-" not in json.dumps(out)
+
+
+def test_shadow_capture_rejects_truthy_flags_and_arbitrary_source_strings():
+    data = response()
+    data["evidence_validation"] = {"claim_evidence_shadow": {
+        "schema": "homebrain-claims.v2", "focal_attested": 1,
+        "shadow_only": "true", "model_claims_assessed": [],
+        "focal_source": "SECRET-PRIVATE-SOURCE",
+    }}
+    out = extract_capture(data, case_id="causal_light2_off",
+                          actual_question=None, root=ROOT)
+    for field in ("focal_attested", "shadow_only", "model_claims_assessed", "focal_source"):
+        assert out["claim_evidence_shadow"][field + "_reported"] is None
+    assert "SECRET-" not in json.dumps(out)
+
+
 def response():
     return {
         "success": True,
