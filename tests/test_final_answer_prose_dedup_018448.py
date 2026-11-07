@@ -130,3 +130,28 @@ def test_api_serialization_does_not_invent_new_actor_or_discard_short_answer():
     result = build_agent_response(outcome, model="model", elapsed_ms=1, version="test")
     assert result["message"] == outcome.message
     assert "repeated_long_prose_removed" not in result["evidence_validation"]
+
+
+def test_write_and_approval_messages_are_left_untouched():
+    repeated = REPORTER + "\n" + REPORTER
+    for klass, approval in (("write", False), ("live-read", True)):
+        outcome = SimpleNamespace(
+            message=repeated, request_class=klass, evidence=[],
+            choices=[], confirmation_required=approval,
+            confirmation_count=1 if approval else 0,
+            metrics={"outcome": "unresolved"},
+        )
+        result = build_agent_response(
+            outcome, model="model", elapsed_ms=1, version="test",
+        )
+        assert result["message"] == repeated
+        assert "repeated_long_prose_removed" not in result["evidence_validation"]
+
+
+def test_causal_model_proof_policy_requires_command_event_and_source_roles():
+    policy = (APP / "agent_prompt_policy.py").read_text()
+    assert "_CAUSAL_ANSWER_PROOF_POLICY" in policy
+    assert "command-off" in policy
+    assert "triggered[]" in policy
+    assert "an OFF command was recorded" in policy
+    assert "initiator remains" in policy
