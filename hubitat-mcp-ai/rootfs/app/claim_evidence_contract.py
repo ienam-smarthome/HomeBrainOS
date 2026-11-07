@@ -32,6 +32,7 @@ MAX_CLAIMS = 24
 KINDS = frozenset({
     "observed_value", "observed_interval", "calculation", "command_issued",
     "listener_notified", "correlation", "absent_in_scope", "cause_unverified",
+    "journal_observation", "transition_pairing",
 })
 
 REASONS = frozenset({
@@ -41,6 +42,7 @@ REASONS = frozenset({
     "not_numeric", "unknown_operation", "out_of_scope_event",
     "missing_coverage", "coverage_target_mismatch", "cause_already_verified",
     "correlation_window", "coverage_unverified", "invalid_event_pair", "unit_mismatch",
+    "coverage_window_mismatch", "sample_not_attested", "model_selected_sample",
 })
 
 
@@ -57,6 +59,7 @@ class Witness:
     event_key: str = ""       # which incident event this belongs to
     app_issuer: str = ""
     unit: str = ""
+    source_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,15 @@ class EvidencePacket:
     max_correlation_lag_s: float = 300.0
     labels: Mapping[str, str] = field(default_factory=dict)  # entity -> name
     authorized_context_event_keys: frozenset[str] = frozenset()
+    focal_time: str = ""  # trusted focus from source correlation, never model
+    journal_reception_event_keys: frozenset[str] = frozenset()
+    eligible_transition_keys: frozenset[str] = frozenset()
+    candidate_sensor_count: int | None = None
+    candidate_sensor_probed_count: int | None = None
+    direct_sensor_windows_checked: int = 0
+    internal_configuration_inspected: bool = False
+    log_reads_total: int = 0
+    log_reads_containing_focal: int = 0
 
 
 @dataclass(frozen=True)
@@ -303,6 +315,10 @@ def _absent(c, p):
         return "missing_coverage", {}
     if cov.entity != str(c.get("entity")):
         return "coverage_target_mismatch", {}
+    if (p.focal_time and (not _t(p.focal_time)
+            or not _t(cov.window_start) or not _t(cov.window_end)
+            or not _t(cov.window_start) <= _t(p.focal_time) <= _t(cov.window_end))):
+        return "coverage_window_mismatch", {}
     if (not cov.successful or cov.pages_checked < 1
             or cov.matched_count != 0
             or cov.query_kind not in _ABSENCE_FILTERS
@@ -311,6 +327,91 @@ def _absent(c, p):
             or _t(cov.window_start) >= _t(cov.window_end)):
         return "coverage_unverified", {}
     return "", {"what": cov.query_kind, "coverage": cov}
+
+
+
+def _journal_observation(c, p):
+    """Attest a RECEIPT, never an original sensor transition or causal lag."""
+    ws, err = _wit(c, p, 1)
+    if err:
+        return err, {}
+    w = ws[0]
+    if w.role != "journal-reception" or w.clock_basis != "collector-received":
+        return "wrong_witness_role", {}
+    if w.source_class != "historical-journal" or _t(w.time) is None:
+        return "clock_unverified", {}
+    if (w.entity != str(c.get("entity"))
+            or w.event_class != c.get("attribute")
+            or w.value != str(c.get("value"))):
+        return "value_mismatch", {}
+    if (not w.event_key or
+            w.event_key not in p.journal_reception_event_keys):
+        return "out_of_scope_event", {}
+    return "", {"entity": w.entity, "attribute": w.event_class,
+                "value": w.value, "received_at": w.time,
+                "source": "historical-journal", "event_clock_verified": False}
+
+
+def _transition_pairing(c, p):
+    """Host-selected full returned sample; model cannot cherry-pick IDs."""
+    if "transition_ids" in c or "witness_ids" in c:
+        return "model_selected_sample", {}
+    entity = str(c.get("entity") or "")
+    cov = p.coverage.get(str(c.get("coverage_id") or ""))
+    if not cov:
+        return "missing_coverage", {}
+    if not entity or cov.entity != entity:
+        return "coverage_target_mismatch", {}
+    start, end = _t(cov.window_start), _t(cov.window_end)
+    if (cov.query_kind != "command-off" or not cov.successful
+            or cov.pages_checked < 1 or not isinstance(cov.matched_count, int)
+            or cov.matched_count < 0 or not start or not end or end <= start
+            or not p.eligible_transition_keys):
+        return "coverage_unverified", {}
+    off_by_time = {}
+    for w in p.witnesses.values():
+        if (w.role != "reporter" or w.entity != entity
+                or w.event_class != "switch" or w.value != "off"
+                or w.event_key not in p.eligible_transition_keys):
+            continue
+        moment = _t(w.time)
+        if not moment or w.clock_basis not in SOURCE_CLOCKS:
+            return "clock_unverified", {}
+        if start <= moment <= end:
+            off_by_time[moment] = w
+    if not off_by_time:
+        return "sample_not_attested", {}
+    commands = []
+    for w in p.witnesses.values():
+        if (w.entity != entity or w.event_class != "command-off"
+                or w.role != "command-issuer"):
+            continue
+        moment = _t(w.time)
+        if (not moment or w.clock_basis not in COMMAND_CLOCKS
+                or not w.app_issuer):
+            return "clock_unverified", {}
+        if start <= moment <= end:
+            commands.append((moment, w))
+    if len(commands) > cov.matched_count:
+        return "coverage_unverified", {}
+    unmatched = sorted(off_by_time)
+    available = sorted(commands, reverse=True, key=lambda pair: pair[0])
+    matches = []
+    for off in sorted(off_by_time, reverse=True):
+        eligible = [(off - at, i) for i, (at, _) in enumerate(available)
+                    if 0 <= (off - at).total_seconds() <= 2.0]
+        if eligible:
+            _, ix = min(eligible, key=lambda p: p[0])
+            when, cmd = available.pop(ix)
+            matches.append((off_by_time[off], cmd))
+            unmatched.remove(off)
+    return "", {
+        "entity": entity, "total": len(off_by_time),
+        "matched": len(matches), "unmatched": len(unmatched),
+        "matched_issuers": tuple(sorted({cmd.app_issuer for _, cmd in matches})),
+        "threshold_seconds": 2, "complete_source_history": False,
+        "scope": "returned_records_only",
+    }
 
 
 def _cause_unverified(c, p):
@@ -326,6 +427,8 @@ _VALIDATORS: dict[str, Callable] = {
     "calculation": _calculation, "command_issued": _command_issued,
     "listener_notified": _listener_notified, "correlation": _correlation,
     "absent_in_scope": _absent, "cause_unverified": _cause_unverified,
+    "journal_observation": _journal_observation,
+    "transition_pairing": _transition_pairing,
 }
 
 
