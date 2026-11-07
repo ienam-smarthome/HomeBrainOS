@@ -26,6 +26,11 @@ QUESTION = ("Why did Example Lamp turn off most recently? Investigate "
 def _actual_shape():
     rows = [r for r in packet_receipts()
             if r.get("tool") != "homebrain_causal_secondary_correlation"]
+    # Source producer identity is explicit in the native live response.
+    for row in rows:
+        if row.get("tool") == "homebrain_device_history":
+            for event in row["details"]["boundaryEvents"]:
+                event["producedBy"]["id"] = "800"
     # The original live reply did not search native sensor history and ran
     # one bounded general past-log query straddling the focal OFF.
     rows = [
@@ -134,28 +139,36 @@ def test_no_context_domain_and_no_correlation_cannot_promote_other_tasks():
 
 def test_bad_or_conflicting_history_and_target_do_not_authorize_focal():
     original = _actual_shape()
-    for mutate in (
-        lambda x: x.pop(0),
-        lambda x: x[1].update(success=False),
-        lambda x: x[2].update(success=False),
-        lambda x: x[1]["details"]["boundaryEvents"].clear(),
-        lambda x: x[0]["details"]["reportedDeviceState"].update(label="Different"),
-    ):
-        rows = deepcopy(original)
-        mutate(rows)
-        # A second independently successful history projection can still
-        # validate; ensure we remove source history if the failing test
-        # touched its duplicate projection.
-        if mutate.__code__.co_consts and False:
-            pass
-        p = packet_from_evidence(rows, original_question=QUESTION)
-        if not p.focal_time:
-            assert not p.focal_event_keys
-    rows = deepcopy(original)
-    for r in rows:
-        if r.get("tool") == "homebrain_device_history":
-            r["success"] = False
-    assert not packet_from_evidence(rows, original_question=QUESTION).focal_time
+    missing_target = deepcopy(original)
+    missing_target.pop(0)
+    assert not packet_from_evidence(
+        missing_target, original_question=QUESTION
+    ).focal_time
+    both_invalid = deepcopy(original)
+    for row in both_invalid:
+        if row.get("tool") == "homebrain_device_history":
+            row["success"] = False
+    assert not packet_from_evidence(
+        both_invalid, original_question=QUESTION
+    ).focal_time
+    both_empty = deepcopy(original)
+    for row in both_empty:
+        if row.get("tool") == "homebrain_device_history":
+            row["details"]["boundaryEvents"] = []
+    assert not packet_from_evidence(
+        both_empty, original_question=QUESTION
+    ).focal_time
+    wrong_label = deepcopy(original)
+    wrong_label[0]["details"]["reportedDeviceState"]["label"] = "Different"
+    assert not packet_from_evidence(
+        wrong_label, original_question=QUESTION
+    ).focal_time
+    # One independent successful source projection is still adequate.
+    one_failed = deepcopy(original)
+    one_failed[1]["success"] = False
+    assert packet_from_evidence(
+        one_failed, original_question=QUESTION
+    ).focal_time
 
 
 def test_source_scope_binds_target_and_explicitly_requested_latest_event():
