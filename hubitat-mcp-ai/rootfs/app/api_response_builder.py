@@ -9,9 +9,11 @@ import re
 from typing import Any
 
 from causal_claim_verification import verify_causal_claims
+from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_coverage_claim_guard import guard_causal_controller_history_coverage
 from causal_attribution_guard import (
+    guard_triggered_listener_causal_claim,
     guard_unproven_upstream_manual_exclusion,
     guard_causal_sensor_source_attribution,
 )
@@ -677,6 +679,26 @@ def build_agent_response(
             guard_unverified_source_exception_mechanism(message, evidence)
         )
 
+    # Model repairs can fail or a final answer can bypass the synthesis
+    # validator. Re-check causal source ownership against the actual focal
+    # event at the API publication boundary, not just during model drafting.
+    # Never rewrite commands, confirmations, or unrelated read responses.
+    causal_proof_repaired = False
+    focal_listener_repaired = False
+    causal_read = (
+        isinstance(outcome_coverage, dict)
+        and outcome_coverage.get("domain") == "causal_provenance"
+        and str(getattr(outcome, "request_class", "")) not in {"write", "confirmation"}
+        and not bool(getattr(outcome, "confirmation_required", False))
+    )
+    if causal_read:
+        message, causal_proof_repaired = guard_unverified_initiator_claims(
+            message, evidence, str(submitted_question or ""),
+        )
+        message, focal_listener_repaired = guard_triggered_listener_causal_claim(
+            message, evidence,
+        )
+
     # Run after all model and source guards so duplicate repair prose cannot
     # reappear downstream. Count removals without asserting evidence quality.
     # Read-only/analytical presentation only. Preserve write/confirmation
@@ -748,6 +770,10 @@ def build_agent_response(
         result["evidence_validation"]["repeated_long_prose_removed"] = (
             repeated_prose_removed
         )
+    if causal_proof_repaired:
+        result["evidence_validation"]["unverified_causal_origin_corrected"] = True
+    if focal_listener_repaired:
+        result["evidence_validation"]["focal_listener_scope_corrected"] = True
     if interval_table_corrected:
         result["evidence_validation"]["interval_table_duration_corrected"] = True
     if occupancy_causal_claim_calibrated:
