@@ -1,5 +1,17 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — Installed v0.18.457 diagnostic pass; whole-answer causal claims still fail
+
+**Source-real result:** Supplied full installed v0.18.457 JSON, 37.066s, six Gemma rounds, nine tool calls, outcome unresolved. Shadow source attestation and the corrected 6 OFF / 2 paired / 4 unmatched returned sample passed. This run actually executed one general past-log request bounded 23:50–00:40 GMT; zero matched/returned rows, source total 9,768, historic completeness false and source-clock UTC verification absent. No app-specific focal log request, direct sensor window or relevant rule configuration was verified. Returned mode history supports Night before the focal OFF and Late Night afterward as context, not trigger proof. First-attempt, model-delivery and deployed-SHA flags remain false.
+
+**Failed final publication:** The answer simultaneously admitted unknown initiator and asserted the action happened outside Hubitat control, then ranked unevidenced candidates. The causal guard treated “unverified” anywhere on the line as a qualifier for another predicate. Ranking in a separate candidate heading escaped member-level external-source checks. The new log correction acknowledged missing app evidence by incorrectly describing open-ended/misaligned reads despite the actual bounded general focal query. These are another failed first-answer acceptance, not a new verified cause or general model score.
+
+**v0.18.458 increment:** Existing initiator checks inspect independent causal clauses, so actor uncertainty cannot mask definite external origin. Unverified candidate headings scope the following list and remove unsupported ranking. Existing focal-log correction renders a distinct bounded-general-but-no-app-evidence explanation; zero-request and open-ended cases are derived from actual counts instead of invented reads. Same existing synthesis/final read-only gates; preserve positive source observations, timelines, mode context, modal possibilities, verified actors and write/confirmation isolation. No new runtime module, tool/model request path or provider/cost change.
+
+**Verification:** Local compilation and clause/ranking smoke passed. Fictional whole-answer API cases cover lighting, fan and heater subjects; separate-clause assertions, ranked lists, bounded general/missing app coverage, no-request cases and synthesis routing are included. Required exact-head CI and installed v0.18.458 acceptance remain pending. This improves existing source/claim integrity; it is **not** completion of generic structured model-claim assessment. `model_claims_assessed=false` remains explicit. Continue frozen cross-domain model-proposed typed-claim evaluation before a general publication migration, rather than claiming another guard proves autonomous answer quality.
+
+---
+
 ## 2026-11-07 — v0.18.457 returned-state sample correction
 
 A deeper replay of the same private v0.18.455 attachment corrected the earlier five-OFF assessment: `observedEvents` contains **six** source-reported OFF state changes, while `boundaryEvents` contains only five. The oldest OFF is unpaired and omitted from interval boundaries. This is **not** a changed live source denominator. The adapter previously read only the boundary view, so both its diagnostic and our initial review undercounted the returned sample.

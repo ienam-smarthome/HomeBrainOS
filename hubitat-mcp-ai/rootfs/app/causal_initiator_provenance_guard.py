@@ -277,7 +277,7 @@ _REPORT_TO_ORIGIN_LEAP = re.compile(
     re.I,
 )
 _EXTERNAL_VERDICT = re.compile(
-    r"\b(?:operated|controlled|switched|toggled|initiated|commanded)\s+"
+    r"\b(?:happened|occurred|operated|controlled|switched|toggled|initiated|commanded)\s+"
     r"(?:\w+\s+){0,4}?(?:externally|outside\s+(?:of\s+)?hubitat)\b"
     r"|\b(?:physical\s+interaction|manual\s+operation|wall[- ]switch\s+press)"
     r"\s+(?:was|is)\s+(?:the\s+)?(?:cause|initiator)\b",
@@ -290,6 +290,28 @@ _SCOPE_QUALIFIER = re.compile(
     re.I,
 )
 _BULLET = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:\*\*[^*]+\*\*\s*)?)")
+
+
+def _independent_external_assertion(text: str) -> bool:
+    """An actor-uncertainty clause cannot license another clause's origin claim."""
+    clauses = re.split(
+        r"(?i)[.!?;]|\b(?:because|although|though|however|but|yet|while)\b",
+        text,
+    )
+    for clause in clauses:
+        if not _EXTERNAL.search(clause):
+            continue
+        if (_STRONG_EXTERNAL_ACTION.search(clause) or _EXTERNAL_VERDICT.search(clause)
+                or _ASSERTION.search(clause)):
+            if not _SCOPE_QUALIFIER.search(clause):
+                return True
+    return False
+
+
+_RANKED_CANDIDATES = re.compile(
+    r"\b(?:(?:most|more)\s+likely|likeliest|top|probable)\s+"
+    r"(?:candidates?|causes?|explanations?|initiators?)\b", re.I,
+)
 
 
 def guard_unverified_initiator_claims(
@@ -316,11 +338,24 @@ def guard_unverified_initiator_claims(
     positive_command = bool(graph.get("directCommand")) if single_focal else False
     changed = False
     output: list[str] = []
+    unranked_list = False
     for raw in original.splitlines(keepends=True):
         nl = "\n" if raw.endswith("\n") else ""
         line = raw[:-1] if nl else raw
         stripped = line.strip()
         prefix = (_BULLET.match(line).group(1) if _BULLET.match(line) else "")
+        # A ranked header scopes subsequent candidates even when the members
+        # never repeat "external". No source ranking is established here.
+        ranked_header = not external_verified and bool(_RANKED_CANDIDATES.search(stripped))
+        if ranked_header:
+            unranked_list = True
+            line = _RANKED_CANDIDATES.sub("unranked, unverified possibilities", line)
+            stripped = line.strip()
+        elif unranked_list and re.match(r"\s*\d+[.)]\s+", line):
+            line = re.sub(r"^\s*\d+[.)]\s+", "- ", line)
+            stripped = line.strip()
+        elif stripped and not re.match(r"\s*[-*+]\s+", line):
+            unranked_list = False
         # Preserve a correctly reported bridge/source fact while removing
         # the unsupported inference that the operation occurred externally.
         # This is a source-role inference pattern, not a device-specific fix.
@@ -360,6 +395,9 @@ def guard_unverified_initiator_claims(
                                r"trigger\w*|command\w*|logic|"
                                r"automatio\w*|controlled|toggled|operated|switched|responsible|interaction)\b",
                                stripped, re.I))
+        )
+        external_guess = external_guess or (
+            not external_verified and _independent_external_assertion(stripped)
         )
         absence_as_proof = bool(_STRONG_NO_HUB_COMMAND.search(stripped))
         listener_excluded = bool(_UNPROVEN_LISTENER_EXCLUSION.search(stripped))
@@ -423,6 +461,7 @@ def guard_unverified_initiator_claims(
                 + "The bounded evidence does not identify an initiating "
                 "controller. An external automation or manual action remains "
                 "possible, but neither has been verified as the cause."
+                + (" These are unranked, unverified possibilities:" if ranked_header else "")
             )
         elif absence_as_proof and not positive_command:
             line = (

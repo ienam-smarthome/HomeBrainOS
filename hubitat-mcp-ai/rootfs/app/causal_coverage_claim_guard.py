@@ -132,11 +132,22 @@ def guard_focal_log_coverage_claims(
         if returned_scope and (not focal_scope or checked_focal):
             continue
         prefix = re.match(r"\s*(?:[-*+]\s+)?", sentence).group(0)
-        if not checked_focal:
+        if bounded and not checked_focal:
+            correction = (
+                "A bounded general log request included the focal time. "
+                "App-specific execution coverage and historical completeness remain "
+                "unverified; the general query cannot exclude automation execution."
+            )
+        elif not checked_focal:
             correction = (
                 "The returned log reads do not establish event absence at the focal time. "
-                "Open-ended samples and queries for other times cannot exclude "
-                "automation execution during this transition."
+                + (
+                    "Open-ended samples and queries for other times cannot exclude "
+                    "automation execution during this transition."
+                    if scope.get("unbounded_or_invalid_window_requests", 0) else
+                    "No bounded request covering this focal time was verified; "
+                    "automation execution remains unverified."
+                )
             )
         else:
             correction = (
