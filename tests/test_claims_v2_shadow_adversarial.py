@@ -8,7 +8,7 @@ import sys
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
-from claims_v2 import (
+from claim_evidence_contract import (
     SCHEMA, Coverage, EvidencePacket, Witness, assess_claims_shadow,
     packet_from_v1_ledger, publish, validate_claims,
     coverage_from_verified_window_reads,
