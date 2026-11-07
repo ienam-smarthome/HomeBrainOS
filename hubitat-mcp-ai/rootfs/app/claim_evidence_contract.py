@@ -85,7 +85,8 @@ class EvidencePacket:
     max_correlation_lag_s: float = 300.0
     labels: Mapping[str, str] = field(default_factory=dict)  # entity -> name
     authorized_context_event_keys: frozenset[str] = frozenset()
-    focal_time: str = ""  # trusted focus from source correlation, never model
+    focal_time: str = ""  # trusted focus from source history or correlation
+    focal_source: str = ""  # source-history-latest-off or host-correlation
     journal_reception_event_keys: frozenset[str] = frozenset()
     eligible_transition_keys: frozenset[str] = frozenset()
     candidate_sensor_count: int | None = None
