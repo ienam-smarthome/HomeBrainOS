@@ -56,7 +56,46 @@ def _scoped_question(
         # proof checks to inspect the wrong graph boundary.
         direction = str(details.get("transition") or "").strip().casefold()
         if direction not in {"on", "off"}:
-            continue
+            # Older host receipts may omit transition while preserving the
+            # exact state row. Resolve direction from the target-labelled
+            # event at the requested absolute instant before falling back
+            # to the historical ON convention for untyped legacy packets.
+            states: set[str] = set()
+            for witness in evidence:
+                if (
+                    not isinstance(witness, dict)
+                    or witness.get("success") is not True
+                    or witness.get("tool") != "homebrain_device_history"
+                ):
+                    continue
+                history = witness.get("details")
+                if (
+                    not isinstance(history, dict)
+                    or str(history.get("label") or "").casefold() != subject.casefold()
+                ):
+                    continue
+                for key in ("boundaryEvents", "observedEvents"):
+                    for event in history.get(key) or []:
+                        if not isinstance(event, dict) or event.get("name") != "switch":
+                            continue
+                        try:
+                            event_at = datetime.fromisoformat(
+                                str(event.get("date") or "").replace("Z", "+00:00")
+                            )
+                        except ValueError:
+                            continue
+                        if (
+                            event_at.tzinfo is not None
+                            and abs((event_at - when).total_seconds()) <= 0.001
+                            and str(event.get("value") or "").casefold() in {"on", "off"}
+                        ):
+                            states.add(str(event["value"]).casefold())
+            if len(states) == 1:
+                direction = next(iter(states))
+            elif states:
+                continue
+            else:
+                direction = "on"  # Legacy receipts with no typed focal state.
         candidates.add(
             f"Why did {subject} turn {direction} at {when:%H:%M:%S} "
             f"on {when.day} {when:%B %Y}?"
