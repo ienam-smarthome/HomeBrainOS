@@ -31,7 +31,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#101b2c
 @media(max-width:530px){h1{font-size:17px}header{padding:14px}main{padding:12px}.card{padding:13px}#graph{height:270px}}
 </style></head>
 <body>
-<header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><small id="state">Checking configuration…</small></header>
+<header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
 <nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active">
@@ -63,11 +63,27 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#101b2c
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div></section></main>
 <script>
+const UI_VERSION="2.0.0-alpha.4";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
-async function readJson(url, init){const r=await fetch(url,init);const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
-async function loadStatus(){try{const d=await readJson('api/status');byId('state').textContent=d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model')}catch(e){byId('state').textContent=String(e.message)}}
+async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
+function reloadInterface(){
+ const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
+}
+async function loadStatus(){
+ try{
+  const d=await readJson('api/status');
+  if(d.version!==UI_VERSION){
+   byId('state').textContent='Interface '+UI_VERSION+' / server '+(d.version||'unknown')+' — reload required';
+   byId('reloadUI').hidden=false;
+   return false;
+  }
+  byId('reloadUI').hidden=true;
+  byId('state').textContent=d.version+' · '+(d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model'));
+  return true;
+ }catch(e){byId('state').textContent=String(e.message);return false;}
+}
 async function pollActivity(){
  if(!activeRequest)return;
  const requestId=activeRequest;
@@ -99,6 +115,7 @@ function newRequestId(){
 }
 async function submitAsk(){
  const q=byId('question').value.trim();if(!q)return;const send=byId('send');if(send.disabled)return;send.disabled=true;
+ if(!await loadStatus()){send.disabled=false;byId('answer').textContent='Unable to start: check the interface status above.';return;}
  activeRequest=newRequestId();pendingApproval=null;byId('approvalError').textContent='';
  const activityTimer=setInterval(pollActivity,750);
  byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
