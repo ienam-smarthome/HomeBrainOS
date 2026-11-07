@@ -100,6 +100,20 @@ Do not publish first-answer or latency gains without matched evaluation.
 
 **Existing-installation activation:** An upgraded Home Assistant add-on may retain its previous option values rather than adopt the new defaults. The v0.18.443 live test must check that `general_task_engine_enabled` is set to true and that `unified_mcp_max_tool_rounds` reflects the intended read-only emergency ceiling; if saved as false/9, change only these options in the add-on Configuration and restart through ordinary add-on management. The global investigation deadline, confirmation controls and tool effects must remain intact. No installation change is made by this PR.
 
+### v0.18.446 — source-qualified history timestamps and page coverage
+
+**Candidate, not yet source-real verified:** Model-planned read-only device
+history now requests authoritative hub timezone, preserves raw timestamps,
+and adds local GMT/BST display labels only when the IANA zone is verified.
+When the newest 50 mixed device events do not reach the requested lookback,
+read-only native until bookmarks extend the window until the boundary or an
+explicit coverage limitation. Host bounds protect memory/Hub payloads.
+Source count describes fetched rows, sample bounds refer only to returned
+observations, and equal samples cannot prove physical constancy between
+events. This is generic across devices and event attributes. The upstream
+bookmark contract and actual source coverage still need one post-upgrade
+read-only Technical JSON test; no Hubitat/HA/router changes.
+
 ### Phase 2 — generic evidence obligations and temporal analytics
 
 **First isolated increment (not deployed):** `rootfs/app/observed_time_series.py`

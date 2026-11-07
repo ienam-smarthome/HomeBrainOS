@@ -14,7 +14,8 @@ adds causal conclusions.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import html
 import json
 import re
@@ -831,7 +832,12 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        if window_request is not None:
+        if window_request is not None or arguments.get("_include_hub_time_zone") is True:
+            # A host-approved model-planned history request needs the hub's
+            # authoritative IANA zone even with a plain rolling hours_back
+            # window. Never mistake the add-on container's UTC clock for the
+            # hub location. A failed hub_get_info is an explicit fallback, not
+            # permission to invent GMT/BST.
             now, hub_timezone_name, timezone_source = (
                 await self._hub_timezone.now_in_hub_timezone(self._now)
             )
@@ -999,6 +1005,148 @@ class DeviceHistoryService:
                 else []
             )
 
+        # In a mixed high-churn device event stream, the 50 newest events
+        # may cover only minutes of a 24-hour question. On host-authorised
+        # read-only evidence collection, follow supported native "until"
+        # bookmarks backwards. This is not a synthetic attribute filter:
+        # upstream attribute-scoped reads have returned false empty results
+        # on some drivers. Stop at the requested window boundary, a verified
+        # short page, a bad/repeated bookmark or an operational memory budget.
+        # None of those conditions proves the hub retained *all* events.
+        coverage_start = (
+            time_window.start if time_window is not None
+            else now - timedelta(hours=hours_back)
+        )
+        source_first_page_at_limit = len(source_events) >= fetch_limit
+        source_pages_fetched = 1
+        history_scan_stop = "first_page"
+        source_row_budget = 1000  # Hub payload protection, not an AI-round ceiling.
+        if (
+            arguments.get("_expand_history_coverage") is True
+            and attribute and success and source_first_page_at_limit
+        ):
+            history_scan_stop = "unresolved"
+            while True:
+                timestamps = [
+                    dt for dt in (
+                        self._event_datetime(row.get("date"))
+                        for row in source_events
+                    ) if dt is not None and dt.tzinfo is not None
+                ]
+                if not timestamps:
+                    history_scan_stop = "missing_aware_event_timestamp"
+                    break
+                oldest = min(timestamps)
+                if oldest <= coverage_start:
+                    history_scan_stop = "requested_window_boundary_reached"
+                    break
+                if len(source_events) + fetch_limit > source_row_budget:
+                    history_scan_stop = "source_row_safety_budget"
+                    break
+                # Native "until" is inclusive; step one millisecond back
+                # rather than requesting the same oldest event again.
+                bookmark = oldest - timedelta(milliseconds=1)
+                until_text = (
+                    bookmark.strftime("%Y-%m-%dT%H:%M:%S.")
+                    + f"{bookmark.microsecond // 1000:03d}"
+                    + bookmark.strftime("%z")
+                )
+                older_args = {
+                    "tool": EVENT_OPERATION,
+                    "args": {
+                        "deviceId": str(device_id),
+                        "hoursBack": hours_back,
+                        "limit": fetch_limit,
+                        "until": until_text,
+                    },
+                }
+                page_started = time.monotonic()
+                try:
+                    older_source = await self.mcp.call_tool(
+                        DEVICE_GATEWAY, older_args
+                    )
+                    page_ok = _shared_tool_succeeded(older_source)
+                    older_rows = (
+                        self._events(older_source.data, limit=fetch_limit)
+                        if page_ok else []
+                    )
+                except Exception:
+                    page_ok = False
+                    older_rows = []
+                self._record_evidence(
+                    DEVICE_GATEWAY, older_args,
+                    success=page_ok,
+                    elapsed_ms=round((time.monotonic() - page_started) * 1000),
+                    summary=(
+                        f"Read older event page: {len(older_rows)} rows"
+                        if page_ok else "Older event page unavailable"
+                    ),
+                    supports_live_claim=page_ok,
+                    evidence_kind="authoritative_device_event_history",
+                )
+                if not page_ok:
+                    history_scan_stop = "older_page_unavailable"
+                    break
+                source_pages_fetched += 1
+                # Enforce the expected oldest-first extension: an older page
+                # that ignores "until" cannot be used to claim coverage.
+                valid_older = [
+                    row for row in older_rows
+                    if (dt := self._event_datetime(row.get("date"))) is not None
+                    and dt.tzinfo is not None and dt < oldest
+                ]
+                if not valid_older:
+                    history_scan_stop = (
+                        "source_ended_or_bookmark_not_honored"
+                    )
+                    break
+                known = {
+                    (str(row.get("date")), str(row.get("name")),
+                     str(row.get("value")), str(row.get("description")))
+                    for row in source_events
+                }
+                new_rows = [
+                    row for row in valid_older
+                    if (str(row.get("date")), str(row.get("name")),
+                        str(row.get("value")), str(row.get("description")))
+                    not in known
+                ]
+                if not new_rows:
+                    history_scan_stop = "duplicate_or_nonadvancing_page"
+                    break
+                source_events.extend(new_rows)
+                if len(older_rows) < fetch_limit:
+                    history_scan_stop = "older_source_page_short"
+                    break
+        fetched_timestamps = [
+            dt for dt in (
+                self._event_datetime(row.get("date"))
+                for row in source_events
+            ) if dt is not None and dt.tzinfo is not None
+        ]
+        source_window_reached = bool(
+            fetched_timestamps
+            and min(fetched_timestamps) <= coverage_start
+        )
+        if (
+            source_first_page_at_limit and source_pages_fetched == 1
+            and history_scan_stop == "first_page" and not source_window_reached
+        ):
+            history_scan_stop = "bounded_unfiltered_page_at_limit"
+        # Display labels are derived from *verified* hub IANA timezone only.
+        # Raw source "date" stays unchanged for joins and exact arithmetic.
+        if (
+            hub_timezone_name
+            and timezone_source in {"hub_get_info", "hub_get_info_cache"}
+        ):
+            zone = ZoneInfo(hub_timezone_name)
+            for row in source_events:
+                dt = self._event_datetime(row.get("date"))
+                if dt is not None and dt.tzinfo is not None:
+                    row["displayTime"] = dt.astimezone(zone).strftime(
+                        "%Y-%m-%d %H:%M:%S %Z"
+                    )
+
         filtered_events = source_events
         if attribute:
             filtered_events = [
@@ -1126,6 +1274,36 @@ class DeviceHistoryService:
             for event in command_events
         )
 
+        # Put compact, source-qualified boundaries *ahead of* verbose event
+        # rows so truncated model context cannot hide the evidence needed for
+        # first/last sample comparisons. They are not physical extrema or a
+        # proof of a constant value between updates.
+        dated_samples = sorted(
+            (
+                (dt, event)
+                for event in filtered_events
+                if (dt := self._event_datetime(event.get("date"))) is not None
+                and dt.tzinfo is not None
+            ),
+            key=lambda pair: pair[0],
+        )
+        def sample_brief(event: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "date": event.get("date"),
+                "displayTime": event.get("displayTime"),
+                "value": event.get("value"),
+                "unit": event.get("unit"),
+            }
+        sample_bounds = {
+            "sampleCount": len(filtered_events),
+            "earliestReturned": (
+                sample_brief(dated_samples[0][1]) if dated_samples else None
+            ),
+            "latestReturned": (
+                sample_brief(dated_samples[-1][1]) if dated_samples else None
+            ),
+            "scope": "returned-recorded-samples-only",
+        }
         data = {
             "success": True,
             "requested": requested,
@@ -1140,13 +1318,27 @@ class DeviceHistoryService:
             "hoursBack": hours_back,
             "attribute": attribute or None,
             "count": len(events),
+            "sampleBounds": sample_bounds,
+            # Counts describe FETCHED rows, not a hub-wide total.
             "sourceEventCount": len(source_events),
             "analysisEventCount": len(filtered_events) if attribute else len(events),
-            "events": events,
+            "sourcePagesFetched": source_pages_fetched,
+            "sourcePageSize": fetch_limit,
+            "sourceFirstPageAtLimit": source_first_page_at_limit,
+            "sourceWindowBoundaryReached": source_window_reached,
+            "sourceCoverageStopReason": history_scan_stop,
+            "sourceCoverageVerified": False,
+            "timeZone": (
+                hub_timezone_name
+                if timezone_source in {"hub_get_info", "hub_get_info_cache"}
+                else None
+            ),
+            "timeZoneSource": timezone_source,
             "newestFirst": True,
             "causationAvailable": causation_available,
             "historySourceIntegrity": "unverified",
             "historySourceIntegrityVerified": False,
+            "events": events,
         }
         if time_window is not None:
             data["timeWindow"] = {

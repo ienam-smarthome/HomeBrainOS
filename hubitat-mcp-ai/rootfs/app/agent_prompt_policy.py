@@ -115,6 +115,36 @@ AUTOMATION AND RULE MACHINE INVESTIGATION EVIDENCE
 """
 
 
+_HISTORY_PRESENTATION_POLICY = """
+
+HISTORICAL TIME AND SAMPLE COVERAGE
+- For a timestamped Hubitat history result, use each source event's
+  displayTime only when the host supplies a hub_get_info-verified IANA
+  timeZone. A Europe/London date displays GMT in winter and BST in summer;
+  never convert an unverified +0000 timestamp to GMT merely because it
+  resembles UK time. Keep absolute source date and timezone provenance
+  distinguishable. A displayed event timestamp is not the current clock.
+- sampleBounds.earliestReturned and latestReturned are chronological extrema
+  of the RETURNED attribute samples, not the device's complete 24-hour record
+  or the physical extrema between discrete reports.
+- sourceEventCount counts fetched raw rows, NEVER the total Hubitat retained
+  event history. analysisEventCount counts selected-attribute rows in those
+  pages. A full first page (sourceFirstPageAtLimit) can hide older relevant
+  attribute records; request read-only continuation where available before
+  reporting a whole-window calculation.
+- Even when multiple pages were retrieved, sourceCoverageVerified=false and
+  historySourceIntegrityVerified=false mean retained source completeness is
+  NOT independently established. When sourceWindowBoundaryReached=false,
+  explicitly qualify the result as limited to the returned observation range.
+- Equal observed sample values establish zero difference between those
+  observations, not that the physical temperature/humidity/power remained
+  constant between readings or throughout the requested lookback.
+- Do not attribute gaps to sensor, network, bridge or driver faults without
+  discriminating evidence. A short returned page or missing old samples does
+  not prove the device stopped transmitting.
+"""
+
+
 _INTERNET_ACCESS_POLICY = """
 
 INTERNET ACCESS SWITCH SEMANTICS
@@ -145,6 +175,7 @@ def build_system_prompt(
         + _TYPED_SNAPSHOT_POLICY
         + _ROOM_STATUS_POLICY
         + _RULE_INVESTIGATION_EVIDENCE_POLICY
+        + _HISTORY_PRESENTATION_POLICY
         + _INTERNET_ACCESS_POLICY
     )
 

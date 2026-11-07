@@ -5455,6 +5455,12 @@ class UnifiedMCPAgent:
                     increment_active_metric("autonomous_planned_read_unavailable")
                     continue
                 args = dict(request.arguments)
+                # Host-only flags: resolve authoritative hub timezone and
+                # continue capped mixed event pages towards the requested
+                # window boundary. The model cannot grant these operations
+                # as extra tools or writes; the adapter owns the read contract.
+                args["_include_hub_time_zone"] = True
+                args["_expand_history_coverage"] = True
                 signature = json.dumps(
                     [request.tool, args], sort_keys=True,
                     ensure_ascii=False, default=str,

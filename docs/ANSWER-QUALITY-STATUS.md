@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-06 — v0.18.446 history timezone and coverage candidate (CI pending)
+
+**Live evidence basis:** On v0.18.445, Bathroom Meter history read returned 11 humidity observations. A 74% reading at 14:25:04.678 +0000 preceded a 59% reading at 18:26:04.288 +0000, about 4h 1m between reported events. Three successful reads, two model rounds, 9.5 seconds; no paid route. This supports the observed calculation but not complete retention, exact physical crossing, proven first-attempt provenance or the new deadline beyond 180 seconds.
+
+**Held-out TRV gap:** Bedroom 1 TRV history read returned only three temperature readings (each 22.2°C at 22:30:53, 23:00:53, 23:30:52 +0000), from a capped 50-row mixed event page for a requested 24h window. A zero difference among returned samples is verified, but a constant temperature over 24h is not. This response was 14.8s / three tool calls / three model rounds. November +0000 is GMT for the UK, while summer dates use BST; source should provide hub-local timezone labels rather than assuming UTC means the user wants UTC.
+
+**Candidate implementation:** Model-planned reads now ask the hub's authoritative IANA timezone, convert event display labels without changing source timestamps, and extend saturated 50-row mixed pages by read-only native until bookmarks until the requested boundary or a truthful operational stop. Explicit source-page, sample-bounds and coverage metadata prevents treating fetched row counts as all retained events. A finite 1000-row resource guard remains. Exact-hour/source integrity, real upstream bookmark behaviour, and deployed add-on version require source-real validation. No hub, HA, router, devices or paid provider changed.
+
+---
+
 ## 2026-11-06 — Fixed 180s investigation deadline removed (v0.18.445 merged; live verification pending)
 
 **User instruction:** Original exact wording: "Proceed with the development plans (remove any existing limiters) and write to the notes." Follow-up clarified that the 180-second hard-total investigation deadline had **not** been removed in v0.18.443/444. The accepted direction is adaptive, evidence-progress-based read-only execution, not unlimited uncontrolled calls.
