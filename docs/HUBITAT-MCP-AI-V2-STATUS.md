@@ -23,7 +23,7 @@ The user observed that Thaura AI's free service connected to the same upstream H
 
 ## Deliberate retained boundaries
 
-The pilot is **read-only**. Only explicitly listed upstream read tools and reviewed read gateways are presented; unknown tool names and gateway sub-tools fail closed. This is a frozen client policy, not proof of arbitrary server implementations. write/manage/call-device/reboot functions are not invocable. This is an experiment boundary, not a limitation on investigation sophistication. Retain hub permission gates, exact source tool schemas, credential redaction, operational timeouts and safe Hubitat probe cadence.
+The pilot is **read-only**. Only explicitly listed upstream read tools and reviewed read gateways are presented; unknown tool names and gateway sub-tools fail closed. This is a frozen client policy, not proof of arbitrary server implementations. Write/manage/call-device/reboot functions are not invocable. This is an experiment boundary, not a limitation on investigation sophistication. Retain hub permission gates, exact source tool schemas, credential redaction, operational timeouts and safe Hubitat probe cadence.
 
 A future v2 with control capabilities would require new explicit user authorization and independent write-safety review, rather than automatically inheriting v1 permission options.
 
