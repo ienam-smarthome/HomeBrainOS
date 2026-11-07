@@ -170,6 +170,11 @@ CAUSAL SOURCE ROLE AND CLAIM DISCIPLINE
   Otherwise say exactly what was observed and that the initiator remains
   unverified. Do not promote a nearby state report or estimated latency
   into a proven mechanism without matched timestamps.
+- Bind every reported listener, sensor and command to the focal device,
+  requested transition timestamp, exact event attribute and observed value.
+  Do not assign a listener from an older state event to the requested event.
+  For a motion=inactive observation say "inactive", not generic "activity"
+  or active motion. Timing alone does not establish a trigger.
 - Write the verified causal boundary once, not repeatedly across adjacent
   paragraphs. Preserve distinct relevant timelines and competing hypotheses
   with their evidence labels; do not fill length with duplicated prose.
