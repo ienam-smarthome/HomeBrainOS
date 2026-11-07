@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from causal_timeline import build_causal_timeline_rows
@@ -41,6 +42,29 @@ def _time_tokens(value: Any) -> set[str]:
     }
 
 
+def _requested_off_instant(evidence: list[dict[str, Any]]) -> datetime | None:
+    """Only a typed unique requested OFF clock may scope historical rows."""
+    candidates: set[datetime] = set()
+    for receipt in evidence:
+        if (not isinstance(receipt, dict) or receipt.get("success") is not True
+                or receipt.get("tool") != "homebrain_causal_secondary_correlation"):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        if str(details.get("transition") or "").casefold() != "off":
+            continue
+        try:
+            clock = datetime.fromisoformat(
+                str(details.get("requestedBoundary") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        if clock.tzinfo is not None:
+            candidates.add(clock.astimezone(timezone.utc))
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def guard_controller_boundary_claim(
     message: str,
     evidence: list[dict[str, Any]],
@@ -54,6 +78,23 @@ def guard_controller_boundary_claim(
         and (row.get("endControllerEvidence") or [])
     ]
     text = str(message or "")
+    # A previous interval's end-aligned button event cannot justify inserting
+    # a correction into a new *latest OFF* investigation. If the host supplied
+    # a focal OFF clock, only its own matching historical end boundary is
+    # eligible for an event-specific controller attribution repair.
+    focal_off = _requested_off_instant(evidence)
+    if focal_off is not None:
+        eligible = []
+        for row in suspects:
+            try:
+                end = datetime.fromisoformat(
+                    str(row.get("end") or "").replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            if end.tzinfo is not None and end.astimezone(timezone.utc) == focal_off:
+                eligible.append(row)
+        suspects = eligible
     if not suspects or not _CONTROLLER_TERM.search(text) or not _TRIGGER_TERM.search(text):
         return text, False
 
