@@ -98,7 +98,18 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.3", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.4", lifespan=lifecycle)
+
+
+@app.middleware("http")
+async def prevent_stale_interface(request: Request, call_next):
+    response = await call_next(request)
+    # The HTML contains the API client. Never reuse it across add-on updates;
+    # API responses can also contain private operational data.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 class AskRequest(BaseModel):
@@ -117,7 +128,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.3",
+        "version": "2.0.0-alpha.4",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
@@ -133,7 +144,7 @@ def require_ui_request(request: Request):
     # Same-origin UI fetches carry this header; cross-origin scripts need a
     # CORS preflight, which this app does not enable. Forms cannot supply it.
     if request.headers.get("x-homebrain-request") != "1":
-        raise HTTPException(403, "Use the HomeBrain interface or the documented request header")
+        raise HTTPException(403, "Interface is out of date or the request header is missing. Close and reopen the v2 interface, then refresh the page. API clients must send X-Homebrain-Request: 1")
 
 
 @app.get("/api/activity/{request_id}")

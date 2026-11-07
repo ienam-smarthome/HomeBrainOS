@@ -297,6 +297,27 @@ class InteractionTests(unittest.TestCase):
                 await agent.close()
         asyncio.run(run())
 
+    def test_interface_cannot_be_cached_across_updates(self):
+        import app as runtime
+        async def run():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=runtime.app),
+                                         base_url="http://test") as client:
+                page = await client.get("/")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("no-store", page.headers["cache-control"])
+                self.assertIn('UI_VERSION="'+runtime.app.version+'"', page.text)
+                # Even an old browser validator must receive the current HTML.
+                refreshed = await client.get("/", headers={
+                    "If-None-Match": page.headers["etag"],
+                    "If-Modified-Since": page.headers["last-modified"]})
+                self.assertEqual(refreshed.status_code, 200)
+                self.assertIn("no-store", refreshed.headers["cache-control"])
+                rejected = await client.post("/api/ask", json={"question": "Status?"})
+                self.assertEqual(rejected.status_code, 403)
+                self.assertIn("refresh", rejected.json()["detail"])
+                self.assertIn("no-store", rejected.headers["cache-control"])
+        asyncio.run(run())
+
     def test_http_confirmation_is_request_bound_and_requires_ui_header(self):
         import app as runtime
         from uuid import uuid4
