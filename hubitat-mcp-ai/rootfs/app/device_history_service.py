@@ -1296,10 +1296,11 @@ class DeviceHistoryService:
             }
         sample_span_seconds = (
             round((dated_samples[-1][0] - dated_samples[0][0]).total_seconds(), 3)
-            if len(dated_samples) >= 2 else 0.0
+            if len(dated_samples) >= 2 else None
         )
         sample_bounds = {
             "sampleCount": len(filtered_events),
+            "timestampedCount": len(dated_samples),
             "earliestReturned": (
                 sample_brief(dated_samples[0][1]) if dated_samples else None
             ),
@@ -1328,22 +1329,32 @@ class DeviceHistoryService:
             "latestReturned": raw_clock(raw_ordered[-1]) if raw_ordered else None,
             "spanSeconds": (
                 round((raw_ordered[-1] - raw_ordered[0]).total_seconds(), 3)
-                if len(raw_ordered) >= 2 else 0.0
+                if len(raw_ordered) >= 2 else None
             ),
             "scope": "fetched-raw-device-events-not-source-retention",
         }
         attribute_label = attribute or "device event"
+        sample_span_label = (
+            f"{sample_span_seconds:.3f} seconds" if sample_span_seconds is not None
+            else "not measurable from fewer than two timestamped observations"
+        )
+        source_span_label = (
+            f"{source_event_range['spanSeconds']:.3f} seconds"
+            if source_event_range["spanSeconds"] is not None
+            else "not measurable from fewer than two timestamped raw events"
+        )
         source_coverage_narrative = (
             f"Fetched {len(source_events)} raw device event rows across "
             f"{source_pages_fetched} page(s) for the requested {hours_back}-hour "
             f"lookback. {len(filtered_events)} of those rows match "
-            f"attribute {attribute_label!r}. "
+            f"attribute {attribute_label!r}, with "
+            f"{len(dated_samples)} timestamped matching samples. "
             "The first-to-last matching observation span is "
-            f"{sample_span_seconds:.3f} seconds; this is NOT the span of "
+            f"{sample_span_label}; this is NOT the span of "
             "all raw device events fetched or proof of a constant physical "
             "reading between samples. "
             "The fetched raw-event span is "
-            f"{source_event_range['spanSeconds']:.3f} seconds. "
+            f"{source_span_label}. "
             f"The requested lookback boundary was "
             f"{'reached by returned timestamps' if source_window_reached else 'not reached by returned timestamps'}. "
             f"Retrieval stopped: {history_scan_stop}. "
