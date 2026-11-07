@@ -1,5 +1,24 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**Next general evidence-language increment (v0.18.447 candidate):**
+Never confuse time spanned by selected-attribute observations with the time
+spanned by all fetched raw device events. Source metadata must separately
+report raw range, matched sample range, event/page counts, requested lookback,
+stopping reason and unverified retention. v0.18.446 successfully fetched 204
+raw events/5 pages/11 temperature samples on Bedroom 1 TRV, but the generated
+answer incorrectly described the 3h36m *temperature sample interval* as the
+duration of *all history retrieved*. The source-neutral v0.18.447 change
+provides a deterministic narrative and explicit separate spans before model
+synthesis; tests and real-installed verification remain required.
+
+**Held-out next acceptance:** Read-only investigation of most recent
+Livingroom Light 2 OFF event: independently read targeted event history,
+possible command-issued provenance and relevant installed app logs/settings.
+Classify reported OFF transition, direct command evidence, automation trigger
+and inferred cause separately; do not fabricate a definitive issuer/cause or
+change devices. This live MCP test must be executed from HomeBrain Ask by the
+user, not through GitHub repository editing.
+
 **Status:** Phase 1 v0.18.443 and Phase 2 source-neutral arithmetic core
 v0.18.444 merged. v0.18.445 merged through PR #1494 after four green CI checks, introducing progress-aware read-only request
 timing without a fixed 180-second *total* deadline. v0.18.446 merged through
