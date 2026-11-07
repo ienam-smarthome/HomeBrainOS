@@ -66,6 +66,23 @@ Expand **View memory history & connection incidents** to show:
 - Persistent connectivity-loss and recovery episodes, independently labelled.
 - Confirmed **Hubitat systemStart** events as amber vertical chart markers, with captured firmware build when available. The marker's time is from Hubitat's timezone-aware event record; this does not prove why the hub restarted.
 
+**Combined memory + CPU graph (v0.18.454):** The unified incident timeline
+defaults to an **overlaid dual-axis view**: free OS memory (blue, left MB
+scale) and native five-minute CPU load equivalent (green, right percent
+scale) on a common timestamp axis. These independent scales are not a
+claim of shared units, and load equivalent is **not** directly measured CPU
+utilisation. Switch to **Separate · aligned panels** for the previous
+vertically split view. Layout switching redraws locally held observations;
+it never polls Hubitat. Dotted hover guides and colour-coded markers snap
+only to actual saved source readings. Confirmed startups, connection
+incidents, missing intervals and their evidence limits remain distinct.
+
+Individual metric graphs now have a taller plot, dotted horizontal and
+vertical inspection guides, actual observed min/max markers, responsive
+axis density and a tooltip placed away from the selected reading. Pointer,
+touch and arrow-key inspection reports the saved observation timestamp,
+not an estimated value at the pointer's time.
+
 **Unified incident timeline (v0.18.430):** The top expandable section uses
 the same selected range as the existing detailed history. It plots real external
 free-OS-memory observations and distinct native five-minute CPU load-equivalent

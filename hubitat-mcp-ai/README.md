@@ -3,7 +3,13 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.453**.
+Current add-on version: **0.18.454**.
+
+**Memory + CPU diagnostic graphs (v0.18.454):** Combined two-axis memory
+and five-minute CPU load-equivalent overlay, optional separate aligned
+panels, dotted inspection guides, taller detailed charts, and observed
+min/max indicators. Read-only browser presentation; no probe or hub
+behaviour changed. [Release notes](CHANGELOG-0.18.454.md).
 
 **Claim-evidence adapter (v0.18.453):** The existing typed-claim contract now has a **read-only shadow sidecar** in Technical JSON, based only on a uniquely verified focal event, successful native source receipts, and actual requested log windows. It computes source-limited OFF-to-Hubitat-command pairing across the full returned sample, separates collector-received Historical Journal observations from native sensor event clocks, and distinguishes sensors marked `probed` from verified direct history reads. Look for `evidence_validation.claim_evidence_shadow` (with `shadow_only=true`, `model_claims_assessed=false`); this is diagnostic provenance, not model truth scoring. No change to user-facing answer, provider routing, command permissions or the v0.18.452 failed-repair floor. See [v0.18.453 notes](CHANGELOG-0.18.453.md).
 

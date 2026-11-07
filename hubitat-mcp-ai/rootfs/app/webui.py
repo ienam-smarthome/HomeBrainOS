@@ -82,6 +82,14 @@ def render_page(title: str, version: str) -> str:
 .diag-timeline-actions a{background:#333;color:white;text-decoration:none}
 #diagTimelineChart{display:block;width:100%;height:auto;max-height:360px;background:#101114;border-radius:9px;touch-action:pan-y}
 #diagTimelineChart:focus{outline:2px solid #93c5fd;outline-offset:2px}
+#diagChart{display:block;width:100%;height:auto;max-height:375px;background:#101114;border-radius:9px;touch-action:pan-y}
+#diagChart:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+.diag-chart-legend{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0}
+.diag-chart-legend .swatch{display:inline-block;width:18px;height:0;border-top:2px solid #60a5fa;margin-right:5px;vertical-align:middle}
+.diag-chart-legend .guide{border-top:2px dotted #cbd5e1}
+.diag-chart-legend .startup{border-top:2px dashed #f59e0b}
+.diag-timeline-actions label{font-size:12px;color:var(--muted)}
+.diag-timeline-actions select{margin-left:5px;padding:7px;border:1px solid #555;border-radius:7px;background:#333;color:#fff;font-size:12px}
 #diagTimelineEvents{max-height:310px;overflow-y:auto}
 #diagTimelineEvents li{display:flex;gap:7px;align-items:flex-start;flex-wrap:wrap}
 #diagTimelineEvents button{width:auto;padding:5px 8px;margin:0 0 0 auto;border-radius:7px;font-size:11px}
@@ -161,6 +169,7 @@ def render_page(title: str, version: str) -> str:
 <span><span class="swatch" style="background:#f59e0b"></span>Confirmed startup</span>
 <span><span class="swatch" style="background:#f87171"></span>Connectivity loss</span>
 </div>
+<div class="diag-timeline-actions"><label for="diagTimelineLayout">Memory + CPU layout <select id="diagTimelineLayout" aria-label="Memory and CPU chart layout"><option value="combined" selected>Combined · shared plot</option><option value="split">Separate · aligned panels</option></select></label></div>
 <svg id="diagTimelineChart" viewBox="0 0 860 330" role="img" tabindex="0" aria-label="Synchronized Hubitat memory, CPU load, confirmed startups and connectivity incidents; hover or use arrow keys to inspect saved observations"></svg>
 <div class="journal-small" id="diagTimelineReadout" aria-live="polite">Hover, touch or use arrow keys to inspect source timestamps. No values are estimated between samples.</div>
 <div class="diag-timeline-actions">
@@ -217,7 +226,8 @@ def render_page(title: str, version: str) -> str:
 </div>
 <div id="diagChartCaption" class="muted" style="margin:10px 0 4px">Expand to load locally stored observations.</div>
 <div id="diagChartStats" class="journal-small" role="status">Minimum — · Maximum — · Latest —</div>
-<svg id="diagChart" viewBox="0 0 760 250" role="img" aria-label="Externally recorded Hubitat resource chart; hover or touch to inspect values. Arrow keys move between readings." tabindex="0" style="display:block;width:100%;height:auto;max-height:290px;background:#101114;border-radius:9px"></svg>
+<svg id="diagChart" viewBox="0 0 860 320" role="img" aria-label="Hubitat measurements with dotted guides. Hover, touch or use arrow keys to inspect recorded values." tabindex="0"></svg>
+<div class="diag-chart-legend journal-small" aria-hidden="true"><span><span class="swatch"></span>Observed readings</span><span><span class="swatch guide"></span>Selected point</span><span><span class="swatch startup"></span>Confirmed startup</span></div>
 <div id="diagPointReadout" class="journal-small" aria-live="polite">Hover, touch or use the left/right arrow keys on the graph to inspect exact readings.</div>
 <strong>Confirmed hub startups (Hubitat systemStart)</strong>
 <ul class="journal-gaps" id="diagReboots"><li class="muted">No confirmed startup events loaded.</li></ul>
@@ -612,9 +622,18 @@ function diagChartYGrid(layer,left,right,top,bottom,scale,metric,color){
   const value=scale.min+scale.step*i;
   const y=bottom-i/scale.intervals*(bottom-top);
   layer.append(diagChartSvgNode('line',{x1:left,x2:right,y1:y,y2:y,
-   stroke:'#394758','stroke-width':0.85,'stroke-opacity':0.85}));
+   stroke:'#53637a','stroke-width':0.85,'stroke-opacity':0.78,'stroke-dasharray':'2 5'}));
   layer.append(diagChartSvgNode('text',{x:left-8,y:y+4,fill:color,
    'text-anchor':'end','font-size':11},diagMetricValue(value,metric)));
+ }
+}
+function diagChartYGridRight(layer,right,top,bottom,scale,metric,color){
+ // Separate scale on the right; tick labels are not readings.
+ for(let i=0;i<=scale.intervals;i++){
+  const value=scale.min+scale.step*i,y=bottom-i/scale.intervals*(bottom-top);
+  layer.append(diagChartSvgNode('line',{x1:right,x2:right+5,y1:y,y2:y,stroke:color,'stroke-opacity':0.7}));
+  layer.append(diagChartSvgNode('text',{x:right+8,y:y+4,fill:color,'text-anchor':'start','font-size':11},
+   diagMetricValue(value,metric)));
  }
 }
 function diagChartTimeGrid(svg,layer,first,last,left,right,top,bottom,labelY){
@@ -670,12 +689,15 @@ function timelineSelectAt(t){
  for(const [group,key,label,basis] of selections){
   const row=timelineNear(timelineRows[group],t);
   const dot=document.getElementById('diagTimeline'+(group==='memory'?'MemoryDot':'CpuDot'));
+  const guide=document.getElementById('diagTimeline'+(group==='memory'?'MemoryGuide':'CpuGuide'));
   const near=row&&Math.abs(timelineX(Date.parse(row.recorded_at),first,last)-x)<=18;
   if(dot)dot.setAttribute('visibility',near?'visible':'hidden');
+  if(guide)guide.setAttribute('visibility',near?'visible':'hidden');
   if(near){
    const ygroup=group==='memory'?'memY':'cpuY';
-   if(dot){dot.setAttribute('cx',timelineX(Date.parse(row.recorded_at),first,last));
-    dot.setAttribute('cy',timelineData[ygroup](row[key]));}
+   const px=timelineX(Date.parse(row.recorded_at),first,last),py=timelineData[ygroup](row[key]);
+   if(dot){dot.setAttribute('cx',px);dot.setAttribute('cy',py);}
+   if(guide){guide.setAttribute('x2',px);guide.setAttribute('y1',py);guide.setAttribute('y2',py);}
    parts.push(label+' '+diagMetricValue(row[key],key)+' at '+diagDate(row.recorded_at)+
       ' ('+basis+(group==='cpu'?', native label '+String(row.native_sample_label||'unavailable'):'')+')');
   }else parts.push(label+': no nearby displayed reading (not zero)');
@@ -699,6 +721,7 @@ function drawIncidentTimeline(data){
   return;
  }
  const [first,last]=r,span=last-first;
+ const combined=document.getElementById('diagTimelineLayout').value==='combined';
  const mem=timelineMetricPoints(data,'free_os_mb','external');
  const cpu=timelineMetricPoints(data,'native_load_pct','native');
  const memMeta=data.metrics&&data.metrics.free_os_mb||{},cpuMeta=data.metrics&&data.metrics.native_load_pct||{};
@@ -715,23 +738,31 @@ function drawIncidentTimeline(data){
  const memoryLow=Math.max(0,(minMem?minMem.free_os_mb:0)-(mem.length?Math.max(20,(Math.max(...mem.map(p=>p.free_os_mb))-minMem.free_os_mb)*0.12):20));
  const memoryHigh=mem.length?Math.max(...mem.map(p=>p.free_os_mb))+30:100;
  const cpuHigh=Math.max(10,maxCpu?maxCpu.native_load_pct*1.15:10);
- const memScale=diagNiceChartScale(memoryLow,memoryHigh,8);
- const cpuScale=diagNiceChartScale(0,cpuHigh,8);
- const memY=value=>timelinePlot.memBottom-(value-memScale.min)/(memScale.max-memScale.min)*(timelinePlot.memBottom-timelinePlot.memTop);
- const cpuY=value=>timelinePlot.cpuBottom-(value-cpuScale.min)/(cpuScale.max-cpuScale.min)*(timelinePlot.cpuBottom-timelinePlot.cpuTop);
+ const memScale=diagNiceChartScale(memoryLow,memoryHigh,combined?6:8);
+ const cpuScale=diagNiceChartScale(0,cpuHigh,combined?6:8);
+ const memTop=combined?30:timelinePlot.memTop,memBottom=combined?timelinePlot.cpuBottom:timelinePlot.memBottom;
+ const cpuTop=combined?30:timelinePlot.cpuTop,cpuBottom=timelinePlot.cpuBottom;
+ const memY=value=>memBottom-(value-memScale.min)/(memScale.max-memScale.min)*(memBottom-memTop);
+ const cpuY=value=>cpuBottom-(value-cpuScale.min)/(cpuScale.max-cpuScale.min)*(cpuBottom-cpuTop);
  // Store only the two measured y transforms, never fabricated sample values.
  // The helper is discarded on each refresh before new data becomes visible.
  const graphData={...data,memY,cpuY};timelineData=graphData;
  diagChartTimeGrid(svg,svg,first,last,timelinePlot.left,timelinePlot.right,
-  timelinePlot.memTop,timelinePlot.cpuBottom,319);
+  memTop,timelinePlot.cpuBottom,319);
  diagChartYGrid(svg,timelinePlot.left,timelinePlot.right,
-  timelinePlot.memTop,timelinePlot.memBottom,memScale,'free_os_mb','#93c5fd');
- diagChartYGrid(svg,timelinePlot.left,timelinePlot.right,
-  timelinePlot.cpuTop,timelinePlot.cpuBottom,cpuScale,'native_load_pct','#86efac');
- svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:15,fill:'#93c5fd','font-size':13},
+  memTop,memBottom,memScale,'free_os_mb','#93c5fd');
+ if(combined){
+  diagChartYGridRight(svg,timelinePlot.right,cpuTop,cpuBottom,cpuScale,'native_load_pct','#86efac');
+  svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:15,fill:'#cbd5e1','font-size':12},
+   'OS memory (left · MB) + 5m CPU load equivalent (right · %)'));
+ }else{
+  diagChartYGrid(svg,timelinePlot.left,timelinePlot.right,
+   cpuTop,cpuBottom,cpuScale,'native_load_pct','#86efac');
+  svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:15,fill:'#93c5fd','font-size':13},
    'OS memory · MB (external probe; independent scale)'));
- svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:174,fill:'#86efac','font-size':13},
+  svg.append(diagChartSvgNode('text',{x:timelinePlot.left,y:174,fill:'#86efac','font-size':13},
    '5m CPU load equivalent · % (native source; independent scale)'));
+ }
  const incidents=(Array.isArray(data.incidents)?data.incidents:[]).filter(e=>e.kind==='hub-unreachable');
  for(const incident of incidents){
   const start=timelineStamp(incident.started_at),end=incident.recovered_at?timelineStamp(incident.recovered_at):last;
@@ -797,6 +828,10 @@ function drawIncidentTimeline(data){
   dot.append(diagChartSvgNode('title',{},diagDate(row.recorded_at)+' · real observed extremum '+diagMetricValue(row[key],key)));
   svg.append(dot);
  }
+ svg.append(diagChartSvgNode('line',{id:'diagTimelineMemoryGuide',x1:timelinePlot.left,x2:timelinePlot.left,y1:0,y2:0,
+   stroke:'#93c5fd','stroke-width':1.2,'stroke-dasharray':'2 5',visibility:'hidden','pointer-events':'none'}));
+ svg.append(diagChartSvgNode('line',{id:'diagTimelineCpuGuide',x1:timelinePlot.left,x2:timelinePlot.left,y1:0,y2:0,
+   stroke:'#86efac','stroke-width':1.2,'stroke-dasharray':'2 5',visibility:'hidden','pointer-events':'none'}));
  svg.append(diagChartSvgNode('line',{id:'diagTimelineCursor',x1:0,x2:0,y1:20,y2:timelinePlot.cpuBottom,
    stroke:'#e2e8f0','stroke-width':1.4,'stroke-dasharray':'2 4',visibility:'hidden','pointer-events':'none'}));
  svg.append(diagChartSvgNode('circle',{id:'diagTimelineMemoryDot',cx:0,cy:0,r:5,fill:'#60a5fa',stroke:'#fff','stroke-width':1,
@@ -837,6 +872,9 @@ function timelinePickPointer(event){
 }
 document.getElementById('diagTimelineChart').addEventListener('pointermove',e=>{if(e.pointerType!=='touch')timelinePickPointer(e)});
 document.getElementById('diagTimelineChart').addEventListener('pointerdown',timelinePickPointer);
+document.getElementById('diagTimelineLayout').addEventListener('change',()=>{
+ if(timelineData)drawIncidentTimeline(timelineData);
+});
 document.getElementById('diagTimelineChart').addEventListener('keydown',e=>{
  if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&timelineFocusTimes.length){
   e.preventDefault();
@@ -1045,7 +1083,7 @@ const age=row.recorded_at?'Last probe '+diagDate(row.recorded_at):'No saved prob
 const source=row.native_sample_label?' · Java source '+row.native_sample_label:' · Java source not yet recorded';
 document.getElementById('diagSummary').textContent=age+source+' · '+(data.consecutive_failures||0)+' consecutive failures. '+details;
 }
-const diagPlot={left:65,right:722,top:26,bottom:204,width:760,height:250};
+const diagPlot={left:72,right:822,top:29,bottom:280,width:860,height:320};
 let diagPlottedPoints=[],diagActivePoint=0;
 function diagMetricValue(value,metric){
  if(!Number.isFinite(value))return '—';
@@ -1070,17 +1108,24 @@ function diagSelectPoint(index){
  const recorded=diagDate(row.recorded_at),value=diagMetricValue(row[metric],metric);
  document.getElementById('diagPointReadout').textContent=recorded+' — '+label+': '+value+sourceNote;
  const marker=document.getElementById('diagChartMarker'),cross=document.getElementById('diagChartCrosshair');
+ const horizontal=document.getElementById('diagChartHorizontal');
  if(marker&&cross){
   marker.setAttribute('cx',point.x);marker.setAttribute('cy',point.y);
   marker.setAttribute('visibility','visible');
   cross.setAttribute('x1',point.x);cross.setAttribute('x2',point.x);
   cross.setAttribute('visibility','visible');
  }
+ if(horizontal){
+  horizontal.setAttribute('x2',point.x);
+  horizontal.setAttribute('y1',point.y);horizontal.setAttribute('y2',point.y);
+  horizontal.setAttribute('visibility','visible');
+ }
  const tip=document.getElementById('diagTooltip'),tipTime=document.getElementById('diagTipTime'),
        tipValue=document.getElementById('diagTipValue');
  if(tip&&tipTime&&tipValue){
-  const tipX=Math.max(diagPlot.left,Math.min(diagPlot.right-178,point.x-78));
-  const tipY=point.y<85?point.y+12:point.y-57;
+  const tipWidth=195,tipHeight=50;
+  const tipX=point.x+tipWidth+14<=diagPlot.right?point.x+14:point.x-tipWidth-14;
+  const tipY=Math.max(diagPlot.top+4,Math.min(diagPlot.bottom-tipHeight-4,point.y-tipHeight-13));
   tip.setAttribute('transform','translate('+tipX.toFixed(1)+','+tipY.toFixed(1)+')');
   tip.setAttribute('visibility','visible');
   tipTime.textContent=recorded;
@@ -1146,7 +1191,8 @@ function drawDiagnosticsChart(){
    ' ('+diagDate(points[points.length-1].recorded_at)+')';
  const padding=Math.max(metric==='native_load5'?0.1:metric==='java_allocated_heap_used_pct'?0.5:1,
                         (rawMax-rawMin)*0.15);
- const scale=diagNiceChartScale(Math.max(0,rawMin-padding),rawMax+padding,10);
+ const pixelWidth=svg.getBoundingClientRect().width||diagPlot.width;
+ const scale=diagNiceChartScale(Math.max(0,rawMin-padding),rawMax+padding,pixelWidth<480?6:9);
  const min=scale.min,max=scale.max,span=max-min;
  const timestamps=diagHistoryRows.map(x=>Date.parse(x.recorded_at)).filter(Number.isFinite);
  const rStart=Date.parse(diagHistoryMeta.range_start),rEnd=Date.parse(diagHistoryMeta.range_end);
@@ -1161,7 +1207,7 @@ function drawDiagnosticsChart(){
  diagChartYGrid(group,diagPlot.left,diagPlot.right,diagPlot.top,diagPlot.bottom,
   scale,metric,'#b4c1d3');
  diagChartTimeGrid(svg,group,first,last,diagPlot.left,diagPlot.right,
-  diagPlot.top,diagPlot.bottom,236);
+  diagPlot.top,diagPlot.bottom,309);
  svg.append(group);
  drawDiagRebootMarkers(svg,first,last);
  let path='',previous=null,previousSegment=null;
@@ -1175,7 +1221,17 @@ function drawDiagnosticsChart(){
   diagPlottedPoints.push({row,x,y});previous=t;previousSegment=row.diag_segment;
  }
  svg.append(diagChartSvgNode('path',{d:path.trim(),fill:'none',stroke:'#60a5fa',
-   'stroke-width':2.4,'stroke-linejoin':'round','stroke-linecap':'round'}));
+   'stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+ // Mark actual extrema even when there are too many readings for point dots.
+ for(const value of [...new Set([rawMin,rawMax])]){
+  const p=diagPlottedPoints.find(x=>x.row[metric]===value);
+  if(!p)continue;
+  const dot=diagChartSvgNode('circle',{cx:p.x,cy:p.y,r:4.3,fill:'#60a5fa',
+   stroke:'#f8fafc','stroke-width':1.2});
+  dot.append(diagChartSvgNode('title',{},diagDate(p.row.recorded_at)+
+   ' · observed '+(value===rawMin?'minimum':'maximum')+' '+diagMetricValue(value,metric)));
+  svg.append(dot);
+ }
  // On short windows expose individual actual samples, not fabricated in-between values.
  if(points.length<=80){
   for(const p of diagPlottedPoints){
@@ -1185,13 +1241,15 @@ function drawDiagnosticsChart(){
    svg.append(circle);
   }
  }
+ svg.append(diagChartSvgNode('line',{id:'diagChartHorizontal',x1:diagPlot.left,x2:diagPlot.left,y1:0,y2:0,
+   stroke:'#cbd5e1','stroke-width':1.2,'stroke-dasharray':'2 5',visibility:'hidden','pointer-events':'none'}));
  svg.append(diagChartSvgNode('line',{id:'diagChartCrosshair',x1:0,x2:0,
-   y1:diagPlot.top,y2:diagPlot.bottom,stroke:'#fbbf24','stroke-width':1.3,
-   'stroke-dasharray':'4 4',visibility:'hidden','pointer-events':'none'}));
+   y1:diagPlot.top,y2:diagPlot.bottom,stroke:'#e2e8f0','stroke-width':1.4,
+   'stroke-dasharray':'2 5',visibility:'hidden','pointer-events':'none'}));
  svg.append(diagChartSvgNode('circle',{id:'diagChartMarker',cx:0,cy:0,r:5.5,
    stroke:'#101114','stroke-width':2,fill:'#fbbf24',visibility:'hidden','pointer-events':'none'}));
  const tooltip=diagChartSvgNode('g',{id:'diagTooltip',visibility:'hidden','pointer-events':'none'});
- tooltip.append(diagChartSvgNode('rect',{x:0,y:0,width:178,height:43,rx:7,fill:'#17263a',stroke:'#64748b'}));
+ tooltip.append(diagChartSvgNode('rect',{x:0,y:0,width:195,height:50,rx:7,fill:'#17263a',stroke:'#64748b'}));
  tooltip.append(diagChartSvgNode('text',{id:'diagTipTime',x:9,y:16,fill:'#e2e8f0','font-size':11}));
  tooltip.append(diagChartSvgNode('text',{id:'diagTipValue',x:9,y:33,fill:'#f8fafc','font-size':15,'font-weight':'bold'}));
  svg.append(tooltip);
@@ -1210,7 +1268,7 @@ function diagSelectNearPointer(event){
  const idx=low>0&&Math.abs(diagPlottedPoints[low-1].x-x)<Math.abs(diagPlottedPoints[low].x-x)?low-1:low;
  if(Math.abs(diagPlottedPoints[idx].x-x)>24){
   document.getElementById('diagPointReadout').textContent='No observed sample near this time. Blank intervals are unknown, not zero.';
-  for(const id of ['diagTooltip','diagChartMarker','diagChartCrosshair']){
+  for(const id of ['diagTooltip','diagChartMarker','diagChartCrosshair','diagChartHorizontal']){
    const item=document.getElementById(id);if(item)item.setAttribute('visibility','hidden');
   }
   return;
