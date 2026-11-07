@@ -1,6 +1,6 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**v0.18.452 source-real failed-repair architectural checkpoint (7 Nov, candidate):**
+**v0.18.452 merged — claim-validated failed-repair publication floor (7 Nov):**
 The v0.18.451 installed OFF investigation had the right top-level unknown-cause
 verdict but falsely promoted a collector-received FP400 motion=inactive
 Historical Journal observation to an original sensor event 19 seconds before
@@ -16,8 +16,14 @@ reception and independently check app-log requested windows against the
 focal time. No action, no extra model/MCP calls, no rewrite on successful
 answers or write/confirmation paths. This is a targeted **publication
 integrity** increment, not proof that the generic model-to-JSON claim-first
-path is complete. Next: gate with CI, source-real test newly installed
-v0.18.452, freeze cross-domain question/evidence packets, then advance
+path is complete. [PR #1509](https://github.com/ienam-smarthome/HomeBrainOS/pull/1509)
+passed all four CI checks on exact head
+`07b40c87af6834e45ebcdbe22daea32d9786f629` (6,727 tests,
+container smoke and metadata) and squash-merged as
+`6b858876b127340cf41602fcbfe3f5ee92184510`.
+Source-real installed v0.18.452 acceptance remains pending.
+Next: source-real test newly installed v0.18.452,
+freeze cross-domain question/evidence packets, then advance
 model-selected typed claims and authoritative coverage into the general
 publication path without retaining redundant prose guards.
 
