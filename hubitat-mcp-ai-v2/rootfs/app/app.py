@@ -95,7 +95,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.1", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.2", lifespan=lifecycle)
 
 
 class AskRequest(BaseModel):
@@ -113,7 +113,7 @@ async def status():
     options = app.state.options
     mcp: ReadOnlyMCP | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.1",
+        "version": "2.0.0-alpha.2",
         "mode": "native-model-led-read-only",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"

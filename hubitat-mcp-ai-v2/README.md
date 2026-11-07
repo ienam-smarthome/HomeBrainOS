@@ -6,11 +6,11 @@
 
 1. A direct native Ollama `/api/chat` agent that chooses and calls live Hubitat MCP read tools without predetermined investigative steps. Tool schemas come from `tools/list`; no handwritten Hubitat schema registry.
 2. One short, readable Hubitat MCP skill, adapted from the upstream MIT-licensed skill. The model chooses whether to read a guide, lookup, history, app configuration, logs or other available sources.
-3. A tiny Ask/Chat web UI and transparent tool-call receipts (no invented JSON evidence).
+3. A tiny Ask/Chat web UI and tool-call receipts containing the bounded, redacted source response shown to the model, plus arguments, success and timing. Completed receipts remain available after a subsequent model failure; large sources are explicitly marked as truncated. Receipts are returned to the current browser session, not automatically persisted.
 4. The **exact same** `external_hub_diagnostics.py` source blob as v1, with its persistent SQLite storage, 30–300s external free OS probes, native five-minute Java/load samples, confirmed `systemStart` markers, connectivity incidents, downsampled histories, 1h–30d windows and 30d default retention.
 5. No Historical Journal, Rule Machine shortcut, v1 router, v1 reasoning patch or scheduler.
 
-The first v2 experiment is **read-only**. This is not an answer-quality restriction; no live write/control tools are exposed. Permissions, timeouts, restricted secrets and server-side read/write masters are not optional AI reasoning features.
+The first v2 experiment is **read-only**. This is not an answer-quality restriction; only explicitly listed upstream read tools and reviewed gateway sub-tools are invocable. Unknown names fail closed; server behavior and permission gates still matter. Permissions, timeouts, restricted secrets and server-side read/write masters are not optional AI reasoning features.
 
 ## Setup
 
@@ -24,7 +24,7 @@ Configure:
 - `model_api_key`: required for Ollama Cloud, leave blank for local Ollama
 - Optional: `external_hub_diagnostics_enabled: true`, `external_hub_diagnostics_hub_url: http://HUB-LAN-IP`, logical cores = 4 for C8 Pro; probe 30s; retention 30d.
 
-Use Home Assistant sidebar ingress. The optional direct port is disabled by default. No credentials or complete MCP responses are saved to the recorder.
+Installation and ingress acceptance are pending. CI currently verifies amd64 container startup without live model/MCP configuration; aarch64 and armv7 are advertised but not verified by that smoke test.\n\nUse Home Assistant sidebar ingress. The optional direct port is disabled by default. No credentials or complete MCP responses are saved to the recorder.
 
 **Existing v1 recorder data is NOT automatically shared with the new add-on:** each add-on has its own `/data` folder. Copy/restore its existing SQLite database through a deliberate separate migration if historical continuity is needed. Starting v2 creates a new recorder history.
 

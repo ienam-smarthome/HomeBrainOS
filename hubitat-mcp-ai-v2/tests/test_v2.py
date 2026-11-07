@@ -19,13 +19,14 @@ class ToolSafetyTests(unittest.TestCase):
     def test_only_native_reads(self):
         for name in (
             "hub_search_tools", "hub_get_tool_guide", "hub_list_devices",
-            "hub_get_device", "hub_read_devices", "hub_read_rule_machine",
+            "hub_get_device", "hub_read_devices", "hub_read_rules",
         ):
             self.assertTrue(is_read_tool(name), name)
         for name in (
             "hub_manage_rule_machine", "hub_call_device_command",
             "hub_create_backup", "hub_reboot", "hub_shutdown",
             "hub_report_issue", "hub_test_rule", "hub_delete_device",
+            "hub_get_unknown_action", "hub_read_unknown", "hub_read_rule_machine",
         ):
             self.assertFalse(is_read_tool(name), name)
 
@@ -89,6 +90,20 @@ class ToolSafetyTests(unittest.TestCase):
                                  ["initialize", "notifications/initialized", "tools/list",
                                   "tools/call"])
                 self.assertEqual(calls[2][1], "test-session")
+            finally:
+                await mcp.close()
+        asyncio.run(run())
+
+    def test_gateway_rejects_write_and_unknown_leaf_before_network(self):
+        async def run():
+            mcp = ReadOnlyMCP("http://192.168.1.239/mcp")
+            mcp._initialized = True
+            mcp._tools = {"hub_read_devices": {"name": "hub_read_devices"}}
+            try:
+                for leaf in ("hub_call_device_command", "hub_get_unknown_action",
+                             "hub_list_files", None):
+                    with self.assertRaises(MCPError):
+                        await mcp.call("hub_read_devices", {"tool": leaf, "args": {}})
             finally:
                 await mcp.close()
         asyncio.run(run())
@@ -163,6 +178,19 @@ class AgentContractTests(unittest.TestCase):
                 self.assertEqual(len(answer["tool_calls"]), 1)
                 self.assertEqual(answer["tool_calls"][0]["arguments"], {"deviceId": 7828})
                 self.assertIn("cause not established", answer["answer"])
+                self.assertEqual(json.loads(answer["tool_calls"][0]["response"]),
+                                 {"content": [{"type": "text", "text": '{"state":"off"}'}]})
+                async def fail_round(messages, tools, remaining):
+                    if any(item.get("role") == "tool" for item in messages):
+                        raise RuntimeError("Model API returned HTTP 503")
+                    return {"tool_calls": [{"function": {
+                        "name": "hub_get_device", "arguments": {"deviceId": 7828}}}]}
+                agent.round = fail_round
+                failed = await agent.answer("What happened?", [], mcp, 60)
+                self.assertFalse(failed["success"])
+                self.assertEqual(failed["error"], "model")
+                self.assertEqual(failed["tool_calls"][0]["response"],
+                                 answer["tool_calls"][0]["response"])
             finally:
                 await agent.close()
         asyncio.run(run())
