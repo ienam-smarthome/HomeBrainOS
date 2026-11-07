@@ -18,11 +18,14 @@ the existing causal-witness-ledger.v1 during migration.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+from math import isfinite
+import re
 from typing import Any, Callable, Mapping, Sequence
 
 SCHEMA = "homebrain-claims.v2"
 SOURCE_CLOCKS = frozenset({"source", "source-reported"})
+COMMAND_CLOCKS = frozenset({"hubitat-command", "source", "source-reported"})
 REPORTER_ROLES = frozenset({"reporter", "input-report"})
 MAX_CLAIMS = 24
 
@@ -37,7 +40,7 @@ REASONS = frozenset({
     "clock_unverified", "value_mismatch", "app_mismatch", "bad_time_order",
     "not_numeric", "unknown_operation", "out_of_scope_event",
     "missing_coverage", "coverage_target_mismatch", "cause_already_verified",
-    "correlation_window",
+    "correlation_window", "coverage_unverified", "invalid_event_pair", "unit_mismatch",
 })
 
 
@@ -53,6 +56,7 @@ class Witness:
     value: str = ""
     event_key: str = ""       # which incident event this belongs to
     app_issuer: str = ""
+    unit: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,9 @@ class Coverage:
     window_end: str = ""
     pages_checked: int = 0
     complete: bool = False    # fail-closed default
+    successful: bool = False
+    matched_count: int | None = None
+    query_kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,6 +81,7 @@ class EvidencePacket:
     root_cause_verified: bool = False
     max_correlation_lag_s: float = 300.0
     labels: Mapping[str, str] = field(default_factory=dict)  # entity -> name
+    authorized_context_event_keys: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -101,16 +109,21 @@ class Validation:
 
 # ------------------------------------------------------------------- helpers
 def _t(value: str) -> datetime | None:
+    """Only source clocks with an explicit offset are comparable."""
+    if not isinstance(value, str):
+        return None
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
+        instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return instant.astimezone(timezone.utc) if instant.tzinfo else None
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _num(value: str) -> float | None:
     try:
-        return float(str(value).rstrip("%°CF "))
-    except (ValueError, TypeError):
+        n = float(str(value).strip())
+        return n if isfinite(n) else None
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -118,7 +131,8 @@ def _wit(claim: Mapping[str, Any], packet: EvidencePacket,
          count: int | None = None) -> tuple[list[Witness], str]:
     keys = claim.get("witness_ids")
     if (not isinstance(keys, list) or not keys or len(keys) > 4
-            or not all(isinstance(k, str) for k in keys)):
+            or not all(isinstance(k, str) and k for k in keys)
+            or len(set(keys)) != len(keys)):
         return [], "missing_witness"
     out = [packet.witnesses.get(k) for k in keys]
     if any(w is None for w in out):
@@ -130,15 +144,25 @@ def _wit(claim: Mapping[str, Any], packet: EvidencePacket,
 
 def _scope_ok(claim: Mapping[str, Any], ws: Sequence[Witness],
               packet: EvidencePacket) -> bool:
-    if claim.get("scope", "focal") == "context":
-        return True
-    if not packet.focal_event_keys:
-        return True
-    return all(w.event_key in packet.focal_event_keys for w in ws)
+    scope = claim.get("scope", "focal")
+    if scope == "context":
+        return bool(packet.authorized_context_event_keys) and all(
+            bool(w.event_key) and w.event_key in packet.authorized_context_event_keys
+            for w in ws
+        )
+    if scope != "focal" or not packet.focal_event_keys:
+        return False
+    return all(bool(w.event_key) and w.event_key in packet.focal_event_keys
+               for w in ws)
 
 
-def _clock_ok(ws: Sequence[Witness]) -> bool:
-    return all(w.clock_basis in SOURCE_CLOCKS and _t(w.time) for w in ws)
+def _clock_ok(ws: Sequence[Witness], *, command: bool = False) -> bool:
+    bases = COMMAND_CLOCKS if command else SOURCE_CLOCKS
+    return all(w.clock_basis in bases and _t(w.time) is not None for w in ws)
+
+
+def _safe(value: Any, limit: int = 90) -> str:
+    return re.sub(r"[\x00-\x1f\x7f]", " ", str(value or "").strip())[:limit]
 
 
 # ---------------------------------------------------------------- validators
