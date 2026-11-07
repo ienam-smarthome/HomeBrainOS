@@ -1,5 +1,19 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**v0.18.450 source-real acceptance correction candidate:** Installed v0.18.449
+held-out natural-language OFF investigation made source queries and reconstructed
+the right recorded interval, but the final response inferred external origin
+from a reporting bridge, overclaimed command absence despite bounded pages,
+misdescribed the exact `motion=inactive` value, and included a controller
+warning from a different historical interval. Seven model rounds and failed
+synthesis repair prove CI-only improvement is insufficient. General correction:
+typed-source interpretation at final publication; source-bound negative claims;
+strict focal clock for controller statements and independently corroborated
+focal sensor attribute/value. Preserve the verified ON command and the unresolved
+OFF decision. CI and post-install first-answer uplift remain pending; do not
+create per-device incident templates or lift read/write safety limits.
+
+
 **v0.18.449 merged — source-real v0.18.448 acceptance failed:** A held-out
 read-only OFF investigation returned plausible timestamps and no repetitive
 paragraphs, but promoted the reporting bridge to an unproven external cause,
