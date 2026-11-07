@@ -2,9 +2,14 @@
 
 **Status:** Phase 1 v0.18.443 and Phase 2 source-neutral arithmetic core
 v0.18.444 merged. v0.18.445 merged through PR #1494 after four green CI checks, introducing progress-aware read-only request
-timing in the add-on without a fixed 180-second *total* deadline. A source-real
-first-answer test is still pending; the temporal operator is **not integrated**
-with live MCP evidence or model synthesis. Do not claim general-question mastery
+timing without a fixed 180-second *total* deadline. v0.18.446 merged through
+PR #1496 with four CI checks green, adding hub-local history display labels and
+read-only continuation of capped device-event pages. Source-real humidity and
+held-out TRV responses were reviewed on the installed v0.18.445 add-on, but
+first-attempt provenance and retained history completeness are not verified.
+The Phase 2 standalone temporal operator is **not yet integrated** with live
+source-qualified arithmetic; v0.18.446 paging and timezone acceptance remain
+to be measured after installation. Do not claim general-question mastery
 until first-attempt, source-real tests prove it. This plan supplements
 the permanent [Answer Quality Charter](ANSWER-QUALITY-CHARTER.md), whose
 correctness/safety targets remain in force.
@@ -102,7 +107,7 @@ Do not publish first-answer or latency gains without matched evaluation.
 
 ### v0.18.446 — source-qualified history timestamps and page coverage
 
-**Candidate, not yet source-real verified:** Model-planned read-only device
+**Merged in v0.18.446; installed behaviour not yet verified:** Model-planned read-only device
 history now requests authoritative hub timezone, preserves raw timestamps,
 and adds local GMT/BST display labels only when the IANA zone is verified.
 When the newest 50 mixed device events do not reach the requested lookback,
