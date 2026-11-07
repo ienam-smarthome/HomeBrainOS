@@ -10,6 +10,8 @@
 
 The user specifically requested one persistent project direction and fast-paced, evaluation-driven development. **Do not resume a sequence of case-specific stage patches.** Our job is to make HomeBrainOS consistently answer common Hubitat/HA questions with Claude-like natural clarity, strong evidence grounding and appropriate uncertainty. Progress is **measured answer improvement**, not extra version numbers or the count of passing unit tests.
 
+**Current generative claim migration milestone (7 Nov 2026):** v0.18.451 merged through PR #1506: canonical `claim_evidence_contract.py` is pure offline shadow-only, translates source-attested V1 witnesses, applies role/clock/focal/coverage gates, and passed 6,720 regression tests. This is not yet an installed model claim emitter or production publisher. Do not assume a model's `scope=context` authorises historical evidence, or a v1 target coverage summary proves negative history. Next obtain the installed v0.18.450/451 read-only acceptance, wire only safe shadow comparison at an existing evidence/answer checkpoint without new tool rounds, freeze a diverse matched packet evaluation, then promote claim-validated publication only if held-out factual support and first-answer usefulness improve. This supersedes any suggestion to add further per-device phrase guards.
+
 ### Every new development chat
 
 1. Read the charter, current status, case manifest, current `main`, last merged PR and active PR/CI checks. This repository takes precedence over a previous chat's partial recollection.

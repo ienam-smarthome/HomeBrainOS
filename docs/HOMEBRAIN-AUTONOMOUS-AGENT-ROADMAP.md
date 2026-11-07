@@ -1,6 +1,6 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**Claim-first migration design reviewed (v0.18.451 candidate, 7 Nov):** Claude's
+**Claim-first migration design shipped as shadow-only module (v0.18.451, 7 Nov):** Claude's
 uploaded 13-test draft correctly favors typed claims over keyword/prose patching,
 but its initial schema accepted empty read scope, unverified command clocks,
 listener event intervals and a model-authorized historical context bypass. The
@@ -10,7 +10,7 @@ module normalizes only verified v1 classes, rejects unsupported/undated source
 claims, keeps `command-issuer` distinct from unknown upstream cause, requires
 real checked zero-result windows and trusted focal/context membership, and
 exposes privacy-safe offline claim verdict counts. It is NOT live publication
-or model-selected evidence planning. Next sequence: (1) confirm installed
+or model-selected evidence planning. [PR #1506](https://github.com/ienam-smarthome/HomeBrainOS/pull/1506) shipped the canonical `claim_evidence_contract.py` after all four CI workflows were green at head `c0f015ea2aeb55fd4ec1913fa01e915710269bbd` (6,720 tests), merged as `900243183915d98510a8b9f11fa51dd30328095d`. No real-install first-answer quality score has been measured. Next sequence: (1) confirm installed
 v0.18.450/451 held-out acceptance, (2) bind verified native receipts and
 trusted event keys to shadow envelopes without new MCP reads, (3) freeze
 cross-domain evidence packets and measure factual support / useful first
