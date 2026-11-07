@@ -161,6 +161,7 @@ class AgentContractTests(unittest.TestCase):
                 self.assertEqual(answer["rounds"], 2)
                 self.assertEqual(mcp.calls, [("hub_get_device", {"deviceId": 7828})])
                 self.assertEqual(len(answer["tool_calls"]), 1)
+                self.assertEqual(answer["tool_calls"][0]["arguments"], {"deviceId": 7828})
                 self.assertIn("cause not established", answer["answer"])
             finally:
                 await agent.close()
