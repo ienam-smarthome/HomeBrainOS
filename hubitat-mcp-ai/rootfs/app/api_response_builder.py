@@ -679,7 +679,15 @@ def build_agent_response(
 
     # Run after all model and source guards so duplicate repair prose cannot
     # reappear downstream. Count removals without asserting evidence quality.
-    message, repeated_prose_removed = deduplicate_repeated_answer_prose(message)
+    # Read-only/analytical presentation only. Preserve write/confirmation
+    # wording exactly; never edit safety-relevant action instructions.
+    repeated_prose_removed = 0
+    if (
+        str(getattr(outcome, "request_class", "")) not in
+        {"write", "confirmation"}
+        and not bool(getattr(outcome, "confirmation_required", False))
+    ):
+        message, repeated_prose_removed = deduplicate_repeated_answer_prose(message)
 
     result = {
         "success": True,
