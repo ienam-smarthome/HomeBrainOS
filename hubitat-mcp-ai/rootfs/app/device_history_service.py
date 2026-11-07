@@ -1294,6 +1294,10 @@ class DeviceHistoryService:
                 "value": event.get("value"),
                 "unit": event.get("unit"),
             }
+        sample_span_seconds = (
+            round((dated_samples[-1][0] - dated_samples[0][0]).total_seconds(), 3)
+            if len(dated_samples) >= 2 else 0.0
+        )
         sample_bounds = {
             "sampleCount": len(filtered_events),
             "earliestReturned": (
@@ -1302,8 +1306,50 @@ class DeviceHistoryService:
             "latestReturned": (
                 sample_brief(dated_samples[-1][1]) if dated_samples else None
             ),
+            "spanSeconds": sample_span_seconds,
             "scope": "returned-recorded-samples-only",
         }
+        # Mixed raw history has its OWN time span. A few matching attribute
+        # samples can be several hours newer than the oldest raw device event.
+        # Calling the sample span "only N hours of history retrieved" erases
+        # that distinction and may falsely suggest a reporting outage.
+        raw_ordered = sorted(fetched_timestamps)
+        def raw_clock(dt: datetime) -> str:
+            if (
+                hub_timezone_name
+                and timezone_source in {"hub_get_info", "hub_get_info_cache"}
+            ):
+                return dt.astimezone(ZoneInfo(hub_timezone_name)).strftime(
+                    "%Y-%m-%d %H:%M:%S %Z"
+                )
+            return dt.isoformat()
+        source_event_range = {
+            "earliestReturned": raw_clock(raw_ordered[0]) if raw_ordered else None,
+            "latestReturned": raw_clock(raw_ordered[-1]) if raw_ordered else None,
+            "spanSeconds": (
+                round((raw_ordered[-1] - raw_ordered[0]).total_seconds(), 3)
+                if len(raw_ordered) >= 2 else 0.0
+            ),
+            "scope": "fetched-raw-device-events-not-source-retention",
+        }
+        attribute_label = attribute or "device event"
+        source_coverage_narrative = (
+            f"Fetched {len(source_events)} raw device event rows across "
+            f"{source_pages_fetched} page(s) for the requested {hours_back}-hour "
+            f"lookback. {len(filtered_events)} of those rows match "
+            f"attribute {attribute_label!r}. "
+            "The first-to-last matching observation span is "
+            f"{sample_span_seconds:.3f} seconds; this is NOT the span of "
+            "all raw device events fetched or proof of a constant physical "
+            "reading between samples. "
+            "The fetched raw-event span is "
+            f"{source_event_range['spanSeconds']:.3f} seconds. "
+            f"The requested lookback boundary was "
+            f"{'reached by returned timestamps' if source_window_reached else 'not reached by returned timestamps'}. "
+            f"Retrieval stopped: {history_scan_stop}. "
+            "Full source retention and complete history remain unverified; "
+            "a short older page does not prove a device reporting outage."
+        )
         data = {
             "success": True,
             "requested": requested,
@@ -1319,6 +1365,8 @@ class DeviceHistoryService:
             "attribute": attribute or None,
             "count": len(events),
             "sampleBounds": sample_bounds,
+            "sourceEventRange": source_event_range,
+            "sourceCoverageNarrative": source_coverage_narrative,
             # Counts describe FETCHED rows, not a hub-wide total.
             "sourceEventCount": len(source_events),
             "analysisEventCount": len(filtered_events) if attribute else len(events),
