@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.457**.
+Current add-on version: **0.18.458**.
+
+**Causal claim scope (v0.18.458):** Independently asserted external-origin clauses cannot borrow uncertainty from a separate actor-unknown clause. Unverified candidate lists are presented without unsupported ranking. Log corrections distinguish an executed bounded general focal query from missing app-specific execution evidence, without inventing open-ended or misaligned reads. These checks run at existing synthesis and final read-only publication boundaries; the shadow remains host-evidence-only, with model_claims_assessed=false. [Details](CHANGELOG-0.18.458.md).
 
 **Complete returned OFF sample (v0.18.457):** The adapter now reads both source `observedEvents` and boundary projections, deduplicating state/time witnesses. An unpaired older OFF can be present in raw returned observations but absent from interval boundaries; it must remain in the returned-sample denominator. The v0.18.455 private packet replays as six OFF reports, two matched commands and four unmatched returned records, without inferring external control. [Details](CHANGELOG-0.18.457.md).
 

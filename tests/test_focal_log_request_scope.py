@@ -210,3 +210,91 @@ def test_nonfocal_method_command_cannot_schedule_unrelated_app_decision_read():
     query = pending_command_app_decision_log(QUESTION, rows)
     assert query is not None and query["args"]["appId"] == "456"
     assert query["args"]["since"].startswith("2026-11-07T00:20:")
+
+
+@pytest.mark.parametrize("subject", ["Example Lamp", "Example Fan", "Example Heater"])
+def test_whole_answer_cannot_mix_actor_uncertainty_with_definite_external_origin(subject):
+    import json
+    rows = json.loads(json.dumps(receipts()).replace("Example Lamp", subject))
+    rows = [row for row in rows if row.get("sub_tool") != "hub_get_logs"]
+    rows.append(log_read("2026-11-06T23:50:00Z", "2026-11-07T00:40:00Z"))
+    rows.append({
+        "tool": "homebrain_location_events", "success": True,
+        "mutates": False, "effect": "read",
+        "evidence_kind": "authoritative_location_event_history",
+        "details": {"observedEvents": [
+            {"name": "mode", "value": "Night", "date": "2026-11-06T23:00:03Z"},
+            {"name": "mode", "value": "Late Night", "date": "2026-11-07T00:45:01Z"},
+        ]},
+    })
+    question = QUESTION.replace("Example Lamp", subject)
+    outcome = _outcome(rows)
+    outcome.message = (
+        "The bridge reported OFF at 00:30 GMT.\n"
+        "| OFF | 00:30 GMT | 12,704s | Example Bridge |\n"
+        "The hub reported Night mode before the transition.\n\n"
+        "The specific initiator remains unverified because the action happened "
+        "outside of Hubitat's control. The most likely candidates are:\n"
+        "1. A physical switch or remote.\n"
+        "2. A bridge-native schedule.\n"
+        "3. An external integration.\n\n"
+        "No automation execution was recorded in the logs around the event."
+    )
+    result = build_agent_response(outcome, model="test", elapsed_ms=1,
+                                  version="0.18.458", submitted_question=question)
+    message = result["message"]
+    assert "outside of Hubitat's control" not in message
+    assert "most likely candidates" not in message
+    assert "unranked, unverified possibilities" in message
+    assert "\n1." not in message and "\n2." not in message
+    assert "A bounded general log request included the focal time" in message
+    assert "Open-ended samples" not in message and "queries for other times" not in message
+    assert "| OFF | 00:30 GMT | 12,704s | Example Bridge |" in message
+    assert "The hub reported Night mode before the transition." in message
+    assert result["evidence"] == rows
+    assert result["evidence_validation"]["claim_evidence_shadow"]["model_claims_assessed"] is False
+
+
+@pytest.mark.parametrize("joiner", [". ", "; ", " because ", " although ", " but "])
+def test_independent_external_assertion_cannot_borrow_uncertainty_from_another_clause(joiner):
+    from causal_initiator_provenance_guard import guard_unverified_initiator_claims
+    text = "The actor is unverified" + joiner + "the action occurred outside Hubitat control."
+    revised, changed = guard_unverified_initiator_claims(text, receipts(), QUESTION)
+    assert changed and "occurred outside" not in revised
+
+
+def test_ranked_candidate_heading_scopes_following_list_without_external_keyword():
+    from causal_initiator_provenance_guard import guard_unverified_initiator_claims
+    text = "The most likely causes are:\n1. A remote.\n2. A timer.\n\nReported OFF at 00:30."
+    revised, changed = guard_unverified_initiator_claims(text, receipts(), QUESTION)
+    assert changed and "most likely" not in revised
+    assert "unranked, unverified possibilities" in revised
+    assert "- A remote." in revised and "- A timer." in revised
+    assert revised.endswith("Reported OFF at 00:30.")
+
+
+def test_actual_general_focal_query_is_not_called_open_ended_or_misaligned():
+    rows = [row for row in receipts() if row.get("sub_tool") != "hub_get_logs"]
+    rows.append(log_read(until="2026-11-07T00:35:00Z"))
+    text = "No app execution was captured in the logs around the OFF event."
+    revised, changed = guard_focal_log_coverage_claims(text, rows, QUESTION)
+    assert changed and "bounded general log request" in revised
+    assert "App-specific execution coverage" in revised
+    assert "Open-ended" not in revised and "other times" not in revised
+
+
+def test_no_log_request_correction_does_not_invent_executed_samples():
+    rows = [row for row in receipts() if row.get("sub_tool") != "hub_get_logs"]
+    revised, changed = guard_focal_log_coverage_claims(
+        "No event was captured in logs around the transition.", rows, QUESTION)
+    assert changed and "No bounded request" in revised
+    assert "Open-ended" not in revised and "other times" not in revised
+
+
+def test_whole_answer_repair_is_used_by_synthesis_as_well_as_api():
+    revised, issues = validate_synthesis(
+        "The actor is unverified because the event happened outside Hubitat control. "
+        "The most likely causes are:\n1. A remote.\n2. A timer.",
+        receipts(), original_user=QUESTION, causal=True)
+    assert "causal_unverified_initiator" in issues
+    assert "happened outside" not in revised and "most likely" not in revised
