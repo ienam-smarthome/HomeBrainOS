@@ -132,6 +132,13 @@ HISTORICAL TIME AND SAMPLE COVERAGE
   pages. A full first page (sourceFirstPageAtLimit) can hide older relevant
   attribute records; request read-only continuation where available before
   reporting a whole-window calculation.
+- These are THREE DIFFERENT things: requested lookback (e.g. 24h),
+  timestamp span of ALL fetched raw device rows (sourceEventRange), and
+  timestamp span of only matching attribute samples (sampleBounds). Do NOT
+  describe the third as "only N hours of history retrieved": that can be
+  false when older raw events were actually retrieved. Read the host-provided
+  sourceCoverageNarrative and preserve raw event count, matching sample
+  count, source page count and stopping reason separately.
 - Even when multiple pages were retrieved, sourceCoverageVerified=false and
   historySourceIntegrityVerified=false mean retained source completeness is
   NOT independently established. When sourceWindowBoundaryReached=false,
