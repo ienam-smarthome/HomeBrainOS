@@ -226,6 +226,7 @@ _STRONG_NO_HUB_COMMAND = re.compile(
     r"no\s+internal\s+hubitat\s+commands?\s+preceded|"
     r"(?:there\s+were\s+)?no\s+hubitat[- ]issued\s+commands?|"
     r"no\s+hubitat\s+commands?\s+(?:were\s+)?(?:issued|sent|executed)|"
+    r"hubitat[^\n.]{0,150}\bit\s+(?:did\s+not|didn't|never)\s+(?:issue|send)\b|"
     r"hubitat\s+(?:only|never)\s+(?:acted|observed)\s+"
     r"(?:passively|in\s+a\s+reactionary\s+capacity))\b",
     re.I,
@@ -237,7 +238,7 @@ _UNPROVEN_LISTENER_EXCLUSION = re.compile(
     re.I,
 )
 _EXTERNAL_VERDICT = re.compile(
-    r"\b(?:operated|controlled|switched|toggled|initiated|commanded)\s+"
+    r"\b(?:operated|controlled|switched|toggled|initiated|commanded|triggered)\s+"
     r"(?:\w+\s+){0,4}?(?:externally|outside\s+(?:of\s+)?hubitat)\b"
     r"|\b(?:physical\s+interaction|manual\s+operation|wall[- ]switch\s+press)"
     r"\s+(?:was|is)\s+(?:the\s+)?(?:cause|initiator)\b",
@@ -284,18 +285,31 @@ def guard_unverified_initiator_claims(
         # A verified direct command may establish who issued that *command*.
         # It still does not establish whether a Hue/Matter-native process
         # initiated a different physical report.
+        # A caveat in a separate clause does not qualify a positive
+        # claim that the source of the command was external. Inspect each
+        # assertion clause independently rather than letting "actor unknown"
+        # immunise a preceding unsupported "triggered externally" verdict.
+        external_claim = any(
+            bool(_EXTERNAL.search(clause))
+            and (
+                bool(_ASSERTION.search(clause))
+                or bool(_EXTERNAL_VERDICT.search(clause))
+                or (
+                    "conclusion:" in clause.casefold()
+                    and bool(_EXTERNAL.search(clause))
+                )
+            )
+            and not bool(_SCOPE_QUALIFIER.search(clause))
+            for clause in re.split(r"[,;]|\b(?:and|but)\b", stripped, flags=re.I)
+        )
         external_guess = (
             not external_verified
-            and bool(_EXTERNAL.search(stripped))
-            and (bool(_ASSERTION.search(stripped))
-                 or bool(_EXTERNAL_VERDICT.search(stripped))
-                 or ("conclusion:" in stripped.casefold()
-                     and bool(_EXTERNAL.search(stripped))))
-            and not bool(_SCOPE_QUALIFIER.search(stripped))
-            and bool(re.search(r"\b(?:caus\w*|initiat\w*|"
-                               r"trigger\w*|command\w*|logic|"
-                               r"automatio\w*|controlled|toggled|operated|switched|responsible|interaction)\b",
-                               stripped, re.I))
+            and external_claim
+            and bool(re.search(
+                r"\b(?:caus\w*|initiat\w*|trigger\w*|command\w*|logic|"
+                r"automatio\w*|controlled|toggled|operated|switched|"
+                r"responsible|interaction)\b", stripped, re.I,
+            ))
         )
         absence_as_proof = bool(_STRONG_NO_HUB_COMMAND.search(stripped))
         listener_excluded = bool(_UNPROVEN_LISTENER_EXCLUSION.search(stripped))
