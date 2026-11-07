@@ -1,5 +1,25 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**Claim-first migration design reviewed (v0.18.451 candidate, 7 Nov):** Claude's
+uploaded 13-test draft correctly favors typed claims over keyword/prose patching,
+but its initial schema accepted empty read scope, unverified command clocks,
+listener event intervals and a model-authorized historical context bypass. The
+actual v1 ledger uses `state-report`, `issued-command`,
+`reported_switch_off`, `issued_on` and no event_key. The generic v2 shadow
+module normalizes only verified v1 classes, rejects unsupported/undated source
+claims, keeps `command-issuer` distinct from unknown upstream cause, requires
+real checked zero-result windows and trusted focal/context membership, and
+exposes privacy-safe offline claim verdict counts. It is NOT live publication
+or model-selected evidence planning. Next sequence: (1) confirm installed
+v0.18.450/451 held-out acceptance, (2) bind verified native receipts and
+trusted event keys to shadow envelopes without new MCP reads, (3) freeze
+cross-domain evidence packets and measure factual support / useful first
+answers / downgrade rate, (4) only then graduate claim-first publication
+with deterministic supported-fact fallback and gradually retire overlapping
+prose guards. Preserve source-role, source completeness, privacy, read/write
+and confirmation boundaries throughout.
+
+
 **v0.18.450 source-real acceptance correction candidate:** Installed v0.18.449
 held-out natural-language OFF investigation made source queries and reconstructed
 the right recorded interval, but the final response inferred external origin
