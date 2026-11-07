@@ -497,6 +497,23 @@ def _line(r: ClaimResult, p: EvidencePacket) -> tuple[str, str]:
             f"{_name(p, b.entity)} {_safe(b.event_class)}={_safe(b.value)} ({b.time}) are "
             f"{_dur(f['lag_s'])} apart. This is a correlation, not shown to "
             f"be the cause.")
+    if k == "journal_observation":
+        return "context", (
+            f"Historical Journal received {_name(p, f['entity'])} "
+            f"{_safe(f['attribute'])}={_safe(f['value'])} at "
+            f"{f['received_at']} (collector-received, not independently "
+            "verified original sensor-event time)."
+        )
+    if k == "transition_pairing":
+        return "scope", (
+            f"Of {f['total']} source-reported OFF transitions for "
+            f"{_name(p, f['entity'])} in the overlapping returned records, "
+            f"{f['matched']} had a recorded Hubitat command-off within "
+            f"{f['threshold_seconds']} seconds; {f['unmatched']} had no "
+            "matching command in the returned records. Historical retention "
+            "and unobserved command paths are not excluded; this does not "
+            "prove an external cause."
+        )
     if k == "absent_in_scope":
         cv = f["coverage"]
         scope = (f"{cv.pages_checked} page(s) of {_safe(cv.source)}"
