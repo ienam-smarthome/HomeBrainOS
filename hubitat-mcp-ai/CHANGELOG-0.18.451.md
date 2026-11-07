@@ -59,8 +59,7 @@ coverage object is fabricated from that summary.
 
 ## Acceptance and next steps
 
-Before merge all four mandatory CI workflows must be green on the exact
-head, including full suite/add-on smoke. Installation of v0.18.450/451 and
+Merged as [PR #1506](https://github.com/ienam-smarthome/HomeBrainOS/pull/1506) at commit `900243183915d98510a8b9f11fa51dd30328095d`, after all four CI workflows passed on tested head `c0f015ea2aeb55fd4ec1913fa01e915710269bbd`. The final full Python suite had **6,720 passing tests**; add-on smoke and metadata checks also passed. Installation of v0.18.450/451 and
 fresh read-only HomeBrain Technical JSON remain unverified.
 
 Follow up by deriving trusted focal/context keys from an existing final
