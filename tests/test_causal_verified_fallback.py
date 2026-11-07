@@ -185,7 +185,8 @@ def test_source_timed_sensor_event_may_be_reported_but_not_inferred_causal():
     native["details"]["eventCount"] = 1
     answer = verified_failed_repair_answer(rows, original_question=QUESTION)
     assert "Source-timed sensor observations" in answer
-    assert "reported" not in answer.split("Source-timed sensor observations")[1].split("Timing alone")[0] or "motion=inactive" in answer
+    assert "Desk Sensor motion=inactive" in answer
+    assert "00:29:40" in answer
     assert "Timing alone is not proof of a trigger" in answer
     native["details"]["windowVerified"] = False
     answer = verified_failed_repair_answer(rows, original_question=QUESTION)
