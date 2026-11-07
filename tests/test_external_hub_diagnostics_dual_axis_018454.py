@@ -43,7 +43,7 @@ def test_combined_memory_cpu_dual_axis_cursor_and_local_split_toggle():
 const vm=require('node:vm'),assert=require('node:assert/strict'),elements=new Map();
 function makeNode(tag='div'){
  return {tag,attrs:{},children:[],textContent:'',value:'',listeners:{},
-  setAttribute(k,v){this.attrs[k]=String(v)},
+  setAttribute(k,v){this.attrs[k]=String(v);if(k==='id')elements.set(String(v),this)},
   append(...items){this.children.push(...items)},
   replaceChildren(){this.children=[]},
   addEventListener(k,fn){this.listeners[k]=fn},
