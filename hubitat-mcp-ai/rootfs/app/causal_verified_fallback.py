@@ -76,7 +76,9 @@ def verified_failed_repair_answer(
                 return None
             states[key] = reporter
     ordered = sorted(states)
-    if not ordered or ordered[-1] != (focal, "off"):
+    if ((focal, "off") not in ordered
+            or any(t > focal and state == "off" for t, state in ordered)
+            or any(t == focal and state != "off" for t, state in ordered)):
         return None
     before = [key for key in ordered if key[0] < focal]
     preceding = before[-1] if before and before[-1][1] == "on" else None
@@ -136,6 +138,8 @@ def verified_failed_repair_answer(
                 continue
             matching = []
             for e in es:
+                if not isinstance(e, Mapping):
+                    continue
                 t = _time(e.get("date"))
                 producer = e.get("producedBy") or {}
                 if (t and abs((t - focal).total_seconds()) <= 2
@@ -180,6 +184,8 @@ def verified_failed_repair_answer(
             continue
         windows.add((str(a.get("deviceId")), start, end))
         for e in events:
+            if not isinstance(e, Mapping):
+                continue
             t = _time(e.get("date"))
             if t and start <= t <= end and e.get("name") == a.get("attribute"):
                 observed.append(_clean(d.get("label")) + " " + str(a["attribute"])
@@ -195,8 +201,10 @@ def verified_failed_repair_answer(
         if _clean(d.get("subject")) != name:
             continue
         for sensor in ((d.get("historicalJournal") or {}).get("sensors") or []):
+            if not isinstance(sensor, Mapping):
+                continue
             for e in sensor.get("events") or []:
-                if e.get("timestampBasis") == "collector-received":
+                if isinstance(e, Mapping) and e.get("timestampBasis") == "collector-received":
                     archive.append(_clean(sensor.get("label")) + " "
                                    + _clean(sensor.get("attribute")) + "="
                                    + _clean(e.get("value")))
@@ -236,7 +244,7 @@ def verified_failed_repair_answer(
     elif focal_log_windows:
         parts.append(
             "**App-log coverage:** " + str(len(focal_log_windows))
-            + " time-bounded log query/queryies included the OFF instant; "
+            + " time-bounded log request(s) included the OFF instant; "
             "a checked request is not proof of a historical initiating action."
         )
     parts.append(
