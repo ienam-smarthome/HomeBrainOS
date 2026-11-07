@@ -33,12 +33,16 @@ The maintained component is `hubitat-mcp-ai/`; current release is **0.18.455**. 
 
 No old PR was closed or merged as part of this review.
 
+## Open issue backlog to reconcile against current code
+
+Seven open issue records remain. Their historical descriptions do not prove the same defects persist in v0.18.455. Prioritise source-contract and acceptance reconciliation: [#942](https://github.com/ienam-smarthome/HomeBrainOS/issues/942) proposal-only identity/native-rule preflight; [#923](https://github.com/ienam-smarthome/HomeBrainOS/issues/923) typed action overlap and scheduler provenance; [#828](https://github.com/ienam-smarthome/HomeBrainOS/issues/828) upstream fresh bulk-health inventory; [#758](https://github.com/ienam-smarthome/HomeBrainOS/issues/758) room-status completeness and timestamps; [#733](https://github.com/ienam-smarthome/HomeBrainOS/issues/733) whole-hub optimisation evidence; [#725](https://github.com/ienam-smarthome/HomeBrainOS/issues/725) configuration markers versus runtime failure; [#686](https://github.com/ienam-smarthome/HomeBrainOS/issues/686) concrete performance-target naming. Keep these as cross-domain evaluation candidates, verify current implementation and fresh source acceptance before closing, and avoid reviving obsolete intent-routing rules from old issue text.
+
 ## Continuity improvements
 
 AGENTS still described v0.18.451 as the current migration checkpoint, while the status/roadmap correctly documented v0.18.455. CLAUDE.md also retains an obsolete “512 tests” line and a three-workflow summary. Prefer exact-head Actions results and current handoff over those historic counts. This review refreshes the primary AGENTS checkpoint; historical status entries remain chronological records rather than current acceptance claims.
 
 ## Validation and limits
 
-Capture changes are offline tooling only; add-on version stays 0.18.455. Local Python compilation and a standard-library smoke check passed. The bundled local Python has no pytest, so full pytest verification is delegated to required PR CI and must be recorded from actual results before merge. Regression tests cover missing/rejected/unattested diagnostics, both source paths, unknown schemas, strict booleans and private-field exclusion.
+Capture changes are offline tooling only; add-on version stays 0.18.455. Local Python compilation and a standard-library smoke check passed. The bundled local Python has no pytest, so pytest verification ran in PR CI. [PR #1516](https://github.com/ienam-smarthome/HomeBrainOS/pull/1516) passed all four required workflows on exact head `975202fa56d3d54ee0e32681d5f7909b5d63ba6f`: **6,756 Python tests**, two nonblocking warnings, container smoke, metadata, Hubitat gate and scorecard integrity. Squash merge: `bcded55b65703406cd337763112e9e9b756e120b`. The Hubitat workflow now includes capture script/test paths so these changes trigger its blocking gate. Regression tests cover missing/rejected/unattested diagnostics, both source paths, unknown schemas, strict booleans and private-field exclusion.
 
 No Home Assistant/Hubitat device, rule, provider, cost policy, confirmation or runtime publication was changed. Rollback is a revert of the capture fields/tests and documentation; existing captures remain readable because the new summary is additive. Installed quality, first-attempt provenance, deployed SHA and initiating controller remain unverified.
