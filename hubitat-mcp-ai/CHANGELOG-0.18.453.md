@@ -65,8 +65,7 @@ host-calculated numeric deltas for humidity, heating and power, plus
 non-causal hub-health limitations. The synthetic tests are not live answer
 quality measurements.
 
-Mandatory exact-head GitHub CI (full suite, add-on smoke, HomeBrain validation,
-scorecard integrity) must pass before merge. Only after merge and install of
+Merged [PR #1511](https://github.com/ienam-smarthome/HomeBrainOS/pull/1511) after all four required GitHub checks passed at exact head `1600af59001959d37e3e86b79aa7db4931b32efd`, including **6,738 passing Python tests**, packed add-on smoke and metadata. Squash main commit `755635e8fb08d8f976504a3f55ef145d21a30c6c`. Only after installation of
 v0.18.453 can source-real read-only acceptance be performed: ask the same
 most-recent OFF question and inspect both answer and
 `evidence_validation.claim_evidence_shadow`. The expected **historical**
