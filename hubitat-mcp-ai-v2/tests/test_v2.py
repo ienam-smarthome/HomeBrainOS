@@ -71,7 +71,7 @@ class ToolSafetyTests(unittest.TestCase):
                         "content": [{"type": "text", "text": '{"password":"private-value"}'}]
                     }
                 })
-                return httpx.Response(200, content="event: message\\ndata: "+body+"\\n\\n",
+                return httpx.Response(200, content="\n".join(["event: message", "data: "+body, "", ""]),
                                       headers={"Content-Type": "text/event-stream"})
             raise AssertionError("Unexpected HTTP method")
         async def run():
