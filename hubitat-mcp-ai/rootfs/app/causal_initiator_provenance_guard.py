@@ -252,7 +252,10 @@ _UNPROVEN_LISTENER_EXCLUSION = re.compile(
     r"\b(?:were|was)\s+not\s+the\s+(?:initiating|commanding)\s+(?:app|controller)\b|"
     r"\b(?:acted|served)\s+as\s+(?:listeners?|subscribers?)"
     r"[^.\n]{0,90}?\s+(?:rather|instead)\s+than\s+"
-    r"(?:the\s+)?(?:triggers?|initiators?|command\s+issuers?)\b)",
+    r"(?:the\s+)?(?:triggers?|initiators?|command\s+issuers?)\b|"
+    r"\b(?:downstream\s+)?listeners?\b[^.\n]{0,140}?"
+    r"\b(?:they\s+)?(?:did\s+not|didn't|could\s+not|cannot)\s+"
+    r"initiat(?:e|ed)\b)",
     re.I,
 )
 # A reported bridge state is not evidence for where the *action* originated.
