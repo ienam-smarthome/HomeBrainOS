@@ -359,7 +359,7 @@ def _dur(seconds: float) -> str:
 
 
 def _name(p: EvidencePacket, entity: str) -> str:
-    return p.labels.get(entity, f"device {entity}")
+    return _safe(p.labels.get(entity, f"device {entity}"))
 
 
 def _line(r: ClaimResult, p: EvidencePacket) -> tuple[str, str]:
@@ -369,7 +369,7 @@ def _line(r: ClaimResult, p: EvidencePacket) -> tuple[str, str]:
     sec = "context" if ctx else "verified"
     if k == "observed_value":
         return sec, (f"{_name(p, f['entity'])} reported {f['attribute']}="
-                     f"{f['value']} at {f['time']}.")
+                     f"{_safe(f['value'])} at {f['time']}.")
     if k == "observed_interval":
         return sec, (f"{_name(p, f['entity'])}: {_dur(f['seconds'])} between "
                      f"recorded events {f['start']} and {f['end']}.")
@@ -377,8 +377,8 @@ def _line(r: ClaimResult, p: EvidencePacket) -> tuple[str, str]:
         return sec, (f"{_name(p, f['entity'])}: {_dur(f['seconds'])} elapsed "
                      f"({f['start']} to {f['end']}).")
     if k == "calculation":
-        return sec, (f"{_name(p, f['entity'])} {f['attribute']} changed from "
-                     f"{f['from']} to {f['to']} (delta {f['delta']:+g}).")
+        return sec, (f"{_name(p, f['entity'])} {_safe(f['attribute'])} changed from "
+                     f"{_safe(f['from'])} to {_safe(f['to'])} (delta {f['delta']:+g}).")
     if k == "command_issued":
         return sec, (f"Hubitat app {f['app']} issued {f['command']} to "
                      f"{_name(p, f['entity'])} at {f['time']}.")
@@ -389,17 +389,17 @@ def _line(r: ClaimResult, p: EvidencePacket) -> tuple[str, str]:
     if k == "correlation":
         a, b = f["a"], f["b"]
         return "correlation", (
-            f"{_name(p, a.entity)} {a.event_class}={a.value} ({a.time}) and "
-            f"{_name(p, b.entity)} {b.event_class}={b.value} ({b.time}) are "
+            f"{_name(p, a.entity)} {_safe(a.event_class)}={_safe(a.value)} ({a.time}) and "
+            f"{_name(p, b.entity)} {_safe(b.event_class)}={_safe(b.value)} ({b.time}) are "
             f"{_dur(f['lag_s'])} apart. This is a correlation, not shown to "
             f"be the cause.")
     if k == "absent_in_scope":
         cv = f["coverage"]
-        scope = (f"{cv.pages_checked} page(s) of {cv.source}"
+        scope = (f"{cv.pages_checked} page(s) of {_safe(cv.source)}"
                  + (f", {cv.window_start} to {cv.window_end}"
                     if cv.window_start else ""))
         tail = "" if cv.complete else " Coverage is incomplete, so this is not proof it never happened."
-        return "scope", (f"No {f['what']} found for {_name(p, cv.entity)} "
+        return "scope", (f"No {_safe(f['what'])} found for {_name(p, cv.entity)} "
                          f"in the records checked ({scope}).{tail}")
     return "unknown", ""
 
@@ -421,7 +421,7 @@ def render_claims(v: Validation, p: EvidencePacket) -> str:
         if sections.get(key):
             out.append(f"{title}:\n" + "\n".join(f"- {t}" for t in sections[key]))
     not_est: list[str] = []
-    if not p.root_cause_verified:       # derived, not model-controlled
+    if not p.root_cause_verified and p.focal_event_keys:
         not_est.append("What initiated the change is not established.")
     for r in v.rejected:
         kind = str(r.claim.get("kind", "claim"))
@@ -470,21 +470,106 @@ def publish(
 # -------------------------------------------------------- v1 migration helper
 def packet_from_v1_ledger(
     ledger: Mapping[str, Any], *, coverage: Sequence[Coverage] = (),
-    focal_event_keys: frozenset = frozenset(),
+    focal_event_keys: frozenset[str] = frozenset(),
+    authorized_context_event_keys: frozenset[str] = frozenset(),
 ) -> EvidencePacket:
-    """Adapt causal-witness-ledger.v1 rows. Missing fields fail closed."""
-    ws: dict[str, Witness] = {}
-    for w in ledger.get("witnesses") or []:
-        if isinstance(w, Mapping) and isinstance(w.get("witness_id"), str):
-            ws[w["witness_id"]] = Witness(
-                witness_id=w["witness_id"], entity=str(w.get("entity", "")),
-                event_class=str(w.get("event_class", "")),
-                role=str(w.get("role", "")), time=str(w.get("time", "")),
-                clock_basis=str(w.get("clock_basis", "unknown")),
-                value=str(w.get("value", "")),
-                event_key=str(w.get("event_key", "")),
-                app_issuer=str(w.get("app_issuer", "")))
+    """Translate actual v1 event classes, roles and source clock semantics.
+
+    The existing v1 ledger contains no event_key and often no switch value:
+    these may be derived from the source-attested class and timestamp. Focal
+    membership remains a separate trust decision made by the host planner.
+    A v1 coverage summary is not enough to attest checked zero-result pages.
+    """
+    if (not isinstance(ledger, Mapping)
+            or ledger.get("schema") != "causal-witness-ledger.v1"):
+        return EvidencePacket({})
+    converted: dict[str, Witness] = {}
+    switches = {
+        "journal_source_switch_on": ("on", "source"),
+        "journal_source_switch_off": ("off", "source"),
+        "reported_switch_on": ("on", "source-reported"),
+        "reported_switch_off": ("off", "source-reported"),
+        "journal_received_switch_on": ("on", "collector-received"),
+        "journal_received_switch_off": ("off", "collector-received"),
+    }
+    commands = {
+        "issued_on": "command-on",
+        "issued_off": "command-off",
+        "issued_setlevel": "command-setlevel",
+    }
+    for row in (ledger.get("witnesses") or [])[:200]:
+        if not isinstance(row, Mapping):
+            continue
+        witness_id = row.get("witness_id")
+        entity = str(row.get("entity") or "")
+        original_class = str(row.get("event_class") or "")
+        clock = str(row.get("clock_basis") or "unknown")
+        role = str(row.get("role") or "")
+        instant = str(row.get("time") or "")
+        value = str(row.get("value") or "")
+        event_class = original_class
+        if not isinstance(witness_id, str) or not witness_id or not entity:
+            continue
+        if original_class in switches and role == "state-report":
+            event_class = "switch"
+            value, expected_clock = switches[original_class]
+            if clock != expected_clock:
+                continue
+            role = "reporter"
+        elif original_class in commands and role == "issued-command":
+            event_class = commands[original_class]
+            role = "command-issuer"
+        elif role == "input-report" and original_class in {
+            "motion", "presence", "occupancy",
+        }:
+            if not value:
+                continue
+        elif role == "state-report" and original_class == "reported_level" and value:
+            event_class = "level"
+            role = "reporter"
+        else:
+            continue
+        event_key = f"{entity}|{original_class}|{instant}"
+        converted[witness_id] = Witness(
+            witness_id=witness_id, entity=entity, event_class=event_class,
+            role=role, time=instant, clock_basis=clock, value=value,
+            event_key=event_key, app_issuer=str(row.get("app_issuer") or ""),
+            unit=str(row.get("unit") or ""),
+        )
+    # The caller may supply only preverified read evidence, not arbitrary
+    # v1 target_source_coverage summaries claiming historical completeness.
     return EvidencePacket(
-        witnesses=ws, coverage={c.coverage_id: c for c in coverage},
+        witnesses=converted,
+        coverage={v.coverage_id: v for v in coverage
+                  if isinstance(v, Coverage) and v.coverage_id},
         focal_event_keys=focal_event_keys,
-        root_cause_verified=ledger.get("root_cause_verified") is True)
+        authorized_context_event_keys=authorized_context_event_keys,
+        root_cause_verified=ledger.get("root_cause_verified") is True,
+    )
+
+
+def assess_claims_shadow(
+    envelope: Any, ledger: Mapping[str, Any], *,
+    coverage: Sequence[Coverage] = (),
+    focal_event_keys: frozenset[str] = frozenset(),
+    authorized_context_event_keys: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Offline/read-only, privacy-limited diagnostics; never publishes text."""
+    packet = packet_from_v1_ledger(
+        ledger, coverage=coverage, focal_event_keys=focal_event_keys,
+        authorized_context_event_keys=authorized_context_event_keys,
+    )
+    verdict = validate_claims(envelope, packet)
+    return {
+        "schema": SCHEMA,
+        "shadow_only": True,
+        "witnesses": len(packet.witnesses),
+        "claims": len(verdict.results),
+        "supported": len(verdict.supported),
+        "rejected": len(verdict.rejected),
+        "envelope_valid": verdict.envelope_ok,
+        "reason_codes": sorted(
+            {r.reason for r in verdict.rejected if r.reason in REASONS}
+            | ({verdict.envelope_reason} if not verdict.envelope_ok else set())
+        ),
+    }
