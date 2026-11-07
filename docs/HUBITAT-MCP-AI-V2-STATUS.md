@@ -1,56 +1,44 @@
-# Hubitat MCP AI v2 — clean-room pilot status
+# Hubitat MCP AI v2 — architecture and live acceptance
 
 Date: 2026-11-07
-Repository: `ienam-smarthome/HomeBrainOS`
-Original development branch: `feat/hubitat-mcp-ai-v2-clean-rebuild`
-Correction branch: `fix/v2-receipts-verification-alpha2`
-Version: `2.0.0-alpha.2`
+Version: `2.0.0-alpha.3`
+Development branch: `feat/v2-upstream-native-mcp`
 
-## Decision
+## Current user direction
 
-The user observed that Thaura AI's free service connected to the same upstream Hubitat MCP server answered a home incident question well. Rather than add another HomeBrain per-question causal/answer patch, build an isolated **model-led v2** using native MCP tool discovery and a concise upstream-inspired skill. The experiment tests whether the model autonomously chooses and follows up on the right sources, without the old deterministic reasoning scaffolding.
+V2 is a clean, model-led client for the upstream Hubitat MCP server's intended capabilities: investigation, device control, automation authoring and administration according to the connected server/token permissions. Do not reintroduce v1 planners, incident-specific fixes, answer rewriting, fixed round quotas or a HomeBrain-maintained tool inventory. V1 remains separate.
 
-**This is a new app, not a destructive rewrite of HomeBrainOS v1.** Leave `hubitat-mcp-ai/`, its data and deployment untouched.
+This supersedes the earlier read-only-pilot architecture and alpha.2 frozen allowlist. A read-only token is appropriate for acceptance testing, but is a server permission choice rather than v2's permanent capability boundary.
 
-## Implemented in candidate source
+## Architecture
 
-- Independent Home Assistant add-on `hubitat-mcp-ai-v2/` with unique slug `hubitat_mcp_ai_v2`, ingress port 8789 and optional direct port disabled.
-- A direct Ollama-compatible `/api/chat` function-calling loop; the model discovers live read tools from MCP `tools/list`, selects tool calls and receives unmodified-in-substance read receipts except for credential redaction and large-payload truncation explicitly marked as such.
-- No specialized causal router, no fixed round quota, no incident-specific planners, no rewriting generated conclusions, no staged claim guards, no Rule Machine inventory shortcut and no v1 historical journal.
-- A short `SKILL.md` with guidance adapted from the upstream MIT Hubitat MCP skill; live schemas remain authoritative.
-- Exact unchanged `external_hub_diagnostics.py` blob copied from v1, in an independent persistent SQLite file. Native reported load equivalent must not be described as measured CPU utilisation; a connection incident or systemStart is not proof of a memory-failure cause.
-- Compact Ask/Chat page and responsive graphical external recorder page with selected time windows, independent OS-memory/CPU axes, retained native timestamps, dotted grids/hover crosshairs and observed startup/outage markers.
-- Minimal tests and v2-only workflow.
+Home Assistant ingress UI → standalone v2 API → Ollama-compatible model/function-call loop → Streamable HTTP MCP client → connected Hubitat MCP server.
 
-## Deliberate retained boundaries
+The live server catalog is refreshed and paginated per request. Gateways accept empty calls for schema discovery and `tool`/`args` calls for execution; flat catalogs are supported. No fixed tool names or gateway-membership maps are enforced by HomeBrain. Unadvertised top-level tool names are refused; the server resolves gateway leaves and applies its own access checks. Tool calls are sequential and not automatically retried after an uncertain outcome.
 
-The pilot is **read-only**. Only explicitly listed upstream read tools and reviewed read gateways are presented; unknown tool names and gateway sub-tools fail closed. This is a frozen client policy, not proof of arbitrary server implementations. Write/manage/call-device/reboot functions are not invocable. This is an experiment boundary, not a limitation on investigation sophistication. Retain hub permission gates, exact source tool schemas, credential redaction, operational timeouts and safe Hubitat probe cadence.
+The bundled upstream `SKILL.md`, `safety-guide.md` and `rule-patterns.md` are unmodified, pinned to upstream `98bc7ca2d0f1bd2e2857962292b33d83683bc2b0` and include the MIT license. All three are supplied to the model. Live schemas and `hub_get_tool_guide` are authoritative. New automations should prefer native Rule Machine/Visual Rules; the bundled rule patterns describe legacy custom rules.
 
-A future v2 with control capabilities would require new explicit user authorization and independent write-safety review, rather than automatically inheriting v1 permission options.
+Calls carrying `confirm=true` pause for an explicit UI decision tied to one pending call and request. Approval is not inferred from assistant output or tool content, does not persist for another action and does not bypass hub backup or permission checks. Ordinary requested operations follow upstream identity and access guidance. No real device, rule, hub setting or permission is changed during repository development.
 
-## Diagnostics migration
+Credential redaction, per-call operational timeouts, the request deadline and explicit context truncation remain. These are resource/privacy safeguards, not answer-quality patches. The model owns the investigation and final prose.
 
-The recorder implementation is retained, but v2 cannot read v1's `/data` by default. V2 starts a new SQLite history file. Preserving v1 data in v2 requires a deliberate copy/migration after deployment; do not claim the historical samples automatically transfer.
+## Evidence and recorder
 
-## Test plan (not yet live-verified)
+Receipts contain the bounded, redacted source response shown to the model, with arguments, status and timing. Completed receipts survive later model failures. Receipts are browser-session responses, not durable archives or automatic follow-up context.
 
-1. Run v2 Python compilation, unit/protocol tests and container build/startup checks for each correction; report the actual tested checkout SHA.
-2. Install v2 alongside v1, retain v1, configure known MCP URL and existing Ollama free cloud/local model credentials.
-3. Read-only repeat tests: Livingroom Light 2 most recent OFF; bathroom humidity >70% until <60%; thermostat heating intervals and TRV demand; memory/reboot incident.
-4. Compare with v1, Claude and Thaura only where source evidence/time window/model capabilities are known and comparable; record first-answer utility, exact tool receipts, unsupported causal claims, incomplete source work, latency and cost.
-5. Do not declare v2 superior or production-ready from green unit tests or a few screenshots.
+The external recorder source is unchanged from v1 and writes v2's independent SQLite file. No automatic v1 migration. Its UI/API read that database; the model's MCP loop does not automatically ingest recorder history.
 
-## Verified baseline and correction candidate
+## Verification history
 
-[PR #1524](https://github.com/ienam-smarthome/HomeBrainOS/pull/1524) merged as `fd02765b2e4ffa328445e3b41abb9ce147e87749`.
-The GitHub check-runs endpoint for final head `2f390e65efa4fb1312c903118bafde9545101769` confirms **nine successful checks**, including push and PR runs. The PR-only workflow endpoint exposes three workflows/six jobs and is not the full check count.
-The [v2 run](https://github.com/ienam-smarthome/HomeBrainOS/actions/runs/42389513658) log checked out synthetic merge `8215d43bc3635c08a00c381b02b5eddf50c1851e`; it ran 10 passing tests. Its dedicated amd64 container build/import and unconfigured HTTP probes passed. This does not verify aarch64/armv7 installation or Home Assistant ingress.
+- PR #1524 introduced the isolated alpha.1, merged as `fd02765b2e4ffa328445e3b41abb9ce147e87749`. The full check-runs endpoint verifies nine successful checks on development head `2f390e65efa4fb1312c903118bafde9545101769`. The v2 PR test log checked out synthetic merge `8215d43bc3635c08a00c381b02b5eddf50c1851e` and ran 10 tests.
+- PR #1525 introduced alpha.2 receipts and a frozen read allowlist, merged as `9e2f345c076aed9f3c271faa1794457b8ca7ab8e`. Eight checks passed on its final head; 11 v2 tests. The allowlist diverged from the now-clarified upstream scope and is removed in alpha.3; receipt improvements remain.
+- Alpha.3 CI/merge evidence is recorded on [PR #1526](https://github.com/ienam-smarthome/HomeBrainOS/pull/1526). Review the final head and actual workflow checkout before claiming validation. CI includes protocol/confirmation regressions, JavaScript syntax and amd64 Docker import/HTTP startup. It uses no live hub/model credentials.
 
-Alpha.2 corrections preserve the same bounded, redacted response text delivered to the model in each returned receipt, including explicit truncation metadata. Completed receipts survive subsequent model/transport failures. The UI already displays these returned receipts; they are not automatically persisted or imported into later conversation context.
-The tool policy now uses fixed upstream read names and gateway-to-leaf membership reviewed from upstream commit `98bc7ca2d0f1bd2e2857962292b33d83683bc2b0`, rather than accepting arbitrary name prefixes. Live server schemas and permission gates remain authoritative; new upstream names require policy review. No case-specific answer patch is added.
+## Next acceptance
 
-Correction CI and merge state are tracked on [PR #1525](https://github.com/ienam-smarthome/HomeBrainOS/pull/1525); consult its final head and workflow logs. Live first-answer usefulness, factual grounding and comparison against v1/Claude/Thaura remain **not measured**.
+1. Install/update v2 alongside v1; verify ingress and real model/MCP connectivity. Other advertised architectures require deployment acceptance beyond the amd64 smoke.
+2. Use an upstream read-only client token for first-answer investigation comparisons. Ask the same frozen question with no prompt repair and preserve answers/receipts.
+3. Compare lighting, humidity, heating and hub-incident questions against matched v1/Claude/Thaura evidence. Publish sample counts, provider/model, code version, latency, missing sources and unsupported claims; do not claim quality from unit tests.
+4. Test device control and native automation only with explicit user-authorized test operations and upstream safety requirements.
 
-## Current evidence and caveats
-
-This is an alpha candidate. No live Hubitat model call, HA ingress acceptance, recorder source data continuity or deployed test has been verified in this repo-only development pass. Continuous follow-up depends on the user resuming a session; no unattended background development is running.
+Live first-answer usefulness, factual grounding, model comparison, control/automation behavior and Home Assistant installation remain **not measured/unverified**. No unattended development is implied.

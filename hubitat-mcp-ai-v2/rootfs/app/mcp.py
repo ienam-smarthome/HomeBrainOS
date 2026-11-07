@@ -1,4 +1,4 @@
-"""Minimal Streamable HTTP MCP transport for the v2 read-only pilot.
+"""Streamable HTTP MCP transport using the connected server catalog.
 
 No v1 orchestration, device-specific routing or answer publication policy.
 """
@@ -15,72 +15,6 @@ import httpx
 
 class MCPError(RuntimeError):
     pass
-
-
-# Frozen upstream read surface, reviewed at 98bc7ca2d0f1bd2e2857962292b33d83683bc2b0.
-# Unknown names fail closed even if their names or annotations claim to be reads.
-READ_GATEWAYS = {
-    "hub_read_apps_code": [
-        "hub_list_apps",
-        "hub_list_drivers",
-        "hub_get_source",
-        "hub_list_libraries",
-        "hub_list_bundles",
-        "hub_list_backups",
-        "hub_get_backup",
-        "hub_list_device_dependents",
-        "hub_get_app_config",
-        "hub_list_hpm_packages"
-    ],
-    "hub_read_diagnostics": [
-        "hub_get_logs",
-        "hub_get_metrics",
-        "hub_get_memory_history",
-        "hub_get_device_health",
-        "hub_get_radio_details",
-        "hub_list_captured_states"
-    ],
-    "hub_read_rules": [
-        "hub_get_custom_rule",
-        "hub_list_rules",
-        "hub_get_rule_health",
-        "hub_list_rule_local_variables",
-        "hub_get_visual_rule"
-    ],
-    "hub_read_devices": [
-        "hub_list_devices",
-        "hub_get_device",
-        "hub_get_device_attribute",
-        "hub_list_device_events",
-        "hub_get_compatible_devices",
-        "hub_get_hub_mesh"
-    ],
-    "hub_read_rooms": [
-        "hub_list_rooms",
-        "hub_get_room"
-    ],
-    "hub_read_files": [
-        "hub_list_files",
-        "hub_read_file"
-    ],
-    "hub_read_variables": [
-        "hub_list_variables",
-        "hub_get_variable",
-        "hub_list_variable_changes"
-    ],
-    "hub_read_dashboards": [
-        "hub_list_dashboards",
-        "hub_get_dashboard"
-    ]
-}
-READ_TOOLS = frozenset({
-    "hub_search_tools", "hub_get_tool_guide", "hub_get_info",
-    "hub_list_modes", "hub_get_hsm_status",
-}).union(*(set(names) for names in READ_GATEWAYS.values()))
-
-
-def is_read_tool(name: str) -> bool:
-    return name in READ_TOOLS or name in READ_GATEWAYS
 
 
 _SECRET_KEY = re.compile(
@@ -106,7 +40,7 @@ def redact(value: Any) -> Any:
     return value
 
 
-class ReadOnlyMCP:
+class MCPClient:
     def __init__(self, url: str, token: str = "", timeout: int = 25):
         url = (url or "").strip()
         parts = urlsplit(url)
@@ -119,6 +53,7 @@ class ReadOnlyMCP:
         self.url = urlunsplit((
             parts.scheme, parts.netloc, parts.path, urlencode(query), ""
         ))
+        self._protocol = "2025-03-26"
         self._session: str | None = None
         self._id = 0
         self._initialized = False
@@ -143,7 +78,9 @@ class ReadOnlyMCP:
         return self._id
 
     async def _post(self, request: dict, empty_ok: bool = False) -> dict:
-        headers = {"Mcp-Session-Id": self._session} if self._session else {}
+        headers = {"MCP-Protocol-Version": self._protocol} if self._initialized else {}
+        if self._session:
+            headers["Mcp-Session-Id"] = self._session
         try:
             response = await self._client.post(self.url, json=request, headers=headers)
             response.raise_for_status()
@@ -205,6 +142,7 @@ class ReadOnlyMCP:
             })
             if "result" not in response:
                 raise MCPError("MCP initialize returned no result")
+            self._protocol = response["result"].get("protocolVersion", self._protocol)
             self._initialized = True
             try:
                 await self._post({
@@ -213,34 +151,42 @@ class ReadOnlyMCP:
             except MCPError:
                 pass
 
-    async def list_tools(self) -> list[dict]:
+    async def list_tools(self, refresh: bool = False) -> list[dict]:
         await self.initialize()
-        if not self._tools:
-            response = await self._post({
-                "jsonrpc": "2.0", "id": self._next(), "method": "tools/list",
-                "params": {},
-            })
-            declared = response.get("result", {}).get("tools", [])
-            if not isinstance(declared, list):
-                raise MCPError("Invalid MCP tool catalog")
-            self._tools = {
-                tool["name"]: tool for tool in declared
-                if isinstance(tool, dict)
-                and isinstance(tool.get("name"), str)
-                and is_read_tool(tool["name"])
-            }
+        if refresh or not self._tools:
+            tools: dict[str, dict] = {}
+            cursor = None
+            seen = set()
+            while True:
+                response = await self._post({
+                    "jsonrpc": "2.0", "id": self._next(), "method": "tools/list",
+                    "params": {"cursor": cursor} if cursor else {},
+                })
+                page = response.get("result", {})
+                declared = page.get("tools") if isinstance(page, dict) else None
+                if not isinstance(declared, list):
+                    raise MCPError("Invalid MCP tool catalog")
+                for tool in declared:
+                    if not isinstance(tool, dict) or not isinstance(tool.get("name"), str):
+                        raise MCPError("Invalid MCP tool definition")
+                    tools[tool["name"]] = tool
+                cursor = page.get("nextCursor")
+                if not cursor:
+                    break
+                if not isinstance(cursor, str) or cursor in seen:
+                    raise MCPError("Invalid or repeated MCP catalog cursor")
+                seen.add(cursor)
+            self._tools = tools
         return list(self._tools.values())
 
     async def call(self, name: str, arguments: dict) -> dict:
-        if not is_read_tool(name):
-            raise MCPError("Tool is not available in the read-only v2 pilot")
         await self.list_tools()
         if name not in self._tools:
-            raise MCPError("Tool is not available in the read-only v2 pilot")
+            raise MCPError("Tool is not in the connected server catalog")
         if not isinstance(arguments, dict):
             raise MCPError("MCP arguments must be an object")
-        if name in READ_GATEWAYS and arguments.get("tool") not in READ_GATEWAYS[name]:
-            raise MCPError("Sub-tool is not available in this read-only gateway")
+        # Preserve gateway discovery (empty args) and server-owned leaf routing.
+        # Never retry a tools/call: an uncertain write outcome must be inspected.
         response = await self._post({
             "jsonrpc": "2.0", "id": self._next(), "method": "tools/call",
             "params": {"name": name, "arguments": arguments},

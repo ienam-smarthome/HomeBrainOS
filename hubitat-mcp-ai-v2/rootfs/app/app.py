@@ -6,15 +6,17 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
 from external_hub_diagnostics import ExternalHubDiagnostics
-from mcp import MCPError, ReadOnlyMCP
+from mcp import MCPError, MCPClient
+from interaction import Interaction
 
 
 DEFAULTS: dict[str, Any] = {
@@ -58,6 +60,7 @@ async def lifecycle(app: FastAPI):
     options = config()
     app.state.options = options
     app.state.ask_lock = asyncio.Lock()
+    app.state.interactions = {}
     app.state.mcp = None
     app.state.model = None
     app.state.configuration_error = None
@@ -69,7 +72,7 @@ async def lifecycle(app: FastAPI):
             int(options["model_timeout_seconds"]),
         )
         if str(options["hubitat_mcp_url"]).strip():
-            app.state.mcp = ReadOnlyMCP(
+            app.state.mcp = MCPClient(
                 str(options["hubitat_mcp_url"]),
                 str(options["hubitat_mcp_token"]),
                 int(options["mcp_timeout_seconds"]),
@@ -95,10 +98,11 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.2", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.3", lifespan=lifecycle)
 
 
 class AskRequest(BaseModel):
+    request_id: UUID = Field(default_factory=uuid4)
     question: str = Field(min_length=1, max_length=10000)
     history: list[dict] = Field(default_factory=list, max_length=20)
 
@@ -111,10 +115,10 @@ async def index():
 @app.get("/api/status")
 async def status():
     options = app.state.options
-    mcp: ReadOnlyMCP | None = app.state.mcp
+    mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.2",
-        "mode": "native-model-led-read-only",
+        "version": "2.0.0-alpha.3",
+        "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
             or bool(str(options["model_api_key"]).strip())
@@ -125,8 +129,40 @@ async def status():
     }
 
 
+def require_ui_request(request: Request):
+    # Same-origin UI fetches carry this header; cross-origin scripts need a
+    # CORS preflight, which this app does not enable. Forms cannot supply it.
+    if request.headers.get("x-homebrain-request") != "1":
+        raise HTTPException(403, "Use the HomeBrain interface or the documented request header")
+
+
+@app.get("/api/activity/{request_id}")
+async def activity(request_id: UUID):
+    interaction = app.state.interactions.get(str(request_id))
+    return interaction.status() if interaction else {"current": None, "pending": None}
+
+
+class Confirmation(BaseModel):
+    id: UUID
+    approved: StrictBool
+
+
+@app.post("/api/activity/{request_id}/confirm")
+async def confirm(request_id: UUID, decision: Confirmation, http_request: Request):
+    require_ui_request(http_request)
+    interaction = app.state.interactions.get(str(request_id))
+    if interaction is None:
+        raise HTTPException(409, "This request is no longer active")
+    try:
+        interaction.decide(str(decision.id), decision.approved)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return {"accepted": True}
+
+
 @app.post("/api/ask")
-async def ask(request: AskRequest):
+async def ask(request: AskRequest, http_request: Request):
+    require_ui_request(http_request)
     if app.state.configuration_error:
         raise HTTPException(503, app.state.configuration_error)
     if (str(app.state.options["model_base_url"]).rstrip("/") == "https://ollama.com"
@@ -134,18 +170,27 @@ async def ask(request: AskRequest):
         raise HTTPException(503, "Configure the Ollama Cloud API key in add-on options")
     if app.state.mcp is None or app.state.model is None:
         raise HTTPException(503, "Configure the model and Hubitat MCP URL in add-on options")
-    async with app.state.ask_lock:
-        try:
-            return await app.state.model.answer(
-                request.question, request.history,
-                app.state.mcp, int(app.state.options["investigation_timeout_seconds"]),
-            )
-        except MCPError as exc:
-            return {"success": False, "answer": f"MCP connection/read failure: {exc}",
-                    "tool_calls": [], "error": "mcp"}
-        except RuntimeError as exc:
-            return {"success": False, "answer": f"Model/transport failure: {exc}",
-                    "tool_calls": [], "error": "model"}
+    request_id = str(request.request_id)
+    if request_id in app.state.interactions:
+        raise HTTPException(409, "This request is already active")
+    interaction = Interaction()
+    app.state.interactions[request_id] = interaction
+    try:
+        async with app.state.ask_lock:
+            try:
+                return await app.state.model.answer(
+                    request.question, request.history,
+                    app.state.mcp, int(app.state.options["investigation_timeout_seconds"]),
+                    before_call=interaction.before_call,
+                )
+            except MCPError as exc:
+                return {"success": False, "answer": f"MCP connection failure: {exc}",
+                        "tool_calls": [], "error": "mcp"}
+            except RuntimeError as exc:
+                return {"success": False, "answer": f"Model/transport failure: {exc}",
+                        "tool_calls": [], "error": "model"}
+    finally:
+        app.state.interactions.pop(request_id, None)
 
 
 @app.get("/api/diagnostics/status")

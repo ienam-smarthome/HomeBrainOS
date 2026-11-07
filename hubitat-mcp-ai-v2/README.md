@@ -1,48 +1,61 @@
-# Hubitat MCP AI v2 — clean pilot
+# Hubitat MCP AI v2 — native MCP client
 
-**Separate experimental add-on**; does not replace or update the existing `hubitat-mcp-ai` add-on. V2 is built as a new implementation, not a refactor of v1. No legacy answer-quality patches, forced investigation recipes, deterministic answer rewriting, evidence-score engines, Stage 4–7 benchmark pipeline or fixed model/tool round quotas are loaded.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.3**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
-## What v2 includes
+## Architecture and scope
 
-1. A direct native Ollama `/api/chat` agent that chooses and calls live Hubitat MCP read tools without predetermined investigative steps. Tool schemas come from `tools/list`; no handwritten Hubitat schema registry.
-2. One short, readable Hubitat MCP skill, adapted from the upstream MIT-licensed skill. The model chooses whether to read a guide, lookup, history, app configuration, logs or other available sources.
-3. A tiny Ask/Chat web UI and tool-call receipts containing the bounded, redacted source response shown to the model, plus arguments, success and timing. Completed receipts remain available after a subsequent model failure; large sources are explicitly marked as truncated. Receipts are returned to the current browser session, not automatically persisted.
-4. The **exact same** `external_hub_diagnostics.py` source blob as v1, with its persistent SQLite storage, 30–300s external free OS probes, native five-minute Java/load samples, confirmed `systemStart` markers, connectivity incidents, downsampled histories, 1h–30d windows and 30d default retention.
-5. No Historical Journal, Rule Machine shortcut, v1 router, v1 reasoning patch or scheduler.
+The configured model uses native Ollama-compatible `/api/chat` function calling to discover and operate the connected Hubitat MCP server. V2 presents the full live `tools/list` catalog allowed by that server/token, including read and write tools. There is no frozen HomeBrain tool allowlist, read-only capability filter or handwritten tool schema registry.
 
-The first v2 experiment is **read-only**. This is not an answer-quality restriction; only explicitly listed upstream read tools and reviewed gateway sub-tools are invocable. Unknown names fail closed; server behavior and permission gates still matter. Permissions, timeouts, restricted secrets and server-side read/write masters are not optional AI reasoning features.
+- Refresh and paginate the live catalog for each request. Preserve server descriptions, schemas and annotations internally.
+- Support gateway schema discovery with empty arguments and invocation with `tool` / `args`, as well as flat catalogs. The server resolves gateway membership and enforces its permissions.
+- Let the model select tools, follow up on evidence and write its answer. Execute calls sequentially; never automatically retry a tool call whose write outcome may be uncertain.
+- Load the unmodified upstream `SKILL.md`, `safety-guide.md` and `rule-patterns.md` from the bundled skill directory. These are guidance; the connected server's live schemas and guides remain authoritative. Native Rule Machine/Visual Rules are preferred for new automations; the patterns reference describes the legacy custom-rule engine.
+- Calls carrying `confirm=true` (including nested gateway arguments) pause for an explicit decision in the UI. Approval is bound to one exact pending call and request; stale approvals fail. A declined or timed-out call is not executed. The model cannot manufacture approval by setting the flag. Ordinary requested operations follow upstream device-identity and permission rules.
+- Retain credential redaction, request deadlines, per-call timeouts and context transport bounds. There is no fixed model/tool round quota or incident-specific investigation recipe.
+
+**This version can perform writes allowed by your MCP connection.** To run a read-only acceptance test, use an upstream read-only client token or disable the server Write master. V2 does not change hub permissions. Server Read/Write masters, per-client access, Advanced overrides, required backups and confirmation flags remain authoritative. Client confirmation does not override a server refusal.
 
 ## Setup
 
-Home Assistant → Settings → Add-ons → Add-on Store → your HomeBrainOS repository → **Hubitat MCP AI v2 (Preview)** → Install. Existing v1 may stay installed and running. Do **not** uninstall v1 or change Hubitat settings for this experiment.
+Refresh the HomeBrainOS add-on repository in Home Assistant and install/update **Hubitat MCP AI v2 (Preview)**. Start it manually and use sidebar ingress. V1 may stay installed.
 
 Configure:
-- `hubitat_mcp_url`: exact local MCP Streamable HTTP URL (can contain its normal endpoint path)
-- `hubitat_mcp_token`: token, if the endpoint requires the `access_token` query parameter
-- `model_base_url`: Ollama-compatible base URL, e.g. `https://ollama.com` for Ollama Cloud or `http://WINDOWS-LAN-IP:11434` for Ollama locally
-- `model_name`: tool-calling model supported by that endpoint
-- `model_api_key`: required for Ollama Cloud, leave blank for local Ollama
-- Optional: `external_hub_diagnostics_enabled: true`, `external_hub_diagnostics_hub_url: http://HUB-LAN-IP`, logical cores = 4 for C8 Pro; probe 30s; retention 30d.
+- `hubitat_mcp_url`: exact Streamable HTTP endpoint, including its path.
+- `hubitat_mcp_token`: token if not already in the endpoint URL.
+- `model_base_url`: Ollama-compatible endpoint, e.g. `https://ollama.com` or your local Ollama address.
+- `model_name`: a tool-calling model supported by that endpoint.
+- `model_api_key`: required for Ollama Cloud; blank for local Ollama.
+- Optional recorder: `external_hub_diagnostics_enabled: true` and `external_hub_diagnostics_hub_url: http://HUB-LAN-IP`. Default probe 30s, retention 30d.
 
-Installation and ingress acceptance are pending. CI currently verifies amd64 container startup without live model/MCP configuration; aarch64 and armv7 are advertised but not verified by that smoke test.
+Installation, ingress and live model/MCP acceptance remain pending. Dedicated container CI probes amd64 without live credentials; it does not prove aarch64/armv7 deployment.
 
-Use Home Assistant sidebar ingress. The optional direct port is disabled by default. No credentials or complete MCP responses are saved to the recorder.
+## Interface and receipts
 
-**Existing v1 recorder data is NOT automatically shared with the new add-on:** each add-on has its own `/data` folder. Copy/restore its existing SQLite database through a deliberate separate migration if historical continuity is needed. Starting v2 creates a new recorder history.
+Ask/Chat displays the model answer, current tool operation and exact pending confirmation when required. Tool receipts include names, redacted arguments, success, elapsed time and the same bounded/redacted source response delivered to the model. Truncation is explicit. Completed receipts survive later model failures. Receipts are returned to the current browser session; they are not automatically persisted or included in later chat history.
+
+The unchanged v1 external recorder is retained in an independent SQLite file. V2 starts new history; it does not import v1 samples automatically. The AI tool loop does not automatically ingest the recorder database. Diagnostics endpoints and graphs read the local recorder; MCP reads come from the connected server.
 
 ## API
 
-- `POST /api/ask` body `{"question":"Why did Livingroom Light 2 turn off?", "history":[]}`. Response `success`, `answer`, `tool_calls`, `elapsed_ms`.
-- `GET /api/status`: configuration/read-only health, no credentials.
-- `GET /api/diagnostics/status`, `/history?metric=free_os_mb&hours=24`, `/timeline?hours=24`: read local SQLite only.
-- `GET /`: mobile-friendly Ask and Hub Diagnostics.
+- `POST /api/ask`: JSON `{"request_id":"<UUID>","question":"...","history":[]}`. Optional request_id defaults to a generated UUID; supply one to poll or approve. Send header `X-Homebrain-Request: 1` on mutation requests.
+- `GET /api/activity/<request_id>`: current operation and pending confirmation.
+- `POST /api/activity/<request_id>/confirm`: JSON `{"id":"<pending UUID>","approved":true}` or false, with the same request header. Only a currently pending ID is accepted once.
+- `GET /api/status`: configuration status, model and recorder; does not certify live connectivity.
+- `GET /api/diagnostics/status`, `/api/diagnostics/history?metric=free_os_mb&hours=24`, `/api/diagnostics/timeline?hours=24`: independent recorder views.
 
-## First acceptance benchmark
+Use Home Assistant ingress; the optional direct port is disabled by default. The custom mutation header prevents ordinary cross-origin forms/scripts from submitting actions; it is not authentication. Keep the direct interface on a trusted network if enabled.
 
-Run each question on **identical** read-only Hubitat source data where possible, and retain raw answers/receipts: most recent Livingroom Light 2 OFF; bathroom humidity over 70% then below 60%; heating interval and TRV demand; hub memory/reboot incident. Assess verified conclusions, unsupported assertions, completeness, latency and source failures. No claim of higher model accuracy until live tests.
+## Validation and acceptance
 
-Operational limits (per call timeout and user request deadline) remain so a stalled model cannot hang indefinitely. There is no artificial model-round limit or answer rewriting.
+Mock protocol tests cover full and paginated catalogs, gateway discovery, flat writes, server refusals, catalog refresh, no automatic write retry, human confirmation/decline/expiry and source receipt retention. CI is necessary engineering evidence, not proof of model reasoning or answer quality.
 
-## Rollback
+For first live acceptance use an upstream read-only token and ask:
+> Investigate why Livingroom Light 2 turned OFF most recently. Do not change anything.
 
-Stop/uninstall the **v2** add-on; v1, Hubitat and all devices remain unchanged. No automatic promotion to v1/main deployment.
+Preserve the first answer and receipts. Compare with v1/Claude/Thaura only on matched evidence, time windows and model settings. Control and automation acceptance require separately authorized test operations; no live writes are performed by CI or repository development.
+
+## Upstream and rollback
+
+Skill files are copied unchanged from [kingpanther13/Hubitat-local-MCP-server](https://github.com/kingpanther13/Hubitat-local-MCP-server/tree/98bc7ca2d0f1bd2e2857962292b33d83683bc2b0/agent-skill/hubitat-mcp), commit `98bc7ca2d0f1bd2e2857962292b33d83683bc2b0`, with its MIT license. See `skills/hubitat/UPSTREAM.md`.
+
+Stop the v2 add-on to stop further operations. Uninstalling v2 does not undo device actions or automations already created through MCP. Revert the release to restore the prior client; v1 and its data are untouched.
