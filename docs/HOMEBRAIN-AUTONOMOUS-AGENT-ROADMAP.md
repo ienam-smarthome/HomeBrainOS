@@ -1,6 +1,6 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
-**Next general evidence-language increment (v0.18.447 candidate):**
+**Merged generic evidence-language increment (v0.18.447, PR #1498; CI green):**
 Never confuse time spanned by selected-attribute observations with the time
 spanned by all fetched raw device events. Source metadata must separately
 report raw range, matched sample range, event/page counts, requested lookback,
@@ -9,7 +9,7 @@ raw events/5 pages/11 temperature samples on Bedroom 1 TRV, but the generated
 answer incorrectly described the 3h36m *temperature sample interval* as the
 duration of *all history retrieved*. The source-neutral v0.18.447 change
 provides a deterministic narrative and explicit separate spans before model
-synthesis; tests and real-installed verification remain required.
+synthesis; all four required CI checks passed; real-installed verification remains required.
 
 **Held-out next acceptance:** Read-only investigation of most recent
 Livingroom Light 2 OFF event: independently read targeted event history,
@@ -27,8 +27,9 @@ read-only continuation of capped device-event pages. Source-real humidity and
 held-out TRV responses were reviewed on the installed v0.18.445 add-on, but
 first-attempt provenance and retained history completeness are not verified.
 The Phase 2 standalone temporal operator is **not yet integrated** with live
-source-qualified arithmetic; v0.18.446 paging and timezone acceptance remain
-to be measured after installation. Do not claim general-question mastery
+source-qualified arithmetic; v0.18.446 paging and timezone were exercised successfully on installed add-on
+with a held-out TRV response; v0.18.447 separate-span answer wording still
+awaits installed validation. Do not claim general-question mastery
 until first-attempt, source-real tests prove it. This plan supplements
 the permanent [Answer Quality Charter](ANSWER-QUALITY-CHARTER.md), whose
 correctness/safety targets remain in force.
