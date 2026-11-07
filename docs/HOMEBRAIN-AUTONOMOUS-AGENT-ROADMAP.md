@@ -1,5 +1,27 @@
 # HomeBrainOS — autonomous evidence-first agent roadmap
 
+**v0.18.452 source-real failed-repair architectural checkpoint (7 Nov, candidate):**
+The v0.18.451 installed OFF investigation had the right top-level unknown-cause
+verdict but falsely promoted a collector-received FP400 motion=inactive
+Historical Journal observation to an original sensor event 19 seconds before
+OFF, and claimed empty app logs around focal OFF though the queries checked
+different historical times. Both verified native sensor windows returned zero
+source events; the model still had 1 failed synthesis repair after 9 rounds
+and 19 tool calls. The general repair is not another statement regex: for
+read-only causal latest-OFF questions, when repair fails and a uniquely
+host-attested focal OFF boundary is available, build a deterministic
+**v2-claim-validated factual floor** from source state observations with
+typed command receipts; separate sensor-source clocks from collector
+reception and independently check app-log requested windows against the
+focal time. No action, no extra model/MCP calls, no rewrite on successful
+answers or write/confirmation paths. This is a targeted **publication
+integrity** increment, not proof that the generic model-to-JSON claim-first
+path is complete. Next: gate with CI, source-real test newly installed
+v0.18.452, freeze cross-domain question/evidence packets, then advance
+model-selected typed claims and authoritative coverage into the general
+publication path without retaining redundant prose guards.
+
+
 **Claim-first migration design shipped as shadow-only module (v0.18.451, 7 Nov):** Claude's
 uploaded 13-test draft correctly favors typed claims over keyword/prose patching,
 but its initial schema accepted empty read scope, unverified command clocks,
