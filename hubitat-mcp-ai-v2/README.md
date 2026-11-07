@@ -24,7 +24,9 @@ Configure:
 - `model_api_key`: required for Ollama Cloud, leave blank for local Ollama
 - Optional: `external_hub_diagnostics_enabled: true`, `external_hub_diagnostics_hub_url: http://HUB-LAN-IP`, logical cores = 4 for C8 Pro; probe 30s; retention 30d.
 
-Installation and ingress acceptance are pending. CI currently verifies amd64 container startup without live model/MCP configuration; aarch64 and armv7 are advertised but not verified by that smoke test.\n\nUse Home Assistant sidebar ingress. The optional direct port is disabled by default. No credentials or complete MCP responses are saved to the recorder.
+Installation and ingress acceptance are pending. CI currently verifies amd64 container startup without live model/MCP configuration; aarch64 and armv7 are advertised but not verified by that smoke test.
+
+Use Home Assistant sidebar ingress. The optional direct port is disabled by default. No credentials or complete MCP responses are saved to the recorder.
 
 **Existing v1 recorder data is NOT automatically shared with the new add-on:** each add-on has its own `/data` folder. Copy/restore its existing SQLite database through a deliberate separate migration if historical continuity is needed. Starting v2 creates a new recorder history.
 
