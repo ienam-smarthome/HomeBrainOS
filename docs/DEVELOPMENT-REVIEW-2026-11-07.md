@@ -33,6 +33,10 @@ The maintained component is `hubitat-mcp-ai/`; current release is **0.18.455**. 
 
 No old PR was closed or merged as part of this review.
 
+## Open issue backlog to reconcile against current code
+
+Seven open issue records remain. Their historical descriptions do not prove the same defects persist in v0.18.455. Prioritise source-contract and acceptance reconciliation: [#942](https://github.com/ienam-smarthome/HomeBrainOS/issues/942) proposal-only identity/native-rule preflight; [#923](https://github.com/ienam-smarthome/HomeBrainOS/issues/923) typed action overlap and scheduler provenance; [#828](https://github.com/ienam-smarthome/HomeBrainOS/issues/828) upstream fresh bulk-health inventory; [#758](https://github.com/ienam-smarthome/HomeBrainOS/issues/758) room-status completeness and timestamps; [#733](https://github.com/ienam-smarthome/HomeBrainOS/issues/733) whole-hub optimisation evidence; [#725](https://github.com/ienam-smarthome/HomeBrainOS/issues/725) configuration markers versus runtime failure; [#686](https://github.com/ienam-smarthome/HomeBrainOS/issues/686) concrete performance-target naming. Keep these as cross-domain evaluation candidates, verify current implementation and fresh source acceptance before closing, and avoid reviving obsolete intent-routing rules from old issue text.
+
 ## Continuity improvements
 
 AGENTS still described v0.18.451 as the current migration checkpoint, while the status/roadmap correctly documented v0.18.455. CLAUDE.md also retains an obsolete “512 tests” line and a three-workflow summary. Prefer exact-head Actions results and current handoff over those historic counts. This review refreshes the primary AGENTS checkpoint; historical status entries remain chronological records rather than current acceptance claims.
