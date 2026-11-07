@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.450**.
+Current add-on version: **0.18.451**.
+
+**Generic claim-v2 evidence shadow (v0.18.451):** A new isolated claim-first library translates existing `causal-witness-ledger.v1` source roles and normalizes state/command classes, requires trusted focal scope, explicitly validated source clocks, true ON→OFF interval pairs, source-matched command issuers, finite same-unit calculations and verified zero-result native history windows. It exposes privacy-limited shadow diagnostics for offline paired evaluation, **not** live answer rewriting or general model-selected claims. The existing output path, prior source-role guards, MCP read budget, write confirmation, paid routing and installed live acceptance are unchanged. [Release notes](CHANGELOG-0.18.451.md).
 
 **Source-bound final causal verdict (v0.18.450):** The publication guard now rejects source-report-to-external-control inferences and unqualified "no Hubitat command was issued" wording when only bounded command receipts exist. A controller correction cannot import an older interval into a new focal OFF question. Verified focal sensor reports retain their exact `motion=inactive` or other recorded state instead of ambiguous "activity". Synthesiser and API serialization use the same sensor-value guard with real-source agreement requirements and Technical JSON correction flags. No device writes, extra MCP reads, changed provider selection or watchdog limits. [Release notes](CHANGELOG-0.18.450.md).
 
