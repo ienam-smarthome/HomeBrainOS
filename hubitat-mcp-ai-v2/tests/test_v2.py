@@ -4,6 +4,8 @@ import json
 import sys
 import tempfile
 import unittest
+
+import httpx
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
@@ -34,6 +36,59 @@ class ToolSafetyTests(unittest.TestCase):
             try:
                 with self.assertRaises(MCPError):
                     await mcp.call("hub_call_device_command", {"deviceId": 1})
+            finally:
+                await mcp.close()
+        asyncio.run(run())
+
+
+    def test_streamable_http_catalog_session_and_read(self):
+        calls = []
+        def reply(request: httpx.Request):
+            data = json.loads(request.content)
+            calls.append((data.get("method"), request.headers.get("mcp-session-id")))
+            name = data.get("method")
+            if name == "initialize":
+                return httpx.Response(200, json={
+                    "jsonrpc": "2.0", "id": data["id"], "result": {
+                        "protocolVersion": "2025-03-26", "capabilities": {}
+                    }
+                }, headers={"Mcp-Session-Id": "test-session"})
+            if name == "notifications/initialized":
+                return httpx.Response(202)
+            if name == "tools/list":
+                return httpx.Response(200, json={
+                    "jsonrpc": "2.0", "id": data["id"], "result": {
+                        "tools": [
+                            {"name": "hub_get_info", "description": "Info",
+                             "inputSchema": {"type": "object", "properties": {}}},
+                            {"name": "hub_call_device_command", "description": "Control"}
+                        ]
+                    }
+                })
+            if name == "tools/call":
+                body = json.dumps({
+                    "jsonrpc": "2.0", "id": data["id"], "result": {
+                        "content": [{"type": "text", "text": '{"password":"private-value"}'}]
+                    }
+                })
+                return httpx.Response(200, content="event: message\\ndata: "+body+"\\n\\n",
+                                      headers={"Content-Type": "text/event-stream"})
+            raise AssertionError("Unexpected HTTP method")
+        async def run():
+            mcp = ReadOnlyMCP("http://192.168.1.239/mcp")
+            await mcp._client.aclose()
+            mcp._client = httpx.AsyncClient(transport=httpx.MockTransport(reply))
+            try:
+                catalog = await mcp.list_tools()
+                self.assertEqual([item["name"] for item in catalog], ["hub_get_info"])
+                result = await mcp.call("hub_get_info", {})
+                self.assertNotIn("private-value", json.dumps(result))
+                with self.assertRaises(MCPError):
+                    await mcp.call("hub_call_device_command", {"deviceId": "7828"})
+                self.assertEqual([v[0] for v in calls],
+                                 ["initialize", "notifications/initialized", "tools/list",
+                                  "tools/call"])
+                self.assertEqual(calls[2][1], "test-session")
             finally:
                 await mcp.close()
         asyncio.run(run())
