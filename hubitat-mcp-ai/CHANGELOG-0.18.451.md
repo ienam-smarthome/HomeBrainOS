@@ -8,7 +8,7 @@ absence, inactive motion described as activity and an irrelevant historical
 controller correction. v0.18.450 addressed these at final prose checkpoints;
 it passed GitHub CI but still awaits source-real installed acceptance.
 
-A user-supplied Claude `claim_evidence_contract.py` prototype and its 13 isolated tests
+A user-supplied Claude `claims_v2.py` prototype and accompanying `test_claims_v2.py` (13 isolated tests)
 were reviewed. The proposed claim-first approach aligns with the permanent
 Answer Quality roadmap and partially existing V1 witness ledger, typed
 attestation and narrow incident publication, but the prototype itself
