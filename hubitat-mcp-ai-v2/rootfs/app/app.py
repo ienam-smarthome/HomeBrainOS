@@ -115,7 +115,10 @@ async def status():
     return {
         "version": "2.0.0-alpha.1",
         "mode": "native-model-led-read-only",
-        "configured": bool(mcp and app.state.model),
+        "configured": bool(mcp and app.state.model and (
+            str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
+            or bool(str(options["model_api_key"]).strip())
+        )),
         "configuration_error": app.state.configuration_error,
         "model": str(options["model_name"]),
         "recorder": app.state.recorder.status(),
@@ -126,6 +129,9 @@ async def status():
 async def ask(request: AskRequest):
     if app.state.configuration_error:
         raise HTTPException(503, app.state.configuration_error)
+    if (str(app.state.options["model_base_url"]).rstrip("/") == "https://ollama.com"
+            and not str(app.state.options["model_api_key"]).strip()):
+        raise HTTPException(503, "Configure the Ollama Cloud API key in add-on options")
     if app.state.mcp is None or app.state.model is None:
         raise HTTPException(503, "Configure the model and Hubitat MCP URL in add-on options")
     async with app.state.ask_lock:
