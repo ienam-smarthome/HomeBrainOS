@@ -10,7 +10,7 @@
 
 Share focal log scope checks at synthesis and final read-only API publication; preserve explicit returned-sample observations, positive state/issuer facts and write/confirmation paths. Bound unqualified hub-command absence to queried records. Prevent a latest-OFF issuing-app decision read unless the command actually matches the source-attested focal OFF. Reuse normalised scope in the failed-repair factual floor and source-role instructions. No new runtime modules, extra model/MCP calls, provider changes or live writes.
 
-**Verification:** Local Python compilation and original private-packet adapter replay passed. Local bundled Python lacks pytest; full synthetic/API regression, packaging, metadata and required exact-head CI remain to be verified before merge. Frozen tests use fictional sources, not the private attachment. Installed v0.18.456 answer quality remains pending; broader typed-claim cross-domain evaluation is still the next migration milestone, not another per-device wording stage.
+**Verification:** Local Python compilation and original private-packet adapter replay passed. Merged [PR #1518](https://github.com/ienam-smarthome/HomeBrainOS/pull/1518) after all four required workflows passed on exact head `555a77eef1545dbfb6650d20c3e3babd04f72c76`: Release assurance (**6,781 Python tests**, two nonblocking warnings, container smoke and metadata), Hubitat MCP AI tests, Validate HomeBrain OS and Answer Quality scorecard integrity. Squash merge: `2c44aa359d1e5a4c03c13c28ce4390cee7f412ae`. Frozen tests use fictional sources, not the private attachment. Installed v0.18.456 answer quality remains pending; broader typed-claim cross-domain evaluation is still the next migration milestone, not another per-device wording stage.
 
 ---
 
