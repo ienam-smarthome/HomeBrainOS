@@ -790,6 +790,21 @@ class DeviceHistoryService:
         label = str(target.get("label") or target.get("name") or requested)
 
         unsupported = self._unsupported_history_attribute(target, attribute)
+        attribute_recovery = None
+        if (unsupported is not None
+                and arguments.get("_discover_rejected_attribute") is True):
+            # Same resolved device, same read-only source. Discover actual
+            # event dimensions instead of substituting a guessed capability.
+            attribute_recovery = {
+                "requestedAttribute": attribute,
+                "strategy": "same-device-unfiltered-event-discovery",
+                "requestedAttributeVerified": False,
+                "doesNotProveAttributeAbsence": True,
+            }
+            increment_active_metric("history_attribute_discovery_recovery")
+            attribute = ""
+            limit = 50
+            unsupported = None
         if unsupported is not None:
             increment_active_metric("history_attribute_rejected")
             available = unsupported.get("availableAttributes") or []
@@ -866,7 +881,7 @@ class DeviceHistoryService:
         # first so the state boundary cannot be crowded out. If that scoped read
         # returns no rows, retry once unfiltered and keep the established local
         # filtering fallback.
-        fetch_limit = 50 if attribute else limit
+        fetch_limit = 50 if attribute or attribute_recovery else limit
         attribute_cf = attribute.casefold() if attribute else ""
         upstream_scoped_attribute = "switch" if attribute_cf == "switch" else ""
         event_args: dict[str, Any] = {
@@ -1397,6 +1412,20 @@ class DeviceHistoryService:
             "causationAvailable": causation_available,
             "historySourceIntegrity": "unverified",
             "historySourceIntegrityVerified": False,
+            "historyAttributeRecovery": attribute_recovery,
+            "observedEventAttributes": sorted({
+                str(event.get("name")) for event in source_events
+                if isinstance(event.get("name"), str) and event.get("name")
+            })[:40],
+            "observedStateAnalyses": (
+                {
+                    key: analysis for key in sorted({
+                        str(event.get("name")) for event in source_events
+                        if isinstance(event.get("name"), str) and event.get("name")
+                    })
+                    if (analysis := analyze_state_intervals(key, source_events)) is not None
+                } if attribute_recovery else {}
+            ),
             "events": events,
         }
         if time_window is not None:

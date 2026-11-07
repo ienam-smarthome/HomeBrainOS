@@ -5461,6 +5461,7 @@ class UnifiedMCPAgent:
                 # as extra tools or writes; the adapter owns the read contract.
                 args["_include_hub_time_zone"] = True
                 args["_expand_history_coverage"] = True
+                args["_discover_rejected_attribute"] = True
                 signature = json.dumps(
                     [request.tool, args], sort_keys=True,
                     ensure_ascii=False, default=str,
@@ -7005,6 +7006,7 @@ class UnifiedMCPAgent:
                     and requested_history_key
                     and requested_history_key != investigative_subject_history_key
                     and not str(arguments.get("attribute") or "").strip()
+                    and not self.general_task_engine_enabled
                 )
                 gateway_error = (
                     catalog.gateway_operation_error(name, arguments)
@@ -7143,6 +7145,10 @@ class UnifiedMCPAgent:
                         tool=tool,
                         supports_live_claim=name != "hub_search_tools",
                         evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
+                        **({"history_discovery": True}
+                           if (name == _LOCAL_DEVICE_HISTORY_TOOL
+                               and not self._mutation_requested_by_user.get())
+                           else {}),
                     )
                     if execution.effect.mutates:
                         self._mark_mutation()
@@ -7327,7 +7333,9 @@ class UnifiedMCPAgent:
                         "content": (
                             "HOST HISTORY-SYNTHESIS HINT\n"
                             "The successful device-history result is evidence, not the "
-                            "finished answer. Answer the user's original question "
+                            "finished answer. One interval does not finish a multi-part "
+                            "question: continue required related-device comparisons "
+                            "before final synthesis. Answer the user's original question "
                             "directly from the current-turn history evidence. When "
                             "temporalAnalysis is present, use its pre-computed interval "
                             "and reliability fields instead of redoing timestamp "
@@ -7601,6 +7609,7 @@ class UnifiedMCPAgent:
                 return await self._final_answer(messages)
             if (
                 round_history_evidence_sufficient
+                and not self.general_task_engine_enabled
                 and not round_has_mutation
                 and not round_tool_failure
             ):

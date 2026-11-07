@@ -26,10 +26,22 @@ MCP SKILL WORKFLOW (live catalog is authoritative)
   hub_read_*; hub_manage_* may contain writes even when some members are reads.
 - After each tool result, assess which part of the original question remains
   unanswered. Follow the strongest missing evidence with a targeted read, then
-  stop when adequate evidence exists or the bounded read budget is spent.
+  answer when the objectives are satisfied or no distinct source progress is
+  possible. Operational cancellation, resource and privacy safeguards still apply.
 - Distinguish observed state, command issuer, configured trigger, executed
   condition, and human initiator. Configuration alone does not prove what
   happened historically. Correlation alone does not establish causation.
+- Recover from a rejected history attribute on the SAME verified device:
+  inspect actual returned event attributes or live metadata before choosing
+  another history dimension. A current attribute snapshot is not a complete
+  catalog of past event names. A schema mismatch is not evidence of inactivity.
+  Do not make the user repeat the original question to continue safe reads.
+- Keep every part of a multi-part question active: event timing, duration and
+  contributing devices require separate timestamped evidence. Read related
+  histories around the primary interval, not just their present states.
+- Give the useful supported parts first even when attribution remains open.
+  A reported demand interval is not independent physical boiler proof; related
+  radiator demand is correlation until controller execution links it.
 - Do not replace tool failures with fabricated information. Make uncertainty
   concise. Summarize the conclusion first, keep technical receipts separately.
 - Preserve resource efficiency: narrow filters, requested attributes and

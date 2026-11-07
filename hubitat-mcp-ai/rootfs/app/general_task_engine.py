@@ -122,12 +122,12 @@ def _read_requests(value: Any) -> tuple[EvidenceReadRequest, ...]:
             "name", "attribute", "hours_back", "limit"
         }:
             continue
-        name, attribute = args.get("name"), args.get("attribute")
+        name, attribute = args.get("name"), args.get("attribute", "")
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
             continue
         if not isinstance(attribute, str) or not (
-            1 <= len(attribute.strip()) <= 70 and
-            attribute.strip().replace("_", "").isalnum()
+            len(attribute.strip()) <= 70 and
+            (not attribute.strip() or attribute.strip().replace("_", "").isalnum())
         ):
             continue
         hours, limit = args.get("hours_back", 168), args.get("limit", 50)
@@ -273,15 +273,15 @@ class GeneralTaskPlanner:
         "You are the planning stage for a Hubitat MCP assistant. Return exactly "
         "one JSON object, no prose, no markdown:\\n"
         '{"version":"1","domain":"diagnostics","operation":"investigate",'
-        '"objective":"Explain an unexpected light activation",'
+        '"objective":"Establish observed device intervals and related-device evidence",'
         '"skills":["diagnostics","automation"],'
-        '"capabilityQueries":["light state event history",'
+        '"capabilityQueries":["device attribute and event history",'
         '"automation app logs and configuration"],'
-        '"evidenceGoals":["Observed state transition",'
-        '"Verified command provenance"],'
+        '"evidenceGoals":["Observed state interval",'
+        '"Related-device source evidence"],'
         '"requiredEvidenceKinds":["device_history","app_logs"],'
         '"readRequests":[{"tool":"homebrain_device_history",'
-        '"args":{"name":"Livingroom Light 2","attribute":"switch",'
+        '"args":{"name":"User-named device","attribute":"",'
         '"hours_back":168,"limit":50}}],'
         '"candidateHypotheses":['
         '{"explanation":"A hub command preceded the switch transition",'
@@ -307,7 +307,18 @@ class GeneralTaskPlanner:
         "name, attribute, hours_back 1..168 and limit 1..50. Use the user's "
         "device wording; never invent a verified ID. This is for ANY matching "
         "device attribute including humidity, temperature, power and switch, "
-        "not a special-case device. The host validates every request against "
+        "not a special-case device. If the actual attribute is unknown, use "
+        "attribute='' for bounded raw event discovery rather than assume switch. "
+        "For heating history distinguish thermostatOperatingState=heating/idle "
+        "(reported demand) from thermostatMode=heat (configured mode), "
+        "setpoints and a physical boiler relay. To answer when/how long/which "
+        "devices contributed, obtain the main signal's timestamped interval "
+        "and compare every relevant radiator/controller history around that "
+        "interval, using verified inventory IDs/labels. Current states cannot "
+        "prove past demand; correlation alone does not prove a controller's "
+        "decision. Do not require the user to repeat a question after a "
+        "recoverable read-schema mismatch. "
+        "The host validates every request against "
         "read-only tool schema and resolves identity. For unknown source kinds "
         "propose capabilityQueries and let live MCP discovery decide. "
         "For investigate operations propose TWO or THREE genuinely competing "

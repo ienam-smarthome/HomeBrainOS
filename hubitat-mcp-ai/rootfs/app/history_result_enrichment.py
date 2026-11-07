@@ -35,6 +35,7 @@ from natural_datetime import normalize_iso_offset
 DEVICE_HISTORY_TOOL = "homebrain_device_history"
 _STATE_PAIRS: dict[str, tuple[str, str]] = {
     "switch": ("on", "off"),
+    "thermostatoperatingstate": ("heating", "idle"),
     "contact": ("open", "closed"),
     "motion": ("active", "inactive"),
     "lock": ("unlocked", "locked"),
