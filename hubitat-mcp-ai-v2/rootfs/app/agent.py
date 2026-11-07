@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from mcp import MCPError, MCPClient, redact
+from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 
 
@@ -200,7 +200,21 @@ class Agent:
                     }
                     if tool_error:
                         record["error"] = "MCP tool reported isError"
-                    content = compact_tool_result(result)
+                    if is_tool_catalog(result):
+                        record["result_kind"] = "tool_catalog"
+                        record["operation_executed"] = False
+                        model_result = {
+                            "client_receipt": {
+                                "result_kind": "tool_catalog", "operation_executed": False,
+                                "note": "Schemas only; no device/data query or action was executed. "
+                                        "Use the returned schema to select a tool and its arguments.",
+                            },
+                            "mcp_result": result,
+                        }
+                    else:
+                        record["result_kind"] = "tool_result"
+                        model_result = result
+                    content = compact_tool_result(model_result)
                     record["response_characters"] = len(content)
                 except (MCPError, ValueError, asyncio.TimeoutError) as exc:
                     record = {
@@ -208,7 +222,12 @@ class Agent:
                         "elapsed_ms": round((time.monotonic() - started_call) * 1000),
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
-                    content = json.dumps({"error": record["error"]})
+                    error_payload = {"error": record["error"]}
+                    if isinstance(exc, MCPContractError):
+                        record["result_kind"] = "contract_error"
+                        record["operation_executed"] = False
+                        error_payload.update({"result_kind": "contract_error", "operation_executed": False})
+                    content = json.dumps(error_payload)
                 # Preserve exactly the bounded, redacted source view sent to the model.
                 record["response"] = content
                 receipts.append(record)

@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
-from mcp import MCPClient, MCPError, redact
+from mcp import MCPClient, MCPError, MCPContractError, redact
 from agent import Agent, compact_tool_result
 
 
@@ -103,6 +103,68 @@ class GatewayContractRegressions(unittest.TestCase):
                 await transport.close()
         asyncio.run(run())
 
+    def test_live_schema_validates_types_and_does_not_rewrite_flat_payloads(self):
+        async def run():
+            transport = LiveClient()
+            try:
+                with self.assertRaisesRegex(MCPContractError, "input schema"):
+                    await transport.client.call("hub_read_devices", {
+                        "tool": "hub_list_devices", "args": "not an object"})
+                with self.assertRaises(MCPContractError):
+                    await transport.client.call("hub_read_devices", {
+                        "tool": "not_in_live_enum", "args": {}})
+                with self.assertRaisesRegex(MCPContractError, "inside 'args'"):
+                    await transport.client.call("hub_read_devices", {
+                        "tool": "hub_list_devices", "labelFilter": "Sample"})
+                self.assertEqual(transport.calls, [])
+                transport.client._tools = {"new_flat_tool": {
+                    "name": "new_flat_tool",
+                    "inputSchema": {"type": "object", "properties": {"args": {"type": "object"}}}}}
+                payload = {"args": {"tool": "literal user data"}}
+                await transport.client.call("new_flat_tool", payload)
+                self.assertEqual(transport.calls, [payload])
+            finally:
+                await transport.close()
+        asyncio.run(run())
+
+    def test_remote_schema_refs_are_not_fetched(self):
+        async def run():
+            transport = LiveClient()
+            transport.client._tools["hub_read_devices"]["inputSchema"] = {
+                "$ref": "https://example.invalid/private-schema"}
+            try:
+                with self.assertRaises(MCPContractError):
+                    await transport.client.call("hub_read_devices", {})
+                self.assertEqual(transport.calls, [])
+            finally:
+                await transport.close()
+        asyncio.run(run())
+
+    def test_catalog_receipt_is_not_reported_as_a_domain_query(self):
+        class DiscoveryAgent(Agent):
+            async def round(self, messages, tools, remaining):
+                if messages[-1]["role"] == "tool":
+                    payload = json.loads(messages[-1]["content"])
+                    self.seen = payload
+                    return {"content": "Schemas discovered; data not yet queried"}
+                return {"tool_calls": [{"function": {"name": "hub_read_devices", "arguments": {}}}]}
+        async def run():
+            transport = LiveClient()
+            agent = DiscoveryAgent("http://localhost:11434", "mock", "", 20)
+            try:
+                result = await agent.answer("Discover available tools", [], transport.client, 60)
+                self.assertFalse(agent.seen["client_receipt"]["operation_executed"])
+                source = json.loads(agent.seen["mcp_result"]["content"][0]["text"])
+                self.assertEqual(source["tools"][0]["inputSchema"], LEAF_SCHEMA)
+                receipt = result["tool_calls"][0]
+                self.assertEqual(receipt["result_kind"], "tool_catalog")
+                self.assertFalse(receipt["operation_executed"])
+                self.assertEqual(json.loads(receipt["response"]), agent.seen)
+            finally:
+                await agent.close()
+                await transport.close()
+        asyncio.run(run())
+
     def test_model_receives_contract_error_then_corrects_and_reads_history(self):
         class ScriptedAgent(Agent):
             async def round(self, messages, tools, remaining):
@@ -154,6 +216,23 @@ class SchemaPreservationRegressions(unittest.TestCase):
         self.assertEqual(result["outputSchema"], LEAF_SCHEMA)
         self.assertNotIn("actual-private-token", json.dumps(result))
         self.assertNotIn("actual-password", json.dumps(result))
+
+    def test_schema_samples_and_plain_text_credentials_are_redacted_without_syntax_damage(self):
+        schema = copy.deepcopy(LEAF_SCHEMA)
+        schema["properties"]["access_token"]["default"] = "sample-private-key"
+        schema["properties"]["access_token"]["examples"] = ["sample-other-key"]
+        schema["properties"]["access_token"]["enum"] = ["none", "provided"]
+        result = redact({"inputSchema": schema})
+        field = result["inputSchema"]["properties"]["access_token"]
+        self.assertEqual(field["type"], "string")
+        self.assertEqual(field["enum"], ["none", "provided"])
+        self.assertEqual(field["default"], "[REDACTED]")
+        self.assertEqual(field["examples"], ["[REDACTED]"])
+        fragment = '"include_token":{"type":"boolean"}'
+        text = redact(fragment + ' password="private value with spaces" Authorization: Bearer private-bearer')
+        self.assertIn(fragment, text)
+        self.assertNotIn("private value", text)
+        self.assertNotIn("private-bearer", text)
 
     def test_embedded_json_credentials_remain_valid_and_redacted(self):
         result = redact({"content": [{"type": "text", "text": json.dumps({
