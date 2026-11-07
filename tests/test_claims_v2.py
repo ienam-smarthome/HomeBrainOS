@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
-from claims_v2 import (Coverage, EvidencePacket, Witness, publish,
+from claim_evidence_contract import (Coverage, EvidencePacket, Witness, publish,
                        validate_claims, SCHEMA)
 
 F = frozenset({"off-0030", "on-2058", "fp400-0029"})
