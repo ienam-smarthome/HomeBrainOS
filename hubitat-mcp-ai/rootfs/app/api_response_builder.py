@@ -711,10 +711,13 @@ def build_agent_response(
     # deterministic claim-validated factual floor. Never touch writes,
     # confirmations, other domains, or unverified focal source identities.
     causal_fallback_published = False
+    failed_repairs = (metrics.get("counters") or {}).get("synthesis_repair_failed")
     if (
         causal_read
         and outcome_coverage.get("rootCauseVerified") is False
-        and int((metrics.get("counters") or {}).get("synthesis_repair_failed") or 0) > 0
+        and isinstance(failed_repairs, int)
+        and not isinstance(failed_repairs, bool)
+        and failed_repairs > 0
     ):
         trusted_floor = verified_failed_repair_answer(
             evidence, original_question=str(submitted_question or ""),
