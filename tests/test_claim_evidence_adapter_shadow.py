@@ -247,8 +247,12 @@ def test_failed_receipts_never_supply_states_commands_or_sensor_coverage():
         data = deepcopy(original)
         data[index]["success"] = False
         p = packet_from_evidence(data)
-        if index in (0, 1):
+        if index == 0:
             assert not p.focal_time
+        elif index == 1:
+            # An independent successful second projection still supports
+            # a reduced sample; failed rows may never be silently reused.
+            assert p.focal_time and len(p.eligible_transition_keys) == 2
         else:
             assert not p.journal_reception_event_keys
     data = deepcopy(original)
@@ -263,7 +267,8 @@ def test_historical_coverage_and_model_control_cannot_invent_focal_event():
     for mutate in (
         lambda x: x.pop(0),
         lambda x: x[4]["details"].update(requestedBoundary="2026-11-06T15:29:53+00:00"),
-        lambda x: x[1]["details"]["boundaryEvents"].pop(0),
+        lambda x: (x[1]["details"]["boundaryEvents"].pop(0),
+                   x[2]["details"]["boundaryEvents"].pop(0)),
     ):
         altered = deepcopy(data)
         mutate(altered)
