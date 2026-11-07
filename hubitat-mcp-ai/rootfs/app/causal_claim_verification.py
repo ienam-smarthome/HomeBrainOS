@@ -51,8 +51,53 @@ def _scoped_question(
             when = datetime.fromisoformat(moment_text.replace("Z", "+00:00"))
         except ValueError:
             continue
+        # The fallback question must retain the *actual* transition role.
+        # Reconstructing every focal event as ON previously led OFF-incident
+        # proof checks to inspect the wrong graph boundary.
+        direction = str(details.get("transition") or "").strip().casefold()
+        if direction not in {"on", "off"}:
+            # Older host receipts may omit transition while preserving the
+            # exact state row. Resolve direction from the target-labelled
+            # event at the requested absolute instant before falling back
+            # to the historical ON convention for untyped legacy packets.
+            states: set[str] = set()
+            for witness in evidence:
+                if (
+                    not isinstance(witness, dict)
+                    or witness.get("success") is not True
+                    or witness.get("tool") != "homebrain_device_history"
+                ):
+                    continue
+                history = witness.get("details")
+                if (
+                    not isinstance(history, dict)
+                    or str(history.get("label") or "").casefold() != subject.casefold()
+                ):
+                    continue
+                for key in ("boundaryEvents", "observedEvents"):
+                    for event in history.get(key) or []:
+                        if not isinstance(event, dict) or event.get("name") != "switch":
+                            continue
+                        try:
+                            event_at = datetime.fromisoformat(
+                                str(event.get("date") or "").replace("Z", "+00:00")
+                            )
+                        except ValueError:
+                            continue
+                        if (
+                            event_at.tzinfo is not None
+                            and abs((event_at - when).total_seconds()) <= 0.001
+                            and str(event.get("value") or "").casefold() in {"on", "off"}
+                        ):
+                            states.add(str(event["value"]).casefold())
+            if len(states) == 1:
+                direction = next(iter(states))
+            elif states:
+                continue
+            else:
+                direction = "on"  # Legacy receipts with no typed focal state.
         candidates.add(
-            f"Why did {subject} turn on at {when:%H:%M:%S} "
+            f"Why did {subject} turn {direction} at {when:%H:%M:%S} "
             f"on {when.day} {when:%B %Y}?"
         )
     return next(iter(candidates)) if len(candidates) == 1 else ""
@@ -442,6 +487,48 @@ _SPECULATIVE_LINK = re.compile(
 )
 
 
+def guard_focal_sensor_state_claim(
+    message: str,
+    evidence: list[dict[str, Any]],
+    original_user: str = "",
+    *,
+    graph: dict[str, Any] | None = None,
+) -> tuple[str, bool]:
+    """Keep a named focal sensor's reported value, not an inferred activity.
+
+    Only correct when there is a unique source-valued inactive OFF-edge
+    observation for that named sensor. Do not generalise to other timestamps,
+    other sensors, multiple competing values or physical occupancy.
+    """
+    source = str(message or "")
+    graph = graph if graph is not None else _graph(evidence, original_user)
+    if graph.get("scope") != "single-observed-event":
+        return source, False
+    rows = _off_sensor_events(graph)
+    if not rows:
+        return source, False
+    changed = False
+    output: list[str] = []
+    for raw in source.splitlines(keepends=True):
+        suffix = "\n" if raw.endswith("\n") else ""
+        line = raw[:-1] if suffix else raw
+        for row in rows:
+            if str(row.get("value") or "").casefold() != "inactive":
+                continue
+            if not _mentions_sensor(line, str(row.get("sensor") or "")):
+                continue
+            # "Reported activity" asserts the opposite sensor observation.
+            # An exact inactive value is a report, not proof of no occupancy.
+            line, replacements = re.subn(
+                r"(?i)\breported\s+activity\b",
+                "reported an inactive state",
+                line,
+            )
+            changed = changed or bool(replacements)
+        output.append(line + suffix)
+    return "".join(output), changed
+
+
 def guard_off_trigger_attribution(
     message: str,
     evidence: list[dict[str, Any]],
@@ -517,6 +604,7 @@ def verify_causal_claims(
         (guard_causal_action_ownership, "causal_action_ownership"),
         (guard_causal_empty_log_inference, "causal_empty_log_inference"),
         (guard_causal_sensor_event_order, "causal_sensor_event_order"),
+        (guard_focal_sensor_state_claim, "causal_focal_sensor_state"),
         (guard_off_trigger_attribution, "causal_off_trigger_overclaim"),
     ):
         corrected, changed = checker(
@@ -570,6 +658,7 @@ __all__ = [
     "guard_causal_action_ownership",
     "guard_causal_empty_log_inference",
     "guard_causal_sensor_event_order",
+    "guard_focal_sensor_state_claim",
     "guard_off_trigger_attribution",
     "verify_causal_claims",
 ]

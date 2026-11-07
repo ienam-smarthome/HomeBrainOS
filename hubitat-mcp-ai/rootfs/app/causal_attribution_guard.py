@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from causal_timeline import build_causal_timeline_rows
@@ -148,12 +149,89 @@ def _history_events(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _focal_listener_events(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    """Extract only the requested source-timed state event, if attested.
+
+    A listener in triggered[] on an older transition is not a listener of
+    the requested one. None means no verified focal anchor is available;
+    an empty list means the anchor was present but its row was not attested.
+    """
+    anchors: set[tuple[str, str, datetime]] = set()
+    for receipt in evidence:
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("success") is not True
+            or receipt.get("tool") != "homebrain_causal_secondary_correlation"
+        ):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        subject = str(details.get("subject") or "").strip().casefold()
+        state = str(details.get("transition") or "").strip().casefold()
+        try:
+            moment = datetime.fromisoformat(
+                str(details.get("requestedBoundary") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        if subject and state in {"on", "off"} and moment.tzinfo is not None:
+            anchors.add((subject, state, moment.astimezone(timezone.utc)))
+    if not anchors:
+        return None
+    if len(anchors) != 1:
+        return []
+    subject, state, moment = next(iter(anchors))
+    matching: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for receipt in evidence:
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("success") is not True
+            or receipt.get("tool") != "homebrain_device_history"
+        ):
+            continue
+        details = receipt.get("details")
+        if (
+            not isinstance(details, dict)
+            or str(details.get("label") or "").strip().casefold() != subject
+        ):
+            continue
+        for key in ("boundaryEvents", "observedEvents"):
+            for event in details.get(key) or []:
+                if (
+                    not isinstance(event, dict)
+                    or str(event.get("name") or "").casefold() != "switch"
+                    or str(event.get("value") or "").casefold() != state
+                ):
+                    continue
+                try:
+                    when = datetime.fromisoformat(
+                        str(event.get("date") or "").replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    continue
+                if (
+                    when.tzinfo is None
+                    or abs((when.astimezone(timezone.utc) - moment).total_seconds()) > 0.001
+                ):
+                    continue
+                identity = (str(event.get("date")), str(event.get("name")), state)
+                if identity not in seen:
+                    matching.append(event)
+                    seen.add(identity)
+    return matching
+
+
 def _triggered_only_app_contexts(
     evidence: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     """Return apps observed only as downstream listeners on physical events."""
 
     events = _history_events(evidence)
+    focal_events = _focal_listener_events(evidence)
     direct_ids: set[str] = set()
     direct_labels: set[str] = set()
     for event in events:
@@ -169,7 +247,7 @@ def _triggered_only_app_contexts(
 
     contexts: list[dict[str, str]] = []
     seen: set[tuple[str, str, str]] = set()
-    for event in events:
+    for event in (focal_events if focal_events is not None else events):
         if str(event.get("type") or "").strip().casefold() != "physical":
             continue
         producer_type, _producer_id, producer_label = _producer_identity(
@@ -231,8 +309,6 @@ def guard_triggered_listener_causal_claim(
         for row in contexts
         if row.get("appLabel")
     }
-    generic_context = contexts[0]
-
     pieces = re.split(r"(?P<space>(?<=[.!?])\s+|\n+)", text)
     changed = False
     for index in range(0, len(pieces), 2):
@@ -250,21 +326,43 @@ def guard_triggered_listener_causal_claim(
             None,
         )
         if matched is None:
-            # Catch generic claims such as "directly triggered by an automation"
-            # when current evidence contains only downstream app listeners and a
-            # physical device/bridge producer.
-            if not _APP_TERM.search(sentence):
-                continue
-            matched = generic_context
+            # App/rule numeric IDs and substantial app-label fragments are
+            # legitimate identity references; they are not a reason to choose
+            # a different arbitrary listener from another event.
+            for row in contexts:
+                app_id = str(row.get("appId") or "")
+                full = str(row.get("appLabel") or "")
+                parts = [p.strip().casefold() for p in re.split(r"[-–—]", full)]
+                aliases = [p for p in parts if len(p) >= 8]
+                if (
+                    (app_id and re.search(
+                        rf"(?i)\b(?:rule|app)\s*#?\s*{re.escape(app_id)}\b",
+                        sentence,
+                    ))
+                    or any(alias in sentence_folded for alias in aliases)
+                ):
+                    matched = row
+                    break
 
-        app_label = matched["appLabel"]
-        producer_label = matched["producerLabel"]
-        guarded_claim = (
-            f"For this physical state event, {app_label} is recorded only as a "
-            f"downstream listener in triggered[]; the event itself was produced "
-            f"by {producer_label}. This evidence does not establish that "
-            f"{app_label} initiated the transition."
-        )
+        if matched is None and not _APP_TERM.search(sentence):
+            continue
+        if matched is not None:
+            app_label = matched["appLabel"]
+            producer_label = matched["producerLabel"]
+            guarded_claim = (
+                f"For this physical state event, {app_label} is recorded only as a "
+                f"downstream listener in triggered[]; the event itself was produced "
+                f"by {producer_label}. This evidence does not establish that "
+                f"{app_label} initiated the transition."
+            )
+        else:
+            # Generic claims must be calibrated without inventing a specific
+            # app identity. Never choose contexts[0] as a named issuer.
+            guarded_claim = (
+                "For this physical state event, triggered[] lists downstream "
+                "listeners of a state report, not evidence that an automation "
+                "initiated the transition."
+            )
         # A claim guard must never erase a timeline row, its date columns,
         # duration, or Markdown pipes. The earlier implementation replaced
         # an entire 4-column row with prose, leaving a dangling closing pipe
