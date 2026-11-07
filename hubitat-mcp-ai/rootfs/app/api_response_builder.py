@@ -14,7 +14,9 @@ from causal_verified_fallback import verified_failed_repair_answer
 from claim_evidence_adapter import assess_evidence_shadow, _latest_off_causal_question
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
-from causal_coverage_claim_guard import guard_causal_controller_history_coverage
+from causal_coverage_claim_guard import (
+    guard_causal_controller_history_coverage, guard_focal_log_coverage_claims,
+)
 from causal_attribution_guard import (
     guard_triggered_listener_causal_claim,
     guard_unproven_upstream_manual_exclusion,
@@ -689,6 +691,7 @@ def build_agent_response(
     causal_proof_repaired = False
     focal_listener_repaired = False
     focal_sensor_value_repaired = False
+    focal_log_coverage_repaired = False
     read_only_investigation = (
         str(getattr(outcome, "request_class", "")) not in {"write", "confirmation"}
         and not bool(getattr(outcome, "confirmation_required", False))
@@ -725,6 +728,9 @@ def build_agent_response(
         and shadow.get("focal_attested") is True
     )
     if causal_read:
+        message, focal_log_coverage_repaired = guard_focal_log_coverage_claims(
+            message, evidence, str(submitted_question or ""),
+        )
         message, causal_proof_repaired = guard_unverified_initiator_claims(
             message, evidence, str(submitted_question or ""),
         )
@@ -829,6 +835,8 @@ def build_agent_response(
         )
     if causal_proof_repaired:
         result["evidence_validation"]["unverified_causal_origin_corrected"] = True
+    if focal_log_coverage_repaired:
+        result["evidence_validation"]["focal_log_coverage_corrected"] = True
     if focal_listener_repaired:
         result["evidence_validation"]["focal_listener_scope_corrected"] = True
     if focal_sensor_value_repaired:

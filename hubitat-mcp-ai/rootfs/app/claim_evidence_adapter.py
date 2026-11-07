@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 import re
+from native_past_log_receipt import summarize_past_log_requests
 
 from claim_evidence_contract import (
     SCHEMA, Coverage, EvidencePacket, Witness, validate_claims,
@@ -351,24 +352,7 @@ def packet_from_evidence(
         for c in coverage.values()
         if c.source == "verified native device-event page"
     }
-    logs = set()
-    focal_logs = set()
-    for row in scoped:
-        if (row.get("tool") != "hub_read_diagnostics"
-                or row.get("sub_tool") != "hub_get_logs"):
-            continue
-        a = _args(row)
-        if a.get("mode") != "past":
-            continue
-        start, end = _time(a.get("since")), _time(a.get("until"))
-        if not start or not end or end < start:
-            continue
-        k = (str(a.get("appId") or a.get("deviceId") or "*"), start, end)
-        logs.add(k)
-        if start <= off_time <= end:
-            focal_logs.add(k)
-        # Do NOT add an absent_in_scope coverage record from a 0-row
-        # returnedPageCount=0 log result; read request is not zero-result proof.
+    log_scope = summarize_past_log_requests(scoped, off_time.isoformat())
 
     sensor_stats = candidate_counts[0] if candidate_counts and len(
         set(candidate_counts)
@@ -384,8 +368,9 @@ def packet_from_evidence(
         candidate_sensor_probed_count=sensor_stats[1],
         direct_sensor_windows_checked=len(native_keys),
         internal_configuration_inspected=False,
-        log_reads_total=len(logs),
-        log_reads_containing_focal=len(focal_logs),
+        log_reads_total=log_scope["past_log_requests"],
+        log_reads_containing_focal=log_scope["bounded_log_requests_covering_focal"],
+        log_request_coverage=log_scope,
     )
 
 
@@ -467,6 +452,7 @@ def assess_evidence_shadow(
         "candidate_sensors_marked_probed": packet.candidate_sensor_probed_count,
         "app_log_requests": packet.log_reads_total,
         "app_log_requests_covering_focal": packet.log_reads_containing_focal,
+        "log_request_coverage": dict(packet.log_request_coverage),
         "relevant_app_rule_configuration_verified":
             packet.internal_configuration_inspected,
     }

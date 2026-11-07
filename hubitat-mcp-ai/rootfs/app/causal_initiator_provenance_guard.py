@@ -188,6 +188,8 @@ def render_state_report_provenance(evidence: list[dict[str, Any]]) -> str | None
     context = build_state_report_provenance(evidence)
     if not context["state_report_count"]:
         return None
+    from native_past_log_receipt import summarize_past_log_requests
+    context["log_request_coverage"] = summarize_past_log_requests(evidence)
     return (
         "HOST SOURCE ROLE CONTRACT (not a cause verdict): "
         + json.dumps(context, separators=(",", ":"), ensure_ascii=False)
@@ -200,7 +202,11 @@ def render_state_report_provenance(evidence: list[dict[str, Any]]) -> str | None
           "choose a bounded read-only command/app-decision/input-history "
           "check while tools are available. At final synthesis, distinguish "
           "reporting provenance from initiating control; do not treat a "
-          "attribute-filtered state history as a command-history search."
+          "attribute-filtered state history as a command-history search. "
+          "Past-log mode may be implicit. A since-only read is an open-ended "
+          "sample, not a bounded focal search. Check both absolute bounds "
+          "and source identity before claiming logs were checked around an "
+          "event; returned samples never prove complete historical absence."
     )
 
 
@@ -217,7 +223,10 @@ _ASSERTION = re.compile(
     re.I,
 )
 _STRONG_NO_HUB_COMMAND = re.compile(
-    r"\b(?:hubitat\s+(?:did\s+not|didn't|never)\s+(?:issue|send)|"
+    r"\b(?:(?:there\s+(?:is|was)\s+)?no\s+recorded\s+command\s+"
+    r"issued\s+by\s+(?:the\s+)?hub\b|"
+    r"no\s+`?command-off`?\s+was\s+recorded\s+in\s+(?:the\s+)?hub['’]s\s+command\s+history|"
+    r"hubitat\s+(?:did\s+not|didn't|never)\s+(?:issue|send)|"
     r"no\s+(?:hubitat(?:[- ]side|[- ]issued)?\s+)?"
     r"command(?:\s+producer)?\s+(?:was\s+)?(?:issued|sent|executed)|"
     r"there\s+(?:is|was)\s+no\s+record\s+of\s+a\s+"

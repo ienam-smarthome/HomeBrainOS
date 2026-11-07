@@ -249,7 +249,21 @@ def pending_command_app_decision_log(
     packet = command_source_packet(request, receipts)
     if packet is None or not packet["recordedCommands"]:
         return None
-    last = packet["recordedCommands"][0]
+    records = packet["recordedCommands"]
+    # A latest-OFF state investigation must not spend its decision-log read
+    # on an unrelated historical command merely because it is the newest
+    # command in a mixed page. Bind to independently attested state focus.
+    from claim_evidence_adapter import packet_from_evidence
+    focal_packet = packet_from_evidence(receipts, original_question=request)
+    if focal_packet.focal_time:
+        focal = _at(focal_packet.focal_time)
+        records = [record for record in records
+                   if record["name"] == "command-off"
+                   and _at(record["at"]) is not None and focal is not None
+                   and abs((_at(record["at"]) - focal).total_seconds()) <= 2]
+        if not records:
+            return None
+    last = records[0]
     app_id = last["recordedIssuerAppId"]
     if not app_id:
         return None

@@ -11,7 +11,9 @@ from source_analysis_completion import guard_unverified_config_behavior
 from source_exception_causality_guard import guard_unverified_source_exception_mechanism
 from causal_command_clue_guard import guard_causal_exclusion_with_command_clue
 from causal_initiator_provenance_guard import guard_unverified_initiator_claims
-from causal_coverage_claim_guard import guard_causal_controller_history_coverage
+from causal_coverage_claim_guard import (
+    guard_causal_controller_history_coverage, guard_focal_log_coverage_claims,
+)
 from causal_attribution_guard import (
     guard_configuration_only_causal_claim,
     guard_triggered_listener_causal_claim,
@@ -290,6 +292,11 @@ def validate_synthesis(
             issues.append("performance_evidence_first")
 
     if causal:
+        corrected, focal_log_changed = guard_focal_log_coverage_claims(
+            corrected, evidence, original_user,
+        )
+        if focal_log_changed:
+            issues.append("causal_focal_log_coverage")
         corrected, clue_guard_changed = guard_causal_exclusion_with_command_clue(
             corrected, evidence, original_user,
         )
