@@ -3,7 +3,10 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.446**.
+Current add-on version: **0.18.447**.
+
+**History coverage wording (v0.18.447):** Distinguishes the time span of fetched raw device events from the span between matching attribute observations. A host-generated source coverage explanation reports counts, page count, measured spans and completeness limits. Zero or one timestamped sample has no measurable interval. This corrects misleading claims such as 'only three hours of history retrieved' when many older raw events were actually fetched. It makes no additional Hubitat reads or mutations. [Release notes](CHANGELOG-0.18.447.md).
+
 
 **Source-qualified history and hub-local clocks (v0.18.446):** Model-planned
 read-only device-history requests resolve the hub IANA timezone to label

@@ -1394,6 +1394,8 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "analysisEventCount",
         "sourceEventCount",
         "sampleBounds",
+        "sourceEventRange",
+        "sourceCoverageNarrative",
         "sourcePagesFetched",
         "sourcePageSize",
         "sourceFirstPageAtLimit",

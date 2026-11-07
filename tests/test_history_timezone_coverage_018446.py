@@ -203,3 +203,87 @@ def test_host_planner_hints_are_not_model_authored_or_public_receipt_arguments()
     for key in ("_include_hub_time_zone", "_expand_history_coverage"):
         assert f'args["{key}"] = True' in orchestrator
         assert f'receipt_arguments.pop("{key}", None)' in executor
+
+
+@pytest.mark.asyncio
+async def test_generic_coverage_explanation_separates_raw_and_matching_time_spans():
+    # 75 raw events cover more than an hour; two temperature observations
+    # cover only ten minutes. Never claim that only ten minutes of all device
+    # history were retrieved or that its temperature was constant throughout.
+    raw = [
+        _row(NOW - timedelta(minutes=i), 60, name="battery")
+        for i in range(75)
+    ] + [
+        _row(NOW - timedelta(minutes=2), 22.1, name="temperature"),
+        _row(NOW - timedelta(minutes=12), 22.2, name="temperature"),
+    ]
+    result = await _service(ReadOnlyPages(raw)).history({
+        "name": "Example Sensor",
+        "attribute": "temperature",
+        "hours_back": 24,
+        "limit": 50,
+        "_include_hub_time_zone": True,
+        "_expand_history_coverage": True,
+    })
+    d = result.data
+    assert d["sourceEventCount"] == 77
+    assert d["analysisEventCount"] == 2
+    assert d["sourcePagesFetched"] == 2
+    assert d["sampleBounds"]["spanSeconds"] == 600.0
+    assert d["sourceEventRange"]["spanSeconds"] == 4440.0
+    assert d["sourceEventRange"]["earliestReturned"].endswith("GMT")
+    assert d["sourceCoverageStopReason"] == "older_source_page_short"
+    assert d["sourceCoverageVerified"] is False
+    note = d["sourceCoverageNarrative"]
+    assert "77 raw device event rows" in note
+    assert "2 of those rows match attribute 'temperature'" in note
+    assert "600.000 seconds" in note
+    assert "4440.000 seconds" in note
+    assert "NOT the span of all raw device events fetched" in note
+    assert "Full source retention and complete history remain unverified" in note
+    details = history_temporal_evidence_details(d)
+    assert details["sourceEventRange"] == d["sourceEventRange"]
+    assert details["sourceCoverageNarrative"] == note
+
+
+@pytest.mark.asyncio
+async def test_no_matching_samples_does_not_invent_a_zero_duration():
+    result = await _service(ReadOnlyPages([
+        _row(NOW - timedelta(minutes=i), i, name="battery")
+        for i in range(4)
+    ])).history({
+        "name": "Example Sensor",
+        "attribute": "temperature",
+        "hours_back": 24,
+        "_include_hub_time_zone": True,
+    })
+    d = result.data
+    assert d["analysisEventCount"] == 0
+    assert d["sampleBounds"]["spanSeconds"] is None
+    assert d["sampleBounds"]["timestampedCount"] == 0
+    assert "not measurable from fewer than two timestamped observations" in (
+        d["sourceCoverageNarrative"]
+    )
+    assert d["sourceCoverageVerified"] is False
+
+
+@pytest.mark.asyncio
+async def test_single_matching_sample_has_no_measured_interval():
+    result = await _service(ReadOnlyPages([
+        _row(NOW - timedelta(minutes=2), 22.1),
+    ])).history({
+        "name": "Example Sensor",
+        "attribute": "temperature",
+        "hours_back": 24,
+    })
+    d = result.data
+    assert d["sampleBounds"]["sampleCount"] == 1
+    assert d["sampleBounds"]["spanSeconds"] is None
+    assert d["sourceEventRange"]["spanSeconds"] is None
+
+
+def test_presenter_policy_distinguishes_all_raw_history_from_selected_sample_span():
+    policy = (APP / "agent_prompt_policy.py").read_text()
+    assert "sourceCoverageNarrative" in policy
+    assert "Do NOT" in policy
+    assert "sourceEventRange" in policy

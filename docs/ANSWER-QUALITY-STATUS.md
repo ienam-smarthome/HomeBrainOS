@@ -1,5 +1,15 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-07 — v0.18.447 generic raw-versus-observation history span clarity (candidate; CI/live re-test pending)
+
+**Held-out live trigger:** The installed v0.18.446 Bedroom 1 TRV history response retrieved 204 raw Hubitat device events across 5 paged read-only source requests but only 11 `temperature` observations (20:30:52–00:06:35 GMT, 3h36m); observed endpoint change was +0.2°C. The answer inaccurately said "only approximately 3 hours and 36 minutes of history were retrieved" as if matching temperature observations represented all raw fetched history. The trace separately showed `sourceEventCount=204`, `analysisEventCount=11`, `sourcePagesFetched=5`, `sourceWindowBoundaryReached=false`, `sourceCoverageStopReason=older_source_page_short` and `historySourceIntegrityVerified=false`. No evidence establishes full 24h retention, sensor failure or long-term stability. The v0.18.446 hub-local GMT display and independent pagination both worked.
+
+**Reusable fix candidate:** The history adapter now reports a separate `sourceEventRange` (earliest/latest raw fetched event dates and raw span), `sampleBounds.spanSeconds` (earliest/latest selected-attribute observation span), `sampleBounds.timestampedCount`, plus a host-generated `sourceCoverageNarrative` distinguishing those scopes, lookback, page count and stop reason. The existing evidence projector retains these source-qualified fields and a generic AI presentation policy disallows treating the matching-sample span as total retrieved history. Zero/one timestamped sample is not misrepresented as a zero-duration measurement. No extra MCP calls, model provider changes, paid routing, device control or write permissions. This is a general quality improvement, not an incident-specific text rewrite.
+
+**Verification gate:** Offline regression tests must prove distinct source/sample spans for a mixed page set, none/one samples, correct timestamped range and projection; four repository CI checks and full Python suite must pass before merging. Installed deployment and natural-language wording uplift are NOT verified until a fresh source-real history question. Next separate acceptance test: user runs read-only most-recent Livingroom Light 2 OFF incident investigation (device events, actual command issuers, app configuration and logs where available); no causal certainty without producer/trigger evidence. Do not modify any devices.
+
+---
+
 ## 2026-11-06 — v0.18.446 timezone and history coverage merged (live acceptance pending)
 
 **Live evidence basis:** On v0.18.445, Bathroom Meter history read returned 11 humidity observations. A 74% reading at 14:25:04.678 +0000 preceded a 59% reading at 18:26:04.288 +0000, about 4h 1m between reported events. Three successful reads, two model rounds, 9.5 seconds; no paid route. This supports the observed calculation but not complete retention, exact physical crossing, proven first-attempt provenance or the new deadline beyond 180 seconds.
