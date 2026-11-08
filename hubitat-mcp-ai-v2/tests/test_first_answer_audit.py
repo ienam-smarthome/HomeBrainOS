@@ -180,6 +180,66 @@ class FirstAnswerAuditTests(unittest.TestCase):
             len(result["native_tools"]["requested_argument_field_counts_per_call"]), 2
         )
 
+    def test_native_flat_event_rows_counted_without_client_annotation(self):
+        inp = fixture()
+        source = inp["response"]["tool_calls"][0]
+        source["arguments"]["limit"] = 2
+        source["response"] = json.dumps({"content": [{
+            "type": "text",
+            "text": json.dumps({
+                "device": "PRIVATE-DEVICE-ABC",
+                "events": [
+                    {"date": "2026-11-08T10:00:00Z", "value": "PRIVATE-EVENT-A"},
+                    {"date": "2026-11-08T10:01:00Z", "value": "PRIVATE-EVENT-B"},
+                ],
+                "count": 999,
+            }),
+        }]})
+        report = audit.audit_export(inp)
+        history = report["history_receipts"]
+        self.assertEqual(history["event_scope_receipts"], 1)
+        self.assertEqual(history["scope_origin_native_event_rows"], 1)
+        self.assertEqual(history["scope_origin_client_annotation"], 0)
+        self.assertEqual(history["event_rows_returned_total"], 2)
+        self.assertEqual(history["source_receipts_with_any_event_timestamp"], 1)
+        self.assertTrue(history["any_request_limit_reached"])
+        self.assertEqual(history["all_history_windows_complete"], "not_established")
+        self.assertNotIn("PRIVATE-DEVICE", json.dumps(report))
+        self.assertNotIn("PRIVATE-EVENT", json.dumps(report))
+
+    def test_gateway_native_event_empty_history_preserves_unknown_coverage(self):
+        inp = fixture()
+        source = inp["response"]["tool_calls"][0]
+        source["name"] = "hub_read_devices"
+        source["arguments"] = {"tool": "hub_list_device_events",
+                               "args": {"deviceId": "PRIVATE-DEVICE", "limit": 100}}
+        source["response"] = json.dumps({"content": [{
+            "type": "text",
+            "text": json.dumps({"deviceId": "PRIVATE-DEVICE", "events": [], "count": 0}),
+        }]})
+        history = audit.audit_export(inp)["history_receipts"]
+        self.assertEqual(history["event_scope_receipts"], 1)
+        self.assertEqual(history["event_rows_returned_total"], 0)
+        self.assertEqual(history["source_receipts_with_any_event_timestamp"], 0)
+        self.assertFalse(history["any_request_limit_reached"])
+        self.assertEqual(history["all_history_windows_complete"], "not_established")
+
+    def test_generic_json_events_and_failed_native_result_do_not_create_evidence(self):
+        inp = fixture()
+        source = inp["response"]["tool_calls"][0]
+        raw = json.dumps({"content": [{"type": "text", "text":
+                         json.dumps({"device": "PRIVATE",
+                                     "events": [{"date": "2026-11-08T12:00:00Z"}]})}]})
+        source["response"] = raw
+        source["name"] = "hub_list_devices"
+        unrelated = audit.audit_export(inp)["history_receipts"]
+        self.assertEqual(unrelated["event_scope_receipts"], 0)
+        source["name"] = "hub_list_device_events"
+        source["success"] = False
+        failed = audit.audit_export(inp)["history_receipts"]
+        self.assertEqual(failed["event_scope_receipts"], 0)
+        self.assertEqual(failed["excluded_non_success_event_scopes"], 1)
+
     def test_unknown_and_invalid_receipts_do_not_fabricate_success(self):
         inp = fixture()
         inp["response"]["tool_calls"][0]["success"] = None
