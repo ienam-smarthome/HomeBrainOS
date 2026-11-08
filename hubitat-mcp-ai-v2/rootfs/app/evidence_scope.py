@@ -49,6 +49,15 @@ def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
         for row in rows if isinstance(row, dict) and isinstance(row.get("date"), str)
         if (dt := _normalized_date(row["date"])) is not None
     ]
+    # Sort actual UTC instants rather than source display strings. The gaps
+    # measure spacing BETWEEN RETURNED ROWS, not a sensor's reporting cadence
+    # or continuous historical coverage. Mixed-attribute results may contain
+    # additional rows that say nothing about a particular attribute.
+    ordered_instants = sorted(dt for dt, _ in times)
+    observed_gaps = [
+        (later - earlier).total_seconds()
+        for earlier, later in zip(ordered_instants, ordered_instants[1:])
+    ]
     args = arguments if isinstance(arguments, dict) else {}
     leaf = args.get("args") if isinstance(args.get("args"), dict) else args
     limit = leaf.get("limit") if type(leaf.get("limit")) is int else None
@@ -57,6 +66,11 @@ def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
         "events_returned": len(rows),
         "oldest_returned_event": min(times)[1] if times else None,
         "newest_returned_event": max(times)[1] if times else None,
+        "adjacent_returned_timestamp_pairs": len(observed_gaps),
+        "largest_gap_between_returned_events_seconds": (
+            round(max(observed_gaps), 3) if observed_gaps else None
+        ),
+        "can_infer_uninterrupted_state_between_events": False,
         "date_rows_without_parseable_offset": sum(
             1 for row in rows if isinstance(row, dict) and isinstance(row.get("date"), str)
             and _normalized_date(row["date"]) is None
@@ -72,8 +86,13 @@ def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
             "The query window, first returned timestamp, count, and limit describe "
             "only the rows that the source returned. They do not establish the "
             "oldest event in the native store, absence of earlier events, or a "
-            "retention/truncation/transport cause. Where the distinction matters, "
-            "seek a discriminating source or mark the cause unverified."
+            "retention/truncation/transport cause. Rows are discrete reports, "
+            "not continuous measurements: their timestamps and even an "
+            "isStateChange flag do not establish uninterrupted intermediate "
+            "states or exact unobserved threshold crossings. The largest "
+            "reported timestamp gap is not proof of a reporting outage. "
+            "Where the distinction matters, seek a discriminating source "
+            "or explicitly qualify the unobserved interval."
         ),
     }
     # An upstream-provided truncation flag has distinct meaning from an inferred

@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.16**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.17**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -56,6 +56,12 @@ For first live acceptance use an upstream read-only token and ask:
 > Investigate why Livingroom Light 2 turned OFF most recently. Do not change anything.
 
 Preserve the first answer and receipts. Compare with v1/Claude/Thaura only on matched evidence, time windows and model settings. Control and automation acceptance require separately authorized test operations; no live writes are performed by CI or repository development.
+
+## Alpha.17 — distinguish discrete returned events from continuous history
+
+Source-reviewed first answers in two independent domains showed useful MCP retrieval but unsupported certainty about unobserved intervals. The existing `client_event_source_scope` sidecar now includes the count of adjacent parseable returned-event timestamps, their largest UTC-normalised gap in seconds, and `can_infer_uninterrupted_state_between_events:false`. These describe returned rows only—not complete historical retention, device downtime, reporting cadence, missing observations, precise threshold crossing, or continuous state. Mixed-attribute results are not proof of per-attribute completeness.
+
+The unchanged original MCP `content` and metadata remain available to the model, which independently chooses native tools and produces the answer. No planner, rewrite, output veto, model extra round, controller-specific rule, permission change or recorder modification is introduced. Alpha.17's actual impact on live first-answer quality is **unmeasured**, pending an uncoached same-question comparison and independent transfer test.
 
 ## Upstream and rollback
 

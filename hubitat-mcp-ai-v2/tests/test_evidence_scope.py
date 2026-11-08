@@ -68,6 +68,45 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(info["can_infer_older_events_absent"])
         self.assertFalse(info["can_infer_requested_window_fully_covered"])
 
+    def test_returned_observation_spacing_is_not_continuity_proof(self):
+        # Wholly fictional event values and clock times.
+        rows = [
+            {"name": "sample", "value": "10", "date": "2026-02-01T10:00:00.000Z", "isStateChange": True},
+            {"name": "sample", "value": "12", "date": "2026-02-01T10:05:00.000Z", "isStateChange": True},
+            {"name": "sample", "value": "11", "date": "2026-02-01T11:20:00.000Z", "isStateChange": True},
+            {"name": "sample", "value": "9", "date": "2026-02-01T12:00:00.000Z", "isStateChange": True},
+        ]
+        raw = event_response("Fixture Sensor", rows)
+        before = json.dumps(raw, sort_keys=True)
+        scope = scope_of(raw, {"attribute": "sample", "limit": 100})
+        self.assertEqual(scope["events_returned"], 4)
+        self.assertEqual(scope["adjacent_returned_timestamp_pairs"], 3)
+        self.assertEqual(scope["largest_gap_between_returned_events_seconds"], 4500.0)
+        self.assertFalse(scope["can_infer_uninterrupted_state_between_events"])
+        self.assertIn("discrete reports", scope["note"])
+        self.assertIn("isStateChange", scope["note"])
+        self.assertEqual(json.dumps(raw, sort_keys=True), before)
+
+    def test_gaps_handle_mixed_timezones_duplicates_and_missing_dates(self):
+        rows = [
+            {"name": "temp", "date": "2026-02-03T10:00:00+0200"},
+            {"name": "temp", "date": "2026-02-03T09:30:00+0000"},
+            {"name": "temp", "date": "2026-02-03T09:30:00+0000"},
+            {"name": "temp", "date": "2026-02-03T09:40:00"},
+            {"name": "temp", "value": "unknown"},
+        ]
+        meta = scope_of(event_response("Synthetic B", rows))
+        self.assertEqual(meta["adjacent_returned_timestamp_pairs"], 2)
+        self.assertEqual(meta["largest_gap_between_returned_events_seconds"], 5400.0)
+        self.assertEqual(meta["date_rows_without_parseable_offset"], 1)
+        self.assertFalse(meta["can_infer_uninterrupted_state_between_events"])
+        single = scope_of(event_response("Synthetic B", [rows[0]]))
+        self.assertIsNone(single["largest_gap_between_returned_events_seconds"])
+        self.assertEqual(single["adjacent_returned_timestamp_pairs"], 0)
+        empty = scope_of(event_response("Synthetic B", []))
+        self.assertIsNone(empty["largest_gap_between_returned_events_seconds"])
+        self.assertFalse(empty["can_infer_uninterrupted_state_between_events"])
+
     def test_other_tools_and_error_payload_are_unchanged(self):
         device = {"content": [{"type": "text", "text": '{"devices":[]}'}]}
         self.assertIsNone(scope_of(device))
