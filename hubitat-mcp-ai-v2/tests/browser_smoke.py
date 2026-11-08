@@ -83,7 +83,7 @@ with sync_playwright() as p:
   assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
   assert resets==[requests[-2]["conversation_id"]]
   page.locator("#diagnosticsTab").click()
-  page.locator("#recorderNotice").wait_for()
+  page.wait_for_function("document.querySelector('#source').textContent.startsWith('online')")
   assert page.locator("#recorderNotice").is_hidden()
   page.evaluate("""() => {
     window.__loadLines = 0;
