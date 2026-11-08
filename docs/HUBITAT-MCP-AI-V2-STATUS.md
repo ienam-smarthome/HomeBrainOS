@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.14` (candidate pending final-head PR/CI verification)
-Development branch: `fix/v2-native-diagnostics-chart-source-scope-alpha14`
+Version: `2.0.0-alpha.15` (candidate pending final-head PR/CI verification)
+Development branch: `feat/v2-v1-quality-diagnostics-timeline-alpha15`
 
 ## Current user direction
 
@@ -176,3 +176,13 @@ The user's installed alpha.13 screenshot of **Hub Diagnostics → History → 24
 Generic model-led answer quality: extend only the source-integrity skill guidance, requiring the model to compare any all/none/every group conclusion against actually checked members, attributes and time periods, to distinguish commands from confirmed device-state changes, and to qualify missing/empty bounded reads as unverified. No automated veto, rule-specific patch, fixed planner, artificial model rounds, device changes, permission updates or model routing are introduced.
 
 Version `2.0.0-alpha.14` for backend, add-on and UI. Tests: native short history dedupe, native longer-history extrema, true outage/long-gap segmentation, unchanged externally sampled OS series, canvas line continuity and tick decimal labels in Chromium and existing UI/model safety tests. First real installed UI verification pending. PR head, checks and merge SHA pending.
+
+## Alpha.15 — V1-quality independent timeline UX (8 Nov 2026)
+
+User feedback after confirming alpha.14 native sampling graph repair: **V1 still has significantly more useful and functional graphs.** Their V1 screenshot illustrates source-aligned memory and CPU panels on separate scales, point cursor/time readout, a local incident/event summary, accessible detailed chart with statistics, and investigation buttons. V2's prior combined/detailed canvas was valid source data but less usable, especially over a 24-hour range when recorder history covered only six hours. Do not mistake the UI shortfall for a native Hubitat CPU telemetry defect.
+
+Implement an **SVG unified timeline in v2**, using the existing external SQLite `/api/diagnostics/timeline` response. Default aligned split memory (external probes) and CPU load equivalent (native five-minute measurements), optional shared plot with independent axes. Include nice source-specific grid ticks, genuine source continuity and exact timestamp cursor, native label and source provenance, offsets/confirmed system starts, external outage bands and observed extrema in a bounded event list. Buttons inspect **only stored source records**; prepare an AI question in the Ask tab without executing tools or authorising a write. Open original same-origin JSON via normal link. No V1-only historical journal UI or automatic model invocation.
+
+Also improve the existing V2 detailed metric graph with unit-labeled axes, min/max/latest stats, keyboard/touch point inspection, and the same time window controls. Choose 6h initial range and default to **fit data** to avoid showing a mostly blank 24h axis when only recent observations exist. Explicitly allow **full requested range** to show blank periods; no missing data is backfilled, nor is fit-mode a claim of earlier complete coverage. Preserve real data extrema, recorded gaps, causal qualifiers and recorder independence, and keep V1 entirely untouched.
+
+Synthetic browser and JS regressions test UI behavior in both desktop/mobile widths, with no live Hubitat or model calls. Existing alpha.14 recorder dedup, MCP native flat mode, permissions, source-scope inference policy and complex-math display unchanged. Installed review pending.
