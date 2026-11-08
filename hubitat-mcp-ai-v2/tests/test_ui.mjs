@@ -7,12 +7,12 @@ const script=html.split('<script>')[1].split('</script>')[0].replace(/loadStatus
 const version=html.match(/const UI_VERSION="([^"]+)"/)[1];
 function harness(){
  const elements=new Map(),timers=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0;
- const element=()=>({textContent:'',value:'',disabled:false,hidden:false,style:{},classList:{remove(){},toggle(){},contains(){return false;}},addEventListener(){},focus(){focused=true;}});
+ const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},value:'',disabled:false,hidden:false,style:{},classList:{remove(){},toggle(){},contains(){return false;}},addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
  const el=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
  const state={status:{version,configured:true,model:'gemma4:31b-cloud'},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true};
- const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createElement(){const e=element();e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
+ const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
  const navigator={clipboard:{writeText:async text=>{copied=text;}}};
- const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,URL,Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
+ const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout:fn=>fn(),Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
  if(url==='api/status')return{ok:true,json:async()=>state.status};
  assert.equal(url,'api/ask');askCalls++;assert.equal(init.headers['X-Homebrain-Request'],'1');
  assert.equal(el('copyAnswer').disabled,true);assert.equal(el('copyTechnical').disabled,true);
@@ -52,3 +52,34 @@ const first=d.run('submitAsk()');await new Promise(resolve=>setImmediate(resolve
 await d.run('submitAsk()');assert.equal(d.askCalls,1);release();await first;
 assert.equal(d.timers.size,0);
 console.log('UI behavior checks passed: exact copies, receipt preservation, clipboard fallback, timing, failures, stale state and duplicate submission.');
+
+const rich=harness();
+const rendered=rich.run('renderAnswer("# Devices\\n\\n| Device | State |\\n| --- | --- |\\n| **Lamp** | \x60off\x60 |\\n\\n- Item\\n\\n<script>alert(1)</script>\\n\\n\x60\x60\x60\\n<img src=x onerror=alert(1)>\\n\x60\x60\x60")');
+const all=node=>[node,...node.children.flatMap(all)];
+assert(all(rendered).some(n=>n.tagName==='TABLE'));
+assert(all(rendered).some(n=>n.tagName==='STRONG'&&n.textContent==='Lamp'));
+assert(all(rendered).some(n=>n.tagName==='CODE'&&n.textContent==='off'));
+assert(!all(rendered).some(n=>['SCRIPT','IMG'].includes(n.tagName)));
+assert(rendered.textContent.includes('<script>alert(1)</script>'));
+assert(rendered.textContent.includes('<img src=x onerror=alert(1)>'));
+rich.el('question').value='First question';await rich.run('submitAsk()');
+rich.el('question').value='Second question';await rich.run('submitAsk()');
+assert.equal(rich.el('conversationHistory').hidden,false);
+assert(rich.el('turns').textContent.includes('First question'));
+assert(!rich.el('turns').textContent.includes('Second question'));
+assert.equal(rich.el('rawAnswer').textContent,rich.state.result.answer);
+await rich.run('downloadTechnical()');
+assert.equal(JSON.parse(await rich.state.downloadBlob.text()).question,'Second question');
+assert(rich.state.downloadName.endsWith('.json'));
+rich.run('newConversation()');
+assert.equal(rich.run('messages.length'),0);
+assert.equal(rich.run('turns.length'),0);
+assert.equal(rich.el('copyAnswer').disabled,true);
+assert.equal(rich.el('downloadTechnical').disabled,true);
+assert.equal(rich.el('conversationHistory').hidden,true);
+rich.el('send').disabled=true;rich.el('question').value='Keep draft';rich.run('newConversation()');assert.equal(rich.el('question').value,'Keep draft');
+rich.run("draw=()=>{}; fetch=async url=>({ok:true,json:async()=>url.includes('/status')?{status:'disabled',last:{}}:{range_start:'2026-11-07T00:00:00Z',range_end:'2026-11-08T00:00:00Z',metrics:{}}});");
+rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('refreshDiagnostics()');
+assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
+assert(html.includes('id="diagnosticsTab"'));
+console.log('Usability checks passed: safe Markdown/tables, original text, session reset/history, JSON download, diagnostics empty state and tab target.');
