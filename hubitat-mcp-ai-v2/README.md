@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.9**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.10**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -88,3 +88,13 @@ Limits: four turns, 32 non-catalog source receipts per turn, 3,200-character sou
 The sole client-owned tool is limited to earlier source-data retrieval; all Hubitat reads, writes, native automation and administrative operations remain exposed exclusively through the upstream catalog and its existing permission gates. No changes were made to confirmation or write privileges; use an upstream read-only token for investigative testing. The upstream bundled skill files and external recorder remain untouched.
 
 Installed live alpha.9 reasoning quality is **unverified**. CI tests fake source payloads and mock model tool choices; they do not constitute a real Gemma or G06 replay. Run the acceptance matrix in `docs/HUBITAT-MCP-AI-V2-ACCEPTANCE.md` and export both the first question and the follow-up technical JSON.
+
+## Alpha.10 — general evidence scope and causal uncertainty
+
+The latest alpha.9 read-only investigation reported 11 returned historical events per device from a 48-hour requested window, then labelled platform event retention as the probable cause **without a source that discriminated native retention from endpoint return limits, filtering or reporting gaps**. Direct upstream v5.1.7 source review establishes that `hub_list_device_events` reads the native `/device/eventsJson/{deviceId}` response and then applies filters in the MCP Groovy app. Requesting `hoursBack=48` therefore **does not prove** 48 hours of native events were available. No upstream or hub setting was modified.
+
+Alpha.10 adds a general, domain-independent source-scope sidecar (`client_event_source_scope`) to model-visible MCP responses **only when the returned result actually contains event rows**. It reports returned event count, earliest/latest parseable timestamps, requested lookback and limit, a limit-hit hint (not a guarantee), any upstream truncation metadata, and explicit `false` indicators for causal/retention/completeness inferences that the sampled rows cannot establish. This is **descriptive evidence metadata**, not an automated decision, a claim correction or a history replay. The original redacted MCP `content` and upstream metadata remain intact alongside the new client field; technical JSON and later session memory retain the model-visible source result.
+
+A short generic addition to the existing v2 client skill tells the model to distinguish reported observations, plausible explanations and causes supported by discriminating evidence. It encourages further **read-only** checks where available and explicit uncertainty when evidence cannot distinguish alternatives. It also warns not to project current snapshots onto historical windows. The model still owns its investigation, stopping decision and response. The tool catalog, model configuration, direct MCP tool loop, write permissions/confirmations, external recorder, upstream bundled skill files and v1 remain unchanged. No domain-specific heuristics, new planner, model routing, separate answer-rewriter or extra round/latency mandate was added.
+
+Unit/integration tests cover multiple synthetic event types, zero returned rows, limit-hit flags, mixed time zone offsets, untouched non-event/write results, input immutability and exact model-visible source/technical receipt preservation. **CI passes are not real Gemma evidence-quality acceptance.** For live evaluation, ask a new first-attempt read-only cause question in a different domain (e.g. an offline device or an unexplained hub restart), export technical JSON and check that competing explanations remain unverified until independently distinguished. Do not claim historical retention is proven from the absence of returned rows.

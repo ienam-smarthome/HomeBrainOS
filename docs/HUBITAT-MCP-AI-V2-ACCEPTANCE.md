@@ -53,3 +53,14 @@ The three installed alpha.8 heating exports demonstrated model context loss acro
 Check the first response's original event records independently for returned dates, pagination limits, and source scope. On the follow-up, inspect the following **separate** fields: `prior_sources_indexed` (prior indexed receipt count), `prior_receipts_used` (selected short previews), and `prior_evidence_reads` (model-selected local archive reads). The model may call `homebrain_read_prior_evidence` for additional chunks; such calls are **not fresh Hubitat reads**. Review whether older source timestamps and events are correctly identified, whether bounded history gaps are acknowledged, and whether a fresh MCP query is requested for data the archive never covered.
 
 Passing criteria for source handoff: all retained source reads are discoverable by an index entry, none is silently omitted, and exact relevant redacted source chunks are obtainable when still archived. Passing criteria for model quality remain independent: no fabricated absence claims, correct time alignment and explicit unverified coverage. A fast answer with no tool reads is not automatically better. Record failures without adding domain-specific prompt rules.
+
+## Alpha.10 independent cause-vs-hypothesis gate
+
+Read-only token, fresh conversation, unchanged model/provider, and first answer uncoached. Use a new non-heating incident (such as device offline, humidity/fan or hub restart) to test transfer to a different question type, alongside the unchanged lighting and heating cases. Preserve the initial JSON even if the answer is unsupported. Check:
+- The source record's `client_event_source_scope` appears **only** when actual structured event rows were returned, and the original MCP `content` is preserved.
+- A returned event minimum is not relabelled a native data-retention boundary; a lookback request is not represented as proof of complete history.
+- The answer distinguishes **observation**, **possible explanation**, and **cause supported by discriminating evidence**; unsupported claims of certainty or relative likelihood count as failures.
+- If a permitted independent read can separate alternatives, check whether the model discovers and executes it before claiming a verified cause. If such evidence is unavailable, a precise unverified conclusion is acceptable.
+- Re-check earlier receipts by source ID where useful; mark missing or truncated data explicitly. Do not alter native hub settings or enable new sources as part of the test.
+
+The alpha.10 source-scope metadata and generic prompt are a **software change**, not evidence of model success. No hidden deterministic veto, claim filter or mandatory model round is added. The real Home Assistant installed trial, with entire exported technical JSON, is the deciding acceptance criterion. A native Events-page versus MCP comparison requires separate authorised evidence; no result is claimed here.

@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.9` (candidate; final PR/CI verification required)
-Development branch: `feat/v2-source-index-on-demand-alpha9`
+Version: `2.0.0-alpha.10` (candidate pending final-head PR/CI verification)
+Development branch: `feat/v2-causal-evidence-scope-alpha10`
 
 ## Current user direction
 
@@ -98,3 +98,15 @@ Operational protections: one session UUID, source IDs scoped within it, memory-o
 **Acceptance:** scripted test sources must reproduce an earlier important record followed by several large newer sources, verify the earlier source appears in the index even when excerpt truncated, prove the model can request the original in chunks without contacting Hubitat, and fail closed for wrong/expired IDs. Live alpha.9 result still requires a first uncoached answer and dependent follow-up; do not claim corrected Gemma reasoning merely from tests.
 
 PR, exact-head CI, final status and merged SHA: **pending verification**.
+
+## Alpha.10 — cause vs hypothesis evidence standards (8 Nov 2026)
+
+A real alpha.9 heating-history follow-up correctly found only 11 filtered events per TRV, then asserted a Hubitat event-retention ceiling was the **most likely** explanation and claimed no further MCP query could recover the records. The answer ran in one model round, with 13 prior indexed sources, 11 snippets and **zero** new read calls or local prior-evidence retrievals. It did not compare native Event page records, inspect alternative return-source coverage, or independently verify purging. **Cause remains unverified.** This error generalizes beyond heating: a limited observational result does not distinguish retention, limited endpoint result, reporting gaps or query behavior.
+
+Independent review of the upstream MCP v5.1.7 Groovy implementation shows `_fetchBypassDeviceEvents` uses `hubInternalGet("/device/eventsJson/${deviceId}")` and `_deviceHistoryBypass` applies attribute/date/limit filters to that returned array. This does not establish the endpoint's depth or native store retention. References: `kingpanther13/Hubitat-local-MCP-server` `libraries/mcp-devices-lib.groovy` around lines 692–710 and 3151–3194. **Do not claim native-hub purge without independent comparison.**
+
+Implement a **general** client-side `client_event_source_scope` annotation, preserving the original model-visible MCP `content`, with returned count, returned event timestamps, requested time/limit scope and explicit unknown completeness/causality. Add short model-led evidence discrimination guidance to the v2 prompt, not incident-specific instructions, vetoes, mandatory extra rounds, answer rewriting or a new causal planner. The evidence annotations are derived from the same returned rows; they do not independently certify a cause. Real alpha.10 first-answer reasoning and native Hubitat Events-page cross-check remain unverified.
+
+Scope: `hubitat-mcp-ai-v2` and v2 development notes only. Existing user-approved upstream write/confirmation behavior remains untouched. The native Hubitat Events-page comparison needs authorised local inspection; repository development alone cannot see the hub. The private exported technical JSON does not belong in Git history.
+
+PR merge SHA/CI: pending exact-head all-green check before merging.
