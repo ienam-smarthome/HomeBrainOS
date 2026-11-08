@@ -1,7 +1,7 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.16` (merged release #1541, main 8a48743b136a49a8b915f140e3acad77c974cb90)
+Repository candidate: `2.0.0-alpha.17` (installed environment last verified as alpha.16; release CI/live model acceptance pending).
 Development checkpoint: PR #1542 merged as `4e486befbc2cd996b6c9eaf635229efee94a0351` (evaluation only; runtime remains alpha.16).
 
 ## Current user direction
