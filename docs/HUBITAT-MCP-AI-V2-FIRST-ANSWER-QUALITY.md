@@ -164,3 +164,38 @@ A key, general evaluator blind spot was found in R6: the existing offline audit 
 
 The next discriminating development experiment should compare source-verified claim accuracy across multiple **fixed-source** domains using the same native tool contract. Separate the impact of the model from source-presentation metadata; do not introduce a fixed planner, forced tool sequence, per-device rule, post-hoc answer rewriting or unverified universal claim filters. Treat the remaining frozen reboot case as an independent source-review opportunity, not something to retry until it passes.
 
+## Daily-command first-answer series — native device action and feedback (8 November 2026)
+
+Six **deliberately selected**, user-supervised direct-command exports were reviewed privately from the installed `2.0.0-alpha.18` / same Gemma model. This review spans a scheduler-related thermostat command, basic ON/OFF and two dimmer actions. No raw household labels, IDs, timestamps, text questions, network addresses, MCP payloads or exports are committed. **These are not a representative action-reliability sample.**
+
+| Observed structural outcome | Sample count |
+| --- | ---: |
+| Native device-command receipts returning accepted | 6 / 6 |
+| Commands with a later independent attribute read in the *same response* | 4 / 6 |
+| Among those, last reported requested attribute matched | 3 / 4 |
+| Among those, last reported requested attribute differed | 1 / 4 |
+| Accepted commands without a same-response independent attribute read | 2 / 6 |
+
+Response times ranged **3.970–10.775 seconds**, median **6.252 seconds** (mixed cold/warm conversation context, no population estimate). The 10.775-second ON request spent 4.568s in three device searches, 0.602s on the command and ~5.605s outside measured tools; an identically targeted fresh-conversation ON request instead took **5.684s** with one discovery, one command and one read. A successful read-confirmed OFF request took **3.970s** with two calls. Read-confirmed two-attribute dimmer commands took **6.518s** and **5.985s**; the latter had **zero prior source receipts**.
+
+**Critical source distinctions:**
+
+- A command tool returning `success=true` acknowledges submission/execution at that interface; its embedded state may carry **older timestamps**. It is **not** a post-command independent observation, and should not be scored as achieved physical effect.
+- An immediate ON follow-up `hub_get_device_attribute(switch)` returned OFF; a later read and discrete bridge-produced ON event established that the *hub eventually reported ON*. The evidence **does not measure an exact command-to-physical-lamp delay**, prove continuous state, or isolate the command from other possible influences.
+- The initial thermostat capability action had an accepted command receipt but no confirmed heater demand/output and bypassed the app's intended coordinated control. Later read-only app investigation found actual form-button controls, but subsequent summaries at times confused scheduled vs emergency targets, assumed writer permissions or claimed freshness despite failed app-config reads. Do not use this history to authorize a heater write.
+- The two dimmer cases independently read both target brightness and switch state after the device command, matching the request at that point; actual emitted light and absence of later automation remain unverified.
+
+**Engineering decision:** Keep the successful native model-led `2.0.0-alpha.18` runtime unchanged. Before adding a forced post-action tool call, timer, blocking rule, retry or prompt, make the evidence **measurable** with a privacy-preserving **offline-only action receipt audit**. Its limited generic comparison recognises standard ON/OFF switch requests and `setLevel` level requests **only for descriptive benchmarking**; arbitrary native-app buttons or device commands remain **not comparable** without a typed outcome contract. A later fresh read with a matching value is a *reported attribute observation*, never independently proven physical completion.
+
+### Offline action audit v5 — structural instrumentation, not agent intervention
+
+The local Technical JSON evaluator now distinguishes:
+1. Native device-command **attempts** vs accepted echoed **native acknowledgments**.
+2. Whether the command response contained embedded (possibly pre-command) state.
+3. Successful, **source-ordered, same-device attribute reads** that follow an acknowledged command, and whether at least two different attributes were read.
+4. For the small standard command subset only, whether the **last** fresh returned expected attribute value matched or differed, versus not comparable. Multiple consecutive observations are not averaged or treated as a definitive final state.
+
+Exclude failed, locally rejected, non-executed, prior-evidence-only and unrelated-device results. Never export device IDs, source attribute names, values, timestamps, commands, raw arguments or model-generated claims. Keep `physical_effect_and_causality=not_established` and `answer_outcome_claim_quality=human_review_required` regardless of acknowledgments or matches. Tests use synthetic receipts to cover stale embedded state, apparent OFF->ON report, dual-attribute dimmer, false-positive rejection, gateway leaf and privacy.
+
+**Next engineering gate:** source-review the aggregate action audit on the existing **private** exports and compare fixed-source multi-domain model reasoning and evidence presentation. Prefer a generic source-contract improvement only if it transfers across independent domains with no unjustified cost in command latency. Do **not** claim this instrumentation changes user-facing answers, device response or model quality.
+
