@@ -5,7 +5,16 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 html=(Path(__file__).parents[1]/"rootfs/app/ui.html").read_text()
 version=re.search(r'const UI_VERSION="([^"]+)"',html)[1]
-answer="## Reported state\n\n| Device | State |\n| --- | --- |\n| **Desk lamp** | \x60off\x60 |\n\n<script>window.injected=true</script>"
+answer=r"""## Reported state
+
+| Device | State | Temperature |
+| --- | --- | --- |
+| **Desk lamp** | \`off\` | $21.0^\circ\text{C}$ |
+
+Heating $\rightarrow$ Idle; $22.0 \rightarrow 21.0^\circ\text{C}$.
+<svg onload=alert(1)><script>window.injected=true</script></svg>
+Unknown: $\frac{1}{2}$.
+"""
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   self.send_response(200);self.send_header("Content-Type","text/html");self.end_headers();self.wfile.write(html.encode())
@@ -37,6 +46,12 @@ with sync_playwright() as p:
   page.locator("#send").click()
   page.locator("#answer table").wait_for()
   assert page.locator("#answer strong").inner_text()=="Desk lamp"
+  assert "21.0°C" in page.locator("#answer").inner_text()
+  assert "Heating → Idle" in page.locator("#answer").inner_text()
+  assert "22.0 → 21.0°C" in page.locator("#answer").inner_text()
+  assert r"$\frac{1}{2}$" in page.locator("#answer").inner_text()
+  assert page.locator("#answer svg").count()==0
+
   assert page.evaluate("window.injected===undefined")
   assert page.locator("#rawAnswer").text_content()==answer
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
