@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
-Date: 2026-11-07
-Version: `2.0.0-alpha.7`
-Development branch: `feat/v2-upstream-native-mcp`
+Updated: 2026-11-08
+Version: `2.0.0-alpha.8` (candidate until PR CI/merge verified)
+Development branch: `feat/v2-session-evidence-followups-alpha8`
 
 ## Current user direction
 
@@ -76,3 +76,13 @@ Model prompts, upstream skills, agent/MCP code, permissions, recorder source and
 Local UI regressions cover formatting/XSS, raw copies, downloads, session reset/history, busy-state reset refusal, timing/errors, diagnostics empty state and tab target. CI includes Python runtime and Docker startup. Installed desktop/mobile acceptance and day-to-day usefulness remain pending.
 
 Recent evaluation: Gemma can summarize richer frozen G06 evidence but previously looped on tool selection; Beam also made unsupported claims. Production-code replay is byte-verified. Fresh investigation comparisons remain limited by captured-query coverage; the latest expanded attempt timed out before either first model response. Do not infer a model winner, train case-specific skill rules, or replace the default model based on those runs. Private fixtures/tokens remain outside the repository.
+
+## Alpha.8 — evidence-aware session follow-ups (8 November 2026)
+
+The user approved the next evaluation milestone and correction of the alpha.7 follow-up limitation, while asking to retain existing upstream MCP write permissions and confirmation behavior unless a serious risk is shown. The alpha.7 UI sent only prior prose; source receipts did not survive into model input on subsequent questions. Alpha.8 introduces a small server-origin, redacted, **memory-only** receipt cache keyed to the open browser conversation. Prior source excerpts include tool identifiers, arguments, capture time, success, bounded result text and truncation markers. The client does not submit source receipts; only the agent's actual tool responses are retained. Old values are historical and cannot authorise new device writes or substitute for a necessary fresh check. The model remains responsible for interpreting them and selecting further tools. New conversation rotates the ID and erases server-held evidence, and expiry/eviction bound memory.
+
+The upstream skill files remain unchanged. V1, recorder source, provider routing, server permissions, `confirm=true` approval, and tool selection are unchanged. No deterministic causal fixes, automatic retries or per-incident logic were added. A server-side cache gives stronger receipt provenance than trusting arbitrary browser-provided observations; the UUID remains a session capability, so preserve normal Home Assistant ingress and keep the direct port disabled.
+
+**Evidence gate:** Browser/HTTP/Python regression tests verify the data flow, truncation, masking, reset, expiry and isolation using synthetic MCP/model responses. The private G06 first-answer capture and Ollama Cloud credentials are not part of the repository. No live Hubitat/Gemma replay or matched Claude/Thaura evaluation is asserted. The next installed acceptance uses the frozen cross-domain matrix in `docs/HUBITAT-MCP-AI-V2-ACCEPTANCE.md` and exported first-answer technical JSON, including at least one dependent follow-up per domain. Previous timeouts are failures, not a successful comparison.
+
+CI and PR exact-head verification: **pending until the final candidate passes.** No unattended work runs after this session.

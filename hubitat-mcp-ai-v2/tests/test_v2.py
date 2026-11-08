@@ -324,7 +324,7 @@ class InteractionTests(unittest.TestCase):
         class FakeModel:
             def __init__(self):
                 self.executed = False
-            async def answer(self, question, history, mcp, seconds, before_call):
+            async def answer(self, question, history, mcp, seconds, before_call, **kwargs):
                 await before_call("hub_manage_destructive_ops",
                                   {"tool": "hub_reboot", "args": {"confirm": True}}, "Reboot requested hub")
                 self.executed = True

@@ -17,6 +17,7 @@ from agent import Agent
 from external_hub_diagnostics import ExternalHubDiagnostics
 from mcp import MCPError, MCPClient
 from interaction import Interaction
+from conversation import ConversationEvidence
 
 
 DEFAULTS: dict[str, Any] = {
@@ -61,6 +62,7 @@ async def lifecycle(app: FastAPI):
     app.state.options = options
     app.state.ask_lock = asyncio.Lock()
     app.state.interactions = {}
+    app.state.conversations = ConversationEvidence()
     app.state.mcp = None
     app.state.model = None
     app.state.configuration_error = None
@@ -98,7 +100,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.7", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.8", lifespan=lifecycle)
 
 
 @app.middleware("http")
@@ -114,6 +116,7 @@ async def prevent_stale_interface(request: Request, call_next):
 
 class AskRequest(BaseModel):
     request_id: UUID = Field(default_factory=uuid4)
+    conversation_id: UUID | None = None
     question: str = Field(min_length=1, max_length=10000)
     history: list[dict] = Field(default_factory=list, max_length=20)
 
@@ -128,7 +131,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.7",
+        "version": "2.0.0-alpha.8",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
@@ -151,6 +154,17 @@ def require_ui_request(request: Request):
 async def activity(request_id: UUID):
     interaction = app.state.interactions.get(str(request_id))
     return interaction.status() if interaction else {"current": None, "pending": None}
+
+
+class ClearConversation(BaseModel):
+    conversation_id: UUID
+
+
+@app.post("/api/conversation/clear")
+async def clear_conversation(request: ClearConversation, http_request: Request):
+    require_ui_request(http_request)
+    app.state.conversations.clear(str(request.conversation_id))
+    return {"cleared": True}
 
 
 class Confirmation(BaseModel):
@@ -189,11 +203,21 @@ async def ask(request: AskRequest, http_request: Request):
     try:
         async with app.state.ask_lock:
             try:
-                return await app.state.model.answer(
+                prior, prior_count = (
+                    app.state.conversations.context(str(request.conversation_id))
+                    if request.conversation_id else ("", 0)
+                )
+                result = await app.state.model.answer(
                     request.question, request.history,
                     app.state.mcp, int(app.state.options["investigation_timeout_seconds"]),
                     before_call=interaction.before_call,
+                    prior_evidence=prior, prior_receipts=prior_count,
                 )
+                if request.conversation_id and result.get("tool_calls"):
+                    app.state.conversations.record(
+                        str(request.conversation_id), request.question, result["tool_calls"]
+                    )
+                return result
             except MCPError as exc:
                 return {"success": False, "answer": f"MCP connection failure: {exc}",
                         "tool_calls": [], "error": "mcp"}
