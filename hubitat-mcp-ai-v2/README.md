@@ -200,3 +200,13 @@ Use the private offline scorecard script:
 It reads a browser-exported v2 Technical JSON, performs **no network/model/hub calls**, and reports observed tool/latency/source-coverage counts without disclosing private questions, answers, IDs, tool arguments, raw values, failures or event timestamps. It **never assigns an automatic factual accuracy score**. A human evidence review remains necessary, and inferred source completeness is not permitted. See docs/HUBITAT-MCP-AI-V2-FIRST-ANSWER-QUALITY.md for the frozen six-case read-only live matrix and first-answer assessment protocol.
 
 No add-on bump is needed to run this *evaluation-only* code, and no change to Hubitat devices, server permissions, V1 or the external recorder is involved.
+
+## Alpha.18 — visible and accessible clipboard feedback (8 November 2026)
+
+The original **Copy answer** action copied the exact raw answer but left the button unchanged; the only acknowledgment was below a potentially long response. Alpha.18 adds a short-lived, high-contrast **✓ Copied!** success label directly on the clicked button and a live status beside the Answer heading. It also applies to **Copy technical details**, and shows **Copy failed** plus manual-copy guidance when neither the native clipboard API nor trusted-LAN fallback succeeds. Buttons and status reset after the confirmation interval, on a new question or when starting a new conversation; a late clipboard promise cannot restore a stale copied message on another request.
+
+- The clipboard operation is awaited before any success feedback appears. Success never implies the clipboard call succeeded when it did not.
+- Existing secure-context Clipboard API and LAN HTTP textarea/`execCommand` fallback remain available.
+- Exact original answer text and downloaded/copied Technical JSON remain intact. No answer rewriting, extra model call, new native MCP tool, provider/auth, incident recording or Hubitat interaction.
+- Automated synthetic JavaScript tests cover success labels, CSS state, live region, fallback, failure, expiry, old-request race and unchanged technical receipt content; repository browser/container tests remain required. **Installed visual acceptance pending**.
+- To roll back, reinstall alpha.17. The generic source-gap annotation remains present in alpha.18; the reasoning-quality baseline is unchanged, with independent reviews documented in the First-Answer Quality Plan.
