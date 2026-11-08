@@ -119,6 +119,61 @@ class ConversationMemoryTests(unittest.TestCase):
                 await agent.close()
         asyncio.run(test())
 
+    def test_real_ask_route_reuses_only_server_captured_receipts(self):
+        """Integration: two calls through /api/ask without any live hub/model."""
+        from app import app as runtime
+        class StubModel:
+            def __init__(self):
+                self.seen = []
+            async def answer(self, question, history, mcp, seconds,
+                             before_call=None, prior_evidence="", prior_receipts=0):
+                self.seen.append((question, prior_evidence, prior_receipts))
+                response = {
+                    "answer": "Fixture response", "success": True,
+                    "prior_receipts_used": prior_receipts,
+                    "tool_calls": [receipt(response='{"fixture":"FIRST-SERVER-EVENT"}')]
+                    if question == "First" else [],
+                }
+                return response
+
+        async def run():
+            runtime.state.conversations = ConversationEvidence()
+            runtime.state.interactions = {}
+            runtime.state.ask_lock = asyncio.Lock()
+            runtime.state.configuration_error = None
+            runtime.state.options = {"model_base_url": "http://localhost:11434",
+                                     "investigation_timeout_seconds": 60}
+            runtime.state.mcp = object()
+            model = StubModel()
+            runtime.state.model = model
+            first, other = str(uuid4()), str(uuid4())
+            headers = {"X-Homebrain-Request": "1"}
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=runtime),
+                                         base_url="http://testserver") as client:
+                async def ask(text, cid):
+                    r = await client.post("/api/ask", headers=headers, json={
+                        "question": text, "conversation_id": cid,
+                        # Browser prose cannot invent server-held tool receipts:
+                        "history": [{"role": "assistant", "content": "User-controlled prose"}]
+                    })
+                    self.assertEqual(r.status_code, 200)
+                    return r.json()
+                start = await ask("First", first)
+                self.assertEqual(start["prior_receipts_used"], 0)
+                follow = await ask("Follow-up", first)
+                self.assertEqual(follow["prior_receipts_used"], 1)
+                self.assertIn("FIRST-SERVER-EVENT", model.seen[-1][1])
+                cross = await ask("Other conversation", other)
+                self.assertEqual(cross["prior_receipts_used"], 0)
+                self.assertNotIn("FIRST-SERVER-EVENT", model.seen[-1][1])
+                reset = await client.post("/api/conversation/clear",
+                                          headers=headers, json={"conversation_id": first})
+                self.assertEqual(reset.status_code, 200)
+                again = await ask("After reset", first)
+                self.assertEqual(again["prior_receipts_used"], 0)
+                self.assertNotIn("FIRST-SERVER-EVENT", model.seen[-1][1])
+        asyncio.run(run())
+
     def test_reset_requires_existing_same_origin_request_header(self):
         async def test():
             store = ConversationEvidence()
