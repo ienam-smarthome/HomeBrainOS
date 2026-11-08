@@ -50,7 +50,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <main>
 <nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active">
-<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include recent questions and answers; previous tool receipts are not automatically resent.</p>
+<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include recent questions, answers and bounded historical MCP source receipts. New actions and live-state questions still require fresh verification. No evidence is stored on disk.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
 <div class="row"><small class="muted">Ask naturally. The assistant chooses tools from your connected Hubitat server.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
 </div>
@@ -84,9 +84,10 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div></section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.7";
+const UI_VERSION="2.0.0-alpha.8";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
+let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
@@ -154,6 +155,7 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
+  if(response?.prior_receipts_used)byId('requestSummary').textContent+=' '+response.prior_receipts_used+' prior source excerpts included as historical context.';
  turns.push({question,answer});turns=turns.slice(-12);renderTurns();
  byId('downloadTechnical').disabled=false;
  byId('receipts').textContent=JSON.stringify(technicalDetails,null,2);
@@ -194,7 +196,7 @@ async function submitAsk(){
  const activityTimer=setInterval(pollActivity,750);
  const responseTimer=setInterval(()=>{byId('responseTime').textContent='Waiting: '+((performance.now()-started)/1000).toFixed(1)+' s';},250);
  byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
- try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({request_id:activeRequest,question:q,history:messages.slice(-12)})});
+ try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({request_id:activeRequest,conversation_id:conversationId,question:q,history:messages.slice(-12)})});
   showResult(q,d.answer||'No answer returned.',d,performance.now()-started);
   messages.push({role:'user',content:q},{role:'assistant',content:d.answer||''});
  }catch(e){
@@ -236,8 +238,12 @@ function renderTurns(){
 }
 function newConversation(){
  if(byId('send').disabled)return;
+ const oldConversation=conversationId;conversationId=newRequestId();
+ void readJson('api/conversation/clear',{method:'POST',
+  headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
+  body:JSON.stringify({conversation_id:oldConversation})}).catch(()=>{});
  messages=[];turns=[];clearResult();renderTurns();byId('question').value='';byId('answer').textContent='Your response will appear here.';
- byId('rawAnswer').textContent='No answer yet.';byId('requestQuestion').hidden=true;byId('requestQuestion').textContent='';byId('requestSummary').textContent='New conversation. No previous questions or answers will be sent.';byId('question').focus();
+ byId('rawAnswer').textContent='No answer yet.';byId('requestQuestion').hidden=true;byId('requestQuestion').textContent='';byId('requestSummary').textContent='New conversation. Previous prose and stored MCP evidence are cleared.';byId('question').focus();
 }
 function downloadTechnical(){
  if(!technicalDetails)return;
