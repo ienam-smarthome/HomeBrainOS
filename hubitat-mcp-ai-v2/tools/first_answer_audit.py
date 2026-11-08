@@ -7,6 +7,8 @@ question, answer, device IDs, tool arguments, raw event rows or source payload.
 Successful MCP calls are NOT equivalent to a correct or safe model answer.
 Only successful source receipts contribute to history counts. Native MCP
 content/text event lists count as source rows even without client annotations.
+Native bounded log receipts also count returned log rows but cannot establish
+absence of older errors or events from a limited latest-page response.
 Untrusted labels,
 including model names, tool names and argument keys, are never echoed verbatim.
 
@@ -29,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "homebrain-v2-first-answer-audit.v3"
+SCHEMA = "homebrain-v2-first-answer-audit.v4"
 
 
 class AuditInputError(ValueError):
@@ -148,6 +150,60 @@ def _native_event_scope(response_text: Any, call: dict[str, Any]) -> dict | None
     return None
 
 
+def _native_log_scope(response_text: Any, call: dict[str, Any]) -> dict | None:
+    """Recognise returned native log rows, not complete retained log coverage.
+
+    A broad log query can match many more rows than its returned latest-page
+    sample. Its success does not establish absence of older errors. No log
+    messages, timestamps, names, selectors or matched counts are exported.
+    """
+    request = call.get("arguments")
+    leaf = request.get("tool") if isinstance(request, dict) else None
+    if call.get("name") != "hub_get_logs" and leaf != "hub_get_logs":
+        return None
+    if not isinstance(response_text, str):
+        return None
+    try:
+        envelope = json.loads(response_text)
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(envelope, dict) or envelope.get("isError") is True
+            or not isinstance(envelope.get("content"), list)):
+        return None
+    args = _effective_args(request)
+    requested_limit = _optional_int(args.get("limit"))
+    for block in envelope["content"]:
+        if (not isinstance(block, dict) or block.get("type") != "text"
+                or not isinstance(block.get("text"), str)):
+            continue
+        try:
+            body = json.loads(block["text"])
+        except (TypeError, ValueError):
+            continue
+        if (not isinstance(body, dict) or not isinstance(body.get("mode"), str)
+                or not isinstance(body.get("entries"), list)
+                or body.get("isError") is True or body.get("success") is False):
+            continue
+        entries = body["entries"]
+        if not all(isinstance(entry, dict) for entry in entries):
+            continue
+        matched = _optional_int(body.get("matched"))
+        return {
+            "rows_returned": len(entries),
+            "reported_matched_exceeds_returned": (
+                matched is not None and matched > len(entries)
+            ),
+            "requested_limit_reached": (
+                requested_limit is not None and requested_limit > 0
+                and len(entries) >= requested_limit
+            ),
+            "has_requested_since": isinstance(args.get("since"), str)
+            and bool(args["since"].strip()),
+            "log_window_completeness": "not_established",
+        }
+    return None
+
+
 def audit_export(document: Any) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise AuditInputError("Expected the browser's Technical JSON object")
@@ -171,6 +227,7 @@ def audit_export(document: Any) -> dict[str, Any]:
     targets: set[tuple[str, str]] = set()
     attributes: set[tuple[str, str]] = set()
     event_scopes: list[dict] = []
+    log_scopes: list[dict] = []
     for call in calls:
         result_kind = call.get("result_kind")
         if result_kind == "tool_catalog":
@@ -213,19 +270,27 @@ def audit_export(document: Any) -> dict[str, Any]:
                 targets.add((normalized, str(value)))
             if normalized in {"attribute", "attributename", "field"}:
                 attributes.add((normalized, str(value)))
+        # An executed, successful read is necessary but not sufficient for
+        # source-window completeness or a factual/causal claim.
+        valid_read = (call.get("success") is True
+                      and call.get("operation_executed") is not False
+                      and result_kind not in {
+                          "tool_catalog", "prior_evidence_read", "contract_error"
+                      })
         scope = _read_scope(call.get("response")) or _native_event_scope(
             call.get("response"), call
         )
         if scope is not None:
-            # Failed, locally rejected or metadata-only calls cannot establish
-            # retrieved history, even if their payload contains scope-looking JSON.
-            if (call.get("success") is True and call.get("operation_executed") is not False
-                    and result_kind not in {
-                        "tool_catalog", "prior_evidence_read", "contract_error"
-                    }):
+            if valid_read:
                 event_scopes.append(scope)
             else:
                 counts["excluded_non_success_event_scopes"] += 1
+        log_scope = _native_log_scope(call.get("response"), call)
+        if log_scope is not None:
+            if valid_read:
+                log_scopes.append(log_scope)
+            else:
+                counts["excluded_non_success_log_scopes"] += 1
     attempts = counts["native_tool_attempts"]
     failures = counts["failed_native_attempts"]
     return {
@@ -297,6 +362,25 @@ def audit_export(document: Any) -> dict[str, Any]:
                 bool(s["returned_timestamps_both_present"]) for s in event_scopes
             ),
         },
+        "log_receipts": {
+            "source_receipts": len(log_scopes),
+            "rows_returned_total": sum(s["rows_returned"] for s in log_scopes),
+            "unique_log_rows_across_receipts": "not_established",
+            "receipts_where_reported_matches_exceed_returned": sum(
+                s["reported_matched_exceeds_returned"] for s in log_scopes
+            ),
+            "any_log_request_limit_reached": any(
+                s["requested_limit_reached"] for s in log_scopes
+            ),
+            "receipts_with_requested_since": sum(
+                s["has_requested_since"] for s in log_scopes
+            ),
+            "excluded_non_success_log_scopes": counts[
+                "excluded_non_success_log_scopes"
+            ],
+            "all_log_windows_complete": "not_established",
+            "absence_of_older_errors_from_sample": "not_established",
+        },
         "human_review": {
             "grounding": "not_measured",
             "group_member_and_attribute_coverage": "not_measured",
@@ -318,7 +402,7 @@ def summarize(records: list[dict]) -> dict:
     times = sorted(elapsed)
     counts = [r["native_tools"] for r in records]
     return {
-        "schema": "homebrain-v2-first-answer-summary.v3",
+        "schema": "homebrain-v2-first-answer-summary.v4",
         "samples": n,
         "quality_status": "not_measured",
         "grounded_claim_rate": None,
