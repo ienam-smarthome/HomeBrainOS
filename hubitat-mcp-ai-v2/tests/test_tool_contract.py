@@ -13,7 +13,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from mcp import MCPClient, MCPError, MCPContractError, redact
-from agent import Agent, compact_tool_result
+from agent import Agent, compact_tool_result, model_tools
 
 
 GATEWAY_SCHEMA = {
@@ -195,6 +195,128 @@ class GatewayContractRegressions(unittest.TestCase):
             finally:
                 await agent.close()
                 await transport.close()
+        asyncio.run(run())
+
+
+class GatewayFirstCallRegressions(unittest.TestCase):
+    def test_live_gateway_schema_explains_top_level_selector_without_mutation(self):
+        catalog = [
+            {"name": "gateway_with_arbitrary_name",
+             "description": "Connect via the native server's selected leaf",
+             "inputSchema": {
+                 "type": "object",
+                 "properties": {
+                     "tool": {"type": "string", "enum": ["read_history", "read_status"]},
+                     "args": {"type": "object"},
+                 },
+             }},
+            {"name": "flat_command",
+             "description": "Ordinary direct tool",
+             "inputSchema": {
+                 "type": "object",
+                 "properties": {"tool": {"type": "string"}, "args": {"type": "object"}},
+                 "required": ["tool"], "additionalProperties": True,
+             }},
+            {"name": "non_gateway", "inputSchema": {
+                 "type": "object", "properties": {"args": {"type": "object"}}}},
+        ]
+        original = copy.deepcopy(catalog)
+        render = model_tools(catalog)
+        gateway = render[0]["function"]
+        self.assertIn("MCP GATEWAY CALL SHAPE", gateway["description"])
+        self.assertIn("top level", gateway["description"])
+        self.assertIn("never repeat the selector", gateway["description"])
+        self.assertIn("catalog/schemas", gateway["description"])
+        self.assertEqual(gateway["parameters"]["properties"]["tool"]["enum"],
+                         ["read_history", "read_status"])
+        self.assertIn("TOP-LEVEL selector",
+                      gateway["parameters"]["properties"]["tool"]["description"])
+        self.assertIn("Never include a 'tool' key",
+                      gateway["parameters"]["properties"]["args"]["description"])
+        self.assertFalse(gateway["parameters"]["additionalProperties"])
+        # A schema with top-level tool+args is a gateway by shape, not name.
+        self.assertIn("MCP GATEWAY CALL SHAPE", render[1]["function"]["description"])
+        self.assertEqual(render[2]["function"]["parameters"], catalog[2]["inputSchema"])
+        self.assertNotIn("MCP GATEWAY CALL SHAPE", render[2]["function"]["description"])
+        self.assertEqual(catalog, original)
+        self.assertIsNot(gateway["parameters"], catalog[0]["inputSchema"])
+
+    def test_ordinary_direct_tool_with_no_gateway_shape_is_unchanged(self):
+        catalog = [{"name": "direct", "description": "Caller-supplied data",
+                    "inputSchema": {"type": "object", "properties": {
+                        "args": {"type": "object", "properties": {
+                            "tool": {"type": "string"}}}}}}]
+        result = model_tools(catalog)[0]["function"]
+        self.assertEqual(result["parameters"], catalog[0]["inputSchema"])
+        self.assertEqual(result["description"], "Caller-supplied data")
+
+    def test_duplicate_gateway_leaf_selector_rejected_before_any_network_call(self):
+        async def run():
+            remote = LiveClient()
+            try:
+                bad = [
+                    {"tool": "hub_list_device_events",
+                     "args": {"tool": "hub_list_device_events", "limit": 50}},
+                    {"tool": "hub_list_devices",
+                     "args": {"tool": "hub_list_devices"}},
+                ]
+                for args in bad:
+                    with self.subTest(args=args):
+                        with self.assertRaisesRegex(MCPContractError, "args.tool"):
+                            await remote.client.call("hub_read_devices", args)
+                self.assertEqual(remote.calls, [])
+                # The correct shape transmits without transformation.
+                good = {"tool": "hub_list_device_events",
+                        "args": {"deviceId": "17", "limit": 50}}
+                await remote.client.call("hub_read_devices", good)
+                self.assertEqual(remote.calls, [good])
+                # Schema discovery with {} remains explicitly supported.
+                catalog = await remote.client.call("hub_read_devices", {})
+                self.assertEqual(json.loads(catalog["content"][0]["text"])["mode"], "catalog")
+            finally:
+                await remote.close()
+        asyncio.run(run())
+
+    def test_model_receives_clear_contract_on_first_call_with_no_catalog_probe(self):
+        class ScriptedModel(Agent):
+            def __init__(self):
+                super().__init__("http://127.0.0.1:11434", "fixture", "", 20)
+                self.rounds_seen = 0
+            async def round(self, messages, tools, remaining):
+                self.rounds_seen += 1
+                gateway = next(t["function"] for t in tools if
+                               t["function"]["name"] == "hub_read_devices")
+                self.assertion = (
+                    "MCP GATEWAY CALL SHAPE" in gateway["description"]
+                    and "TOP-LEVEL selector" in gateway["parameters"]["properties"]["tool"]["description"]
+                    and gateway["parameters"]["properties"]["tool"]["enum"]
+                    == ["hub_list_devices", "hub_list_device_events"]
+                )
+                if self.rounds_seen == 1:
+                    return {"content": "", "tool_calls": [{"function": {
+                        "name": "hub_read_devices",
+                        "arguments": {"tool": "hub_list_device_events",
+                                      "args": {"deviceId": "17"}}}}]}
+                self.model_messages = list(messages)
+                return {"content": "Historical row retrieved. Cause unverified.",
+                        "tool_calls": []}
+        async def run():
+            remote = LiveClient()
+            agent = ScriptedModel()
+            try:
+                response = await agent.answer("Read source history", [],
+                                              remote.client, 60)
+                self.assertTrue(agent.assertion)
+                self.assertTrue(response["success"])
+                self.assertEqual(response["rounds"], 2)
+                self.assertEqual(len(response["tool_calls"]), 1)
+                self.assertEqual(response["tool_calls"][0]["name"], "hub_read_devices")
+                self.assertEqual(remote.calls, [
+                    {"tool": "hub_list_device_events", "args": {"deviceId": "17"}}
+                ])
+            finally:
+                await agent.close()
+                await remote.close()
         asyncio.run(run())
 
 
