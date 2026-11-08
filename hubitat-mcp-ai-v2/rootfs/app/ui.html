@@ -752,33 +752,167 @@ async function refreshDiagnostics(){
   timelineData=null;visual=null;drawIncidentTimeline();draw();
  }
 }
-function axis(rows,key){const data=rows.filter(r=>r.reachable&&Number.isFinite(+r[key])&&r[key]!=null).map(r=>+r[key]);if(!data.length)return [0,1];let min=Math.min(...data),max=Math.max(...data);const extra=Math.max((max-min)*.13,1);return [Math.max(0,min-extra),max+extra]}
 function draw(){
- const c=byId('graph'),rect=c.getBoundingClientRect();if(!rect.width)return;
- const dpr=Math.min(window.devicePixelRatio||1,2);c.width=Math.floor(rect.width*dpr);c.height=Math.floor(rect.height*dpr);
- const g=c.getContext('2d');g.scale(dpr,dpr);const w=rect.width,h=rect.height;
- g.clearRect(0,0,w,h);g.fillStyle='#121e2d';g.fillRect(0,0,w,h);
- const left=46,right=visual?.bk?51:18,top=20,bottom=35,W=w-left-right,H=h-top-bottom;
- if(!visual){g.fillStyle='#b2bfd2';g.fillText('No captured data yet',left+16,top+25);return;}
- const [lo,hi]=axis(visual.a,visual.ak),[lo2,hi2]=axis(visual.b,visual.bk||visual.ak);
- const x=t=>left+(t-visual.start)/Math.max(1,visual.end-visual.start)*W;
- const y=(v,min,max)=>top+H-(v-min)/Math.max(.0001,max-min)*H;
- g.font='11px system-ui';g.lineWidth=1;g.setLineDash([2,4]);g.strokeStyle='#35485d';g.fillStyle='#b6c4d5';
- for(let i=0;i<=4;i++){const yy=top+H*i/4;g.beginPath();g.moveTo(left,yy);g.lineTo(left+W,yy);g.stroke();g.textAlign='right';g.fillText(fmt(hi-(hi-lo)*i/4,(hi-lo)<2?2:(hi-lo)<10?1:0),left-6,yy+4);if(visual.bk){g.textAlign='left';g.fillText(fmt(hi2-(hi2-lo2)*i/4,(hi2-lo2)<2?2:(hi2-lo2)<10?1:0),left+W+7,yy+4)}}
- g.textAlign='center';for(let i=0;i<=4;i++){const t=visual.start+(visual.end-visual.start)*i/4;g.fillText(new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),x(t),h-13)}
- for(const e of visual.incidents){const s=Date.parse(e.started_at),f=e.recovered_at?Date.parse(e.recovered_at):visual.end;if(!Number.isFinite(s)||!Number.isFinite(f))continue;g.fillStyle='#d7516330';g.fillRect(Math.max(left,x(s)),top,Math.max(0,Math.min(left+W,x(f))-Math.max(left,x(s))),H)}
- for(const e of visual.reboots){const t=Date.parse(e.occurred_at);if(!Number.isFinite(t)||t<visual.start||t>visual.end)continue;g.strokeStyle='#ffc76a';g.setLineDash([4,4]);g.beginPath();g.moveTo(x(t),top);g.lineTo(x(t),top+H);g.stroke();}
- function series(rows,key,min,max,color){const pts=rows.filter(r=>r.reachable&&r[key]!=null&&Number.isFinite(+r[key])).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));g.strokeStyle=color;g.lineWidth=1.9;g.lineCap='round';g.lineJoin='round';g.setLineDash([]);g.beginPath();let prev=null;for(const p of pts){const stamp=Date.parse(p.recorded_at);if(!Number.isFinite(stamp))continue;const xx=x(stamp),yy=y(+p[key],min,max);if(prev&&prev.diag_segment===p.diag_segment&&stamp-Date.parse(prev.recorded_at)<=(key.startsWith('native_')||key.startsWith('java_')?900000:350000))g.lineTo(xx,yy);else g.moveTo(xx,yy);prev=p;}g.stroke();if(pts.length<=600){g.fillStyle=color;for(const p of pts){const stamp=Date.parse(p.recorded_at);if(!Number.isFinite(stamp))continue;g.beginPath();g.arc(x(stamp),y(+p[key],min,max),1.6,0,Math.PI*2);g.fill();}}return pts}
- const a=series(visual.a,visual.ak,lo,hi,'#70b9ff'),b=visual.bk?series(visual.b,visual.bk,lo2,hi2,'#6ee7b7'):[];
- if(hoverX!=null){const xx=Math.min(left+W,Math.max(left,hoverX));g.strokeStyle='#d9e3f1';g.setLineDash([3,4]);g.beginPath();g.moveTo(xx,top);g.lineTo(xx,top+H);g.stroke();const t=visual.start+(xx-left)/W*(visual.end-visual.start);
- const nearest=rows=>rows.length?rows.reduce((best,r)=>Math.abs(Date.parse(r.recorded_at)-t)<Math.abs(Date.parse(best.recorded_at)-t)?r:best):null;const p=nearest(a),q=nearest(b);
- for(const [item,key,min,max,col] of [[p,visual.ak,lo,hi,'#70b9ff'],[q,visual.bk,lo2,hi2,'#6ee7b7']])if(item){g.fillStyle=col;g.beginPath();g.arc(x(Date.parse(item.recorded_at)),y(+item[key],min,max),4,0,Math.PI*2);g.fill()}
- const parts=[p&&new Date(p.recorded_at).toLocaleString('en-GB')+': '+fmt(+p[visual.ak])+' ('+visual.ak+')',q&&new Date(q.recorded_at).toLocaleString('en-GB')+': '+fmt(+q[visual.bk])+' ('+visual.bk+')'].filter(Boolean);
- byId('hint').textContent=parts.join(' | ');byId('hint').style.display=parts.length?'block':'none';
- }else byId('hint').style.display='none';
+ const canvas=byId('graph'),rect=canvas.getBoundingClientRect();
+ if(!rect.width)return;
+ const dpr=Math.min(window.devicePixelRatio||1,2);
+ canvas.width=Math.floor(rect.width*dpr);canvas.height=Math.floor(rect.height*dpr);
+ const g=canvas.getContext('2d');g.scale(dpr,dpr);
+ const w=rect.width,h=rect.height;
+ g.fillStyle='#101b2b';g.fillRect(0,0,w,h);
+ const left=60,right=visual?.bk?64:20,top=28,bottom=43;
+ const W=Math.max(20,w-left-right),H=Math.max(20,h-top-bottom);
+ if(!visual){
+  g.fillStyle='#c2cfe0';g.font='13px system-ui';
+  g.fillText('No saved readings in this interval',left+12,top+25);
+  byId('plotStats').textContent='Minimum — · Maximum — · Latest —';
+  byId('detailReadout').textContent='No observation was retrieved for the selected range.';
+  detailPoints=[];return;
+ }
+ const visible=timelineWindow(timelineData);
+ const start=visible?.start??visual.start,end=visible?.end??visual.end;
+ const view=(visual,key,native)=>sourcePoints(visual,key,native)
+  .filter(r=>{const t=Date.parse(r.recorded_at);return t>=start&&t<=end});
+ const a=view(visual.a,visual.ak,visual.ak.startsWith('native_')||
+  visual.ak.startsWith('java_'));
+ const b=visual.bk?view(visual.b,visual.bk,true):[];
+ detailPoints=[...new Set([...a,...b])].sort((p,q)=>
+  Date.parse(p.recorded_at)-Date.parse(q.recorded_at));
+ const aScale=scaleFor(a,visual.ak),bScale=scaleFor(b,visual.bk||visual.ak,true);
+ const x=t=>left+(t-start)/Math.max(1,end-start)*W;
+ const y=(value,scale)=>top+H-(value-scale.min)/(scale.max-scale.min)*H;
+ g.font='11px system-ui';g.lineWidth=1;g.strokeStyle='#41556d';g.fillStyle='#c2cfe0';
+ for(let i=0;i<=aScale.count;i++){
+  const value=aScale.min+aScale.step*i,yy=y(value,aScale);
+  g.strokeStyle='#354b62';g.setLineDash([2,5]);
+  g.beginPath();g.moveTo(left,yy);g.lineTo(left+W,yy);g.stroke();
+  g.fillStyle='#a8c9f5';g.textAlign='right';
+  g.fillText(diagValue(value,visual.ak),left-7,yy+3);
+ }
+ if(visual.bk){
+  for(let i=0;i<=bScale.count;i++){
+   const value=bScale.min+bScale.step*i,yy=y(value,bScale);
+   g.fillStyle='#86efac';g.textAlign='left';
+   g.fillText(diagValue(value,visual.bk),left+W+7,yy+3);
+  }
+ }
+ const ticks=Math.max(2,Math.min(10,Math.floor(rect.width/120)));
+ const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
+ for(let i=0;i<=ticks;i++){
+  const t=start+(end-start)*i/ticks,xx=x(t);
+  g.strokeStyle='#354b62';g.setLineDash([2,6]);
+  g.beginPath();g.moveTo(xx,top);g.lineTo(xx,top+H);g.stroke();
+  g.textAlign=i===0?'left':i===ticks?'right':'center';g.fillStyle='#b6c6da';
+  g.fillText(new Date(t).toLocaleString('en-GB',sameDay?
+   {hour:'2-digit',minute:'2-digit',hour12:false}:
+   {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}),xx,h-13);
+ }
+ g.save();g.beginPath();g.rect(left,top,W,H);g.clip();
+ for(const inc of visual.incidents||[]){
+  const begin=Date.parse(inc.started_at);
+  const endIncident=inc.recovered_at?Date.parse(inc.recovered_at):end;
+  if(!Number.isFinite(begin)||!Number.isFinite(endIncident)||endIncident<start||begin>end)continue;
+  g.fillStyle='#e65f7230';
+  g.fillRect(x(Math.max(begin,start)),top,
+   Math.max(1,x(Math.min(endIncident,end))-x(Math.max(begin,start))),H);
+ }
+ for(const event of visual.reboots||[]){
+  const t=Date.parse(event.occurred_at);
+  if(!Number.isFinite(t)||t<start||t>end)continue;
+  g.strokeStyle='#ffc76a';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(x(t),top);g.lineTo(x(t),top+H);g.stroke();
+ }
+ const drawTrace=(rows,key,scale,color,native)=>{
+  let prev=null;g.strokeStyle=color;g.lineWidth=2.1;
+  g.lineCap='round';g.lineJoin='round';g.setLineDash([]);g.beginPath();
+  for(const row of rows){
+   const t=Date.parse(row.recorded_at),yy=y(row[key],scale);
+   const seg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
+   const gap=prev&&((seg!==null&&prev.seg!==null&&seg!==prev.seg)||
+     t-prev.t>(native?900000:Math.max(120000,90*1000)));
+   if(prev&&!gap)g.lineTo(x(t),yy);else g.moveTo(x(t),yy);
+   prev={t,seg};
+  }
+  g.stroke();
+  if(rows.length<=85){
+   g.fillStyle=color;
+   for(const row of rows){g.beginPath();g.arc(x(Date.parse(row.recorded_at)),
+    y(row[key],scale),2,0,Math.PI*2);g.fill();}
+  }
+  if(rows.length){
+   const lows=rows.reduce((p,q)=>p[key]<=q[key]?p:q);
+   const highs=rows.reduce((p,q)=>p[key]>=q[key]?p:q);
+   for(const row of lows===highs?[lows]:[lows,highs]){
+    g.fillStyle=color;g.strokeStyle='#f3f7fd';g.lineWidth=1.2;
+    g.beginPath();g.arc(x(Date.parse(row.recorded_at)),y(row[key],scale),4,0,Math.PI*2);
+    g.fill();g.stroke();
+   }
+  }
+ };
+ drawTrace(a,visual.ak,aScale,'#70b9ff',
+  visual.ak.startsWith('native_')||visual.ak.startsWith('java_'));
+ if(visual.bk)drawTrace(b,visual.bk,bScale,'#6ee7b7',true);
+ // The selected-time cursor is source-aware. No point is extrapolated across
+ // missing observations; a distant timestamp produces "not nearby".
+ const focus=hoverX===null?(a.length?x(Date.parse(a[a.length-1].recorded_at)):
+  b.length?x(Date.parse(b[b.length-1].recorded_at)):null):Math.max(left,Math.min(left+W,hoverX));
+ const selectedTime=focus===null?null:start+(focus-left)/W*(end-start);
+ let details=[];
+ if(selectedTime!==null){
+  g.strokeStyle='#e2edff';g.setLineDash([3,4]);g.lineWidth=1.2;
+  g.beginPath();g.moveTo(focus,top);g.lineTo(focus,top+H);g.stroke();
+  for(const [rows,key,scale,color] of [
+   [a,visual.ak,aScale,'#70b9ff'],[b,visual.bk,bScale,'#6ee7b7']]){
+   if(!key||!rows.length)continue;
+   const row=nearestDiagnosticRow(rows,selectedTime);
+   if(Math.abs(x(Date.parse(row.recorded_at))-focus)>26){
+    details.push((key==='free_os_mb'?'OS memory':key)+': no nearby reading');
+    continue;
+   }
+   const xx=x(Date.parse(row.recorded_at)),yy=y(row[key],scale);
+   g.fillStyle=color;g.strokeStyle='#fff';g.setLineDash([]);
+   g.lineWidth=1.5;g.beginPath();g.arc(xx,yy,5,0,Math.PI*2);g.fill();g.stroke();
+   details.push((key==='free_os_mb'?'OS memory':key)+': '+diagValue(row[key],key)+
+    ' at '+diagTime(Date.parse(row.recorded_at))+
+    (row.native_sample_label?' · native '+row.native_sample_label:' · external probe'));
+  }
+ }
+ g.restore();
+ const stats=(rows,key,label)=>{
+  if(!rows.length)return label+': no saved readings';
+  const values=rows.map(r=>r[key]),last=rows[rows.length-1];
+  return label+' · min '+diagValue(Math.min(...values),key)+
+   ' · max '+diagValue(Math.max(...values),key)+
+   ' · latest '+diagValue(last[key],key)+' ('+diagTime(Date.parse(last.recorded_at))+')';
+ };
+ byId('plotStats').textContent=stats(a,visual.ak,
+  byId('metric').selectedOptions?.[0]?.textContent||visual.ak)+
+  (visual.bk?' | '+stats(b,visual.bk,'5m CPU equivalent'):'');
+ byId('detailReadout').textContent=selectedTime===null?
+  'No saved readings at this time; unknown is not zero.':
+  details.join(' | ')+' · No interpolation or inferred cause.';
+ const hint=byId('hint');
+ hint.textContent=details.join(' | ');
+ hint.style.display=hoverX!==null&&details.length?'block':'none';
 }
-byId('graph').addEventListener('pointermove',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
+byId('graph').addEventListener('pointermove',e=>{if(e.pointerType!=='touch'){hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()}});
+byId('graph').addEventListener('pointerdown',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
 byId('graph').addEventListener('pointerleave',()=>{hoverX=null;draw()});
-window.addEventListener('resize',()=>{if(byId('diagnostics').classList.contains('active'))draw()});
+byId('graph').addEventListener('keydown',e=>{
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!detailPoints.length||!visual)return;
+ e.preventDefault();
+ const range=timelineWindow(timelineData);if(!range)return;
+ const left=60,right=visual.bk?64:20,width=byId('graph').getBoundingClientRect().width-left-right;
+ const active=hoverX===null?Date.parse(detailPoints[detailPoints.length-1].recorded_at):
+  range.start+(hoverX-left)/width*(range.end-range.start);
+ const times=[...new Set(detailPoints.map(r=>Date.parse(r.recorded_at)))].sort((a,b)=>a-b);
+ let t=e.key==='Home'?times[0]:e.key==='End'?times[times.length-1]:
+  e.key==='ArrowRight'?(times.find(x=>x>active)||times[times.length-1]):
+  ([...times].reverse().find(x=>x<active)||times[0]);
+ hoverX=left+(t-range.start)/(range.end-range.start)*width;draw();
+});
+window.addEventListener('resize',()=>{
+ if(byId('diagnostics').classList.contains('active'))redrawDiagnostics();
+});
 loadStatus();
 </script></body></html>
