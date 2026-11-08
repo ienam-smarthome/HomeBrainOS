@@ -199,7 +199,9 @@ Use the private offline scorecard script:
 
 It reads a browser-exported v2 Technical JSON, performs **no network/model/hub calls**, and reports observed tool/latency/source-coverage counts without disclosing private questions, answers, IDs, tool arguments, raw values, failures or event timestamps. It **never assigns an automatic factual accuracy score**. A human evidence review remains necessary, and inferred source completeness is not permitted. See docs/HUBITAT-MCP-AI-V2-FIRST-ANSWER-QUALITY.md for the frozen six-case read-only live matrix and first-answer assessment protocol.
 
-No add-on bump is needed to run this *evaluation-only* code, and no change to Hubitat devices, server permissions, V1 or the external recorder is involved.
+The offline evaluator (audit schema v4) also counts **bounded native log receipts** separately from device event history: actual returned rows, sources reporting more matches than returned, and reached request limits. No log text, source timestamps, tool arguments or device details are written to the aggregate report. A limited returned page cannot verify an absence of older errors, and source completeness always remains **not established**. Synthetic tests check both flat/gateway results, failed/non-executed calls, and privacy.
+
+No add-on bump is needed to run this *evaluation-only* code, and no change to Hubitat devices, server permissions, model prompts, V1 or the external recorder is involved.
 
 ## Alpha.18 — visible and accessible clipboard feedback (8 November 2026)
 
