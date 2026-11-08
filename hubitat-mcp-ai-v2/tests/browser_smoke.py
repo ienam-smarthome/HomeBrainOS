@@ -36,7 +36,7 @@ with sync_playwright() as p:
     assert request.headers.get("x-homebrain-request")=="1"
     requests.append(request.post_data_json)
     data={"success":True,"answer":answer,"rounds":2,"elapsed_ms":100,"tool_calls":[]}
-   elif "/api/diagnostics/status" in request.url:data={"status":"online","last":{"native_load5":0.7,"native_load_pct":17.5}}
+   elif "/api/diagnostics/status" in request.url:data={"status":"online","cpu_cores":4,"last":{"native_load5":0.7,"native_load_pct":17.5}}
    elif "/api/diagnostics/timeline" in request.url:
     data={"range_start":"2026-11-08T06:00:00Z","range_end":"2026-11-08T12:40:00Z","probe_seconds":30,
           "metrics":{
@@ -55,12 +55,18 @@ with sync_playwright() as p:
           "reboots":[{"occurred_at":"2026-11-08T12:14:00Z","firmware":"2.5.3.119","source":"hub_events_json_systemStart"}],
           "incidents":[{"kind":"hub-unreachable","started_at":"2026-11-08T12:20:00Z","recovered_at":"2026-11-08T12:24:00Z"}]}
    elif "/api/diagnostics/history" in request.url:
-    data={"range_start":"2026-11-08T11:50:00Z","range_end":"2026-11-08T12:40:00Z","metric":"native_load5",
+    percent="metric=native_load_pct" in request.url
+    key="native_load_pct" if percent else "native_load5"
+    values=[12.5,18.0,16.5,25.5] if percent else [0.50,0.72,0.66,1.02]
+    data={"range_start":"2026-11-08T11:50:00Z","range_end":"2026-11-08T12:40:00Z",
+          "metric":key,"cpu_cores":4,"observed_metric_points":4,"source_sample_count":40,
           "samples":[
-            {"recorded_at":"2026-11-08T12:00:00Z","reachable":1,"native_sample_label":"12:00","diag_segment":0,"native_load5":0.50},
-            {"recorded_at":"2026-11-08T12:05:00Z","reachable":1,"native_sample_label":"12:05","diag_segment":0,"native_load5":0.72},
-            {"recorded_at":"2026-11-08T12:10:00Z","reachable":1,"native_sample_label":"12:10","diag_segment":0,"native_load5":0.66},
-            {"recorded_at":"2026-11-08T12:30:00Z","reachable":1,"native_sample_label":"12:30","diag_segment":1,"native_load5":1.02},
+            {"recorded_at":t,"reachable":1,"native_sample_label":label,
+             "diag_segment":segment,key:value}
+            for t,label,segment,value in zip(
+             ["2026-11-08T12:00:00Z","2026-11-08T12:05:00Z",
+              "2026-11-08T12:10:00Z","2026-11-08T12:30:00Z"],
+             ["12:00","12:05","12:10","12:30"],[0,0,0,1],values)
           ],"incidents":[],"reboots":[]}
    else:data={"range_start":"2026-11-07T00:00:00Z","range_end":"2026-11-08T00:00:00Z","metrics":{}}
    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
@@ -143,13 +149,27 @@ with sync_playwright() as p:
       return nativeFillText.call(this,value,x,y);
     };
   }""")
-  page.locator("#metric").select_option("native_load5")
+  page.locator("#metric").select_option("native_load_pct")
   page.wait_for_function("window.__loadLines >= 2")
   assert page.evaluate("window.__loadLines") == 2, "Only adjacent native samples should connect, not across a source gap"
-  assert page.evaluate("window.__loadTicks.some(x => /^\\d+\\.\\d+ load$/.test(x))"), "Native load axes should show fractional values with explicit units"
-  assert "One point per distinct native" in page.locator("#source").inner_text()
-  assert "min" in page.locator("#plotStats").inner_text().lower()
+  assert page.evaluate("window.__loadTicks.some(x => /^\\d+(?:\\.\\d+)?%$/.test(x))"), "Native load equivalent Y-axis must display percent, not raw load"
+  assert "12.5%" in page.locator("#plotStats").inner_text()
+  assert "25.5%" in page.locator("#plotStats").inner_text()
+  assert "Native 5m load equivalent (%)" in page.locator("#detailPrimaryLegend").inner_text()
+  assert page.locator("#detailCpuLegend").is_hidden(), "Only the selected detail series should appear in its legend"
+  assert "configured CPU core count" in page.locator("#source").inner_text()
+  assert "Configured CPU cores: 4" in page.locator("#source").inner_text()
+  assert "not measured CPU utilisation" in page.locator("#source").inner_text()
   assert "No interpolation" in page.locator("#detailReadout").inner_text()
+  assert "Native 5m load equivalent" in page.locator("#detailReadout").inner_text()
+  assert "%" in page.locator("#detailReadout").inner_text()
+  # A raw/unscaled view remains available for inspecting the original source load.
+  page.locator("#metric").select_option("native_load5")
+  page.wait_for_function("window.__loadLines >= 4")
+  assert page.evaluate("window.__loadTicks.some(x => /^\\d+(?:\\.\\d+)? load$/.test(x))")
+  assert "0.5 load" in page.locator("#plotStats").inner_text()
+  assert "Native 5m load (raw)" in page.locator("#detailPrimaryLegend").inner_text()
+  assert "unscaled" in page.locator("#source").inner_text()
   count_before=len(requests)
   page.locator("#timelineAsk").click()
   assert page.locator("#ask").is_visible()

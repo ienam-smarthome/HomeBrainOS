@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.15**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.16**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -170,3 +170,15 @@ V2 alpha.15 adds a **standalone responsive SVG unified incident timeline**, mode
 This release uses the **same existing V2 SQLite recorder, endpoints, credentials, retention and MCP tools**, and does not copy the heavyweight V1 backend, its journal, a causal router or incident-specific code. No Hubitat setting, live device, database row, client permissions, model routing or external probe cadence is changed. The overall evidence standard remains that event proximity is not proof of causation.
 
 **Validation:** The Node UI fixture and desktop/mobile Chromium tests cover the split/combined layout, exact source values, extrema/event list, source JSON link, full-vs-fit interval, keyboard selection, pure local inspection and **no network request from AI-question preparation**, alongside existing XSS, model answer copy/export, active-session controls and chart source-gap tests. Only a real installed alpha.15 screenshot can establish subjective visual parity with the user's V1 chart.
+
+## Alpha.16 — native five-minute load shown as a percentage equivalent
+
+In the installed alpha.15 phone screenshot, the **Detailed metric history → Native 5m load** selection showed unscaled load-average units (e.g. `0.60 load`), while the unified timeline immediately above already correctly plotted a derived load-equivalent percentage. The user asked to display native load as a percentage.
+
+The V2 external recorder already provides both independent fields: `native_load5` (unscaled five-minute load average reported by Hubitat) and `native_load_pct` (derived `native_load5 / configured_cpu_cores * 100`, rounded to one decimal place). The percentage **is not actual measured CPU utilisation** and may exceed 100% if runnable demand exceeds the configured core count; the UI never caps it. Example: a native 5m load of **0.60** on **4 configured cores** is **15.0% load equivalent**, not a direct measurement of 15% CPU busy time.
+
+Alpha.16 makes **Native 5m load equivalent (%)** the principal native-load selection within **Detailed metric history**. It retrieves the existing source field `native_load_pct` (no client-side reinterpretation, backfill or SQLite migration), and shows percentage axis ticks, minimum/maximum/latest statistics and exact hovered/selected observed values. The metric legend now explicitly names the selected series; the extra CPU line legend appears only when a second series is actually drawn. The note identifies the percentage calculation and configured CPU-core count from returned source metadata. For auditing source values, a separate **Native 5m load (raw, unscaled)** option remains available; its axis, statistics and readout continue to use `load` rather than `%`.
+
+The **Unified incident timeline**, CPU load-equivalent card, live source cadence, outage markers, native sample de-duplication and all existing raw evidence remain unchanged. This release does not edit the upstream Hubitat MCP Server, CPU-core configuration, data retention, model responses, device state, home automation permissions or V1. The new view presents only the recorder's existing derived value.
+
+**Acceptance:** after installing `2.0.0-alpha.16`, choose Hub Diagnostics → Detailed metric history → Native 5m load equivalent (%). Verify Y-axis and cursor show `%`, statistics show the corresponding percentage equivalents, and caption explains it is core-normalised **load**, not measured CPU utilisation. Switching to the separately available raw mode shows `load` units and original values from the same five-minute source timestamps. Real gaps must remain blank and no additional hub requests should be made solely to change the graph selection.

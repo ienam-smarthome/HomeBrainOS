@@ -98,6 +98,22 @@ class NativeSeriesTests(unittest.TestCase):
         self.assertGreater(result["samples"][3]["diag_segment"],
                            result["samples"][1]["diag_segment"])
 
+    def test_native_load_percentage_is_existing_backend_core_normalisation(self):
+        # Original raw native reading remains intact; the percentage is a
+        # derived 5m load-equivalent, never a CPU-utilisation measurement.
+        recorder = object.__new__(_module.ExternalHubDiagnostics)
+        recorder.cpu_cores = 4
+        row = {"native_load5": 0.6, "native_sample_label": "source-at-11-08-18:49:56"}
+        percent = recorder._with_load_pct(row)
+        self.assertEqual(percent["native_load_pct"], 15.0)
+        self.assertEqual(percent["native_load5"], 0.6)
+        self.assertNotIn("native_load_pct", row)
+        self.assertEqual(percent["native_sample_label"], row["native_sample_label"])
+        self.assertEqual(recorder._with_load_pct({"native_load5": 4.8})["native_load_pct"], 120.0)
+        self.assertIsNone(recorder._with_load_pct({"native_load5": -1})["native_load_pct"])
+        recorder.cpu_cores = 8
+        self.assertEqual(recorder._with_load_pct(row)["native_load_pct"], 7.5)
+
     def test_native_long_window_downsamples_real_distinct_sources_only(self):
         start = datetime(2026, 11, 7, 0, 0, tzinfo=timezone.utc)
         rows = [

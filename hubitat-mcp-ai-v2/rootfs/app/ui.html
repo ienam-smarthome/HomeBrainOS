@@ -119,10 +119,10 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 </div>
 <div class="card" id="detailCard">
 <div class="row"><h2>Detailed metric history</h2>
-<select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load5">Native 5m load</option></select>
+<select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load_pct">Native 5m load equivalent (%)</option><option value="native_load5">Native 5m load (raw, unscaled)</option></select>
 </div>
 <div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
-<div class="legend"><span><i class="dot"></i>OS free memory (MB) / selected metric</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
+<div class="legend"><span><i class="dot"></i><span id="detailPrimaryLegend">OS free memory (MB)</span></span><span id="detailCpuLegend"><i class="dot" style="background:var(--green)"></i>5m CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
 <div class="chartshell"><canvas id="graph" role="img" tabindex="0" aria-label="Detailed recorder history; use pointer or left/right arrow keys to inspect observed samples"></canvas><div id="hint"></div></div>
 <p id="detailReadout" class="timeline-readout" aria-live="polite">Hover or use the arrow keys to inspect exact measured values.</p>
 <div id="source" class="timeline-meta">Select a window to inspect saved timestamps.</div>
@@ -130,7 +130,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.15";
+const UI_VERSION="2.0.0-alpha.16";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -729,10 +729,19 @@ async function refreshDiagnostics(){
    a:detail.samples||[],b:[],ak:metric,bk:null,
    reboots:detail.reboots||[],incidents:detail.incidents||[],
    probe_seconds:timelineData.probe_seconds,
-   description:(metric.startsWith('native_')||metric.startsWith('java_')?
+   description:(metric==='native_load_pct'?
+    'Native 5m load equivalent (%): load average ÷ configured CPU core count × 100; not measured CPU utilisation. One point per distinct native source; no repeated polls.':
+    metric==='native_load5'?
+    'Raw five-minute load average (unscaled, not % utilisation). The percentage-equivalent option uses load ÷ configured CPU cores × 100.':
+    metric.startsWith('java_')?
     'One point per distinct native five-minute source; no repeated polls or fabricated readings.':
     'Actual external probe-time readings; no interpolation.')
   };
+  byId('detailPrimaryLegend').textContent=metric==='combined'?
+   'OS free memory (MB)':metric==='native_load_pct'?
+   'Native 5m load equivalent (%)':metric==='native_load5'?
+   'Native 5m load (raw)':(byId('metric').selectedOptions?.[0]?.textContent||metric);
+  byId('detailCpuLegend').hidden=metric!=='combined';
   const nativeCount=metric==='combined'?
    timeline.metrics?.native_load_pct?.observed_metric_points:detail.observed_metric_points;
   const recorderCount=metric==='combined'?
@@ -740,8 +749,12 @@ async function refreshDiagnostics(){
   const countText=Number.isFinite(nativeCount)&&Number.isFinite(recorderCount)?
    ' · '+nativeCount+' observed source readings from '+recorderCount+
    ' recorder poll rows (selected request).':'';
+  const coreCount=Number(detail?.cpu_cores??status.cpu_cores);
+  const coreNote=(metric==='native_load_pct'||metric==='native_load5')&&
+    Number.isInteger(coreCount)&&coreCount>0?
+    ' · Configured CPU cores: '+coreCount+'.': '';
   byId('source').textContent=(status.status||'unknown')+' · '+visual.description+
-   countText+(status.error?' · '+status.error:'');
+   coreNote+countText+(status.error?' · '+status.error:'');
   byId('incidents').textContent=JSON.stringify({
    incidents:visual.incidents,reboots:visual.reboots,
    notice:'Recorder observations are not independently verified reboot causes.'
@@ -868,13 +881,17 @@ function draw(){
    if(!key||!rows.length)continue;
    const row=nearestDiagnosticRow(rows,selectedTime);
    if(Math.abs(x(Date.parse(row.recorded_at))-focus)>26){
-    details.push((key==='free_os_mb'?'OS memory':key)+': no nearby reading');
+    details.push((key==='free_os_mb'?'OS memory':key==='native_load_pct'?
+    'Native 5m load equivalent':key==='native_load5'?'Native 5m load (raw)':key)+
+    ': no nearby reading');
     continue;
    }
    const xx=x(Date.parse(row.recorded_at)),yy=y(row[key],scale);
    g.fillStyle=color;g.strokeStyle='#fff';g.setLineDash([]);
    g.lineWidth=1.5;g.beginPath();g.arc(xx,yy,5,0,Math.PI*2);g.fill();g.stroke();
-   details.push((key==='free_os_mb'?'OS memory':key)+': '+diagValue(row[key],key)+
+   details.push((key==='free_os_mb'?'OS memory':key==='native_load_pct'?
+    'Native 5m load equivalent':key==='native_load5'?'Native 5m load (raw)':key)+
+    ': '+diagValue(row[key],key)+
     ' at '+diagTime(Date.parse(row.recorded_at))+
     (row.native_sample_label?' · native '+row.native_sample_label:' · external probe'));
   }
