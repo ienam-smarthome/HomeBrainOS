@@ -21,7 +21,8 @@ def _source_shape(raw: str) -> dict:
         return {}
     if not isinstance(value, dict):
         return {}
-    for part in value.get("content", []):
+    content = value.get("content")
+    for part in content if isinstance(content, list) else []:
         if not isinstance(part, dict) or not isinstance(part.get("text"), str):
             continue
         try:

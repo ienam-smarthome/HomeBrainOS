@@ -45,3 +45,11 @@ Use the upstream **read-only client token** during benchmark runs. The general-p
 ## Status at authoring
 
 Candidate code and synthetic tests: under PR/CI review. Installed alpha.8 acceptance: **not performed**. Live comparison and any claim of better reasoning: **unverified**.
+
+## Alpha.9 evidence handoff checks
+
+The three installed alpha.8 heating exports demonstrated model context loss across follow-ups. Keep the originals outside the public repository. For the next alpha.9 test, begin a fresh page conversation after update and export both the first and dependent question without changing the model or MCP permissions.
+
+Check the first response's original event records independently for returned dates, pagination limits, and source scope. On the follow-up, inspect the following **separate** fields: `prior_sources_indexed` (prior indexed receipt count), `prior_receipts_used` (selected short previews), and `prior_evidence_reads` (model-selected local archive reads). The model may call `homebrain_read_prior_evidence` for additional chunks; such calls are **not fresh Hubitat reads**. Review whether older source timestamps and events are correctly identified, whether bounded history gaps are acknowledged, and whether a fresh MCP query is requested for data the archive never covered.
+
+Passing criteria for source handoff: all retained source reads are discoverable by an index entry, none is silently omitted, and exact relevant redacted source chunks are obtainable when still archived. Passing criteria for model quality remain independent: no fabricated absence claims, correct time alignment and explicit unverified coverage. A fast answer with no tool reads is not automatically better. Record failures without adding domain-specific prompt rules.

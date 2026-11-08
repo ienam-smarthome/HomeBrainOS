@@ -126,8 +126,8 @@ class ConversationMemoryTests(unittest.TestCase):
             def __init__(self):
                 self.seen = []
             async def answer(self, question, history, mcp, seconds,
-                             before_call=None, prior_evidence="", prior_receipts=0):
-                self.seen.append((question, prior_evidence, prior_receipts))
+                             before_call=None, prior_evidence="", prior_receipts=0, prior_reader=None):
+                self.seen.append((question, prior_evidence, prior_receipts, prior_reader))
                 response = {
                     "answer": "Fixture response", "success": True,
                     "prior_receipts_used": prior_receipts,
@@ -163,6 +163,8 @@ class ConversationMemoryTests(unittest.TestCase):
                 follow = await ask("Follow-up", first)
                 self.assertEqual(follow["prior_receipts_used"], 1)
                 self.assertIn("FIRST-SERVER-EVENT", model.seen[-1][1])
+                self.assertTrue(callable(model.seen[-1][3]))
+                self.assertEqual(follow["prior_sources_indexed"], 1)
                 cross = await ask("Other conversation", other)
                 self.assertEqual(cross["prior_receipts_used"], 0)
                 self.assertNotIn("FIRST-SERVER-EVENT", model.seen[-1][1])
