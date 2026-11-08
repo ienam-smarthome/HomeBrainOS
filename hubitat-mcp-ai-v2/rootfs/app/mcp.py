@@ -287,6 +287,13 @@ class MCPClient:
                         "Gateway 'tool' must be a top-level sibling of 'args', not inside it. "
                         'Use {"tool":"<name from catalog>","args":{...}} to execute, or {} for schema discovery.'
                     )
+                nested = arguments.get("args")
+                if isinstance(nested, dict) and "tool" in nested:
+                    raise MCPContractError(
+                        "Gateway 'args' must contain leaf parameters only; remove "
+                        "'args.tool'. The native leaf selector belongs solely "
+                        "in the top-level 'tool' field. No tool was executed."
+                    )
                 if set(arguments) - set(properties):
                     raise MCPContractError("Gateway tool parameters belong inside 'args'; use only the live top-level properties")
         # Preserve gateway discovery (empty args) and server-owned leaf routing.
