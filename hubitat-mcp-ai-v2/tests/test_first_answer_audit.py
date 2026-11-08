@@ -250,6 +250,81 @@ class FirstAnswerAuditTests(unittest.TestCase):
         mcp_error = audit.audit_export(inp)["history_receipts"]
         self.assertEqual(mcp_error["event_rows_returned_total"], 0)
 
+    def test_native_log_latest_page_cannot_prove_older_errors_absent(self):
+        inp = fixture()
+        call = {
+            "name": "hub_get_logs",
+            "arguments": {"mode": "past", "limit": 2,
+                          "since": "2026-01-01T00:00:00Z"},
+            "success": True, "result_kind": "tool_result",
+            "response": json.dumps({"content": [{"type": "text", "text":
+                json.dumps({"mode": "past", "total": 1000, "matched": 125,
+                            "entries": [
+                                {"time": "2026-02-03 17:22:45.123",
+                                 "message": "PRIVATE-FIXTURE-ERROR-RECORD"},
+                                {"time": "2026-02-03 17:21:42.456",
+                                 "message": "PRIVATE-FIXTURE-OTHER-RECORD"},
+                            ], "count": 2})}]})
+        }
+        inp["response"]["tool_calls"].append(call)
+        result = audit.audit_export(inp)
+        logs = result["log_receipts"]
+        self.assertEqual(logs["source_receipts"], 1)
+        self.assertEqual(logs["rows_returned_total"], 2)
+        self.assertEqual(logs["receipts_where_reported_matches_exceed_returned"], 1)
+        self.assertTrue(logs["any_log_request_limit_reached"])
+        self.assertEqual(logs["receipts_with_requested_since"], 1)
+        self.assertEqual(logs["all_log_windows_complete"], "not_established")
+        self.assertEqual(logs["absence_of_older_errors_from_sample"],
+                         "not_established")
+        self.assertNotIn("PRIVATE-FIXTURE-ERROR", json.dumps(result))
+        self.assertNotIn("2026-02-03", json.dumps(result))
+
+    def test_short_native_log_receipt_still_does_not_prove_complete_retention(self):
+        inp = fixture()
+        inp["response"]["tool_calls"].append({
+            "name": "hub_read_logs",
+            "arguments": {"tool": "hub_get_logs", "args": {"mode": "hubEvents",
+                                                          "limit": 100}},
+            "success": True, "result_kind": "tool_result",
+            "response": json.dumps({"content": [{"type": "text", "text":
+                json.dumps({"mode": "hubEvents", "matched": 1, "entries": [
+                    {"date": "2026-02-03T12:00:00Z", "name": "fakeEvent"}
+                ], "count": 1})}]})
+        })
+        logs = audit.audit_export(inp)["log_receipts"]
+        self.assertEqual(logs["source_receipts"], 1)
+        self.assertEqual(logs["rows_returned_total"], 1)
+        self.assertEqual(logs["receipts_where_reported_matches_exceed_returned"], 0)
+        self.assertFalse(logs["any_log_request_limit_reached"])
+        self.assertEqual(logs["all_log_windows_complete"], "not_established")
+
+    def test_failed_nonexecuted_and_unrelated_log_payloads_are_not_evidence(self):
+        inp = fixture()
+        response = json.dumps({"content": [{"type": "text", "text":
+            json.dumps({"mode": "past", "entries": [{
+                "message": "PRIVATE-DEVICE-FICTION"
+            }], "matched": 99})}]})
+        inp["response"]["tool_calls"].extend([
+            {"name": "hub_get_logs", "arguments": {},
+             "success": False, "response": response},
+            {"name": "hub_get_logs", "arguments": {},
+             "success": True, "operation_executed": False, "response": response},
+            {"name": "hub_list_devices", "arguments": {},
+             "success": True, "response": response},
+            {"name": "hub_get_logs", "arguments": {},
+             "success": True, "result_kind": "tool_catalog",
+             "response": response},
+            {"name": "hub_get_logs", "arguments": {},
+             "success": True, "response": json.dumps({
+                 "isError": True, "content": json.loads(response)["content"]
+             })},
+        ])
+        logs = audit.audit_export(inp)["log_receipts"]
+        self.assertEqual(logs["source_receipts"], 0)
+        self.assertEqual(logs["rows_returned_total"], 0)
+        self.assertEqual(logs["excluded_non_success_log_scopes"], 3)
+
     def test_unknown_and_invalid_receipts_do_not_fabricate_success(self):
         inp = fixture()
         inp["response"]["tool_calls"][0]["success"] = None
