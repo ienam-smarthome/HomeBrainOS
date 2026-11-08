@@ -6,13 +6,13 @@ const html=readFileSync(new URL('../rootfs/app/ui.html',import.meta.url),'utf8')
 const script=html.split('<script>')[1].split('</script>')[0].replace(/loadStatus\(\);\s*$/, '');
 const version=html.match(/const UI_VERSION="([^"]+)"/)[1];
 function harness(){
- const elements=new Map(),timers=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0,clearCalls=0,askBodies=[];
- const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},getBoundingClientRect(){return {width:860,height:360,left:0};},value:'',disabled:false,hidden:false,style:{},classList:{remove(){},toggle(){},contains(){return false;}},addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
+ const elements=new Map(),timers=new Map(),timeouts=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0,clearCalls=0,askBodies=[];
+ const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},getBoundingClientRect(){return {width:860,height:360,left:0};},value:'',disabled:false,hidden:false,style:{},classList:(()=>{const classes=new Set();return{add(...names){names.forEach(n=>classes.add(n));},remove(...names){names.forEach(n=>classes.delete(n));},toggle(name,on){if(on===undefined? !classes.has(name):on){classes.add(name);return true;}classes.delete(name);return false;},contains(name){return classes.has(name);}}})(),addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
  const el=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
  const state={status:{version,configured:true,model:'gemma4:31b-cloud'},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true,askBodies};
  const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElementNS(_ns,tag){return element(tag);},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
  const navigator={clipboard:{writeText:async text=>{copied=text;}}};
- const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout:fn=>fn(),Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
+ const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout(fn){const id=++seq;timeouts.set(id,fn);return id;},clearTimeout(id){timeouts.delete(id);},Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
  if(url==='api/status')return{ok:true,json:async()=>state.status};
  if(url==='api/conversation/clear'){clearCalls++;assert.equal(init.headers['X-Homebrain-Request'],'1');assert.equal(typeof JSON.parse(init.body).conversation_id,'string');return{ok:true,json:async()=>({cleared:true})};}
  assert.equal(url,'api/ask');askCalls++;askBodies.push(JSON.parse(init.body));assert.equal(init.headers['X-Homebrain-Request'],'1');
@@ -23,14 +23,27 @@ function harness(){
  return{ok:!state.httpError,status:503,json:async()=>state.httpError?{detail:state.httpError}:state.result};
  }});
  vm.runInContext(script,context);
- return{state,el,timers,navigator,run:code=>vm.runInContext(code,context),get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;},get clearCalls(){return clearCalls;}};
+ return{state,el,timers,timeouts,navigator,run:code=>vm.runInContext(code,context),flushTimeouts(){const scheduled=[...timeouts.values()];timeouts.clear();for(const fn of scheduled)fn();},get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;},get clearCalls(){return clearCalls;}};
 }
 const h=harness();h.el('question').value='Read only question';
 await h.run('submitAsk()');
 assert.equal(h.el('responseTime').textContent,'Response time: 2.5 s');
 assert.equal(h.timers.size,0);assert.equal(h.el('send').disabled,false);
+assert.match(html,/id="copyStatus"[^>]*role="status"[^>]*aria-live="polite"/);
 await h.run("copyResult('answer')");assert.equal(h.copied,h.state.result.answer);
+assert.equal(h.el('copyAnswer').textContent,'✓ Copied!');
+assert.equal(h.el('copyAnswer').classList.contains('copy-feedback-ok'),true);
+assert.match(h.el('copyStatus').textContent,/Answer copied to clipboard/);
+assert.equal(h.timeouts.size,1);
+h.flushTimeouts();
+assert.equal(h.el('copyAnswer').textContent,'Copy answer');
+assert.equal(h.el('copyAnswer').classList.contains('copy-feedback-ok'),false);
+assert.equal(h.el('copyStatus').textContent,'');
 await h.run("copyResult('technical')");
+assert.equal(h.el('copyTechnical').textContent,'✓ Copied!');
+assert.equal(h.el('copyTechnical').classList.contains('copy-feedback-ok'),true);
+h.flushTimeouts();
+assert.equal(h.el('copyTechnical').textContent,'Copy technical details');
 const detail=JSON.parse(h.copied);
 assert.deepEqual(detail.response,h.state.result);assert.equal(detail.model,'gemma4:31b-cloud');
 assert.equal(detail.question,'Read only question');assert.ok(detail.request_id);
@@ -38,9 +51,16 @@ assert.equal(detail.client_elapsed_ms,2500);assert.equal(detail.server_elapsed_m
 h.navigator.clipboard.writeText=async()=>{throw Error('insecure context');};
 await h.run("copyResult('answer')");assert.equal(h.fallback,h.state.result.answer);assert.equal(h.focused,true);
 h.navigator.clipboard=undefined;await h.run("copyResult('technical')");assert.deepEqual(JSON.parse(h.fallback).response,h.state.result);
-h.state.copyWorks=false;await h.run("copyResult('answer')");assert.match(h.el('copyStatus').textContent,/Copy unavailable/);
+h.state.copyWorks=false;await h.run("copyResult('answer')");
+assert.equal(h.el('copyAnswer').textContent,'Copy failed');
+assert.equal(h.el('copyAnswer').classList.contains('copy-feedback-fail'),true);
+assert.equal(h.el('copyStatus').classList.contains('copy-status-error'),true);
+assert.match(h.el('copyStatus').textContent,/Copy unavailable/);
+h.flushTimeouts();assert.equal(h.el('copyAnswer').textContent,'Copy answer');
 h.state.result={answer:'Model failed',error:'model',elapsed_ms:20,tool_calls:[{result:'retained'}]};
 await h.run('submitAsk()');assert.equal(h.run('technicalDetails.response.error'),'model');
+assert.equal(h.el('copyStatus').textContent,'');
+assert.equal(h.el('copyAnswer').textContent,'Copy answer');
 h.state.httpError='Service unavailable';await h.run('submitAsk()');
 assert.equal(h.el('answer').textContent,'Request failed: Service unavailable');
 assert.equal(h.run('technicalDetails.error.type'),'transport');assert.equal(h.run('technicalDetails.response'),null);assert.equal(h.timers.size,0);
@@ -52,7 +72,18 @@ d.state.pending=new Promise(resolve=>{release=resolve;});
 const first=d.run('submitAsk()');await new Promise(resolve=>setImmediate(resolve));
 await d.run('submitAsk()');assert.equal(d.askCalls,1);release();await first;
 assert.equal(d.timers.size,0);
-console.log('UI behavior checks passed: exact copies, receipt preservation, clipboard fallback, timing, failures, stale state and duplicate submission.');
+// An old asynchronous clipboard completion cannot override newer request UI.
+const race=harness();race.el('question').value='Private input';await race.run('submitAsk()');
+let clipboardComplete;
+race.navigator.clipboard.writeText=()=>new Promise(resolve=>{clipboardComplete=resolve;});
+const oldCopy=race.run("copyResult('answer')");
+assert.equal(race.el('copyAnswer').textContent,'Copy answer');
+race.run('clearResult()');
+clipboardComplete();await oldCopy;
+assert.equal(race.el('copyAnswer').textContent,'Copy answer');
+assert.equal(race.el('copyStatus').textContent,'');
+assert.equal(race.timeouts.size,0);
+console.log('UI behavior checks passed: visible clipboard confirmation, expiry, failed-copy feedback, stale-copy safety, exact copies, receipt preservation, clipboard fallback, timing, failures, stale state and duplicate submission.');
 
 const rich=harness();
 const rendered=rich.run('renderAnswer("# Devices\\n\\n| Device | State |\\n| --- | --- |\\n| **Lamp** | \x60off\x60 |\\n\\n- Item\\n\\n<script>alert(1)</script>\\n\\n\x60\x60\x60\\n<img src=x onerror=alert(1)>\\n\x60\x60\x60")');
