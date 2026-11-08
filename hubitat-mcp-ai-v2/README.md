@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.11**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.12**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -110,3 +110,17 @@ A second generic preflight rejects `args.tool` for live gateway-shaped schemas *
 This does **not** change MCP permissions, confirmation semantics, source-evidence scope, the source memory, recorded diagnostics, model/provider, or v1. It adds no automatic tool-selection planner, incident-specific code or artificial model-round quota.
 
 **Acceptance:** on a fresh alpha.11 install, ask the same uncoached read-only system-event/reboot investigation and then an unrelated read-only device-history question. Export both initial technical JSON files. Count model rounds, gateway `contract_error`, native `isError`, `tools/call` executions, latency and grounding quality. The target is **zero first-call gateway-shape errors**, but CI can only verify synthetic presentation and preflight protections, not real Gemma compliance. Preserve any failures in the record.
+
+## Alpha.12 — live leaf-parameter awareness, without a planner
+
+A real installed alpha.11 test eliminated gateway selector-placement errors (three to zero) but still sent `hub_get_logs(mode='hubEvents',sortBy='desc')`, which the upstream MCP server rejected because the leaf contract says `sortBy` applies to the device/app runtime-statistics tabs. It also made an unrelated broad recent-log read that took 5.24 seconds. The first answer took 15.44 seconds versus 9.94 seconds on alpha.10 despite fewer model rounds; one matched comparison does not prove a latency trend. Live private JSON is not in this public repository.
+
+Alpha.12 now retrieves the **selected gateway leaf's actual server-advertised `inputSchema` and description** through the gateway's read-only `{}` catalog discovery on its first use. This is generic: the model chooses the gateway and leaf; no fixed map or named-domain logic exists. The client stores the gateway's catalog in memory, with only previously selected leaf schemas added to future model-facing descriptions. Cached definitions are invalidated whenever the connected live `tools/list` catalog changes. A metadata lookup is not a device query or actuation, and `leaf_schema_discoveries` records the additional schema-only requests separately from `tool_calls`.
+
+For selected leaves with a well-formed JSON Schema, the client checks **declared** types, enum, required fields, and other schema constraints **before** the original MCP invocation. Invalid arguments become local `contract_error` receipts and do not execute the native leaf. Valid arguments pass unchanged. Invalid/remote-reference schema definitions are treated as unavailable rather than blocking otherwise permitted server operations; timeout/transport failure during optional discovery likewise leaves the native tool available. There is no automatic retry of any potentially mutating call.
+
+Some upstream constraints, including `sortBy` applying only to certain log modes, are expressed in **field description prose**, not a JSON Schema conditional. The client shows that original prose to the model after retrieving the selected leaf schema; it **does not invent a deterministic mode-specific parser or pretend to reject combinations the native schema allows**. Therefore the first cold-start call may still be rejected by the upstream server when a prose-only restriction is missed. On later model rounds/requests, the cached relevant leaf descriptions are available without new catalog probes. The model can also use native gateway `{}` discovery as before.
+
+A short generic instruction prefers focused, read-only historical sources/time windows over broad unrelated log snapshots. It does not enforce tool selection, invent an automatic investigation plan or claim faster runtime. No new model/provider, separate answer rewriter, question-specific patches, synthetic correction rules, user write permission, confirmation approval, v1 modifications or external recorder changes.
+
+**Acceptance:** run the same first-answer reboot question with read-only permissions and model unchanged, plus an unrelated history question. Compare schema-only lookup count, first-call leaf errors, tool executions, rounds, actual latency and source grounding. The target is fewer native parameter errors and unnecessary log reads; both live quality and runtime remain unverified until the installed alpha.12 run.

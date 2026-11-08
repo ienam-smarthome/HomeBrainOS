@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.11` (candidate pending final-head PR/CI verification)
-Development branch: `feat/v2-live-gateway-contract-alpha11`
+Version: `2.0.0-alpha.12` (candidate pending final-head PR/CI verification)
+Development branch: `feat/v2-live-leaf-schema-alpha12`
 
 ## Current user direction
 
@@ -122,3 +122,15 @@ Additionally reject the duplicated leaf selector `args.tool` locally for gateway
 Synthetic regression tests cover live enum retention, model-facing call shape, original catalog immutability, unrelated direct tools, no-network duplicated-selector rejection, unchanged good-call payloads, discovery and a scripted first model call. The scripted model is **not** a real Gemma evaluation. Native source scope sidecars, alpha.9 prior-evidence archive, external Hub Diagnostics recorder and v1 remain untouched.
 
 Post-merge installed alpha.11 quality acceptance **pending**: exact version, uncoached read-only first attempts in unrelated domains, complete technical JSON, malformed-call rate, model rounds and answer support. Avoid promising error-free Gemma behavior until observed. PR/merged SHA and CI to verify.
+
+## Alpha.12 — discover selected leaf contracts from upstream (8 Nov 2026)
+
+The latest installed alpha.11 first-answer reboot analysis answered the firmware-update question with defensible source records and no selector-placement errors, but incorrectly used `hub_get_logs(mode=hubEvents,sortBy=desc)` and spent 5.24 seconds on an unrelated `past` log dump. The upstream v5.1.7 `hub_get_logs` **leaf** inputSchema, found in `libraries/mcp-diagnostics-lib.groovy`, describes `sortBy` as applicable to `devices` and `apps` modes. The top-level `tools/list` gateway schema cannot express every leaf's field-specific restriction. No hardcoded remedy for `hub_get_logs` or individual modes is appropriate.
+
+Model-selected, generic implementation: after a selected gateway leaf is proposed, fetch that gateway's `{}` metadata-only catalog once per unchanged connected catalog, cache the available `inputSchema` and descriptions, and check only structurally declared JSON Schema constraints. Return local, nonexecuted `contract_error` for invalid typed arguments. Include the selected leaf schema/description in the model's **next** tool definition and later requests. The client does not extract hardcoded natural-language restrictions into invented validation rules. A prose-only restriction can still yield an upstream error on first use; this limitation must be visible, not masked. No hidden mutation, automatic retry, source-query replay, new authorizations or fixed model rounds.
+
+Operational scope: read-only schema fetches are additional MCP metadata requests, tracked in `leaf_schema_discoveries`, not device reads. Cached selections invalidated if live tools/list changes. Optional metadata failure must not prevent a previously valid native tool call or gate writes differently. All user-owned device/tool permissions, `confirm=true` approval, upstream skills, v1 and external recorder unchanged. Model remains responsible for search and stop decisions.
+
+CI uses a synthetic MCP server exposing multiple leaf schemas and a stub model; tests verify one catalog probe per gateway, cache invalidation, field descriptions, local validation without a native side-effect, exact passthrough of valid requests and unchanged direct tools. Live installed Gemma performance **unverified**; compare real first-attempt technical JSON before recommending further changes.
+
+PR head, exact CI results and merge SHA: pending verification.

@@ -189,9 +189,11 @@ class GatewayContractRegressions(unittest.TestCase):
                 self.assertEqual(result["answer"], "Source event retrieved")
                 self.assertFalse(result["tool_calls"][0]["success"])
                 self.assertIn("top-level", result["tool_calls"][0]["error"])
-                self.assertEqual(len(transport.calls), 2)
-                self.assertEqual([a["tool"] for a in transport.calls],
+                domain_calls = [a for a in transport.calls if a.get("tool")]
+                self.assertEqual(len(domain_calls), 2)
+                self.assertEqual([a["tool"] for a in domain_calls],
                                  ["hub_list_devices", "hub_list_device_events"])
+                self.assertEqual(sum(not a for a in transport.calls), 1)
             finally:
                 await agent.close()
                 await transport.close()
@@ -311,9 +313,10 @@ class GatewayFirstCallRegressions(unittest.TestCase):
                 self.assertEqual(response["rounds"], 2)
                 self.assertEqual(len(response["tool_calls"]), 1)
                 self.assertEqual(response["tool_calls"][0]["name"], "hub_read_devices")
-                self.assertEqual(remote.calls, [
+                self.assertEqual([call for call in remote.calls if call.get("tool")], [
                     {"tool": "hub_list_device_events", "args": {"deviceId": "17"}}
                 ])
+                self.assertEqual(sum(not call for call in remote.calls), 1)
             finally:
                 await agent.close()
                 await remote.close()
