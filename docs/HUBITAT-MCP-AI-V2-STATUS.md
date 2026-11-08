@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.10` (candidate pending final-head PR/CI verification)
-Development branch: `feat/v2-causal-evidence-scope-alpha10`
+Version: `2.0.0-alpha.11` (candidate pending final-head PR/CI verification)
+Development branch: `feat/v2-live-gateway-contract-alpha11`
 
 ## Current user direction
 
@@ -110,3 +110,15 @@ Implement a **general** client-side `client_event_source_scope` annotation, pres
 Scope: `hubitat-mcp-ai-v2` and v2 development notes only. Existing user-approved upstream write/confirmation behavior remains untouched. The native Hubitat Events-page comparison needs authorised local inspection; repository development alone cannot see the hub. The private exported technical JSON does not belong in Git history.
 
 PR merge SHA/CI: pending exact-head all-green check before merging.
+
+## Alpha.11 — unambiguous model-facing live gateway schema (8 November 2026)
+
+The installed alpha.10 Gemma4 cloud reboot investigation supplied by the user returned a well-supported firmware-update/startup sequence but required **six** model rounds and **five** MCP attempts, of which only **two** succeeded. Three attempts used malformed gateway arguments (selector nested under `args`, then repeated as leaf `args.tool`, including a similar diagnostic gateway error). These were model-generated protocol mistakes, not hub failures. Exact private technical JSON remains outside GitHub.
+
+Enhance the **presentation** of any server-advertised gateway-shaped `inputSchema` (detected by *both* `properties.tool` and `properties.args`, no name lists or hard-coded leaf schemas). Use a deep copy for model-visible descriptions and top-level `additionalProperties: false` matching existing server gateway enforcement; retain the live enum, leaf selection authority, normal/flat tools, catalog discovery `{}`, original validation schema and upstream skill verbatim. The model continues selecting the gateway and leaf. A non-gateway tool with an `args` object containing an ordinary `tool` data key must not be affected.
+
+Additionally reject the duplicated leaf selector `args.tool` locally for gateway-shaped schemas before any `tools/call` request; never guess, reparent, autocorrect or retry. Preserve existing permission and approval contract: writes are still upstream-authorized and confirmed only per current rules; no write is executed by this release itself.
+
+Synthetic regression tests cover live enum retention, model-facing call shape, original catalog immutability, unrelated direct tools, no-network duplicated-selector rejection, unchanged good-call payloads, discovery and a scripted first model call. The scripted model is **not** a real Gemma evaluation. Native source scope sidecars, alpha.9 prior-evidence archive, external Hub Diagnostics recorder and v1 remain untouched.
+
+Post-merge installed alpha.11 quality acceptance **pending**: exact version, uncoached read-only first attempts in unrelated domains, complete technical JSON, malformed-call rate, model rounds and answer support. Avoid promising error-free Gemma behavior until observed. PR/merged SHA and CI to verify.

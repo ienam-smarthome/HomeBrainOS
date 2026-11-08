@@ -1,7 +1,7 @@
 # Hubitat MCP AI v2 — frozen first-answer and follow-up acceptance
 
 Date: 2026-11-08
-Baseline: v2 alpha.7; candidate: alpha.8.
+Historical baseline: v2 alpha.7 / alpha.8; current candidate: alpha.11.
 Mode: **read-only client token** for investigation. Do not perform live device or Rule Machine changes as part of this benchmark.
 
 ## Goal and evidence boundaries
@@ -64,3 +64,16 @@ Read-only token, fresh conversation, unchanged model/provider, and first answer 
 - Re-check earlier receipts by source ID where useful; mark missing or truncated data explicitly. Do not alter native hub settings or enable new sources as part of the test.
 
 The alpha.10 source-scope metadata and generic prompt are a **software change**, not evidence of model success. No hidden deterministic veto, claim filter or mandatory model round is added. The real Home Assistant installed trial, with entire exported technical JSON, is the deciding acceptance criterion. A native Events-page versus MCP comparison requires separate authorised evidence; no result is claimed here.
+
+## Alpha.11 first-call gateway accuracy — frozen comparison
+
+**No live mutation.** Use the same read-only MCP client token, Gemma model, connected Hubitat server and unmodified questions. Start each test in New conversation; use only the first exported answer for first-call metrics.
+
+| Case | Exact first question | First-call success standard |
+| --- | --- | --- |
+| G1 | Investigate the most recent Hubitat reboot. Determine whether it was caused by critically low memory, a firmware update, or another cause. Check available system events and diagnostics. Distinguish verified evidence from possible explanations. Do not change anything. | First `hub_read_*` gateway tool call uses the live top-level `tool` selector and leaf-only `args`; no duplicate `args.tool`; correctly identifies source context |
+| G2 | Retrieve the most recent five events for Hallway Light 1, including timestamps and event provenance. Distinguish the reporting device from any proven initiating command. Do not change anything. | Same gateway shape; preserve real events and uncertainty |
+
+For each JSON record installed UI/backend version, model/provider, MCP server version, first requested gateway/leaf, raw parameters, success/error and execution flag, eventual successful native calls, model rounds, server latency and factual support. **Zero malformed first calls is the target, not guaranteed by schema rendering.** Distinguish a locally rejected `contract_error` (`operation_executed: false`) from native `isError` calls. Check the UI still supports direct/flat MCP tools, gateway `{}` schema discovery, and writes/confirmation unchanged in permission simulations only.
+
+Synthetic CI accepts a model stub to verify first-call tool affordances, but only an installed uncoached model run can establish actual first-call improvement. Do not train case-specific argument rewrites or mask rejected calls.
