@@ -82,8 +82,31 @@ Alpha.17 proposes only generic event-source metadata: adjacent returned timestam
 
 **Hypothesis:** salient source-time gap metadata may reduce unjustified model certainty about unobserved intervals. **Expected effect:** fewer unsupported continuity claims at similar tool count and latency; not proven by unit tests. **Risk:** context overhead, model may ignore metadata, mixed-attribute intervals are not per-attribute coverage. **Rollback:** return to alpha.16. **Acceptance:** same frozen V2-R3 question on installed alpha.17, inspect actual source-window drift and first answer, then test transfer on a distinct frozen domain. Never grade from synthetic tests.
 
+## Installed alpha.17 matched-question acceptance — reviewer result (8 November 2026)
+
+The user supplied a **fresh first answer and private Technical JSON** from installed `2.0.0-alpha.17` using the same cloud model and **identical frozen V2-R3 question** as the prior alpha.16 baseline. Source evidence was reviewed directly, not inferred from model prose. Both first answers reported no prior evidence receipts. Raw household observations and event timestamps stay outside the public repository.
+
+| Review axis | Alpha.16 | Alpha.17 |
+| --- | --- | --- |
+| Browser elapsed | 9.808 s | 7.886 s |
+| Server elapsed | 9.740 s | 7.841 s |
+| Native attempts | 2/2 successful | 2/2 successful |
+| Model rounds | 3 | 3 |
+| Returned events | 11 | 11 |
+| Shared historical event rows (exact timestamps and values) | \u2014 | 10 of 11 |
+| Observed threshold-to-threshold arithmetic | Correct | Correct |
+| Unsupported uninterrupted-history assertion | **Yes** | **No** |
+| Explicitly acknowledges discrete samples | Weak/inconsistent | **Yes** |
+| Precision of actual versus first-*recorded* threshold times | Incomplete | Still incomplete |
+
+The source catalog and model were held constant; the extra event in the later export and absence of the earlier oldest event reflect a moving live data window. The new `client_event_source_scope` fields were actually present in the model-visible receipt: 10 adjacent parseable returned timestamp pairs, a non-null maximum source-timestamp separation, and `can_infer_uninterrupted_state_between_events:false`. These are **source scope markers**, not independent proof of intermediate conditions. Comparing model text to source records shows the major error was removed: alpha.17 no longer declares that the entire humidity interval was continuously observed or that intermediate values were necessarily unchanged.
+
+**Remaining issues:** The answer still phrases the *first returned above-threshold reading* as the physical crossing instant, says the crossing could have occurred *slightly* earlier without a bounded uncertainty estimate, describes the highest **returned** reading as an unrestricted physical peak, and says the two events belonged to the same “session” without establishing a source-defined session. The correct quantity is elapsed time **between the first relevant recorded observations**, not a proven continuous physiological or environmental duration. Assessment: **improved PARTIAL** on one matched question, not a full pass or measured model-wide quality rate. Two calls and three rounds held constant. The 1.922 s observed browser-speed difference (19.6%) is descriptive, not demonstrated repeatable latency improvement.
+
+**Decision:** The alpha.17 sidecar hypothesis has **one positive installed acceptance**, but it is not yet independently validated across domains. No new incident-specific prompt, planner, second model, forced tool use, or answer rewrite is justified. Retain `2.0.0-alpha.17`, and next run a distinct frozen first-answer investigation (V2-R2 lighting causality) with its unmodified wording and private Technical JSON. Grade historical sensor coverage, command issuer vs physical reporter, internal automation execution uncertainty, model-selected reads, and resource use. Confirm the **test client's effective read-only permissions via configuration**, never by attempting a write. Keep any raw captured receipts outside GitHub.
+
 ## Next test and release gate
 
-After the two independent alpha.16 source reviews, the next step is a **fresh V2-R3 first answer on installed alpha.17**, using a test MCP connection with effective Read allowed / Write denied verified via configuration (not by sending a write). Share the complete answer and private Technical JSON. Compare only matching returned source scope, historical gaps, model confidence, tool attempts, and latency; changing live events must be recorded as a confounder. Then use a separate frozen domain for transfer.
+The matched installed alpha.17 V2-R3 first answer has now been reviewed and shows **one positive, narrower historical-evidence calibration result**. Next use the frozen **V2-R2 lighting** question as an independent domain on alpha.17, a fresh conversation and verified Read allowed / Write denied test connection. Preserve the unedited first answer and private Technical JSON; compare issuer/reporter roles, automation and sensor history near the focal OFF event, unsupported definitive causes and missing historical members. Keep model and native flat-tool settings unchanged.
 
-Alpha.17 changes only the generic model-visible event-scope annotation and release metadata. It adds **no model prompt, extra model round, router, provider, device rule, recorder, V1 or MCP permission change**. Its model-quality effect must be measured live rather than assumed from code tests.
+Alpha.17 changes only the generic model-visible event-scope annotation and release metadata. It adds **no model prompt, extra model round, router, provider, device rule, recorder, V1 or MCP permission change**. One matched V2-R3 live comparison now provides encouraging but insufficient evidence of improved certainty calibration. Cross-domain transfer remains unverified.
