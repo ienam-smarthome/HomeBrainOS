@@ -114,15 +114,15 @@ def _native_event_scope(response_text: Any, call: dict[str, Any]) -> dict | None
     args = _effective_args(request)
     requested_limit = _optional_int(args.get("limit"))
     for block in envelope["content"]:
-        if not isinstance(block, dict) or block.get("type") != "text" \\
-                or not isinstance(block.get("text"), str):
+        if (not isinstance(block, dict) or block.get("type") != "text"
+                or not isinstance(block.get("text"), str)):
             continue
         try:
             body = json.loads(block["text"])
         except (TypeError, ValueError):
             continue
-        if not isinstance(body, dict) or not isinstance(body.get("events"), list) \\
-                or ("device" not in body and "deviceId" not in body):
+        if (not isinstance(body, dict) or not isinstance(body.get("events"), list)
+                or ("device" not in body and "deviceId" not in body)):
             continue
         events = body["events"]
         if not all(isinstance(e, dict) for e in events):
