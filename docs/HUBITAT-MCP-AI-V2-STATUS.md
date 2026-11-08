@@ -134,3 +134,13 @@ Operational scope: read-only schema fetches are additional MCP metadata requests
 CI uses a synthetic MCP server exposing multiple leaf schemas and a stub model; tests verify one catalog probe per gateway, cache invalidation, field descriptions, local validation without a native side-effect, exact passthrough of valid requests and unchanged direct tools. Live installed Gemma performance **unverified**; compare real first-attempt technical JSON before recommending further changes.
 
 PR head, exact CI results and merge SHA: pending verification.
+
+## Native flat MCP vs gateway evaluation — no v2 runtime change (8 Nov 2026)
+
+The user requested comparison before any further architecture change after alpha.12's live Gemma result: three malformed nested gateway selector attempts, one invalid `sortBy='desc'` leaf request (locally rejected), and four eventual successful reads in 13.78 s. Alpha.11 first-call gateway formatting had been better, so the observed difference may reflect model variability; one run cannot establish an alpha.12 regression rate. The separate claim about free-memory history must still be checked for appropriate incident-time coverage.
+
+**Upstream code finding:** the native Hubitat MCP server already offers a genuine flat catalog via its existing `useGateways=false` (**Consolidate tools behind category gateways: OFF**) setting. In this mode the server advertises every visible leaf with its direct inputSchema on `tools/list`; it enforces the same Read/Write masters and advanced overrides, hides `hub_search_tools`, and explicitly refuses stale gateway-name calls. The setting is **server-wide**, affects other clients' catalog assumptions, and must be restored after an authorised test. V2 already accepts direct leaf calls and validates the live top-level schema. There is **no evidence justifying a new client-side proxy** or a version bump just to try native flat mode.
+
+Added synthetic gateway-versus-flat compatibility regressions with identical mocked event results and test isolation of hidden writes, confirmation and catalog refresh. Real installed Gemma context size, model success, tool latency and hub-side flat-mode behavior are **unverified**. Only a controlled read-only A/B on the installed hub can decide; see `docs/HUBITAT-MCP-AI-V2-FLAT-MODE-EVALUATION.md`. Do not change Hubitat settings, credentials or permissions from this repository work. The user must knowingly accept the global mode switch before it occurs.
+
+Repository evaluation test PR/CI: pending.
