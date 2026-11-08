@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.6**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.8**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -64,3 +64,13 @@ Skill files are copied unchanged from [kingpanther13/Hubitat-local-MCP-server](h
 Stop the v2 add-on to stop further operations. Uninstalling v2 does not undo device actions or automations already created through MCP. Revert the release to restore the prior client; v1 and its data are untouched.
 
 The answer panel provides **Copy answer** and **Copy technical details**. Technical details retain the original API response and receipts, model, request ID and question, plus browser and server timings. The visible response time includes browser network and waiting time. Copying also supports LAN HTTP where the Clipboard API is unavailable. This UI update does not change prompts, model selection, MCP access or answer generation.
+
+## Alpha.8 — evidence-aware follow-up questions
+
+Alpha.7 sent recent question/answer prose but silently omitted all earlier MCP source receipts. Alpha.8 adds an **ephemeral in-memory server evidence cache** keyed by a cryptographically generated browser-session conversation UUID. Only the server's actual bounded/redacted MCP tool receipts populate it; browser-supplied history cannot insert evidence. For a follow-up, the model receives selected earlier tool names, arguments, result excerpts, source collection times and explicit truncation indicators in addition to the existing conversation prose. **This is prior evidence, not a live snapshot, trusted instruction or permission to act.** Live verification remains required when the user requests current state, device control or checks beyond the earlier source coverage.
+
+The cache is bounded to four turns, ten latest non-catalog tool receipts per turn, 3,200 characters per receipt, approximately 20,000 source characters per follow-up, and 32 concurrent browser conversations. Items expire after 45 minutes of inactivity. No persistent transcript or separate evidence database is created. Restarting the add-on loses the cache; earlier evidence is then re-read as needed. New conversation rotates its UUID and sends a one-time server-side clear request. A prior request's technical JSON download is independent, and the `prior_receipts_used` counter only reports excerpts supplied to the model (not factual correctness). Huge tool results are visibly truncated rather than silently presented as complete.
+
+Alpha.8 leaves the **existing MCP capability and write/confirmation design unchanged**; first-answer evaluation should still use an upstream read-only MCP token. No new v1 planner, model substitution, skill-specific question patch, or recorder modification was introduced.
+
+See `docs/HUBITAT-MCP-AI-V2-ACCEPTANCE.md` for the frozen acceptance protocol. CI exercises synthetic evidence and model stubs, not a real Home Assistant ingress, model comparison or private G06 capture. Install the add-on and collect real first-answer exports before declaring an answer-quality improvement.
