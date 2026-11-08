@@ -46,6 +46,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 @media(max-width:600px){header>div{width:100%}.toolbar button{flex:1}main{padding:12px}th,td{padding:8px}#answer{font-size:15px}}
 
 /* Source-aware recorder timeline: SVG preserves sharp traces at all viewport sizes. */
+.timeline-scroll{width:100%;overflow-x:auto;overflow-y:hidden;border-radius:10px}
 .timeline-chart{width:100%;height:auto;display:block;max-height:420px;min-height:210px;
  background:#101b2b;border-radius:10px;touch-action:pan-y}
 .timeline-chart:focus-visible,#graph:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
@@ -65,7 +66,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .diag-controls label{font-size:12px;color:var(--muted)}
 .diag-controls select{margin-left:6px;padding:6px}
 #graph{cursor:crosshair}
-@media(max-width:530px){.timeline-chart{min-height:190px}.timeline-event{flex-wrap:wrap}
+@media(max-width:530px){.timeline-chart{min-width:700px;min-height:270px}.timeline-event{flex-wrap:wrap}
 .timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
 .diag-controls select{margin-left:0}}
 
@@ -105,7 +106,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · aligned panels</option><option value="combined">Combined · dual axes</option></select></label>
 <label for="plotExtent">Time axis <select id="plotExtent" onchange="redrawDiagnostics()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
 </div>
-<svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 360" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg>
+<div class="timeline-scroll" role="region" aria-label="Scrollable synchronized memory and CPU chart"><svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 360" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg></div>
 <p class="timeline-readout" id="timelineReadout" aria-live="polite">Select an observed point on the timeline, or use the arrow keys. Source gaps are not zero.</p>
 <div class="timeline-actions">
 <button id="timelineInspect" disabled onclick="inspectTimelineSelection()">Inspect selected time</button>
