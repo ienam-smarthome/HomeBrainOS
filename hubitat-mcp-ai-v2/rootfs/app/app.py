@@ -100,7 +100,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.8", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.9", lifespan=lifecycle)
 
 
 @app.middleware("http")
@@ -131,7 +131,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.8",
+        "version": "2.0.0-alpha.9",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
@@ -207,11 +207,25 @@ async def ask(request: AskRequest, http_request: Request):
                     app.state.conversations.context(str(request.conversation_id))
                     if request.conversation_id else ("", 0)
                 )
+                indexed = (app.state.conversations.source_count(str(request.conversation_id))
+                           if request.conversation_id else 0)
+                # Only server-held redacted receipts are exposed, scoped by UUID.
+                def read_prior(receipt_id, offset=0, max_chars=12000):
+                    return app.state.conversations.read_receipt(
+                        str(request.conversation_id), receipt_id, offset, max_chars
+                    )
                 result = await app.state.model.answer(
                     request.question, request.history,
                     app.state.mcp, int(app.state.options["investigation_timeout_seconds"]),
                     before_call=interaction.before_call,
                     prior_evidence=prior, prior_receipts=prior_count,
+                    prior_reader=read_prior if request.conversation_id and indexed else None,
+                )
+                result["prior_sources_indexed"] = indexed
+                result["prior_evidence_reads"] = sum(
+                    item.get("result_kind") == "prior_evidence_read"
+                    for item in result.get("tool_calls", [])
+                    if isinstance(item, dict)
                 )
                 if request.conversation_id and result.get("tool_calls"):
                     app.state.conversations.record(
