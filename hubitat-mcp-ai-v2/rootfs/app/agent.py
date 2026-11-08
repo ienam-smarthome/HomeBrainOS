@@ -5,6 +5,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
+from copy import deepcopy
 from typing import Any
 
 import httpx
@@ -83,16 +84,59 @@ _PRIOR_TOOL_DEFINITION = {
 
 
 def model_tools(catalog: list[dict]) -> list[dict]:
-    return [{
-        "type": "function",
-        "function": {
-            "name": item["name"],
-            "description": str(item.get("description") or item["name"]),
-            "parameters": item.get("inputSchema") or {
-                "type": "object", "properties": {},
-            },
-        },
-    } for item in catalog]
+    """Present live MCP schemas with an explicit gateway call shape.
+
+    The live server is the *only* source of parameter names/leaf selectors.
+    Gateway presentation is a copy: neither the upstream catalog nor the
+    schema used for server-call validation is changed. Direct tools stay as-is.
+    """
+    rendered = []
+    for item in catalog:
+        schema = item.get("inputSchema") or {"type": "object", "properties": {}}
+        description = str(item.get("description") or item["name"])
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        if isinstance(properties, dict) and "tool" in properties and "args" in properties:
+            schema = deepcopy(schema)
+            props = schema["properties"]
+            # The server's gateway contract reserves 'tool' for the outer
+            # selector; 'args' carries ONLY the selected leaf's parameters.
+            guide = (
+                "MCP GATEWAY CALL SHAPE (do not confuse gateway and leaf): "
+                'execute using {"tool":"<leaf name allowed by this live schema>",'
+                '"args":{"<leaf-specific field>":"<value>"}}. '
+                "The leaf selector MUST be at the top level. Never put a "
+                "'tool' property inside 'args', and never repeat the selector "
+                "there. Do not put leaf fields at the top level. "
+                "Call with {} only to discover the leaf catalog/schemas; "
+                "discovery does NOT execute a read or action. "
+                "Do not call a leaf as a top-level function unless the "
+                "connected MCP tools/list also exposes it directly."
+            )
+            description += "\n\n" + guide
+            if isinstance(props["tool"], dict):
+                p = props["tool"]
+                p["description"] = (
+                    (str(p.get("description") or "") + " ").strip() +
+                    " TOP-LEVEL selector naming one native leaf (see enum, if present); "
+                    "not an argument inside 'args'."
+                ).strip()
+            if isinstance(props["args"], dict):
+                p = props["args"]
+                p["description"] = (
+                    (str(p.get("description") or "") + " ").strip() +
+                    " Leaf-only argument object for the selected top-level 'tool'. "
+                    "Never include a 'tool' key here; do not duplicate the selector."
+                ).strip()
+            # The native gateway rejects extra top-level fields; present that
+            # already-enforced boundary in the model schema without guessing
+            # or changing the actual server-side validator/call.
+            schema["additionalProperties"] = False
+        rendered.append({
+            "type": "function",
+            "function": {"name": item["name"], "description": description,
+                         "parameters": schema},
+        })
+    return rendered
 
 
 def arguments_of(call: dict) -> dict:
