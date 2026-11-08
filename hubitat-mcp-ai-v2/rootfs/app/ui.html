@@ -44,6 +44,31 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .session-note{font-size:12px;color:var(--muted)}.previous-turn{padding:14px 0;border-bottom:1px solid var(--edge)}.previous-turn pre{max-height:220px}
 #recorderNotice{border-left:3px solid var(--amber);padding:12px 16px;background:var(--panel);margin:16px 0}
 @media(max-width:600px){header>div{width:100%}.toolbar button{flex:1}main{padding:12px}th,td{padding:8px}#answer{font-size:15px}}
+
+/* Source-aware recorder timeline: SVG preserves sharp traces at all viewport sizes. */
+.timeline-chart{width:100%;height:auto;display:block;max-height:420px;min-height:210px;
+ background:#101b2b;border-radius:10px;touch-action:pan-y}
+.timeline-chart:focus-visible,#graph:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.timeline-meta,.timeline-readout,.plot-stats{font-size:12px;line-height:1.55;color:var(--muted);margin:10px 0}
+.timeline-readout{min-height:38px;padding:8px 11px;border:1px solid var(--edge);
+ border-radius:8px;background:#111d2e}
+.timeline-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.timeline-actions a{color:var(--blue);font-size:13px}
+.timeline-actions button{padding:8px 11px;font-size:13px}
+.timeline-events{display:flex;flex-direction:column;gap:8px;max-height:270px;overflow:auto;margin-top:12px}
+.timeline-event{display:flex;align-items:flex-start;gap:9px;justify-content:space-between;
+ padding:10px;border:1px solid var(--edge);border-radius:8px;font-size:12px}
+.timeline-event p{margin:0;flex:1;min-width:0;line-height:1.55}
+.timeline-event button{padding:6px 9px;font-size:12px}
+#timelineEvidence{max-height:250px}
+.diag-controls{margin:6px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.diag-controls label{font-size:12px;color:var(--muted)}
+.diag-controls select{margin-left:6px;padding:6px}
+#graph{cursor:crosshair}
+@media(max-width:530px){.timeline-chart{min-height:190px}.timeline-event{flex-wrap:wrap}
+.timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
+.diag-controls select{margin-left:0}}
+
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
@@ -71,20 +96,40 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
-<div class="card">
-<div class="row"><strong>History</strong>
-<select id="range" class="right" onchange="refreshDiagnostics()">
-<option value="1">1 hour</option><option value="6">6 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option>
-</select>
-<select id="metric" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load5">Native 5m load</option></select>
+<div class="card" id="timelineCard">
+<div class="row"><h2>Unified incident timeline</h2><button class="right" id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
+<p class="timeline-meta" id="timelineMeta">External recorder observations, native five-minute load and verified systemStart events. Missing history remains unknown.</p>
+<div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
+<div class="diag-controls">
+<label for="range">Range <select id="range" onchange="refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
+<label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · aligned panels</option><option value="combined">Combined · dual axes</option></select></label>
+<label for="plotExtent">Time axis <select id="plotExtent" onchange="redrawDiagnostics()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
 </div>
+<svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 360" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg>
+<p class="timeline-readout" id="timelineReadout" aria-live="polite">Select an observed point on the timeline, or use the arrow keys. Source gaps are not zero.</p>
+<div class="timeline-actions">
+<button id="timelineInspect" disabled onclick="inspectTimelineSelection()">Inspect selected time</button>
+<button id="timelineAsk" disabled onclick="prepareTimelineQuestion()">Prepare AI investigation</button>
+<a id="timelineSource" href="api/diagnostics/timeline?hours=6" target="_blank" rel="noopener noreferrer">View source records (JSON)</a>
+</div>
+<p class="session-note">These are locally saved observations, not cause attribution. Inspect uses no Hubitat request. Preparing an AI question does not send it or authorise a device action.</p>
+<details id="timelineObservations" open><summary>Observed points and incidents</summary><div class="timeline-events" id="timelineEvents"></div></details>
+<details id="timelineEvidenceDetails" hidden><summary>Selected local source evidence (read-only)</summary><pre id="timelineEvidence"></pre></details>
+</div>
+<div class="card" id="detailCard">
+<div class="row"><h2>Detailed metric history</h2>
+<select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load5">Native 5m load</option></select>
+</div>
+<div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
 <div class="legend"><span><i class="dot"></i>OS free memory (MB) / selected metric</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
-<div class="chartshell"><canvas id="graph" role="img" aria-label="Recorder history with aligned axes, confirmed startup markers and probe gaps"></canvas><div id="hint"></div></div>
-<div id="source">Select a window to inspect saved timestamps.</div>
+<div class="chartshell"><canvas id="graph" role="img" tabindex="0" aria-label="Detailed recorder history; use pointer or left/right arrow keys to inspect observed samples"></canvas><div id="hint"></div></div>
+<p id="detailReadout" class="timeline-readout" aria-live="polite">Hover or use the arrow keys to inspect exact measured values.</p>
+<div id="source" class="timeline-meta">Select a window to inspect saved timestamps.</div>
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
-</div></section></main>
+</div>
+</section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.14";
+const UI_VERSION="2.0.0-alpha.15";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
