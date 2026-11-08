@@ -1,6 +1,6 @@
 # HomeBrainOS v2 — first-answer quality measurement (original development)
 
-**Established:** 8 November 2026. **Runtime:** 2.0.0-alpha.16, unchanged.
+**Established:** 8 November 2026. **Baseline runtime:** 2.0.0-alpha.16; **candidate:** 2.0.0-alpha.17 (source annotation only; not yet live verified).
 **Purpose:** Resume the clean, model-led MCP investigation roadmap after the Hub Diagnostics chart work. Follow the permanent Answer Quality Charter without importing V1 planners, hardcoded incident fixes, answer rewriting or tool restrictions.
 
 ## What earlier installed v2 trials did and did not show
@@ -84,6 +84,6 @@ Alpha.17 proposes only generic event-source metadata: adjacent returned timestam
 
 ## Next test and release gate
 
-Use **V2-R5, FanBoost** as a fresh cross-domain first answer, **after verifying the effective test MCP connection is read-only without issuing a write**. Share the complete first answer and its Technical JSON privately in chat. Grade which sources the model selected, whether the returned time window covers the focal event and whether any cause was overstated.
+After the two independent alpha.16 source reviews, the next step is a **fresh V2-R3 first answer on installed alpha.17**, using a test MCP connection with effective Read allowed / Write denied verified via configuration (not by sending a write). Share the complete answer and private Technical JSON. Compare only matching returned source scope, historical gaps, model confidence, tool attempts, and latency; changing live events must be recorded as a confounder. Then use a separate frozen domain for transfer.
 
-This milestone adds **evaluation software and documentation only**; no model prompt, extra model round, router, provider, device rule, external recorder, V1, MCP permission or installed v2 runtime change. Only after source-reviewed baseline results on multiple domains should a model-quality implementation PR be proposed.
+Alpha.17 changes only the generic model-visible event-scope annotation and release metadata. It adds **no model prompt, extra model round, router, provider, device rule, recorder, V1 or MCP permission change**. Its model-quality effect must be measured live rather than assumed from code tests.
