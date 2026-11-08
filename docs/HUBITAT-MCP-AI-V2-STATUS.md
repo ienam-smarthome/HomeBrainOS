@@ -1,7 +1,7 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Repository candidate: `2.0.0-alpha.17` (installed environment last verified as alpha.16; release CI/live model acceptance pending).
+Repository and installed UI/export: `2.0.0-alpha.17`; matched V2-R3 first-answer acceptance reviewed on 8 November 2026. The runtime effect on other domains remains unverified.
 Development checkpoint: PR #1542 merged as `4e486befbc2cd996b6c9eaf635229efee94a0351` (evaluation only; runtime remains alpha.16).
 
 ## Current user direction
@@ -224,3 +224,13 @@ Together with the independent V2-R5 first-answer review, there are now two cross
 ### Evaluation-only audit integrity follow-up (candidate)
 
 The offline Technical JSON importer must not inflate event-history coverage from a failed MCP call or a metadata-only schema/catalog receipt that happens to contain a scope-shaped JSON object. Limit counted event histories to successful native source responses, explicitly count discarded scope-shaped receipts, and preserve **unknown unique event count** across overlapping responses. Also avoid echoing externally supplied model/tool names or argument keys in supposedly private-safe aggregate exports; use a model fingerprint and structural counts instead. This is an evaluation-format v2 update **without runtime or add-on version change**. The live answer-quality baseline remains unmeasured pending the frozen FanBoost first answer.
+
+### Installed alpha.17 first-answer comparison — V2-R3 (8 November 2026)
+
+The user supplied the **first answer and private Technical JSON** from the installed alpha.17 UI. It answered the exact same frozen humidity-history question with the same Gemma cloud model and native flat MCP tooling as the prior alpha.16 baseline. Both were first turns with no prior evidence receipts. Source comparison: 11 returned humidity rows in each run, **10 identical event timestamp/value pairs**, with one oldest/newest row changing as live history advanced. Both selected two native reads successfully and completed in three model rounds. Browser latency was **9.808s (alpha.16) vs 7.886s (alpha.17)**; server latency **9.740s vs 7.841s**. This is one observation, not a repeatability or performance distribution.
+
+**Supported improvement:** alpha.16 incorrectly claimed continuous recorded history and uninterrupted conditions between two reported threshold observations. The alpha.17 answer explicitly described discrete reports and gaps, and **did not repeat the unsupported continuity claim**. The new source-scope gap metadata was present in the actual model-visible event response, including 10 adjacent timestamp pairs and `can_infer_uninterrupted_state_between_events:false`.
+
+**Remaining limitations:** The model still described *first observed* threshold readings as actual physical crossing instants, used an unquantified “slightly before” statement, labelled a returned maximum as a peak without complete intermediate coverage, and referred to a same “session” without independent session evidence. Reviewer outcome: **improved PARTIAL**, not a full pass, model-wide accuracy score or causal claim that the extra annotation alone produced the change. Effective per-client Write-denied permission remains unverified by observing read-only calls.
+
+**Development decision:** Keep alpha.17 unchanged. Do **not** respond with another instance-specific instruction, planner, model routing experiment or answer rewriting. The next discriminating test is the frozen V2-R2 light OFF investigation in a new conversation under a verified read-only client, with first answer and full private Technical JSON. Transfer to the separate causal-reasoning domain remains unmeasured. No Hubitat, HA, router, MCP server, model setting, V1, recorder, or permissions were mutated during this repository review.
