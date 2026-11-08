@@ -50,7 +50,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <main>
 <nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active">
-<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include recent questions, answers and bounded historical MCP source receipts. New actions and live-state questions still require fresh verification. No evidence is stored on disk.</p>
+<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
 <div class="row"><small class="muted">Ask naturally. The assistant chooses tools from your connected Hubitat server.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
 </div>
@@ -84,7 +84,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div></section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.8";
+const UI_VERSION="2.0.0-alpha.9";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -155,7 +155,8 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
-  if(response?.prior_receipts_used)byId('requestSummary').textContent+=' '+response.prior_receipts_used+' prior source excerpts included as historical context.';
+  if(response?.prior_sources_indexed)byId('requestSummary').textContent+=' '+response.prior_sources_indexed+' earlier sources indexed; '+(response.prior_receipts_used||0)+' excerpts supplied.';
+  if(response?.prior_evidence_reads)byId('requestSummary').textContent+=' '+response.prior_evidence_reads+' earlier source chunks read on demand.';
  turns.push({question,answer});turns=turns.slice(-12);renderTurns();
  byId('downloadTechnical').disabled=false;
  byId('receipts').textContent=JSON.stringify(technicalDetails,null,2);

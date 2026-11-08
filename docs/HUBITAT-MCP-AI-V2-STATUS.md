@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.8` (candidate until PR CI/merge verified)
-Development branch: `feat/v2-session-evidence-followups-alpha8`
+Version: `2.0.0-alpha.9` (candidate; final PR/CI verification required)
+Development branch: `feat/v2-source-index-on-demand-alpha9`
 
 ## Current user direction
 
@@ -86,3 +86,15 @@ The upstream skill files remain unchanged. V1, recorder source, provider routing
 **Evidence gate:** Browser/HTTP/Python regression tests verify the data flow, truncation, masking, reset, expiry and isolation using synthetic MCP/model responses. The private G06 first-answer capture and Ollama Cloud credentials are not part of the repository. No live Hubitat/Gemma replay or matched Claude/Thaura evaluation is asserted. The next installed acceptance uses the frozen cross-domain matrix in `docs/HUBITAT-MCP-AI-V2-ACCEPTANCE.md` and exported first-answer technical JSON, including at least one dependent follow-up per domain. Previous timeouts are failures, not a successful comparison.
 
 CI and PR exact-head verification: **pending until the final candidate passes.** No unattended work runs after this session.
+
+## Alpha.9 — real follow-up source loss and generic readback milestone (8 Nov 2026)
+
+The user provided three installed alpha.8 technical JSON exports from a read-only cross-device heating question and two follow-ups. The first answer had **10 tool attempts, 2 local contract rejections, 8 successful reads**, including the main controller's 58 returned events and five radiator histories. The first answer incorrectly reported a most-recent interval and extrapolated later snapshot values backwards. Each follow-up was fast but used **five prior snippets and zero new MCP tools**, falsely asserting that original main controller history did not exist. The complete original receipt was present in the first technical export but absent from the alpha.8 follow-up excerpt budget. Individual device event histories were bounded (some showed 100 recent events), so absent older events in those pages were **not** evidence of historical absence. Do not commit private device history or real model outputs to the public repo.
+
+Root cause addressed: alpha.8 kept short latest-first source excerpts without an index of *all* prior reads. Alpha.9 adds compact provenance and returned event-time span metadata for every retained source plus a server-side capped archive of each redacted original source string. A single read-only client-owned model tool retrieves older source chunks on demand by opaque receipt ID. The model can also rerun a correctly scoped native MCP read if the old archive is incomplete. It is **not** an automatic replay mechanism, local causal verifier or expanded write capability. This general mechanism applies to lighting, humidity, heating and hub-incident histories alike.
+
+Operational protections: one session UUID, source IDs scoped within it, memory-only, bounded index and bytes, explicit truncation/eviction signals, no new Hubitat writes, existing upstream confirmation/permission boundaries unchanged. Preserve `New conversation` reset and 45-minute idle expiry.
+
+**Acceptance:** scripted test sources must reproduce an earlier important record followed by several large newer sources, verify the earlier source appears in the index even when excerpt truncated, prove the model can request the original in chunks without contacting Hubitat, and fail closed for wrong/expired IDs. Live alpha.9 result still requires a first uncoached answer and dependent follow-up; do not claim corrected Gemma reasoning merely from tests.
+
+PR, exact-head CI, final status and merged SHA: **pending verification**.

@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.8**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.9**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -74,3 +74,17 @@ The cache is bounded to four turns, ten latest non-catalog tool receipts per tur
 Alpha.8 leaves the **existing MCP capability and write/confirmation design unchanged**; first-answer evaluation should still use an upstream read-only MCP token. No new v1 planner, model substitution, skill-specific question patch, or recorder modification was introduced.
 
 See `docs/HUBITAT-MCP-AI-V2-ACCEPTANCE.md` for the frozen acceptance protocol. CI exercises synthetic evidence and model stubs, not a real Home Assistant ingress, model comparison or private G06 capture. Install the add-on and collect real first-answer exports before declaring an answer-quality improvement.
+
+## Alpha.9 — complete source index and on-demand prior evidence
+
+A real alpha.8 read-only heating investigation retrieved the main controller's event history, but two follow-ups received only five excerpts from newer sources. The model then falsely stated that no controller history had been retrieved. This is a **source-loss / selection problem**, not evidence that the earlier Hubitat read was absent. The actual user-supplied diagnostic exports remain private.
+
+Alpha.9 separates the compact **source index** from the excerpt budget. Every retained, non-catalog server-origin receipt has a unique opaque ID, original gateway/leaf arguments, success state, collection time, original response size, retention availability, and, when the MCP result contains structured event history, its returned event count and earliest/latest **returned** timestamps. These endpoints describe the retrieved sample, not complete historical coverage. If the index itself exceeds its budget, `source_index_omitted` makes missing items explicit; it never implies that the underlying MCP read was not performed.
+
+A follow-up exposes one **client-owned, read-only** tool, `homebrain_read_prior_evidence(receipt_id, offset?, max_chars?)`, in addition to (not instead of) the connected upstream native MCP catalog. The model can select that tool to retrieve up to 16,000 characters per call from the previous **redacted** model-visible source held locally. An offset/next_offset allows multiple chunks and exact-text reconstruction within the archive boundary. The tool never contacts or mutates Hubitat; it is scoped to the same random browser conversation ID. If the archive was evicted/expired, the index says so and the model must use the native MCP tool, selecting an appropriate historical window to regain coverage. No automatic source replay, question-specific algorithm or v1 planner is introduced.
+
+Limits: four turns, 32 non-catalog source receipts per turn, 3,200-character source previews, approximately 20k characters of source index/previews in initial follow-up context, 320k archived characters per conversation with 90k max per individual receipt, 32 conversations and 45-minute inactivity expiry. Archive eviction retains source index metadata and marks the content unavailable; an oversized source is explicitly flagged. The index and archive live in RAM only, with no persistent history or new API endpoint to fetch the archive directly. The model returns `prior_sources_indexed`, `prior_receipts_used` (number of short excerpts included), and `prior_evidence_reads` (local chunk tool attempts) separately. **None of these counts measures factual correctness.**
+
+The sole client-owned tool is limited to earlier source-data retrieval; all Hubitat reads, writes, native automation and administrative operations remain exposed exclusively through the upstream catalog and its existing permission gates. No changes were made to confirmation or write privileges; use an upstream read-only token for investigative testing. The upstream bundled skill files and external recorder remain untouched.
+
+Installed live alpha.9 reasoning quality is **unverified**. CI tests fake source payloads and mock model tool choices; they do not constitute a real Gemma or G06 replay. Run the acceptance matrix in `docs/HUBITAT-MCP-AI-V2-ACCEPTANCE.md` and export both the first question and the follow-up technical JSON.
