@@ -1,0 +1,123 @@
+"""External diagnostics native source-cadence regression for v2 only.
+
+Synthetic records. No live hub or network access.
+"""
+import importlib.util
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import unittest
+
+
+_PATH = Path(__file__).resolve().parents[1] / "rootfs" / "app" / "external_hub_diagnostics.py"
+_SPEC = importlib.util.spec_from_file_location("v2_native_diagnostics_source_test", _PATH)
+_module = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_module)
+summarize_history_samples = _module.summarize_history_samples
+
+
+def stamp(value):
+    return value.isoformat(timespec="milliseconds")
+
+
+class NativeSeriesTests(unittest.TestCase):
+    def test_native_short_range_returns_distinct_source_samples_not_repeated_polls(self):
+        """Cached 5m rows must not fragment every genuine source line segment."""
+        start = datetime(2026, 11, 8, 11, 0, tzinfo=timezone.utc)
+        rows = []
+        for i in range(30):  # 15 min of 30s probes, 3 actual 5m samples
+            rows.append({
+                "recorded_at": stamp(start + timedelta(seconds=i * 30)),
+                "reachable": 1,
+                "native_sample_label": "native-%02d" % (i // 10),
+                "native_load5": (0.63, 1.17, 0.95)[i // 10],
+                "native_load_pct": (15.8, 29.2, 23.8)[i // 10],
+                "java_free_mb": (125.0, 123.4, 124.0)[i // 10],
+            })
+        for metric in ("native_load5", "native_load_pct", "java_free_mb"):
+            with self.subTest(metric=metric):
+                result = summarize_history_samples(
+                    iter([dict(x) for x in rows]), metric=metric,
+                    start=start, finish=start + timedelta(hours=1),
+                    probe_seconds=30,
+                )
+                self.assertEqual(result["source_sample_count"], 30)
+                self.assertEqual(result["observed_metric_points"], 3)
+                self.assertFalse(result["downsampled"])
+                self.assertEqual([p["native_sample_label"] for p in result["samples"]],
+                                 ["native-00", "native-01", "native-02"])
+                self.assertEqual([p["diag_segment"] for p in result["samples"]],
+                                 [0, 0, 0])
+                self.assertEqual(result["samples"][0]["recorded_at"], rows[0]["recorded_at"])
+                self.assertEqual(result["samples"][1]["recorded_at"], rows[10]["recorded_at"])
+
+    def test_native_outage_or_missing_reading_breaks_line_without_fabricated_values(self):
+        start = datetime(2026, 11, 8, 11, 0, tzinfo=timezone.utc)
+        spec = [
+            (0, 1, "s0", .5),
+            (30, 1, "s0", .5),
+            (300, 1, "s1", .6),
+            (330, 1, "s1", .6),
+            (360, 0, None, None),
+            (390, 1, "s1", .6),
+            (600, 1, "s2", .9),
+            (630, 1, "s2", .9),
+            (2400, 1, "s3", 1.0),  # true source gap > 15 minutes
+        ]
+        rows = [{"recorded_at": stamp(start + timedelta(seconds=sec)),
+                 "reachable": reachable, "native_sample_label": label,
+                 "native_load5": value} for sec, reachable, label, value in spec]
+        out = summarize_history_samples(
+            iter(rows), metric="native_load5",
+            start=start, finish=start + timedelta(hours=1), probe_seconds=30,
+        )
+        self.assertEqual(out["source_sample_count"], len(rows))
+        self.assertEqual(out["observed_metric_points"], 4)
+        self.assertEqual([r["native_sample_label"] for r in out["samples"]],
+                         ["s0", "s1", "s2", "s3"])
+        self.assertEqual([r["diag_segment"] for r in out["samples"]],
+                         [0, 0, 1, 2])
+        self.assertEqual([r["native_load5"] for r in out["samples"]],
+                         [.5, .6, .9, 1.0])
+
+    def test_probe_cadence_and_outage_rows_preserved_for_real_os_metric(self):
+        start = datetime(2026, 11, 8, 11, 0, tzinfo=timezone.utc)
+        rows = [
+            {"recorded_at": stamp(start + timedelta(seconds=i * 30)),
+             "reachable": 0 if i == 2 else 1,
+             "free_os_mb": None if i == 2 else 840.0 + i}
+            for i in range(6)
+        ]
+        result = summarize_history_samples(
+            iter(rows), metric="free_os_mb",
+            start=start, finish=start + timedelta(hours=1), probe_seconds=30,
+        )
+        self.assertEqual(result["source_sample_count"], 6)
+        self.assertEqual(result["observed_metric_points"], 5)
+        self.assertEqual(len(result["samples"]), 6)
+        self.assertEqual(result["samples"][2]["reachable"], 0)
+        self.assertGreater(result["samples"][3]["diag_segment"],
+                           result["samples"][1]["diag_segment"])
+
+    def test_native_long_window_downsamples_real_distinct_sources_only(self):
+        start = datetime(2026, 11, 7, 0, 0, tzinfo=timezone.utc)
+        rows = [
+            {"recorded_at": stamp(start + timedelta(seconds=i * 30)),
+             "reachable": 1, "native_sample_label": "sample-%03d" % (i // 10),
+             "native_load5": 2.4 if i // 10 == 25 else .6}
+            for i in range(4000)
+        ]
+        result = summarize_history_samples(
+            iter(rows), metric="native_load5",
+            start=start, finish=start + timedelta(days=2),
+            probe_seconds=30, raw_limit=100,
+        )
+        self.assertTrue(result["downsampled"])
+        self.assertEqual(result["source_sample_count"], 4000)
+        self.assertEqual(result["observed_metric_points"], 400)
+        self.assertEqual(max(r["native_load5"] for r in result["samples"]), 2.4)
+        self.assertEqual(len({r["native_sample_label"] for r in result["samples"]}),
+                         len(result["samples"]))
+
+
+if __name__ == "__main__":
+    unittest.main()
