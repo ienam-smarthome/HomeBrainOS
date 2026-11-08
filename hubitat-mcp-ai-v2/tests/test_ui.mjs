@@ -70,7 +70,7 @@ const mathSource=[
  '| **Bedroom 1 TRV** | Unknown | $21.0^\\circ\\text{C}$ | Command only |',
  '| **Bedroom 3 TRV** | **Heating** $\\rightarrow$ **Idle** | $22.0 \\rightarrow 21.0^\\circ\\text{C}$ | $\\sim$09:30:15 |',
  '',
- 'Text notation: \\(20.5^\\circ\\text{C}\\), x^{2}, CO_{2}, $\\geq 70\\%$, $\\approx 2$.',
+ 'Text notation: \\(20.5^\\circ\\text{C}\\), $x^{2}$, $CO_{2}$, $\\geq 70\\%$, $\\approx 2$.',
  'Unsupported math: $\\frac{1}{2}$.',
  'Literal code: \`$21.0^\\circ\\text{C}$\`.',
  'Keep raw markup literal: <svg onload=alert(1)>.',

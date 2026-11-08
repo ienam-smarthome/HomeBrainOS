@@ -9,7 +9,7 @@ answer=r"""## Reported state
 
 | Device | State | Temperature |
 | --- | --- | --- |
-| **Desk lamp** | \`off\` | $21.0^\circ\text{C}$ |
+| **Desk lamp** | `off` | $21.0^\circ\text{C}$ |
 
 Heating $\rightarrow$ Idle; $22.0 \rightarrow 21.0^\circ\text{C}$.
 <svg onload=alert(1)><script>window.injected=true</script></svg>
