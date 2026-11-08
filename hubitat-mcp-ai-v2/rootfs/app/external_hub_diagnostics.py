@@ -168,7 +168,11 @@ def summarize_history_samples(
     observed = 0
     for row in rows:
         count += 1
-        if raw is not None:
+        # For native metrics, source measurement changes only when the
+        # source's five-minute label changes. The intervening 30-second rows
+        # repeat one cached reading and are not independent chart points.
+        # Preserve every probe row (including outages) for non-native metrics.
+        if raw is not None and not native:
             if len(raw) < raw_limit:
                 raw.append(row)
             else:
@@ -192,6 +196,11 @@ def summarize_history_samples(
             if label in seen_native:
                 continue
             seen_native.add(label)
+            if raw is not None:
+                if len(raw) < raw_limit:
+                    raw.append(row)
+                else:
+                    raw = None
         if previous and (unknown or stamp - previous[0] > gap_seconds):
             segment += 1
         row["diag_segment"] = segment
