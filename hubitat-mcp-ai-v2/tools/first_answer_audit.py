@@ -109,7 +109,8 @@ def _native_event_scope(response_text: Any, call: dict[str, Any]) -> dict | None
         envelope = json.loads(response_text)
     except (TypeError, ValueError):
         return None
-    if not isinstance(envelope, dict) or not isinstance(envelope.get("content"), list):
+    if (not isinstance(envelope, dict) or envelope.get("isError") is True
+            or not isinstance(envelope.get("content"), list)):
         return None
     args = _effective_args(request)
     requested_limit = _optional_int(args.get("limit"))
@@ -123,6 +124,8 @@ def _native_event_scope(response_text: Any, call: dict[str, Any]) -> dict | None
             continue
         if (not isinstance(body, dict) or not isinstance(body.get("events"), list)
                 or ("device" not in body and "deviceId" not in body)):
+            continue
+        if body.get("success") is False or body.get("isError") is True:
             continue
         events = body["events"]
         if not all(isinstance(e, dict) for e in events):
@@ -216,9 +219,10 @@ def audit_export(document: Any) -> dict[str, Any]:
         if scope is not None:
             # Failed, locally rejected or metadata-only calls cannot establish
             # retrieved history, even if their payload contains scope-looking JSON.
-            if call.get("success") is True and result_kind not in {
-                "tool_catalog", "prior_evidence_read", "contract_error"
-            }:
+            if (call.get("success") is True and call.get("operation_executed") is not False
+                    and result_kind not in {
+                        "tool_catalog", "prior_evidence_read", "contract_error"
+                    }):
                 event_scopes.append(scope)
             else:
                 counts["excluded_non_success_event_scopes"] += 1
