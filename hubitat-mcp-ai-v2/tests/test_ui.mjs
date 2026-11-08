@@ -1,0 +1,54 @@
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+const html=readFileSync(new URL('../rootfs/app/ui.html',import.meta.url),'utf8');
+const script=html.split('<script>')[1].split('</script>')[0].replace(/loadStatus\(\);\s*$/, '');
+const version=html.match(/const UI_VERSION="([^"]+)"/)[1];
+function harness(){
+ const elements=new Map(),timers=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0;
+ const element=()=>({textContent:'',value:'',disabled:false,hidden:false,style:{},classList:{remove(){},toggle(){},contains(){return false;}},addEventListener(){},focus(){focused=true;}});
+ const el=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
+ const state={status:{version,configured:true,model:'gemma4:31b-cloud'},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true};
+ const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createElement(){const e=element();e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
+ const navigator={clipboard:{writeText:async text=>{copied=text;}}};
+ const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,URL,Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
+ if(url==='api/status')return{ok:true,json:async()=>state.status};
+ assert.equal(url,'api/ask');askCalls++;assert.equal(init.headers['X-Homebrain-Request'],'1');
+ assert.equal(el('copyAnswer').disabled,true);assert.equal(el('copyTechnical').disabled,true);
+ for(const fn of [...timers.values()]){if(fn.toString().includes('Waiting:')){clock+=1250;fn();assert.match(el('responseTime').textContent,/Waiting: 1.3 s/);}}
+ if(state.pending)await state.pending;
+ clock+=1250;
+ return{ok:!state.httpError,status:503,json:async()=>state.httpError?{detail:state.httpError}:state.result};
+ }});
+ vm.runInContext(script,context);
+ return{state,el,timers,navigator,run:code=>vm.runInContext(code,context),get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;}};
+}
+const h=harness();h.el('question').value='Read only question';
+await h.run('submitAsk()');
+assert.equal(h.el('responseTime').textContent,'Response time: 2.5 s');
+assert.equal(h.timers.size,0);assert.equal(h.el('send').disabled,false);
+await h.run("copyResult('answer')");assert.equal(h.copied,h.state.result.answer);
+await h.run("copyResult('technical')");
+const detail=JSON.parse(h.copied);
+assert.deepEqual(detail.response,h.state.result);assert.equal(detail.model,'gemma4:31b-cloud');
+assert.equal(detail.question,'Read only question');assert.ok(detail.request_id);
+assert.equal(detail.client_elapsed_ms,2500);assert.equal(detail.server_elapsed_ms,2000);assert.equal(detail.ui_version,version);
+h.navigator.clipboard.writeText=async()=>{throw Error('insecure context');};
+await h.run("copyResult('answer')");assert.equal(h.fallback,h.state.result.answer);assert.equal(h.focused,true);
+h.navigator.clipboard=undefined;await h.run("copyResult('technical')");assert.deepEqual(JSON.parse(h.fallback).response,h.state.result);
+h.state.copyWorks=false;await h.run("copyResult('answer')");assert.match(h.el('copyStatus').textContent,/Copy unavailable/);
+h.state.result={answer:'Model failed',error:'model',elapsed_ms:20,tool_calls:[{result:'retained'}]};
+await h.run('submitAsk()');assert.equal(h.run('technicalDetails.response.error'),'model');
+h.state.httpError='Service unavailable';await h.run('submitAsk()');
+assert.equal(h.el('answer').textContent,'Request failed: Service unavailable');
+assert.equal(h.run('technicalDetails.error.type'),'transport');assert.equal(h.run('technicalDetails.response'),null);assert.equal(h.timers.size,0);
+h.state.status.version='old';const count=h.askCalls;await h.run('submitAsk()');
+assert.equal(h.askCalls,count);assert.equal(h.el('responseTime').textContent,'Response time: not sent');
+assert.equal(h.run('technicalDetails.model'),null);assert.equal(h.run('technicalDetails.request_id'),null);
+const d=harness();d.el('question').value='One request';let release;
+d.state.pending=new Promise(resolve=>{release=resolve;});
+const first=d.run('submitAsk()');await new Promise(resolve=>setImmediate(resolve));
+await d.run('submitAsk()');assert.equal(d.askCalls,1);release();await first;
+assert.equal(d.timers.size,0);
+console.log('UI behavior checks passed: exact copies, receipt preservation, clipboard fallback, timing, failures, stale state and duplicate submission.');

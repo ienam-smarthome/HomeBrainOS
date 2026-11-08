@@ -1,7 +1,7 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Date: 2026-11-07
-Version: `2.0.0-alpha.5`
+Version: `2.0.0-alpha.6`
 Development branch: `feat/v2-upstream-native-mcp`
 
 ## Current user direction
@@ -60,3 +60,9 @@ Final correction CI/merge evidence is tracked on PR #1528. Scripted recovery thr
 4. Test device control and native automation only with explicit user-authorized test operations and upstream safety requirements.
 
 Live first-answer usefulness, factual grounding, model comparison, control/automation behavior and Home Assistant installation remain **not measured/unverified**. No unattended development is implied.
+
+## Alpha.6 UI conveniences and current evaluation direction
+
+User requested separate answer/technical-detail copying and visible response time. Alpha.6 retains the original API response in copied technical details, alongside question, model, request ID, browser elapsed time and server elapsed time where available. LAN HTTP clipboard fallback and failed-request copying are covered by isolated UI tests. Model, prompts, schemas, MCP access, recorder and answer generation are unchanged. No live model or hub calls are used for this UI validation.
+
+Current evaluation direction: assess existing Ollama Cloud Gemma4:31b with varied read-only first-answer questions; preserve all failures and raw receipts before deciding any changes. Do not resume model routing experiments, heating-specific fixes, coaching or answer rewriting. This UI release makes evidence easier to capture; it is not evidence of reasoning improvement.
