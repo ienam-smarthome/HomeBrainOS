@@ -595,7 +595,7 @@ function drawIncidentTimeline(){
  byId('timelineMeta').textContent=memCount+' external OS-memory observations · '+
   cpuCount+' distinct native 5m CPU readings · '+(timelineData.reboots||[]).length+
   ' recorded startup(s) · '+incidents.length+' observed connectivity episode(s)'+
-  (fit?' · Time axis fitted to recorded observations within the '+byId('range').selectedOptions[0].textContent+' request':'')+
+  (fit?' · Time axis fitted to recorded observations within the '+byId('range').value+'-hour request':'')+
   ((memMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
   ' · Partial source coverage; time alignment is not causation.';
  timelineShown={...timelineShown,x,yFor,plot};
@@ -692,27 +692,65 @@ byId('incidentTimeline').addEventListener('keydown',e=>{
 });
 
 async function refreshDiagnostics(){
- try{const hours=+byId('range').value,metric=byId('metric').value;const [s,t]=await Promise.all([
- readJson('api/diagnostics/status'),
- readJson('api/diagnostics/'+(metric==='combined'?'timeline?hours='+hours:'history?hours='+hours+'&metric='+encodeURIComponent(metric)))
- ]);setCards(s);
- const notice=byId('recorderNotice');notice.hidden=s.status==='online';
- notice.textContent=s.status==='disabled'?'External recorder is disabled. In the add-on configuration, enable external_hub_diagnostics_enabled and set external_hub_diagnostics_hub_url to your hub’s HTTP LAN base URL, then save and restart. This recorder has separate history from MCP diagnostics.':
- s.error?'Recorder error: '+s.error:s.status==='waiting'?'Recorder enabled. Waiting for its first sample.':'Recorder status: '+(s.status||'unknown')+'. Check the source details below for probe failures.';
- visual=metric==='combined'?{
- start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:(t.metrics?.free_os_mb?.samples||[]),b:(t.metrics?.native_load_pct?.samples||[]),
- ak:'free_os_mb',bk:'native_load_pct',reboots:t.reboots||[],incidents:t.incidents||[],description:'Memory is sampled externally; native 5m load is dated at collection.'
- }:{
- start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:t.samples||[],b:[],ak:metric,bk:null,reboots:t.reboots||[],incidents:t.incidents||[],description:(metric.startsWith('native_')||metric.startsWith('java_')?'One point per distinct native five-minute reading; repeated polls excluded. True source gaps stay blank.':'Probe-time readings; true source gaps stay blank.')
- };
- const nativeCount=metric==='combined'?t.metrics?.native_load_pct?.observed_metric_points:t.observed_metric_points;
- const recorderCount=metric==='combined'?t.metrics?.native_load_pct?.source_sample_count:t.source_sample_count;
- const nativeDetail=Number.isFinite(nativeCount)&&Number.isFinite(recorderCount)?
-   ' · '+nativeCount+' source readings among '+recorderCount+' recorder poll rows (within selected range).':'';
- byId('source').textContent=(s.status||'unknown')+' · '+visual.description+nativeDetail+(s.error?' · '+s.error:'');
- byId('incidents').textContent=JSON.stringify({incidents:visual.incidents,reboots:visual.reboots},null,2);
- draw();
- }catch(e){byId('source').textContent='Unable to load recorder: '+e.message;visual=null;draw();}
+ const sequence=++diagnosticsSequence;
+ const hours=+byId('range').value,metric=byId('metric').value;
+ byId('timelineMeta').textContent='Loading saved recorder observations…';
+ try{
+  // Both charts are views over the same independently recorded SQLite history.
+  // The unified timeline is always fetched, with no second native hub poll.
+  const [status,timeline,detail]=await Promise.all([
+   readJson('api/diagnostics/status'),
+   readJson('api/diagnostics/timeline?hours='+hours),
+   metric==='combined'?Promise.resolve(null):
+    readJson('api/diagnostics/history?hours='+hours+'&metric='+encodeURIComponent(metric))
+  ]);
+  if(sequence!==diagnosticsSequence)return;
+  setCards(status);
+  const notice=byId('recorderNotice');notice.hidden=status.status==='online';
+  notice.textContent=status.status==='disabled'?
+   'External recorder is disabled. Configure external_hub_diagnostics_enabled and its HTTP LAN base URL in the add-on options, then restart. This is separate from MCP tool history.':
+   status.error?'Recorder error: '+status.error:status.status==='waiting'?
+   'Recorder is enabled. Waiting for its first saved observation.':
+   'Recorder status: '+(status.status||'unknown')+'; inspect individual source events below.';
+  timelineData=timeline;
+  byId('timelineSource').href='api/diagnostics/timeline?hours='+hours;
+  byId('timelineEvidenceDetails').hidden=true;
+  drawIncidentTimeline();
+  visual=metric==='combined'?{
+   start:Date.parse(timeline.range_start),end:Date.parse(timeline.range_end),
+   a:timeline.metrics?.free_os_mb?.samples||[],
+   b:timeline.metrics?.native_load_pct?.samples||[],
+   ak:'free_os_mb',bk:'native_load_pct',reboots:timeline.reboots||[],
+   incidents:timeline.incidents||[],
+   description:'OS memory: external probes. 5m CPU: native source at collector receipt.'
+  }:{
+   start:Date.parse(detail.range_start),end:Date.parse(detail.range_end),
+   a:detail.samples||[],b:[],ak:metric,bk:null,
+   reboots:detail.reboots||[],incidents:detail.incidents||[],
+   description:(metric.startsWith('native_')||metric.startsWith('java_')?
+    'One point per distinct native five-minute source; no repeated polls or fabricated readings.':
+    'Actual external probe-time readings; no interpolation.')
+  };
+  const nativeCount=metric==='combined'?
+   timeline.metrics?.native_load_pct?.observed_metric_points:detail.observed_metric_points;
+  const recorderCount=metric==='combined'?
+   timeline.metrics?.native_load_pct?.source_sample_count:detail.source_sample_count;
+  const countText=Number.isFinite(nativeCount)&&Number.isFinite(recorderCount)?
+   ' · '+nativeCount+' observed source readings from '+recorderCount+
+   ' recorder poll rows (selected request).':'';
+  byId('source').textContent=(status.status||'unknown')+' · '+visual.description+
+   countText+(status.error?' · '+status.error:'');
+  byId('incidents').textContent=JSON.stringify({
+   incidents:visual.incidents,reboots:visual.reboots,
+   notice:'Recorder observations are not independently verified reboot causes.'
+  },null,2);
+  draw();
+ }catch(e){
+  if(sequence!==diagnosticsSequence)return;
+  byId('timelineMeta').textContent='Unable to load saved timeline: '+e.message;
+  byId('source').textContent='Unable to load recorder: '+e.message;
+  timelineData=null;visual=null;drawIncidentTimeline();draw();
+ }
 }
 function axis(rows,key){const data=rows.filter(r=>r.reachable&&Number.isFinite(+r[key])&&r[key]!=null).map(r=>+r[key]);if(!data.length)return [0,1];let min=Math.min(...data),max=Math.max(...data);const extra=Math.max((max-min)*.13,1);return [Math.max(0,min-extra),max+extra]}
 function draw(){
