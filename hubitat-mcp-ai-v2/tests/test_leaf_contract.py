@@ -172,8 +172,10 @@ class LiveLeafContractTests(unittest.TestCase):
                 self.assertion2 = ("NATIVE LEAF CONTRACT" in definition["description"]
                                    and "For table mode only." in definition["description"])
                 if self.round_count == 2:
-                    self.assertEqual([x["role"] for x in messages[-2:]], ["assistant", "tool"])
-                    self.assertIn("Leaf arguments violate", messages[-1]["content"])
+                    if [x["role"] for x in messages[-2:]] != ["assistant", "tool"]:
+                        raise AssertionError("Expected assistant-to-tool response transcript")
+                    if "Leaf arguments violate" not in messages[-1]["content"]:
+                        raise AssertionError("Expected exact nonexecuted leaf-schema rejection")
                     return {"content": "", "tool_calls": [{
                         "function": {"name": "gateway_alpha",
                                      "arguments": {"tool": "read_log_rows",
