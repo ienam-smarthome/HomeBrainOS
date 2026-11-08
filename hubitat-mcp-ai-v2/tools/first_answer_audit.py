@@ -5,6 +5,8 @@ Reads the Technical JSON *already exported by the user's v2 browser*. No Hubitat
 Home Assistant, model, network, database or credentials are accessed. Prints no
 question, answer, device IDs, tool arguments, raw event rows or source payload.
 Successful MCP calls are NOT equivalent to a correct or safe model answer.
+Only successful source receipts contribute to history counts. Untrusted labels,
+including model names, tool names and argument keys, are never echoed verbatim.
 
 Usage:
     python hubitat-mcp-ai-v2/tools/first_answer_audit.py private-export.json
@@ -18,13 +20,14 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import statistics
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "homebrain-v2-first-answer-audit.v1"
+SCHEMA = "homebrain-v2-first-answer-audit.v2"
 
 
 class AuditInputError(ValueError):
@@ -103,8 +106,8 @@ def audit_export(document: Any) -> dict[str, Any]:
         raise AuditInputError("Missing version/model; export may not be from v2")
 
     counts: Counter = Counter()
-    names: list[str] = []
-    requested_field_sets: list[list[str]] = []
+    names: set[str] = set()
+    requested_field_counts: list[int] = []
     targets: set[tuple[str, str]] = set()
     attributes: set[tuple[str, str]] = set()
     event_scopes: list[dict] = []
@@ -135,9 +138,9 @@ def audit_export(document: Any) -> dict[str, Any]:
 
         raw_name = call.get("name")
         if isinstance(raw_name, str) and len(raw_name) <= 120:
-            names.append(raw_name)
+            names.add(raw_name)
         args = _effective_args(call.get("arguments"))
-        requested_field_sets.append(_arg_names(args))
+        requested_field_counts.append(len(_arg_names(args)))
         # Keep distinct requested selectors in memory, but never include their
         # private values in the result. A distinct requested target is NOT
         # proof that it returned history or that the target was present.
@@ -152,7 +155,14 @@ def audit_export(document: Any) -> dict[str, Any]:
                 attributes.add((normalized, str(value)))
         scope = _read_scope(call.get("response"))
         if scope is not None:
-            event_scopes.append(scope)
+            # Failed, locally rejected or metadata-only calls cannot establish
+            # retrieved history, even if their payload contains scope-looking JSON.
+            if call.get("success") is True and result_kind not in {
+                "tool_catalog", "prior_evidence_read", "contract_error"
+            }:
+                event_scopes.append(scope)
+            else:
+                counts["excluded_non_success_event_scopes"] += 1
     attempts = counts["native_tool_attempts"]
     failures = counts["failed_native_attempts"]
     return {
@@ -164,7 +174,16 @@ def audit_export(document: Any) -> dict[str, Any]:
             "do not grade factual accuracy, complete device coverage, "
             "causal calibration or write permissions. Those require source review."
         ),
-        "build": {"version": version, "model": model},
+        "build": {
+            # Only controlled version syntax is emitted verbatim. Identifiers
+            # controlled by external models/tools stay in the private source.
+            "version": version if re.fullmatch(
+                r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9._-]+)?", version
+            ) else "unrecognised",
+            "model_sha256_prefix": hashlib.sha256(
+                model.encode("utf-8")
+            ).hexdigest()[:16],
+        },
         "question_sha256_prefix": hashlib.sha256(question.encode("utf-8")).hexdigest()[:16],
         "source": {
             "type": "locally_imported_browser_technical_export",
@@ -190,14 +209,16 @@ def audit_export(document: Any) -> dict[str, Any]:
             "locally_rejected": counts["local_contract_rejections"],
             "known_nonexecuted_contract_errors": counts["known_nonexecuted_contract_errors"],
             "other_failed_attempts": counts["other_failed_attempts"],
-            "model_selected_tool_names": sorted(set(names)),
-            "requested_argument_field_names_per_call": requested_field_sets,
+            "distinct_model_selected_tool_names": len(names),
+            "requested_argument_field_counts_per_call": requested_field_counts,
             "distinct_requested_id_selectors": len(targets),
             "distinct_requested_attribute_filters": len(attributes),
         },
         "history_receipts": {
             "event_scope_receipts": len(event_scopes),
+            "excluded_non_success_event_scopes": counts["excluded_non_success_event_scopes"],
             "event_rows_returned_total": sum(s["events_returned"] for s in event_scopes),
+            "unique_events_across_receipts": "not_established",
             "any_request_limit_reached": any(s["limit_reached"] for s in event_scopes),
             "any_upstream_truncation_flag": any(
                 s["upstream_reported_truncated"] for s in event_scopes
@@ -228,7 +249,7 @@ def summarize(records: list[dict]) -> dict:
     times = sorted(elapsed)
     counts = [r["native_tools"] for r in records]
     return {
-        "schema": "homebrain-v2-first-answer-summary.v1",
+        "schema": "homebrain-v2-first-answer-summary.v2",
         "samples": n,
         "quality_status": "not_measured",
         "grounded_claim_rate": None,
