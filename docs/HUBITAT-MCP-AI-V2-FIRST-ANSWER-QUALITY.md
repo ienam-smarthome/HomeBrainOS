@@ -51,6 +51,19 @@ These cases test **read-only** investigation. They do not authorize a device cha
 | Complex investigation latency | Observational only | Individual times documented, no quality cutoff |
 | Read-only/control safety regressions | 0 | Synthetic CI only; live per-client permission grants not verified |
 
+## First source-reviewed V2-R5 live result (8 November 2026)
+
+A private, uncoached `2.0.0-alpha.16` / Gemma cloud Technical JSON was reviewed **directly against every retrieved MCP response**. The original private export remains outside GitHub. This is **one case only** and must not be represented as a model-wide first-answer quality percentage.
+
+- **Observed:** 18.480 s client, 18.359 s server, six model rounds, 13/13 successful direct leaf reads, zero contract errors or prior evidence receipts. Three native event-history responses returned **19 total rows** (not necessarily unique), including one request at its 10-row limit. A broad device-inventory query also returned substantial unrelated context.
+- **Supported:** Native switch command history identified the issuing controller app and the later physical state reporter. The configured scheduled start and duration aligned strongly with that activation. The **scheduled-cycle hypothesis was well supported**.
+- **Not supported:** The answer said all monitored humidity sensors were below threshold at the focal moment, but one configured sensor had **no historical read**, and the two queried sensor histories contained **no humidity observations inside the decisive onset interval**. Later values and current state cannot fill that historical gap. No internal scheduling callback/decision trace was retrieved to establish the precise cause or to exclude all manual/other influences.
+- **Reviewer disposition:** **PARTIAL first answer**: informative and directionally correct, but it asserted that the cause was fully verified and there were no unverified causes. This is a **source-reviewed causal overclaim and a historical group-member coverage gap**, not a tool-protocol failure. No global factual-claim percentage is assigned from one result.
+- **Safety:** The exported operations were read-only; effective per-client Write-denied permissions are **not independently established**. No changes are inferred or authorised.
+- **Next comparison:** preserve the original model-led architecture, collect a fresh uncoached cross-domain V2-R3 humidity answer, and distinguish actual returned event rows from complete historical windows before choosing any runtime change.
+
+**Offline audit interoperability gap found:** The direct `hub_list_device_events` responses were normal native MCP `content[].text` payloads with real `events` arrays but **without** the optional `client_event_source_scope` annotation. Earlier audit versions counted **zero** scope receipts despite the successful reads. The new evaluation-only parser recognises both the native flat and gateway event shapes, counts only successful native returned rows, flags at-limit responses without inferring truncation/retention, and retains `not_established` completeness and unique-event counts. No prompt, model loop, tools or Hubitat runtime is changed.
+
 ## Next test and release gate
 
 Use **V2-R5, FanBoost** as a fresh cross-domain first answer, **after verifying the effective test MCP connection is read-only without issuing a write**. Share the complete first answer and its Technical JSON privately in chat. Grade which sources the model selected, whether the returned time window covers the focal event and whether any cause was overstated.

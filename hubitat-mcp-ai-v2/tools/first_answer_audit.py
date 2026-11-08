@@ -5,7 +5,9 @@ Reads the Technical JSON *already exported by the user's v2 browser*. No Hubitat
 Home Assistant, model, network, database or credentials are accessed. Prints no
 question, answer, device IDs, tool arguments, raw event rows or source payload.
 Successful MCP calls are NOT equivalent to a correct or safe model answer.
-Only successful source receipts contribute to history counts. Untrusted labels,
+Only successful source receipts contribute to history counts. Native MCP
+content/text event lists count as source rows even without client annotations.
+Untrusted labels,
 including model names, tool names and argument keys, are never echoed verbatim.
 
 Usage:
@@ -27,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "homebrain-v2-first-answer-audit.v2"
+SCHEMA = "homebrain-v2-first-answer-audit.v3"
 
 
 class AuditInputError(ValueError):
@@ -62,6 +64,7 @@ def _read_scope(response_text: Any) -> dict | None:
         return None
     return {
         "events_returned": returned,
+        "scope_origin": "client_annotation",
         "returned_timestamps_both_present": (
             isinstance(info.get("oldest_returned_event"), str)
             and isinstance(info.get("newest_returned_event"), str)
@@ -86,6 +89,63 @@ def _effective_args(value: Any) -> dict:
         return {}
     leaf = value.get("args")
     return leaf if isinstance(leaf, dict) and isinstance(value.get("tool"), str) else value
+
+
+def _native_event_scope(response_text: Any, call: dict[str, Any]) -> dict | None:
+    """Count returned rows in a native device-event MCP response, not a search hit.
+
+    Live flat tools can return an MCP content/text envelope without the
+    optional client_event_source_scope annotation. Recognise the native event
+    leaf contract, including its gateway equivalent; never treat any arbitrary
+    JSON object's events field as historical evidence. Retention is unknown.
+    """
+    request = call.get("arguments")
+    leaf = request.get("tool") if isinstance(request, dict) else None
+    if call.get("name") != "hub_list_device_events" and leaf != "hub_list_device_events":
+        return None
+    if not isinstance(response_text, str):
+        return None
+    try:
+        envelope = json.loads(response_text)
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(envelope, dict) or envelope.get("isError") is True
+            or not isinstance(envelope.get("content"), list)):
+        return None
+    args = _effective_args(request)
+    requested_limit = _optional_int(args.get("limit"))
+    for block in envelope["content"]:
+        if (not isinstance(block, dict) or block.get("type") != "text"
+                or not isinstance(block.get("text"), str)):
+            continue
+        try:
+            body = json.loads(block["text"])
+        except (TypeError, ValueError):
+            continue
+        if (not isinstance(body, dict) or not isinstance(body.get("events"), list)
+                or ("device" not in body and "deviceId" not in body)):
+            continue
+        if body.get("success") is False or body.get("isError") is True:
+            continue
+        events = body["events"]
+        if not all(isinstance(e, dict) for e in events):
+            continue
+        # Actual returned list length is reliable even when a count field has
+        # a different meaning. At the request limit, pagination MAY be needed;
+        # neither limit hit nor an empty result proves native retention depth.
+        return {
+            "events_returned": len(events),
+            "scope_origin": "native_event_rows",
+            "returned_timestamps_both_present": bool(events) and all(
+                isinstance(event.get("date"), str) for event in events
+            ),
+            "requested_lookback_hours": _optional_int(args.get("hoursBack")),
+            "requested_limit": requested_limit,
+            "limit_reached": bool(requested_limit) and len(events) >= requested_limit,
+            "upstream_reported_truncated": body.get("upstream_truncated") is True,
+            "historical_coverage_complete": "not_established",
+        }
+    return None
 
 
 def audit_export(document: Any) -> dict[str, Any]:
@@ -153,13 +213,16 @@ def audit_export(document: Any) -> dict[str, Any]:
                 targets.add((normalized, str(value)))
             if normalized in {"attribute", "attributename", "field"}:
                 attributes.add((normalized, str(value)))
-        scope = _read_scope(call.get("response"))
+        scope = _read_scope(call.get("response")) or _native_event_scope(
+            call.get("response"), call
+        )
         if scope is not None:
             # Failed, locally rejected or metadata-only calls cannot establish
             # retrieved history, even if their payload contains scope-looking JSON.
-            if call.get("success") is True and result_kind not in {
-                "tool_catalog", "prior_evidence_read", "contract_error"
-            }:
+            if (call.get("success") is True and call.get("operation_executed") is not False
+                    and result_kind not in {
+                        "tool_catalog", "prior_evidence_read", "contract_error"
+                    }):
                 event_scopes.append(scope)
             else:
                 counts["excluded_non_success_event_scopes"] += 1
@@ -216,6 +279,12 @@ def audit_export(document: Any) -> dict[str, Any]:
         },
         "history_receipts": {
             "event_scope_receipts": len(event_scopes),
+            "scope_origin_native_event_rows": sum(
+                s["scope_origin"] == "native_event_rows" for s in event_scopes
+            ),
+            "scope_origin_client_annotation": sum(
+                s["scope_origin"] == "client_annotation" for s in event_scopes
+            ),
             "excluded_non_success_event_scopes": counts["excluded_non_success_event_scopes"],
             "event_rows_returned_total": sum(s["events_returned"] for s in event_scopes),
             "unique_events_across_receipts": "not_established",
@@ -249,7 +318,7 @@ def summarize(records: list[dict]) -> dict:
     times = sorted(elapsed)
     counts = [r["native_tools"] for r in records]
     return {
-        "schema": "homebrain-v2-first-answer-summary.v2",
+        "schema": "homebrain-v2-first-answer-summary.v3",
         "samples": n,
         "quality_status": "not_measured",
         "grounded_claim_rate": None,
