@@ -38,7 +38,7 @@ jobs:
         run: |
           docker build \
             --build-arg BUILD_FROM=ghcr.io/hassio-addons/base:15.0.8 \
-            --build-arg BUILD_VERSION=2.0.0-alpha.6 \
+            --build-arg BUILD_VERSION=2.0.0-alpha.7 \
             --build-arg BUILD_ARCH=amd64 \
             --tag hubitat-mcp-ai-v2:smoke \
             hubitat-mcp-ai-v2

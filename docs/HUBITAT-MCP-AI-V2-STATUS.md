@@ -1,7 +1,7 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Date: 2026-11-07
-Version: `2.0.0-alpha.6`
+Version: `2.0.0-alpha.7`
 Development branch: `feat/v2-upstream-native-mcp`
 
 ## Current user direction
@@ -66,3 +66,13 @@ Live first-answer usefulness, factual grounding, model comparison, control/autom
 User requested separate answer/technical-detail copying and visible response time. Alpha.6 retains the original API response in copied technical details, alongside question, model, request ID, browser elapsed time and server elapsed time where available. LAN HTTP clipboard fallback and failed-request copying are covered by isolated UI tests. Model, prompts, schemas, MCP access, recorder and answer generation are unchanged. No live model or hub calls are used for this UI validation.
 
 Current evaluation direction: assess existing Ollama Cloud Gemma4:31b with varied read-only first-answer questions; preserve all failures and raw receipts before deciding any changes. Do not resume model routing experiments, heating-specific fixes, coaching or answer rewriting. This UI release makes evidence easier to capture; it is not evidence of reasoning improvement.
+
+## Alpha.7 daily-use interface and evaluation direction
+
+User authorized v2 usability development and continued comparison with v1 before choosing a daily assistant. Alpha.7 adds safe DOM-only Markdown/table/code rendering, original-text access, page-session conversation history and reset, evidence JSON download, responsive spacing/focus styles and a visible recorder-disabled explanation. It also corrects the diagnostics tab ID mismatch. Copy operations preserve original answer text; no raw HTML is interpreted. No transcripts are persisted by this UI.
+
+Model prompts, upstream skills, agent/MCP code, permissions, recorder source and v1 remain unchanged. Follow-up context remains prior prose only, not prior tool receipts; the UI explains this. Formatting is not answer rewriting or proof of factual accuracy. Confirmation controls remain attached to backend operations.
+
+Local UI regressions cover formatting/XSS, raw copies, downloads, session reset/history, busy-state reset refusal, timing/errors, diagnostics empty state and tab target. CI includes Python runtime and Docker startup. Installed desktop/mobile acceptance and day-to-day usefulness remain pending.
+
+Recent evaluation: Gemma can summarize richer frozen G06 evidence but previously looped on tool selection; Beam also made unsupported claims. Production-code replay is byte-verified. Fresh investigation comparisons remain limited by captured-query coverage; the latest expanded attempt timed out before either first model response. Do not infer a model winner, train case-specific skill rules, or replace the default model based on those runs. Private fixtures/tokens remain outside the repository.
