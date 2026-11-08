@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.12**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.13**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -128,3 +128,15 @@ A short generic instruction prefers focused, read-only historical sources/time w
 ## Native flat-tool compatibility evaluation (no v2 runtime change)
 
 The upstream Hubitat MCP Server has a global **Consolidate tools behind category gateways** switch (`useGateways`). Setting it OFF exposes each authorised leaf directly with its native `inputSchema`; ON is the usual gateway mode. V2 already accepts either form through the live catalog and its normal confirmation/permission path. A mock first-call compatibility test and a controlled, read-only A/B acceptance plan were added without changing the alpha.12 runtime. **Do not toggle the live hub automatically**: this server-wide setting changes the catalogs seen by other MCP clients and may require reconnect. See `docs/HUBITAT-MCP-AI-V2-FLAT-MODE-EVALUATION.md` before any authorised live comparison. Whether flat mode speeds up or improves Gemma is still unknown.
+
+## Alpha.13 — safe inline mathematical display (no model or investigation logic change)
+
+The installed alpha.12 Gemma4 heating answer contained ordinary inline TeX expressions inside Markdown table cells (e.g. `$21.0^\\circ\\text{C}$`, `$22.0 \\rightarrow 21.0^\\circ\\text{C}$`, `$\\sim$09:30:15`), which the small local Markdown renderer displayed literally instead of showing readable units or arrows. This was a **UI renderer defect**, not a Hubitat data or device-command issue. Do not “fix” it by rewriting the saved model answer or imposing heating-specific generation constraints.
+
+Alpha.13 adds an **offline-safe text subset of inline TeX** to the existing answer renderer, including `$...$` and `\\(...\\)` expressions, degree/temperature, arrows, common comparisons, approximations, Greek letters and supported numeric superscripts/subscripts. It applies uniformly to table cells, headings, list items and paragraphs, including supported emphasis. Markdown inline code and fenced code remain literal. Unsupported TeX is rendered **verbatim**, not partially guessed or silently removed. **This is not a complete LaTeX or MathJax/KaTeX engine** (complex fractions, matrices and display equations are not automatically typeset).
+
+Rendering uses **DOM text nodes only** (no `innerHTML`, eval, remote CDN, model API or third-party scripts). The original model `answer` string, chat history, copied answer, raw-answer panel and full technical JSON remain **byte-for-byte as received**; only the displayed view changes. Regression tests exercise literal markup/XSS, both inline delimiters, °C, arrows, subscripts, superscripts, unknown commands, code preservation, clipboard/export and desktop/mobile browser output. The v2 runtime's MCP tools, routing, model choices, source evidence, permissions and confirmations are unchanged.
+
+This UI change requires an add-on version bump to `2.0.0-alpha.13` and reopening/refeshing the Home Assistant ingress page after updating. The version status prevents stale alpha.12 pages from silently masquerading as the new renderer.
+
+**Separate first-answer finding (alpha.12 flat mode):** A historical main thermostat/TRV investigation used eight successful read calls (0 errors), four model rounds and 15.893s browser time. Its core answer was supported: the main thermostat and one room TRV were heating during an overlapping period; no operating-state events appeared for four other room TRVs in the *targeted returned window*. However, `setHeatingSetpoint` **commands** issued near the interval end should not be labeled observed setpoint changes on those other devices. A no-event interval is not proof of continuous idle or complete native retention, and a main-thermostat operating-state-only query cannot verify absence of a setpoint change. This evidence-quality assessment does **not** add any answer rewriting or incident-specific reasoning code.

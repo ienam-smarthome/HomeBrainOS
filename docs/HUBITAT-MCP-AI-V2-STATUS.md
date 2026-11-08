@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.12` (candidate pending final-head PR/CI verification)
-Development branch: `feat/v2-live-leaf-schema-alpha12`
+Version: `2.0.0-alpha.13` (candidate pending final-head PR/CI verification)
+Development branch: `fix/v2-safe-inline-math-display-alpha13`
 
 ## Current user direction
 
@@ -154,3 +154,15 @@ The matching alpha.12 gateway **G1** took 13.779s and 4 rounds, with 4/8 model a
 **Important safety uncertainty:** `do not change anything` and observed read-only operations do not verify *effective* token permissions; a separate earlier `hub_get_info` response reported `writeEnabled:true` but not all per-client grants. Verify Read allowed / Write denied on the actual test client without using a write as a probe. The server-wide flat-mode switch also affects other clients and may need rollback. No device settings, token permissions or MCP server settings were changed through this GitHub development update.
 
 **Development decision:** Preserve the working alpha.12 runtime and model-selected direct tools, no v1-style causal planner, no new router or hardcoded input corrections. Native flat mode is the leading observed candidate only, not a universal default. Freeze F1 humidity and F2 multi-room heating first-answer questions for a broader evidence-timing and cross-domain test; see `docs/HUBITAT-MCP-AI-V2-FLAT-MODE-EVALUATION.md`. Only aggregate results may be committed. Live client access and other connected-client compatibility are not verified by GitHub.
+
+## Alpha.13 — browser rendering and flat-mode heating-answer review (8 Nov 2026)
+
+The user supplied a screenshot of a raw TeX escape rendering in an alpha.12 historical room-heating comparison, together with the complete first-answer Technical JSON from the installed flat-mode Gemma4 cloud model. The table showed literal `$21.0^\\circ\\text{C}$`, `$\\rightarrow$` and `$\\sim$`. The frontend's `renderAnswer`/`appendInline` implements a deliberately small Markdown subset with no math handling, so the defect was strictly **display**, not a bad MCP result or historical event corruption.
+
+**Implementation:** Add a narrowly bounded, offline inline-TeX-to-safe-text display layer for common symbols (`°C`, arrows, inequalities, approximations, Greek symbols, numeric exponents/indices). Preserve Markdown code literals, original API answer text, raw-view/copy/export, all event receipts, and any unsupported TeX unchanged. No HTML parsing or external library/CDN, no math evaluation, no model-specific output instructions or cause-specific fixes. Tests cover UI VM and Chromium desktop/mobile as well as XSS and exact technical JSON preservation. Bump UI/service/add-on to **alpha.13** so ingress refreshes correctly. Complex formulas (e.g. fractions and matrices) are intentionally **not** typeset by this small renderer.
+
+**Source-verified answer assessment:** Eight direct read-only MCP calls, **8 successful, 0 rejected**, 4 model rounds, 15.893s browser / 15.831s server, no prior receipts or schema discoveries. The main thermostat reported `heating` at 09:33:33 UTC, `idle` at 10:00:22; one bedroom TRV reported `heating` from 09:30:15 to `idle` at 10:00:03 and had actual device-reported heating-setpoint changes from 22 to 21 degrees. Four other TRVs returned no thermostat operating-state rows in their **requested 09:30–10:10 UTC** history excerpts, though some unrelated rows or setpoint **commands** were present. Thus the conclusion “not all TRVs were idle” is supported, while the other four states remain **unverified**, not demonstrably idle. Model table called commanded setpoints “Observed Setpoint Change” for these devices, which overstated evidence. It also said no main-thermostat setpoint change was recorded without querying that setpoint attribute. Correct future investigations should distinguish command receipt, confirmed physical state, and absences limited by returned source coverage; this is documented, **not** enforced with any new planner/claim patch.
+
+Native flat mode remains the *observed leading interface* but not a proven universal default. A previous report of enabled write permission still requires client-specific verification before treating a natural-language read-only question as an enforced permission. No live Hubitat, HA, router or upstream server modifications in this repo release.
+
+PR head, CI and merged SHA: pending final verification.
