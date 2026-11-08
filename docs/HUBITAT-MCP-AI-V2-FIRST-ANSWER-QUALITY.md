@@ -199,3 +199,14 @@ Exclude failed, locally rejected, non-executed, prior-evidence-only and unrelate
 
 **Next engineering gate:** source-review the aggregate action audit on the existing **private** exports and compare fixed-source multi-domain model reasoning and evidence presentation. Prefer a generic source-contract improvement only if it transfers across independent domains with no unjustified cost in command latency. Do **not** claim this instrumentation changes user-facing answers, device response or model quality.
 
+## Next gate implemented — blinded fixed-source evidence-presentation benchmark (8 November 2026)
+
+The first controlled comparison scaffold is now implemented **offline only**, without editing the live model or MCP runtime. See docs/HUBITAT-MCP-AI-V2-FIXED-SOURCE-BENCHMARK.md for the exact source-integrity, privacy and manual scoring protocol.
+
+A private inventory of **18 browser Technical JSON exports** found **10 without prior context reported**, containing **52 native attempts**, and **8 with prior evidence**, containing **20 native attempts**. Their medians (12.406s vs 7.813s) are **descriptive only**: question complexity and context differ. The ten eligible exports span both direct actions and investigation evidence; related cases mean that independence and domain balance still require review.
+
+The new fixed_source_benchmark.py prepares counterbalanced A/B *retrospective* review inputs with **byte-preserved recorded MCP response strings** and identical questions/instructions. The only A/B distinction is **generic source-role annotation** alongside the unchanged receipts. Native tool calls, including the user's historical writes, are **never replayed**. The original model answer is omitted from source prompts. Both variants are verified against the same SHA-256; the condition map, raw receipts, answer files, reviewer ratings and identifiers remain in a **private directory outside GitHub**.
+
+The benchmark cannot call a live model, declare an answer correct, grade itself, or verify write permissions. Its report is only paired, blind **human-rated** evidence-grounding, completeness, causal calibration, action-outcome and usefulness comparisons plus descriptive latency. A zero-answer or zero-rated report is **pending**, not a performance result.
+
+**Decision:** Keep the installed v2 runtime at alpha.18. Require a real paired model trial and source review in more than one independent domain before considering a general source-presentation change; preserve command-confirmation safety and response latency. Do not put private exports, transcripts, device IDs, time stamps or secrets in PRs or CI.
