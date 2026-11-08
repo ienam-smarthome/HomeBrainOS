@@ -214,3 +214,12 @@ The original **Copy answer** action copied the exact raw answer but left the but
 - Exact original answer text and downloaded/copied Technical JSON remain intact. No answer rewriting, extra model call, new native MCP tool, provider/auth, incident recording or Hubitat interaction.
 - Automated synthetic JavaScript tests cover success labels, CSS state, live region, fallback, failure, expiry, old-request race and unchanged technical receipt content; repository browser/container tests remain required. **Installed visual acceptance pending**.
 - To roll back, reinstall alpha.17. The generic source-gap annotation remains present in alpha.18; the reasoning-quality baseline is unchanged, with independent reviews documented in the First-Answer Quality Plan.
+
+## Offline fixed-source A/B benchmark (no add-on update)
+
+For a controlled, private comparison of the SAME source receipts with and without generic source-role notes, see docs/HUBITAT-MCP-AI-V2-FIXED-SOURCE-BENCHMARK.md and hubitat-mcp-ai-v2/tools/fixed_source_benchmark.py.
+
+- The prepare command creates source-identical A/B pairs, a hidden balanced condition map and a blinded rating template, using *previously exported* Technical JSON. Exports containing prior source context are excluded from the self-contained sample. The original model answer is not shown in the paired prompts.
+- Run each A/B prompt through the same model with NO live tools and separately preserve its unedited answer/latency. A human source reviewer grades grounding, source completeness, causal calibration, outcome verification and usefulness before unblinding. The report command verifies pair integrity and returns only aggregate, descriptive differences, not an automated correctness score.
+- The generated folder contains raw private home/device information; keep it OUTSIDE GitHub and away from CI and public sharing. The code performs no model, MCP, network or device calls and refuses to create data underneath the repository.
+- The installed add-on stays at **2.0.0-alpha.18**. This experiment does not implement new runtime answer rewriting, forced command verification, automatic retries or app-specific patches. Any future runtime changes require independent multi-domain evidence and their own tests.
