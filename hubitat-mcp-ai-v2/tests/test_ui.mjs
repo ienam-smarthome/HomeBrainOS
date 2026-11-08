@@ -7,10 +7,10 @@ const script=html.split('<script>')[1].split('</script>')[0].replace(/loadStatus
 const version=html.match(/const UI_VERSION="([^"]+)"/)[1];
 function harness(){
  const elements=new Map(),timers=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0,clearCalls=0,askBodies=[];
- const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},value:'',disabled:false,hidden:false,style:{},classList:{remove(){},toggle(){},contains(){return false;}},addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
+ const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},getBoundingClientRect(){return {width:860,height:360,left:0};},value:'',disabled:false,hidden:false,style:{},classList:{remove(){},toggle(){},contains(){return false;}},addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
  const el=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
  const state={status:{version,configured:true,model:'gemma4:31b-cloud'},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true,askBodies};
- const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
+ const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElementNS(_ns,tag){return element(tag);},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
  const navigator={clipboard:{writeText:async text=>{copied=text;}}};
  const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout:fn=>fn(),Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
  if(url==='api/status')return{ok:true,json:async()=>state.status};
@@ -88,6 +88,47 @@ rich.run("draw=()=>{}; fetch=async url=>({ok:true,json:async()=>url.includes('/s
 rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('refreshDiagnostics()');
 assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
 assert(html.includes('id="diagnosticsTab"'));
+assert(html.includes('id="incidentTimeline"'));
+assert(html.includes('id="timelineLayout"'));
+assert(html.includes('id="plotExtent"'));
+assert(html.includes('id="timelineSource"'));
+assert(html.includes('id="timelineInspect"'));
+assert(html.includes('id="timelineAsk"'));
+assert(html.includes('id="detailReadout"'));
+assert.match(rich.el('timelineMeta').textContent,/No.*observations|0 external OS-memory observations/);
+const timeline=harness();
+timeline.el('range').value='6';
+timeline.el('plotExtent').value='fit';
+timeline.el('timelineLayout').value='split';
+const sourceFixture={
+ range_start:'2026-11-08T06:00:00Z',range_end:'2026-11-08T12:40:00Z',
+ metrics:{
+  free_os_mb:{samples:[
+   {recorded_at:'2026-11-08T12:00:00Z',reachable:1,free_os_mb:830,diag_segment:0},
+   {recorded_at:'2026-11-08T12:00:30Z',reachable:1,free_os_mb:835,diag_segment:0}
+  ],observed_metric_points:2},
+  native_load_pct:{samples:[
+   {recorded_at:'2026-11-08T12:00:00Z',reachable:1,native_load_pct:20,native_sample_label:'source-1',diag_segment:0},
+   {recorded_at:'2026-11-08T12:05:00Z',reachable:1,native_load_pct:23,native_sample_label:'source-2',diag_segment:0}
+  ],observed_metric_points:2}
+ },reboots:[{occurred_at:'2026-11-08T12:10:00Z',firmware:'2.5.3.119'}],incidents:[]
+};
+timeline.run('timelineData='+JSON.stringify(sourceFixture));
+timeline.run('drawIncidentTimeline()');
+assert(timeline.el('incidentTimeline').children.some(n=>n.tagName==='PATH'));
+assert(timeline.el('timelineMeta').textContent.includes('2 distinct native 5m CPU readings'));
+assert(timeline.el('timelineMeta').textContent.includes('Time axis fitted'));
+assert(timeline.el('timelineEvents').textContent.includes('Confirmed startup'));
+assert.equal(timeline.el('timelineInspect').disabled,false);
+timeline.run('inspectTimelineSelection()');
+assert(timeline.el('timelineEvidence').textContent.includes('saved_external_recorder_only'));
+timeline.run('prepareTimelineQuestion()');
+assert(timeline.el('question').value.includes('do not change anything.'));
+assert.equal(timeline.askCalls,0);
+timeline.el('plotExtent').value='full';
+timeline.run('redrawDiagnostics=()=>drawIncidentTimeline();redrawDiagnostics()');
+assert(!timeline.el('timelineMeta').textContent.includes('Time axis fitted'));
+
 console.log('Usability checks passed: safe Markdown/tables, original text, session reset/history, JSON download, diagnostics empty state and tab target.');
 
 // UI math is display-only; raw answer and receipts remain byte-identical.
