@@ -150,6 +150,10 @@ class MCPClient:
         self._initialized = False
         self._lock = asyncio.Lock()
         self._tools: dict[str, dict] = {}
+        # Short-lived, server-origin leaf schemas obtained only from explicit
+        # gateway discovery ({}); never a static local registry.
+        self._gateway_leaf_catalogs: dict[str, dict[str, dict]] = {}
+        self._requested_leaves: dict[str, set[str]] = {}
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(float(timeout)),
             follow_redirects=False,
@@ -267,8 +271,99 @@ class MCPClient:
                 if not isinstance(cursor, str) or cursor in seen:
                     raise MCPError("Invalid or repeated MCP catalog cursor")
                 seen.add(cursor)
+            # A changed catalog may indicate new token permissions or server
+            # code. Never trust older leaf definitions after such a change.
+            if tools != self._tools:
+                self._gateway_leaf_catalogs.clear()
+                self._requested_leaves.clear()
             self._tools = tools
         return list(self._tools.values())
+
+    def cached_leaf_schemas(self) -> dict[str, dict[str, dict]]:
+        """Return copies of the leaf schemas the model has actually selected.
+
+        Do not dump an entire gateway catalog into every model round.
+        """
+        return {
+            gateway: {
+                leaf: self._gateway_leaf_catalogs[gateway][leaf]
+                for leaf in selected
+                if leaf in self._gateway_leaf_catalogs[gateway]
+            }
+            for gateway, selected in self._requested_leaves.items()
+            if gateway in self._gateway_leaf_catalogs
+        }
+
+    async def gateway_leaf_schema(
+        self, gateway: str, leaf: str
+    ) -> tuple[dict | None, bool]:
+        """Read live leaf schema via a read-only gateway {} discovery.
+
+        Returns (leaf definition if exposed, whether an MCP catalog request was
+        made). Only tools with a live gateway-shaped schema are eligible. No
+        guessed gateway/leaf names; no side-effectful leaf is executed here.
+        """
+        await self.list_tools()
+        declaration = self._tools.get(gateway)
+        schema = declaration.get("inputSchema") if isinstance(declaration, dict) else None
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        if not (isinstance(properties, dict) and "tool" in properties and
+                "args" in properties and isinstance(leaf, str) and leaf.strip()):
+            return None, False
+
+        if gateway not in self._gateway_leaf_catalogs:
+            result = await self.call(gateway, {})
+            definitions: dict[str, dict] = {}
+            if is_tool_catalog(result):
+                for block in result.get("content", []) or []:
+                    if not isinstance(block, dict) or block.get("type") != "text":
+                        continue
+                    try:
+                        value = json.loads(block.get("text", ""))
+                    except (ValueError, TypeError):
+                        continue
+                    if not (isinstance(value, dict) and value.get("mode") == "catalog"
+                            and isinstance(value.get("tools"), list)):
+                        continue
+                    allowed = properties["tool"].get("enum") if isinstance(
+                        properties["tool"], dict) else None
+                    for item in value["tools"]:
+                        if not (isinstance(item, dict) and isinstance(item.get("name"), str)):
+                            continue
+                        name = item["name"]
+                        if isinstance(allowed, list) and name not in allowed:
+                            continue
+                        definition = item.get("inputSchema")
+                        if isinstance(definition, (dict, bool)):
+                            definitions[name] = item
+                    break
+            self._gateway_leaf_catalogs[gateway] = definitions
+            fetched = True
+        else:
+            fetched = False
+
+        self._requested_leaves.setdefault(gateway, set()).add(leaf)
+        return self._gateway_leaf_catalogs[gateway].get(leaf), fetched
+
+    @staticmethod
+    def validate_leaf_arguments(definition: dict | None, arguments: dict) -> None:
+        """Apply only *declared* leaf JSON Schema constraints.
+
+        Prose descriptions (e.g. mode-dependent options) are passed to the
+        model verbatim, never translated into guessed deterministic rules.
+        """
+        schema = definition.get("inputSchema") if isinstance(definition, dict) else None
+        if isinstance(schema, (dict, bool)):
+            try:
+                _validate_arguments(arguments, schema)
+            except MCPContractError as exc:
+                if "could not be validated" in str(exc):
+                    # Bad/remote reference schemas are not a reason to deny an
+                    # otherwise permitted native tool call.
+                    return
+                raise MCPContractError(
+                    "Leaf arguments violate their live input schema: " + str(exc)
+                ) from None
 
     async def call(self, name: str, arguments: dict) -> dict:
         await self.list_tools()
