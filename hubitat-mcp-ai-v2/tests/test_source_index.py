@@ -70,7 +70,7 @@ class SourceIndexTests(unittest.TestCase):
         self.assertEqual(structured["source_index_omitted"], 0)
         index = structured["source_index"]
         self.assertEqual(len(index), 8)
-        first = next(x for x in index if x["device"] == "Fixture main")
+        first = next(x for x in index if x.get("device") == "Fixture main")
         self.assertTrue(first["archive_available"])
         self.assertEqual(first["earliest_returned_event"], dates[0])
         self.assertEqual(first["latest_returned_event"], dates[1])
@@ -106,7 +106,7 @@ class SourceIndexTests(unittest.TestCase):
         context, _ = cache.context(sid)
         structured = json.loads(context[context.index("{"):context.rfind("}") + 1])
         source_id = structured["source_index"][1]["receipt_id"]
-        with self.assertRaisesRegex(MCPError, "not found"):
+        with self.assertRaisesRegex(MCPError, "expired or"):
             cache.read_receipt(str(uuid4()), source_id)
         with self.assertRaisesRegex(MCPError, "out of range"):
             cache.read_receipt(sid, source_id, offset=-1)

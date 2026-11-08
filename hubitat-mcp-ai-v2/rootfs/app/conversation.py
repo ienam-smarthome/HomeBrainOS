@@ -174,7 +174,10 @@ class ConversationEvidence:
 
         # Source index is budgeted independently of sample excerpts so a large,
         # recent response cannot silently hide an earlier relevant source.
-        index_budget = max(200, int(self.max_context_chars * 0.65))
+        # Tiny test/UI budgets must still reserve meaningful room for previews;
+        # the omitted index count remains explicit whenever sources do not fit.
+        index_ratio = 0.48 if self.max_context_chars < 5000 else 0.65
+        index_budget = max(200, int(self.max_context_chars * index_ratio))
         selected, index_used = [], 0
         for rec in reversed(records):
             meta = rec["metadata"]
