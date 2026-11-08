@@ -66,6 +66,10 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .diag-controls label{font-size:12px;color:var(--muted)}
 .diag-controls select{margin-left:6px;padding:6px}
 #graph{cursor:crosshair}
+.copy-feedback-ok{background:#175848;border-color:#4bd7aa;color:#f1fff9;box-shadow:0 0 0 2px #45cba631}
+.copy-feedback-fail{background:#663139;border-color:#ee8c95;color:#fff3f5}
+.copy-status{font-size:13px;font-weight:600;color:var(--green);line-height:1.4}
+.copy-status.copy-status-error{color:#ffb2bc}
 @media(max-width:530px){.timeline-chart{min-width:700px;min-height:270px}.timeline-event{flex-wrap:wrap}
 .timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
 .diag-controls select{margin-left:0}}
@@ -85,10 +89,9 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
 <button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
 <div class="card">
-<div class="row"><h2>Answer</h2><button id="copyAnswer" class="right" disabled onclick="copyResult('answer')">Copy answer</button></div>
+<div class="row"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button></div>
 <p id="requestSummary" role="status" aria-live="polite">No request yet.</p><p id="requestQuestion" hidden></p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p>
 <div id="answer" class="muted">Your response will appear here.</div>
-<p id="copyStatus" class="muted" role="status" aria-live="polite"></p>
 <details><summary>Technical details / Tool receipts</summary>
 <button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
 <button id="downloadTechnical" disabled onclick="downloadTechnical()">Download JSON</button><pre id="receipts">No tool calls yet.</pre></details>
@@ -130,11 +133,12 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.17";
+const UI_VERSION="2.0.0-alpha.18";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
+let copyFeedbackTimer=null,copyAttempt=0;
 function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
@@ -183,10 +187,23 @@ function newRequestId(){
  const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
  return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
 }
+function resetCopyFeedback(){
+ copyAttempt++;
+ if(copyFeedbackTimer!==null){clearTimeout(copyFeedbackTimer);copyFeedbackTimer=null;}
+ for(const [id,label] of [['copyAnswer','Copy answer'],['copyTechnical','Copy technical details']]){
+  const button=byId(id);
+  button.textContent=label;
+  button.classList.remove('copy-feedback-ok','copy-feedback-fail');
+ }
+ const status=byId('copyStatus');
+ status.textContent='';
+ status.classList.remove('copy-status-error');
+}
 function clearResult(){
+ resetCopyFeedback();
  lastAnswer=null;technicalDetails=null;configuredModel=null;
  byId('copyAnswer').disabled=true;byId('copyTechnical').disabled=true;
- byId('copyStatus').textContent='';byId('responseTime').textContent='Response time: —';
+ byId('responseTime').textContent='Response time: —';
  byId('receipts').textContent='No tool calls yet.';
  byId('downloadTechnical').disabled=true;
 }
@@ -227,9 +244,21 @@ async function copyText(text){
 async function copyResult(which){
  const text=which==='answer'?lastAnswer:(technicalDetails?JSON.stringify(technicalDetails,null,2):null);
  if(text===null)return;
+ resetCopyFeedback();
+ const attempt=copyAttempt;
  const copied=await copyText(text);
- byId('copyStatus').textContent=copied?(which==='answer'?'Answer copied.':'Technical details copied.'):
-  'Copy unavailable. Select the answer or technical details and copy manually.';
+ // A pending clipboard promise must not change a later request's UI.
+ if(attempt!==copyAttempt)return;
+ const button=byId(which==='answer'?'copyAnswer':'copyTechnical');
+ const status=byId('copyStatus');
+ button.textContent=copied?'✓ Copied!':'Copy failed';
+ button.classList.add(copied?'copy-feedback-ok':'copy-feedback-fail');
+ status.textContent=copied?(which==='answer'?'Answer copied to clipboard.':'Technical details copied to clipboard.'):
+  'Copy unavailable. Select the text and copy manually.';
+ status.classList.toggle('copy-status-error',!copied);
+ copyFeedbackTimer=setTimeout(()=>{
+  if(attempt===copyAttempt)resetCopyFeedback();
+ },copied?2600:4800);
 }
 async function submitAsk(){
  const q=byId('question').value.trim();if(!q)return;const send=byId('send');if(send.disabled)return;send.disabled=true;

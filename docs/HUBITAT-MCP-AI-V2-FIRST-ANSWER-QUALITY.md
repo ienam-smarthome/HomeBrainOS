@@ -1,6 +1,6 @@
 # HomeBrainOS v2 — first-answer quality measurement (original development)
 
-**Established:** 8 November 2026. **Baseline runtime:** 2.0.0-alpha.16; **candidate:** 2.0.0-alpha.17 (source annotation only; not yet live verified).
+**Established:** 8 November 2026. **Baseline:** alpha.16; **source-gap trial:** installed alpha.17; **UI-only release candidate:** alpha.18. Model-quality effect for alpha.18 remains unchanged/unmeasured.
 **Purpose:** Resume the clean, model-led MCP investigation roadmap after the Hub Diagnostics chart work. Follow the permanent Answer Quality Charter without importing V1 planners, hardcoded incident fixes, answer rewriting or tool restrictions.
 
 ## What earlier installed v2 trials did and did not show
@@ -119,6 +119,29 @@ A fresh first answer and **private Technical JSON** for the frozen V2-R2 lightin
 
 ## Next test and release gate
 
-The installed alpha.17 V2-R2 lighting transfer question has now been source-reviewed: **strong factual correlation, but an overconfident verified internal cause**, with one recoverable schema-type rejection. For the next independent domain use the frozen **V2-R4 heating** question on unchanged alpha.17/Gemma/native flat tools, a fresh conversation and verified Read allowed / Write denied test connection. Preserve the unedited first answer and private Technical JSON; review the complete room-TRV group, historical state and setpoint evidence, command-versus-observed events, uncertainty and tool efficiency. Do not add prompt or device-specific patches based on this single case.
+The installed alpha.17 V2-R2 lighting transfer question has now been source-reviewed: **strong factual correlation, but an overconfident verified internal cause**, with one recoverable schema-type rejection. The frozen **V2-R4 heating** first answer has now been independently source-reviewed; see the evaluation below. No extra prompt rules or device-specific changes were made. Continue with the frozen **V2-R6 offline/stale telemetry** question, preserving the first answer and private Technical JSON on the same model and native flat tools, using a verified read-only connection.
 
 Alpha.17 changes only the generic model-visible event-scope annotation and release metadata. It adds **no model prompt, extra model round, router, provider, device rule, recorder, V1 or MCP permission change**. One matched V2-R3 comparison showed narrower discrete-history calibration, while the distinct V2-R2 test still made an unsupported definitive automation-cause claim. Model-wide quality and general transfer remain unverified.
+
+## Installed alpha.17 V2-R4 heating — complete-group first-answer evaluation (8 November 2026)
+
+A fresh, uncoached first answer and private full Technical JSON were reviewed against the returned native MCP source. **No raw household event records, IDs, exact timestamps or private values are committed.**
+
+- **Observed:** 17.575s client / 17.497s server, four model rounds, **10/10 successful native calls**, no schema errors and no prior conversation receipts. The model discovered the main Thermostat and six labelled TRV devices. It retrieved operating-state history for the main thermostat and five room TRVs; the sixth listed TRV exposed no comparable operating-state attribute in the inventory and was not historically queried.
+- **Well supported:** The main thermostat reported a recent heating→idle cycle, while four sampled room TRVs reported overlapping heating followed by idle. Its historical setpoint changed at both ends of the main cycle; those changes identified an automation producer. The fifth room TRV's targeted state-history query returned zero records, correctly reported as **unknown**.
+- **Missing required coverage:** The model fetched main thermostat historical setpoint/temperature and room-TRV *operating-state* histories, **but never obtained historical setpoint/temperature events for any room TRV**. The zero-row result for the fifth room TRV cannot establish its prior state, and the sixth listed device was not classified explicitly as outside the compared group or lacking the required historical attribute.
+- **Unsupported conclusions:** The model converted `thermostatOperatingState=idle` into claims that the **physical radiator valves were closed**, and `thermostatOperatingState=heating` into **the boiler/heat source was firing**. The native responses contained no physical valve-position or boiler-on evidence. Relative onset times suggested possible common scheduler coordination, but did not prove one device triggered another. Main thermostat state/event records are discrete source observations, not an uninterrupted physical-firing trace.
+- **Reviewer result: PARTIAL** — useful event alignment, honest disclosure of one empty history and some missing setpoint evidence, but incomplete group/attribute coverage and overconfident physical/causal claims. This is one intentionally selected case, **not** an estimate of model-wide first-answer accuracy. The observed read calls do not prove effective Read allowed / Write denied token policy.
+
+### Decision and subsequent comparison
+
+The weakness is **historical group coverage and source-role interpretation**, not insufficient tool availability. The model itself selected the correct native investigation tools but stopped without the explicitly requested historical TRV setpoints. Retain the native model-led architecture and the unchanged investigation prompt. Do not add a heating-specific planner, fixed call count, blanket claim rewrite or silent state coercion from one case.
+
+The next frozen, independent **V2-R6 offline/stale telemetry** test should examine reporter/lastSeen provenance and alternative causes. Keep its first answer and private Technical JSON, and grade actual evidence rather than tool success. Only after a broader set of reviewed results should a general source-contract or model-comparison experiment be justified.
+
+### Alpha.18 user-interface-only release candidate
+
+The user requested **obvious confirmation when copying the answer**: a static button and status far below long answers were easy to miss. Alpha.18 moves the accessible live copy status adjacent to the Answer header and changes the clicked button to visible success/failure text and styling **only after the clipboard operation returns its outcome**. It resets after a short interval, on a new request, or when a new conversation starts; delayed clipboard completions cannot repaint a later request. Technical JSON content, raw answer text, fallback clipboard handling and tool receipts remain unchanged.
+
+**Expected metric:** reliable, visible user confirmation in the UI, not an increase in model reasoning quality. **Tests:** synthetic JavaScript copy success, failure, expiry, fallback, stale completion and unchanged payload; browser/container CI. **Risk:** timer-dependent visual state may be missed by assistive technology (mitigated by `role=status` and `aria-live=polite`); copy functionality must still work in LAN HTTP fallback. **Rollback:** reinstall alpha.17 / revert the isolated UI and version changes. No Hubitat, Home Assistant or MCP change.
+
