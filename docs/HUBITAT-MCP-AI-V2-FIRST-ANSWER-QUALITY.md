@@ -64,6 +64,24 @@ A private, uncoached `2.0.0-alpha.16` / Gemma cloud Technical JSON was reviewed 
 
 **Offline audit interoperability gap found:** The direct `hub_list_device_events` responses were normal native MCP `content[].text` payloads with real `events` arrays but **without** the optional `client_event_source_scope` annotation. Earlier audit versions counted **zero** scope receipts despite the successful reads. The new evaluation-only parser recognises both the native flat and gateway event shapes, counts only successful native returned rows, flags at-limit responses without inferring truncation/retention, and retains `not_established` completeness and unique-event counts. No prompt, model loop, tools or Hubitat runtime is changed.
 
+## V2-R3 historical humidity — independent first-answer review (8 November 2026)
+
+The second independent first-answer run used installed alpha.16 and the same cloud model, in a new conversation. Its private Technical JSON was independently reviewed and remains outside GitHub.
+
+- **Measured:** 9.808 seconds browser, 9.740 seconds server, three model rounds, two successful native MCP reads, zero tool failures, zero prior receipts. The targeted event-history response contained 11 returned events in a 24-hour relative window, below the requested limit of 100.
+- **Supported:** The model retrieved the correct historical event sequence and accurately calculated elapsed time **between returned threshold-crossing observations**.
+- **Unsupported:** It declared the event stream contiguous, free of observation gaps, and proof of uninterrupted conditions during the interval. Reported events with `isStateChange:true` do not establish complete native retention, continuous measurement or the precise unobserved transition time; the focal returned series includes a material reporting interval without intermediate observations.
+- **Reviewer disposition:** **PARTIAL first answer**: useful retrieval and arithmetic, but unjustified historical continuity and degree of certainty. Read-only operations do not prove effective Write-denied client grants.
+- **Two-domain baseline:** Both V2-R5 ventilation and V2-R3 historical humidity were independently reviewed as partial first answers. Together they made 15/15 successful native reads, yet each overstated what the event sources proved. This is **not** a representative model-wide accuracy rate.
+
+### Alpha.17 transferable improvement hypothesis
+
+Both cases reveal overinterpretation of **bounded event observations**. The existing `client_event_source_scope` note marks retrieval and retention limits, but does not surface observed spacing or explicitly qualify uninterrupted state between returned events.
+
+Alpha.17 proposes only generic event-source metadata: adjacent returned timestamp pair count, largest UTC-normalised interval between returned rows, and `can_infer_uninterrupted_state_between_events:false`. This does not add an investigation planner, extra model pass, answer-rewriting rule, tool restriction, separate inference model, or Hubitat write. The original MCP response stays intact.
+
+**Hypothesis:** salient source-time gap metadata may reduce unjustified model certainty about unobserved intervals. **Expected effect:** fewer unsupported continuity claims at similar tool count and latency; not proven by unit tests. **Risk:** context overhead, model may ignore metadata, mixed-attribute intervals are not per-attribute coverage. **Rollback:** return to alpha.16. **Acceptance:** same frozen V2-R3 question on installed alpha.17, inspect actual source-window drift and first answer, then test transfer on a distinct frozen domain. Never grade from synthetic tests.
+
 ## Next test and release gate
 
 Use **V2-R5, FanBoost** as a fresh cross-domain first answer, **after verifying the effective test MCP connection is read-only without issuing a write**. Share the complete first answer and its Technical JSON privately in chat. Grade which sources the model selected, whether the returned time window covers the focal event and whether any cause was overstated.

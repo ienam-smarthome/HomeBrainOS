@@ -213,6 +213,14 @@ The user provided an actual private alpha.16 Gemma cloud Technical JSON for the 
 
 The approved evaluation-only audit tooling must now recognise actual native `content[].text` event-row responses even when no `client_event_source_scope` annotation exists. This is separate from the previous successful-only scope filter and must not infer event uniqueness, upstream retention, complete windows, or cause. Preserve the private raw export outside GitHub. The next recommended frozen question is V2-R3 (historical humidity thresholds). No Hubitat/HA/recorder/MCP setting or runtime version changes.
 
+### V2-R3 historical evidence baseline and alpha.17 candidate (8 November 2026)
+
+The frozen V2-R3 question on installed alpha.16 yielded two successful direct MCP reads, three model rounds, 9.808 seconds browser latency, and 11 returned event-history rows. The observed threshold-interval arithmetic was correct, but the answer falsely claimed the sampled history proved uninterrupted conditions. `isStateChange:true` and a successful 24-hour query do not independently certify continuous history. The first answer is reviewed as **PARTIAL**; raw readings and timestamps remain private, outside the public repository.
+
+Together with the independent V2-R5 first-answer review, there are now two cross-domain **partial** source-reviewed results despite 15/15 successful native read calls. The sample size is too small to assert a model-wide rate.
+
+**Alpha.17 candidate:** extend the generic model-visible native event-scope metadata with UTC-normalised adjacent-returned-timestamp spacing and an explicit `can_infer_uninterrupted_state_between_events:false` limit. No fixed planner, claim patch, rewrite, extra model call, permission change, recorder update or V1 change. The next acceptance is a controlled alpha.17 first-answer comparison against the frozen V2-R3 question, followed by another independent domain. Effect on model quality remains unmeasured.
+
 ### Evaluation-only audit integrity follow-up (candidate)
 
 The offline Technical JSON importer must not inflate event-history coverage from a failed MCP call or a metadata-only schema/catalog receipt that happens to contain a scope-shaped JSON object. Limit counted event histories to successful native source responses, explicitly count discarded scope-shaped receipts, and preserve **unknown unique event count** across overlapping responses. Also avoid echoing externally supplied model/tool names or argument keys in supposedly private-safe aggregate exports; use a model fingerprint and structural counts instead. This is an evaluation-format v2 update **without runtime or add-on version change**. The live answer-quality baseline remains unmeasured pending the frozen FanBoost first answer.
