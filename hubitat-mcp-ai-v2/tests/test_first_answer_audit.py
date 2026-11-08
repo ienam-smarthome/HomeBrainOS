@@ -239,6 +239,16 @@ class FirstAnswerAuditTests(unittest.TestCase):
         failed = audit.audit_export(inp)["history_receipts"]
         self.assertEqual(failed["event_scope_receipts"], 0)
         self.assertEqual(failed["excluded_non_success_event_scopes"], 1)
+        source["success"] = True
+        source["operation_executed"] = False
+        not_executed = audit.audit_export(inp)["history_receipts"]
+        self.assertEqual(not_executed["event_rows_returned_total"], 0)
+        source.pop("operation_executed")
+        source["response"] = json.dumps({
+            "isError": True, "content": json.loads(raw)["content"]
+        })
+        mcp_error = audit.audit_export(inp)["history_receipts"]
+        self.assertEqual(mcp_error["event_rows_returned_total"], 0)
 
     def test_unknown_and_invalid_receipts_do_not_fabricate_success(self):
         inp = fixture()
