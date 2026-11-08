@@ -89,3 +89,34 @@ rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('r
 assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
 assert(html.includes('id="diagnosticsTab"'));
 console.log('Usability checks passed: safe Markdown/tables, original text, session reset/history, JSON download, diagnostics empty state and tab target.');
+
+// UI math is display-only; raw answer and receipts remain byte-identical.
+const mathSource="| Device | State | Setpoint | Note |\n| --- | --- | --- | --- |\n| **Bedroom 1 TRV** | Unknown | $21.0^\\circ\\text{C}$ | Command only |\n| **Bedroom 3 TRV** | **Heating** $\\rightarrow$ **Idle** | $22.0 \\rightarrow 21.0^\\circ\\text{C}$ | $\\sim$09:30:15 |\n\nText notation: \\(20.5^\\circ\\text{C}\\), $x^{2}$, $CO_{2}$, $\\geq 70\\%$, $\\approx 2$.\nUnknown: $\\frac{1}{2}$.\nLiteral code: `$21.0^\\circ\\text{C}$`.\nCurrency: $5 to $10 is not math.\nKeep raw markup literal: <svg onload=alert(1)>.";
+const mathRendered=rich.run('renderAnswer('+JSON.stringify(mathSource)+')');
+assert(all(mathRendered).some(n=>n.tagName==='TABLE'));
+assert(mathRendered.textContent.includes("21.0°C"));
+assert(mathRendered.textContent.includes("Heating → Idle"));
+assert(mathRendered.textContent.includes("22.0 → 21.0°C"));
+assert(mathRendered.textContent.includes("≈09:30:15"));
+assert(mathRendered.textContent.includes("20.5°C"));
+assert(mathRendered.textContent.includes("x²"));
+assert(mathRendered.textContent.includes("CO₂"));
+assert(mathRendered.textContent.includes("≥ 70%"));
+assert(mathRendered.textContent.includes("≈ 2"));
+assert(mathRendered.textContent.includes("<svg onload=alert(1)>"));
+assert(mathRendered.textContent.includes("Currency: $5 to $10 is not math."));
+assert(mathRendered.textContent.includes("$\\frac{1}{2}$"));
+const mathCode=all(mathRendered).find(n=>n.tagName==='CODE'&&n.textContent.includes('21.0'));
+assert.equal(mathCode.textContent,"$21.0^\\circ\\text{C}$");
+assert(!all(mathRendered).some(n=>n.tagName==='SVG'));
+const mathUi=harness();
+mathUi.state.result={answer:mathSource,elapsed_ms:123,rounds:2,tool_calls:[]};
+mathUi.el('question').value='Compare setpoints';
+await mathUi.run('submitAsk()');
+assert(mathUi.el('answer').textContent.includes('22.0 → 21.0°C'));
+assert.equal(mathUi.el('rawAnswer').textContent,mathSource);
+await mathUi.run("copyResult('answer')");
+assert.equal(mathUi.copied,mathSource);
+await mathUi.run("copyResult('technical')");
+assert.equal(JSON.parse(mathUi.copied).response.answer,mathSource);
+console.log('Inline math display tests passed: source fidelity, Unicode, code literals, unsupported TeX and text-only XSS.');
