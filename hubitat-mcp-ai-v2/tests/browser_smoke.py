@@ -146,7 +146,7 @@ with sync_playwright() as p:
   page.locator("#metric").select_option("native_load5")
   page.wait_for_function("window.__loadLines >= 2")
   assert page.evaluate("window.__loadLines") == 2, "Only adjacent native samples should connect, not across a source gap"
-  assert page.evaluate("window.__loadTicks.some(x => /^\\d+\\.\\d+$/.test(x))"), "Native load axes should show fractions"
+  assert page.evaluate("window.__loadTicks.some(x => /^\\d+\\.\\d+ load$/.test(x))"), "Native load axes should show fractional values with explicit units"
   assert "One point per distinct native" in page.locator("#source").inner_text()
   assert "min" in page.locator("#plotStats").inner_text().lower()
   assert "No interpolation" in page.locator("#detailReadout").inner_text()
