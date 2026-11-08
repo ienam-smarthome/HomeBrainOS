@@ -144,6 +144,42 @@ class FirstAnswerAuditTests(unittest.TestCase):
         self.assertEqual(record["history_receipts"]["all_history_windows_complete"],
                          "not_established")
 
+    def test_failed_and_metadata_only_scope_payloads_do_not_count_as_history(self):
+        inp = fixture()
+        history = inp["response"]["tool_calls"][0]
+        history["success"] = False
+        inp["response"]["tool_calls"].append({
+            "name": "hub_read_devices", "arguments": {},
+            "success": True, "result_kind": "tool_catalog",
+            "operation_executed": False, "response": history["response"],
+        })
+        result = audit.audit_export(inp)
+        self.assertEqual(result["history_receipts"]["event_scope_receipts"], 0)
+        self.assertEqual(result["history_receipts"]["event_rows_returned_total"], 0)
+        self.assertEqual(
+            result["history_receipts"]["excluded_non_success_event_scopes"], 2
+        )
+        self.assertEqual(result["history_receipts"]["unique_events_across_receipts"],
+                         "not_established")
+
+    def test_model_tool_and_argument_labels_cannot_escape_into_public_report(self):
+        inp = fixture()
+        inp["model"] = "PRIVATE-FIXTURE-MODEL-TOKEN"
+        inp["ui_version"] = "PRIVATE-FIXTURE-BUILD-TOKEN"
+        call = inp["response"]["tool_calls"][0]
+        call["name"] = "PRIVATE-FIXTURE-TOOL-TOKEN"
+        call["arguments"]["PRIVATE-FIXTURE-SCHEMA-KEY"] = "private-value"
+        result = audit.audit_export(inp)
+        report = json.dumps(audit.summarize([result]))
+        self.assertNotIn("PRIVATE-FIXTURE", report)
+        self.assertNotIn("private-value", report)
+        self.assertEqual(result["build"]["version"], "unrecognised")
+        self.assertEqual(len(result["build"]["model_sha256_prefix"]), 16)
+        self.assertEqual(result["native_tools"]["distinct_model_selected_tool_names"], 2)
+        self.assertEqual(
+            len(result["native_tools"]["requested_argument_field_counts_per_call"]), 2
+        )
+
     def test_unknown_and_invalid_receipts_do_not_fabricate_success(self):
         inp = fixture()
         inp["response"]["tool_calls"][0]["success"] = None
