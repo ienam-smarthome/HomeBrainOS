@@ -713,7 +713,7 @@ async function refreshDiagnostics(){
    status.error?'Recorder error: '+status.error:status.status==='waiting'?
    'Recorder is enabled. Waiting for its first saved observation.':
    'Recorder status: '+(status.status||'unknown')+'; inspect individual source events below.';
-  timelineData=timeline;
+  timelineData={...timeline,probe_seconds:Number(status.probe_seconds)||30};
   byId('timelineSource').href='api/diagnostics/timeline?hours='+hours;
   byId('timelineEvidenceDetails').hidden=true;
   drawIncidentTimeline();
@@ -722,12 +722,13 @@ async function refreshDiagnostics(){
    a:timeline.metrics?.free_os_mb?.samples||[],
    b:timeline.metrics?.native_load_pct?.samples||[],
    ak:'free_os_mb',bk:'native_load_pct',reboots:timeline.reboots||[],
-   incidents:timeline.incidents||[],
+   incidents:timeline.incidents||[],probe_seconds:timelineData.probe_seconds,
    description:'OS memory: external probes. 5m CPU: native source at collector receipt.'
   }:{
    start:Date.parse(detail.range_start),end:Date.parse(detail.range_end),
    a:detail.samples||[],b:[],ak:metric,bk:null,
    reboots:detail.reboots||[],incidents:detail.incidents||[],
+   probe_seconds:timelineData.probe_seconds,
    description:(metric.startsWith('native_')||metric.startsWith('java_')?
     'One point per distinct native five-minute source; no repeated polls or fabricated readings.':
     'Actual external probe-time readings; no interpolation.')
@@ -830,7 +831,7 @@ function draw(){
    const t=Date.parse(row.recorded_at),yy=y(row[key],scale);
    const seg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
    const gap=prev&&((seg!==null&&prev.seg!==null&&seg!==prev.seg)||
-     t-prev.t>(native?900000:Math.max(120000,90*1000)));
+      t-prev.t>(native?900000:Math.max(120000,(Number(visual.probe_seconds)||30)*3000)));
    if(prev&&!gap)g.lineTo(x(t),yy);else g.moveTo(x(t),yy);
    prev={t,seg};
   }

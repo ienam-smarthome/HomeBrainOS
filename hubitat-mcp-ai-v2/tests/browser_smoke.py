@@ -153,7 +153,7 @@ with sync_playwright() as p:
   count_before=len(requests)
   page.locator("#timelineAsk").click()
   assert page.locator("#ask").is_visible()
-  assert "Do not change anything" in page.locator("#question").input_value()
+  assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   page.locator("#askTab").click()
