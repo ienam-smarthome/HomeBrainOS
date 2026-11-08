@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.15` (candidate pending final-head PR/CI verification)
-Development branch: `feat/v2-v1-quality-diagnostics-timeline-alpha15`
+Version: `2.0.0-alpha.16` (candidate pending final-head PR/CI verification)
+Development branch: `fix/v2-native-5m-percent-alpha16`
 
 ## Current user direction
 
@@ -186,3 +186,13 @@ Implement an **SVG unified timeline in v2**, using the existing external SQLite 
 Also improve the existing V2 detailed metric graph with unit-labeled axes, min/max/latest stats, keyboard/touch point inspection, and the same time window controls. Choose 6h initial range and default to **fit data** to avoid showing a mostly blank 24h axis when only recent observations exist. Explicitly allow **full requested range** to show blank periods; no missing data is backfilled, nor is fit-mode a claim of earlier complete coverage. Preserve real data extrema, recorded gaps, causal qualifiers and recorder independence, and keep V1 entirely untouched.
 
 Synthetic browser and JS regressions test UI behavior in both desktop/mobile widths, with no live Hubitat or model calls. Existing alpha.14 recorder dedup, MCP native flat mode, permissions, source-scope inference policy and complex-math display unchanged. Installed review pending.
+
+## Alpha.16 — raw native load vs core-normalised percentage (8 Nov 2026)
+
+The installed alpha.15 phone screenshot shows **Native 5m load** axis and tooltip expressed in load-average units (native value approximately 0.6). Although the V2 **Unified incident timeline** already charts native load-equivalent **%**, the *Detailed metric history* dropdown selected the unscaled `native_load5` field and therefore showed `0.6 load`. User requested that native load be presented as a percentage.
+
+Source audit confirms `external_hub_diagnostics._with_load_pct()` already derives `native_load_pct = round(native_load5 / cpu_cores * 100, 1)`; it exposes `cpu_cores` in the history and status responses, and `native_load_pct` is a permitted history metric. No new recorder calculation, inferred core count, data persistence changes or Hubitat read needed. **The derived value is five-minute load-equivalent percent, not direct CPU utilisation**, and values over 100% remain legitimate demand indicators; do not clamp to 100%. The raw native load is preserved separately for expert inspection.
+
+Only the detailed chart metric selector/legend/provenance/cursor and v2 version require changes. The main option now selects live `native_load_pct`, the raw `native_load5` remains a secondary option, and the caption reports configured source core count and normalization. The combined timeline and original historical readings are unchanged. Browser tests must inspect actual `%` labels and native source gap behavior at desktop/mobile sizes, plus raw-load reversibility and exact source-time alignment. Python regression verifies source raw values remain immutable and backend normalisation uses configured core count. No V1, MCP permission, model, hub or SQLite mutation.
+
+PR/CI and installed acceptance: pending final check and first user screenshot.

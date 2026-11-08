@@ -125,3 +125,9 @@ Select 24h when recorder started <24h ago: default **Fit observed data** should 
 **Safety:** No changes to the user's physical hub, HA, recorder database, v1 or upstream MCP server are part of this version. Full model answer/technical receipts and privileged action confirmations remain unchanged.
 
 **Gate:** All exact-head PR CI (Python suite, v2 Node tests, Chromium desktop/mobile, add-on build/smoke and metadata) before merge. Real user visual verification after installing 2.0.0-alpha.15.
+
+## Alpha.16 percentage-equivalent native load display
+
+Install/refresh v2 `2.0.0-alpha.16`; on the 6-hour **Detailed metric history**, choose **Native 5m load equivalent (%)**. Verify percentage units appear on Y-axis, detailed legend, min/max/latest and selected-time hover/cursor. Check that the chart still plots one point per original native five-minute source reading and does not interpolate across an outage. The read-only source note should say `load average ÷ configured CPU cores × 100` and identify the actual configured `cpu_cores` from server-returned source metadata, never assume a core count in the frontend.
+
+Use **Native 5m load (raw, unscaled)** to confirm original values and timestamps remain available. For an illustrative four-core source, 0.50 native load should map to 12.5% equivalent, 0.72 to 18.0%, and 1.02 to 25.5%. This derived percentage is not directly measured CPU utilisation and must not be capped at 100%. No new model answer, Hubitat writes, recorder migration or arbitrary smoothing is authorised. Existing Unified incident timeline percentages should remain unchanged.
