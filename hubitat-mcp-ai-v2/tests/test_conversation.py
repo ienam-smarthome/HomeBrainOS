@@ -112,7 +112,7 @@ class ConversationMemoryTests(unittest.TestCase):
                 )
                 self.assertEqual(result["prior_receipts_used"], 1)
                 self.assertEqual(agent.seen[-1]["content"], "Is it still off?")
-                self.assertIn("Earlier", agent.seen[-2]["content"] if "Earlier" in agent.seen[-2]["content"] else "Earlier")
+                self.assertIn("Historical MCP receipts", agent.seen[-2]["content"])
                 self.assertIn("7828", agent.seen[-2]["content"])
                 self.assertEqual(result["tool_calls"], [])
             finally:

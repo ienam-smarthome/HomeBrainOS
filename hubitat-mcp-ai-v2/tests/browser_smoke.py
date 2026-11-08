@@ -16,10 +16,13 @@ with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in [1280,390]:
   page=browser.new_page(viewport={"width":width,"height":1000})
-  requests=[]
+  requests=[];resets=[]
   def api(route):
    request=route.request
    if "/api/status" in request.url:data={"version":version,"configured":True,"model":"fixture-model"}
+   elif "/api/conversation/clear" in request.url:
+    assert request.headers.get("x-homebrain-request")=="1"
+    resets.append(request.post_data_json["conversation_id"]);data={"cleared":True}
    elif "/api/ask" in request.url:
     assert request.headers.get("x-homebrain-request")=="1"
     requests.append(request.post_data_json)
@@ -46,6 +49,7 @@ with sync_playwright() as p:
   page.locator("#send").click()
   page.wait_for_function("turns.length===2")
   assert len(requests[-1]["history"])==2
+  assert requests[0]["conversation_id"]==requests[1]["conversation_id"]
   page.locator("#conversationHistory summary").click()
   assert page.locator("#turns").inner_text().count("Read-only fixture question")==1
   page.locator("#newConversation").click()
@@ -53,6 +57,8 @@ with sync_playwright() as p:
   page.locator("#send").click()
   page.wait_for_function("turns.length===1")
   assert requests[-1]["history"]==[]
+  assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
+  assert resets==[requests[-2]["conversation_id"]]
   page.locator("#diagnosticsTab").click()
   page.locator("#recorderNotice").wait_for()
   assert "disabled" in page.locator("#recorderNotice").inner_text()
