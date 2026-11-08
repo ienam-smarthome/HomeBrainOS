@@ -2,7 +2,7 @@
 
 Updated: 2026-11-08
 Version: `2.0.0-alpha.16` (merged release #1541, main 8a48743b136a49a8b915f140e3acad77c974cb90)
-Development branch: `eval/v2-first-answer-evidence-scorecard` (evaluation only, no add-on version bump)
+Development checkpoint: PR #1542 merged as `4e486befbc2cd996b6c9eaf635229efee94a0351` (evaluation only; runtime remains alpha.16).
 
 ## Current user direction
 
@@ -205,4 +205,8 @@ New **purely offline** script in hubitat-mcp-ai-v2/tools/first_answer_audit.py a
 
 A new freeze-and-review protocol covers reboot, lighting cause, humidity duration, historical room-demand, FanBoost and offline/stale-telemetry cases; see docs/HUBITAT-MCP-AI-V2-FIRST-ANSWER-QUALITY.md. The earlier curated 40 source-only packets remain separate from live native MCP benchmarks; passing one is not evidence of the other.
 
-**Next user action:** one fresh V2-R5 FanBoost read-only question, first answer + Technical JSON, with effective test client's Read allowed / Write denied verified through configuration (no write probe). Then assess source coverage and provenance before planning code. Do not interpret this tool/CI milestone as validated Gemma quality or a new alpha.17 runtime. PR and exact CI pending.
+**Next user action:** one fresh V2-R5 FanBoost read-only question, first answer + Technical JSON, with effective test client's Read allowed / Write denied verified through configuration (no write probe). Then assess source coverage and provenance before planning model-quality code. Do not interpret this tool/CI milestone as validated Gemma quality or a new alpha.17 runtime. PR #1542 merged as `4e486befbc2c`; the merge commit's Release assurance, v2 pilot, Answer quality scorecard integrity and Validate HomeBrain OS workflows completed successfully.
+
+### Evaluation-only audit integrity follow-up (candidate)
+
+The offline Technical JSON importer must not inflate event-history coverage from a failed MCP call or a metadata-only schema/catalog receipt that happens to contain a scope-shaped JSON object. Limit counted event histories to successful native source responses, explicitly count discarded scope-shaped receipts, and preserve **unknown unique event count** across overlapping responses. Also avoid echoing externally supplied model/tool names or argument keys in supposedly private-safe aggregate exports; use a model fingerprint and structural counts instead. This is an evaluation-format v2 update **without runtime or add-on version change**. The live answer-quality baseline remains unmeasured pending the frozen FanBoost first answer.
