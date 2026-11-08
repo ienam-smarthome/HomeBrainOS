@@ -95,7 +95,7 @@ class ConversationMemoryTests(unittest.TestCase):
     def test_model_receives_history_as_older_data_not_fresh_tool_response(self):
         class FakeAgent(Agent):
             async def round(self, messages, tools, remaining):
-                self.seen = messages
+                self.seen = list(messages)
                 return {"role": "assistant", "content": "The earlier sample says off, current state requires a read."}
         class FakeMCP:
             async def list_tools(self, refresh=False):
