@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.10**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.11**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -8,7 +8,7 @@ The configured model uses native Ollama-compatible `/api/chat` function calling 
 
 - Refresh and paginate the live catalog for each request. Preserve server descriptions, schemas and annotations internally.
 - Support gateway schema discovery with empty arguments and invocation with `tool` / `args`, as well as flat catalogs. The server resolves gateway membership and enforces its permissions.
-- Validate calls against the live input schema, with no remote schema fetches. For gateway-shaped schemas, reject a selector incorrectly nested inside `args` with an actionable error; do not silently rewrite it. Empty discovery and valid gateway/flat calls remain supported.
+- Validate calls against the live input schema, with no remote schema fetches. For gateway-shaped schemas, reject a selector incorrectly nested inside `args` **or duplicated as `args.tool`**, with an actionable local error; do not silently rewrite it or transmit it to Hubitat. Empty discovery and valid gateway/flat calls remain supported.
 - Let the model select tools, follow up on evidence and write its answer. Execute calls sequentially; never automatically retry a tool call whose write outcome may be uncertain.
 - Load the unmodified upstream `SKILL.md`, `safety-guide.md` and `rule-patterns.md` from the bundled skill directory. These are guidance; the connected server's live schemas and guides remain authoritative. Native Rule Machine/Visual Rules are preferred for new automations; the patterns reference describes the legacy custom-rule engine.
 - Calls carrying `confirm=true` (including nested gateway arguments) pause for an explicit decision in the UI. Approval is bound to one exact pending call and request; stale approvals fail. A declined or timed-out call is not executed. The model cannot manufacture approval by setting the flag. Ordinary requested operations follow upstream device-identity and permission rules.
@@ -98,3 +98,15 @@ Alpha.10 adds a general, domain-independent source-scope sidecar (`client_event_
 A short generic addition to the existing v2 client skill tells the model to distinguish reported observations, plausible explanations and causes supported by discriminating evidence. It encourages further **read-only** checks where available and explicit uncertainty when evidence cannot distinguish alternatives. It also warns not to project current snapshots onto historical windows. The model still owns its investigation, stopping decision and response. The tool catalog, model configuration, direct MCP tool loop, write permissions/confirmations, external recorder, upstream bundled skill files and v1 remain unchanged. No domain-specific heuristics, new planner, model routing, separate answer-rewriter or extra round/latency mandate was added.
 
 Unit/integration tests cover multiple synthetic event types, zero returned rows, limit-hit flags, mixed time zone offsets, untouched non-event/write results, input immutability and exact model-visible source/technical receipt preservation. **CI passes are not real Gemma evidence-quality acceptance.** For live evaluation, ask a new first-attempt read-only cause question in a different domain (e.g. an offline device or an unexplained hub restart), export technical JSON and check that competing explanations remain unverified until independently distinguished. Do not claim historical retention is proven from the absence of returned rows.
+
+## Alpha.11 — first-call gateway contract accuracy
+
+Installed alpha.10's first-answer hub-reboot test identified the correct 2.5.3.119 update/startup sequence, but required six model rounds. Of five upstream attempts, **three failed** because the model nested the gateway selector in `args`, duplicated it inside leaf arguments, or repeated the same mistake for the diagnostic gateway. The model recovered but paid avoidable time/model-call costs. No live hub state was altered by that read-only test.
+
+Alpha.11 improves **model-facing schema presentation** automatically for any connected MCP tool whose *live* `inputSchema.properties` exposes both `tool` and `args`. It provides an explicit example of the required outer selector/inner leaf-arguments shape, explains `{}` as **catalog discovery only**, and adds field-level descriptions. The model-facing schema marks unexpected top-level fields forbidden because the upstream gateway already rejects them. The gateway leaf enum, existing schema fields, original server catalog and actual MCP validation contracts remain unchanged. **No special-case gateway or leaf names are hard-coded**, and non-gateway tools retain their original presentation.
+
+A second generic preflight rejects `args.tool` for live gateway-shaped schemas **even when the outer `tool` is also provided**. Previously that invalid duplicate could reach the native server and generate an avoidable `isError`. Now it yields a local `MCPContractError` with no `tools/call` request; valid calls are forwarded byte-equivalent as structured JSON and are never silently rewritten or auto-retried. The model may still make an invalid call, so this does not constitute proof of first-call success with Gemma.
+
+This does **not** change MCP permissions, confirmation semantics, source-evidence scope, the source memory, recorded diagnostics, model/provider, or v1. It adds no automatic tool-selection planner, incident-specific code or artificial model-round quota.
+
+**Acceptance:** on a fresh alpha.11 install, ask the same uncoached read-only system-event/reboot investigation and then an unrelated read-only device-history question. Export both initial technical JSON files. Count model rounds, gateway `contract_error`, native `isError`, `tools/call` executions, latency and grounding quality. The target is **zero first-call gateway-shape errors**, but CI can only verify synthetic presentation and preflight protections, not real Gemma compliance. Preserve any failures in the record.
