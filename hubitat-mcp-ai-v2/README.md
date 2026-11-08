@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.14**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.15**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -154,3 +154,19 @@ The browser chart draws connected segments *only* where the recorder marked the 
 No Hubitat devices, Hubitat MCP server mode, routes, upstream skills, external recorder database or historical entries are changed by this update. Existing add-on SQLite files remain compatible. The new deduplicated chart view is computed from the stored records, so prior native history automatically plots correctly after installing alpha.14. Preserve the previously identified alpha.13 TRV-history limitations as source interpretation, not a dashboard failure.
 
 **Verification:** Update the add-on to `2.0.0-alpha.14`, refresh the sidebar UI and inspect **Hub Diagnostics → Native 5m load** for 1 hour and 24 hours. Within intervals with real native samples, expect continuous line segments with markers and decimal Y ticks. Genuine outages and missing history must remain gaps. The caption should show source readings versus recorder poll rows. Exact live appearance, including any collection gaps, requires installed confirmation rather than synthetic CI alone.
+
+## Alpha.15 — V1-grade diagnostics timeline UX on the independent V2 recorder
+
+The user's side-by-side installed screenshots showed that V2 alpha.14 fixed the native five-minute chart's disconnected dots, **but V1's functional diagnostics remained substantially better**: V1 has synchronized and separately aligned memory/CPU graphs, readable axes, cursor and source timestamp inspection, incident and extrema lists, and useful buttons to investigate a selected point. V2's prior 24-hour single canvas also devoted much of its width to empty time preceding the external recorder's first observations. This is a *presentation/interaction parity* improvement, not a new hub resource probe.
+
+V2 alpha.15 adds a **standalone responsive SVG unified incident timeline**, modeled on V1's useful presentation pattern but **powered only by V2's already-existing `/api/diagnostics/timeline` source**:
+- Default **separate but time-aligned memory / 5m CPU panels**, each with its own real Y-axis scale. Optional combined dual-axis view. Desktop SVG displays the full trace; mobile wraps its labeled plot in an accessible horizontally scrollable region.
+- Read-only, timestamp-aligned external probe memory, true five-minute native CPU-load equivalent, shaded recorded external connectivity losses, and separately marked confirmed offset-aware `systemStart` events. No invented readings, automatic smoothing or extrapolated causes.
+- Source-aware vertical cursor, exact source timestamp/value readouts, keyboard previous/next/home/end navigation, touch inspection, highlighted actual minima/maxima, and a local observed-events list. A reading is shown only when near the selected position; distant samples are labeled **no nearby reading**, not treated as the state at the selected instant.
+- Window controls: **1h/6h/24h/3d/7d/30d**, 6h default. **Fit observed data** (default) keeps the chosen request window but zooms the display from the first retained source observation/event; **Full requested range** preserves every blank historical interval and visibly expresses the bounds of data coverage.
+- Safe **Inspect selected time** displays a limited locally saved evidence snippet, including nearby confirmed starts and incidents, without hub I/O; **Prepare AI investigation** populates the ordinary Ask / Chat text field with a clear *read-only* investigation prompt, **does not auto-submit or bypass permissions**. Source JSON is linked to the existing same-origin recorder endpoint. There is no fake V1 journal data or nonfunctional V1-only service button.
+- Keep and improve the **detailed metric graph** underneath: native/OS/Java/latency choices, readable unit-aware and adaptive Y/X ticks, exact minimum/maximum/latest statistics, real extrema markers, cursor and keyboard sample navigation, and source-provenance readouts. Respects confirmed source segment gaps, with no fabricated intermediate values.
+
+This release uses the **same existing V2 SQLite recorder, endpoints, credentials, retention and MCP tools**, and does not copy the heavyweight V1 backend, its journal, a causal router or incident-specific code. No Hubitat setting, live device, database row, client permissions, model routing or external probe cadence is changed. The overall evidence standard remains that event proximity is not proof of causation.
+
+**Validation:** The Node UI fixture and desktop/mobile Chromium tests cover the split/combined layout, exact source values, extrema/event list, source JSON link, full-vs-fit interval, keyboard selection, pure local inspection and **no network request from AI-question preparation**, alongside existing XSS, model answer copy/export, active-session controls and chart source-gap tests. Only a real installed alpha.15 screenshot can establish subjective visual parity with the user's V1 chart.

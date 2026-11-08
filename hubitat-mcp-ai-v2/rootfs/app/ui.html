@@ -44,6 +44,32 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .session-note{font-size:12px;color:var(--muted)}.previous-turn{padding:14px 0;border-bottom:1px solid var(--edge)}.previous-turn pre{max-height:220px}
 #recorderNotice{border-left:3px solid var(--amber);padding:12px 16px;background:var(--panel);margin:16px 0}
 @media(max-width:600px){header>div{width:100%}.toolbar button{flex:1}main{padding:12px}th,td{padding:8px}#answer{font-size:15px}}
+
+/* Source-aware recorder timeline: SVG preserves sharp traces at all viewport sizes. */
+.timeline-scroll{width:100%;overflow-x:auto;overflow-y:hidden;border-radius:10px}
+.timeline-chart{width:100%;height:auto;display:block;max-height:420px;min-height:210px;
+ background:#101b2b;border-radius:10px;touch-action:pan-y}
+.timeline-chart:focus-visible,#graph:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.timeline-meta,.timeline-readout,.plot-stats{font-size:12px;line-height:1.55;color:var(--muted);margin:10px 0}
+.timeline-readout{min-height:38px;padding:8px 11px;border:1px solid var(--edge);
+ border-radius:8px;background:#111d2e}
+.timeline-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.timeline-actions a{color:var(--blue);font-size:13px}
+.timeline-actions button{padding:8px 11px;font-size:13px}
+.timeline-events{display:flex;flex-direction:column;gap:8px;max-height:270px;overflow:auto;margin-top:12px}
+.timeline-event{display:flex;align-items:flex-start;gap:9px;justify-content:space-between;
+ padding:10px;border:1px solid var(--edge);border-radius:8px;font-size:12px}
+.timeline-event p{margin:0;flex:1;min-width:0;line-height:1.55}
+.timeline-event button{padding:6px 9px;font-size:12px}
+#timelineEvidence{max-height:250px}
+.diag-controls{margin:6px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.diag-controls label{font-size:12px;color:var(--muted)}
+.diag-controls select{margin-left:6px;padding:6px}
+#graph{cursor:crosshair}
+@media(max-width:530px){.timeline-chart{min-width:700px;min-height:270px}.timeline-event{flex-wrap:wrap}
+.timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
+.diag-controls select{margin-left:0}}
+
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
@@ -71,20 +97,40 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
-<div class="card">
-<div class="row"><strong>History</strong>
-<select id="range" class="right" onchange="refreshDiagnostics()">
-<option value="1">1 hour</option><option value="6">6 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option>
-</select>
-<select id="metric" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load5">Native 5m load</option></select>
+<div class="card" id="timelineCard">
+<div class="row"><h2>Unified incident timeline</h2><button class="right" id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
+<p class="timeline-meta" id="timelineMeta">External recorder observations, native five-minute load and verified systemStart events. Missing history remains unknown.</p>
+<div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
+<div class="diag-controls">
+<label for="range">Range <select id="range" onchange="refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
+<label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · aligned panels</option><option value="combined">Combined · dual axes</option></select></label>
+<label for="plotExtent">Time axis <select id="plotExtent" onchange="redrawDiagnostics()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
 </div>
+<div class="timeline-scroll" role="region" aria-label="Scrollable synchronized memory and CPU chart"><svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 360" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg></div>
+<p class="timeline-readout" id="timelineReadout" aria-live="polite">Select an observed point on the timeline, or use the arrow keys. Source gaps are not zero.</p>
+<div class="timeline-actions">
+<button id="timelineInspect" disabled onclick="inspectTimelineSelection()">Inspect selected time</button>
+<button id="timelineAsk" disabled onclick="prepareTimelineQuestion()">Prepare AI investigation</button>
+<a id="timelineSource" href="api/diagnostics/timeline?hours=6" target="_blank" rel="noopener noreferrer">View source records (JSON)</a>
+</div>
+<p class="session-note">These are locally saved observations, not cause attribution. Inspect uses no Hubitat request. Preparing an AI question does not send it or authorise a device action.</p>
+<details id="timelineObservations" open><summary>Observed points and incidents</summary><div class="timeline-events" id="timelineEvents"></div></details>
+<details id="timelineEvidenceDetails" hidden><summary>Selected local source evidence (read-only)</summary><pre id="timelineEvidence"></pre></details>
+</div>
+<div class="card" id="detailCard">
+<div class="row"><h2>Detailed metric history</h2>
+<select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load5">Native 5m load</option></select>
+</div>
+<div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
 <div class="legend"><span><i class="dot"></i>OS free memory (MB) / selected metric</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
-<div class="chartshell"><canvas id="graph" role="img" aria-label="Recorder history with aligned axes, confirmed startup markers and probe gaps"></canvas><div id="hint"></div></div>
-<div id="source">Select a window to inspect saved timestamps.</div>
+<div class="chartshell"><canvas id="graph" role="img" tabindex="0" aria-label="Detailed recorder history; use pointer or left/right arrow keys to inspect observed samples"></canvas><div id="hint"></div></div>
+<p id="detailReadout" class="timeline-readout" aria-live="polite">Hover or use the arrow keys to inspect exact measured values.</p>
+<div id="source" class="timeline-meta">Select a window to inspect saved timestamps.</div>
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
-</div></section></main>
+</div>
+</section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.14";
+const UI_VERSION="2.0.0-alpha.15";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -308,56 +354,567 @@ function setCards(s){const l=s.last||{};const specs=[
  ['CPU load equivalent',fmt(l.native_load_pct)+'%'],['HTTP latency',fmt(l.latency_ms)+' ms']
  ];byId('cards').replaceChildren(...specs.map(([name,value])=>{const el=document.createElement('div');el.className='metric';const label=document.createElement('small');label.textContent=name;const val=document.createElement('strong');val.textContent=value;el.append(label,val);return el}));
 }
-async function refreshDiagnostics(){
- try{const hours=+byId('range').value,metric=byId('metric').value;const [s,t]=await Promise.all([
- readJson('api/diagnostics/status'),
- readJson('api/diagnostics/'+(metric==='combined'?'timeline?hours='+hours:'history?hours='+hours+'&metric='+encodeURIComponent(metric)))
- ]);setCards(s);
- const notice=byId('recorderNotice');notice.hidden=s.status==='online';
- notice.textContent=s.status==='disabled'?'External recorder is disabled. In the add-on configuration, enable external_hub_diagnostics_enabled and set external_hub_diagnostics_hub_url to your hub’s HTTP LAN base URL, then save and restart. This recorder has separate history from MCP diagnostics.':
- s.error?'Recorder error: '+s.error:s.status==='waiting'?'Recorder enabled. Waiting for its first sample.':'Recorder status: '+(s.status||'unknown')+'. Check the source details below for probe failures.';
- visual=metric==='combined'?{
- start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:(t.metrics?.free_os_mb?.samples||[]),b:(t.metrics?.native_load_pct?.samples||[]),
- ak:'free_os_mb',bk:'native_load_pct',reboots:t.reboots||[],incidents:t.incidents||[],description:'Memory is sampled externally; native 5m load is dated at collection.'
- }:{
- start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:t.samples||[],b:[],ak:metric,bk:null,reboots:t.reboots||[],incidents:t.incidents||[],description:(metric.startsWith('native_')||metric.startsWith('java_')?'One point per distinct native five-minute reading; repeated polls excluded. True source gaps stay blank.':'Probe-time readings; true source gaps stay blank.')
+// V1-grade independent recorder display. Uses only the v2 saved SQLite timeline
+// API and DOM-created SVG; these source-aligned plots never fetch a hub device.
+const SVG_NS='http://www.w3.org/2000/svg';
+let timelineData=null,timelineSeries={memory:[],cpu:[]},timelineShown=null;
+let timelineSelection=null,timelineNearest={memory:null,cpu:null},timelineFocusTimes=[];
+let diagnosticsSequence=0,detailPoints=[],detailSelectedIndex=-1;
+function svgNode(tag,attrs={},label){
+ const node=document.createElementNS(SVG_NS,tag);
+ for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));
+ if(label!==undefined)node.textContent=String(label);
+ return node;
+}
+function diagTime(t){
+ const date=new Date(t);
+ return Number.isFinite(date.getTime())?date.toLocaleString('en-GB',{
+  day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false
+ }):'Unknown time';
+}
+function diagValue(value,key){
+ if(typeof value!=='number'||!Number.isFinite(value))return '—';
+ const decimals=key==='native_load5'?2:1;
+ const unit=key==='free_os_mb'||key==='java_free_mb'?' MB':
+  key==='latency_ms'?' ms':key==='native_load5'?' load':'%';
+ return new Intl.NumberFormat('en-GB',{maximumFractionDigits:decimals}).format(value)+unit;
+}
+function sourcePoints(rows,key,native=false){
+ const seen=new Set();
+ return (Array.isArray(rows)?rows:[]).filter(row=>{
+  if(!row||!row.reachable||typeof row[key]!=='number'||!Number.isFinite(row[key])||
+      !Number.isFinite(Date.parse(row.recorded_at)))return false;
+  if(native){
+   const label=String(row.native_sample_label||'');
+   if(!label||seen.has(label))return false;
+   seen.add(label);
+  }
+  return true;
+ }).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
+}
+function timelineWindow(data){
+ if(!data)return null;
+ const requestedStart=Date.parse(data.range_start),end=Date.parse(data.range_end);
+ if(!Number.isFinite(requestedStart)||!Number.isFinite(end)||end<=requestedStart)return null;
+ if(byId('plotExtent').value==='full')return {start:requestedStart,end,requestedStart,fit:false};
+ const metricRows=[...(data.metrics?.free_os_mb?.samples||[]),
+                   ...(data.metrics?.native_load_pct?.samples||[])];
+ const observed=metricRows.filter(r=>r&&r.reachable&&
+  ((typeof r.free_os_mb==='number'&&Number.isFinite(r.free_os_mb))||
+   (typeof r.native_load_pct==='number'&&Number.isFinite(r.native_load_pct))))
+  .map(r=>Date.parse(r.recorded_at));
+ const events=[...(data.reboots||[]).map(r=>Date.parse(r.occurred_at)),
+  ...(data.incidents||[]).flatMap(r=>[Date.parse(r.started_at),Date.parse(r.recovered_at)])];
+ const valid=[...observed,...events].filter(x=>Number.isFinite(x)&&x>=requestedStart&&x<=end);
+ if(!valid.length)return {start:requestedStart,end,requestedStart,fit:false};
+ const first=Math.min(...valid),margin=Math.max(60000,Math.min(10*60000,(end-first)*.035));
+ const start=Math.max(requestedStart,first-margin);
+ return {start,end,requestedStart,fit:start>requestedStart+60000};
+}
+function niceDiagnosticScale(low,high,steps=6){
+ const lo=Number.isFinite(low)?Math.max(0,low):0;
+ const hi=Number.isFinite(high)?Math.max(lo+.0001,high):1;
+ const raw=Math.max(.000001,(hi-lo)/Math.max(1,steps));
+ const base=Math.pow(10,Math.floor(Math.log10(raw)));
+ const step=([1,2,2.5,5,10].find(x=>x*base>=raw)||10)*base;
+ const min=Math.max(0,Math.floor(lo/step+1e-9)*step);
+ const max=Math.max(min+step,Math.ceil(hi/step-1e-9)*step);
+ return {min,max,step,count:Math.round((max-min)/step)};
+}
+function scaleFor(rows,key,forceZero=false){
+ if(!rows.length)return niceDiagnosticScale(0,100);
+ const values=rows.map(x=>x[key]),low=Math.min(...values),high=Math.max(...values);
+ const padding=Math.max((high-low)*.12,key==='free_os_mb'?8:key==='native_load_pct'?2:.05);
+ return niceDiagnosticScale(forceZero?0:Math.max(0,low-padding),high+padding,6);
+}
+function nearestDiagnosticRow(rows,when){
+ if(!rows.length)return null;
+ let lo=0,hi=rows.length-1;
+ while(lo<hi){const mid=(lo+hi)>>>1;if(Date.parse(rows[mid].recorded_at)<when)lo=mid+1;else hi=mid;}
+ if(lo>0&&Math.abs(Date.parse(rows[lo-1].recorded_at)-when)<
+   Math.abs(Date.parse(rows[lo].recorded_at)-when))return rows[lo-1];
+ return rows[lo];
+}
+function redrawDiagnostics(){drawIncidentTimeline();draw();}
+function drawIncidentTimeline(){
+ const svg=byId('incidentTimeline');svg.replaceChildren();
+ timelineSeries={memory:[],cpu:[]};timelineFocusTimes=[];
+ timelineShown=timelineWindow(timelineData);
+ if(!timelineShown){
+  svg.append(svgNode('text',{x:75,y:100,fill:'#cbd5e1','font-size':15},'No saved recorder history available'));
+  byId('timelineMeta').textContent='No recorded interval available. Unknown is not zero.';
+  byId('timelineReadout').textContent='Waiting for saved recorder measurements.';
+  byId('timelineInspect').disabled=true;byId('timelineAsk').disabled=true;
+  byId('timelineEvents').replaceChildren();return;
+ }
+ const {start,end,requestedStart,fit}=timelineShown;
+ const memMetric=timelineData.metrics?.free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
+ const mem=sourcePoints(memMetric.samples,'free_os_mb');
+ const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true);
+ timelineSeries={memory:mem,cpu};
+ const layout=byId('timelineLayout').value,combined=layout==='combined';
+ const plot={left:76,right:800,top:combined?37:28,memBottom:combined?322:156,
+  cpuTop:combined?37:202,cpuBottom:322};
+ const memScale=scaleFor(mem,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
+ const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
+ const yFor=(kind,v)=>{
+  const scale=kind==='memory'?memScale:cpuScale;
+  const top=kind==='memory'?plot.top:plot.cpuTop;
+  const bottom=kind==='memory'?plot.memBottom:plot.cpuBottom;
+  return bottom-(v-scale.min)/(scale.max-scale.min)*(bottom-top);
  };
- const nativeCount=metric==='combined'?t.metrics?.native_load_pct?.observed_metric_points:t.observed_metric_points;
- const recorderCount=metric==='combined'?t.metrics?.native_load_pct?.source_sample_count:t.source_sample_count;
- const nativeDetail=Number.isFinite(nativeCount)&&Number.isFinite(recorderCount)?
-   ' · '+nativeCount+' source readings among '+recorderCount+' recorder poll rows (within selected range).':'';
- byId('source').textContent=(s.status||'unknown')+' · '+visual.description+nativeDetail+(s.error?' · '+s.error:'');
- byId('incidents').textContent=JSON.stringify({incidents:visual.incidents,reboots:visual.reboots},null,2);
- draw();
- }catch(e){byId('source').textContent='Unable to load recorder: '+e.message;visual=null;draw();}
+ const text=(tag,attrs,value)=>svg.append(svgNode(tag,attrs,value));
+ const gridCount=Math.max(2,Math.min(10,Math.floor((svg.getBoundingClientRect().width||860)/115)));
+ for(let i=0;i<=gridCount;i++){
+  const t=start+(end-start)*i/gridCount,xx=x(t);
+  text('line',{x1:xx,x2:xx,y1:plot.top,y2:plot.cpuBottom,stroke:'#33475c',
+   'stroke-width':.8,'stroke-dasharray':'2 5'});
+  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
+  const label=new Date(t).toLocaleString('en-GB',sameDay?
+   {hour:'2-digit',minute:'2-digit',hour12:false}:
+   {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+  text('text',{x:xx,y:345,fill:'#b1c0d4','font-size':11,
+   'text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
+ }
+ const yGrid=(scale,kind,right=false)=>{
+  for(let i=0;i<=scale.count;i++){
+   const value=scale.min+scale.step*i,yy=yFor(kind,value);
+   if(!right)text('line',{x1:plot.left,x2:plot.right,y1:yy,y2:yy,
+    stroke:'#44566b','stroke-opacity':.7,'stroke-width':.75,'stroke-dasharray':'2 5'});
+   const key=kind==='memory'?'free_os_mb':'native_load_pct';
+   text('text',{x:right?plot.right+9:plot.left-8,y:yy+4,
+    fill:kind==='memory'?'#93c5fd':'#86efac','font-size':11,
+    'text-anchor':right?'start':'end'},diagValue(value,key));
+  }
+ };
+ yGrid(memScale,'memory');
+ yGrid(cpuScale,'cpu',combined);
+ if(!combined)yGrid(cpuScale,'cpu');
+ text('text',{x:plot.left,y:17,fill:'#93c5fd','font-size':12},
+  combined?'OS memory (left · MB) / 5m CPU equivalent (right · %)':
+  'OS memory · MB (external probes; independent scale)');
+ if(!combined)text('text',{x:plot.left,y:191,fill:'#86efac','font-size':12},
+  '5m CPU load equivalent · % (native; independent scale)');
+ const incidents=(timelineData.incidents||[]).filter(v=>v&&v.kind==='hub-unreachable');
+ for(const row of incidents){
+  const begin=Date.parse(row.started_at),stop=row.recovered_at?Date.parse(row.recovered_at):end;
+  if(!Number.isFinite(begin)||!Number.isFinite(stop)||begin>end||stop<start)continue;
+  const xx=x(Math.max(start,begin)),xx2=x(Math.min(end,stop));
+  const band=svgNode('rect',{x:xx,y:plot.top,width:Math.max(1.5,xx2-xx),
+   height:plot.cpuBottom-plot.top,fill:'#e65f72','fill-opacity':.14});
+  band.append(svgNode('title',{},'External probe outage · '+diagTime(begin)+
+   ' · does not establish a hub reboot'));svg.append(band);
+ }
+ const drawTrace=(rows,key,kind,color)=>{
+  let path='',prev=null;
+  for(const row of rows){
+   const t=Date.parse(row.recorded_at);
+   if(t<start||t>end)continue;
+   const seg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
+   const gap=prev!==null&&((seg!==null&&prev.seg!==null&&seg!==prev.seg)||
+    t-prev.t>(kind==='cpu'?900000:Math.max(120000,(Number(timelineData.probe_seconds)||30)*3000)));
+   const command=(path&&!gap?' L':' M')+x(t).toFixed(2)+' '+yFor(kind,row[key]).toFixed(2);
+   path+=command;prev={t,seg};
+  }
+  if(path)svg.append(svgNode('path',{d:path.trim(),fill:'none',stroke:color,
+   'stroke-width':2.25,'stroke-linejoin':'round','stroke-linecap':'round'}));
+  if(rows.length<=55)for(const row of rows){
+   const t=Date.parse(row.recorded_at);if(t<start||t>end)continue;
+   const dot=svgNode('circle',{cx:x(t),cy:yFor(kind,row[key]),r:2.3,fill:color});
+   dot.append(svgNode('title',{},diagTime(t)+' · '+diagValue(row[key],key)+
+    (kind==='cpu'?' · native source '+String(row.native_sample_label||'unknown'):
+     ' · external probe')));
+   svg.append(dot);
+  }
+ };
+ drawTrace(mem,'free_os_mb','memory','#70b9ff');
+ drawTrace(cpu,'native_load_pct','cpu','#6ee7b7');
+ const events=[];
+ for(const rec of timelineData.reboots||[]){
+  const t=Date.parse(rec.occurred_at);if(!Number.isFinite(t)||t<start||t>end)continue;
+  const line=svgNode('line',{x1:x(t),x2:x(t),y1:plot.top,y2:plot.cpuBottom,
+   stroke:'#ffc76a','stroke-width':1.7,'stroke-dasharray':'4 4'});
+  line.append(svgNode('title',{},'Hubitat systemStart '+diagTime(t)+
+   ' · cause not established'));svg.append(line);
+  events.push({t,kind:'Confirmed startup',detail:'systemStart'+
+   (rec.firmware?' · firmware '+rec.firmware:'')+' · cause unverified'});
+ }
+ for(const inc of incidents){
+  const t=Date.parse(inc.started_at),recovered=Date.parse(inc.recovered_at);
+  if(Number.isFinite(t)&&t>=start&&t<=end)events.push({t,kind:'Connectivity loss',
+   detail:'Two external failed probes; not a confirmed reboot'});
+  if(Number.isFinite(recovered)&&recovered>=start&&recovered<=end)
+   events.push({t:recovered,kind:'Connectivity recovered',
+    detail:'External recorder recovered; cause not established'});
+ }
+ const minMem=mem.length?mem.reduce((a,b)=>a.free_os_mb<=b.free_os_mb?a:b):null;
+ const maxCpu=cpu.length?cpu.reduce((a,b)=>a.native_load_pct>=b.native_load_pct?a:b):null;
+ if(minMem)events.push({t:Date.parse(minMem.recorded_at),kind:'Lowest observed OS memory',
+  detail:diagValue(minMem.free_os_mb,'free_os_mb')+' · external probe, not a diagnosis'});
+ if(maxCpu)events.push({t:Date.parse(maxCpu.recorded_at),kind:'Highest observed 5m CPU load',
+  detail:diagValue(maxCpu.native_load_pct,'native_load_pct')+' · native source '+
+   String(maxCpu.native_sample_label||'unknown')+'; derived load, not measured utilisation'});
+ for(const [row,key,kind,color] of [
+  [minMem,'free_os_mb','memory','#70b9ff'],
+  [maxCpu,'native_load_pct','cpu','#6ee7b7']]){
+  if(!row)continue;
+  const t=Date.parse(row.recorded_at);
+  svg.append(svgNode('circle',{cx:x(t),cy:yFor(kind,row[key]),r:4.3,fill:color,
+   stroke:'#f2f7fe','stroke-width':1.4}));
+ }
+ svg.append(svgNode('line',{id:'timelineCursor',x1:0,x2:0,y1:plot.top,y2:plot.cpuBottom,
+  stroke:'#f1f5ff','stroke-width':1.5,'stroke-dasharray':'2 4',
+  visibility:'hidden','pointer-events':'none'}));
+ for(const [kind,color] of [['memory','#70b9ff'],['cpu','#6ee7b7']]){
+  svg.append(svgNode('circle',{id:'timelineDot'+kind,fill:color,
+   stroke:'#fff','stroke-width':1.4,r:5,cx:0,cy:0,visibility:'hidden',
+   'pointer-events':'none'}));
+ }
+ events.sort((a,b)=>b.t-a.t);
+ const list=byId('timelineEvents');list.replaceChildren();
+ if(!events.length){const p=document.createElement('p');p.textContent=
+  'No confirmed incidents or extrema in this interval. This is not proof of uninterrupted uptime.';
+  list.append(p)}
+ for(const event of events.slice(0,35)){
+  const row=document.createElement('div');row.className='timeline-event';
+  const p=document.createElement('p'),name=document.createElement('strong');
+  name.textContent=diagTime(event.t)+' · '+event.kind;
+  p.append(name,document.createTextNode(' — '+event.detail));
+  const button=document.createElement('button');button.textContent='Inspect time';
+  button.type='button';button.addEventListener('click',()=>{
+   selectTimelineTime(event.t);byId('incidentTimeline').focus()});
+  row.append(p,button);list.append(row);
+ }
+ if(events.length>35){const rest=document.createElement('p');
+  rest.textContent='Showing 35 of '+events.length+' event markers. View source JSON for the full bounded response.';
+  list.append(rest)}
+ timelineFocusTimes=[...new Set([
+  ...mem.map(x=>Date.parse(x.recorded_at)),...cpu.map(x=>Date.parse(x.recorded_at)),
+  ...events.map(x=>x.t)
+ ])].filter(t=>Number.isFinite(t)&&t>=start&&t<=end).sort((a,b)=>a-b);
+ const memCount=memMetric.observed_metric_points??mem.length,cpuCount=cpuMetric.observed_metric_points??cpu.length;
+ byId('timelineMeta').textContent=memCount+' external OS-memory observations · '+
+  cpuCount+' distinct native 5m CPU readings · '+(timelineData.reboots||[]).length+
+  ' recorded startup(s) · '+incidents.length+' observed connectivity episode(s)'+
+  (fit?' · Time axis fitted to recorded observations within the '+byId('range').value+'-hour request':'')+
+  ((memMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
+  ' · Partial source coverage; time alignment is not causation.';
+ timelineShown={...timelineShown,x,yFor,plot};
+ const previous=timelineSelection;
+ if(Number.isFinite(previous)&&previous>=start&&previous<=end)selectTimelineTime(previous);
+ else if(timelineFocusTimes.length)selectTimelineTime(timelineFocusTimes[timelineFocusTimes.length-1]);
+ else{
+  timelineSelection=null;byId('timelineInspect').disabled=true;byId('timelineAsk').disabled=true;
+  byId('timelineReadout').textContent='No observed readings in this displayed range. Blank means unknown.';
+ }
 }
-function axis(rows,key){const data=rows.filter(r=>r.reachable&&Number.isFinite(+r[key])&&r[key]!=null).map(r=>+r[key]);if(!data.length)return [0,1];let min=Math.min(...data),max=Math.max(...data);const extra=Math.max((max-min)*.13,1);return [Math.max(0,min-extra),max+extra]}
+function selectTimelineTime(when){
+ if(!timelineShown||!Number.isFinite(when))return;
+ const {start,end,x,yFor}=timelineShown,at=Math.max(start,Math.min(end,when));
+ timelineSelection=at;
+ const xx=x(at),cursor=byId('timelineCursor');
+ if(cursor){cursor.setAttribute('x1',xx);cursor.setAttribute('x2',xx);cursor.setAttribute('visibility','visible')}
+ const evidence=['Selected '+diagTime(at)];
+ timelineNearest={memory:null,cpu:null};
+ for(const [kind,key,label,basis] of [
+  ['memory','free_os_mb','OS memory','external probe'],
+  ['cpu','native_load_pct','5m CPU equivalent','native source at collection']]){
+  const row=nearestDiagnosticRow(timelineSeries[kind],at);
+  const near=row&&Math.abs(x(Date.parse(row.recorded_at))-xx)<=26;
+  const dot=byId('timelineDot'+kind);
+  if(dot)dot.setAttribute('visibility',near?'visible':'hidden');
+  if(near){
+   dot.setAttribute('cx',x(Date.parse(row.recorded_at)));
+   dot.setAttribute('cy',yFor(kind,row[key]));
+   timelineNearest[kind]=row;
+   evidence.push(label+' '+diagValue(row[key],key)+' at '+diagTime(Date.parse(row.recorded_at))+
+    ' ('+basis+(kind==='cpu'?', label '+String(row.native_sample_label||'unknown'):'')+')');
+  }else evidence.push(label+': no nearby reading (not zero)');
+ }
+ byId('timelineReadout').textContent=evidence.join(' · ')+' · These readings do not establish a cause.';
+ byId('timelineInspect').disabled=false;byId('timelineAsk').disabled=false;
+}
+function inspectTimelineSelection(){
+ if(!Number.isFinite(timelineSelection)||!timelineData)return;
+ const incidents=(timelineData.incidents||[]).filter(i=>{
+  const first=Date.parse(i.started_at),last=Date.parse(i.recovered_at);
+  return Number.isFinite(first)&&first<=timelineSelection&&
+   (!Number.isFinite(last)||last>=timelineSelection);
+ });
+ const nearbyStartups=(timelineData.reboots||[]).filter(r=>
+  Math.abs(Date.parse(r.occurred_at)-timelineSelection)<=300000);
+ const detail={selected_utc:new Date(timelineSelection).toISOString(),
+  evidence_type:'saved_external_recorder_only',causality:'not established',
+  memory_reading:timelineNearest.memory||null,
+  native_cpu_reading:timelineNearest.cpu||null,
+  matching_connectivity_episodes:incidents,nearby_recorded_system_starts:nearbyStartups,
+  note:'A nearby source record is not an observation at the selected instant. An empty interval remains unknown.'};
+ byId('timelineEvidence').textContent=JSON.stringify(detail,null,2);
+ byId('timelineEvidenceDetails').hidden=false;byId('timelineEvidenceDetails').open=true;
+}
+function prepareTimelineQuestion(){
+ if(!Number.isFinite(timelineSelection))return;
+ const iso=new Date(timelineSelection).toISOString();
+ byId('question').value='Investigate the available Hubitat evidence around '+
+  iso+' (UTC). Correlate relevant device, system and automation history when available. '+
+  'Distinguish external recorder observations from native hub events and verified causes. '+
+  'Do not infer missing history, and do not change anything.';
+ tab('ask');byId('question').focus();
+}
+function timelinePointer(event){
+ if(!timelineShown)return;
+ const svg=byId('incidentTimeline'),rect=svg.getBoundingClientRect();
+ if(!rect.width)return;
+ const px=(event.clientX-rect.left)/rect.width*860;
+ if(px<timelineShown.plot.left-12||px>timelineShown.plot.right+12)return;
+ const fraction=(px-timelineShown.plot.left)/
+  (timelineShown.plot.right-timelineShown.plot.left);
+ selectTimelineTime(timelineShown.start+Math.max(0,Math.min(1,fraction))*
+  (timelineShown.end-timelineShown.start));
+}
+byId('incidentTimeline').addEventListener('pointermove',e=>{
+ if(e.pointerType!=='touch')timelinePointer(e);
+});
+byId('incidentTimeline').addEventListener('pointerdown',timelinePointer);
+byId('incidentTimeline').addEventListener('keydown',e=>{
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!timelineFocusTimes.length)return;
+ e.preventDefault();
+ let idx=0;
+ if(e.key==='End')idx=timelineFocusTimes.length-1;
+ else if(e.key==='Home')idx=0;
+ else if(e.key==='ArrowRight')idx=Math.min(timelineFocusTimes.length-1,
+  timelineFocusTimes.findIndex(t=>t>timelineSelection));
+ else{
+  const backwards=timelineFocusTimes.filter(t=>t<timelineSelection);
+  idx=backwards.length?backwards.length-1:0;
+ }
+ if(idx<0)idx=timelineFocusTimes.length-1;
+ selectTimelineTime(timelineFocusTimes[idx]);
+});
+
+async function refreshDiagnostics(){
+ const sequence=++diagnosticsSequence;
+ const hours=+byId('range').value,metric=byId('metric').value;
+ byId('timelineMeta').textContent='Loading saved recorder observations…';
+ try{
+  // Both charts are views over the same independently recorded SQLite history.
+  // The unified timeline is always fetched, with no second native hub poll.
+  const [status,timeline,detail]=await Promise.all([
+   readJson('api/diagnostics/status'),
+   readJson('api/diagnostics/timeline?hours='+hours),
+   metric==='combined'?Promise.resolve(null):
+    readJson('api/diagnostics/history?hours='+hours+'&metric='+encodeURIComponent(metric))
+  ]);
+  if(sequence!==diagnosticsSequence)return;
+  setCards(status);
+  const notice=byId('recorderNotice');notice.hidden=status.status==='online';
+  notice.textContent=status.status==='disabled'?
+   'External recorder is disabled. Configure external_hub_diagnostics_enabled and its HTTP LAN base URL in the add-on options, then restart. This is separate from MCP tool history.':
+   status.error?'Recorder error: '+status.error:status.status==='waiting'?
+   'Recorder is enabled. Waiting for its first saved observation.':
+   'Recorder status: '+(status.status||'unknown')+'; inspect individual source events below.';
+  timelineData={...timeline,probe_seconds:Number(status.probe_seconds)||30};
+  byId('timelineSource').href='api/diagnostics/timeline?hours='+hours;
+  byId('timelineEvidenceDetails').hidden=true;
+  drawIncidentTimeline();
+  visual=metric==='combined'?{
+   start:Date.parse(timeline.range_start),end:Date.parse(timeline.range_end),
+   a:timeline.metrics?.free_os_mb?.samples||[],
+   b:timeline.metrics?.native_load_pct?.samples||[],
+   ak:'free_os_mb',bk:'native_load_pct',reboots:timeline.reboots||[],
+   incidents:timeline.incidents||[],probe_seconds:timelineData.probe_seconds,
+   description:'OS memory: external probes. 5m CPU: native source at collector receipt.'
+  }:{
+   start:Date.parse(detail.range_start),end:Date.parse(detail.range_end),
+   a:detail.samples||[],b:[],ak:metric,bk:null,
+   reboots:detail.reboots||[],incidents:detail.incidents||[],
+   probe_seconds:timelineData.probe_seconds,
+   description:(metric.startsWith('native_')||metric.startsWith('java_')?
+    'One point per distinct native five-minute source; no repeated polls or fabricated readings.':
+    'Actual external probe-time readings; no interpolation.')
+  };
+  const nativeCount=metric==='combined'?
+   timeline.metrics?.native_load_pct?.observed_metric_points:detail.observed_metric_points;
+  const recorderCount=metric==='combined'?
+   timeline.metrics?.native_load_pct?.source_sample_count:detail.source_sample_count;
+  const countText=Number.isFinite(nativeCount)&&Number.isFinite(recorderCount)?
+   ' · '+nativeCount+' observed source readings from '+recorderCount+
+   ' recorder poll rows (selected request).':'';
+  byId('source').textContent=(status.status||'unknown')+' · '+visual.description+
+   countText+(status.error?' · '+status.error:'');
+  byId('incidents').textContent=JSON.stringify({
+   incidents:visual.incidents,reboots:visual.reboots,
+   notice:'Recorder observations are not independently verified reboot causes.'
+  },null,2);
+  draw();
+ }catch(e){
+  if(sequence!==diagnosticsSequence)return;
+  byId('timelineMeta').textContent='Unable to load saved timeline: '+e.message;
+  byId('source').textContent='Unable to load recorder: '+e.message;
+  timelineData=null;visual=null;drawIncidentTimeline();draw();
+ }
+}
 function draw(){
- const c=byId('graph'),rect=c.getBoundingClientRect();if(!rect.width)return;
- const dpr=Math.min(window.devicePixelRatio||1,2);c.width=Math.floor(rect.width*dpr);c.height=Math.floor(rect.height*dpr);
- const g=c.getContext('2d');g.scale(dpr,dpr);const w=rect.width,h=rect.height;
- g.clearRect(0,0,w,h);g.fillStyle='#121e2d';g.fillRect(0,0,w,h);
- const left=46,right=visual?.bk?51:18,top=20,bottom=35,W=w-left-right,H=h-top-bottom;
- if(!visual){g.fillStyle='#b2bfd2';g.fillText('No captured data yet',left+16,top+25);return;}
- const [lo,hi]=axis(visual.a,visual.ak),[lo2,hi2]=axis(visual.b,visual.bk||visual.ak);
- const x=t=>left+(t-visual.start)/Math.max(1,visual.end-visual.start)*W;
- const y=(v,min,max)=>top+H-(v-min)/Math.max(.0001,max-min)*H;
- g.font='11px system-ui';g.lineWidth=1;g.setLineDash([2,4]);g.strokeStyle='#35485d';g.fillStyle='#b6c4d5';
- for(let i=0;i<=4;i++){const yy=top+H*i/4;g.beginPath();g.moveTo(left,yy);g.lineTo(left+W,yy);g.stroke();g.textAlign='right';g.fillText(fmt(hi-(hi-lo)*i/4,(hi-lo)<2?2:(hi-lo)<10?1:0),left-6,yy+4);if(visual.bk){g.textAlign='left';g.fillText(fmt(hi2-(hi2-lo2)*i/4,(hi2-lo2)<2?2:(hi2-lo2)<10?1:0),left+W+7,yy+4)}}
- g.textAlign='center';for(let i=0;i<=4;i++){const t=visual.start+(visual.end-visual.start)*i/4;g.fillText(new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),x(t),h-13)}
- for(const e of visual.incidents){const s=Date.parse(e.started_at),f=e.recovered_at?Date.parse(e.recovered_at):visual.end;if(!Number.isFinite(s)||!Number.isFinite(f))continue;g.fillStyle='#d7516330';g.fillRect(Math.max(left,x(s)),top,Math.max(0,Math.min(left+W,x(f))-Math.max(left,x(s))),H)}
- for(const e of visual.reboots){const t=Date.parse(e.occurred_at);if(!Number.isFinite(t)||t<visual.start||t>visual.end)continue;g.strokeStyle='#ffc76a';g.setLineDash([4,4]);g.beginPath();g.moveTo(x(t),top);g.lineTo(x(t),top+H);g.stroke();}
- function series(rows,key,min,max,color){const pts=rows.filter(r=>r.reachable&&r[key]!=null&&Number.isFinite(+r[key])).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));g.strokeStyle=color;g.lineWidth=1.9;g.lineCap='round';g.lineJoin='round';g.setLineDash([]);g.beginPath();let prev=null;for(const p of pts){const stamp=Date.parse(p.recorded_at);if(!Number.isFinite(stamp))continue;const xx=x(stamp),yy=y(+p[key],min,max);if(prev&&prev.diag_segment===p.diag_segment&&stamp-Date.parse(prev.recorded_at)<=(key.startsWith('native_')||key.startsWith('java_')?900000:350000))g.lineTo(xx,yy);else g.moveTo(xx,yy);prev=p;}g.stroke();if(pts.length<=600){g.fillStyle=color;for(const p of pts){const stamp=Date.parse(p.recorded_at);if(!Number.isFinite(stamp))continue;g.beginPath();g.arc(x(stamp),y(+p[key],min,max),1.6,0,Math.PI*2);g.fill();}}return pts}
- const a=series(visual.a,visual.ak,lo,hi,'#70b9ff'),b=visual.bk?series(visual.b,visual.bk,lo2,hi2,'#6ee7b7'):[];
- if(hoverX!=null){const xx=Math.min(left+W,Math.max(left,hoverX));g.strokeStyle='#d9e3f1';g.setLineDash([3,4]);g.beginPath();g.moveTo(xx,top);g.lineTo(xx,top+H);g.stroke();const t=visual.start+(xx-left)/W*(visual.end-visual.start);
- const nearest=rows=>rows.length?rows.reduce((best,r)=>Math.abs(Date.parse(r.recorded_at)-t)<Math.abs(Date.parse(best.recorded_at)-t)?r:best):null;const p=nearest(a),q=nearest(b);
- for(const [item,key,min,max,col] of [[p,visual.ak,lo,hi,'#70b9ff'],[q,visual.bk,lo2,hi2,'#6ee7b7']])if(item){g.fillStyle=col;g.beginPath();g.arc(x(Date.parse(item.recorded_at)),y(+item[key],min,max),4,0,Math.PI*2);g.fill()}
- const parts=[p&&new Date(p.recorded_at).toLocaleString('en-GB')+': '+fmt(+p[visual.ak])+' ('+visual.ak+')',q&&new Date(q.recorded_at).toLocaleString('en-GB')+': '+fmt(+q[visual.bk])+' ('+visual.bk+')'].filter(Boolean);
- byId('hint').textContent=parts.join(' | ');byId('hint').style.display=parts.length?'block':'none';
- }else byId('hint').style.display='none';
+ const canvas=byId('graph'),rect=canvas.getBoundingClientRect();
+ if(!rect.width)return;
+ const dpr=Math.min(window.devicePixelRatio||1,2);
+ canvas.width=Math.floor(rect.width*dpr);canvas.height=Math.floor(rect.height*dpr);
+ const g=canvas.getContext('2d');g.scale(dpr,dpr);
+ const w=rect.width,h=rect.height;
+ g.fillStyle='#101b2b';g.fillRect(0,0,w,h);
+ const left=60,right=visual?.bk?64:20,top=28,bottom=43;
+ const W=Math.max(20,w-left-right),H=Math.max(20,h-top-bottom);
+ if(!visual){
+  g.fillStyle='#c2cfe0';g.font='13px system-ui';
+  g.fillText('No saved readings in this interval',left+12,top+25);
+  byId('plotStats').textContent='Minimum — · Maximum — · Latest —';
+  byId('detailReadout').textContent='No observation was retrieved for the selected range.';
+  detailPoints=[];return;
+ }
+ const visible=timelineWindow(timelineData);
+ const start=visible?.start??visual.start,end=visible?.end??visual.end;
+ const view=(visual,key,native)=>sourcePoints(visual,key,native)
+  .filter(r=>{const t=Date.parse(r.recorded_at);return t>=start&&t<=end});
+ const a=view(visual.a,visual.ak,visual.ak.startsWith('native_')||
+  visual.ak.startsWith('java_'));
+ const b=visual.bk?view(visual.b,visual.bk,true):[];
+ detailPoints=[...new Set([...a,...b])].sort((p,q)=>
+  Date.parse(p.recorded_at)-Date.parse(q.recorded_at));
+ const aScale=scaleFor(a,visual.ak),bScale=scaleFor(b,visual.bk||visual.ak,true);
+ const x=t=>left+(t-start)/Math.max(1,end-start)*W;
+ const y=(value,scale)=>top+H-(value-scale.min)/(scale.max-scale.min)*H;
+ g.font='11px system-ui';g.lineWidth=1;g.strokeStyle='#41556d';g.fillStyle='#c2cfe0';
+ for(let i=0;i<=aScale.count;i++){
+  const value=aScale.min+aScale.step*i,yy=y(value,aScale);
+  g.strokeStyle='#354b62';g.setLineDash([2,5]);
+  g.beginPath();g.moveTo(left,yy);g.lineTo(left+W,yy);g.stroke();
+  g.fillStyle='#a8c9f5';g.textAlign='right';
+  g.fillText(diagValue(value,visual.ak),left-7,yy+3);
+ }
+ if(visual.bk){
+  for(let i=0;i<=bScale.count;i++){
+   const value=bScale.min+bScale.step*i,yy=y(value,bScale);
+   g.fillStyle='#86efac';g.textAlign='left';
+   g.fillText(diagValue(value,visual.bk),left+W+7,yy+3);
+  }
+ }
+ const ticks=Math.max(2,Math.min(10,Math.floor(rect.width/120)));
+ const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
+ for(let i=0;i<=ticks;i++){
+  const t=start+(end-start)*i/ticks,xx=x(t);
+  g.strokeStyle='#354b62';g.setLineDash([2,6]);
+  g.beginPath();g.moveTo(xx,top);g.lineTo(xx,top+H);g.stroke();
+  g.textAlign=i===0?'left':i===ticks?'right':'center';g.fillStyle='#b6c6da';
+  g.fillText(new Date(t).toLocaleString('en-GB',sameDay?
+   {hour:'2-digit',minute:'2-digit',hour12:false}:
+   {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}),xx,h-13);
+ }
+ g.save();g.beginPath();g.rect(left,top,W,H);g.clip();
+ for(const inc of visual.incidents||[]){
+  const begin=Date.parse(inc.started_at);
+  const endIncident=inc.recovered_at?Date.parse(inc.recovered_at):end;
+  if(!Number.isFinite(begin)||!Number.isFinite(endIncident)||endIncident<start||begin>end)continue;
+  g.fillStyle='#e65f7230';
+  g.fillRect(x(Math.max(begin,start)),top,
+   Math.max(1,x(Math.min(endIncident,end))-x(Math.max(begin,start))),H);
+ }
+ for(const event of visual.reboots||[]){
+  const t=Date.parse(event.occurred_at);
+  if(!Number.isFinite(t)||t<start||t>end)continue;
+  g.strokeStyle='#ffc76a';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(x(t),top);g.lineTo(x(t),top+H);g.stroke();
+ }
+ const drawTrace=(rows,key,scale,color,native)=>{
+  let prev=null;g.strokeStyle=color;g.lineWidth=2.1;
+  g.lineCap='round';g.lineJoin='round';g.setLineDash([]);g.beginPath();
+  for(const row of rows){
+   const t=Date.parse(row.recorded_at),yy=y(row[key],scale);
+   const seg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
+   const gap=prev&&((seg!==null&&prev.seg!==null&&seg!==prev.seg)||
+      t-prev.t>(native?900000:Math.max(120000,(Number(visual.probe_seconds)||30)*3000)));
+   if(prev&&!gap)g.lineTo(x(t),yy);else g.moveTo(x(t),yy);
+   prev={t,seg};
+  }
+  g.stroke();
+  if(rows.length<=85){
+   g.fillStyle=color;
+   for(const row of rows){g.beginPath();g.arc(x(Date.parse(row.recorded_at)),
+    y(row[key],scale),2,0,Math.PI*2);g.fill();}
+  }
+  if(rows.length){
+   const lows=rows.reduce((p,q)=>p[key]<=q[key]?p:q);
+   const highs=rows.reduce((p,q)=>p[key]>=q[key]?p:q);
+   for(const row of lows===highs?[lows]:[lows,highs]){
+    g.fillStyle=color;g.strokeStyle='#f3f7fd';g.lineWidth=1.2;
+    g.beginPath();g.arc(x(Date.parse(row.recorded_at)),y(row[key],scale),4,0,Math.PI*2);
+    g.fill();g.stroke();
+   }
+  }
+ };
+ drawTrace(a,visual.ak,aScale,'#70b9ff',
+  visual.ak.startsWith('native_')||visual.ak.startsWith('java_'));
+ if(visual.bk)drawTrace(b,visual.bk,bScale,'#6ee7b7',true);
+ // The selected-time cursor is source-aware. No point is extrapolated across
+ // missing observations; a distant timestamp produces "not nearby".
+ const focus=hoverX===null?(a.length?x(Date.parse(a[a.length-1].recorded_at)):
+  b.length?x(Date.parse(b[b.length-1].recorded_at)):null):Math.max(left,Math.min(left+W,hoverX));
+ const selectedTime=focus===null?null:start+(focus-left)/W*(end-start);
+ let details=[];
+ if(selectedTime!==null){
+  g.strokeStyle='#e2edff';g.setLineDash([3,4]);g.lineWidth=1.2;
+  g.beginPath();g.moveTo(focus,top);g.lineTo(focus,top+H);g.stroke();
+  for(const [rows,key,scale,color] of [
+   [a,visual.ak,aScale,'#70b9ff'],[b,visual.bk,bScale,'#6ee7b7']]){
+   if(!key||!rows.length)continue;
+   const row=nearestDiagnosticRow(rows,selectedTime);
+   if(Math.abs(x(Date.parse(row.recorded_at))-focus)>26){
+    details.push((key==='free_os_mb'?'OS memory':key)+': no nearby reading');
+    continue;
+   }
+   const xx=x(Date.parse(row.recorded_at)),yy=y(row[key],scale);
+   g.fillStyle=color;g.strokeStyle='#fff';g.setLineDash([]);
+   g.lineWidth=1.5;g.beginPath();g.arc(xx,yy,5,0,Math.PI*2);g.fill();g.stroke();
+   details.push((key==='free_os_mb'?'OS memory':key)+': '+diagValue(row[key],key)+
+    ' at '+diagTime(Date.parse(row.recorded_at))+
+    (row.native_sample_label?' · native '+row.native_sample_label:' · external probe'));
+  }
+ }
+ g.restore();
+ const stats=(rows,key,label)=>{
+  if(!rows.length)return label+': no saved readings';
+  const values=rows.map(r=>r[key]),last=rows[rows.length-1];
+  return label+' · min '+diagValue(Math.min(...values),key)+
+   ' · max '+diagValue(Math.max(...values),key)+
+   ' · latest '+diagValue(last[key],key)+' ('+diagTime(Date.parse(last.recorded_at))+')';
+ };
+ byId('plotStats').textContent=stats(a,visual.ak,
+  byId('metric').selectedOptions?.[0]?.textContent||visual.ak)+
+  (visual.bk?' | '+stats(b,visual.bk,'5m CPU equivalent'):'');
+ byId('detailReadout').textContent=selectedTime===null?
+  'No saved readings at this time; unknown is not zero.':
+  details.join(' | ')+' · No interpolation or inferred cause.';
+ const hint=byId('hint');
+ hint.textContent=details.join(' | ');
+ hint.style.display=hoverX!==null&&details.length?'block':'none';
 }
-byId('graph').addEventListener('pointermove',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
+byId('graph').addEventListener('pointermove',e=>{if(e.pointerType!=='touch'){hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()}});
+byId('graph').addEventListener('pointerdown',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
 byId('graph').addEventListener('pointerleave',()=>{hoverX=null;draw()});
-window.addEventListener('resize',()=>{if(byId('diagnostics').classList.contains('active'))draw()});
+byId('graph').addEventListener('keydown',e=>{
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!detailPoints.length||!visual)return;
+ e.preventDefault();
+ const range=timelineWindow(timelineData);if(!range)return;
+ const left=60,right=visual.bk?64:20,width=byId('graph').getBoundingClientRect().width-left-right;
+ const active=hoverX===null?Date.parse(detailPoints[detailPoints.length-1].recorded_at):
+  range.start+(hoverX-left)/width*(range.end-range.start);
+ const times=[...new Set(detailPoints.map(r=>Date.parse(r.recorded_at)))].sort((a,b)=>a-b);
+ let t=e.key==='Home'?times[0]:e.key==='End'?times[times.length-1]:
+  e.key==='ArrowRight'?(times.find(x=>x>active)||times[times.length-1]):
+  ([...times].reverse().find(x=>x<active)||times[0]);
+ hoverX=left+(t-range.start)/(range.end-range.start)*width;draw();
+});
+window.addEventListener('resize',()=>{
+ if(byId('diagnostics').classList.contains('active'))redrawDiagnostics();
+});
 loadStatus();
 </script></body></html>

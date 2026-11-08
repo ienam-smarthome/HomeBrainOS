@@ -37,6 +37,23 @@ with sync_playwright() as p:
     requests.append(request.post_data_json)
     data={"success":True,"answer":answer,"rounds":2,"elapsed_ms":100,"tool_calls":[]}
    elif "/api/diagnostics/status" in request.url:data={"status":"online","last":{"native_load5":0.7,"native_load_pct":17.5}}
+   elif "/api/diagnostics/timeline" in request.url:
+    data={"range_start":"2026-11-08T06:00:00Z","range_end":"2026-11-08T12:40:00Z","probe_seconds":30,
+          "metrics":{
+           "free_os_mb":{"observed_metric_points":4,"source_sample_count":4,"samples":[
+             {"recorded_at":"2026-11-08T12:00:00Z","reachable":1,"diag_segment":0,"free_os_mb":830.0},
+             {"recorded_at":"2026-11-08T12:00:30Z","reachable":1,"diag_segment":0,"free_os_mb":834.0},
+             {"recorded_at":"2026-11-08T12:01:00Z","reachable":1,"diag_segment":0,"free_os_mb":810.0},
+             {"recorded_at":"2026-11-08T12:02:00Z","reachable":1,"diag_segment":0,"free_os_mb":828.0}
+           ]},
+           "native_load_pct":{"observed_metric_points":3,"source_sample_count":40,"samples":[
+             {"recorded_at":"2026-11-08T12:00:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:00","native_load_pct":15.0},
+             {"recorded_at":"2026-11-08T12:05:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:05","native_load_pct":22.0},
+             {"recorded_at":"2026-11-08T12:10:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:10","native_load_pct":35.0}
+           ]}
+          },
+          "reboots":[{"occurred_at":"2026-11-08T12:14:00Z","firmware":"2.5.3.119","source":"hub_events_json_systemStart"}],
+          "incidents":[{"kind":"hub-unreachable","started_at":"2026-11-08T12:20:00Z","recovered_at":"2026-11-08T12:24:00Z"}]}
    elif "/api/diagnostics/history" in request.url:
     data={"range_start":"2026-11-08T11:50:00Z","range_end":"2026-11-08T12:40:00Z","metric":"native_load5",
           "samples":[
@@ -84,6 +101,33 @@ with sync_playwright() as p:
   assert resets==[requests[-2]["conversation_id"]]
   page.locator("#diagnosticsTab").click()
   page.wait_for_function("document.querySelector('#source').textContent.startsWith('online')")
+  page.locator("#incidentTimeline path").first.wait_for()
+  assert page.locator("#incidentTimeline path").count()>=2
+  assert page.locator("#incidentTimeline circle").count()>=2
+  assert "4 external OS-memory observations" in page.locator("#timelineMeta").inner_text()
+  assert "3 distinct native 5m CPU readings" in page.locator("#timelineMeta").inner_text()
+  assert "fitted to recorded observations" in page.locator("#timelineMeta").inner_text()
+  assert "Confirmed startup" in page.locator("#timelineEvents").inner_text()
+  assert "Connectivity loss" in page.locator("#timelineEvents").inner_text()
+  assert "Lowest observed OS memory" in page.locator("#timelineEvents").inner_text()
+  assert "Highest observed 5m CPU load" in page.locator("#timelineEvents").inner_text()
+  assert page.locator("#timelineSource").get_attribute("href")=="api/diagnostics/timeline?hours=6"
+  assert not page.locator("#timelineInspect").is_disabled()
+  page.locator("#timelineInspect").click()
+  assert "saved_external_recorder_only" in page.locator("#timelineEvidence").inner_text()
+  assert "causality" in page.locator("#timelineEvidence").inner_text()
+  page.locator("#incidentTimeline").focus()
+  page.keyboard.press("Home")
+  assert "Selected" in page.locator("#timelineReadout").inner_text()
+  page.keyboard.press("ArrowRight")
+  assert "Selected" in page.locator("#timelineReadout").inner_text()
+  page.locator("#timelineLayout").select_option("combined")
+  assert "5m CPU equivalent" in page.locator("#incidentTimeline").text_content()
+  page.locator("#timelineLayout").select_option("split")
+  assert "independent scale" in page.locator("#incidentTimeline").text_content()
+  page.locator("#plotExtent").select_option("full")
+  assert "fitted to recorded observations" not in page.locator("#timelineMeta").inner_text()
+  page.locator("#plotExtent").select_option("fit")
   assert page.locator("#recorderNotice").is_hidden()
   page.evaluate("""() => {
     window.__loadLines = 0;
@@ -102,8 +146,16 @@ with sync_playwright() as p:
   page.locator("#metric").select_option("native_load5")
   page.wait_for_function("window.__loadLines >= 2")
   assert page.evaluate("window.__loadLines") == 2, "Only adjacent native samples should connect, not across a source gap"
-  assert page.evaluate("window.__loadTicks.some(x => /^\\d+\\.\\d+$/.test(x))"), "Native load axes should show fractions"
-  assert "repeated polls excluded" in page.locator("#source").inner_text()
+  assert page.evaluate("window.__loadTicks.some(x => /^\\d+\\.\\d+ load$/.test(x))"), "Native load axes should show fractional values with explicit units"
+  assert "One point per distinct native" in page.locator("#source").inner_text()
+  assert "min" in page.locator("#plotStats").inner_text().lower()
+  assert "No interpolation" in page.locator("#detailReadout").inner_text()
+  count_before=len(requests)
+  page.locator("#timelineAsk").click()
+  assert page.locator("#ask").is_visible()
+  assert "do not change anything" in page.locator("#question").input_value().lower()
+  assert len(requests)==count_before, "Preparing an AI question must never submit it"
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
   assert not errors,errors
