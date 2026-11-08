@@ -86,7 +86,25 @@ with sync_playwright() as p:
   assert page.evaluate("window.injected===undefined")
   assert page.locator("#rawAnswer").text_content()==answer
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  # Ensure the feedback is visible at the clicked action on desktop and phone,
+  # and the exact original text is written (not rendered/rewritten HTML).
+  page.evaluate("""() => {
+    window.__clipboardValue = null;
+    Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{
+      writeText: async text => {window.__clipboardValue=text;}
+    }});
+  }""")
+  page.locator("#copyAnswer").click()
+  page.wait_for_function("document.querySelector('#copyAnswer').textContent === '✓ Copied!'")
+  assert page.locator("#copyAnswer").evaluate("(e) => e.classList.contains('copy-feedback-ok')")
+  assert page.locator("#copyStatus").get_attribute("role")=="status"
+  assert "Answer copied" in page.locator("#copyStatus").inner_text()
+  assert page.evaluate("window.__clipboardValue")==answer
   page.locator("summary",has_text="Technical details").click()
+  page.locator("#copyTechnical").click()
+  page.wait_for_function("document.querySelector('#copyTechnical').textContent === '✓ Copied!'")
+  assert json.loads(page.evaluate("window.__clipboardValue"))["response"]["answer"]==answer
+  assert "Technical details copied" in page.locator("#copyStatus").inner_text()
   with page.expect_download() as download:
    page.locator("#downloadTechnical").click()
   exported=json.loads(Path(download.value.path()).read_text())
@@ -183,4 +201,4 @@ with sync_playwright() as p:
   page.close()
  browser.close()
 server.shutdown()
-print("Desktop/mobile browser acceptance passed: formatting, XSS, export, history/reset, tabs and recorder state.")
+print("Desktop/mobile browser acceptance passed: visible clipboard confirmations, exact raw copy, formatting, XSS, export, history/reset, tabs and recorder state.")
