@@ -325,6 +325,148 @@ class FirstAnswerAuditTests(unittest.TestCase):
         self.assertEqual(logs["rows_returned_total"], 0)
         self.assertEqual(logs["excluded_non_success_log_scopes"], 3)
 
+    def test_action_acknowledgment_is_not_a_state_change(self):
+        inp = fixture()
+        target = "PRIVATE-COMMAND-FIXTURE-DEVICE-333"
+        def mcp(body):
+            return json.dumps({"content": [{"type": "text",
+                                            "text": json.dumps(body)}]})
+        inp["response"]["tool_calls"].extend([
+            {"name": "hub_call_device_command", "arguments": {
+                "deviceId": target, "command": "on"},
+             "success": True, "result_kind": "tool_result",
+             "response": mcp({"success": True, "device": target,
+                              "command": "on",
+                              "state": {"switch": {"value": "off"}}})},
+        ])
+        evidence = audit.audit_export(inp)["action_receipts"]
+        self.assertEqual(evidence["native_command_acknowledgments"], 1)
+        self.assertEqual(evidence["commands_with_embedded_state_snapshot"], 1)
+        self.assertEqual(evidence["commands_with_subsequent_independent_attribute_read"], 0)
+        self.assertEqual(evidence["expected_attribute_matched_at_last_read"], 0)
+        self.assertEqual(evidence["physical_effect_and_causality"], "not_established")
+        self.assertNotIn(target, json.dumps(evidence))
+
+    def test_action_mismatch_then_match_is_last_reported_observation_only(self):
+        inp = fixture()
+        target = "PRIVATE-COMMAND-FIXTURE-DEVICE-333"
+        def mcp(body):
+            return json.dumps({"content": [{"type": "text",
+                                            "text": json.dumps(body)}]})
+        inp["response"]["tool_calls"].extend([
+            {"name": "hub_call_device_command",
+             "arguments": {"deviceId": target, "command": "on"},
+             "success": True, "response": mcp({"success": True,
+                                                "command": "on"})},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": target, "attribute": "switch"},
+             "success": True, "response": mcp({"attribute": "switch",
+                                                "value": "off"})},
+        ])
+        evidence = audit.audit_export(inp)["action_receipts"]
+        self.assertEqual(evidence["expected_attribute_not_matched_at_last_read"], 1)
+        self.assertEqual(evidence["expected_attribute_matched_at_last_read"], 0)
+        inp["response"]["tool_calls"].append({
+            "name": "hub_get_device_attribute",
+            "arguments": {"deviceId": target, "attribute": "switch"},
+            "success": True, "response": mcp({"attribute": "switch", "value": "on"}),
+        })
+        result = audit.audit_export(inp)["action_receipts"]
+        self.assertEqual(result["expected_attribute_matched_at_last_read"], 1)
+        self.assertEqual(result["expected_attribute_not_matched_at_last_read"], 0)
+        self.assertEqual(result["independent_post_command_attribute_rows"], 2)
+        self.assertEqual(result["answer_outcome_claim_quality"], "human_review_required")
+
+    def test_action_setlevel_and_switch_both_observed_without_device_leakage(self):
+        inp = fixture()
+        target = "PRIVATE-COMMAND-FIXTURE-DEVICE-444"
+        def mcp(body):
+            return json.dumps({"content": [{"type": "text",
+                                            "text": json.dumps(body)}]})
+        inp["response"]["tool_calls"].extend([
+            {"name": "hub_call_device_command",
+             "arguments": {"deviceId": target, "command": "setLevel",
+                           "parameters": ["30"]},
+             "success": True, "response": mcp({
+                 "success": True, "command": "setLevel", "parameters": [30],
+                 "state": {"level": {"value": 60}}
+             })},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": target, "attribute": "level"},
+             "success": True, "response": mcp({"attribute": "level", "value": 30})},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": target, "attribute": "switch"},
+             "success": True, "response": mcp({"attribute": "switch", "value": "on"})},
+        ])
+        evidence = audit.audit_export(inp)["action_receipts"]
+        self.assertEqual(evidence["native_command_acknowledgments"], 1)
+        self.assertEqual(evidence["commands_with_two_or_more_attributes_read"], 1)
+        self.assertEqual(evidence["expected_attribute_matched_at_last_read"], 1)
+        self.assertEqual(evidence["independent_post_command_attribute_rows"], 2)
+        self.assertNotIn(target, json.dumps(evidence))
+        self.assertNotIn("setLevel", json.dumps(evidence))
+
+    def test_action_failed_and_wrong_target_receipts_do_not_fake_confirmation(self):
+        inp = fixture()
+        def mcp(body):
+            return json.dumps({"content": [{"type": "text",
+                                            "text": json.dumps(body)}]})
+        inp["response"]["tool_calls"].extend([
+            {"name": "hub_call_device_command",
+             "arguments": {"deviceId": "PRIVATE-A", "command": "off"},
+             "success": False, "operation_executed": False,
+             "response": mcp({"success": True, "command": "off"})},
+            {"name": "hub_call_device_command",
+             "arguments": {"deviceId": "PRIVATE-A", "command": "off"},
+             "success": True,
+             "response": mcp({"success": False, "command": "off"})},
+            {"name": "hub_call_device_command",
+             "arguments": {"deviceId": "PRIVATE-A", "command": "off"},
+             "success": True,
+             "response": mcp({"success": True, "command": "off"})},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": "PRIVATE-B", "attribute": "switch"},
+             "success": True,
+             "response": mcp({"attribute": "switch", "value": "off"})},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": "PRIVATE-A", "attribute": "switch"},
+             "success": False,
+             "response": mcp({"attribute": "switch", "value": "off"})},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": "PRIVATE-A", "attribute": "switch"},
+             "success": True, "operation_executed": False,
+             "response": mcp({"attribute": "switch", "value": "off"})},
+        ])
+        evidence = audit.audit_export(inp)["action_receipts"]
+        self.assertEqual(evidence["device_commands_attempted"], 3)
+        self.assertEqual(evidence["native_command_acknowledgments"], 1)
+        self.assertEqual(evidence["commands_with_subsequent_independent_attribute_read"], 0)
+        self.assertEqual(evidence["expected_attribute_matched_at_last_read"], 0)
+
+    def test_action_prior_evidence_and_unrecognised_commands_are_not_verification(self):
+        inp = fixture()
+        def mcp(body):
+            return json.dumps({"content": [{"type": "text",
+                                            "text": json.dumps(body)}]})
+        inp["response"]["tool_calls"].extend([
+            {"name": "hub_write_devices",
+             "arguments": {"tool": "hub_call_device_command",
+                           "args": {"deviceId": "PRIVATE-A",
+                                    "command": "emergencyHeat"}},
+             "success": True,
+             "response": mcp({"success": True, "command": "emergencyHeat"})},
+            {"name": "hub_get_device_attribute",
+             "arguments": {"deviceId": "PRIVATE-A", "attribute": "switch"},
+             "success": True, "result_kind": "prior_evidence_read",
+             "operation_executed": False,
+             "response": mcp({"attribute": "switch", "value": "on"})},
+        ])
+        evidence = audit.audit_export(inp)["action_receipts"]
+        self.assertEqual(evidence["native_command_acknowledgments"], 1)
+        self.assertEqual(evidence["commands_with_subsequent_independent_attribute_read"], 0)
+        self.assertEqual(evidence["no_comparable_expected_attribute_read"], 1)
+        self.assertEqual(evidence["expected_attribute_matched_at_last_read"], 0)
+
     def test_unknown_and_invalid_receipts_do_not_fabricate_success(self):
         inp = fixture()
         inp["response"]["tool_calls"][0]["success"] = None

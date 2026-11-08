@@ -9,6 +9,8 @@ Only successful source receipts contribute to history counts. Native MCP
 content/text event lists count as source rows even without client annotations.
 Native bounded log receipts also count returned log rows but cannot establish
 absence of older errors or events from a limited latest-page response.
+Standard device command acknowledgments and subsequent attribute reads are
+reported separately; neither implies physical effects or model answer correctness.
 Untrusted labels,
 including model names, tool names and argument keys, are never echoed verbatim.
 
@@ -31,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "homebrain-v2-first-answer-audit.v4"
+SCHEMA = "homebrain-v2-first-answer-audit.v5"
 
 
 class AuditInputError(ValueError):
@@ -202,6 +204,169 @@ def _native_log_scope(response_text: Any, call: dict[str, Any]) -> dict | None:
             "log_window_completeness": "not_established",
         }
     return None
+
+
+def _native_content_body(response_text: Any) -> dict | None:
+    """Read a native MCP content/text leaf without exporting raw source values."""
+    if not isinstance(response_text, str):
+        return None
+    try:
+        envelope = json.loads(response_text)
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(envelope, dict) or envelope.get("isError") is True
+            or not isinstance(envelope.get("content"), list)):
+        return None
+    for block in envelope["content"]:
+        if (not isinstance(block, dict) or block.get("type") != "text"
+                or not isinstance(block.get("text"), str)):
+            continue
+        try:
+            body = json.loads(block["text"])
+        except (TypeError, ValueError):
+            continue
+        if (isinstance(body, dict) and body.get("isError") is not True
+                and body.get("success") is not False):
+            return body
+    return None
+
+
+def _native_call_matches(call: dict, leaf: str) -> bool:
+    arguments = call.get("arguments")
+    return (call.get("name") == leaf or
+            (isinstance(arguments, dict) and arguments.get("tool") == leaf))
+
+
+def _executed_successful_call(call: dict) -> bool:
+    return (call.get("success") is True
+            and call.get("operation_executed") is not False
+            and call.get("result_kind") not in {
+                "tool_catalog", "prior_evidence_read", "contract_error",
+            })
+
+
+def _device_key(value: Any) -> str | None:
+    if (isinstance(value, (str, int)) and not isinstance(value, bool)
+            and str(value).strip()):
+        return str(value).strip()
+    return None
+
+
+def _action_expected_attribute(arguments: dict) -> tuple[str, str | float] | None:
+    """Limited standard commands only; never infer device-specific effects."""
+    command = arguments.get("command")
+    if command in ("on", "off"):
+        return "switch", command
+    if command != "setLevel":
+        return None
+    values = arguments.get("parameters")
+    if not isinstance(values, list) or not values:
+        return None
+    try:
+        number = float(values[0])
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or isinstance(values[0], bool):
+        return None
+    return "level", number
+
+
+def _action_receipts(calls: list[dict]) -> dict:
+    """Report structural command/observation receipts, NOT action success.
+
+    Source-order post-command reads are contemporaneous observations of
+    Hubitat's reported state, not proof of physical completion or exclusive
+    causality. A command response's embedded state can be pre-command data,
+    so it is deliberately excluded from independent follow-up observations.
+    Never export device IDs, action parameters, source labels or values.
+    """
+    attempted = 0
+    acknowledged: list[tuple[int, str, dict, bool]] = []
+    for i, call in enumerate(calls):
+        if not _native_call_matches(call, "hub_call_device_command"):
+            continue
+        attempted += 1
+        if not _executed_successful_call(call):
+            continue
+        args = _effective_args(call.get("arguments"))
+        device = _device_key(args.get("deviceId"))
+        command = args.get("command")
+        body = _native_content_body(call.get("response"))
+        if (device is None or not isinstance(command, str) or not body
+                or body.get("success") is not True
+                or body.get("command") != command):
+            continue
+        acknowledged.append((i, device, args, isinstance(body.get("state"), dict)))
+
+    have_reads = 0
+    observed_rows = 0
+    multiple_attributes = 0
+    expected_match = 0
+    expected_mismatch = 0
+    no_comparable = 0
+    for index, device, args, _ in acknowledged:
+        observed: dict[str, Any] = {}
+        for later in calls[index + 1:]:
+            if _native_call_matches(later, "hub_call_device_command"):
+                next_device = _device_key(
+                    _effective_args(later.get("arguments")).get("deviceId")
+                )
+                if next_device == device:
+                    break
+            if not (_native_call_matches(later, "hub_get_device_attribute")
+                    and _executed_successful_call(later)):
+                continue
+            read_args = _effective_args(later.get("arguments"))
+            if _device_key(read_args.get("deviceId")) != device:
+                continue
+            body = _native_content_body(later.get("response"))
+            attribute = read_args.get("attribute")
+            if (not body or not isinstance(attribute, str)
+                    or body.get("attribute") != attribute
+                    or "value" not in body or body["value"] is None):
+                continue
+            observed[attribute] = body["value"]
+            observed_rows += 1
+        if observed:
+            have_reads += 1
+            if len(observed) >= 2:
+                multiple_attributes += 1
+        expected = _action_expected_attribute(args)
+        if expected is None or expected[0] not in observed:
+            no_comparable += 1
+            continue
+        attribute, value = expected
+        current = observed[attribute]
+        if attribute == "switch":
+            matches = isinstance(current, str) and current.lower() == value
+        else:
+            try:
+                reading = float(current)
+                matches = math.isfinite(reading) and reading == value
+            except (ValueError, TypeError):
+                matches = False
+        if matches:
+            expected_match += 1
+        else:
+            expected_mismatch += 1
+    return {
+        "device_commands_attempted": attempted,
+        "native_command_acknowledgments": len(acknowledged),
+        "commands_with_embedded_state_snapshot": sum(
+            has_state for _, _, _, has_state in acknowledged
+        ),
+        "commands_with_subsequent_independent_attribute_read": have_reads,
+        "commands_without_subsequent_independent_attribute_read": (
+            len(acknowledged) - have_reads
+        ),
+        "independent_post_command_attribute_rows": observed_rows,
+        "commands_with_two_or_more_attributes_read": multiple_attributes,
+        "expected_attribute_matched_at_last_read": expected_match,
+        "expected_attribute_not_matched_at_last_read": expected_mismatch,
+        "no_comparable_expected_attribute_read": no_comparable,
+        "physical_effect_and_causality": "not_established",
+        "answer_outcome_claim_quality": "human_review_required",
+    }
 
 
 def audit_export(document: Any) -> dict[str, Any]:
@@ -381,6 +546,7 @@ def audit_export(document: Any) -> dict[str, Any]:
             "all_log_windows_complete": "not_established",
             "absence_of_older_errors_from_sample": "not_established",
         },
+        "action_receipts": _action_receipts(calls),
         "human_review": {
             "grounding": "not_measured",
             "group_member_and_attribute_coverage": "not_measured",
@@ -402,7 +568,7 @@ def summarize(records: list[dict]) -> dict:
     times = sorted(elapsed)
     counts = [r["native_tools"] for r in records]
     return {
-        "schema": "homebrain-v2-first-answer-summary.v4",
+        "schema": "homebrain-v2-first-answer-summary.v5",
         "samples": n,
         "quality_status": "not_measured",
         "grounded_claim_rate": None,
