@@ -36,7 +36,15 @@ with sync_playwright() as p:
     assert request.headers.get("x-homebrain-request")=="1"
     requests.append(request.post_data_json)
     data={"success":True,"answer":answer,"rounds":2,"elapsed_ms":100,"tool_calls":[]}
-   elif "/api/diagnostics/status" in request.url:data={"status":"disabled","last":{}}
+   elif "/api/diagnostics/status" in request.url:data={"status":"online","last":{"native_load5":0.7,"native_load_pct":17.5}}
+   elif "/api/diagnostics/history" in request.url:
+    data={"range_start":"2026-11-08T11:50:00Z","range_end":"2026-11-08T12:40:00Z","metric":"native_load5",
+          "samples":[
+            {"recorded_at":"2026-11-08T12:00:00Z","reachable":1,"native_sample_label":"12:00","diag_segment":0,"native_load5":0.50},
+            {"recorded_at":"2026-11-08T12:05:00Z","reachable":1,"native_sample_label":"12:05","diag_segment":0,"native_load5":0.72},
+            {"recorded_at":"2026-11-08T12:10:00Z","reachable":1,"native_sample_label":"12:10","diag_segment":0,"native_load5":0.66},
+            {"recorded_at":"2026-11-08T12:30:00Z","reachable":1,"native_sample_label":"12:30","diag_segment":1,"native_load5":1.02},
+          ],"incidents":[],"reboots":[]}
    else:data={"range_start":"2026-11-07T00:00:00Z","range_end":"2026-11-08T00:00:00Z","metrics":{}}
    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
   page.route("**/api/**",api)
@@ -75,8 +83,27 @@ with sync_playwright() as p:
   assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
   assert resets==[requests[-2]["conversation_id"]]
   page.locator("#diagnosticsTab").click()
-  page.locator("#recorderNotice").wait_for()
-  assert "disabled" in page.locator("#recorderNotice").inner_text()
+  page.wait_for_function("document.querySelector('#source').textContent.startsWith('online')")
+  assert page.locator("#recorderNotice").is_hidden()
+  page.evaluate("""() => {
+    window.__loadLines = 0;
+    window.__loadTicks = [];
+    const context = CanvasRenderingContext2D.prototype;
+    const nativeLineTo = context.lineTo, nativeFillText = context.fillText;
+    context.lineTo = function(x,y) {
+      if (this.strokeStyle === '#70b9ff') window.__loadLines++;
+      return nativeLineTo.call(this,x,y);
+    };
+    context.fillText = function(value,x,y) {
+      window.__loadTicks.push(String(value));
+      return nativeFillText.call(this,value,x,y);
+    };
+  }""")
+  page.locator("#metric").select_option("native_load5")
+  page.wait_for_function("window.__loadLines >= 2")
+  assert page.evaluate("window.__loadLines") == 2, "Only adjacent native samples should connect, not across a source gap"
+  assert page.evaluate("window.__loadTicks.some(x => /^\\d+\\.\\d+$/.test(x))"), "Native load axes should show fractions"
+  assert "repeated polls excluded" in page.locator("#source").inner_text()
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
   assert not errors,errors

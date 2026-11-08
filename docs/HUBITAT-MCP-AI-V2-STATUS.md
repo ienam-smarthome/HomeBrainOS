@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.13` (candidate pending final-head PR/CI verification)
-Development branch: `fix/v2-safe-inline-math-display-alpha13`
+Version: `2.0.0-alpha.14` (candidate pending final-head PR/CI verification)
+Development branch: `fix/v2-native-diagnostics-chart-source-scope-alpha14`
 
 ## Current user direction
 
@@ -166,3 +166,13 @@ The user supplied a screenshot of a raw TeX escape rendering in an alpha.12 hist
 Native flat mode remains the *observed leading interface* but not a proven universal default. A previous report of enabled write permission still requires client-specific verification before treating a natural-language read-only question as an enforced permission. No live Hubitat, HA, router or upstream server modifications in this repo release.
 
 PR head, CI and merged SHA: pending final verification.
+
+## Alpha.14 — native load line repair and source-scope guidance (8 Nov 2026)
+
+The user's installed alpha.13 screenshot of **Hub Diagnostics → History → 24 hours → Native 5m load** showed many isolated dots during the hours with recorder samples. Code review found a definite local mismatch: the recorder's raw (short-history) `samples` array contained repeated 30-second polls holding one cached native five-minute observation, while only the first source-labeled row had a `diag_segment`. The canvas renderer tested successive rows for equal `diag_segment`, causing repeated cached rows to be rendered as tiny strokes. The graph is **not evidence that the hub had dozens of independent native measurements or outages**. No external recorder SQLite or real probe responses were available to independently verify specific timestamp/collection anomalies. Empty earlier portions of a 24-hour range can be explained by a recorder that began collecting later or by unavailable readings; do not invent historical data.
+
+**Repair:** For native-only values, only return one source-labeled row per distinct native source label in raw chart history (long-window logic already deduplicated). Preserve raw poll count separately, all original OS-memory probes and failure segment detection, 15-minute true native gap boundaries, exact source/collector timestamps, and actual extrema. Add visible native-line connections and small markers, fractional Y tick precision, a caption showing observation/poll counts, and browser regression on desktop/mobile confirming two connected genuine segments but not across the true 20-minute gap. **The separate CPU-equivalent percent is derived from five-minute load / configured cores**, not a direct hardware utilisation metric.
+
+Generic model-led answer quality: extend only the source-integrity skill guidance, requiring the model to compare any all/none/every group conclusion against actually checked members, attributes and time periods, to distinguish commands from confirmed device-state changes, and to qualify missing/empty bounded reads as unverified. No automated veto, rule-specific patch, fixed planner, artificial model rounds, device changes, permission updates or model routing are introduced.
+
+Version `2.0.0-alpha.14` for backend, add-on and UI. Tests: native short history dedupe, native longer-history extrema, true outage/long-gap segmentation, unchanged externally sampled OS series, canvas line continuity and tick decimal labels in Chromium and existing UI/model safety tests. First real installed UI verification pending. PR head, checks and merge SHA pending.
