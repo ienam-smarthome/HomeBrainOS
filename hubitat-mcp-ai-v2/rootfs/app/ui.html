@@ -322,7 +322,11 @@ async function refreshDiagnostics(){
  }:{
  start:Date.parse(t.range_start),end:Date.parse(t.range_end),a:t.samples||[],b:[],ak:metric,bk:null,reboots:t.reboots||[],incidents:t.incidents||[],description:(metric.startsWith('native_')||metric.startsWith('java_')?'One point per distinct native five-minute reading; repeated polls excluded. True source gaps stay blank.':'Probe-time readings; true source gaps stay blank.')
  };
- byId('source').textContent=(s.status||'unknown')+' · '+visual.description+(s.error?' · '+s.error:'');
+ const nativeCount=metric==='combined'?t.metrics?.native_load_pct?.observed_metric_points:t.observed_metric_points;
+ const recorderCount=metric==='combined'?t.metrics?.native_load_pct?.source_sample_count:t.source_sample_count;
+ const nativeDetail=Number.isFinite(nativeCount)&&Number.isFinite(recorderCount)?
+   ' · '+nativeCount+' source readings among '+recorderCount+' recorder poll rows (within selected range).':'';
+ byId('source').textContent=(s.status||'unknown')+' · '+visual.description+nativeDetail+(s.error?' · '+s.error:'');
  byId('incidents').textContent=JSON.stringify({incidents:visual.incidents,reboots:visual.reboots},null,2);
  draw();
  }catch(e){byId('source').textContent='Unable to load recorder: '+e.message;visual=null;draw();}
