@@ -84,7 +84,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div></section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.12";
+const UI_VERSION="2.0.0-alpha.13";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -208,13 +208,62 @@ async function submitAsk(){
 }
 byId('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))submitAsk();});
 
+// Small, offline-safe *display* subset of common inline TeX, not a math
+// evaluator or a general LaTeX engine. Unsupported commands remain visible
+// verbatim, and the original model answer/technical JSON are never changed.
+const mathSymbols={circ:'°',degree:'°',rightarrow:'→',to:'→',leftarrow:'←',
+ leftrightarrow:'↔',Rightarrow:'⇒',Leftarrow:'⇐',Leftrightarrow:'⇔',
+ sim:'≈',approx:'≈',simeq:'≃',equiv:'≡',ge:'≥',geq:'≥',le:'≤',leq:'≤',
+ ne:'≠',neq:'≠',times:'×',cdot:'·',pm:'±',mp:'∓',infty:'∞',
+ alpha:'α',beta:'β',gamma:'γ',delta:'δ',Delta:'Δ',theta:'θ',
+ lambda:'λ',mu:'μ',pi:'π',sigma:'σ',omega:'ω',Omega:'Ω',
+ '%':'%','_':'_','{':'{','}':'}',quad:' ',qquad:'  '};
+const superDigits={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵',
+ '6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾',
+ 'n':'ⁿ','i':'ⁱ'};
+const subDigits={'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅',
+ '6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','=':'₌','(':'₍',')':'₎'};
+function inlineMathText(value){
+ let text=String(value).trim();if(!text)return null;
+ // Treat superscript degree as ° rather than superscript punctuation.
+ text=text.replace(/\^(?:\{\\(?:circ|degree)\}|\\(?:circ|degree)\b)/g,'°');
+ text=text.replace(/\\(?:text|mathrm|operatorname)\s*\{([^{}]*)\}/g,'$1');
+ text=text.replace(/\\(?:left|right)\b/g,'');
+ text=text.replace(/\\([A-Za-z]+|[%_{}])/g,(full,key)=>
+  Object.prototype.hasOwnProperty.call(mathSymbols,key)?mathSymbols[key]:full);
+ text=text.replace(/\\[,;! ]/g,' ');
+ text=text.replace(/\^\{([0-9+=()ni-]+)\}|\^([0-9+=()ni-])/g,
+  (full,group,single)=>[...(group||single)].map(c=>superDigits[c]).join(''));
+ text=text.replace(/_\{([0-9+=()-]+)\}|_([0-9+=()-])/g,
+  (full,group,single)=>[...(group||single)].map(c=>subDigits[c]).join(''));
+ // Refuse partial/unknown constructs; showing the exact original is safer
+ // than fabricating a mathematical expression.
+ if(/[\\{}^]/.test(text))return null;
+ return text;
+}
+function appendMathText(node,text){
+ const pattern=/\\\(([^)\n]*?)\\\)|\$(?!\s)([^$\n]*?\S)\$/g;
+ let at=0;
+ for(const match of text.matchAll(pattern)){
+  if(match.index<at||(match.index>0&&text[match.index-1]==='\\'))continue;
+  const display=inlineMathText(match[1]===undefined?match[2]:match[1]);
+  if(display===null)continue;
+  node.appendChild(document.createTextNode(text.slice(at,match.index)));
+  const math=document.createElement('span');math.className='inline-math';
+  math.textContent=display;node.appendChild(math);
+  at=match.index+match[0].length;
+ }
+ node.appendChild(document.createTextNode(text.slice(at)));
+}
 function appendInline(node,text){
  const pattern=/(\x60[^\x60]+\x60|\*\*[^*]+\*\*|\*[^*]+\*)/g;let at=0;
  for(const match of text.matchAll(pattern)){
-  node.appendChild(document.createTextNode(text.slice(at,match.index)));
+  appendMathText(node,text.slice(at,match.index));
   const token=match[0],tag=token[0]==='\x60'?'code':token.startsWith('**')?'strong':'em',n=document.createElement(tag);
-  n.textContent=token.slice(tag==='strong'?2:1,tag==='strong'?-2:-1);node.appendChild(n);at=match.index+token.length;
- }node.appendChild(document.createTextNode(text.slice(at)));
+  const inner=token.slice(tag==='strong'?2:1,tag==='strong'?-2:-1);
+  if(tag==='code')n.textContent=inner;else appendMathText(n,inner);
+  node.appendChild(n);at=match.index+token.length;
+ }appendMathText(node,text.slice(at));
 }
 function tableCells(line){const value=line.trim();if(!value.startsWith('|')||!value.endsWith('|'))return null;return value.slice(1,-1).split('|').map(c=>c.trim());}
 function renderAnswer(value){
