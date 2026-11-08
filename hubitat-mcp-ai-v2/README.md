@@ -182,3 +182,15 @@ Alpha.16 makes **Native 5m load equivalent (%)** the principal native-load selec
 The **Unified incident timeline**, CPU load-equivalent card, live source cadence, outage markers, native sample de-duplication and all existing raw evidence remain unchanged. This release does not edit the upstream Hubitat MCP Server, CPU-core configuration, data retention, model responses, device state, home automation permissions or V1. The new view presents only the recorder's existing derived value.
 
 **Acceptance:** after installing `2.0.0-alpha.16`, choose Hub Diagnostics → Detailed metric history → Native 5m load equivalent (%). Verify Y-axis and cursor show `%`, statistics show the corresponding percentage equivalents, and caption explains it is core-normalised **load**, not measured CPU utilisation. Switching to the separately available raw mode shows `load` units and original values from the same five-minute source timestamps. Real gaps must remain blank and no additional hub requests should be made solely to change the graph selection.
+
+## First-answer quality instrumentation (original development roadmap)
+
+After the alpha.16 diagnostics sprint, v2's next priority is model-led **source selection, historical coverage and correct causal confidence**, not further UI patches or hardcoded incident recipes. The clean v2 runtime and native flat tools remain unchanged in this evaluation milestone.
+
+Use the private offline scorecard script:
+
+    python hubitat-mcp-ai-v2/tools/first_answer_audit.py /private/path/technical.json --output /private/path/audit.json
+
+It reads a browser-exported v2 Technical JSON, performs **no network/model/hub calls**, and reports observed tool/latency/source-coverage counts without disclosing private questions, answers, IDs, tool arguments, raw values, failures or event timestamps. It **never assigns an automatic factual accuracy score**. A human evidence review remains necessary, and inferred source completeness is not permitted. See docs/HUBITAT-MCP-AI-V2-FIRST-ANSWER-QUALITY.md for the frozen six-case read-only live matrix and first-answer assessment protocol.
+
+No add-on bump is needed to run this *evaluation-only* code, and no change to Hubitat devices, server permissions, V1 or the external recorder is involved.

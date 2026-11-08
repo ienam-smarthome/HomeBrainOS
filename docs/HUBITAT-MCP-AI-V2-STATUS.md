@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-08
-Version: `2.0.0-alpha.16` (candidate pending final-head PR/CI verification)
-Development branch: `fix/v2-native-5m-percent-alpha16`
+Version: `2.0.0-alpha.16` (merged release #1541, main 8a48743b136a49a8b915f140e3acad77c974cb90)
+Development branch: `eval/v2-first-answer-evidence-scorecard` (evaluation only, no add-on version bump)
 
 ## Current user direction
 
@@ -196,3 +196,13 @@ Source audit confirms `external_hub_diagnostics._with_load_pct()` already derive
 Only the detailed chart metric selector/legend/provenance/cursor and v2 version require changes. The main option now selects live `native_load_pct`, the raw `native_load5` remains a secondary option, and the caption reports configured source core count and normalization. The combined timeline and original historical readings are unchanged. Browser tests must inspect actual `%` labels and native source gap behavior at desktop/mobile sizes, plus raw-load reversibility and exact source-time alignment. Python regression verifies source raw values remain immutable and backend normalisation uses configured core count. No V1, MCP permission, model, hub or SQLite mutation.
 
 PR/CI and installed acceptance: pending final check and first user screenshot.
+
+## Return to original v2 agent-quality roadmap — first-answer measurement
+
+The next milestone is **not another Hub Diagnostics feature**. The original v2 problem after native flat-tool improvements is **correct, source-complete model-led investigation on first attempt**. Repeated multi-TRV and motion-timer answers show source selection and output-claim confidence still need evidence-grounded evaluation. Five-minute load display is complete and separately verified via alpha.16.
+
+New **purely offline** script in hubitat-mcp-ai-v2/tools/first_answer_audit.py accepts the browser's private Technical JSON. It outputs bounded *counts and evidence-observation limitations* without disclosing private answer text, request parameters, device identifiers or event records. It reports native calls versus metadata reads, rejected operations, prior evidence, source-reported event rows, sample-dependent latency, and **not_measured** quality fields. The importer does not access the model or hub and never grades truth from lexical text or successful MCP calls.
+
+A new freeze-and-review protocol covers reboot, lighting cause, humidity duration, historical room-demand, FanBoost and offline/stale-telemetry cases; see docs/HUBITAT-MCP-AI-V2-FIRST-ANSWER-QUALITY.md. The earlier curated 40 source-only packets remain separate from live native MCP benchmarks; passing one is not evidence of the other.
+
+**Next user action:** one fresh V2-R5 FanBoost read-only question, first answer + Technical JSON, with effective test client's Read allowed / Write denied verified through configuration (no write probe). Then assess source coverage and provenance before planning code. Do not interpret this tool/CI milestone as validated Gemma quality or a new alpha.17 runtime. PR and exact CI pending.
