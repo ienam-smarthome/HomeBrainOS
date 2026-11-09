@@ -49,6 +49,21 @@ class SyntheticMCPTests(unittest.TestCase):
             catalog=await m.call("hub_read_devices",{})
             self.assertEqual(json.loads(catalog["content"][0]["text"])["mode"],"catalog")
             self.assertFalse(catalog.get("isError"))
+            schema,discovered=await m.gateway_leaf_schema(
+                "hub_manage_devices","hub_call_device_command")
+            self.assertTrue(discovered)
+            self.assertIn("parameters",schema["inputSchema"]["properties"])
+            self.assertNotIn("params",schema["inputSchema"]["properties"])
+            self.assertIn("hub_call_device_command",
+                m.cached_leaf_schemas()["hub_manage_devices"])
+            # The former synthetic-only "params" wire key MUST be rejected.
+            incompatible=await m.call("hub_manage_devices",{
+                "tool":"hub_call_device_command",
+                "args":{"deviceId":"LAB-101","command":"setLevel","params":[40]}})
+            self.assertTrue(incompatible["isError"])
+            self.assertEqual(json.loads(incompatible["content"][0]["text"])["reason_code"],
+                             "invalid_leaf_arguments")
+
             before=await m.call("hub_read_devices",{"tool":"hub_list_devices",
                 "args":{"labelFilter":"Bench Study Lamp"}})
             self.assertEqual(json.loads(before["content"][0]["text"])["count"],1)
@@ -56,12 +71,12 @@ class SyntheticMCPTests(unittest.TestCase):
                 "args":{"deviceId":"LAB-101","command":"off"}})
             self.assertTrue(wrong["isError"])
             accepted=await m.call("hub_manage_devices",{"tool":"hub_call_device_command",
-                "args":{"deviceId":"LAB-101","command":"setLevel","params":[40]}})
+                "args":{"deviceId":"LAB-101","command":"setLevel","parameters":["40"]}})
             data=json.loads(accepted["content"][0]["text"])
             self.assertTrue(data["success"])
-            self.assertEqual(data["command_response_snapshot_not_fresh"]["level"],"15")
+            self.assertEqual(data["state"]["level"],"15")
             second=await m.call("hub_manage_devices",{"tool":"hub_call_device_command",
-                "args":{"deviceId":"LAB-101","command":"setLevel","params":[40]}})
+                "args":{"deviceId":"LAB-101","command":"setLevel","parameters":["40"]}})
             self.assertTrue(second["isError"],"Even a simulated duplicate is prohibited")
             level=await m.call("hub_read_devices",{"tool":"hub_get_device_attribute",
                 "args":{"deviceId":"LAB-101","attribute":"level"}})
@@ -72,7 +87,7 @@ class SyntheticMCPTests(unittest.TestCase):
             checks=_check_coverage(c,m.calls)
             self.assertEqual([q["observed"] for q in checks],[True]*4)
             self.assertEqual(len(m.simulated_writes),1)
-            self.assertEqual(m.blocked_attempts,2)
+            self.assertEqual(m.blocked_attempts,3)
             read_only=SyntheticMCP(scenario_definitions()[2])
             forbidden=await read_only.call("hub_manage_devices",{
                 "tool":"hub_call_device_command",
@@ -89,13 +104,13 @@ class SyntheticMCPTests(unittest.TestCase):
                              ("LAB-301","heatingSetpoint"),
                              ("LAB-302","thermostatOperatingState"),
                              ("LAB-303","thermostatOperatingState")]:
-                await m.call("hub_read_history",{"tool":"hub_list_device_events",
+                await m.call("hub_read_devices",{"tool":"hub_list_device_events",
                               "args":{"deviceId":did,"attribute":attr}})
             checks=_check_coverage(c,m.calls)
             self.assertEqual(sum(x["observed"] for x in checks),4)
             self.assertFalse(checks[-1]["observed"])
             # An empty historical result IS a checked source, not proof of idle.
-            x=await m.call("hub_read_history",{"tool":"hub_list_device_events",
+            x=await m.call("hub_read_devices",{"tool":"hub_list_device_events",
                             "args":{"deviceId":"LAB-304",
                                     "attribute":"thermostatOperatingState"}})
             data=json.loads(x["content"][0]["text"])
@@ -126,7 +141,7 @@ class FirstAnswerLabTests(unittest.TestCase):
                         response={"tool_calls":[tool_call("hub_manage_devices",
                             "hub_call_device_command",{"tool":"hub_call_device_command",
                                 "args":{"deviceId":"LAB-101","command":"setLevel",
-                                        "params":[40]}})]}
+                                        "parameters":["40"]}})]}
                     elif n==2:
                         response={"tool_calls":[tool_call("hub_read_devices",
                             "hub_get_device_attribute",{"tool":"hub_get_device_attribute",
