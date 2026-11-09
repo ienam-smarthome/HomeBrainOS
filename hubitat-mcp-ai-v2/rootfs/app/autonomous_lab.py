@@ -21,9 +21,9 @@ from mcp import MCPError, _validate_arguments
 
 CRITERIA = ("factual_grounding", "source_completeness", "causal_calibration",
             "command_outcome", "usefulness")
-MAX_MODEL_ROUNDS = 8
-MAX_TOOL_ATTEMPTS = 24
-SANDBOX_DEADLINE_SECONDS = 90
+MAX_MODEL_ROUNDS = 12
+MAX_TOOL_ATTEMPTS = 40
+SANDBOX_DEADLINE_SECONDS = 120
 
 def ev(value, at, *, produced_by="SIMULATED_DEVICE", triggered=None):
     return {"name": "synthetic", "value": str(value), "date": at,
@@ -301,109 +301,173 @@ def _native(payload: dict, *, error: bool = False) -> dict:
 
 
 class SyntheticMCP:
-    """Fail-closed native-shaped MCP adapter, never instantiates MCPClient."""
+    """Fail-closed native-shaped MCP adapter, never instantiates MCPClient.
+
+    Schema discovery matches the real MCPClient path used by Agent.answer.
+    Every 'call' is an in-memory evaluation; no network/hub object is held.
+    """
     def __init__(self, scenario: dict):
         self.scenario = scenario
         self.devices = {d["id"]:json.loads(json.dumps(d)) for d in scenario["devices"]}
         self.calls: list[dict] = []
         self.simulated_writes: list[dict] = []
         self.blocked_attempts = 0
+        self._gateway_leaf_catalogs: dict[str, dict[str, dict]] = {}
+        self._requested_leaves: dict[str, set[str]] = {}
 
     async def list_tools(self, refresh: bool = False) -> list[dict]:
+        # Discovery is a read: preserve successfully inspected leaf schemas.
         return [
-            {"name":name,"description": "Synthetic sandbox gateway: "+
-                 ("simulated device control" if name=="hub_manage_devices" else "read-only")+
-                 ". Call with {} to discover leaf schemas or with top-level tool and args.",
+            {"name":name,
+             "description":("Synthetic MCP " + ("write/read" if name=="hub_manage_devices"
+                 else "read-only") + " gateway. "
+                 "Call with {} to discover the native leaf argument schemas, or "
+                 "with top-level {\"tool\":\"leaf\",\"args\":{...}} to execute. "
+                 "Allowed leaves: " + ", ".join(names) +
+                 ". All data and commands are in-memory fictional test fixtures."),
              "inputSchema":{"type":"object","properties":{
-                 "tool":{"type":"string","enum":list(names)},
-                 "args":{"type":"object","description":"Leaf-specific arguments"}
+                 "tool":{"type":"string","enum":list(names),
+                         "description":"Top-level leaf selector; omit for catalog discovery"},
+                 "args":{"type":"object","description":"Leaf arguments only; no nested tool selector"}
              },"additionalProperties":False}}
             for name,names in GATEWAYS.items()
         ]
 
-    async def call(self, name: str, arguments: dict) -> dict:
-        if len(self.calls) >= MAX_TOOL_ATTEMPTS:
-            self.blocked_attempts += 1
-            return _native({"error":"Synthetic tool-attempt limit reached"},error=True)
+    def cached_leaf_schemas(self) -> dict[str, dict[str, dict]]:
+        return {gateway:{leaf:self._gateway_leaf_catalogs[gateway][leaf]
+                for leaf in selected if leaf in self._gateway_leaf_catalogs[gateway]}
+                for gateway,selected in self._requested_leaves.items()
+                if gateway in self._gateway_leaf_catalogs}
+
+    async def gateway_leaf_schema(self,gateway:str,leaf:str) -> tuple[dict|None,bool]:
+        if gateway not in GATEWAYS or leaf not in GATEWAYS[gateway]:
+            return None,False
+        fetched=False
+        if gateway not in self._gateway_leaf_catalogs:
+            # The same read-only discovery that the real MCPClient performs.
+            response=await self.call(gateway,{})
+            catalog=json.loads(response["content"][0]["text"])
+            if catalog.get("mode")!="catalog":
+                return None,False
+            self._gateway_leaf_catalogs[gateway]={
+                item["name"]:item for item in catalog["tools"]}
+            fetched=True
+        self._requested_leaves.setdefault(gateway,set()).add(leaf)
+        return self._gateway_leaf_catalogs[gateway].get(leaf),fetched
+
+    @staticmethod
+    def validate_leaf_arguments(definition:dict|None,args:dict)->None:
+        if isinstance(definition,dict):
+            _validate_arguments(args,definition["inputSchema"])
+
+    def _reject(self,reason:str,leaf:str="invalid",did:str="") -> dict:
+        self.blocked_attempts+=1
+        self.calls.append({"leaf":leaf,"id":did,"success":False,
+                           "reason_code":reason,"simulated":True})
+        # Codes carry no model prompt, source data, device detail or credentials.
+        return _native({"error":"Synthetic tool was rejected",
+                        "reason_code":reason,
+                        "hint":{
+                            "unknown_tool":"Select a name from the advertised synthetic tools/list",
+                            "invalid_gateway_shape":"Use gateway({tool:leaf,args:{...}}) or {} to inspect its catalog",
+                            "invalid_leaf_arguments":"Use the leaf's schema; command arguments are 'parameters', not 'params'",
+                            "unsupported_command":"The requested command is not authorised in this synthetic scenario",
+                            "duplicate_command":"Do not repeat an accepted device command",
+                            "tool_budget":"Synthetic call budget was exhausted",
+                        }.get(reason,"Inspect the synthetic tool contract")},error=True)
+
+    async def call(self,name:str,arguments:dict)->dict:
+        if len(self.calls)>=MAX_TOOL_ATTEMPTS:
+            return self._reject("tool_budget")
         if name not in GATEWAYS or not isinstance(arguments,dict):
-            self.blocked_attempts += 1
-            self.calls.append({"leaf":"invalid","success":False})
-            return _native({"error":"No such sandbox tool"},error=True)
+            return self._reject("unknown_tool")
         if not arguments:
-            self.calls.append({"leaf":"catalog","success":True})
+            self.calls.append({"leaf":"catalog","gateway":name,"success":True})
             return _native({"mode":"catalog","gateway":name,
-                            "tools":[_leaf_def(x) for x in GATEWAYS[name]]})
+                            "tools":[_leaf_def(leaf) for leaf in GATEWAYS[name]]})
         leaf=arguments.get("tool")
-        args=arguments.get("args",{})
-        if (leaf not in GATEWAYS[name] or set(arguments)!={"tool","args"}
-                or not isinstance(args,dict)):
-            self.blocked_attempts+=1
-            self.calls.append({"leaf":"invalid","success":False})
-            return _native({"error":"Invalid gateway/leaf shape"},error=True)
-        # This validation is ONLY for the synthetic tool schema; it is never
-        # applied to live MCP sources or to production Agent.
-        spec=_leaf_def(leaf)["inputSchema"]
-        if (set(args)-set(spec["properties"]) or any(k not in args for k in spec["required"])
-                or any(not isinstance(args[k],str)
-                       for k in ("deviceId","attribute","appId","command") if k in args)):
-            self.blocked_attempts+=1
-            self.calls.append({"leaf":leaf,"success":False})
-            return _native({"error":"Malformed synthetic leaf arguments"},error=True)
+        args=arguments.get("args")
+        if (not isinstance(leaf,str) or leaf not in GATEWAYS[name]
+                or set(arguments)!={"tool","args"} or not isinstance(args,dict)):
+            return self._reject("invalid_gateway_shape")
+        try:
+            _validate_arguments(args,_leaf_def(leaf)["inputSchema"])
+        except (MCPError,ValueError,TypeError):
+            return self._reject("invalid_leaf_arguments",leaf)
         did=str(args.get("deviceId") or args.get("appId") or "")
         if leaf=="hub_call_device_command":
             allowed=self.scenario.get("allow_command")
-            params=args.get("params",[])
-            candidate_value=(params[0] if params else None)
-            if (not allowed or did!=allowed[0] or args["command"]!=allowed[1]
-                    or allowed[2]!=candidate_value or self.simulated_writes):
-                self.blocked_attempts+=1
-                self.calls.append({"leaf":leaf,"id":did,"success":False,"simulated":True})
-                return _native({"error":"Synthetic sandbox command prohibited or duplicate"},
-                               error=True)
-            self.simulated_writes.append({"deviceId":did,"command":args["command"]})
-            # The command response intentionally carries a *stale* snapshot;
-            # the new current state is exposed only through subsequent reads.
-            prior=json.loads(json.dumps(self.devices[did]["currentStates"]))
+            # Native MCP sends arguments in the 'parameters' string array,
+            # not the fabricated 'params' field used by the old simulator.
+            parameters=args.get("parameters",[])
+            if not isinstance(parameters,list) or any(not isinstance(x,str)
+                                                       for x in parameters):
+                return self._reject("invalid_leaf_arguments",leaf,did)
+            if self.simulated_writes:
+                return self._reject("duplicate_command",leaf,did)
+            if (not allowed or did!=str(allowed[0])
+                    or args.get("command")!=allowed[1]
+                    or parameters!=([str(allowed[2])] if allowed[2] is not None else [])):
+                return self._reject("unsupported_command",leaf,did)
+            if did not in self.devices:
+                return self._reject("unsupported_command",leaf,did)
+            self.simulated_writes.append({"deviceId":did,
+                                          "command":args["command"]})
+            previous=json.loads(json.dumps(self.devices[did]["currentStates"]))
             self.devices[did]["currentStates"].update(self.scenario["after_command"][did])
-            result={"success":True,"accepted":True,"deviceId":did,"command":args["command"],
-                    "command_response_snapshot_not_fresh":prior,
+            result={"success":True,"accepted":True,"deviceId":did,
+                    "command":args["command"],
+                    "state":previous,"command_response_snapshot_not_fresh":True,
                     "physical_outcome":"not independently measured"}
         elif leaf=="hub_list_devices":
             filt=str(args.get("labelFilter") or "").casefold()
-            matches=[d for d in self.devices.values() if filt in d["label"].casefold()]
-            result={"devices":matches,"count":len(matches),"total":len(self.devices)}
+            matches=[item for item in self.devices.values()
+                     if filt in item["label"].casefold()]
+            # Device lookup can be broader than one member. Current states
+            # represent only this snapshot, never historical demand.
+            result={"devices":matches,"count":len(matches),
+                    "total":len(self.devices),"format":args.get("format","summary")}
         elif leaf=="hub_get_device":
             result=self.devices.get(did) or {"error":"Unknown synthetic device"}
         elif leaf=="hub_get_device_attribute":
             item=self.devices.get(did)
+            value=(item.get("currentStates",{}).get(args["attribute"]) if item else None)
             result={"deviceId":did,"attribute":args["attribute"],
-                    "value":item.get("currentStates",{}).get(args["attribute"]) if item else None,
-                    "read_at":"synthetic fresh read","source":"current synthetic hub attribute"}
+                    "currentValue":value,"value":value,
+                    "read_at":"synthetic fresh read",
+                    "source":"current synthetic hub attribute"}
+            if "expectedValue" in args:
+                result["converged"]=str(value)==args["expectedValue"]
         elif leaf=="hub_list_device_events":
             events=self.scenario.get("events",{}).get(did,{})
             attr=args.get("attribute")
-            selected=events.get(attr,[]) if attr else [row for seq in events.values() for row in seq]
+            if isinstance(attr,str) and attr.startswith("command-"):
+                # Represent stored command issuer history through the actual
+                # native event-history tool, rather than a fictional one.
+                selected=[{"name":attr,"date":e["date"],"value":e["command"],
+                           "producedBy":{"name":e["issuer"],"appId":e["appId"]}}
+                          for e in self.scenario.get("command_history",{}).get(did,[])
+                          if "command-"+e["command"]==attr]
+            else:
+                selected=(events.get(attr,[]) if attr
+                          else [row for seq in events.values() for row in seq])
             limit=max(1,min(200,args.get("limit",50))) if type(args.get("limit",50)) is int else 50
             result={"source":"device","deviceId":did,"attributeFilter":attr,
                     "events":selected[:limit],"count":len(selected[:limit]),
                     "requested_limit":limit,"source_scope":"returned event rows only",
                     "history_complete":"unknown"}
-        elif leaf=="hub_get_device_command_history":
-            rows=self.scenario.get("command_history",{}).get(did,[])
-            result={"deviceId":did,"commands":rows,"count":len(rows),
-                    "coverage":"synthetic bounded records; missing command unverified"}
         elif leaf=="hub_get_app_config":
             result=self.scenario.get("apps",{}).get(did,{"error":"No matching app"})
         elif leaf=="hub_get_device_health":
             result=self.scenario.get("health",{"status":"not included in this scenario"})
         elif leaf=="hub_get_logs":
             result=self.scenario.get("logs",{"entries":[],"count":0,"total":0,
-                                             "coverage":"no matching logs supplied"})
+                                            "coverage":"no matching logs supplied"})
         else:
-            self.blocked_attempts+=1
-            return _native({"error":"Unknown synthetic tool"},error=True)
+            return self._reject("unknown_tool",leaf,did)
         self.calls.append({"leaf":leaf,"id":did,"attribute":args.get("attribute"),
-                           "returned_ids":[d["id"] for d in matches] if leaf=="hub_list_devices" else [],
+                           "returned_ids":[item["id"] for item in matches]
+                           if leaf=="hub_list_devices" else [],
                            "success":True,"simulated":leaf=="hub_call_device_command"})
         return _native(result)
 
