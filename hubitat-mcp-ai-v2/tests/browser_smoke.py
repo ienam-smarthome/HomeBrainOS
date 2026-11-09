@@ -336,7 +336,7 @@ with sync_playwright() as p:
   # Simulate the complete phone/tablet A/B workflow with no model or hub.
   page.locator("#benchmarkTab").click()
   assert page.locator("#benchmark").is_visible()
-  assert "No private benchmark" in page.locator("#benchStatus").inner_text()
+  page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('No private benchmark')")
   page.locator("#benchZip").set_input_files({
    "name":"synthetic-private.zip","mimeType":"application/zip","buffer":b"PKSYNTHETIC"
   })
