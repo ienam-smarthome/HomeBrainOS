@@ -246,7 +246,7 @@ def _leaf_def(name: str) -> dict:
             "mode":{"type":"string"},"limit":{"type":"integer","minimum":1},
             "deviceId":{"type":["string","integer"]},"pattern":{"type":"string"}},
         "hub_get_app_config":{
-            "appId":{"type":"string","description":"Fictional LAB-APP identifier; native uses numeric app ID"}},
+            "appId":{"type":["string","integer"],"description":"Native uses integer app IDs; legacy LAB fixtures also allow fictional string app IDs"}},
         "hub_call_device_command":{
             "deviceId":{"type":["string","integer"]},
             "command":{"type":"string"},
