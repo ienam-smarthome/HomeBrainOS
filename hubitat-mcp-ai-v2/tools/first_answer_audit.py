@@ -17,6 +17,7 @@ including model names, tool names and argument keys, are never echoed verbatim.
 Usage:
     python hubitat-mcp-ai-v2/tools/first_answer_audit.py private-export.json
     python hubitat-mcp-ai-v2/tools/first_answer_audit.py first.json second.json --output audit.json
+    python hubitat-mcp-ai-v2/tools/first_answer_audit.py first.json second.json --reviews private-review.json
 
 Keep input/export and locally generated audit files out of the public repo.
 """
@@ -558,8 +559,97 @@ def audit_export(document: Any) -> dict[str, Any]:
     }
 
 
-def summarize(records: list[dict]) -> dict:
-    """Descriptive metrics only; no auto-scoring of answer correctness."""
+HUMAN_REVIEW_SCHEMA = "homebrain-v2-source-real-human-review.v1"
+_HUMAN_REVIEW_FIELDS = {
+    "export_index", "first_attempt", "source_kind",
+    "factual_claims_reviewed", "supported_factual_claims",
+    "definitive_causal_claims_reviewed", "unsupported_definitive_causal_claims",
+    "useful_first_answer", "relevant_sources_sufficient",
+}
+
+
+def _manual_quality_metrics(document: dict, samples: int) -> dict:
+    """Opt-in, human-attested *source-real first-answer* quality.
+
+    Never generate a quality score from tool counts or the model's prose.
+    The private reviewer file is keyed only by the position of an exported
+    sample. Neither review notes nor original identifiers are copied to the
+    public-safe aggregate. A Boolean first_attempt and source_kind are human
+    attestations, not facts that the export can independently verify.
+    """
+    if (not isinstance(document, dict) or
+            document.get("schema") != HUMAN_REVIEW_SCHEMA or
+            not isinstance(document.get("reviews"), list)):
+        raise AuditInputError("Invalid private human-review document")
+
+    seen: set[int] = set()
+    eligible: list[dict] = []
+    excluded = 0
+    for item in document["reviews"]:
+        if not isinstance(item, dict) or set(item) != _HUMAN_REVIEW_FIELDS:
+            raise AuditInputError("Invalid human-review fields")
+        index = item["export_index"]
+        if type(index) is not int or not 0 <= index < samples or index in seen:
+            raise AuditInputError("Invalid or repeated review export_index")
+        seen.add(index)
+        if (type(item["first_attempt"]) is not bool or
+                item["source_kind"] not in ("real", "synthetic", "unknown")):
+            raise AuditInputError("Invalid first-answer/source attestation")
+        for field in ("factual_claims_reviewed", "supported_factual_claims",
+                      "definitive_causal_claims_reviewed",
+                      "unsupported_definitive_causal_claims"):
+            if type(item[field]) is not int or item[field] < 0:
+                raise AuditInputError("Invalid manually reviewed claim count")
+        if (item["supported_factual_claims"] > item["factual_claims_reviewed"] or
+                item["unsupported_definitive_causal_claims"] >
+                item["definitive_causal_claims_reviewed"]):
+            raise AuditInputError("Claim count exceeds manually reviewed denominator")
+        for field in ("useful_first_answer", "relevant_sources_sufficient"):
+            if item[field] is not None and type(item[field]) is not bool:
+                raise AuditInputError("Human assessment must be true, false or null")
+
+        if not item["first_attempt"] or item["source_kind"] != "real":
+            excluded += 1
+            continue
+        eligible.append(item)
+
+    factual = sum(r["factual_claims_reviewed"] for r in eligible)
+    supported = sum(r["supported_factual_claims"] for r in eligible)
+    causal = sum(r["definitive_causal_claims_reviewed"] for r in eligible)
+    unsupported = sum(r["unsupported_definitive_causal_claims"] for r in eligible)
+    usefulness = [r["useful_first_answer"] for r in eligible
+                  if r["useful_first_answer"] is not None]
+    completeness = [r["relevant_sources_sufficient"] for r in eligible
+                    if r["relevant_sources_sufficient"] is not None]
+
+    return {
+        "quality_status": ("not_measured" if not eligible else
+                           "human_attested_complete" if len(eligible) == samples else
+                           "human_attested_partial"),
+        "reviewed_source_real_first_answers": len(eligible),
+        "review_rows_submitted": len(seen),
+        "excluded_nonreal_or_nonfirst_attempt_reviews": excluded,
+        "unreviewed_export_samples": samples - len(seen),
+        "reviewer_independence": "not_verified",
+        "source_real_and_first_attempt": "human_attested_not_independently_verified",
+        "grounded_claim_rate": round(supported / factual, 4) if factual else None,
+        "factual_claims_reviewed": factual,
+        "supported_factual_claims": supported,
+        "definitive_causal_claims_reviewed": causal,
+        "unsupported_definitive_causal_claim_count": unsupported if causal else None,
+        "useful_first_answer_rate": (
+            round(sum(usefulness) / len(usefulness), 4) if usefulness else None
+        ),
+        "usefulness_reviews_with_rating": len(usefulness),
+        "relevant_source_sufficiency_rate": (
+            round(sum(completeness) / len(completeness), 4) if completeness else None
+        ),
+        "source_sufficiency_reviews_with_rating": len(completeness),
+    }
+
+
+def summarize(records: list[dict], *, human_reviews: dict | None = None) -> dict:
+    """Descriptive metrics; opt-in manual review never infers quality from reads."""
     n = len(records)
     elapsed = [
         r["performance"]["browser_elapsed_ms"] / 1000
@@ -567,7 +657,7 @@ def summarize(records: list[dict]) -> dict:
     ]
     times = sorted(elapsed)
     counts = [r["native_tools"] for r in records]
-    return {
+    report = {
         "schema": "homebrain-v2-first-answer-summary.v5",
         "samples": n,
         "quality_status": "not_measured",
@@ -581,12 +671,16 @@ def summarize(records: list[dict]) -> dict:
         "history_complete": "not_established_by_exports",
         "details": records,
     }
+    if human_reviews is not None:
+        report.update(_manual_quality_metrics(human_reviews, n))
+    return report
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("exports", nargs="+", type=Path, help="Private browser Technical JSON exports")
     parser.add_argument("--output", type=Path, help="Private JSON report path, default stdout")
+    parser.add_argument("--reviews", type=Path, help="Optional private position-indexed human review JSON")
     args = parser.parse_args()
     records = []
     try:
@@ -596,7 +690,13 @@ def main() -> int:
     except (AuditInputError, OSError, ValueError) as exc:
         parser.error("Cannot audit an input export: " + type(exc).__name__ + ". "
                      "Keep raw technical logs private and verify the file schema.")
-    report = json.dumps(summarize(records), indent=2, ensure_ascii=False)
+    try:
+        reviews = json.loads(args.reviews.read_text(encoding="utf-8")) if args.reviews else None
+        summary = summarize(records, human_reviews=reviews)
+    except (AuditInputError, OSError, ValueError) as exc:
+        parser.error("Cannot apply private reviews: " + type(exc).__name__ + ". "
+                     "Check the separate human-review schema and export ordering.")
+    report = json.dumps(summary, indent=2, ensure_ascii=False)
     if args.output:
         args.output.write_text(report + "\n", encoding="utf-8")
     else:
