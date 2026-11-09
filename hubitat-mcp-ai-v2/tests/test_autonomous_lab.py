@@ -188,6 +188,60 @@ class FirstAnswerLabTests(unittest.TestCase):
                     await agent.close()
         asyncio.run(run())
 
+    def test_failed_round_limit_is_not_counted_as_answer_and_safe_retry_preserves_evidence(self):
+        async def exercise():
+            with tempfile.TemporaryDirectory() as folder:
+                lab=AutonomousLab(Path(folder)/"synthetic")
+                lab.root.mkdir(parents=True,exist_ok=True)
+                old={"id":"lab-01",
+                     "answer":"Model/transport failure: synthetic round budget",
+                     "success":False,"rounds":8,"elapsed_ms":9000,
+                     "tool_calls":[{"name":"hub_manage_devices","success":False}],
+                     "blocked_attempts":10,"simulated_commands":0,"coverage":[]}
+                lab._answer_path("lab-01").write_text(json.dumps(old),encoding="utf-8")
+                item=lab.summary()["cases"][0]
+                self.assertTrue(item["failed"])
+                self.assertFalse(item["answered"])
+                report=lab.report()
+                self.assertEqual(report["cases_attempted"],1)
+                self.assertEqual(report["cases_answered"],0)
+                self.assertEqual(report["cases_failed"],1)
+                with self.assertRaises(ValueError):
+                    lab.score("lab-01",dict.fromkeys(
+                        ("factual_grounding","source_completeness",
+                         "causal_calibration","command_outcome","usefulness"),0))
+                agent=Agent("https://ollama.com","synthetic-test","FAKE_TEST_KEY",30)
+                await agent.client.aclose()
+                def reply(request):
+                    self.assertTrue(json.loads(request.content).get("tools"))
+                    return httpx.Response(200,json={"message":{
+                        "content":"Synthetic evaluation complete; no live actions."}})
+                agent.client=httpx.AsyncClient(transport=httpx.MockTransport(reply))
+                try:
+                    with self.assertRaises(ValueError):
+                        await lab.run("lab-01",agent)
+                    await lab.run("lab-01",agent,retry_failed=True)
+                    self.assertTrue(lab._failed_archives("lab-01"))
+                    archived=json.loads(lab._failed_archives("lab-01")[0].read_text())
+                    self.assertEqual(archived["blocked_attempts"],10)
+                    status=lab.summary()["cases"][0]
+                    self.assertTrue(status["answered"])
+                    self.assertFalse(status["failed"])
+                    self.assertEqual(status["previous_failed_attempts"],1)
+                    report=lab.report()
+                    self.assertEqual(report["cases_attempted"],1)
+                    self.assertEqual(report["cases_answered"],1)
+                    self.assertEqual(report["cases_failed"],0)
+                    self.assertEqual(report["prior_failed_attempts"],1)
+                    with self.assertRaises(ValueError):
+                        await lab.run("lab-01",agent,retry_failed=True)
+                    lab.delete()
+                    self.assertFalse(lab._failed_archives("lab-01"))
+                    self.assertEqual(lab.report()["cases_attempted"],0)
+                finally:
+                    await agent.close()
+        asyncio.run(exercise())
+
     def test_http_routes_require_manual_consent_and_are_separate_from_mcp(self):
         async def exercise():
             with tempfile.TemporaryDirectory() as folder:
