@@ -74,6 +74,34 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
 .diag-controls select{margin-left:0}}
 
+
+/* Full-page chart popouts share the existing read-only recorder renderer. */
+.graph-popout-link,.graph-popout-return{display:inline-flex;align-items:center;gap:6px;
+ padding:10px 13px;border:1px solid var(--edge);border-radius:10px;color:var(--txt);
+ text-decoration:none;background:#203148}
+.graph-popout-link:hover,.graph-popout-return:hover{border-color:var(--blue)}
+.graph-popout-link:focus-visible,.graph-popout-return:focus-visible{
+ outline:3px solid var(--blue);outline-offset:3px}
+body.graph-popout{min-height:100vh}
+body.graph-popout header,body.graph-popout nav,body.graph-popout #diagnostics>.row,
+body.graph-popout #diagnostics>.muted,body.graph-popout #diagnostics>.metrics,
+body.graph-popout #recorderNotice{display:none!important}
+body.graph-popout main{max-width:none;width:100%;padding:14px 20px}
+body.graph-popout #diagnostics{display:block}
+body.graph-popout #timelineCard,body.graph-popout #detailCard{display:none}
+body.graph-popout.graph-popout-timeline #timelineCard,
+body.graph-popout.graph-popout-detail #detailCard{display:block}
+body.graph-popout .card{padding:18px 22px;width:100%}
+body.graph-popout .graph-popout-link{display:none}
+body.graph-popout .graph-popout-return:not([hidden]){display:inline-flex}
+body.graph-popout .timeline-chart{min-width:0;min-height:460px;max-height:none;
+ height:clamp(460px,68vh,1000px);width:100%}
+body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
+@media(max-width:700px){body.graph-popout main{padding:8px}
+ body.graph-popout .card{padding:12px}
+ body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px}
+ body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
+
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
@@ -101,7 +129,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
 <div class="card" id="timelineCard">
-<div class="row"><h2>Unified incident timeline</h2><button class="right" id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
+<div class="row"><h2>Unified incident timeline</h2><a class="graph-popout-return" id="timelineReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link right" id="timelinePopout" href="?graph_view=timeline" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('timeline')">↗ Pop out full page</a><button id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
 <p class="timeline-meta" id="timelineMeta">External recorder observations, native five-minute load and verified systemStart events. Missing history remains unknown.</p>
 <div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
 <div class="diag-controls">
@@ -121,7 +149,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <details id="timelineEvidenceDetails" hidden><summary>Selected local source evidence (read-only)</summary><pre id="timelineEvidence"></pre></details>
 </div>
 <div class="card" id="detailCard">
-<div class="row"><h2>Detailed metric history</h2>
+<div class="row"><h2>Detailed metric history</h2><a class="graph-popout-return" id="detailReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link" id="detailPopout" href="?graph_view=detail" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('detail')">↗ Pop out full page</a>
 <select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load_pct">Native 5m load equivalent (%)</option><option value="native_load5">Native 5m load (raw, unscaled)</option></select>
 </div>
 <div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
@@ -133,7 +161,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.18";
+const UI_VERSION="2.0.0-alpha.19";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -464,6 +492,50 @@ function nearestDiagnosticRow(rows,when){
    Math.abs(Date.parse(rows[lo].recorded_at)-when))return rows[lo-1];
  return rows[lo];
 }
+
+// Full-page graph links point to the same interface on this origin. Only
+// display options and a selected timestamp go into the URL, never raw data.
+function graphPageUrl(kind){
+ const here=window.location;
+ const url=new URL(here.pathname,here.origin);
+ url.searchParams.set('graph_view',kind);
+ url.searchParams.set('range',byId('range').value);
+ url.searchParams.set('extent',byId('plotExtent').value);
+ url.searchParams.set('layout',byId('timelineLayout').value);
+ url.searchParams.set('metric',byId('metric').value);
+ if(kind==='timeline'&&Number.isFinite(timelineSelection))
+  url.searchParams.set('selected',String(timelineSelection));
+ return url;
+}
+function prepareGraphPopout(kind){
+ if(!['timeline','detail'].includes(kind)||!window.location)return;
+ const link=byId(kind==='timeline'?'timelinePopout':'detailPopout');
+ link.href=graphPageUrl(kind).href;
+}
+function initGraphPopout(){
+ if(!window.location||!window.location.search)return;
+ const params=new URLSearchParams(window.location.search),kind=params.get('graph_view');
+ if(!['timeline','detail'].includes(kind))return;
+ for(const [key,id] of [['range','range'],['extent','plotExtent'],
+                        ['layout','timelineLayout'],['metric','metric']]){
+  const value=params.get(key),select=byId(id);
+  if(value&&Array.from(select.options||[]).some(option=>option.value===value))
+   select.value=value;
+ }
+ const selected=params.get('selected');
+ if(kind==='timeline'&&selected!==null&&Number.isFinite(Number(selected)))
+  timelineSelection=Number(selected);
+ document.body.classList.add('graph-popout','graph-popout-'+kind);
+ document.title=(kind==='timeline'?'Unified incident timeline':'Detailed metric history')+
+  ' — Hubitat MCP AI v2';
+ for(const id of ['timelineReturn','detailReturn']){
+  const link=byId(id);
+  link.href=new URL(window.location.pathname,window.location.origin).href;
+  link.hidden=false;
+ }
+ tab('diagnostics');
+}
+
 function redrawDiagnostics(){drawIncidentTimeline();draw();}
 function drawIncidentTimeline(){
  const svg=byId('incidentTimeline');svg.replaceChildren();
@@ -962,5 +1034,6 @@ byId('graph').addEventListener('keydown',e=>{
 window.addEventListener('resize',()=>{
  if(byId('diagnostics').classList.contains('active'))redrawDiagnostics();
 });
+initGraphPopout();
 loadStatus();
 </script></body></html>
