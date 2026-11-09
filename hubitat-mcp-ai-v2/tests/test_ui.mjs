@@ -119,6 +119,20 @@ rich.run("draw=()=>{}; fetch=async url=>({ok:true,json:async()=>url.includes('/s
 rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('refreshDiagnostics()');
 assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
 assert(html.includes('id="diagnosticsTab"'));
+assert(html.includes('id="benchmarkTab"'));
+assert(html.includes('id="benchZip"'));
+assert(html.includes('id="benchPrivateConsent"'));
+assert(html.includes('id="benchCloudConsent"'));
+assert(html.includes('id="benchPilot1"'));
+assert(html.includes('id="benchPilot2"'));
+assert(html.includes('id="benchSource"'));
+assert(html.includes('id="benchScoresA"'));
+assert(html.includes('id="benchScoresB"'));
+assert(html.includes('id="benchDelete"'));
+assert.match(html,/score both versions|Score A and B/i);
+assert.match(html,/api\/benchmark\//);
+assert.match(html,/X-Homebrain-Request/);
+
 assert(html.includes('id="incidentTimeline"'));
 assert(html.includes('id="timelineLayout"'));
 assert(html.includes('id="plotExtent"'));
