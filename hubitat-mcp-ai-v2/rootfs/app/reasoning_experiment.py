@@ -100,15 +100,15 @@ def holdout_scenarios() -> list[dict]:
                 "HOLD-201":{"switch":[
                     ev("off","2026-11-12T18:19:00Z",produced_by="Synthetic Matter Bridge",
                        triggered=[{"name":"Bench Activity Journal",
-                                   "appId":"HOLD-APP-299","handler":"switchHandler"}]),
+                                   "appId":9201299,"handler":"switchHandler"}]),
                     ev("on","2026-11-12T18:05:00Z",produced_by="Synthetic Matter Bridge")]},
                 "HOLD-202":{"contact":[
                     ev("closed","2026-11-12T18:18:40Z"),
                     ev("open","2026-11-12T18:18:12Z")]}},
             "command_history":{"HOLD-201":[
                 {"command":"off","date":"2026-11-12T18:18:59.820Z",
-                 "issuer":"Bench Entrance Auto-Off","appId":"HOLD-APP-201"}]},
-            "apps":{"HOLD-APP-201":{
+                 "issuer":"Bench Entrance Auto-Off","appId":9201201}]},
+            "apps":{"9201201":{
                 "name":"Bench Entrance Auto-Off","contact_device":"HOLD-202",
                 "on_closed_action":"off","inactive_delay_seconds":20,
                 "configuration_observed_at":"2026-11-12T18:50:00Z",
@@ -121,7 +121,7 @@ def holdout_scenarios() -> list[dict]:
                 {"label":"Entry contact event history","leaf":"hub_list_device_events",
                  "id":"HOLD-202","attribute":"contact"},
                 {"label":"Automation configuration snapshot","leaf":"hub_get_app_config",
-                 "id":"HOLD-APP-201"}],
+                 "id":"9201201"}],
         },
         {
             "id":"hold-03","domain":"humidity_intervals",
@@ -164,6 +164,7 @@ def holdout_scenarios() -> list[dict]:
             "allow_command":None,
             "devices":[
                 {"id":"HOLD-401","label":"Bench Central Heater",
+                 "controller_app_id":9201401,
                  "capabilities":["Thermostat"],
                  "currentStates":{"thermostatOperatingState":"idle",
                                   "heatingSetpoint":"13"}},
@@ -189,7 +190,7 @@ def holdout_scenarios() -> list[dict]:
                     ev("idle","2026-11-12T10:28:00Z"),
                     ev("heating","2026-11-12T10:00:15Z")]},
                 "HOLD-404":{"thermostatOperatingState":[]}},
-            "apps":{"HOLD-APP-401":{
+            "apps":{"9201401":{
                 "name":"Bench Heat-Demand Coordinator",
                 "demand_policy":"any zone calling",
                 "controller_source":"synthetic control rules",
@@ -207,7 +208,7 @@ def holdout_scenarios() -> list[dict]:
                 {"label":"Loft checked even if empty","leaf":"hub_list_device_events",
                  "id":"HOLD-404"},
                 {"label":"Current coordinator configuration","leaf":"hub_get_app_config",
-                 "id":"HOLD-APP-401"}],
+                 "id":"9201401"}],
         },
         {
             "id":"hold-05","domain":"connectivity",
