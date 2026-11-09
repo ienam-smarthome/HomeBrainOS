@@ -533,7 +533,10 @@ with sync_playwright() as p:
   for select in page.locator("#reasoningScoresB select").all():
    select.select_option("1")
   page.locator("#reasoningSave").click()
-  page.wait_for_function("document.querySelector('#reasoningStatus').textContent.includes('1 blindly scored')")
+  page.wait_for_function("document.querySelector('#reasoningSave').disabled && document.querySelector('#reasoningStatus').textContent.includes('1 blindly scored')")
+  assert all(el.is_disabled() for el in page.locator("#reasoningScoresA select").all())
+  assert all(el.is_disabled() for el in page.locator("#reasoningScoresB select").all())
+  assert "saved and locked" in page.locator("#reasoningReviewStatus").inner_text()
   page.get_by_role("button",name="Generate aggregate report").click()
   page.wait_for_function("document.querySelector('#reasoningReportPreview').textContent.includes('paired_blind_ratings')")
   with page.expect_download() as download:

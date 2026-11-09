@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.18**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.26**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -364,3 +364,22 @@ reasoning was changed.
 The original Autonomous Lab dashboard now separately counts client-side
 schema errors and simulator rejections. See
 \`docs/HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md\`.
+
+
+## Alpha.26 — immutable blinded reasoning ratings (9 November 2026)
+
+The existing six-case Reasoning A/B holdout is unchanged; model calls, fixture
+sources, candidate guidance, blinding assignment and native MCP behavior are
+unchanged. A scoring-integrity correction now **locks each pair's A/B ratings
+when saved**. Previously, the backend silently accepted a second score submission
+even after the final six-pair report unmasked the labels, allowing
+post-unblinding changes to the claimed blind results. The API now rejects an
+attempt to replace a saved score, and the UI displays the saved values as
+disabled controls. There is no implicit rating reset or hidden re-run.
+
+Review both arm answers and source receipts carefully before clicking Save;
+to start a wholly fresh study, use the existing explicit **Delete A/B results
+and ratings** control, which also removes that study's synthetic results.
+This release changes no production reasoning, diagnostics, credentials,
+Hubitat or Home Assistant device state. The prospective six-pair Gemma trial
+and post-install acceptance remain outstanding.

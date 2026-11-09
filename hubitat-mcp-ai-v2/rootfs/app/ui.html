@@ -325,7 +325,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
  </div>
  <div class="card">
   <h3>3 · Independent blind assessment</h3>
-  <p class="session-note">Score each arm on factual grounding, source completeness, causal calibration, command outcome, and usefulness: 0 unsupported, 1 partial, 2 supported, or n/a if inapplicable. Rate the full answer, not just retrieved-tool counts.</p>
+  <p class="session-note">Score each arm on factual grounding, source completeness, causal calibration, command outcome, and usefulness: 0 unsupported, 1 partial, 2 supported, or n/a if inapplicable. Rate the full answer, not just retrieved-tool counts. Saved scores are locked to protect blind evaluation; review carefully before submitting.</p>
   <div class="reasoning-pair">
    <div><h3>A scores</h3><div class="reasoning-scores" id="reasoningScoresA"></div></div>
    <div><h3>B scores</h3><div class="reasoning-scores" id="reasoningScoresB"></div></div>
@@ -346,7 +346,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.25";
+const UI_VERSION="2.0.0-alpha.26";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -1801,7 +1801,7 @@ async function reasoningRefresh(){
    reasoningPoll=setTimeout(reasoningRefresh,2200);
  }catch(error){reasoningText('reasoningStatus',error.message);}
 }
-function reasoningRatingPanel(label,ratings,enabled){
+function reasoningRatingPanel(label,ratings,enabled,locked=false){
  const holder=byId('reasoningScores'+label);holder.replaceChildren();
  if(!enabled)return;
  for(const criterion of REASONING_SCORE_NAMES){
@@ -1817,6 +1817,7 @@ function reasoningRatingPanel(label,ratings,enabled){
   }
   const prior=ratings?.[criterion];
   select.value=prior===undefined?'':String(prior);
+  select.disabled=locked;
   row.appendChild(select);holder.appendChild(row);
  }
 }
@@ -1847,12 +1848,13 @@ async function reasoningView(){
     checks.map(c=>(c.observed?'✓ ':'○ ')+c.label).join('\n'):
     'No model result yet.');
    reasoningRatingPanel(label,detail.ratings?.[label],
-    detail.arms?.A?.success===true&&detail.arms?.B?.success===true);
+    detail.arms?.A?.success===true&&detail.arms?.B?.success===true,
+    !!detail.ratings);
   }
   const ready=detail.arms?.A?.success===true&&detail.arms?.B?.success===true;
-  byId('reasoningSave').disabled=!ready||!!reasoningState?.running;
+  byId('reasoningSave').disabled=!ready||!!reasoningState?.running||!!detail.ratings;
   reasoningText('reasoningReviewStatus',detail.ratings?
-   'Blind ratings saved; assignment remains hidden until every case is rated.':
+   'Blind ratings saved and locked; the completed study reveals allocation in its final report.':
    ready?'Read both answers and receipts, then score both without guessing their allocation.':
    'Both model answers must complete before blind rating.');
  }catch(error){reasoningText('reasoningReviewStatus','Case error: '+error.message);}
