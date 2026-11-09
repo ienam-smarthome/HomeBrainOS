@@ -1758,6 +1758,179 @@ async function autolabDelete(){
  }catch(error){autolabText('autolabStatus','Delete failed: '+error.message);}
 }
 
+
+// Candidate-vs-baseline blind synthetic paired experiment. No /api/ask calls.
+const REASONING_SCORE_NAMES=['factual_grounding','source_completeness',
+ 'causal_calibration','command_outcome','usefulness'];
+let reasoningState=null,reasoningDetail=null,reasoningReportData=null,reasoningPoll=null;
+async function reasoningApi(path,options={}){
+ const res=await fetch('api/reasoning-ab/'+path,{
+  ...options,cache:'no-store',
+  headers:{'X-Homebrain-Request':'1',...(options.headers||{})}
+ });
+ const data=await res.json();
+ if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:'Paired experiment request failed');
+ return data;
+}
+function reasoningText(id,value){byId(id).textContent=String(value);}
+async function reasoningRefresh(){
+ if(reasoningPoll!==null){clearTimeout(reasoningPoll);reasoningPoll=null;}
+ try{
+  const data=await reasoningApi('status');
+  reasoningState=data;
+  const selected=byId('reasoningSelect').value;
+  const choices=data.cases.map(row=>[row.id,row.id+' · '+row.title+
+   (row.graded?' · rated':row.ready_to_rate?' · ready to rate':
+    Object.values(row.arms).includes('failed')?' · retry available':'')]);
+  benchOptions('reasoningSelect',choices,selected);
+  const entry=data.cases.find(x=>x.id===byId('reasoningSelect').value);
+  const done=entry?.ready_to_rate||entry?.graded;
+  byId('reasoningRun').disabled=!!data.running||!entry||done;
+  byId('reasoningRun').textContent=entry&&Object.values(entry.arms).includes('failed')?
+   'Retry failed A/B arm':'Run blinded A/B pair';
+  byId('reasoningStop').disabled=!data.running;
+  reasoningText('reasoningStatus',data.running?
+   'Running fictional pair '+(data.progress?.case_id||'')+
+   ' · Answer '+(data.progress?.arm||'')+' · No live hub actions':
+   data.error?'Last result: '+data.error:
+   data.cases.filter(x=>x.ready_to_rate).length+' / '+data.cases.length+
+   ' pairs completed · '+data.cases.filter(x=>x.graded).length+' blindly scored.');
+  await reasoningView();
+  if(data.running&&byId('reasoning').classList.contains('active'))
+   reasoningPoll=setTimeout(reasoningRefresh,2200);
+ }catch(error){reasoningText('reasoningStatus',error.message);}
+}
+function reasoningRatingPanel(label,ratings,enabled){
+ const holder=byId('reasoningScores'+label);holder.replaceChildren();
+ if(!enabled)return;
+ for(const criterion of REASONING_SCORE_NAMES){
+  const row=document.createElement('label');
+  row.textContent=criterion.replaceAll('_',' ');
+  const select=document.createElement('select');
+  select.setAttribute('data-reasoning-label',label);
+  select.setAttribute('data-reasoning-criterion',criterion);
+  for(const [value,title] of [['','Not scored'],['0','0 · Unsupported'],
+   ['1','1 · Partial'],['2','2 · Supported'],['n/a','n/a · Not applicable']]){
+   const option=document.createElement('option');option.value=value;
+   option.textContent=title;select.appendChild(option);
+  }
+  const prior=ratings?.[criterion];
+  select.value=prior===undefined?'':String(prior);
+  row.appendChild(select);holder.appendChild(row);
+ }
+}
+async function reasoningView(){
+ const sid=byId('reasoningSelect').value;
+ if(!sid)return;
+ try{
+  const detail=await reasoningApi('case/'+encodeURIComponent(sid));
+  if(sid!==byId('reasoningSelect').value)return;
+  reasoningDetail=detail;
+  reasoningText('reasoningQuestion',detail.question);
+  for(const label of ['A','B']){
+   const arm=detail.arms?.[label];
+   reasoningText('reasoningAnswer'+label,arm?.answer||
+    (arm?.success===false?'Failed model trial; review synthetic receipts.':
+     'Not generated yet.'));
+   reasoningText('reasoningCalls'+label,arm?.tool_calls?
+    JSON.stringify(arm.tool_calls,null,2):'No tool receipts.');
+   const checks=arm?.coverage||[];
+   reasoningText('reasoningMetrics'+label,arm?
+    'Evidence: '+checks.filter(x=>x.observed).length+'/'+checks.length+
+    ' · Model rounds: '+arm.rounds+
+    ' · Time: '+(Number(arm.elapsed_ms||0)/1000).toFixed(1)+' s'+
+    ' · Client schema errors: '+(arm.client_contract_errors||0)+
+    ' · Simulator rejections: '+(arm.simulator_rejections||0)+
+    ' · In-memory commands: '+(arm.simulated_commands||0)+
+    ' · Real hub actions: 0\n'+
+    checks.map(c=>(c.observed?'✓ ':'○ ')+c.label).join('\n'):
+    'No model result yet.');
+   reasoningRatingPanel(label,detail.ratings?.[label],
+    detail.arms?.A?.success===true&&detail.arms?.B?.success===true);
+  }
+  const ready=detail.arms?.A?.success===true&&detail.arms?.B?.success===true;
+  byId('reasoningSave').disabled=!ready||!!reasoningState?.running;
+  reasoningText('reasoningReviewStatus',detail.ratings?
+   'Blind ratings saved; assignment remains hidden until every case is rated.':
+   ready?'Read both answers and receipts, then score both without guessing their allocation.':
+   'Both model answers must complete before blind rating.');
+ }catch(error){reasoningText('reasoningReviewStatus','Case error: '+error.message);}
+}
+async function reasoningRun(){
+ const sid=byId('reasoningSelect').value;
+ const entry=reasoningState?.cases.find(x=>x.id===sid);
+ const retry=!!entry&&Object.values(entry.arms).includes('failed');
+ if(!byId('reasoningModelConsent').checked||
+    !byId('reasoningCloudConsent').checked){
+  reasoningText('reasoningStatus','Approve both model and remote/cloud notices.');
+  return;
+ }
+ if(retry&&!window.confirm('Retry only the failed fictional arm? Its prior failure will be archived. This can consume more cloud credits.'))return;
+ byId('reasoningRun').disabled=true;
+ try{
+  await reasoningApi('run',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({case_id:sid,model_execution_consent:true,
+    cloud_transfer_consent:true,retry_failed:retry})});
+  await reasoningRefresh();
+ }catch(error){
+  reasoningText('reasoningStatus','Could not run pair: '+error.message);
+  byId('reasoningRun').disabled=false;
+ }
+}
+async function reasoningStop(){
+ try{
+  await reasoningApi('stop',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:'{}'});
+  await reasoningRefresh();
+ }catch(error){reasoningText('reasoningStatus','Stop failed: '+error.message);}
+}
+async function reasoningSave(){
+ if(!reasoningDetail)return;
+ const scores={A:{},B:{}};
+ for(const label of ['A','B']){
+  for(const select of byId('reasoningScores'+label).querySelectorAll('select')){
+   const value=select.value;
+   if(!value){reasoningText('reasoningReviewStatus','Score all dimensions on both answers.');return;}
+   scores[label][select.getAttribute('data-reasoning-criterion')]=
+    value==='n/a'?'n/a':Number(value);
+  }
+ }
+ try{
+  await reasoningApi('case/'+encodeURIComponent(reasoningDetail.id)+'/score',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({scores})});
+  await reasoningRefresh();
+ }catch(error){reasoningText('reasoningReviewStatus',error.message);}
+}
+async function reasoningReport(){
+ try{
+  reasoningReportData=await reasoningApi('report');
+  reasoningText('reasoningReportPreview',JSON.stringify(reasoningReportData,null,2));
+  byId('reasoningDownload').disabled=false;
+ }catch(error){reasoningText('reasoningReportPreview',error.message);}
+}
+function reasoningDownload(){
+ if(!reasoningReportData)return;
+ const data=new Blob([JSON.stringify(reasoningReportData,null,2)+'\n'],
+  {type:'application/json'});
+ const uri=URL.createObjectURL(data);
+ const link=document.createElement('a');link.href=uri;
+ link.download='HomeBrain-v2-reasoning-holdout-report.json';
+ document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(uri);
+}
+async function reasoningDelete(){
+ if(!window.confirm('Permanently delete ONLY the new fictional reasoning A/B results, ratings and private allocation?'))return;
+ try{
+  await reasoningApi('delete',{method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({confirm_delete:true})});
+  reasoningDetail=null;reasoningReportData=null;
+  byId('reasoningDownload').disabled=true;
+  reasoningText('reasoningReportPreview','No A/B report yet.');
+  await reasoningRefresh();
+ }catch(error){reasoningText('reasoningStatus','Delete failed: '+error.message);}
+}
+
 initGraphPopout();
 loadStatus();
 </script></body></html>
