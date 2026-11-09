@@ -22,6 +22,7 @@ from mcp import MCPError, _validate_arguments
 CRITERIA = ("factual_grounding", "source_completeness", "causal_calibration",
             "command_outcome", "usefulness")
 MAX_MODEL_ROUNDS = 12
+MAX_FAILED_RETRIES = 2
 MAX_TOOL_ATTEMPTS = 40
 SANDBOX_DEADLINE_SECONDS = 120
 
@@ -524,24 +525,37 @@ class AutonomousLab:
         self.root=Path(root)
         self.catalog={case["id"]:case for case in scenario_definitions()}
 
-    def summary(self,progress:dict | None=None) -> dict:
-        state=progress or {}
-        return {"version":"synthetic-autonomous-first-answer.v1",
-                "synthetic_only":True,"running":bool(state.get("running")),
-                "error":state.get("error"),
-                "progress":{k:v for k,v in state.items()
-                            if k in ("case_id","started","rounds")},
-                "cases":[{
-                    "id":sid,"title":case["title"],"domain":case["domain"],
-                    "answered":self._answer_path(sid).is_file(),
-                    "graded":self._ratings_path(sid).is_file(),
-                } for sid,case in self.catalog.items()]}
-
     def _answer_path(self,sid:str)->Path:
         return self.root / (sid+"-answer.json")
 
     def _ratings_path(self,sid:str)->Path:
         return self.root / (sid+"-ratings.json")
+
+    def _failed_archives(self,sid:str)->list[Path]:
+        return [self.root / f"{sid}-failed-{i:02}.json"
+                for i in range(1,MAX_FAILED_RETRIES+1)
+                if (self.root / f"{sid}-failed-{i:02}.json").exists()]
+
+    def summary(self,progress:dict | None=None) -> dict:
+        state=progress or {}
+        cases=[]
+        for sid,scenario in self.catalog.items():
+            path=self._answer_path(sid)
+            result=json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+            succeeded=bool(result and result.get("success"))
+            cases.append({
+                "id":sid,"title":scenario["title"],"domain":scenario["domain"],
+                "run":result is not None,"answered":succeeded,
+                "failed":result is not None and not succeeded,
+                "graded":self._ratings_path(sid).is_file(),
+                "previous_failed_attempts":len(self._failed_archives(sid)),
+            })
+        return {"version":"synthetic-autonomous-first-answer.v2",
+                "synthetic_only":True,"running":bool(state.get("running")),
+                "error":state.get("error"),
+                "progress":{k:v for k,v in state.items()
+                            if k in ("case_id","started","rounds")},
+                "cases":cases}
 
     def case(self,sid:str) -> dict:
         if sid not in self.catalog:
@@ -549,7 +563,8 @@ class AutonomousLab:
         case=self.catalog[sid]
         result={"id":sid,"title":case["title"],"domain":case["domain"],
                 "question":case["question"],"synthetic_only":True,
-                "answer":None,"ratings":None,"coverage":None}
+                "answer":None,"ratings":None,"coverage":None,
+                "previous_failed_attempts":len(self._failed_archives(sid))}
         if self._answer_path(sid).is_file():
             raw=json.loads(self._answer_path(sid).read_text(encoding="utf-8"))
             result.update({"answer":raw.get("answer"),
@@ -559,16 +574,30 @@ class AutonomousLab:
                            "coverage":raw.get("coverage"),
                            "simulated_commands":raw.get("simulated_commands"),
                            "blocked_attempts":raw.get("blocked_attempts"),
+                           "blocked_reasons":raw.get("blocked_reasons",{}),
+                           "failure_type":raw.get("failure_type"),
                            "unsafe_live_actions":0})
         if self._ratings_path(sid).is_file():
             result["ratings"]=json.loads(self._ratings_path(sid).read_text(encoding="utf-8"))
         return result
 
-    async def run(self,sid:str,configured_model:Agent) -> None:
+    async def run(self,sid:str,configured_model:Agent,retry_failed:bool=False) -> None:
         if sid not in self.catalog:
             raise ValueError("Unknown synthetic lab case")
-        if self._answer_path(sid).exists():
-            raise ValueError("Case already completed; data cannot be overwritten")
+        current=self._answer_path(sid)
+        if current.exists():
+            recorded=json.loads(current.read_text(encoding="utf-8"))
+            if recorded.get("success") or self._ratings_path(sid).exists():
+                raise ValueError("A completed or graded case must not be overwritten")
+            if not retry_failed:
+                raise ValueError("A failed evaluation is stored; request an explicit retry")
+            archives=self._failed_archives(sid)
+            if len(archives)>=MAX_FAILED_RETRIES:
+                raise ValueError("Retry limit reached; delete the synthetic lab data to reset")
+            slot=self.root / f"{sid}-failed-{len(archives)+1:02}.json"
+            os.replace(current,slot)
+        elif retry_failed:
+            raise ValueError("No failed run exists to retry")
         scenario=self.catalog[sid]
         fake=SyntheticMCP(scenario)
         agent=BoundedAgent(configured_model)
@@ -593,6 +622,10 @@ class AutonomousLab:
                  "coverage":_check_coverage(scenario,fake.calls),
                  "simulated_commands":len(fake.simulated_writes),
                  "blocked_attempts":fake.blocked_attempts,
+                 "blocked_reasons":{reason:sum(c.get("reason_code")==reason for c in fake.calls)
+                       for reason in sorted({c["reason_code"] for c in fake.calls
+                                             if c.get("reason_code")})},
+                 "failure_type":result.get("error") if not result.get("success") else None,
                  "unsafe_live_actions":0,
                  "model_rounds":agent.model_rounds}
         _private_write(self._answer_path(sid),json.dumps(written,ensure_ascii=False))
@@ -600,6 +633,8 @@ class AutonomousLab:
     def score(self,sid:str,scores:dict) -> None:
         if sid not in self.catalog or not self._answer_path(sid).is_file():
             raise ValueError("Run this synthetic case before scoring")
+        if not json.loads(self._answer_path(sid).read_text(encoding="utf-8")).get("success"):
+            raise ValueError("Do not grade a failed model/transport run as a completed answer")
         if not isinstance(scores,dict) or set(scores)!=set(CRITERIA) or any(
                 type(v) is not int and v!="n/a" or
                 type(v) is int and v not in (0,1,2)
@@ -626,10 +661,15 @@ class AutonomousLab:
                          "observed_evidence_checks":sum(bool(x.get("observed")) for x in coverage),
                          "simulated_commands":raw.get("simulated_commands",0),
                          "blocked_attempts":raw.get("blocked_attempts",0),
+                         "blocked_reasons":raw.get("blocked_reasons",{}),
+                         "prior_failed_attempts":len(self._failed_archives(row["id"])),
                          "ratings":grade})
         return {"schema":"homebrain-v2-autonomous-first-answer.v1",
                 "synthetic_only":True,"cases_prepared":len(self.catalog),
-                "cases_answered":len(rows),
+                "cases_attempted":len(rows),
+                "cases_answered":sum(r["model_answered"] for r in rows),
+                "cases_failed":sum(not r["model_answered"] for r in rows),
+                "prior_failed_attempts":sum(len(self._failed_archives(sid)) for sid in self.catalog),
                 "cases_graded":sum(r["ratings"] is not None for r in rows),
                 "live_mcp_calls":0,"live_device_actions":0,
                 "cases":rows,
@@ -643,3 +683,5 @@ class AutonomousLab:
         for sid in self.catalog:
             self._answer_path(sid).unlink(missing_ok=True)
             self._ratings_path(sid).unlink(missing_ok=True)
+            for failed in self._failed_archives(sid):
+                failed.unlink(missing_ok=True)
