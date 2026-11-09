@@ -163,9 +163,109 @@ def _load_manifest(directory: Path) -> tuple[dict, str]:
     return doc, saved
 
 
+def _permission_evidence_from_export(document: dict) -> list[tuple[bool | None, bool | None, bool | None, bool | None]]:
+    """Extract only safe permission booleans from successful hub_get_info receipts.
+
+    The top-level readEnabled/writeEnabled switches are GLOBAL, not per-token.
+    clientAccess is returned only for recognised per-client access tokens.
+    A model's answer text, failed/non-executed tool or arbitrary log record
+    cannot establish permission; no client name, URL or token is retained.
+    """
+    response = document.get("response")
+    if not isinstance(response, dict):
+        return []
+    findings = []
+    for receipt in response.get("tool_calls", []):
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if (receipt.get("operation_executed") is False or
+                receipt.get("result_kind") in
+                ("tool_catalog", "prior_evidence_read", "contract_error")):
+            continue
+        args = receipt.get("arguments")
+        is_hub_info = (receipt.get("name") == "hub_get_info" or
+                       (isinstance(args, dict) and args.get("tool") == "hub_get_info"))
+        if not is_hub_info:
+            continue
+        try:
+            envelope = json.loads(receipt.get("response"))
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(envelope, dict) or envelope.get("isError") is True:
+            continue
+        blocks = envelope.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for item in blocks:
+            if not isinstance(item, dict) or item.get("type") != "text":
+                continue
+            try:
+                info = json.loads(item.get("text"))
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(info, dict):
+                continue
+            master_read = info.get("readEnabled")
+            master_write = info.get("writeEnabled")
+            client = info.get("clientAccess")
+            token_read = client.get("readEnabled") if isinstance(client, dict) else None
+            token_write = client.get("writeEnabled") if isinstance(client, dict) else None
+            if not any(type(x) is bool for x in
+                       (master_read, master_write, token_read, token_write)):
+                continue
+            findings.append(tuple(x if type(x) is bool else None
+                                  for x in (master_read, master_write,
+                                            token_read, token_write)))
+    return findings
+
+
+def _permission_evidence(documents: list[dict]) -> dict:
+    found = [row for doc in documents
+             for row in _permission_evidence_from_export(doc)]
+    def consistent(index: int) -> bool | None:
+        values = {row[index] for row in found if row[index] is not None}
+        return next(iter(values)) if len(values) == 1 else None
+    global_read, global_write, client_read, client_write = (
+        consistent(i) for i in range(4)
+    )
+    client_seen = sum(1 for row in found if row[2] is not None or
+                      row[3] is not None)
+    if not found:
+        status = "no_successful_hub_info_permission_receipt"
+    elif client_write is False:
+        status = "client_write_disabled_reported_not_independently_verified"
+    elif client_write is True:
+        status = "client_write_enabled_reported"
+    elif client_seen:
+        status = "client_access_permissions_missing_or_conflicting"
+    elif global_write is True:
+        status = "global_write_enabled_client_scope_not_shown"
+    elif global_write is False:
+        status = "global_write_disabled_reported"
+    else:
+        status = "permission_receipts_incomplete_or_conflicting"
+    return {
+        "hub_info_permission_receipts": len(found),
+        "global_read_enabled_reported": global_read,
+        "global_write_enabled_reported": global_write,
+        "per_client_access_blocks_returned": client_seen,
+        "per_client_read_enabled_reported": client_read,
+        "per_client_write_enabled_reported": client_write,
+        "status": status,
+        "note": (
+            "Global master permissions are not individual token permissions. "
+            "Only a recognised per-client token returns clientAccess. "
+            "These source-reported flags are not an independent enforcement test; "
+            "confirm the client token in Hubitat Apps > MCP Rule Server > "
+            "Settings > Advanced > Per-client access tokens."
+        ),
+    }
+
+
 def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     manifest, sealed_digest = _load_manifest(directory)
     records: list[dict] = []
+    source_exports: list[dict] = []
     ids: list[str] = []
     missing: list[str] = []
     carryover: list[str] = []
@@ -209,6 +309,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         model_hashes.add(record["build"]["model_sha256_prefix"])
         versions.add(record["build"]["version"])
         records.append(record)
+        source_exports.append(document)
         ids.append(ident)
 
     if reviews is not None and missing:
@@ -238,6 +339,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         "real_source_verified_from_export": False,
         "first_attempt_independently_verified": False,
         "read_only_permission_independently_verified": False,
+        "permission_evidence": _permission_evidence(source_exports),
         "new_cloud_calls": 0,
         "new_mcp_calls": 0,
         "review_eligibility": ("needs_operator_source_and_first_attempt_attestation"
