@@ -20,15 +20,15 @@ The frozen six-case fictional A/B evaluation was fully completed and unblinded. 
 
 Existing CLI (no model, hub, network or HA calls):
 
-\`\`\`powershell
+```powershell
 python hubitat-mcp-ai-v2/tools/first_answer_audit.py case01.json case02.json --output first-answer-summary.json
-\`\`\`
+```
 
-Until human reviews are attached, \`quality_status\` remains \`not_measured\` and grounding/usefulness/causal scores remain null.
+Until human reviews are attached, `quality_status` remains `not_measured` and grounding/usefulness/causal scores remain null.
 
-Create a private \`source-real-reviews.json\` **locally**, in the same positional order as the Technical JSON files supplied to the CLI:
+Create a private `source-real-reviews.json` **locally**, in the same positional order as the Technical JSON files supplied to the CLI:
 
-\`\`\`json
+```json
 {
   "schema": "homebrain-v2-source-real-human-review.v1",
   "reviews": [
@@ -45,17 +45,17 @@ Create a private \`source-real-reviews.json\` **locally**, in the same positiona
     }
   ]
 }
-\`\`\`
+```
 
-The numbers above are **illustrative schema values, not real HomeBrain evaluation results**. \`export_index\` is zero-based and refers to the position of a private export passed on the command line. Review records are optional for any unreviewed export; each position can be scored at most once. If the first attempt cannot be attested, use \`first_attempt: false\`. If the packet is fictional, use \`source_kind: "synthetic"\`; if origin is unknown use \`"unknown"\`. Non-real and non-first-attempt rows are **excluded** from source-real first-answer quality denominators. For \`useful_first_answer\` and \`relevant_sources_sufficient\`, use \`null\` rather than guess when undetermined.
+The numbers above are **illustrative schema values, not real HomeBrain evaluation results**. `export_index` is zero-based and refers to the position of a private export passed on the command line. Review records are optional for any unreviewed export; each position can be scored at most once. If the first attempt cannot be attested, use `first_attempt: false`. If the packet is fictional, use `source_kind: "synthetic"`; if origin is unknown use `"unknown"`. Non-real and non-first-attempt rows are **excluded** from source-real first-answer quality denominators. For `useful_first_answer` and `relevant_sources_sufficient`, use `null` rather than guess when undetermined.
 
 Apply the human review without exporting the private answers or receipts:
 
-\`\`\`powershell
+```powershell
 python hubitat-mcp-ai-v2/tools/first_answer_audit.py case01.json case02.json --reviews source-real-reviews.json --output reviewed-summary.json
-\`\`\`
+```
 
-The output contains descriptive score denominators, counts and anonymised receipt metadata. \`quality_status\` is \`human_attested_partial\` or \`human_attested_complete\` only where qualifying reviews are supplied; an empty or inapplicable review set remains \`not_measured\`. \`grounded_claim_rate\` is null if no factual claims were reviewed. The unsupported definite-cause count is null if no definite causal claims were reviewed, so a zero-denominator case never masquerades as zero unsupported causes. The tool **does not independently prove** source provenance, freshness, reviewer independence or factual correctness; those remain human attestations.
+The output contains descriptive score denominators, counts and anonymised receipt metadata. `quality_status` is `human_attested_partial` or `human_attested_complete` only where qualifying reviews are supplied; an empty or inapplicable review set remains `not_measured`. `grounded_claim_rate` is null if no factual claims were reviewed. The unsupported definite-cause count is null if no definite causal claims were reviewed, so a zero-denominator case never masquerades as zero unsupported causes. The tool **does not independently prove** source provenance, freshness, reviewer independence or factual correctness; those remain human attestations.
 
 **Privacy boundary:** Keep original Technical JSON exports and private reviews outside the public repository. No raw question, answer, event row, tool argument, model label, private note, room identity or review filename is copied into the aggregate. The published script is runnable offline and never fetches source data.
 
