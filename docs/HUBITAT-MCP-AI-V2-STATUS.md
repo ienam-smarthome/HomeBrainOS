@@ -8,9 +8,9 @@ Updated: 2026-11-09
 
 After reviewing the unblinded six-case A/B findings, the next step is **not** promotion of the candidate prompt. The critical unresolved problem is deciding which discriminating source to retrieve and using the upstream MCP schema correctly; candidate and baseline tied on causal calibration (7/12) and required-source checks (10/23).
 
-This phase extends the existing **offline** \`hubitat-mcp-ai-v2/tools/first_answer_audit.py\` with an opt-in, separately supplied private human-review overlay. It preserves original first-answer Technical JSON exports and never grades answer correctness from tool counts alone. Only human-attested **real, first-attempt** samples can contribute to factual grounding, definitive unsupported causal-claim counts, usefulness and source-sufficiency denominators. Non-first, fictional and unknown-source reviews are explicitly excluded; zero reviewed claims leave the relevant rate/count null. The private reviewer data is not copied into the safe summary, and reviewer/source attestations are not independently verified by the script. Tests use fake exports. This is measurement tooling **only**, not any inference or live MCP behaviour change.
+This phase extends the existing **offline** `hubitat-mcp-ai-v2/tools/first_answer_audit.py` with an opt-in, separately supplied private human-review overlay. It preserves original first-answer Technical JSON exports and never grades answer correctness from tool counts alone. Only human-attested **real, first-attempt** samples can contribute to factual grounding, definitive unsupported causal-claim counts, usefulness and source-sufficiency denominators. Non-first, fictional and unknown-source reviews are explicitly excluded; zero reviewed claims leave the relevant rate/count null. The private reviewer data is not copied into the safe summary, and reviewer/source attestations are not independently verified by the script. Tests use fake exports. This is measurement tooling **only**, not any inference or live MCP behaviour change.
 
-The next steps are to capture a **new unseen source-real** read-only first-answer set, independently review exact receipts, diagnose missing source classes/invalid schema calls/causal overclaims and **then** evaluate one general model-led intervention prospectively against unchanged production. Keep the six revealed \`hold-..\` experiments frozen. The full approach, private CLI review schema, targets and boundaries are in [v2 next milestone](HUBITAT-MCP-AI-V2-NEXT-MILESTONE.md). Version remains unchanged for this offline tooling/docs milestone. No HA/hub access or cloud inference was used to create these notes.
+The next steps are to capture a **new unseen source-real** read-only first-answer set, independently review exact receipts, diagnose missing source classes/invalid schema calls/causal overclaims and **then** evaluate one general model-led intervention prospectively against unchanged production. Keep the six revealed `hold-..` experiments frozen. The full approach, private CLI review schema, targets and boundaries are in [v2 next milestone](HUBITAT-MCP-AI-V2-NEXT-MILESTONE.md). Version remains unchanged for this offline tooling/docs milestone. No HA/hub access or cloud inference was used to create these notes.
 
 ## 9 November 2026 — Completed alpha.25/26 blinded synthetic reasoning holdout
 
@@ -384,10 +384,10 @@ reasoning/device control was approved or performed.
 
 To assess an untested dimension—**tool selection and follow-up evidence
 retrieval by the actual v2 model-led agent**—added an independent, synthetic
-\`Autonomous Lab\` tab. The model receives fictional scenarios, chooses
+`Autonomous Lab` tab. The model receives fictional scenarios, chooses
 native-shaped MCP gateway tools via the unchanged production
-\`Agent.answer\` loop, and independently decides when to stop. A separate
-\`SyntheticMCP\` instance always serves tool discovery, reads and up to one
+`Agent.answer` loop, and independently decides when to stop. A separate
+`SyntheticMCP` instance always serves tool discovery, reads and up to one
 allowed **memory-only simulated command** for command cases. No call can
 reach Hubitat or HA, and no prior private A/B source is imported or sent.
 Other action attempts and duplicate commands are blocked and counted.
@@ -404,28 +404,28 @@ Evaluations are user-initiated, capped at eight model rounds, 24 tool
 attempts and a 90-second deadline, with clear cloud-credit consent.
 No independent live inference or physical-effect claim is supported.
 
-Version: \`2.0.0-alpha.22\`. Tests use synthetic model transport and
+Version: `2.0.0-alpha.22`. Tests use synthetic model transport and
 in-memory MCP fixtures only; no cloud requests, device actions or HA
 config mutations. Native Ask/Chat, earlier private A/B scores, recorder,
 graphs and V1 remain untouched. See
-\`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\` for operation, limitations,
+`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md` for operation, limitations,
 rollback and scenario details.
 
 
 ### Alpha.23 — Autonomous Lab: live synthetic-run contract correction
 
-A user-installed \`2.0.0-alpha.22\` Gemma trial reached the evaluation's
+A user-installed `2.0.0-alpha.22` Gemma trial reached the evaluation's
 8-round cap with 10 rejected synthetic tool attempts and no simulated
 command or fresh follow-up verification. The synthetic tool adapter had
 drifted from the real MCP Rule Server tool schemas. The root *possibility*
-is clear from code (native \`parameters: ["40"]\` versus the old simulated
-\`params: [40]\`, invented gateway names, absent discovery-cache
+is clear from code (native `parameters: ["40"]` versus the old simulated
+`params: [40]`, invented gateway names, absent discovery-cache
 semantics); the per-call causes remain unverified without the preserved
 original tool receipts.
 
 Corrected the synthetic MCP adapter to mirror native gateway placement,
 real command parameter naming, on-demand leaf schema discovery and
-validation. The production \`Agent.answer\` and native MCP connection
+validation. The production `Agent.answer` and native MCP connection
 remain unchanged. Added machine-readable rejected reason codes; the
 sandbox retains its memory-only, single-command safety envelope. The
 evaluation budget is 12 model rounds / 40 synthetic calls / 120s rather
@@ -436,11 +436,11 @@ as answered/gradable cases. An explicit, newly approved retry of **only**
 a failed case archives the prior failed attempt (up to two retries) and
 preserves other cases. UI and report distinguish answered, failed, graded
 and prior failed runs. New synthetic regressions verify native string
-\`parameters\`, reject old \`params\`, progressive schema discovery and
+`parameters`, reject old `params`, progressive schema discovery and
 safe retry with original failed-result preservation.
 
-**Operational:** upgrade only the v2 add-on to \`2.0.0-alpha.23\` and
-retry \`lab-01\` with consent. Inspect actual synthetic tool receipts
+**Operational:** upgrade only the v2 add-on to `2.0.0-alpha.23` and
+retry `lab-01` with consent. Inspect actual synthetic tool receipts
 and coverage before judging Gemma; do not infer live device performance.
 
 
@@ -490,14 +490,14 @@ and accepted-but-unverified beacon command. These are separate from both
 earlier benchmark datasets, not patches targeted to their exact questions.
 
 For each holdout case, identical model configuration and source fixtures
-run twice in separate \`Agent.answer\` loops, starting from empty history
-with completely fresh \`SyntheticMCP\` state. Baseline retains the
+run twice in separate `Agent.answer` loops, starting from empty history
+with completely fresh `SyntheticMCP` state. Baseline retains the
 existing alpha.24 system skill. Candidate has **one additional, general
 evidence-completion system instruction**: consider discriminating evidence
 for causal claims and unresolved alternatives before stopping. It does
 not select tools, add forced reads, restrict writes, or change the
 production agent. Randomised A/B assignment is stored only in a private
-\`/data/homebrain-v2-reasoning-ab\` file. The report remains blinded until
+`/data/homebrain-v2-reasoning-ab` file. The report remains blinded until
 **all six pairs have successfully run and been manually scored**.
 
 Per-arm receipts and checklists distinguish model calls, retrieved
@@ -509,8 +509,8 @@ stops, failed attempts can be explicitly retried, successful answers
 remain unchanged, and no automated real-device actions occur. Reports
 omit raw answers, source receipts, identifiers and credentials.
 
-**Version:** \`2.0.0-alpha.25\`. Read
-\`docs/HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md\` for six scenarios,
+**Version:** `2.0.0-alpha.25`. Read
+`docs/HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md` for six scenarios,
 operational steps, blinding limits, evaluation interpretation and rollback.
 No model traffic is generated by code review or CI. **The installed v2
 add-on must be updated and the user must consent to the paired model runs
@@ -521,7 +521,7 @@ should be promoted based on this small synthetic study.
 ### Alpha.26 — prospective A/B scoring integrity (9 Nov 2026)
 
 **Trigger:** Code inspection of the merged alpha.25 holdout found that
-\`ReasoningExperiment.score()\` accepted repeat submissions to the same pair.
+`ReasoningExperiment.score()` accepted repeat submissions to the same pair.
 Because the aggregate report reveals the candidate/baseline allocation after
 all six pairs are scored, this permitted silent post-unblinding revisions of
 previously labelled *blind* ratings. The browser also kept Save enabled for
@@ -536,7 +536,7 @@ browser locked controls. The only reset remains the existing explicit full
 Reasoning A/B study delete. Existing saved ratings remain readable, without
 migration, re-grading or altered mapping.
 
-**Version:** \`2.0.0-alpha.26\`. Baseline/candidate prompts, six fictional
+**Version:** `2.0.0-alpha.26`. Baseline/candidate prompts, six fictional
 holdout scenarios, order allocation, source receipts, isolated model/tool
 invocation, Hub Diagnostics, native MCP, and production AI remain unchanged.
 The six paired live-Gemma runs have **not** been supplied or validated;
