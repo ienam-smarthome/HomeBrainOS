@@ -94,12 +94,13 @@ body.graph-popout.graph-popout-detail #detailCard{display:block}
 body.graph-popout .card{padding:18px 22px;width:100%}
 body.graph-popout .graph-popout-link{display:none}
 body.graph-popout .graph-popout-return:not([hidden]){display:inline-flex}
+.graph-popout-return[hidden]{display:none}
 body.graph-popout .timeline-chart{min-width:0;min-height:460px;max-height:none;
  height:clamp(460px,68vh,1000px);width:100%}
 body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
 @media(max-width:700px){body.graph-popout main{padding:8px}
  body.graph-popout .card{padding:12px}
- body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px}
+ body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px;min-width:860px}
  body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
 
 </style></head>
@@ -549,13 +550,21 @@ function drawIncidentTimeline(){
   byId('timelineEvents').replaceChildren();return;
  }
  const {start,end,requestedStart,fit}=timelineShown;
+ // The popup increases plot geometry; it is not merely a magnified 860px SVG.
+ const fullView=document.body?.classList?.contains('graph-popout')||false;
+ const bounds=svg.getBoundingClientRect();
+ const chartWidth=fullView?Math.max(860,Math.round(bounds.width||860)):860;
+ const chartHeight=fullView?Math.max(400,Math.round(bounds.height||460)):360;
+ svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
  const memMetric=timelineData.metrics?.free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
  const mem=sourcePoints(memMetric.samples,'free_os_mb');
  const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true);
  timelineSeries={memory:mem,cpu};
  const layout=byId('timelineLayout').value,combined=layout==='combined';
- const plot={left:76,right:800,top:combined?37:28,memBottom:combined?322:156,
-  cpuTop:combined?37:202,cpuBottom:322};
+ const splitBoundary=Math.round(156+(chartHeight-360)*.5);
+ const plot={left:76,right:chartWidth-(combined?84:60),top:combined?37:28,
+  memBottom:combined?chartHeight-38:splitBoundary,
+  cpuTop:combined?37:splitBoundary+46,cpuBottom:chartHeight-38};
  const memScale=scaleFor(mem,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
  const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
  const yFor=(kind,v)=>{
@@ -565,17 +574,19 @@ function drawIncidentTimeline(){
   return bottom-(v-scale.min)/(scale.max-scale.min)*(bottom-top);
  };
  const text=(tag,attrs,value)=>svg.append(svgNode(tag,attrs,value));
- const gridCount=Math.max(2,Math.min(10,Math.floor((svg.getBoundingClientRect().width||860)/115)));
+ // Reserve enough logical SVG width for long labels spanning date boundaries.
+ const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
+ const gridCount=Math.max(2,Math.min(18,Math.floor(
+  (plot.right-plot.left)/(sameDay?83:155))));
  for(let i=0;i<=gridCount;i++){
   const t=start+(end-start)*i/gridCount,xx=x(t);
   text('line',{x1:xx,x2:xx,y1:plot.top,y2:plot.cpuBottom,stroke:'#33475c',
    'stroke-width':.8,'stroke-dasharray':'2 5'});
-  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
   const label=new Date(t).toLocaleString('en-GB',sameDay?
    {hour:'2-digit',minute:'2-digit',hour12:false}:
    {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
-  text('text',{x:xx,y:345,fill:'#b1c0d4','font-size':11,
-   'text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
+  text('text',{x:xx,y:chartHeight-13,fill:'#b1c0d4','font-size':11,
+   'data-axis':'time','text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
  }
  const yGrid=(scale,kind,right=false)=>{
   for(let i=0;i<=scale.count;i++){
@@ -590,11 +601,10 @@ function drawIncidentTimeline(){
  };
  yGrid(memScale,'memory');
  yGrid(cpuScale,'cpu',combined);
- if(!combined)yGrid(cpuScale,'cpu');
  text('text',{x:plot.left,y:17,fill:'#93c5fd','font-size':12},
   combined?'OS memory (left · MB) / 5m CPU equivalent (right · %)':
   'OS memory · MB (external probes; independent scale)');
- if(!combined)text('text',{x:plot.left,y:191,fill:'#86efac','font-size':12},
+ if(!combined)text('text',{x:plot.left,y:plot.cpuTop-11,fill:'#86efac','font-size':12},
   '5m CPU load equivalent · % (native; independent scale)');
  const incidents=(timelineData.incidents||[]).filter(v=>v&&v.kind==='hub-unreachable');
  for(const row of incidents){
@@ -700,7 +710,7 @@ function drawIncidentTimeline(){
   (fit?' · Time axis fitted to recorded observations within the '+byId('range').value+'-hour request':'')+
   ((memMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
   ' · Partial source coverage; time alignment is not causation.';
- timelineShown={...timelineShown,x,yFor,plot};
+ timelineShown={...timelineShown,x,yFor,plot,chartWidth};
  const previous=timelineSelection;
  if(Number.isFinite(previous)&&previous>=start&&previous<=end)selectTimelineTime(previous);
  else if(timelineFocusTimes.length)selectTimelineTime(timelineFocusTimes[timelineFocusTimes.length-1]);
@@ -766,7 +776,7 @@ function timelinePointer(event){
  if(!timelineShown)return;
  const svg=byId('incidentTimeline'),rect=svg.getBoundingClientRect();
  if(!rect.width)return;
- const px=(event.clientX-rect.left)/rect.width*860;
+ const px=(event.clientX-rect.left)/rect.width*(timelineShown.chartWidth||860);
  if(px<timelineShown.plot.left-12||px>timelineShown.plot.right+12)return;
  const fraction=(px-timelineShown.plot.left)/
   (timelineShown.plot.right-timelineShown.plot.left);
@@ -912,7 +922,8 @@ function draw(){
    g.fillText(diagValue(value,visual.bk),left+W+7,yy+3);
   }
  }
- const ticks=Math.max(2,Math.min(10,Math.floor(rect.width/120)));
+ const ticks=Math.max(2,Math.min(18,Math.floor(W/(
+  new Date(start).toDateString()===new Date(end).toDateString()?90:145))));
  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
  for(let i=0;i<=ticks;i++){
   const t=start+(end-start)*i/ticks,xx=x(t);
