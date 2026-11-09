@@ -25,9 +25,52 @@ with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in [1280,390]:
   page=browser.new_page(viewport={"width":width,"height":1000})
-  requests=[];resets=[]
+  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[]
   def api(route):
    request=route.request
+   if "/api/benchmark/" in request.url:
+    assert request.headers.get("x-homebrain-request")=="1"
+    path=request.url.split("/api/benchmark/")[1].split("?")[0]
+    if path=="status":
+     data={"imported":bench["imported"],"running":False,"error":None,
+      "cases":[{"id":"case-001","answered":bench["answered"],"graded":bench["scored"]}] if bench["imported"] else []}
+    elif path=="import":
+     assert request.headers.get("content-type")=="application/zip"
+     bench["imported"]=True;data={"imported":True,"pairs":1,"model_calls":0}
+    elif path=="run":
+     values=request.post_data_json
+     assert values["case_ids"]==["case-001"]
+     assert values["private_evidence_consent"] is True
+     assert values["cloud_transfer_consent"] is True
+     assert "tools" not in values
+     bench_runs.append(values);bench["answered"]=True
+     data={"started":True,"pending":2}
+    elif path=="case/case-001":
+     data={"id":"case-001","question":"Synthetic private <img onerror=window.injected=true>?",
+      "source":[{"tool":"read","result":"<script>window.injected=true</script>"}],
+      "both_answered":bench["answered"],
+      "answers":{"A":"Synthetic <script>answer A</script>","B":"Answer B"} if bench["answered"] else {},
+      "ratings":{label:{"ratings":{name:None for name in
+        ("factual_grounding","source_completeness","causal_calibration","command_outcome","usefulness")}}
+          for label in ("A","B")}}
+    elif path=="case/case-001/score":
+     recorded=request.post_data_json["scores"]
+     assert set(recorded)=={"A","B"}
+     assert all(len(recorded[label])==5 for label in recorded)
+     bench["scored"]=True;data={"saved":True}
+    elif path=="report":
+     data={"schema":"homebrain-v2-fixed-source-report.v1",
+      "blind_reviewed_pairs":1 if bench["scored"] else 0,
+      "private_values_exported":False,
+      "condition_effects":{"factual_grounding":{"role_notes_better":1}}}
+    elif path=="stop":data={"stop_requested":False}
+    elif path=="delete":
+     assert request.post_data_json["confirm_delete"] is True
+     bench["imported"]=False;bench["answered"]=False;bench["scored"]=False
+     data={"deleted":True}
+    else:raise AssertionError("Unexpected benchmark route "+path)
+    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
+    return
    if "/api/status" in request.url:data={"version":version,"configured":True,"model":"fixture-model"}
    elif "/api/conversation/clear" in request.url:
     assert request.headers.get("x-homebrain-request")=="1"
