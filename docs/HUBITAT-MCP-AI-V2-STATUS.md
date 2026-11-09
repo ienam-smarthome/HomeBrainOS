@@ -357,3 +357,42 @@ tests, desktop/mobile Chromium, full Python suite, container smoke and
 post-merge CI. Neither synthetic tests nor the new page constitute a completed
 Gemma A/B evaluation. Actual cloud-run and human blind scores still require
 the user's explicit action.
+
+
+### Alpha.22 — Isolated synthetic autonomous first-answer milestone
+
+The user completed the 10-pair private A/B Gemma fixed-source benchmark.
+The net generic annotation effect was a small negative (~3 points across 46
+applicable ratings), with three baseline wins, three annotation wins and four
+ties. Duplicate humidity history and assistant-informed human scoring limit
+interpretation. No general benefit was established, and no change to live
+reasoning/device control was approved or performed.
+
+To assess an untested dimension—**tool selection and follow-up evidence
+retrieval by the actual v2 model-led agent**—added an independent, synthetic
+\`Autonomous Lab\` tab. The model receives fictional scenarios, chooses
+native-shaped MCP gateway tools via the unchanged production
+\`Agent.answer\` loop, and independently decides when to stop. A separate
+\`SyntheticMCP\` instance always serves tool discovery, reads and up to one
+allowed **memory-only simulated command** for command cases. No call can
+reach Hubitat or HA, and no prior private A/B source is imported or sent.
+Other action attempts and duplicate commands are blocked and counted.
+
+Six independent fictional domains cover successful and unsuccessful
+commands, historical heating demand, schedule/trigger causality, stale
+telemetry, and state-event reporter versus command-issuer attribution.
+A visible checklist reports exactly which expected tool-source classes
+were retrieved, **not whether the answer is true**. Manual 0/1/2/n/a
+ratings assess grounding, completeness, causal calibration, command
+outcome and usefulness. Export omits prompts, sources, answers and keys;
+it includes cases, tool-round counts, retrieval coverage and manual scores.
+Evaluations are user-initiated, capped at eight model rounds, 24 tool
+attempts and a 90-second deadline, with clear cloud-credit consent.
+No independent live inference or physical-effect claim is supported.
+
+Version: \`2.0.0-alpha.22\`. Tests use synthetic model transport and
+in-memory MCP fixtures only; no cloud requests, device actions or HA
+config mutations. Native Ask/Chat, earlier private A/B scores, recorder,
+graphs and V1 remain untouched. See
+\`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\` for operation, limitations,
+rollback and scenario details.

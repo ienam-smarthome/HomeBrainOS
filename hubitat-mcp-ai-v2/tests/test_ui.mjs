@@ -120,6 +120,17 @@ rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('r
 assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
 assert(html.includes('id="diagnosticsTab"'));
 assert(html.includes('id="benchmarkTab"'));
+assert(html.includes('id="autonomousTab"'));
+assert(html.includes('id="autolabSelect"'));
+assert(html.includes('id="autolabRun"'));
+assert(html.includes('id="autolabModelConsent"'));
+assert(html.includes('id="autolabCloudConsent"'));
+assert(html.includes('id="autolabCoverage"'));
+assert(html.includes('id="autolabScores"'));
+assert(html.includes('id="autolabReportPreview"'));
+assert.match(html,/api\/autonomous\//);
+assert.match(html,/synthetic test only/i);
+
 assert(html.includes('id="benchZip"'));
 assert(html.includes('id="benchPrivateConsent"'));
 assert(html.includes('id="benchCloudConsent"'));

@@ -13,6 +13,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from benchmark import BenchmarkWorkspace
 from benchmark_routes import router as benchmark_router
+from autonomous_lab import AutonomousLab
+from autonomous_routes import router as autonomous_router
 from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
@@ -68,6 +70,9 @@ async def lifecycle(app: FastAPI):
     app.state.benchmark = BenchmarkWorkspace(Path("/data/homebrain-v2-benchmark"))
     app.state.benchmark_task = None
     app.state.benchmark_progress = {"running": False, "error": None}
+    app.state.autolab = AutonomousLab(Path("/data/homebrain-v2-autonomous-lab"))
+    app.state.autolab_task = None
+    app.state.autolab_progress = {"running": False, "error": None}
     app.state.mcp = None
     app.state.model = None
     app.state.configuration_error = None
@@ -98,6 +103,12 @@ async def lifecycle(app: FastAPI):
     try:
         yield
     finally:
+        if app.state.autolab_task and not app.state.autolab_task.done():
+            app.state.autolab_task.cancel()
+            try:
+                await app.state.autolab_task
+            except asyncio.CancelledError:
+                pass
         if app.state.benchmark_task and not app.state.benchmark_task.done():
             app.state.benchmark_task.cancel()
             try:
@@ -111,8 +122,9 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.21", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.22", lifespan=lifecycle)
 app.include_router(benchmark_router)
+app.include_router(autonomous_router)
 
 
 @app.middleware("http")
@@ -143,7 +155,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.21",
+        "version": "2.0.0-alpha.22",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
