@@ -4,6 +4,20 @@
 
 This next milestone is distinct from the already-unblinded six fictional `hold-..` cases. It freezes ten new, cross-domain questions with private user-selected device/app labels, then validates **first-attempt Technical JSON** from the existing v2 Ask interface. The capture checker makes **no** MCP, Home Assistant, model or network calls and cannot turn anything on/off. Source-real accuracy remains **not measured** until an operator runs the new questions against a real connected server and a reviewer checks the receipts.
 
+## Check the actual Read / Write permissions (before further live tests)
+
+The source-real `sr-01` Technical JSON reported top-level `readEnabled: true` and `writeEnabled: true`. **These are global MCP Rule Server Read / Write master settings**, not proof that the HomeBrain v2 client token has write permissions. The upstream server's `hub_get_info` adds a **`clientAccess`** object *only when authenticated with a recognised per-client access token*, including that token's `readEnabled`, `writeEnabled` and visible tools.
+
+On the **Hubitat hub itself**: **Apps → MCP Rule Server → Settings → Advanced → Per-client access tokens** (requires firmware 2.5.2+). Select/create a dedicated `HomeBrain v2 Read-only Evaluation` client. Set **Read ON / Write OFF** for that client, and ensure its local/cloud endpoint permissions suit your connection. Keep the global master Write ON if other MCP integrations still need it. Copy **only that client's endpoint/token** privately into the HomeBrainOS v2 add-on's MCP connection settings; **never** paste tokens into a chat, Technical JSON, README, or GitHub.
+
+Use a fresh `hub_get_info` read *through that HomeBrain v2 connection*, and inspect the result for **`clientAccess.writeEnabled: false`** and **`clientAccess.readEnabled: true`**. Seeing only top-level `writeEnabled: true` does **not** prove the token is writable; seeing a token's own `clientAccess.writeEnabled: false` is read-only permission **reported by the server**, still not independent proof of enforcement. Do not run any write command merely to test a permission boundary.
+
+The offline `source_real_acceptance.py verify` report now includes a privacy-safe `permission_evidence` section derived from successful `hub_get_info` receipts, clearly separating `global_write_enabled_reported` from `per_client_write_enabled_reported` and excluding any names/tokens/URLs. For older captures made with the main token, per-client grant fields remain `null`. `read_only_permission_independently_verified` deliberately remains `false` because receipts cannot independently prove enforcement.
+
+Upstream documentation:
+[Per-client access tokens](https://github.com/kingpanther13/Hubitat-local-MCP-server/blob/98bc7ca2d0f1bd2e2857962292b33d83683bc2b0/README.md) and
+[hub_get_info field contract](https://github.com/kingpanther13/Hubitat-local-MCP-server/blob/98bc7ca2d0f1bd2e2857962292b33d83683bc2b0/TOOL_GUIDE.md).
+
 ## Private setup
 
 Use a **new private folder outside the public repository** for all configuration, questions, outputs and exported receipts. Create a local `labels.json` like this, replacing the six uppercase placeholder values with exact names from the actual hub (never commit or publish it):
