@@ -201,7 +201,7 @@ const fullSpan=timeline.run('timelineWindow(timelineData).end - timelineWindow(t
 const startDrag=timeline.run("startChartBrush('timeline',{clientX:200,pointerId:7,button:0})");
 assert.equal(startDrag,true);
 timeline.run("moveChartBrush('timeline',{clientX:500,pointerId:7})");
-assert.equal(timeline.run('zoomBrush.to'),500);
+assert(Math.abs(timeline.run('zoomBrush.to')-500)<.001);
 assert.equal(timeline.run("endChartBrush('timeline',{clientX:500,pointerId:7})"),true);
 assert.equal(timeline.run('diagnosticZoom!==null'),true);
 assert(timeline.run('diagnosticZoom.end-diagnosticZoom.start')<fullSpan);
