@@ -147,7 +147,7 @@ def scenario_definitions() -> list[dict]:
             }},
             "checks":[
                 {"label":"Extractor switch events","leaf":"hub_list_device_events","id":"LAB-401"},
-                {"label":"Command issuer history","leaf":"hub_get_device_command_history","id":"LAB-401"},
+                {"label":"Command issuer event history","leaf":"hub_list_device_events","id":"LAB-401","attribute":"command-on"},
                 {"label":"Automation schedule and threshold","leaf":"hub_get_app_config","id":"LAB-APP-401"},
                 {"label":"Humidity history and reporting gaps","leaf":"hub_list_device_events","id":"LAB-402"},
             ],
@@ -207,7 +207,7 @@ def scenario_definitions() -> list[dict]:
                                    "action":"records a change; does not originate this event"}},
             "checks":[
                 {"label":"Lamp switch events","leaf":"hub_list_device_events","id":"LAB-601"},
-                {"label":"Command issuer history","leaf":"hub_get_device_command_history","id":"LAB-601"},
+                {"label":"Command issuer event history","leaf":"hub_list_device_events","id":"LAB-601","attribute":"command-off"},
             ],
         }
     ]
