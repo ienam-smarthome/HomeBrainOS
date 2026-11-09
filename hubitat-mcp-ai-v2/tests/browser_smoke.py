@@ -25,9 +25,53 @@ with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in [1280,390]:
   page=browser.new_page(viewport={"width":width,"height":1000})
-  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[]
+  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[];lab={"answered":False,"graded":False};lab_runs=[]
   def api(route):
    request=route.request
+   if "/api/autonomous/" in request.url:
+    assert request.headers.get("x-homebrain-request")=="1"
+    path=request.url.split("/api/autonomous/")[1].split("?")[0]
+    if path=="status":
+     data={"version":"synthetic-autonomous-first-answer.v1","synthetic_only":True,
+      "running":False,"error":None,
+      "cases":[{"id":"lab-05","title":"Stale sensor vs verified outage",
+                "domain":"telemetry","answered":lab["answered"],"graded":lab["graded"]}]}
+    elif path=="case/lab-05":
+     data={"id":"lab-05","title":"Stale sensor vs verified outage",
+       "domain":"telemetry","question":"Investigate <script>window.injected=true</script> synthetic stale telemetry.",
+       "synthetic_only":True,
+       "answer":"Stale readings; <img src=x onerror=window.injected=true> is unverified." if lab["answered"] else None,
+       "ratings":{name:2 for name in ("factual_grounding","source_completeness","causal_calibration",
+        "command_outcome","usefulness")} if lab["graded"] else None,
+       "success":True,"rounds":3,"elapsed_ms":3000,"simulated_commands":0,
+       "blocked_attempts":0,"unsafe_live_actions":0,
+       "tool_calls":[{"name":"hub_read_history","response":"synthetic <script>not executable</script>"}] if lab["answered"] else None,
+       "coverage":[{"label":"Device health classification","observed":True},
+                   {"label":"Event history checked","observed":False}] if lab["answered"] else None}
+    elif path=="run":
+     values=request.post_data_json
+     assert values["case_id"]=="lab-05"
+     assert values["model_execution_consent"] is True
+     assert values["cloud_transfer_consent"] is True
+     lab_runs.append(values);lab["answered"]=True
+     data={"started":True,"case_id":"lab-05","synthetic_only":True,"live_mcp_calls":0}
+    elif path=="case/lab-05/score":
+     scores=request.post_data_json["scores"]
+     assert len(scores)==5 and set(scores)=={"factual_grounding","source_completeness",
+      "causal_calibration","command_outcome","usefulness"}
+     lab["graded"]=True;data={"saved":True}
+    elif path=="report":
+     data={"schema":"homebrain-v2-autonomous-first-answer.v1","synthetic_only":True,
+      "cases_prepared":6,"cases_answered":int(lab["answered"]),"cases_graded":int(lab["graded"]),
+      "live_mcp_calls":0,"live_device_actions":0,
+      "cases":[{"case":"lab-05","observed_evidence_checks":1,"required_evidence_checks":2}]}
+    elif path=="stop":data={"stop_requested":False}
+    elif path=="delete":
+     assert request.post_data_json["confirm_delete"] is True
+     lab["answered"]=False;lab["graded"]=False;data={"deleted":True}
+    else:raise AssertionError("Unknown autonomous browser path "+path)
+    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
+    return
    if "/api/benchmark/" in request.url:
     assert request.headers.get("x-homebrain-request")=="1"
     path=request.url.split("/api/benchmark/")[1].split("?")[0]
@@ -371,6 +415,39 @@ with sync_playwright() as p:
   assert exported["private_values_exported"] is False
   assert "SYNTHETIC" not in json.dumps(exported)
   assert len(requests)==count_before,"Benchmark cannot send an Ask/MCP request"
+  # Autonomous lab uses fictional native-shaped MCP only. UI must display
+  # untrusted model/source content as text and never call the live Ask endpoint.
+  page.locator("#autonomousTab").click()
+  assert page.locator("#autonomous").is_visible()
+  page.wait_for_function("document.querySelector('#autolabSelect').value === 'lab-05'")
+  assert "<script>window.injected=true</script>" in page.locator("#autolabQuestion").inner_text()
+  assert page.locator("#autolabQuestion script").count()==0
+  page.locator("#autolabRun").click()
+  assert "approve both" in page.locator("#autolabStatus").inner_text().lower()
+  assert len(lab_runs)==0
+  page.locator("#autolabModelConsent").check()
+  page.locator("#autolabCloudConsent").check()
+  page.locator("#autolabRun").click()
+  page.wait_for_function("document.querySelector('#autolabAnswer').textContent.includes('Stale readings')")
+  assert len(lab_runs)==1
+  assert page.locator("#autolabAnswer img").count()==0
+  assert page.evaluate("window.injected===undefined")
+  assert "Retrieved" in page.locator("#autolabCoverage").inner_text()
+  assert "Not retrieved" in page.locator("#autolabCoverage").inner_text()
+  page.locator("#autolabRun").is_disabled()
+  for select in page.locator("#autolabScores select").all():
+   select.select_option("2")
+  page.locator("#autolabSave").click()
+  page.wait_for_function("document.querySelector('#autolabStatus').textContent.includes('1 manually scored')")
+  page.get_by_role("button",name="Generate report").last.click()
+  page.wait_for_function("document.querySelector('#autolabReportPreview').textContent.includes('cases_graded')")
+  with page.expect_download() as download:
+   page.locator("#autolabDownload").click()
+  summary=json.loads(Path(download.value.path()).read_text())
+  assert summary["cases_graded"]==1
+  assert summary["live_mcp_calls"]==0
+  assert "window.injected" not in json.dumps(summary)
+  assert len(requests)==count_before,"Autonomous sandbox must not use real Ask/MCP"
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
   assert not errors,errors
