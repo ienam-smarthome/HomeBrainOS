@@ -8,6 +8,12 @@ The frozen six-case fictional A/B evaluation was fully completed and unblinded. 
 
 **Goal:** find the general source-selection and tool-schema obstacles that prevent a useful, verified answer the first time. The model remains responsible for selecting relevant live MCP reads, deciding when the evidence is sufficient and writing natural, cautious explanations. No hardcoded per-device tool plans, event-specific heuristics, fabricated source coverage or answer rewrites.
 
+## 9 November 2026 — Phase 2: frozen source-real capture pack prepared
+
+A new **offline-only** `hubitat-mcp-ai-v2/tools/source_real_acceptance.py` utility prepares a private, SHA-256-sealed bank of ten new read-only questions using user-supplied device/app labels and verifies the unchanged first Technical JSON exported for each. The fixed categories differ from the six revealed fictional `hold-..` tests. It detects question mismatches, duplicate request identities, self-reported prior conversation evidence, command attempts, incomplete capture, inconsistent installed version and model fingerprints. It reuses the private reviewer audit from Phase 1; it never calls a model, MCP, HA or a device and does not export original question text or receipts. It cannot prove a real source or first attempt without the operator's attestation. A human-reviewed score is permitted only for a fully captured pack without reported prior-source carryover or a device-command attempt.
+
+See [private capture instructions](HUBITAT-MCP-AI-V2-SOURCE-REAL-CAPTURE.md). **No actual new real-hub observations are supplied yet**; first-answer factual and causal quality remain `not_measured`. A **server-enforced read-only token** is required before any source-real collection through the installed Ask UI. The production model/tool loop is not changed, and the generic synthetic prompt candidate remains unpromoted.
+
 ## Scope and sequence
 
 1. **Review-grade capture (implemented in this phase):** Reuse the existing private first-answer Technical JSON auditor, which reports source-window limitations, tool schema rejections, tool calls, elapsed time and command evidence. An optional **separate human-review JSON** attaches claim-level factual grounding, definite unsupported causal claims, usefulness and sufficient-source assessments to the same privately ordered exports. Quality never becomes measured merely because MCP reads succeeded.
