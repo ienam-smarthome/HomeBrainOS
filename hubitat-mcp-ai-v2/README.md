@@ -261,3 +261,30 @@ The Unified incident timeline **and** Detailed metric history now allow a select
 Both plots use the **same zoom window** within a page, keeping synchronized memory/CPU comparisons aligned. Pop-out links carry the selected numeric time bounds together with the existing display-only range/layout/metric options. Selecting a new **Range** or **Time axis** option resets the manual zoom; switching split/combined or metric preserves it. No raw source rows, tokens or network identifiers are placed in the URL. The zoom overlay is only visual. It does not interpolate, generate extra samples, refetch history, or query the hub, and the saved source/gap/causality distinctions remain unchanged. For long-range records already downsampled by the recorder API, zooming displays **only the retained fetched data**, not hidden high-resolution points.
 
 Browser and synthetic tests cover drag-selection overlay, zoomed interval, repeat zoom, reset, preserving single-click inspections and source-read-only boundaries on both full-page charts. The add-on UI, API and package version are all `2.0.0-alpha.20`. Existing v2 AI model/tool reasoning, Hubitat commands, HA, recorder storage, MCP server, backup/permissions, and V1 are unchanged. Updating the installed add-on is the user's separate action; rollback by reinstalling alpha.19.
+
+## Alpha.21 — Phone-accessible private AI Benchmark page
+
+The standalone v2 interface now has an **AI Benchmark** tab. Import the
+previously prepared private A/B ZIP directly from a phone or tablet in Home
+Assistant ingress. The page verifies frozen evidence hashes and stores original
+source receipts, model answers and blind ratings under
+`/data/homebrain-v2-benchmark/`, inaccessible to the live chat history.
+Choose one or two cases per run, explicitly acknowledge private evidence and
+cloud/remote model transfer, then use the configured model to generate
+stateless **no-tools** A/B answers (temperature 0, seed 42). Model activity
+can be stopped; completed results persist through add-on restart.
+
+Review A and B alongside the unannotated original MCP source, score five
+evidence-quality dimensions (0/1/2/n/a), and download an **aggregate-only**
+comparison report. The interface never displays the hidden A/B assignment,
+auto-grades answers, claims physical device causality or issues a native MCP
+tool call. You can explicitly delete all locally stored benchmark material.
+A cloud model such as `gemma4:31b-cloud` requires configured API access,
+and submitting private evidence may incur cloud charges. No run occurs on
+import, page opening or schedule. The download is an aggregate statistical
+summary, never private questions/answers/sources or tokens.
+
+The native v2 model-led loop, home device controls, Hub Diagnostics, external
+recorder, HA, native MCP server and V1 are unchanged. See
+`docs/HUBITAT-MCP-AI-V2-BENCHMARK-UI.md` for the full phone workflow and
+privacy/rollback notes. Update to **2.0.0-alpha.21** to use this new UI.
