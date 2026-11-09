@@ -123,6 +123,12 @@ assert(html.includes('id="incidentTimeline"'));
 assert(html.includes('id="timelineLayout"'));
 assert(html.includes('id="plotExtent"'));
 assert(html.includes('id="timelineSource"'));
+assert(html.includes('id="timelinePopout"'));
+assert(html.includes('id="detailPopout"'));
+assert(html.includes('id="timelineReturn"'));
+assert(html.includes('id="detailReturn"'));
+assert.match(html,/graph-popout-timeline/);
+assert.match(html,/graph-popout-detail/);
 assert(html.includes('id="timelineInspect"'));
 assert(html.includes('id="timelineAsk"'));
 assert(html.includes('id="detailReadout"'));
@@ -166,6 +172,25 @@ assert.equal(timeline.askCalls,0);
 timeline.el('plotExtent').value='full';
 timeline.run('redrawDiagnostics=()=>drawIncidentTimeline();redrawDiagnostics()');
 assert(!timeline.el('timelineMeta').textContent.includes('Time axis fitted'));
+// Overnight date+time labels must have enough actual logical SVG space,
+// rather than being counted from CSS pixels and placed into an 860-unit plot.
+timeline.run("timelineData.range_start='2026-11-07T06:00:00Z'; drawIncidentTimeline()");
+const axisLabels=timeline.el('incidentTimeline').children.filter(
+  n=>n.tagName==='TEXT'&&n['data-axis']==='time');
+assert(axisLabels.length>=3&&axisLabels.length<=6);
+assert(axisLabels.some(n=>n.textContent.includes('Nov')));
+const xValues=axisLabels.map(n=>Number(n.x));
+assert(xValues.every((x,i)=>i===0||x-xValues[i-1]>=145));
+timeline.run("window.location={origin:'http://127.0.0.1:8789',pathname:'/ingress/homebrain',search:''}");
+timeline.el('range').value='6';timeline.el('timelineLayout').value='split';
+timeline.el('metric').value='native_load_pct';
+const popoutURL=timeline.run("graphPageUrl('timeline').href");
+assert(popoutURL.includes('/ingress/homebrain?graph_view=timeline'));
+assert(popoutURL.includes('range=6'));
+assert(popoutURL.includes('layout=split'));
+assert(popoutURL.includes('metric=native_load_pct'));
+assert(!popoutURL.includes('source-1'));
+assert(!popoutURL.includes('PRIVATE'));
 
 console.log('Usability checks passed: safe Markdown/tables, original text, session reset/history, JSON download, diagnostics empty state and tab target.');
 
