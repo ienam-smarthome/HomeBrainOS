@@ -396,3 +396,35 @@ config mutations. Native Ask/Chat, earlier private A/B scores, recorder,
 graphs and V1 remain untouched. See
 \`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\` for operation, limitations,
 rollback and scenario details.
+
+
+### Alpha.23 — Autonomous Lab: live synthetic-run contract correction
+
+A user-installed \`2.0.0-alpha.22\` Gemma trial reached the evaluation's
+8-round cap with 10 rejected synthetic tool attempts and no simulated
+command or fresh follow-up verification. The synthetic tool adapter had
+drifted from the real MCP Rule Server tool schemas. The root *possibility*
+is clear from code (native \`parameters: ["40"]\` versus the old simulated
+\`params: [40]\`, invented gateway names, absent discovery-cache
+semantics); the per-call causes remain unverified without the preserved
+original tool receipts.
+
+Corrected the synthetic MCP adapter to mirror native gateway placement,
+real command parameter naming, on-demand leaf schema discovery and
+validation. The production \`Agent.answer\` and native MCP connection
+remain unchanged. Added machine-readable rejected reason codes; the
+sandbox retains its memory-only, single-command safety envelope. The
+evaluation budget is 12 model rounds / 40 synthetic calls / 120s rather
+than solely lifting the cap to mask invalid tool contracts.
+
+Critically, unsuccessful model/transport outcomes are no longer counted
+as answered/gradable cases. An explicit, newly approved retry of **only**
+a failed case archives the prior failed attempt (up to two retries) and
+preserves other cases. UI and report distinguish answered, failed, graded
+and prior failed runs. New synthetic regressions verify native string
+\`parameters\`, reject old \`params\`, progressive schema discovery and
+safe retry with original failed-result preservation.
+
+**Operational:** upgrade only the v2 add-on to \`2.0.0-alpha.23\` and
+retry \`lab-01\` with consent. Inspect actual synthetic tool receipts
+and coverage before judging Gemma; do not infer live device performance.
