@@ -333,6 +333,44 @@ with sync_playwright() as p:
   assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  # Simulate the complete phone/tablet A/B workflow with no model or hub.
+  page.locator("#benchmarkTab").click()
+  assert page.locator("#benchmark").is_visible()
+  assert "No private benchmark" in page.locator("#benchStatus").inner_text()
+  page.locator("#benchZip").set_input_files({
+   "name":"synthetic-private.zip","mimeType":"application/zip","buffer":b"PKSYNTHETIC"
+  })
+  page.locator("#benchImport").click()
+  page.wait_for_function("document.querySelector('#benchPilot1').value === 'case-001'")
+  assert page.locator("#benchRun").is_enabled()
+  assert page.locator("#benchImport").is_disabled()
+  page.locator("#benchRun").click()
+  assert "Approve both" in page.locator("#benchRunStatus").inner_text()
+  assert len(bench_runs)==0
+  page.locator("#benchPrivateConsent").check()
+  page.locator("#benchCloudConsent").check()
+  page.locator("#benchRun").click()
+  page.wait_for_function("document.querySelector('#benchSave').disabled === false")
+  assert len(bench_runs)==1
+  assert "<script>answer A</script>" in page.locator("#benchAnswerA").inner_text()
+  assert page.locator("#benchAnswerA script").count()==0
+  assert page.locator("#benchQuestion img").count()==0
+  page.locator("#benchOriginalSources summary").click()
+  assert "<script>window.injected=true</script>" in page.locator("#benchSource").inner_text()
+  assert page.evaluate("window.injected===undefined")
+  for select in page.locator("#benchScoresA select").all()+page.locator("#benchScoresB select").all():
+   select.select_option("2")
+  page.locator("#benchSave").click()
+  page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('1 blind scored')")
+  page.locator("#benchReportButton").click()
+  assert "blind_reviewed_pairs" in page.locator("#benchReportPreview").inner_text()
+  with page.expect_download() as download:
+   page.locator("#benchDownload").click()
+  exported=json.loads(Path(download.value.path()).read_text())
+  assert exported["blind_reviewed_pairs"]==1
+  assert exported["private_values_exported"] is False
+  assert "SYNTHETIC" not in json.dumps(exported)
+  assert len(requests)==count_before,"Benchmark cannot send an Ask/MCP request"
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
   assert not errors,errors
