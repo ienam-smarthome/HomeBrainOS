@@ -184,6 +184,9 @@ class BlindReasoningStudyTests(unittest.TestCase):
                         encoding="utf-8")
                 if i<5:
                     exp.score(sid,ratings)
+                    with self.assertRaisesRegex(ValueError,"already saved"):
+                        exp.score(sid,{"A":{k:0 for k in CRITERIA},
+                                       "B":{k:0 for k in CRITERIA}})
             self.assertEqual(sum(exp._allocation(sid)["A"]=="candidate" for sid in exp.catalog),3)
             self.assertEqual(sum(exp._allocation(sid)["B"]=="candidate" for sid in exp.catalog),3)
             before=exp.report()
@@ -192,6 +195,9 @@ class BlindReasoningStudyTests(unittest.TestCase):
             self.assertNotIn("candidate_label",json.dumps(before))
             last=list(exp.catalog)[-1]
             exp.score(last,ratings)
+            with self.assertRaisesRegex(ValueError,"already saved"):
+                exp.score(last,{"A":{k:0 for k in CRITERIA},
+                                "B":{k:0 for k in CRITERIA}})
             report=exp.report()
             self.assertTrue(report["condition_mapping_revealed"])
             self.assertEqual(report["paired_answers_completed"],6)
@@ -301,6 +307,10 @@ class BlindReasoningStudyTests(unittest.TestCase):
                                              json={"scores":score},headers=h)
                         self.assertEqual(r.status_code,200)
                         self.assertTrue(r.json()["mapping_hidden"])
+                        again=await client.post("/api/reasoning-ab/case/hold-01/score",
+                                                 json={"scores":score},headers=h)
+                        self.assertEqual(again.status_code,400)
+                        self.assertIn("locked",again.json()["detail"])
                         self.assertEqual((await client.post("/api/reasoning-ab/run",
                             json=req,headers=h)).status_code,409)
                         self.assertEqual((await client.post("/api/reasoning-ab/delete",
