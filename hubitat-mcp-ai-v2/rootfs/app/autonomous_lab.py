@@ -472,7 +472,18 @@ class AutonomousLab:
         scenario=self.catalog[sid]
         fake=SyntheticMCP(scenario)
         agent=BoundedAgent(configured_model)
-        result=await agent.answer(scenario["question"],[],fake,SANDBOX_DEADLINE_SECONDS)
+        # Explicitly tell the MODEL it is testing a fictional MCP environment,
+        # including for read-only scenarios. Do not alter the production skill.
+        sandbox_prompt = (
+            "SYNTHETIC TEST ONLY. This is a fictional isolated MCP server. "
+            "Every device, event, ID, app, and command response is simulated. "
+            "No real Hubitat or Home Assistant is connected. When authorised "
+            "by the following question, a sandbox command modifies ONLY an "
+            "in-memory fixture. Treat synthetic observations as evidence for "
+            "this test, not claims about a real physical device. "
+            "Choose tools yourself and state evidence limits.\\n\\n"
+        ) + scenario["question"]
+        result=await agent.answer(sandbox_prompt,[],fake,SANDBOX_DEADLINE_SECONDS)
         written={"id":sid,
                  "answer":str(result.get("answer") or "")[:250000],
                  "success":bool(result.get("success")),
