@@ -324,3 +324,21 @@ failed evidence is archived. The evaluation-only budgets are 12 model
 rounds, 40 synthetic tool attempts and 120 seconds. All native MCP,
 Home Assistant, Hub Diagnostics and v1 behaviour remain unchanged.
 See \`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\`.
+
+ 
+## Alpha.24 — Join downsampled diagnostic traces without masking outages
+
+Hub Diagnostics' unified incident timeline and per-metric memory / CPU graphs
+now join consecutive displayed samples **only when the saved recorder marks
+them as belonging to the same continuous source segment**. Long views retain
+first/last/min/max probe observations, so reduced point density no longer
+appears as hundreds of disconnected short strokes. A changed `diag_segment`
+still breaks the line. Raw and legacy unlabelled sources retain their cadence
+gap checks, so unrecorded intervals are not presented as measured values.
+
+This is a **chart-only/read-only** update. No recorder history, SQL storage,
+probe schedule, native CPU calculation, causal attribution, Hubitat operation,
+MCP write permission or synthetic evaluation changes. UI tests cover both SVG
+incident timelines and canvas detail views, including segment boundaries.
+Update the v2 add-on to **2.0.0-alpha.24** and reopen or refresh Hub Diagnostics.
+
