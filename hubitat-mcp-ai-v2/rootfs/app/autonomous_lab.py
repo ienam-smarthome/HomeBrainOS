@@ -367,6 +367,7 @@ class SyntheticMCP:
             self.blocked_attempts+=1
             return _native({"error":"Unknown synthetic tool"},error=True)
         self.calls.append({"leaf":leaf,"id":did,"attribute":args.get("attribute"),
+                           "returned_ids":[d["id"] for d in matches] if leaf=="hub_list_devices" else [],
                            "success":True,"simulated":leaf=="hub_call_device_command"})
         return _native(result)
 
@@ -408,7 +409,8 @@ def _check_coverage(scenario: dict, calls: list[dict]) -> list[dict]:
                     call.get("attribute")==attr))
             else:
                 matching=(call.get("leaf")==leaf and
-                          (did is None or call.get("id")==did) and
+                          (did is None or call.get("id")==did or
+                           leaf=="hub_list_devices" and did in call.get("returned_ids",[])) and
                           (requirement.get("attribute") is None or
                            call.get("attribute")==requirement["attribute"]))
             if matching:
