@@ -74,6 +74,35 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
 .diag-controls select{margin-left:0}}
 
+
+/* Full-page chart popouts share the existing read-only recorder renderer. */
+.graph-popout-link,.graph-popout-return{display:inline-flex;align-items:center;gap:6px;
+ padding:10px 13px;border:1px solid var(--edge);border-radius:10px;color:var(--txt);
+ text-decoration:none;background:#203148}
+.graph-popout-link:hover,.graph-popout-return:hover{border-color:var(--blue)}
+.graph-popout-link:focus-visible,.graph-popout-return:focus-visible{
+ outline:3px solid var(--blue);outline-offset:3px}
+body.graph-popout{min-height:100vh}
+body.graph-popout header,body.graph-popout nav,body.graph-popout #diagnostics>.row,
+body.graph-popout #diagnostics>.muted,body.graph-popout #diagnostics>.metrics,
+body.graph-popout #recorderNotice{display:none!important}
+body.graph-popout main{max-width:none;width:100%;padding:14px 20px}
+body.graph-popout #diagnostics{display:block}
+body.graph-popout #timelineCard,body.graph-popout #detailCard{display:none}
+body.graph-popout.graph-popout-timeline #timelineCard,
+body.graph-popout.graph-popout-detail #detailCard{display:block}
+body.graph-popout .card{padding:18px 22px;width:100%}
+body.graph-popout .graph-popout-link{display:none}
+body.graph-popout .graph-popout-return:not([hidden]){display:inline-flex}
+.graph-popout-return[hidden]{display:none}
+body.graph-popout .timeline-chart{min-width:0;min-height:460px;max-height:none;
+ height:clamp(460px,68vh,1000px);width:100%}
+body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
+@media(max-width:700px){body.graph-popout main{padding:8px}
+ body.graph-popout .card{padding:12px}
+ body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px;min-width:860px}
+ body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
+
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
@@ -101,7 +130,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
 <div class="card" id="timelineCard">
-<div class="row"><h2>Unified incident timeline</h2><button class="right" id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
+<div class="row"><h2>Unified incident timeline</h2><a class="graph-popout-return" id="timelineReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link right" id="timelinePopout" href="?graph_view=timeline" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('timeline')">↗ Pop out full page</a><button id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
 <p class="timeline-meta" id="timelineMeta">External recorder observations, native five-minute load and verified systemStart events. Missing history remains unknown.</p>
 <div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
 <div class="diag-controls">
@@ -121,7 +150,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 <details id="timelineEvidenceDetails" hidden><summary>Selected local source evidence (read-only)</summary><pre id="timelineEvidence"></pre></details>
 </div>
 <div class="card" id="detailCard">
-<div class="row"><h2>Detailed metric history</h2>
+<div class="row"><h2>Detailed metric history</h2><a class="graph-popout-return" id="detailReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link" id="detailPopout" href="?graph_view=detail" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('detail')">↗ Pop out full page</a>
 <select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load_pct">Native 5m load equivalent (%)</option><option value="native_load5">Native 5m load (raw, unscaled)</option></select>
 </div>
 <div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
@@ -133,7 +162,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.18";
+const UI_VERSION="2.0.0-alpha.19";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -464,6 +493,50 @@ function nearestDiagnosticRow(rows,when){
    Math.abs(Date.parse(rows[lo].recorded_at)-when))return rows[lo-1];
  return rows[lo];
 }
+
+// Full-page graph links point to the same interface on this origin. Only
+// display options and a selected timestamp go into the URL, never raw data.
+function graphPageUrl(kind){
+ const here=window.location;
+ const url=new URL(here.pathname,here.origin);
+ url.searchParams.set('graph_view',kind);
+ url.searchParams.set('range',byId('range').value);
+ url.searchParams.set('extent',byId('plotExtent').value);
+ url.searchParams.set('layout',byId('timelineLayout').value);
+ url.searchParams.set('metric',byId('metric').value);
+ if(kind==='timeline'&&Number.isFinite(timelineSelection))
+  url.searchParams.set('selected',String(timelineSelection));
+ return url;
+}
+function prepareGraphPopout(kind){
+ if(!['timeline','detail'].includes(kind)||!window.location)return;
+ const link=byId(kind==='timeline'?'timelinePopout':'detailPopout');
+ link.href=graphPageUrl(kind).href;
+}
+function initGraphPopout(){
+ if(!window.location||!window.location.search)return;
+ const params=new URLSearchParams(window.location.search),kind=params.get('graph_view');
+ if(!['timeline','detail'].includes(kind))return;
+ for(const [key,id] of [['range','range'],['extent','plotExtent'],
+                        ['layout','timelineLayout'],['metric','metric']]){
+  const value=params.get(key),select=byId(id);
+  if(value&&Array.from(select.options||[]).some(option=>option.value===value))
+   select.value=value;
+ }
+ const selected=params.get('selected');
+ if(kind==='timeline'&&selected!==null&&Number.isFinite(Number(selected)))
+  timelineSelection=Number(selected);
+ document.body.classList.add('graph-popout','graph-popout-'+kind);
+ document.title=(kind==='timeline'?'Unified incident timeline':'Detailed metric history')+
+  ' — Hubitat MCP AI v2';
+ for(const id of ['timelineReturn','detailReturn']){
+  const link=byId(id);
+  link.href=new URL(window.location.pathname,window.location.origin).href;
+  link.hidden=false;
+ }
+ tab('diagnostics');
+}
+
 function redrawDiagnostics(){drawIncidentTimeline();draw();}
 function drawIncidentTimeline(){
  const svg=byId('incidentTimeline');svg.replaceChildren();
@@ -477,13 +550,21 @@ function drawIncidentTimeline(){
   byId('timelineEvents').replaceChildren();return;
  }
  const {start,end,requestedStart,fit}=timelineShown;
+ // The popup increases plot geometry; it is not merely a magnified 860px SVG.
+ const fullView=document.body?.classList?.contains('graph-popout')||false;
+ const bounds=svg.getBoundingClientRect();
+ const chartWidth=fullView?Math.max(860,Math.round(bounds.width||860)):860;
+ const chartHeight=fullView?Math.max(400,Math.round(bounds.height||460)):360;
+ svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
  const memMetric=timelineData.metrics?.free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
  const mem=sourcePoints(memMetric.samples,'free_os_mb');
  const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true);
  timelineSeries={memory:mem,cpu};
  const layout=byId('timelineLayout').value,combined=layout==='combined';
- const plot={left:76,right:800,top:combined?37:28,memBottom:combined?322:156,
-  cpuTop:combined?37:202,cpuBottom:322};
+ const splitBoundary=Math.round(156+(chartHeight-360)*.5);
+ const plot={left:76,right:chartWidth-(combined?84:60),top:combined?37:28,
+  memBottom:combined?chartHeight-38:splitBoundary,
+  cpuTop:combined?37:splitBoundary+46,cpuBottom:chartHeight-38};
  const memScale=scaleFor(mem,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
  const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
  const yFor=(kind,v)=>{
@@ -493,17 +574,19 @@ function drawIncidentTimeline(){
   return bottom-(v-scale.min)/(scale.max-scale.min)*(bottom-top);
  };
  const text=(tag,attrs,value)=>svg.append(svgNode(tag,attrs,value));
- const gridCount=Math.max(2,Math.min(10,Math.floor((svg.getBoundingClientRect().width||860)/115)));
+ // Reserve enough logical SVG width for long labels spanning date boundaries.
+ const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
+ const gridCount=Math.max(2,Math.min(18,Math.floor(
+  (plot.right-plot.left)/(sameDay?83:155))));
  for(let i=0;i<=gridCount;i++){
   const t=start+(end-start)*i/gridCount,xx=x(t);
   text('line',{x1:xx,x2:xx,y1:plot.top,y2:plot.cpuBottom,stroke:'#33475c',
    'stroke-width':.8,'stroke-dasharray':'2 5'});
-  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
   const label=new Date(t).toLocaleString('en-GB',sameDay?
    {hour:'2-digit',minute:'2-digit',hour12:false}:
    {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
-  text('text',{x:xx,y:345,fill:'#b1c0d4','font-size':11,
-   'text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
+  text('text',{x:xx,y:chartHeight-13,fill:'#b1c0d4','font-size':11,
+   'data-axis':'time','text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
  }
  const yGrid=(scale,kind,right=false)=>{
   for(let i=0;i<=scale.count;i++){
@@ -518,11 +601,10 @@ function drawIncidentTimeline(){
  };
  yGrid(memScale,'memory');
  yGrid(cpuScale,'cpu',combined);
- if(!combined)yGrid(cpuScale,'cpu');
  text('text',{x:plot.left,y:17,fill:'#93c5fd','font-size':12},
   combined?'OS memory (left · MB) / 5m CPU equivalent (right · %)':
   'OS memory · MB (external probes; independent scale)');
- if(!combined)text('text',{x:plot.left,y:191,fill:'#86efac','font-size':12},
+ if(!combined)text('text',{x:plot.left,y:plot.cpuTop-11,fill:'#86efac','font-size':12},
   '5m CPU load equivalent · % (native; independent scale)');
  const incidents=(timelineData.incidents||[]).filter(v=>v&&v.kind==='hub-unreachable');
  for(const row of incidents){
@@ -628,7 +710,7 @@ function drawIncidentTimeline(){
   (fit?' · Time axis fitted to recorded observations within the '+byId('range').value+'-hour request':'')+
   ((memMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
   ' · Partial source coverage; time alignment is not causation.';
- timelineShown={...timelineShown,x,yFor,plot};
+ timelineShown={...timelineShown,x,yFor,plot,chartWidth};
  const previous=timelineSelection;
  if(Number.isFinite(previous)&&previous>=start&&previous<=end)selectTimelineTime(previous);
  else if(timelineFocusTimes.length)selectTimelineTime(timelineFocusTimes[timelineFocusTimes.length-1]);
@@ -694,7 +776,7 @@ function timelinePointer(event){
  if(!timelineShown)return;
  const svg=byId('incidentTimeline'),rect=svg.getBoundingClientRect();
  if(!rect.width)return;
- const px=(event.clientX-rect.left)/rect.width*860;
+ const px=(event.clientX-rect.left)/rect.width*(timelineShown.chartWidth||860);
  if(px<timelineShown.plot.left-12||px>timelineShown.plot.right+12)return;
  const fraction=(px-timelineShown.plot.left)/
   (timelineShown.plot.right-timelineShown.plot.left);
@@ -840,7 +922,8 @@ function draw(){
    g.fillText(diagValue(value,visual.bk),left+W+7,yy+3);
   }
  }
- const ticks=Math.max(2,Math.min(10,Math.floor(rect.width/120)));
+ const ticks=Math.max(2,Math.min(18,Math.floor(W/(
+  new Date(start).toDateString()===new Date(end).toDateString()?90:145))));
  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
  for(let i=0;i<=ticks;i++){
   const t=start+(end-start)*i/ticks,xx=x(t);
@@ -962,5 +1045,6 @@ byId('graph').addEventListener('keydown',e=>{
 window.addEventListener('resize',()=>{
  if(byId('diagnostics').classList.contains('active'))redrawDiagnostics();
 });
+initGraphPopout();
 loadStatus();
 </script></body></html>

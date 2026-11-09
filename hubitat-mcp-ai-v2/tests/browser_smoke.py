@@ -70,7 +70,7 @@ with sync_playwright() as p:
           ],"incidents":[],"reboots":[]}
    else:data={"range_start":"2026-11-07T00:00:00Z","range_end":"2026-11-08T00:00:00Z","metrics":{}}
    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
-  page.route("**/api/**",api)
+  page.context.route("**/api/**",api)
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
   page.locator("#question").fill("Read-only fixture question")
@@ -151,6 +151,41 @@ with sync_playwright() as p:
   assert "independent scale" in page.locator("#incidentTimeline").text_content()
   page.locator("#plotExtent").select_option("full")
   assert "fitted to recorded observations" not in page.locator("#timelineMeta").inner_text()
+  # A real new-tab popout refetches the same saved recorder data; no native
+  # Hubitat MCP invocation, new query endpoints or chart-source URLs.
+  assert page.locator("#timelinePopout").get_attribute("target")=="_blank"
+  with page.expect_popup() as popup_info:
+   page.locator("#timelinePopout").click()
+  popup=popup_info.value
+  popup.locator("#incidentTimeline path").first.wait_for()
+  assert "graph_view=timeline" in popup.url
+  assert popup.locator("#timelineCard").is_visible()
+  assert popup.locator("#detailCard").is_hidden()
+  assert popup.locator("#timelineReturn").is_visible()
+  assert popup.locator("#incidentTimeline").evaluate("(el)=>el.getBoundingClientRect().height")>=380
+  viewport=popup.locator("#incidentTimeline").evaluate("""el=>({
+   width:el.viewBox.baseVal.width,
+   height:el.viewBox.baseVal.height,
+   cssWidth:el.getBoundingClientRect().width
+  })""")
+  assert viewport["width"]>=860 and viewport["height"]>=400
+  assert viewport["width"]>=viewport["cssWidth"]-4
+  # Span midnight and compare the real text bounding boxes for collisions.
+  popup.evaluate("""() => {
+   timelineData.range_start='2026-11-07T06:00:00Z';
+   document.querySelector('#plotExtent').value='full';
+   drawIncidentTimeline();
+  }""")
+  labels=popup.locator("#incidentTimeline [data-axis=time]")
+  assert labels.count()>=3
+  bounds=labels.evaluate_all("els=>els.map(el=>{const b=el.getBBox();return {left:b.x,right:b.x+b.width}})")
+  assert all(bounds[i]["right"]<=bounds[i+1]["left"]+1
+             for i in range(len(bounds)-1)),bounds
+  popup.locator("#incidentTimeline").focus()
+  popup.keyboard.press("Home")
+  popup.keyboard.press("ArrowRight")
+  assert "Selected" in popup.locator("#timelineReadout").inner_text()
+  popup.close()
   page.locator("#plotExtent").select_option("fit")
   assert page.locator("#recorderNotice").is_hidden()
   page.evaluate("""() => {
@@ -188,6 +223,18 @@ with sync_playwright() as p:
   assert "0.5 load" in page.locator("#plotStats").inner_text()
   assert "Native 5m load (raw)" in page.locator("#detailPrimaryLegend").inner_text()
   assert "unscaled" in page.locator("#source").inner_text()
+  with page.expect_popup() as detailed_info:
+   page.locator("#detailPopout").click()
+  detailed=detailed_info.value
+  detailed.locator("#graph").wait_for()
+  detailed.wait_for_function("document.querySelector('#graph').width > 0")
+  assert "graph_view=detail" in detailed.url
+  assert detailed.locator("#detailCard").is_visible()
+  assert detailed.locator("#timelineCard").is_hidden()
+  assert detailed.locator("#detailReturn").is_visible()
+  assert detailed.locator("#metric").input_value()=="native_load5"
+  assert detailed.locator("#graph").evaluate("(e)=>e.getBoundingClientRect().height")>=380
+  detailed.close()
   count_before=len(requests)
   page.locator("#timelineAsk").click()
   assert page.locator("#ask").is_visible()

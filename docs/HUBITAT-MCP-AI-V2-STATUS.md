@@ -306,3 +306,11 @@ review across independent domains before any live-agent change.
 No V2 runtime, model-prompt, source rewriting, response caching, timeout,
 device routing, permissions, Heating Scheduler, Hue Bridge, Hubitat,
 Home Assistant, V1 or diagnostics change. Version stays 2.0.0-alpha.18.
+
+### Alpha.19 — Full-page Hub Diagnostics graphs (9 November 2026)
+
+The user requested a **Pop out full page** option for graphs and supplied a Unified incident timeline screenshot with overlapping date/time labels near the right edge. Inspection of `hubitat-mcp-ai-v2/rootfs/app/ui.html` showed the main timeline SVG had a **fixed 860-unit viewBox**, but its X-axis tick count was computed from the CSS-displayed width; long date-bearing labels therefore overlapped. The detailed canvas also used width-based tick counts without adjusting for date label length.
+
+**Implemented in the v2 UI:** separate new-tab focused pages for Unified incident timeline and Detailed metric history, preserving range/extent/layout/selected point or metric. The popup reuses local saved-recorder endpoints and draws the timeline at actual screen geometry, with improved label spacing. The detailed canvas becomes substantially taller. Return-to-dashboard navigation, responsive scrolling on narrow screens, and keyboard/pointer selection are retained. Source evidence remains read-only; no raw measurements/credentials are placed in URL parameters.
+
+**Acceptance gate:** full browser checks for main page and both pop-outs (desktop/mobile), real event and CPU labels without collision, selected-point cursor, canvas size, alpha.19 UI/server version agreement, repository Python suite and container smoke. If any gate fails, do not merge or announce the new UI as installed. There are **no changes** to v2 native MCP tools, AI answer generation, Hubitat, HA, diagnostics recorder or V1. Existing alpha.18 continues functioning until the user updates the add-on.
