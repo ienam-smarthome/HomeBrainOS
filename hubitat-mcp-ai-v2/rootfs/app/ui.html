@@ -919,11 +919,14 @@ function timelinePointer(event){
  selectTimelineTime(timelineShown.start+Math.max(0,Math.min(1,fraction))*
   (timelineShown.end-timelineShown.start));
 }
+byId('incidentTimeline').addEventListener('pointerdown',e=>startChartBrush('timeline',e));
 byId('incidentTimeline').addEventListener('pointermove',e=>{
- if(e.pointerType!=='touch')timelinePointer(e);
+ if(!moveChartBrush('timeline',e)&&e.pointerType!=='touch')timelinePointer(e);
 });
-byId('incidentTimeline').addEventListener('pointerdown',timelinePointer);
+byId('incidentTimeline').addEventListener('pointerup',e=>endChartBrush('timeline',e));
+byId('incidentTimeline').addEventListener('pointercancel',()=>cancelChartBrush('timeline'));
 byId('incidentTimeline').addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&zoomBrush){e.preventDefault();cancelChartBrush('timeline');return;}
  if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!timelineFocusTimes.length)return;
  e.preventDefault();
  let idx=0;
@@ -1170,10 +1173,19 @@ function draw(){
  hint.textContent=details.join(' | ');
  hint.style.display=hoverX!==null&&details.length?'block':'none';
 }
-byId('graph').addEventListener('pointermove',e=>{if(e.pointerType!=='touch'){hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()}});
-byId('graph').addEventListener('pointerdown',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
-byId('graph').addEventListener('pointerleave',()=>{hoverX=null;draw()});
+byId('graph').addEventListener('pointerdown',e=>startChartBrush('detail',e));
+byId('graph').addEventListener('pointermove',e=>{
+ if(!moveChartBrush('detail',e)&&e.pointerType!=='touch'){
+  hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw();
+ }
+});
+byId('graph').addEventListener('pointerup',e=>endChartBrush('detail',e));
+byId('graph').addEventListener('pointercancel',()=>cancelChartBrush('detail'));
+byId('graph').addEventListener('pointerleave',()=>{
+ if(!zoomBrush){hoverX=null;draw();}
+});
 byId('graph').addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&zoomBrush){e.preventDefault();cancelChartBrush('detail');return;}
  if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!detailPoints.length||!visual)return;
  e.preventDefault();
  const range=timelineWindow(timelineData);if(!range)return;
