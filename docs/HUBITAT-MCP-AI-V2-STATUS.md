@@ -322,3 +322,38 @@ User requested selected-area zoom in the full-page HomeBrainOS diagnostic graphs
 Applied the time window to both plots' data filtering and autoscale (not merely visual magnification). Source gaps and outage/startup markers remain evidence-scoped. Pop-out URL contains display-only time bounds, not any recorder sample data. Range or time-axis changes reset zoom; layout and metric changes keep the selected time window. No new API, polling, native hub read, model call, write or graph-data mutation. Zoom cannot restore raw readings that the API did not return in a downsampled window.
 
 **Release gate**: alpha.20 UI/API/config alignment, synthetic JS tests, desktop/mobile browser pointer drags and reset in both popouts, full repository Python suite and container build; exact-head CI green before merge. No native MCP tool, AI prompt, Hubitat/HA, separate recorder service, backup or V1 modifications. Alpha.19 remains installed until user updates.
+
+### Alpha.21 — Private benchmark evaluation workspace (9 November 2026)
+
+Following the offline fixed-source PRs #1550–#1552, the user requested a
+**no-PC, phone-only way** to run the previously prepared Gemma A/B test.
+Implemented a separate third **AI Benchmark** tab in v2 with a bounded private
+ZIP importer, manifest/source SHA verification, persistent add-on-local source
+storage, explicit model/cloud consent gates, and asynchronous two-pair pilot
+runs using the already configured Ollama model connection. The evaluator's
+model payload contains only separate system/user messages, `temperature:0`,
+`seed:42`, and **no `tools` list**; it cannot call Hubitat MCP or replay
+device commands.
+
+The same-origin UI displays A and B unedited as plain text, provides the
+unannotated source receipts for blind human assessment, records five
+user-supplied score dimensions and exports a **report containing only paired
+aggregate statistics** (no private source, answer or assignment). Private
+data can be explicitly deleted; a stopped run preserves already completed
+responses. Server-side limits reject ZIP traversal, unexpected/encrypted
+entries, symlinks, oversized/modified sources and unpaired conditions. One
+imported dataset persists in /data across add-on restarts. Model calls incur
+possible cloud costs and share private evidence **only after explicit
+approval**. Import alone does not contact the model.
+
+The original alpha.20 action-verification, chart popouts, zoom and V2 model-led
+MCP behaviour remain unchanged. No native MCP, heating, Hubitat, HA,
+recorder, permission, backup or v1 modifications. Tests cover malformed
+source bundles, failed/forbidden approvals, no native tool list, saved answer
+integrity, blind scores, privacy-safe report and Android-size browser UI.
+
+**Acceptance:** validate alpha.21 UI/API/config agreement, exact-head unit/UI
+tests, desktop/mobile Chromium, full Python suite, container smoke and
+post-merge CI. Neither synthetic tests nor the new page constitute a completed
+Gemma A/B evaluation. Actual cloud-run and human blind scores still require
+the user's explicit action.
