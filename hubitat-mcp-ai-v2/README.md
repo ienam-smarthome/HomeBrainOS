@@ -241,3 +241,15 @@ cases; complete ten-case evaluation is an explicit opt-in.
 
 See docs/HUBITAT-MCP-AI-V2-FIXED-SOURCE-BENCHMARK.md for private Windows
 setup and exact dry-run, model-run and human scoring steps.
+
+## Alpha.19 — Hub Diagnostics full-page graph views (9 November 2026)
+
+Both existing **Unified incident timeline** and **Detailed metric history** graphs now have a **Pop out full page** link in Hub Diagnostics. Each opens a new tab on the same HomeBrainOS origin, with a focused, full-width/height graph view and a **Dashboard** return link. This is a larger plotting surface, not a new graph data source or an exported image.
+
+- Preserve the requested range, observed-data/full-window time axis, split/combined timeline layout, metric selection and (for the unified timeline) selected timestamp in the new tab; the selected time and display options are the **only** information placed in the URL. No chart samples, tokens or credentials are stored in URLs or browser storage.
+- Both windows use existing read-only external-recorder JSON endpoints, interval markers, source distinction, keyboard navigation, pointer cursors and evidence readouts. Pop-out refresh fetches the same saved observations and never invokes Hubitat or the AI model.
+- The full-page SVG recalculates its viewBox and plot geometry for screen size; the detailed graph canvas uses increased height and device-pixel scaling. On narrow screens the full-page timeline scrolls horizontally rather than shrinking labels to illegibility.
+- Date-bearing timeline X-axis labels now have appropriate spacing **in logical SVG coordinates**, avoiding the overlap near midnight previously caused by using CSS width to count labels in a fixed-width SVG. The detailed chart's X-axis tick count similarly accounts for date+time label width.
+- Browser regression tests exercise real pop-out tabs, large graph dimensions, no overlapping date labels, keyboard selection, retained metric selection and return navigation; unit tests cover safe URL construction and time labels.
+
+**Scope:** UI-only version `2.0.0-alpha.19`. No model/tool prompts, command path, native MCP server, Hubitat devices, Home Assistant, recorder schema, backup/permission, V1 or underlying measurements change. **Rollback:** reinstall alpha.18, or revert the isolated UI/config/test/docs commit.
