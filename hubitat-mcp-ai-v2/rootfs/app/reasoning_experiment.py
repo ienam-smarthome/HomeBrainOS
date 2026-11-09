@@ -488,6 +488,11 @@ class ReasoningExperiment:
     def score(self,sid:str,scores:dict)->None:
         if sid not in self.catalog:
             raise ValueError("Unknown fictional holdout case")
+        # Blind ratings must be immutable once saved. Otherwise a reviewer
+        # could change earlier scores after the final report unmasks A/B,
+        # silently invalidating the prospective comparison.
+        if self._ratings_path(sid).exists():
+            raise ValueError("Blind ratings already saved; this case is locked")
         if not all(self._answer_path(sid,label).exists() and
                    json.loads(self._answer_path(sid,label).read_text(encoding="utf-8")).get("success")
                    for label in ("A","B")):
