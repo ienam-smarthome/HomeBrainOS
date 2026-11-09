@@ -121,6 +121,38 @@ a run. The user question must still not be considered proof of any event.
   private add-on storage; no household file or original A/B evidence is
   imported.
 
+## 9 November 2026 — Final user-run blinded A/B results (all six rated)
+
+**Evidence:** User-supplied final `homebrain-v2-reasoning-holdout-report.v1` JSON, six pairs requested, six completed, six blind ratings saved and the allocation unblinded only after all six were scored. The export is synthetic-only: **zero live MCP calls or physical device actions**. This milestone was introduced in alpha.25 and rating integrity was fixed in alpha.26 (merged PR #1561). The aggregate export does **not** attest the installed add-on build SHA, model name/provider, credential settings or independent evaluator identity.
+
+**Experiment:** Candidate = identical model-led v2 tool/answer loop with one extra generic investigation-completion system instruction; baseline = existing production skill and loop. Each side had the same fictional case question and independent in-memory MCP state. Ratings were 0–2 per applicable criterion, as advised by an assistant reviewer, then entered by the user. They are **not an independent blinded external-panel assessment**, and six cases are too few for a robust population conclusion.
+
+| Frozen holdout | Candidate letter | Candidate score | Baseline letter | Baseline score | Candidate minus baseline |
+| --- | --- | ---: | --- | ---: | ---: |
+| hold-01 energy / 0 W vs supply | B | 3/8 | A | 5/8 | -2 |
+| hold-02 command issuer vs listener | A | 6/8 | B | 2/8 | +4 |
+| hold-03 humidity intervals | B | 8/8 | A | 7/8 | +1 |
+| hold-04 multi-zone historical heating | A | 3/8 | B | 5/8 | -2 |
+| hold-05 two stale sensors | B | 7/8 | A | 4/8 | +3 |
+| hold-06 accepted command, still OFF | A | 9/10 | B | 8/10 | +1 |
+| **Total** | | **36/50 (72%)** | | **31/50 (62%)** | **+5/50** |
+
+Four cases favored the candidate on total manual points and two favored baseline. The candidate's overall score improves in this narrow pilot, but that is not a demonstrated general reasoning-quality gain.
+
+| Manual criterion | Candidate | Baseline | Paired mean difference per case (0–2) |
+| --- | ---: | ---: | ---: |
+| Factual grounding | 10/12 | 7/12 | +0.50 |
+| Source completeness | 7/12 | 5/12 | +0.33 |
+| **Causal calibration — primary** | **7/12** | **7/12** | **0.00** |
+| Usefulness | 10/12 | 10/12 | 0.00 |
+| Command outcome (one applicable case) | 2/2 | 2/2 | 0.00 |
+
+**Observed tool/evidence measures, not answer correctness:** Candidate retrieved 10/23 exact required checks (43.5%); baseline also 10/23 (43.5%). Candidate had 30 attempted tool calls vs baseline 35; 4 client-side schema errors vs baseline 3; both had 30 model rounds and zero simulator rejections. Summed case times were 33.165 seconds candidate vs 31.045 seconds baseline; these case durations are short synthetic tests, **not** a live Hubitat latency distribution. Both arms correctly issued just one authorized in-memory ON command in hold-06; no live writes occurred.
+
+**Interpretation / decision:** The extra generic instruction improved human-rated factual grounding and slightly improved manual completeness, but **did not improve the primary causal-calibration measure**, independent required-source retrieval, command outcome or usefulness. The candidate was materially worse on energy/supply (hold-01) and historical heating (hold-04). Both arms stopped short of potentially discriminating reads; unfiltered event rows sometimes contained useful evidence but did not pass attribute-specific fixture checks. Schema contract errors also persisted. Do **not** promote this candidate prompt to the production v2 skill or claim success from CI/lexical coverage. Preserve the frozen result and no regrading or retuning against these revealed cases.
+
+**Next evidence-driven milestone:** Keep the existing model-led, live-schema-driven v2 production path unchanged. Investigate cross-domain *general* evidence-sufficiency decisions and tool-schema comprehension, with the model still selecting relevant reads and expressing uncertainty; do not hard-code source lists, thresholds, causal rewrites, per-case guidance or quotas. Design a genuinely **new, unseen, source-verified** read-only acceptance set (including real Hubitat evidence when consented), measure **first-answer causal errors, missing relevant sources, tool schema errors, usefulness and latency** under the same model/tools, then test any proposed general intervention prospectively against an unchanged baseline. Historical synthetic and fixed-source pilots are contextual only and cannot be used as independent confirmation of improvement. No live device control, HA changes or new cloud calls are authorized by this report.
+
 ## Interpreting the result
 
 The primary proposed measure is blind manual **causal-calibration quality**,
