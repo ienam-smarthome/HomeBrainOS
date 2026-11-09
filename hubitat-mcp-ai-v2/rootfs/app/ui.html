@@ -1652,7 +1652,8 @@ async function autolabView(){
   }
   autolabText('autolabMetrics',detail.answer?
    'Model rounds: '+detail.rounds+' · Simulated commands: '+
-   detail.simulated_commands+' · Blocked attempts: '+detail.blocked_attempts+
+   detail.simulated_commands+' · Client schema errors: '+(detail.client_contract_errors||0)+
+   ' · Simulator rejections: '+detail.blocked_attempts+
    (Object.keys(detail.blocked_reasons||{}).length?' ('+
     Object.entries(detail.blocked_reasons).map(([k,v])=>k+': '+v).join(', ')+')':'')+
    ' · Previous failed runs: '+(detail.previous_failed_attempts||0)+
