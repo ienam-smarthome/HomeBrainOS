@@ -25,9 +25,52 @@ with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in [1280,390]:
   page=browser.new_page(viewport={"width":width,"height":1000})
-  requests=[];resets=[]
+  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[]
   def api(route):
    request=route.request
+   if "/api/benchmark/" in request.url:
+    assert request.headers.get("x-homebrain-request")=="1"
+    path=request.url.split("/api/benchmark/")[1].split("?")[0]
+    if path=="status":
+     data={"imported":bench["imported"],"running":False,"error":None,
+      "cases":[{"id":"case-001","answered":bench["answered"],"graded":bench["scored"]}] if bench["imported"] else []}
+    elif path=="import":
+     assert request.headers.get("content-type")=="application/zip"
+     bench["imported"]=True;data={"imported":True,"pairs":1,"model_calls":0}
+    elif path=="run":
+     values=request.post_data_json
+     assert values["case_ids"]==["case-001"]
+     assert values["private_evidence_consent"] is True
+     assert values["cloud_transfer_consent"] is True
+     assert "tools" not in values
+     bench_runs.append(values);bench["answered"]=True
+     data={"started":True,"pending":2}
+    elif path=="case/case-001":
+     data={"id":"case-001","question":"Synthetic private <img onerror=window.injected=true>?",
+      "source":[{"tool":"read","result":"<script>window.injected=true</script>"}],
+      "both_answered":bench["answered"],
+      "answers":{"A":"Synthetic <script>answer A</script>","B":"Answer B"} if bench["answered"] else {},
+      "ratings":{label:{"ratings":{name:None for name in
+        ("factual_grounding","source_completeness","causal_calibration","command_outcome","usefulness")}}
+          for label in ("A","B")}}
+    elif path=="case/case-001/score":
+     recorded=request.post_data_json["scores"]
+     assert set(recorded)=={"A","B"}
+     assert all(len(recorded[label])==5 for label in recorded)
+     bench["scored"]=True;data={"saved":True}
+    elif path=="report":
+     data={"schema":"homebrain-v2-fixed-source-report.v1",
+      "blind_reviewed_pairs":1 if bench["scored"] else 0,
+      "private_values_exported":False,
+      "condition_effects":{"factual_grounding":{"role_notes_better":1}}}
+    elif path=="stop":data={"stop_requested":False}
+    elif path=="delete":
+     assert request.post_data_json["confirm_delete"] is True
+     bench["imported"]=False;bench["answered"]=False;bench["scored"]=False
+     data={"deleted":True}
+    else:raise AssertionError("Unexpected benchmark route "+path)
+    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
+    return
    if "/api/status" in request.url:data={"version":version,"configured":True,"model":"fixture-model"}
    elif "/api/conversation/clear" in request.url:
     assert request.headers.get("x-homebrain-request")=="1"
@@ -290,6 +333,44 @@ with sync_playwright() as p:
   assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  # Simulate the complete phone/tablet A/B workflow with no model or hub.
+  page.locator("#benchmarkTab").click()
+  assert page.locator("#benchmark").is_visible()
+  page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('No private benchmark')")
+  page.locator("#benchZip").set_input_files({
+   "name":"synthetic-private.zip","mimeType":"application/zip","buffer":b"PKSYNTHETIC"
+  })
+  page.locator("#benchImport").click()
+  page.wait_for_function("document.querySelector('#benchPilot1').value === 'case-001'")
+  assert page.locator("#benchRun").is_enabled()
+  assert page.locator("#benchImport").is_disabled()
+  page.locator("#benchRun").click()
+  assert "Approve both" in page.locator("#benchRunStatus").inner_text()
+  assert len(bench_runs)==0
+  page.locator("#benchPrivateConsent").check()
+  page.locator("#benchCloudConsent").check()
+  page.locator("#benchRun").click()
+  page.wait_for_function("document.querySelector('#benchSave').disabled === false")
+  assert len(bench_runs)==1
+  assert "<script>answer A</script>" in page.locator("#benchAnswerA").inner_text()
+  assert page.locator("#benchAnswerA script").count()==0
+  assert page.locator("#benchQuestion img").count()==0
+  page.locator("#benchOriginalSources summary").click()
+  assert "<script>window.injected=true</script>" in page.locator("#benchSource").inner_text()
+  assert page.evaluate("window.injected===undefined")
+  for select in page.locator("#benchScoresA select").all()+page.locator("#benchScoresB select").all():
+   select.select_option("2")
+  page.locator("#benchSave").click()
+  page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('1 blind scored')")
+  page.locator("#benchReportButton").click()
+  page.wait_for_function("document.querySelector('#benchReportPreview').textContent.includes('blind_reviewed_pairs')")
+  with page.expect_download() as download:
+   page.locator("#benchDownload").click()
+  exported=json.loads(Path(download.value.path()).read_text())
+  assert exported["blind_reviewed_pairs"]==1
+  assert exported["private_values_exported"] is False
+  assert "SYNTHETIC" not in json.dumps(exported)
+  assert len(requests)==count_before,"Benchmark cannot send an Ask/MCP request"
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
   assert not errors,errors

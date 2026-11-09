@@ -109,11 +109,26 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
  body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px;min-width:860px}
  body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
 
+
+/* Private A/B model evaluation; keeps both untrusted answers as plain text. */
+.bench-field{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.bench-field label{color:var(--muted);font-size:13px}
+.bench-field select{padding:9px;max-width:100%}
+.bench-field input[type=file]{font:inherit;max-width:100%;font-size:13px;color:var(--txt)}
+.bench-consent{display:block;font-size:13px;line-height:1.5;margin:10px 0}
+.bench-consent input{accent-color:var(--blue);margin-right:9px}
+.bench-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.bench-pair pre{min-height:120px;max-height:460px;white-space:pre-wrap}
+.bench-score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.bench-score label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.bench-score select{padding:9px}
+.bench-privacy{border-left:3px solid var(--amber);padding:12px;background:#241f1b;border-radius:5px;font-size:13px;line-height:1.55}
+@media(max-width:690px){.bench-pair{grid-template-columns:1fr}nav{flex-wrap:wrap}}
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
-<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
+<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button></nav>
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
@@ -168,15 +183,63 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <div id="source" class="timeline-meta">Select a window to inspect saved timestamps.</div>
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div>
+</section>
+<section id="benchmark">
+ <div class="row"><h2>AI Benchmark · private A/B review</h2><button class="right" onclick="benchmarkRefresh()">Refresh</button></div>
+ <p class="muted">Evaluate the same frozen MCP evidence with and without generic source-role notes. This isolated test cannot invoke Hubitat or Home Assistant tools.</p>
+ <div class="card">
+  <h3>1 · Import private benchmark evidence</h3>
+  <p class="bench-privacy">This ZIP contains private home device history. It stays in this HomeBrainOS add-on’s /data directory until you explicitly delete it. People who can access this add-on may be able to view the evidence. Importing makes no model calls.</p>
+  <div class="bench-field"><input id="benchZip" type="file" accept=".zip,application/zip" aria-label="Prepared private benchmark ZIP">
+   <button id="benchImport" onclick="benchmarkUpload()">Import ZIP</button></div>
+  <p id="benchStatus" role="status" aria-live="polite">No benchmark imported.</p>
+ </div>
+ <div class="card">
+  <h3>2 · Generate paired answers</h3>
+  <p id="benchModel" class="session-note">Using your configured model; no native MCP tools are supplied.</p>
+  <div class="bench-field">
+   <label for="benchPilot1">First case</label><select id="benchPilot1"></select>
+   <label for="benchPilot2">Second case (optional)</label><select id="benchPilot2"></select>
+  </div>
+  <label class="bench-consent"><input id="benchPrivateConsent" type="checkbox">I authorise sending these recorded private MCP sources to the selected model for this benchmark.</label>
+  <label class="bench-consent"><input id="benchCloudConsent" type="checkbox">I understand that cloud/remote models may receive my private evidence and use paid credits.</label>
+  <div class="row"><button id="benchRun" class="primary" onclick="benchmarkRun()" disabled>Run selected A/B pairs</button>
+   <button id="benchStop" onclick="benchmarkStop()" disabled>Stop run</button></div>
+  <p id="benchRunStatus" role="status" aria-live="polite">Import the ZIP to begin.</p>
+ </div>
+ <div class="card">
+  <h3>3 · Blind review</h3>
+  <p class="session-note">Score A and B separately without seeing which one contains annotations. Score 0 = incorrect/unsupported, 1 = partial, 2 = supported; n/a = genuinely not applicable.</p>
+  <div class="bench-field"><label for="benchSelectCase">Review case</label>
+   <select id="benchSelectCase" onchange="benchmarkViewCase()"></select></div>
+  <p id="benchQuestion" class="session-note">No case selected.</p>
+  <details id="benchOriginalSources"><summary>Inspect the original MCP source receipts (no annotation labels)</summary>
+   <pre id="benchSource" aria-label="Original recorded MCP evidence"></pre></details>
+  <div class="bench-pair">
+   <div><h3>Answer A</h3><pre id="benchAnswerA">Not generated.</pre><div class="bench-score" id="benchScoresA"></div></div>
+   <div><h3>Answer B</h3><pre id="benchAnswerB">Not generated.</pre><div class="bench-score" id="benchScoresB"></div></div>
+  </div>
+  <div class="row"><button id="benchSave" onclick="benchmarkSaveScores()" disabled>Save blind scores</button>
+   <span id="benchReviewStatus" role="status" class="session-note"></span></div>
+ </div>
+ <div class="card">
+  <h3>4 · Aggregate comparison</h3>
+  <p class="session-note">Only fully scored A/B pairs count. The report never exports the original home evidence, model answers, case names or hidden A/B assignments.</p>
+  <div class="row"><button id="benchReportButton" onclick="benchmarkReport()" disabled>Generate report</button>
+   <button id="benchDownload" onclick="benchmarkDownloadReport()" disabled>Download report JSON</button></div>
+  <pre id="benchReportPreview">No scored results yet.</pre>
+  <details><summary>Private data controls</summary><p class="bench-privacy">Deleting clears all imported evidence, answers and ratings stored by this add-on. This does not revoke information already transmitted to a cloud model.</p>
+   <button id="benchDelete" onclick="benchmarkDelete()" disabled>Delete all benchmark data</button></details>
+ </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.20";
+const UI_VERSION="2.0.0-alpha.21";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
-function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
+function tab(which){for(const id of ['ask','diagnostics','benchmark']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
@@ -1201,6 +1264,206 @@ byId('graph').addEventListener('keydown',e=>{
 window.addEventListener('resize',()=>{
  if(byId('diagnostics').classList.contains('active'))redrawDiagnostics();
 });
+
+// Standalone mobile benchmark. The raw source never enters the Ask/Chat MCP
+// conversation and model answers are rendered as plain text, not HTML.
+const BENCH_SCORE_NAMES=['factual_grounding','source_completeness',
+ 'causal_calibration','command_outcome','usefulness'];
+let benchSnapshot=null,benchCurrent=null,benchReportData=null,benchPollTimer=null;
+async function benchApi(path,options={}){
+ const headers={'X-Homebrain-Request':'1',...(options.headers||{})};
+ const reply=await fetch('api/benchmark/'+path,{...options,headers,cache:'no-store'});
+ const payload=await reply.json();
+ if(!reply.ok)throw Error(typeof payload.detail==='string'?payload.detail:'Benchmark request failed');
+ return payload;
+}
+function benchMessage(id,value){byId(id).textContent=String(value);}
+function benchOptions(id,choices,selected){
+ const select=byId(id);select.replaceChildren();
+ for(const [value,label] of choices){
+  const item=document.createElement('option');item.value=value;item.textContent=label;
+  select.appendChild(item);
+ }
+ select.value=choices.some(row=>row[0]===selected)?selected:(choices[0]?.[0]||'');
+}
+async function benchmarkRefresh(){
+ if(benchPollTimer!==null){clearTimeout(benchPollTimer);benchPollTimer=null;}
+ try{
+  const result=await benchApi('status');
+  benchSnapshot=result;
+  const cases=result.cases||[],running=!!result.running;
+  benchMessage('benchModel','Configured model: '+(configuredModel||'check add-on settings')+
+   ' · tool-free frozen-evidence evaluation');
+  benchMessage('benchStatus',result.imported?
+   cases.length+' private question pairs imported · '+cases.filter(x=>x.answered).length+
+   ' answered · '+cases.filter(x=>x.graded).length+' blind scored':
+   'No private benchmark imported. Choose the prepared ZIP above.');
+  const select1=byId('benchPilot1'),select2=byId('benchPilot2'),review=byId('benchSelectCase');
+  const old1=select1.value,old2=select2.value,oldReview=review.value;
+  const choices=cases.map(x=>[x.id,x.id+(x.answered?' · answered':'')]);
+  benchOptions('benchPilot1',choices,old1||choices[0]?.[0]);
+  benchOptions('benchPilot2',[['','One case only'],...choices],old2||'');
+  benchOptions('benchSelectCase',choices,oldReview||choices[0]?.[0]);
+  byId('benchRun').disabled=!result.imported||running;
+  byId('benchStop').disabled=!running;
+  byId('benchImport').disabled=result.imported||running;
+  byId('benchReportButton').disabled=!result.imported;
+  byId('benchDelete').disabled=!result.imported||running;
+  const p=result.progress||{};
+  benchMessage('benchRunStatus',running?
+   'Running: '+(p.completed_requests||0)+' of '+(p.total_requests||0)+
+   ' model responses saved. No Hubitat tools enabled.':
+   result.error?'Last run: '+result.error:
+   result.imported?'Ready. Select one or two cases and approve the data transfer.':
+   'Import the ZIP to begin.');
+  if(result.imported&&review.value){
+   if(!benchCurrent||benchCurrent.id!==review.value)await benchmarkViewCase();
+  }else{
+   benchCurrent=null;
+   benchMessage('benchQuestion','No case selected.');
+   benchMessage('benchAnswerA','Not generated.');
+   benchMessage('benchAnswerB','Not generated.');
+  }
+  if(running&&byId('benchmark').classList.contains('active')){
+   benchPollTimer=setTimeout(benchmarkRefresh,1800);
+  }else if(benchCurrent&&benchCurrent.id===review.value&&
+           cases.find(x=>x.id===review.value)?.answered&&!benchCurrent.both_answered){
+   await benchmarkViewCase();
+  }
+ }catch(error){benchMessage('benchStatus','Benchmark: '+error.message);}
+}
+async function benchmarkUpload(){
+ const file=byId('benchZip').files?.[0];
+ if(!file){benchMessage('benchStatus','Select the prepared private ZIP first.');return;}
+ if(file.size>8*1024*1024){
+  benchMessage('benchStatus','The ZIP exceeds the 8 MB safety limit.');return;
+ }
+ byId('benchImport').disabled=true;
+ try{
+  await benchApi('import',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+  benchCurrent=null;benchReportData=null;
+  byId('benchZip').value='';
+  await benchmarkRefresh();
+ }catch(error){
+  benchMessage('benchStatus','Import failed: '+error.message);
+  byId('benchImport').disabled=false;
+ }
+}
+async function benchmarkRun(){
+ const first=byId('benchPilot1').value,second=byId('benchPilot2').value;
+ const selected=[...new Set([first,second].filter(Boolean))];
+ if(!selected.length){benchMessage('benchRunStatus','Select at least one case.');return;}
+ if(!byId('benchPrivateConsent').checked||!byId('benchCloudConsent').checked){
+  benchMessage('benchRunStatus','Approve both private evidence and cloud/remote transfer notices.');
+  return;
+ }
+ byId('benchRun').disabled=true;
+ try{
+  const response=await benchApi('run',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({case_ids:selected,private_evidence_consent:true,
+    cloud_transfer_consent:true})});
+  benchMessage('benchRunStatus',response.started?
+   'Benchmark started. The A/B answers are created with no MCP tools.':
+   response.message||'All requested answers already exist.');
+  await benchmarkRefresh();
+ }catch(error){
+  benchMessage('benchRunStatus','Could not run: '+error.message);
+  byId('benchRun').disabled=false;
+ }
+}
+async function benchmarkStop(){
+ try{
+  await benchApi('stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  benchMessage('benchRunStatus','Stop requested. Completed paired answers are retained.');
+  await benchmarkRefresh();
+ }catch(error){benchMessage('benchRunStatus','Could not stop: '+error.message);}
+}
+function benchScorePanel(label,previous,enabled){
+ const root=byId('benchScores'+label);
+ root.replaceChildren();
+ if(!enabled)return;
+ for(const name of BENCH_SCORE_NAMES){
+  const wrapper=document.createElement('label');
+  wrapper.textContent=name.replaceAll('_',' ');
+  const select=document.createElement('select');
+  select.setAttribute('data-bench-label',label);
+  select.setAttribute('data-bench-category',name);
+  for(const [value,text] of [['','Not scored'],['0','0 · Unsupported'],
+                             ['1','1 · Partial'],['2','2 · Supported'],
+                             ['n/a','n/a · Not applicable']]){
+   const option=document.createElement('option');
+   option.value=value;option.textContent=text;select.appendChild(option);
+  }
+  const old=previous?.ratings?.[name];
+  select.value=old===null||old===undefined?'':String(old);
+  wrapper.appendChild(select);root.appendChild(wrapper);
+ }
+}
+async function benchmarkViewCase(){
+ const key=byId('benchSelectCase').value;
+ if(!key)return;
+ try{
+  const detail=await benchApi('case/'+encodeURIComponent(key));
+  if(key!==byId('benchSelectCase').value)return;
+  benchCurrent=detail;
+  benchMessage('benchQuestion',detail.id+': '+detail.question);
+  benchMessage('benchSource',JSON.stringify(detail.source,null,2));
+  benchMessage('benchAnswerA',detail.answers?.A||'Not generated yet.');
+  benchMessage('benchAnswerB',detail.answers?.B||'Not generated yet.');
+  benchScorePanel('A',detail.ratings?.A,detail.both_answered);
+  benchScorePanel('B',detail.ratings?.B,detail.both_answered);
+  byId('benchSave').disabled=!detail.both_answered;
+  benchMessage('benchReviewStatus',detail.both_answered?
+   'Read both answers and the original sources. Score both versions without opening the hidden manifest.':
+   'Both model answers must be available before scoring.');
+ }catch(error){benchMessage('benchReviewStatus','Case error: '+error.message);}
+}
+async function benchmarkSaveScores(){
+ if(!benchCurrent?.both_answered)return;
+ const scores={A:{},B:{}};
+ for(const label of ['A','B']){
+  const selections=byId('benchScores'+label).querySelectorAll('select');
+  for(const element of selections){
+   const key=element.getAttribute('data-bench-category'),value=element.value;
+   if(!value){benchMessage('benchReviewStatus','Score every dimension on both answers.');return;}
+   scores[label][key]=value==='n/a'?'n/a':Number(value);
+  }
+ }
+ try{
+  await benchApi('case/'+encodeURIComponent(benchCurrent.id)+'/score',{
+   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores})});
+  benchMessage('benchReviewStatus','Blind scores saved. The A/B assignment remains hidden.');
+  await benchmarkRefresh();
+ }catch(error){benchMessage('benchReviewStatus','Score not saved: '+error.message);}
+}
+async function benchmarkReport(){
+ try{
+  benchReportData=await benchApi('report');
+  benchMessage('benchReportPreview',JSON.stringify(benchReportData,null,2));
+  byId('benchDownload').disabled=false;
+ }catch(error){benchMessage('benchReportPreview','Report unavailable: '+error.message);}
+}
+function benchmarkDownloadReport(){
+ if(!benchReportData)return;
+ const text=JSON.stringify(benchReportData,null,2)+'\n';
+ const blob=new Blob([text],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement('a');link.href=url;link.download='HomeBrain-v2-benchmark-report.json';
+ document.body.appendChild(link);link.click();link.remove();
+ URL.revokeObjectURL(url);
+}
+async function benchmarkDelete(){
+ if(!window.confirm('Delete ALL locally stored benchmark evidence, answers and ratings? This cannot undo cloud submissions.'))return;
+ try{
+  await benchApi('delete',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({confirm_delete:true})});
+  benchSnapshot=null;benchCurrent=null;benchReportData=null;
+  byId('benchDownload').disabled=true;
+  benchMessage('benchReportPreview','No scored results yet.');
+  await benchmarkRefresh();
+ }catch(error){benchMessage('benchStatus','Deletion failed: '+error.message);}
+}
+
 initGraphPopout();
 loadStatus();
 </script></body></html>
