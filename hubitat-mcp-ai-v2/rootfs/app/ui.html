@@ -1264,6 +1264,206 @@ byId('graph').addEventListener('keydown',e=>{
 window.addEventListener('resize',()=>{
  if(byId('diagnostics').classList.contains('active'))redrawDiagnostics();
 });
+
+// Standalone mobile benchmark. The raw source never enters the Ask/Chat MCP
+// conversation and model answers are rendered as plain text, not HTML.
+const BENCH_SCORE_NAMES=['factual_grounding','source_completeness',
+ 'causal_calibration','command_outcome','usefulness'];
+let benchSnapshot=null,benchCurrent=null,benchReportData=null,benchPollTimer=null;
+async function benchApi(path,options={}){
+ const headers={'X-Homebrain-Request':'1',...(options.headers||{})};
+ const reply=await fetch('api/benchmark/'+path,{...options,headers,cache:'no-store'});
+ const payload=await reply.json();
+ if(!reply.ok)throw Error(typeof payload.detail==='string'?payload.detail:'Benchmark request failed');
+ return payload;
+}
+function benchMessage(id,value){byId(id).textContent=String(value);}
+function benchOptions(id,choices,selected){
+ const select=byId(id);select.replaceChildren();
+ for(const [value,label] of choices){
+  const item=document.createElement('option');item.value=value;item.textContent=label;
+  select.appendChild(item);
+ }
+ select.value=choices.some(row=>row[0]===selected)?selected:(choices[0]?.[0]||'');
+}
+async function benchmarkRefresh(){
+ if(benchPollTimer!==null){clearTimeout(benchPollTimer);benchPollTimer=null;}
+ try{
+  const result=await benchApi('status');
+  benchSnapshot=result;
+  const cases=result.cases||[],running=!!result.running;
+  benchMessage('benchModel','Configured model: '+(configuredModel||'check add-on settings')+
+   ' · tool-free frozen-evidence evaluation');
+  benchMessage('benchStatus',result.imported?
+   cases.length+' private question pairs imported · '+cases.filter(x=>x.answered).length+
+   ' answered · '+cases.filter(x=>x.graded).length+' blind scored':
+   'No private benchmark imported. Choose the prepared ZIP above.');
+  const select1=byId('benchPilot1'),select2=byId('benchPilot2'),review=byId('benchSelectCase');
+  const old1=select1.value,old2=select2.value,oldReview=review.value;
+  const choices=cases.map(x=>[x.id,x.id+(x.answered?' · answered':'')]);
+  benchOptions('benchPilot1',choices,old1||choices[0]?.[0]);
+  benchOptions('benchPilot2',[['','One case only'],...choices],old2||'');
+  benchOptions('benchSelectCase',choices,oldReview||choices[0]?.[0]);
+  byId('benchRun').disabled=!result.imported||running;
+  byId('benchStop').disabled=!running;
+  byId('benchImport').disabled=result.imported||running;
+  byId('benchReportButton').disabled=!result.imported;
+  byId('benchDelete').disabled=!result.imported||running;
+  const p=result.progress||{};
+  benchMessage('benchRunStatus',running?
+   'Running: '+(p.completed_requests||0)+' of '+(p.total_requests||0)+
+   ' model responses saved. No Hubitat tools enabled.':
+   result.error?'Last run: '+result.error:
+   result.imported?'Ready. Select one or two cases and approve the data transfer.':
+   'Import the ZIP to begin.');
+  if(result.imported&&review.value){
+   if(!benchCurrent||benchCurrent.id!==review.value)await benchmarkViewCase();
+  }else{
+   benchCurrent=null;
+   benchMessage('benchQuestion','No case selected.');
+   benchMessage('benchAnswerA','Not generated.');
+   benchMessage('benchAnswerB','Not generated.');
+  }
+  if(running&&byId('benchmark').classList.contains('active')){
+   benchPollTimer=setTimeout(benchmarkRefresh,1800);
+  }else if(benchCurrent&&benchCurrent.id===review.value&&
+           cases.find(x=>x.id===review.value)?.answered&&!benchCurrent.both_answered){
+   await benchmarkViewCase();
+  }
+ }catch(error){benchMessage('benchStatus','Benchmark: '+error.message);}
+}
+async function benchmarkUpload(){
+ const file=byId('benchZip').files?.[0];
+ if(!file){benchMessage('benchStatus','Select the prepared private ZIP first.');return;}
+ if(file.size>8*1024*1024){
+  benchMessage('benchStatus','The ZIP exceeds the 8 MB safety limit.');return;
+ }
+ byId('benchImport').disabled=true;
+ try{
+  await benchApi('import',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+  benchCurrent=null;benchReportData=null;
+  byId('benchZip').value='';
+  await benchmarkRefresh();
+ }catch(error){
+  benchMessage('benchStatus','Import failed: '+error.message);
+  byId('benchImport').disabled=false;
+ }
+}
+async function benchmarkRun(){
+ const first=byId('benchPilot1').value,second=byId('benchPilot2').value;
+ const selected=[...new Set([first,second].filter(Boolean))];
+ if(!selected.length){benchMessage('benchRunStatus','Select at least one case.');return;}
+ if(!byId('benchPrivateConsent').checked||!byId('benchCloudConsent').checked){
+  benchMessage('benchRunStatus','Approve both private evidence and cloud/remote transfer notices.');
+  return;
+ }
+ byId('benchRun').disabled=true;
+ try{
+  const response=await benchApi('run',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({case_ids:selected,private_evidence_consent:true,
+    cloud_transfer_consent:true})});
+  benchMessage('benchRunStatus',response.started?
+   'Benchmark started. The A/B answers are created with no MCP tools.':
+   response.message||'All requested answers already exist.');
+  await benchmarkRefresh();
+ }catch(error){
+  benchMessage('benchRunStatus','Could not run: '+error.message);
+  byId('benchRun').disabled=false;
+ }
+}
+async function benchmarkStop(){
+ try{
+  await benchApi('stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  benchMessage('benchRunStatus','Stop requested. Completed paired answers are retained.');
+  await benchmarkRefresh();
+ }catch(error){benchMessage('benchRunStatus','Could not stop: '+error.message);}
+}
+function benchScorePanel(label,previous,enabled){
+ const root=byId('benchScores'+label);
+ root.replaceChildren();
+ if(!enabled)return;
+ for(const name of BENCH_SCORE_NAMES){
+  const wrapper=document.createElement('label');
+  wrapper.textContent=name.replaceAll('_',' ');
+  const select=document.createElement('select');
+  select.setAttribute('data-bench-label',label);
+  select.setAttribute('data-bench-category',name);
+  for(const [value,text] of [['','Not scored'],['0','0 · Unsupported'],
+                             ['1','1 · Partial'],['2','2 · Supported'],
+                             ['n/a','n/a · Not applicable']]){
+   const option=document.createElement('option');
+   option.value=value;option.textContent=text;select.appendChild(option);
+  }
+  const old=previous?.ratings?.[name];
+  select.value=old===null||old===undefined?'':String(old);
+  wrapper.appendChild(select);root.appendChild(wrapper);
+ }
+}
+async function benchmarkViewCase(){
+ const key=byId('benchSelectCase').value;
+ if(!key)return;
+ try{
+  const detail=await benchApi('case/'+encodeURIComponent(key));
+  if(key!==byId('benchSelectCase').value)return;
+  benchCurrent=detail;
+  benchMessage('benchQuestion',detail.id+': '+detail.question);
+  benchMessage('benchSource',JSON.stringify(detail.source,null,2));
+  benchMessage('benchAnswerA',detail.answers?.A||'Not generated yet.');
+  benchMessage('benchAnswerB',detail.answers?.B||'Not generated yet.');
+  benchScorePanel('A',detail.ratings?.A,detail.both_answered);
+  benchScorePanel('B',detail.ratings?.B,detail.both_answered);
+  byId('benchSave').disabled=!detail.both_answered;
+  benchMessage('benchReviewStatus',detail.both_answered?
+   'Read both answers and the original sources. Score both versions without opening the hidden manifest.':
+   'Both model answers must be available before scoring.');
+ }catch(error){benchMessage('benchReviewStatus','Case error: '+error.message);}
+}
+async function benchmarkSaveScores(){
+ if(!benchCurrent?.both_answered)return;
+ const scores={A:{},B:{}};
+ for(const label of ['A','B']){
+  const selections=byId('benchScores'+label).querySelectorAll('select');
+  for(const element of selections){
+   const key=element.getAttribute('data-bench-category'),value=element.value;
+   if(!value){benchMessage('benchReviewStatus','Score every dimension on both answers.');return;}
+   scores[label][key]=value==='n/a'?'n/a':Number(value);
+  }
+ }
+ try{
+  await benchApi('case/'+encodeURIComponent(benchCurrent.id)+'/score',{
+   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores})});
+  benchMessage('benchReviewStatus','Blind scores saved. The A/B assignment remains hidden.');
+  await benchmarkRefresh();
+ }catch(error){benchMessage('benchReviewStatus','Score not saved: '+error.message);}
+}
+async function benchmarkReport(){
+ try{
+  benchReportData=await benchApi('report');
+  benchMessage('benchReportPreview',JSON.stringify(benchReportData,null,2));
+  byId('benchDownload').disabled=false;
+ }catch(error){benchMessage('benchReportPreview','Report unavailable: '+error.message);}
+}
+function benchmarkDownloadReport(){
+ if(!benchReportData)return;
+ const text=JSON.stringify(benchReportData,null,2)+'\n';
+ const blob=new Blob([text],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement('a');link.href=url;link.download='HomeBrain-v2-benchmark-report.json';
+ document.body.appendChild(link);link.click();link.remove();
+ URL.revokeObjectURL(url);
+}
+async function benchmarkDelete(){
+ if(!window.confirm('Delete ALL locally stored benchmark evidence, answers and ratings? This cannot undo cloud submissions.'))return;
+ try{
+  await benchApi('delete',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({confirm_delete:true})});
+  benchSnapshot=null;benchCurrent=null;benchReportData=null;
+  byId('benchDownload').disabled=true;
+  benchMessage('benchReportPreview','No scored results yet.');
+  await benchmarkRefresh();
+ }catch(error){benchMessage('benchStatus','Deletion failed: '+error.message);}
+}
+
 initGraphPopout();
 loadStatus();
 </script></body></html>
