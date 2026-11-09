@@ -17,7 +17,7 @@ from typing import Any
 
 from agent import Agent
 from benchmark import _private_write
-from mcp import MCPError
+from mcp import MCPError, _validate_arguments
 
 CRITERIA = ("factual_grounding", "source_completeness", "causal_calibration",
             "command_outcome", "usefulness")
@@ -214,48 +214,84 @@ def scenario_definitions() -> list[dict]:
 
 
 def _leaf_def(name: str) -> dict:
-    properties = {
-        "hub_list_devices":{"labelFilter":{"type":"string"}},
-        "hub_get_device":{"deviceId":{"type":"string"}},
-        "hub_get_device_attribute":{"deviceId":{"type":"string"},"attribute":{"type":"string"}},
-        "hub_list_device_events":{"deviceId":{"type":"string"},"attribute":{"type":"string"},"limit":{"type":"integer"},"since":{"type":"string"},"until":{"type":"string"}},
-        "hub_get_device_command_history":{"deviceId":{"type":"string"}},
-        "hub_get_device_health":{},
-        "hub_get_logs":{"limit":{"type":"integer"},"query":{"type":"string"}},
-        "hub_get_app_config":{"appId":{"type":"string"}},
-        "hub_call_device_command":{"deviceId":{"type":"string"},"command":{"type":"string"},
-                                   "params":{"type":"array","items":{"type":["integer","number","string"]}}},
-    }[name]
-    return {"name":name,
-            "description": {
-                "hub_list_devices":"Find devices by label and return their current states. Current states are not historical.",
-                "hub_get_device":"Read current states of one identified device.",
-                "hub_get_device_attribute":"Read a named current attribute from one device.",
-                "hub_list_device_events":"Read bounded historical events for one device and optionally one attribute.",
-                "hub_get_device_command_history":"Read the stored command-issuer history, if any. Missing records do not prove no command happened.",
-                "hub_get_device_health":"Read current hub stale-activity classification, not physical reachability.",
-                "hub_get_logs":"Read one limited recent log page, not an exhaustive historical search.",
-                "hub_get_app_config":"Read a current automation configuration snapshot, not its internal past decision.",
-                "hub_call_device_command":"SYNTHETIC ONLY: simulate a sandbox device command. Never reaches a hub; execute at most once.",
-            }[name],
-            "inputSchema":{"type":"object","properties":properties,
-                           "required": ["deviceId"] if name in (
-                               "hub_get_device","hub_get_device_command_history") else
-                           (["deviceId","attribute"] if name=="hub_get_device_attribute" else
-                            ["deviceId","command"] if name=="hub_call_device_command" else
-                            ["deviceId"] if name=="hub_list_device_events" else
-                            ["appId"] if name=="hub_get_app_config" else []),
-                           "additionalProperties":False},
+    """Synthetic subset of the native Hubitat MCP Rule Server 5.1.x schemas.
+
+    Native parameter names and gateway placement are used unchanged. Features
+    outside the simulator (physical I/O, batch writes, network diagnostics) are
+    intentionally not advertised. Models may still attempt an undeclared
+    argument; it is rejected and counted, never forwarded.
+    """
+    names={
+        "hub_list_devices": {
+            "format":{"type":"string","enum":["summary","detailed","ids","context"]},
+            "labelFilter":{"type":"string","description":"Case-insensitive device label substring"},
+            "scope":{"type":"string","enum":["authorized","all","owned"]},
+            "roomFilter":{"type":"string"},"limit":{"type":"integer","minimum":1},
+            "attributeNames":{"type":"array","items":{"type":"string"}}},
+        "hub_get_device":{
+            "deviceId":{"type":"string"},"mode":{"type":"string",
+                "enum":["summary","configuration","details"]}},
+        "hub_get_device_attribute":{
+            "deviceId":{"type":["string","integer"]},"attribute":{"type":"string"},
+            "expectedValue":{"type":"string"}},
+        "hub_list_device_events":{
+            "deviceId":{"type":["string","integer"]},"attribute":{"type":"string"},
+            "limit":{"type":"integer","minimum":1},"since":{"type":"string"},
+            "until":{"type":"string"},"hoursBack":{"type":"integer","minimum":1}},
+        "hub_get_device_health":{
+            "staleHours":{"type":"number","minimum":0},
+            "includeHealthy":{"type":"boolean"}},
+        "hub_get_logs":{
+            "mode":{"type":"string"},"limit":{"type":"integer","minimum":1},
+            "deviceId":{"type":["string","integer"]},"pattern":{"type":"string"}},
+        "hub_get_app_config":{
+            "appId":{"type":"string","description":"Fictional LAB-APP identifier; native uses numeric app ID"}},
+        "hub_call_device_command":{
+            "deviceId":{"type":["string","integer"]},
+            "command":{"type":"string"},
+            "parameters":{"type":"array","items":{"type":"string"},
+                "description":"Native command arguments, e.g. [\"40\"] for setLevel"},
+            "includeState":{"type":"boolean"},
+            "waitFor":{"type":"object","properties":{
+                "attribute":{"type":"string"},"expectedValue":{"type":"string"}},
+                "required":["attribute"],"additionalProperties":False}},
     }
+    descriptions={
+        "hub_list_devices":"List devices and their current states; filter by label. Current state is not historical.",
+        "hub_get_device":"Inspect the current attributes and supported commands of one device.",
+        "hub_get_device_attribute":"Read an independently fresh current attribute after any command. Polling is not implemented in this sandbox.",
+        "hub_list_device_events":"Return bounded historical device event rows; attribute='command-on/off' reads recorded command issuer events.",
+        "hub_get_device_health":"Read stale-activity classification, not proof of network/physical outage.",
+        "hub_get_logs":"Read one bounded page of synthetic diagnostic logs, not a complete log archive.",
+        "hub_get_app_config":"Read a fictional app configuration snapshot, not an internal decision trace.",
+        "hub_call_device_command":"SYNTHETIC MEMORY ONLY. Accept exactly one authorised sandbox command. Native args: deviceId, command, parameters (string array). A successful command response is not a fresh device state read.",
+    }
+    if name not in names:
+        raise ValueError("Unknown synthetic tool")
+    required={
+        "hub_get_device":["deviceId"],
+        "hub_get_device_attribute":["attribute"],
+        "hub_list_device_events":["deviceId"],
+        "hub_get_app_config":["appId"],
+    }.get(name,[])
+    # The upstream native command has two wire forms and does not declare
+    # JSON Schema required fields; the simulator checks the single-target
+    # subset itself, before any in-memory mutation.
+    return {"name":name,"description":descriptions[name],
+            "inputSchema":{"type":"object","properties":names[name],
+                           "required":required,"additionalProperties":False}}
 
 
-GATEWAYS = {
-    "hub_read_devices": ("hub_list_devices","hub_get_device",
-                         "hub_get_device_attribute","hub_get_device_health"),
-    "hub_read_history": ("hub_list_device_events","hub_get_device_command_history",
-                         "hub_get_logs"),
-    "hub_read_apps": ("hub_get_app_config",),
-    "hub_manage_devices": ("hub_call_device_command",),
+# Gateway names/membership mirror the corresponding native server surfaces.
+# Every name not present in an actual native gateway is excluded.
+GATEWAYS={
+    "hub_read_devices":("hub_list_devices","hub_get_device",
+                        "hub_get_device_attribute","hub_list_device_events"),
+    "hub_manage_devices":("hub_call_device_command","hub_list_devices",
+                          "hub_get_device","hub_get_device_attribute",
+                          "hub_list_device_events"),
+    "hub_read_diagnostics":("hub_get_device_health","hub_get_logs"),
+    "hub_read_apps_code":("hub_get_app_config",),
 }
 
 
