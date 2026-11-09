@@ -63,3 +63,53 @@ Interpret improvements only after paired, source-reviewed examples across more t
 Do not add a fixed planner, tool-use restriction, answer rewriting, automatic write retry, physical-actuation claim, heating-specific workaround or unverified permission preflight. Supervised write testing requires explicit user authorization and device safety checks.
 
 **Rollback:** remove this offline tool, its synthetic tests and docs. Hubitat, Home Assistant, installed alpha.18, Gemma, the native MCP server, independent recorder and V1 are unaffected.
+
+## Optional local Ollama pair runner — explicit opt-in
+
+The companion tool at hubitat-mcp-ai-v2/tools/run_fixed_source_pairs_ollama.py
+submits frozen retrospective A/B prompts to the user's running Ollama
+instance through the local /api/chat endpoint, with one independent,
+tool-free model conversation per variant. It cannot call Hubitat or MCP.
+
+**Privacy warning:** A model whose name contains "cloud" (such as
+gemma4:31b-cloud) may forward raw private MCP source evidence from local
+Ollama to the cloud provider. You must explicitly approve this transfer
+and any cloud usage cost before running the pilot. No data is transmitted
+by the default dry-run. The flags --run and --acknowledge-private-mcp-data
+are both required to send anything. Cloud models also need
+--allow-cloud-model. Non-loopback endpoints require explicit
+--allow-remote-endpoint and HTTPS. Credentials in endpoint URLs are rejected.
+
+Unzip the private benchmark bundle OUTSIDE the Git repository, then preview
+the number of planned requests without any network traffic:
+
+~~~powershell
+Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\HomeBrain_v2_FIXED_SOURCE_PRIVATE.zip" -DestinationPath "$env:USERPROFILE\HomeBrain-v2-fixed-source-private"
+python hubitat-mcp-ai-v2/tools/run_fixed_source_pairs_ollama.py --directory "$env:USERPROFILE\HomeBrain-v2-fixed-source-private" --max-pairs 2
+~~~
+
+After expressly approving the private source transfer to your existing
+Gemma cloud model, run a **two-pair pilot**:
+
+~~~powershell
+python hubitat-mcp-ai-v2/tools/run_fixed_source_pairs_ollama.py --directory "$env:USERPROFILE\HomeBrain-v2-fixed-source-private" --model "gemma4:31b-cloud" --max-pairs 2 --run --acknowledge-private-mcp-data --allow-cloud-model
+~~~
+
+Only after inspecting pilot results and cloud usage, use --max-pairs 10
+to complete the ten-case sample. Existing answer files are skipped and
+never overwritten; elapsed model time is written beside the still-empty
+blind rating fields. A/B execution order is randomised while system/user
+context and model settings are identical. No MCP tools or write functions
+are passed to Ollama. The script does not score model answers or measure
+physical device outcomes.
+
+For a purely local model, substitute its installed ID and omit
+--allow-cloud-model. This compares a **different model** rather than the
+original cloud Gemma. No automatic provider fallback or extra API key
+configuration is provided. Failure to contact Ollama or a returned model
+tool-call is an error rather than a fabricated success.
+
+After independently grading each paired answer *blindly*, use the
+fixed_source_benchmark.py report command above. Generated prompts, model
+answers, timings and condition maps remain private. Synthetic CI success
+does not demonstrate actual model answer improvement.

@@ -223,3 +223,21 @@ For a controlled, private comparison of the SAME source receipts with and withou
 - Run each A/B prompt through the same model with NO live tools and separately preserve its unedited answer/latency. A human source reviewer grades grounding, source completeness, causal calibration, outcome verification and usefulness before unblinding. The report command verifies pair integrity and returns only aggregate, descriptive differences, not an automated correctness score.
 - The generated folder contains raw private home/device information; keep it OUTSIDE GitHub and away from CI and public sharing. The code performs no model, MCP, network or device calls and refuses to create data underneath the repository.
 - The installed add-on stays at **2.0.0-alpha.18**. This experiment does not implement new runtime answer rewriting, forced command verification, automatic retries or app-specific patches. Any future runtime changes require independent multi-domain evidence and their own tests.
+
+## Optional private Ollama A/B runner
+
+The offline fixed-source benchmark now has a separate, **explicit opt-in**
+runner at hubitat-mcp-ai-v2/tools/run_fixed_source_pairs_ollama.py.
+It can take previously frozen source-identical A/B inputs and ask the same
+chosen Ollama model (e.g. the installed gemma4:31b-cloud) in independent
+no-tools conversations, preserving unedited answers/timings for later
+independent human blind review. **Dry-run is the default**. Explicit
+--run and --acknowledge-private-mcp-data are mandatory, as is
+--allow-cloud-model for cloud models (which may relay private household
+source data from local Ollama to its provider). The runner is loopback-only
+unless separately authorised, rejects remote HTTP, and never invokes
+Hubitat/MCP or grades its own results. The default pilot is two paired
+cases; complete ten-case evaluation is an explicit opt-in.
+
+See docs/HUBITAT-MCP-AI-V2-FIXED-SOURCE-BENCHMARK.md for private Windows
+setup and exact dry-run, model-run and human scoring steps.
