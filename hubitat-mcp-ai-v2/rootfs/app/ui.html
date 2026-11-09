@@ -287,7 +287,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
  </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.22";
+const UI_VERSION="2.0.0-alpha.23";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -1540,19 +1540,20 @@ async function autolabRefresh(){
   const response=await autolabApi('status');
   autolabState=response;
   const choices=response.cases.map(item=>[item.id,
-   item.id+' · '+item.title+(item.answered?' · answered':'')]);
+   item.id+' · '+item.title+(item.failed?' · failed (retry available)':item.answered?' · answered':'')]);
   const selected=byId('autolabSelect').value;
   benchOptions('autolabSelect',choices,selected);
   const active=response.cases.find(item=>item.id===byId('autolabSelect').value);
   byId('autolabRun').disabled=response.running||!active||active.answered;
+  byId('autolabRun').textContent=active?.failed?'Retry failed case':'Run selected synthetic case';
   byId('autolabStop').disabled=!response.running;
   autolabText('autolabStatus',response.running?
    'Running '+(response.progress?.case_id||'')+
     ' with fictional MCP data and a bounded model-round budget…':
    response.error?'Last run: '+response.error:
    response.cases.filter(c=>c.answered).length+' / '+response.cases.length+
-   ' synthetic cases answered; '+response.cases.filter(c=>c.graded).length+
-   ' manually scored.');
+   ' completed; '+response.cases.filter(c=>c.failed).length+' failed; '+
+   response.cases.filter(c=>c.graded).length+' manually scored.');
   await autolabView();
   if(response.running&&byId('autonomous').classList.contains('active'))
    autolabPolling=setTimeout(autolabRefresh,2000);
@@ -1577,6 +1578,9 @@ async function autolabView(){
   autolabText('autolabMetrics',detail.answer?
    'Model rounds: '+detail.rounds+' · Simulated commands: '+
    detail.simulated_commands+' · Blocked attempts: '+detail.blocked_attempts+
+   (Object.keys(detail.blocked_reasons||{}).length?' ('+
+    Object.entries(detail.blocked_reasons).map(([k,v])=>k+': '+v).join(', ')+')':'')+
+   ' · Previous failed runs: '+(detail.previous_failed_attempts||0)+
    ' · Live hub actions: 0 · Response time: '+
    (Number(detail.elapsed_ms||0)/1000).toFixed(1)+' s':
    'Model has not run this case.');
@@ -1601,13 +1605,17 @@ async function autolabView(){
     wrapper.appendChild(select);group.appendChild(wrapper);
    }
   }
-  byId('autolabSave').disabled=detail.answer===null;
-  autolabText('autolabReviewStatus',detail.ratings?'Saved manual assessment':
+  byId('autolabSave').disabled=detail.answer===null||detail.success===false;
+  autolabText('autolabReviewStatus',detail.success===false?
+   'Model evaluation failed — inspect synthetic receipts. This is not a completed answer. Retry only after reviewing consent.':
+   detail.ratings?'Saved manual assessment':
    'Assess the retrieved evidence and the model answer, not just successful tool calls.');
  }catch(error){autolabText('autolabReviewStatus','Could not load case: '+error.message);}
 }
 async function autolabRun(){
  const id=byId('autolabSelect').value;
+ const retry=!!autolabState?.cases.find(x=>x.id===id)?.failed;
+ if(retry&&!window.confirm('Retry this FAILED synthetic case? The previous failed result will be archived. This can use more cloud credits.'))return;
  if(!byId('autolabModelConsent').checked||!byId('autolabCloudConsent').checked){
   autolabText('autolabStatus','Review and approve both synthetic-model and cloud notices.');
   return;
@@ -1617,7 +1625,7 @@ async function autolabRun(){
   await autolabApi('run',{
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({case_id:id,model_execution_consent:true,
-    cloud_transfer_consent:true})
+    cloud_transfer_consent:true,retry_failed:retry})
   });
   await autolabRefresh();
  }catch(error){

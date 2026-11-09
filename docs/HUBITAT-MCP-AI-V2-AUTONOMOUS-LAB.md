@@ -119,3 +119,61 @@ investigations separately, and retain explicit approval for future writes.
 
 **Rollback:** install alpha.21. Synthetic results persist in add-on \`/data\`
 until deleted explicitly in alpha.22. No change to V1 or other services.
+
+
+## Alpha.23 — Native MCP schema fidelity and failed-case retry
+
+The first installed alpha.22 real-Gemma synthetic attempt, \`lab-01\`,
+returned **model-round safety limit reached** after 8 model rounds. Its
+sandbox tool trace reported 10 blocked attempts, 0 simulated commands,
+device discovery present and **both post-command verification reads absent**.
+That is a failed evaluation, not evidence that Gemma or the actual hub
+cannot execute a brightness command.
+
+An independent code/contract review confirmed multiple simulator-vs-native
+differences. The native \`hub_call_device_command\` accepts
+\`parameters: ["40"]\`, whereas the old simulator accepted only an invented
+\`params: [40]\`. Other synthetic gateways (\`hub_read_history\`,
+\`hub_read_apps\`) and command-history leaf names did not match native
+gateway membership. The simulator now uses the upstream MCP 5.1.x names:
+\`hub_read_devices\` for device/history, \`hub_manage_devices\` for
+command/device operations, \`hub_read_diagnostics\` for health/logs and
+\`hub_read_apps_code\` for app configuration. Stored command issuer events
+are available through \`hub_list_device_events(attribute="command-on"/"command-off")\`,
+not an invented command-history tool. Native-selected leaf schemas are
+read from simulated \`{}\` gateway catalog discovery and cached into the
+production agent's normal progressive-disclosure mechanism.
+
+The simulator still intentionally implements a safe **subset** of the
+upstream contract: it denies unsupported batch writes, network diagnostics
+and non-fictional targets, and executes at most one precise memory-only
+simulated command in allowed cases. Native device-command arguments are
+strings under \`parameters\` as upstream specifies. The sandbox command
+acknowledgment cannot be mistaken for an independent post-command read.
+Bounded model/tool budgets are 12 rounds / 40 synthetic calls, deadline
+120 seconds. Rejected calls expose **reason codes** in the synthetic UI:
+\`invalid_gateway_shape\`, \`invalid_leaf_arguments\`,
+\`unsupported_command\`, \`duplicate_command\` and so on; they do not
+expose any real household data.
+
+Failed model/transport trials are now explicitly marked **failed** and not
+counted as completed human-reviewable answers. The original failed result
+is retained. After upgrading, select that case, review the consent
+checkboxes and choose **Retry failed case**. Its previous failure is
+archived as \`lab-01-failed-01.json\`; all other completed/graded cases and
+the separate private A/B benchmark remain untouched. Successful cases
+cannot be overwritten; at most two preserved failed retries are allowed
+before the user explicitly resets synthetic data. Only human-reviewable
+model outputs can be scored. Report totals distinguish attempts, completed
+answers, failed cases and prior failed attempts.
+
+**Evidence limitation:** The screenshot supplied only summary counts and
+did not show the rejected per-call arguments. Therefore, the simulator
+schema incompatibility is confirmed by source inspection, but it cannot
+by itself establish which exact error caused each of the ten original
+rejections. The original failed tool receipts remain available for review.
+
+All changes are isolated to the synthetic evaluator, its UI/API, tests,
+metadata and documentation. No code path routes synthetic tools to the
+live MCPClient, no change to production Agent, native MCP server, Hubitat,
+HA core, recorder, device controls or V1.

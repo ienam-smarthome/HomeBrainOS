@@ -307,3 +307,20 @@ credits. No model requests or synthetic commands occur merely by opening the
 tab. The original AI Benchmark page, native Ask/Chat and Hub Diagnostics
 remain unchanged. Instructions and privacy boundaries:
 \`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\`.
+
+
+## Alpha.23 — Corrected native-contract synthetic evaluation
+
+Following the first installed alpha.22 synthetic Lab 01 attempt, which
+reached the model-round limit without executing the simulated command,
+the evaluator now models the actual MCP gateway and device-command
+wire contract rather than an invented \`params\` format. Leaf schemas
+are disclosed progressively, as in the live MCP client, and rejected
+calls report machine-readable safe diagnostic codes.
+
+Failures are shown as **failed**, not answered. You can explicitly retry
+a failed case without deleting all other synthetic results; the original
+failed evidence is archived. The evaluation-only budgets are 12 model
+rounds, 40 synthetic tool attempts and 120 seconds. All native MCP,
+Home Assistant, Hub Diagnostics and v1 behaviour remain unchanged.
+See \`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\`.

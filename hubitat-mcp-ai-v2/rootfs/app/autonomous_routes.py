@@ -36,12 +36,13 @@ class Start(BaseModel):
     case_id:str
     model_execution_consent:StrictBool
     cloud_transfer_consent:StrictBool
+    retry_failed:StrictBool=False
 
 
-async def _evaluate(app,case_id:str):
+async def _evaluate(app,case_id:str,retry_failed:bool=False):
     state=app.state.autolab_progress
     try:
-        await app.state.autolab.run(case_id,app.state.model)
+        await app.state.autolab.run(case_id,app.state.model,retry_failed=retry_failed)
     except asyncio.CancelledError:
         state["error"]="Evaluation stopped; no completed result saved"
         raise
@@ -66,8 +67,17 @@ async def run(body:Start,request:Request):
         raise HTTPException(503,"Configure the model in add-on options")
     if body.case_id not in app.state.autolab.catalog:
         raise HTTPException(400,"Unknown synthetic lab case")
-    if app.state.autolab._answer_path(body.case_id).exists():
-        raise HTTPException(409,"This case was already run; existing evidence is preserved")
+    path=app.state.autolab._answer_path(body.case_id)
+    if path.exists():
+        previous=app.state.autolab.case(body.case_id)
+        if previous.get("success") or previous.get("ratings") is not None:
+            raise HTTPException(409,"A completed or graded case cannot be overwritten")
+        if not body.retry_failed:
+            raise HTTPException(409,"Failed run retained; explicitly request a retry")
+        if len(app.state.autolab._failed_archives(body.case_id))>=2:
+            raise HTTPException(409,"Retry limit reached; use explicit reset")
+    elif body.retry_failed:
+        raise HTTPException(400,"No previous failed case to retry")
     options=app.state.options
     base=urlsplit(str(options["model_base_url"]))
     remote=(base.hostname not in ("localhost","127.0.0.1","::1")
@@ -78,7 +88,7 @@ async def run(body:Start,request:Request):
         raise HTTPException(503,"Configure an Ollama Cloud API key")
     app.state.autolab_progress={"running":True,"case_id":body.case_id,
                                 "started":True,"error":None}
-    app.state.autolab_task=asyncio.create_task(_evaluate(app,body.case_id))
+    app.state.autolab_task=asyncio.create_task(_evaluate(app,body.case_id,body.retry_failed))
     return {"started":True,"case_id":body.case_id,
             "synthetic_only":True,"live_mcp_calls":0}
 

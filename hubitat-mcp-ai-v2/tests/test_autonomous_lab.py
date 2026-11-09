@@ -49,6 +49,21 @@ class SyntheticMCPTests(unittest.TestCase):
             catalog=await m.call("hub_read_devices",{})
             self.assertEqual(json.loads(catalog["content"][0]["text"])["mode"],"catalog")
             self.assertFalse(catalog.get("isError"))
+            schema,discovered=await m.gateway_leaf_schema(
+                "hub_manage_devices","hub_call_device_command")
+            self.assertTrue(discovered)
+            self.assertIn("parameters",schema["inputSchema"]["properties"])
+            self.assertNotIn("params",schema["inputSchema"]["properties"])
+            self.assertIn("hub_call_device_command",
+                m.cached_leaf_schemas()["hub_manage_devices"])
+            # The former synthetic-only "params" wire key MUST be rejected.
+            incompatible=await m.call("hub_manage_devices",{
+                "tool":"hub_call_device_command",
+                "args":{"deviceId":"LAB-101","command":"setLevel","params":[40]}})
+            self.assertTrue(incompatible["isError"])
+            self.assertEqual(json.loads(incompatible["content"][0]["text"])["reason_code"],
+                             "invalid_leaf_arguments")
+
             before=await m.call("hub_read_devices",{"tool":"hub_list_devices",
                 "args":{"labelFilter":"Bench Study Lamp"}})
             self.assertEqual(json.loads(before["content"][0]["text"])["count"],1)
@@ -56,12 +71,12 @@ class SyntheticMCPTests(unittest.TestCase):
                 "args":{"deviceId":"LAB-101","command":"off"}})
             self.assertTrue(wrong["isError"])
             accepted=await m.call("hub_manage_devices",{"tool":"hub_call_device_command",
-                "args":{"deviceId":"LAB-101","command":"setLevel","params":[40]}})
+                "args":{"deviceId":"LAB-101","command":"setLevel","parameters":["40"]}})
             data=json.loads(accepted["content"][0]["text"])
             self.assertTrue(data["success"])
-            self.assertEqual(data["command_response_snapshot_not_fresh"]["level"],"15")
+            self.assertEqual(data["state"]["level"],"15")
             second=await m.call("hub_manage_devices",{"tool":"hub_call_device_command",
-                "args":{"deviceId":"LAB-101","command":"setLevel","params":[40]}})
+                "args":{"deviceId":"LAB-101","command":"setLevel","parameters":["40"]}})
             self.assertTrue(second["isError"],"Even a simulated duplicate is prohibited")
             level=await m.call("hub_read_devices",{"tool":"hub_get_device_attribute",
                 "args":{"deviceId":"LAB-101","attribute":"level"}})
@@ -72,7 +87,7 @@ class SyntheticMCPTests(unittest.TestCase):
             checks=_check_coverage(c,m.calls)
             self.assertEqual([q["observed"] for q in checks],[True]*4)
             self.assertEqual(len(m.simulated_writes),1)
-            self.assertEqual(m.blocked_attempts,2)
+            self.assertEqual(m.blocked_attempts,3)
             read_only=SyntheticMCP(scenario_definitions()[2])
             forbidden=await read_only.call("hub_manage_devices",{
                 "tool":"hub_call_device_command",
@@ -89,13 +104,13 @@ class SyntheticMCPTests(unittest.TestCase):
                              ("LAB-301","heatingSetpoint"),
                              ("LAB-302","thermostatOperatingState"),
                              ("LAB-303","thermostatOperatingState")]:
-                await m.call("hub_read_history",{"tool":"hub_list_device_events",
+                await m.call("hub_read_devices",{"tool":"hub_list_device_events",
                               "args":{"deviceId":did,"attribute":attr}})
             checks=_check_coverage(c,m.calls)
             self.assertEqual(sum(x["observed"] for x in checks),4)
             self.assertFalse(checks[-1]["observed"])
             # An empty historical result IS a checked source, not proof of idle.
-            x=await m.call("hub_read_history",{"tool":"hub_list_device_events",
+            x=await m.call("hub_read_devices",{"tool":"hub_list_device_events",
                             "args":{"deviceId":"LAB-304",
                                     "attribute":"thermostatOperatingState"}})
             data=json.loads(x["content"][0]["text"])
@@ -126,7 +141,7 @@ class FirstAnswerLabTests(unittest.TestCase):
                         response={"tool_calls":[tool_call("hub_manage_devices",
                             "hub_call_device_command",{"tool":"hub_call_device_command",
                                 "args":{"deviceId":"LAB-101","command":"setLevel",
-                                        "params":[40]}})]}
+                                        "parameters":["40"]}})]}
                     elif n==2:
                         response={"tool_calls":[tool_call("hub_read_devices",
                             "hub_get_device_attribute",{"tool":"hub_get_device_attribute",
@@ -172,6 +187,60 @@ class FirstAnswerLabTests(unittest.TestCase):
                 finally:
                     await agent.close()
         asyncio.run(run())
+
+    def test_failed_round_limit_is_not_counted_as_answer_and_safe_retry_preserves_evidence(self):
+        async def exercise():
+            with tempfile.TemporaryDirectory() as folder:
+                lab=AutonomousLab(Path(folder)/"synthetic")
+                lab.root.mkdir(parents=True,exist_ok=True)
+                old={"id":"lab-01",
+                     "answer":"Model/transport failure: synthetic round budget",
+                     "success":False,"rounds":8,"elapsed_ms":9000,
+                     "tool_calls":[{"name":"hub_manage_devices","success":False}],
+                     "blocked_attempts":10,"simulated_commands":0,"coverage":[]}
+                lab._answer_path("lab-01").write_text(json.dumps(old),encoding="utf-8")
+                item=lab.summary()["cases"][0]
+                self.assertTrue(item["failed"])
+                self.assertFalse(item["answered"])
+                report=lab.report()
+                self.assertEqual(report["cases_attempted"],1)
+                self.assertEqual(report["cases_answered"],0)
+                self.assertEqual(report["cases_failed"],1)
+                with self.assertRaises(ValueError):
+                    lab.score("lab-01",dict.fromkeys(
+                        ("factual_grounding","source_completeness",
+                         "causal_calibration","command_outcome","usefulness"),0))
+                agent=Agent("https://ollama.com","synthetic-test","FAKE_TEST_KEY",30)
+                await agent.client.aclose()
+                def reply(request):
+                    self.assertTrue(json.loads(request.content).get("tools"))
+                    return httpx.Response(200,json={"message":{
+                        "content":"Synthetic evaluation complete; no live actions."}})
+                agent.client=httpx.AsyncClient(transport=httpx.MockTransport(reply))
+                try:
+                    with self.assertRaises(ValueError):
+                        await lab.run("lab-01",agent)
+                    await lab.run("lab-01",agent,retry_failed=True)
+                    self.assertTrue(lab._failed_archives("lab-01"))
+                    archived=json.loads(lab._failed_archives("lab-01")[0].read_text())
+                    self.assertEqual(archived["blocked_attempts"],10)
+                    status=lab.summary()["cases"][0]
+                    self.assertTrue(status["answered"])
+                    self.assertFalse(status["failed"])
+                    self.assertEqual(status["previous_failed_attempts"],1)
+                    report=lab.report()
+                    self.assertEqual(report["cases_attempted"],1)
+                    self.assertEqual(report["cases_answered"],1)
+                    self.assertEqual(report["cases_failed"],0)
+                    self.assertEqual(report["prior_failed_attempts"],1)
+                    with self.assertRaises(ValueError):
+                        await lab.run("lab-01",agent,retry_failed=True)
+                    lab.delete()
+                    self.assertFalse(lab._failed_archives("lab-01"))
+                    self.assertEqual(lab.report()["cases_attempted"],0)
+                finally:
+                    await agent.close()
+        asyncio.run(exercise())
 
     def test_http_routes_require_manual_consent_and_are_separate_from_mcp(self):
         async def exercise():
