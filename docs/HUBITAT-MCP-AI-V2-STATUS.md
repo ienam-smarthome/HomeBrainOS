@@ -280,3 +280,29 @@ A new **offline-only** paired benchmark is in development on top of main commit 
 The new tool freezes existing MCP response strings, native call order/status/arguments and the original question, constructs two A/B bundles per eligible export, and adds **only generic source-role notes** to one bundle. A hidden, balanced map allows blind human scoring of five evidence dimensions; source SHA-256 equality is checked before any aggregate comparison. The tool neither calls a model nor touches Hubitat, Home Assistant or MCP. It creates restrictive **private local** files, rejects output paths under the repository and never sends raw exports to CI/GitHub. Synthetic tests cover integrity, condition balance, missing answers/ratings, tampering, prior-context exclusion, source-role boundaries and privacy.
 
 **State of evidence:** The 18 real exports have been inventoried locally, but there are **no run-and-rated model A/B pairs yet**. A small number of selected cases cannot justify a general model performance percentage or a runtime source rewrite. The next actionable gate is to run the existing Gemma model on both fixed-source variants in isolated, no-tools sessions and blind-rate each answer against private receipts. If source-role notes consistently help across independent domains with acceptable latency, only then consider a separately gated runtime change. Model-led native MCP operation and the external diagnostics recorder remain unchanged. Installed version stays **2.0.0-alpha.18**.
+
+### Fixed-source evaluation execution gate (8 November 2026)
+
+Actual private source preparation has now been performed locally: 18 historical
+Technical JSON exports inventoried, **10 source-isolated cases** selected, 20
+paired A/B files emitted and **10/10 pairs SHA verified** with balanced A/B
+assignment. The eight prior-context-dependent exports are excluded from this
+first frozen-source comparison. All historical MCP receipts were copied as
+DATA, not replayed. The user-only private bundle was produced outside GitHub
+and not uploaded to CI. **No paired Gemma inference or blind rating has yet
+occurred**, so model-quality lift remains completely unmeasured.
+
+A new optional standalone Ollama runner supports those prepared pairs with
+NO default network activity and explicit private-source sharing consent.
+Running a cloud model requires a separate cloud flag to acknowledge that the
+locally hosted Ollama may relay the private MCP evidence to Ollama Cloud.
+Each call is a retrospective **no-tools** chat, not a Hubitat/MCP operation;
+answers are stored only in the user's private paired benchmark folder and
+their human rating fields remain blank. The default request limit is two
+pairs; a larger ten-case model trial requires explicit selection. The
+experimental fixed-source release gate still requires blinded source
+review across independent domains before any live-agent change.
+
+No V2 runtime, model-prompt, source rewriting, response caching, timeout,
+device routing, permissions, Heating Scheduler, Hue Bridge, Hubitat,
+Home Assistant, V1 or diagnostics change. Version stays 2.0.0-alpha.18.
