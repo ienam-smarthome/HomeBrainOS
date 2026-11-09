@@ -136,11 +136,19 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 #autolabAnswer{min-height:150px;max-height:550px;overflow:auto;white-space:pre-wrap}
 #autolabCalls{max-height:450px}
 @media(max-width:550px){.autolab-evidence{grid-template-columns:1fr}}
+
+.reasoning-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.reasoning-pair pre{max-height:430px;min-height:110px;overflow:auto}
+.reasoning-evidence{font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--muted)}
+.reasoning-scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}
+.reasoning-scores label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
+.reasoning-scores select{padding:9px}
+@media(max-width:690px){.reasoning-pair{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
-<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button></nav>
+<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button></nav>
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
@@ -285,15 +293,66 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
   <details><summary>Clear synthetic results</summary>
    <button onclick="autolabDelete()">Delete all local synthetic evaluations</button></details>
  </div>
-</section></main>
+</section>
+
+<section id="reasoning">
+ <div class="row"><h2>Reasoning A/B — fresh synthetic holdout</h2>
+ <button class="right" onclick="reasoningRefresh()">Refresh</button></div>
+ <p class="autolab-risk"><strong>Synthetic evaluation only.</strong> The current alpha.24 production reasoning is the baseline. An isolated candidate uses the same Agent.answer and native-shaped in-memory MCP tools, with one additional general evidence-quality instruction. The A/B assignments remain hidden until all six cases have been rated. No real device or home data is used. Your configured cloud model may consume credits.</p>
+ <div class="card">
+  <h3>1 · Run one blinded pair</h3>
+  <div class="row"><select id="reasoningSelect" class="autolab-select" aria-label="Select fresh synthetic holdout case" onchange="reasoningView()"></select></div>
+  <p id="reasoningQuestion" class="session-note">Choose a fictional case.</p>
+  <label class="bench-consent"><input id="reasoningModelConsent" type="checkbox">I approve two independent fictional model investigations for this case. Cloud credits may be consumed.</label>
+  <label class="bench-consent"><input id="reasoningCloudConsent" type="checkbox">I approve transferring fictional questions and fictional MCP evidence to my configured remote/cloud model, if applicable.</label>
+  <div class="row">
+   <button class="primary" id="reasoningRun" onclick="reasoningRun()">Run blinded A/B pair</button>
+   <button id="reasoningStop" onclick="reasoningStop()" disabled>Stop pair</button>
+  </div>
+  <p class="session-note" id="reasoningStatus" role="status" aria-live="polite">Loading...</p>
+ </div>
+ <div class="card">
+  <h3>2 · Review Answer A and Answer B blind</h3>
+  <p class="session-note">Read the model answers and the actual synthetic tool-call receipts. Coverage is an observed-source check, not proof that an explanation is correct. Neither answer is identified as the baseline or candidate while grading.</p>
+  <div class="reasoning-pair">
+   <div><h3>Answer A</h3><pre id="reasoningAnswerA">Not generated yet.</pre>
+    <div id="reasoningMetricsA" class="reasoning-evidence"></div>
+    <details><summary>View exact synthetic tool receipts A</summary><pre id="reasoningCallsA">No receipts.</pre></details></div>
+   <div><h3>Answer B</h3><pre id="reasoningAnswerB">Not generated yet.</pre>
+    <div id="reasoningMetricsB" class="reasoning-evidence"></div>
+    <details><summary>View exact synthetic tool receipts B</summary><pre id="reasoningCallsB">No receipts.</pre></details></div>
+  </div>
+ </div>
+ <div class="card">
+  <h3>3 · Independent blind assessment</h3>
+  <p class="session-note">Score each arm on factual grounding, source completeness, causal calibration, command outcome, and usefulness: 0 unsupported, 1 partial, 2 supported, or n/a if inapplicable. Rate the full answer, not just retrieved-tool counts.</p>
+  <div class="reasoning-pair">
+   <div><h3>A scores</h3><div class="reasoning-scores" id="reasoningScoresA"></div></div>
+   <div><h3>B scores</h3><div class="reasoning-scores" id="reasoningScoresB"></div></div>
+  </div>
+  <div class="row"><button id="reasoningSave" onclick="reasoningSave()" disabled>Save both blind scores</button>
+   <span class="session-note" id="reasoningReviewStatus" role="status"></span></div>
+ </div>
+ <div class="card">
+  <h3>4 · Aggregate report (reveals mapping only after 6/6 scored)</h3>
+  <p class="session-note">Private experiment reports contain ratings and source-retrieval counts only, never prompts, raw answers, private allocation keys, household records, or model credentials. The final report unmasks the A/B assignment only after every pair has been blindly scored.</p>
+  <div class="row"><button onclick="reasoningReport()">Generate aggregate report</button>
+   <button id="reasoningDownload" onclick="reasoningDownload()" disabled>Download report JSON</button></div>
+  <pre id="reasoningReportPreview">No A/B report yet.</pre>
+  <details><summary>Delete only this synthetic A/B study</summary>
+   <button onclick="reasoningDelete()">Delete A/B results and ratings</button>
+  </details>
+ </div>
+</section>
+</main>
 <script>
-const UI_VERSION="2.0.0-alpha.24";
+const UI_VERSION="2.0.0-alpha.25";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
-function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();}
+function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
