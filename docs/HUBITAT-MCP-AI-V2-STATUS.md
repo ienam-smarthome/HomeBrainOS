@@ -428,3 +428,34 @@ safe retry with original failed-result preservation.
 **Operational:** upgrade only the v2 add-on to \`2.0.0-alpha.23\` and
 retry \`lab-01\` with consent. Inspect actual synthetic tool receipts
 and coverage before judging Gemma; do not infer live device performance.
+
+
+### Alpha.24 — Downsampled diagnostic trace continuity (chart only)
+
+After reviewing the 9 Nov three-day Unified Incident Timeline screenshot
+(3,409 external OS-memory observations and 332 distinct native 5m CPU samples),
+the disjoint vertical memory strokes were traced to a frontend/backend
+sampling-contract mismatch. `summarize_history_samples` keeps actual
+first/last/min/max readings when the raw return exceeds 3,000 observations,
+and gives retained samples a `diag_segment` ID that changes on failed
+probes or genuine cadence gaps. Both SVG and canvas renderers previously
+applied raw source-cadence thresholds even to the downsampled rows, turning
+legitimate reduced-data spacing into visual breaks.
+
+PR #1558 changed the renderers to join selected points **only within
+the same known segment when `downsampled=true`**, while continuing to break
+on segment changes and retain strict time-based checks for raw or old
+unlabelled data. The 9 Nov chart screenshot was not a live proof that all
+intervals were healthy, and no causal inference is made from the line shape.
+Synthetic UI regression tests verify SVG/canvas continuity, real gaps,
+native and external thresholds, and missing segment metadata fallbacks.
+PR #1558 passed the v2 pilot tests, repository validation and release
+assurance, and merged as `be90ab12` on 9 Nov 2026.
+
+**Release:** `2.0.0-alpha.24` makes the change installable via the v2 add-on
+version update. This release does not modify the external recorder's
+historical SQLite observations, probes, any hub/device, MCP connector,
+autonomous synthetic lab or V1. Check the newly installed version,
+refresh the timeline and visually confirm that confirmed gaps remain blank.
+Live installed acceptance is still outstanding.
+
