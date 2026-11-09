@@ -288,3 +288,22 @@ The native v2 model-led loop, home device controls, Hub Diagnostics, external
 recorder, HA, native MCP server and V1 are unchanged. See
 `docs/HUBITAT-MCP-AI-V2-BENCHMARK-UI.md` for the full phone workflow and
 privacy/rollback notes. Update to **2.0.0-alpha.21** to use this new UI.
+
+
+## Alpha.22 — Autonomous First-Answer Lab (synthetic, model-led)
+
+The fourth HomeBrainOS v2 UI tab evaluates native-model-selected MCP tool
+discovery, evidence reads and initial answer quality on **six fresh fictional
+cases** without connecting to your real Hubitat, Home Assistant, devices or
+private A/B benchmark ZIP. The production \`Agent.answer\` loop operates
+against an in-memory \`SyntheticMCP\` adapter; even allowed synthetic device
+commands cannot reach real hardware. Each case is opt-in and capped at eight
+model rounds and 24 synthetic calls.
+
+The tab displays actual model/tool receipts, a source-retrieval coverage
+checklist, a five-category **manual** answer assessment, and a source-free
+JSON report. Cloud/remote model use requires explicit consent and may use
+credits. No model requests or synthetic commands occur merely by opening the
+tab. The original AI Benchmark page, native Ask/Chat and Hub Diagnostics
+remain unchanged. Instructions and privacy boundaries:
+\`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\`.
