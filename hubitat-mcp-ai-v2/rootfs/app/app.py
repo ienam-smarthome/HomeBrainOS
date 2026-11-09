@@ -15,6 +15,8 @@ from benchmark import BenchmarkWorkspace
 from benchmark_routes import router as benchmark_router
 from autonomous_lab import AutonomousLab
 from autonomous_routes import router as autonomous_router
+from reasoning_experiment import ReasoningExperiment
+from reasoning_routes import router as reasoning_router
 from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
@@ -73,6 +75,9 @@ async def lifecycle(app: FastAPI):
     app.state.autolab = AutonomousLab(Path("/data/homebrain-v2-autonomous-lab"))
     app.state.autolab_task = None
     app.state.autolab_progress = {"running": False, "error": None}
+    app.state.reasoning_lab = ReasoningExperiment(Path("/data/homebrain-v2-reasoning-ab"))
+    app.state.reasoning_task = None
+    app.state.reasoning_progress = {"running": False, "error": None}
     app.state.mcp = None
     app.state.model = None
     app.state.configuration_error = None
@@ -103,6 +108,12 @@ async def lifecycle(app: FastAPI):
     try:
         yield
     finally:
+        if app.state.reasoning_task and not app.state.reasoning_task.done():
+            app.state.reasoning_task.cancel()
+            try:
+                await app.state.reasoning_task
+            except asyncio.CancelledError:
+                pass
         if app.state.autolab_task and not app.state.autolab_task.done():
             app.state.autolab_task.cancel()
             try:
@@ -122,9 +133,10 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.24", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.25", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
+app.include_router(reasoning_router)
 
 
 @app.middleware("http")
@@ -155,7 +167,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.24",
+        "version": "2.0.0-alpha.25",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"

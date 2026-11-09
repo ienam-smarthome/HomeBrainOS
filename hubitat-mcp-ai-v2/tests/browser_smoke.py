@@ -25,9 +25,69 @@ with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in [1280,390]:
   page=browser.new_page(viewport={"width":width,"height":1000})
-  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[];lab={"answered":False,"graded":False};lab_runs=[]
+  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[];lab={"answered":False,"graded":False};lab_runs=[];paired={"answered":False,"graded":False};paired_runs=[]
   def api(route):
    request=route.request
+   if "/api/reasoning-ab/" in request.url:
+    assert request.headers.get("x-homebrain-request")=="1"
+    route_name=request.url.split("/api/reasoning-ab/")[1].split("?")[0]
+    criteria=("factual_grounding","source_completeness","causal_calibration",
+              "command_outcome","usefulness")
+    if route_name=="status":
+     data={"schema":"homebrain-v2-reasoning-holdout-status.v1",
+           "synthetic_only":True,"running":False,"error":None,
+           "cases":[{"id":"hold-01","title":"Freezer power dip and alleged outage",
+                     "domain":"energy_history",
+                     "arms":{label:("completed" if paired["answered"] else "not_run")
+                             for label in ("A","B")},
+                     "ready_to_rate":paired["answered"],"graded":paired["graded"]}]}
+    elif route_name=="case/hold-01":
+     ratings={label:{name:2 for name in criteria} for label in ("A","B")}
+     data={"id":"hold-01","title":"Freezer power dip and alleged outage",
+           "domain":"energy_history",
+           "question":"Did <script>window.injected=true</script> lose electric power?",
+           "synthetic_only":True,
+           "arms":{label:{
+               "success":True,
+               "answer":"A <img src=x onerror=window.injected=true> is not confirmed" if label=="A"
+                         else "B <script>window.injected=true</script> no outage proof",
+               "rounds":3,"elapsed_ms":1500,"client_contract_errors":1,
+               "simulator_rejections":0,"simulated_commands":0,
+               "coverage":[{"label":"Power history","observed":True},
+                           {"label":"Switch history","observed":False}],
+               "tool_calls":[{"name":"hub_read_devices",
+                              "response":"mock <script>not executable</script>"}],
+             } for label in ("A","B")} if paired["answered"] else {},
+           "ratings":ratings if paired["graded"] else None}
+    elif route_name=="run":
+     values=request.post_data_json
+     assert values["case_id"]=="hold-01"
+     assert values["model_execution_consent"] is True
+     assert values["cloud_transfer_consent"] is True
+     assert values["retry_failed"] is False
+     paired_runs.append(values)
+     paired["answered"]=True
+     data={"started":True,"case_id":"hold-01",
+           "synthetic_only":True,"live_mcp_calls":0,"live_device_actions":0}
+    elif route_name=="case/hold-01/score":
+     data_scores=request.post_data_json["scores"]
+     assert set(data_scores)=={"A","B"}
+     assert all(set(data_scores[label])==set(criteria) for label in ("A","B"))
+     paired["graded"]=True;data={"saved":True,"mapping_hidden":True}
+    elif route_name=="report":
+     data={"schema":"homebrain-v2-reasoning-holdout-report.v1",
+           "synthetic_only":True,"cases_prepared":6,
+           "paired_answers_completed":int(paired["answered"]),
+           "paired_blind_ratings":int(paired["graded"]),
+           "condition_mapping_revealed":False,
+           "live_mcp_calls":0,"live_device_actions":0,"cases":[]}
+    elif route_name=="stop":data={"stop_requested":False}
+    elif route_name=="delete":
+     assert request.post_data_json["confirm_delete"] is True
+     paired["answered"]=False;paired["graded"]=False;data={"deleted":True}
+    else:raise AssertionError("Unknown reasoning experiment browser route "+route_name)
+    route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
+    return
    if "/api/autonomous/" in request.url:
     assert request.headers.get("x-homebrain-request")=="1"
     path=request.url.split("/api/autonomous/")[1].split("?")[0]
@@ -448,6 +508,41 @@ with sync_playwright() as p:
   assert summary["live_mcp_calls"]==0
   assert "window.injected" not in json.dumps(summary)
   assert len(requests)==count_before,"Autonomous sandbox must not use real Ask/MCP"
+  # Blind paired reasoning study: no real MCP calls, safe untrusted text,
+  # separate A/B scoring and report that is not prematurely unblinded.
+  page.locator("#reasoningTab").click()
+  assert page.locator("#reasoning").is_visible()
+  page.wait_for_function("document.querySelector('#reasoningSelect').value === 'hold-01'")
+  assert "<script>window.injected=true</script>" in page.locator("#reasoningQuestion").inner_text()
+  assert page.locator("#reasoningQuestion script").count()==0
+  page.locator("#reasoningRun").click()
+  assert "Approve both" in page.locator("#reasoningStatus").inner_text()
+  assert not paired_runs
+  page.locator("#reasoningModelConsent").check()
+  page.locator("#reasoningCloudConsent").check()
+  page.locator("#reasoningRun").click()
+  page.wait_for_function("document.querySelector('#reasoningAnswerA').textContent.includes('not confirmed')")
+  assert len(paired_runs)==1
+  assert page.locator("#reasoningAnswerA img").count()==0
+  assert page.locator("#reasoningAnswerB script").count()==0
+  assert page.evaluate("window.injected===undefined")
+  assert "Power history" in page.locator("#reasoningMetricsA").inner_text()
+  assert "Client schema errors: 1" in page.locator("#reasoningMetricsB").inner_text()
+  for select in page.locator("#reasoningScoresA select").all():
+   select.select_option("2")
+  for select in page.locator("#reasoningScoresB select").all():
+   select.select_option("1")
+  page.locator("#reasoningSave").click()
+  page.wait_for_function("document.querySelector('#reasoningStatus').textContent.includes('1 blindly scored')")
+  page.get_by_role("button",name="Generate aggregate report").click()
+  page.wait_for_function("document.querySelector('#reasoningReportPreview').textContent.includes('paired_blind_ratings')")
+  with page.expect_download() as download:
+   page.locator("#reasoningDownload").click()
+  exported_pair=json.loads(Path(download.value.path()).read_text())
+  assert exported_pair["paired_blind_ratings"]==1
+  assert exported_pair["condition_mapping_revealed"] is False
+  assert "window.injected" not in json.dumps(exported_pair)
+  assert len(requests)==count_before,"Reasoning A/B cannot use real Ask/MCP"
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
   assert not errors,errors

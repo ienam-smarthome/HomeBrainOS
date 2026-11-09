@@ -136,11 +136,19 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 #autolabAnswer{min-height:150px;max-height:550px;overflow:auto;white-space:pre-wrap}
 #autolabCalls{max-height:450px}
 @media(max-width:550px){.autolab-evidence{grid-template-columns:1fr}}
+
+.reasoning-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.reasoning-pair pre{max-height:430px;min-height:110px;overflow:auto}
+.reasoning-evidence{font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--muted)}
+.reasoning-scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}
+.reasoning-scores label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
+.reasoning-scores select{padding:9px}
+@media(max-width:690px){.reasoning-pair{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
-<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button></nav>
+<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button></nav>
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
@@ -285,15 +293,66 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
   <details><summary>Clear synthetic results</summary>
    <button onclick="autolabDelete()">Delete all local synthetic evaluations</button></details>
  </div>
-</section></main>
+</section>
+
+<section id="reasoning">
+ <div class="row"><h2>Reasoning A/B — fresh synthetic holdout</h2>
+ <button class="right" onclick="reasoningRefresh()">Refresh</button></div>
+ <p class="autolab-risk"><strong>Synthetic evaluation only.</strong> The current alpha.24 production reasoning is the baseline. An isolated candidate uses the same Agent.answer and native-shaped in-memory MCP tools, with one additional general evidence-quality instruction. The A/B assignments remain hidden until all six cases have been rated. No real device or home data is used. Your configured cloud model may consume credits.</p>
+ <div class="card">
+  <h3>1 · Run one blinded pair</h3>
+  <div class="row"><select id="reasoningSelect" class="autolab-select" aria-label="Select fresh synthetic holdout case" onchange="reasoningView()"></select></div>
+  <p id="reasoningQuestion" class="session-note">Choose a fictional case.</p>
+  <label class="bench-consent"><input id="reasoningModelConsent" type="checkbox">I approve two independent fictional model investigations for this case. Cloud credits may be consumed.</label>
+  <label class="bench-consent"><input id="reasoningCloudConsent" type="checkbox">I approve transferring fictional questions and fictional MCP evidence to my configured remote/cloud model, if applicable.</label>
+  <div class="row">
+   <button class="primary" id="reasoningRun" onclick="reasoningRun()">Run blinded A/B pair</button>
+   <button id="reasoningStop" onclick="reasoningStop()" disabled>Stop pair</button>
+  </div>
+  <p class="session-note" id="reasoningStatus" role="status" aria-live="polite">Loading...</p>
+ </div>
+ <div class="card">
+  <h3>2 · Review Answer A and Answer B blind</h3>
+  <p class="session-note">Read the model answers and the actual synthetic tool-call receipts. Coverage is an observed-source check, not proof that an explanation is correct. Neither answer is identified as the baseline or candidate while grading.</p>
+  <div class="reasoning-pair">
+   <div><h3>Answer A</h3><pre id="reasoningAnswerA">Not generated yet.</pre>
+    <div id="reasoningMetricsA" class="reasoning-evidence"></div>
+    <details><summary>View exact synthetic tool receipts A</summary><pre id="reasoningCallsA">No receipts.</pre></details></div>
+   <div><h3>Answer B</h3><pre id="reasoningAnswerB">Not generated yet.</pre>
+    <div id="reasoningMetricsB" class="reasoning-evidence"></div>
+    <details><summary>View exact synthetic tool receipts B</summary><pre id="reasoningCallsB">No receipts.</pre></details></div>
+  </div>
+ </div>
+ <div class="card">
+  <h3>3 · Independent blind assessment</h3>
+  <p class="session-note">Score each arm on factual grounding, source completeness, causal calibration, command outcome, and usefulness: 0 unsupported, 1 partial, 2 supported, or n/a if inapplicable. Rate the full answer, not just retrieved-tool counts.</p>
+  <div class="reasoning-pair">
+   <div><h3>A scores</h3><div class="reasoning-scores" id="reasoningScoresA"></div></div>
+   <div><h3>B scores</h3><div class="reasoning-scores" id="reasoningScoresB"></div></div>
+  </div>
+  <div class="row"><button id="reasoningSave" onclick="reasoningSave()" disabled>Save both blind scores</button>
+   <span class="session-note" id="reasoningReviewStatus" role="status"></span></div>
+ </div>
+ <div class="card">
+  <h3>4 · Aggregate report (reveals mapping only after 6/6 scored)</h3>
+  <p class="session-note">Private experiment reports contain ratings and source-retrieval counts only, never prompts, raw answers, private allocation keys, household records, or model credentials. The final report unmasks the A/B assignment only after every pair has been blindly scored.</p>
+  <div class="row"><button onclick="reasoningReport()">Generate aggregate report</button>
+   <button id="reasoningDownload" onclick="reasoningDownload()" disabled>Download report JSON</button></div>
+  <pre id="reasoningReportPreview">No A/B report yet.</pre>
+  <details><summary>Delete only this synthetic A/B study</summary>
+   <button onclick="reasoningDelete()">Delete A/B results and ratings</button>
+  </details>
+ </div>
+</section>
+</main>
 <script>
-const UI_VERSION="2.0.0-alpha.24";
+const UI_VERSION="2.0.0-alpha.25";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
-function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();}
+function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
@@ -1593,7 +1652,8 @@ async function autolabView(){
   }
   autolabText('autolabMetrics',detail.answer?
    'Model rounds: '+detail.rounds+' · Simulated commands: '+
-   detail.simulated_commands+' · Blocked attempts: '+detail.blocked_attempts+
+   detail.simulated_commands+' · Client schema errors: '+(detail.client_contract_errors||0)+
+   ' · Simulator rejections: '+detail.blocked_attempts+
    (Object.keys(detail.blocked_reasons||{}).length?' ('+
     Object.entries(detail.blocked_reasons).map(([k,v])=>k+': '+v).join(', ')+')':'')+
    ' · Previous failed runs: '+(detail.previous_failed_attempts||0)+
@@ -1697,6 +1757,179 @@ async function autolabDelete(){
   autolabText('autolabReportPreview','No evaluation report yet.');
   await autolabRefresh();
  }catch(error){autolabText('autolabStatus','Delete failed: '+error.message);}
+}
+
+
+// Candidate-vs-baseline blind synthetic paired experiment. No /api/ask calls.
+const REASONING_SCORE_NAMES=['factual_grounding','source_completeness',
+ 'causal_calibration','command_outcome','usefulness'];
+let reasoningState=null,reasoningDetail=null,reasoningReportData=null,reasoningPoll=null;
+async function reasoningApi(path,options={}){
+ const res=await fetch('api/reasoning-ab/'+path,{
+  ...options,cache:'no-store',
+  headers:{'X-Homebrain-Request':'1',...(options.headers||{})}
+ });
+ const data=await res.json();
+ if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:'Paired experiment request failed');
+ return data;
+}
+function reasoningText(id,value){byId(id).textContent=String(value);}
+async function reasoningRefresh(){
+ if(reasoningPoll!==null){clearTimeout(reasoningPoll);reasoningPoll=null;}
+ try{
+  const data=await reasoningApi('status');
+  reasoningState=data;
+  const selected=byId('reasoningSelect').value;
+  const choices=data.cases.map(row=>[row.id,row.id+' · '+row.title+
+   (row.graded?' · rated':row.ready_to_rate?' · ready to rate':
+    Object.values(row.arms).includes('failed')?' · retry available':'')]);
+  benchOptions('reasoningSelect',choices,selected);
+  const entry=data.cases.find(x=>x.id===byId('reasoningSelect').value);
+  const done=entry?.ready_to_rate||entry?.graded;
+  byId('reasoningRun').disabled=!!data.running||!entry||done;
+  byId('reasoningRun').textContent=entry&&Object.values(entry.arms).includes('failed')?
+   'Retry failed A/B arm':'Run blinded A/B pair';
+  byId('reasoningStop').disabled=!data.running;
+  reasoningText('reasoningStatus',data.running?
+   'Running fictional pair '+(data.progress?.case_id||'')+
+   ' · Answer '+(data.progress?.arm||'')+' · No live hub actions':
+   data.error?'Last result: '+data.error:
+   data.cases.filter(x=>x.ready_to_rate).length+' / '+data.cases.length+
+   ' pairs completed · '+data.cases.filter(x=>x.graded).length+' blindly scored.');
+  await reasoningView();
+  if(data.running&&byId('reasoning').classList.contains('active'))
+   reasoningPoll=setTimeout(reasoningRefresh,2200);
+ }catch(error){reasoningText('reasoningStatus',error.message);}
+}
+function reasoningRatingPanel(label,ratings,enabled){
+ const holder=byId('reasoningScores'+label);holder.replaceChildren();
+ if(!enabled)return;
+ for(const criterion of REASONING_SCORE_NAMES){
+  const row=document.createElement('label');
+  row.textContent=criterion.replaceAll('_',' ');
+  const select=document.createElement('select');
+  select.setAttribute('data-reasoning-label',label);
+  select.setAttribute('data-reasoning-criterion',criterion);
+  for(const [value,title] of [['','Not scored'],['0','0 · Unsupported'],
+   ['1','1 · Partial'],['2','2 · Supported'],['n/a','n/a · Not applicable']]){
+   const option=document.createElement('option');option.value=value;
+   option.textContent=title;select.appendChild(option);
+  }
+  const prior=ratings?.[criterion];
+  select.value=prior===undefined?'':String(prior);
+  row.appendChild(select);holder.appendChild(row);
+ }
+}
+async function reasoningView(){
+ const sid=byId('reasoningSelect').value;
+ if(!sid)return;
+ try{
+  const detail=await reasoningApi('case/'+encodeURIComponent(sid));
+  if(sid!==byId('reasoningSelect').value)return;
+  reasoningDetail=detail;
+  reasoningText('reasoningQuestion',detail.question);
+  for(const label of ['A','B']){
+   const arm=detail.arms?.[label];
+   reasoningText('reasoningAnswer'+label,arm?.answer||
+    (arm?.success===false?'Failed model trial; review synthetic receipts.':
+     'Not generated yet.'));
+   reasoningText('reasoningCalls'+label,arm?.tool_calls?
+    JSON.stringify(arm.tool_calls,null,2):'No tool receipts.');
+   const checks=arm?.coverage||[];
+   reasoningText('reasoningMetrics'+label,arm?
+    'Evidence: '+checks.filter(x=>x.observed).length+'/'+checks.length+
+    ' · Model rounds: '+arm.rounds+
+    ' · Time: '+(Number(arm.elapsed_ms||0)/1000).toFixed(1)+' s'+
+    ' · Client schema errors: '+(arm.client_contract_errors||0)+
+    ' · Simulator rejections: '+(arm.simulator_rejections||0)+
+    ' · In-memory commands: '+(arm.simulated_commands||0)+
+    ' · Real hub actions: 0\n'+
+    checks.map(c=>(c.observed?'✓ ':'○ ')+c.label).join('\n'):
+    'No model result yet.');
+   reasoningRatingPanel(label,detail.ratings?.[label],
+    detail.arms?.A?.success===true&&detail.arms?.B?.success===true);
+  }
+  const ready=detail.arms?.A?.success===true&&detail.arms?.B?.success===true;
+  byId('reasoningSave').disabled=!ready||!!reasoningState?.running;
+  reasoningText('reasoningReviewStatus',detail.ratings?
+   'Blind ratings saved; assignment remains hidden until every case is rated.':
+   ready?'Read both answers and receipts, then score both without guessing their allocation.':
+   'Both model answers must complete before blind rating.');
+ }catch(error){reasoningText('reasoningReviewStatus','Case error: '+error.message);}
+}
+async function reasoningRun(){
+ const sid=byId('reasoningSelect').value;
+ const entry=reasoningState?.cases.find(x=>x.id===sid);
+ const retry=!!entry&&Object.values(entry.arms).includes('failed');
+ if(!byId('reasoningModelConsent').checked||
+    !byId('reasoningCloudConsent').checked){
+  reasoningText('reasoningStatus','Approve both model and remote/cloud notices.');
+  return;
+ }
+ if(retry&&!window.confirm('Retry only the failed fictional arm? Its prior failure will be archived. This can consume more cloud credits.'))return;
+ byId('reasoningRun').disabled=true;
+ try{
+  await reasoningApi('run',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({case_id:sid,model_execution_consent:true,
+    cloud_transfer_consent:true,retry_failed:retry})});
+  await reasoningRefresh();
+ }catch(error){
+  reasoningText('reasoningStatus','Could not run pair: '+error.message);
+  byId('reasoningRun').disabled=false;
+ }
+}
+async function reasoningStop(){
+ try{
+  await reasoningApi('stop',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:'{}'});
+  await reasoningRefresh();
+ }catch(error){reasoningText('reasoningStatus','Stop failed: '+error.message);}
+}
+async function reasoningSave(){
+ if(!reasoningDetail)return;
+ const scores={A:{},B:{}};
+ for(const label of ['A','B']){
+  for(const select of byId('reasoningScores'+label).querySelectorAll('select')){
+   const value=select.value;
+   if(!value){reasoningText('reasoningReviewStatus','Score all dimensions on both answers.');return;}
+   scores[label][select.getAttribute('data-reasoning-criterion')]=
+    value==='n/a'?'n/a':Number(value);
+  }
+ }
+ try{
+  await reasoningApi('case/'+encodeURIComponent(reasoningDetail.id)+'/score',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({scores})});
+  await reasoningRefresh();
+ }catch(error){reasoningText('reasoningReviewStatus',error.message);}
+}
+async function reasoningReport(){
+ try{
+  reasoningReportData=await reasoningApi('report');
+  reasoningText('reasoningReportPreview',JSON.stringify(reasoningReportData,null,2));
+  byId('reasoningDownload').disabled=false;
+ }catch(error){reasoningText('reasoningReportPreview',error.message);}
+}
+function reasoningDownload(){
+ if(!reasoningReportData)return;
+ const data=new Blob([JSON.stringify(reasoningReportData,null,2)+'\n'],
+  {type:'application/json'});
+ const uri=URL.createObjectURL(data);
+ const link=document.createElement('a');link.href=uri;
+ link.download='HomeBrain-v2-reasoning-holdout-report.json';
+ document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(uri);
+}
+async function reasoningDelete(){
+ if(!window.confirm('Permanently delete ONLY the new fictional reasoning A/B results, ratings and private allocation?'))return;
+ try{
+  await reasoningApi('delete',{method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({confirm_delete:true})});
+  reasoningDetail=null;reasoningReportData=null;
+  byId('reasoningDownload').disabled=true;
+  reasoningText('reasoningReportPreview','No A/B report yet.');
+  await reasoningRefresh();
+ }catch(error){reasoningText('reasoningStatus','Delete failed: '+error.message);}
 }
 
 initGraphPopout();

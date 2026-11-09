@@ -246,7 +246,7 @@ def _leaf_def(name: str) -> dict:
             "mode":{"type":"string"},"limit":{"type":"integer","minimum":1},
             "deviceId":{"type":["string","integer"]},"pattern":{"type":"string"}},
         "hub_get_app_config":{
-            "appId":{"type":"string","description":"Fictional LAB-APP identifier; native uses numeric app ID"}},
+            "appId":{"type":["string","integer"],"description":"Native uses integer app IDs; legacy LAB fixtures also allow fictional string app IDs"}},
         "hub_call_device_command":{
             "deviceId":{"type":["string","integer"]},
             "command":{"type":"string"},
@@ -574,6 +574,8 @@ class AutonomousLab:
                            "coverage":raw.get("coverage"),
                            "simulated_commands":raw.get("simulated_commands"),
                            "blocked_attempts":raw.get("blocked_attempts"),
+                           "client_contract_errors":raw.get("client_contract_errors",0),
+                           "other_failed_calls":raw.get("other_failed_calls",0),
                            "blocked_reasons":raw.get("blocked_reasons",{}),
                            "failure_type":raw.get("failure_type"),
                            "unsafe_live_actions":0})
@@ -622,6 +624,11 @@ class AutonomousLab:
                  "coverage":_check_coverage(scenario,fake.calls),
                  "simulated_commands":len(fake.simulated_writes),
                  "blocked_attempts":fake.blocked_attempts,
+                 "client_contract_errors":sum(x.get("result_kind")=="contract_error"
+                       for x in result.get("tool_calls",[])),
+                 "other_failed_calls":sum(not x.get("success") and
+                       x.get("result_kind")!="contract_error"
+                       for x in result.get("tool_calls",[])),
                  "blocked_reasons":{reason:sum(c.get("reason_code")==reason for c in fake.calls)
                        for reason in sorted({c["reason_code"] for c in fake.calls
                                              if c.get("reason_code")})},
@@ -661,6 +668,8 @@ class AutonomousLab:
                          "observed_evidence_checks":sum(bool(x.get("observed")) for x in coverage),
                          "simulated_commands":raw.get("simulated_commands",0),
                          "blocked_attempts":raw.get("blocked_attempts",0),
+                         "client_contract_errors":raw.get("client_contract_errors",0),
+                         "other_failed_calls":raw.get("other_failed_calls",0),
                          "blocked_reasons":raw.get("blocked_reasons",{}),
                          "prior_failed_attempts":len(self._failed_archives(row["id"])),
                          "ratings":grade})
