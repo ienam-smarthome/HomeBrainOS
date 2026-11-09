@@ -50,7 +50,10 @@ additional calls, hard-code outcome rules, or grant any control privileges.
    **causal calibration**, **command outcome** and **usefulness** (0, 1, 2
    or n/a). A read-only retrospective investigation may legitimately have
    command outcome = n/a.
-7. Save the blind ratings. Repeat for the other five cases. The hidden
+7. Save the blind ratings **once per case**: they become immutable to prevent
+   rescoring after the condition mapping is revealed. If an entry was mistaken,
+   the only built-in reset deletes this *entire* separate synthetic study;
+   review both answers before saving. Repeat for the other five cases. The hidden
    condition mapping is not returned by the UI API or aggregate report
    until **all six pairs are completed and rated**.
 8. Download the final **aggregate report JSON**. Only then does it provide
