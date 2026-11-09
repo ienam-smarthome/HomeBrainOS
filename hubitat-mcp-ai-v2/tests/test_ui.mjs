@@ -251,6 +251,66 @@ assert.equal(timeline.run('diagnosticZoom'),null);
 assert.equal(timeline.run('timelineSelection!==null'),true);
 assert.equal(timeline.askCalls,0);
 
+// Downsampled extrema may be minutes apart even when every underlying 30s
+// external probe succeeded. Real segment changes must still break the trace.
+const gapTest=harness();
+const gapAt=(time,segment)=>({recorded_at:'2026-11-08T'+time+'Z',
+ ...(segment===undefined?{}:{diag_segment:segment})});
+const gapCall=(a,b,native=false,downsampled=false)=>
+ gapTest.run('diagnosticTraceGap('+JSON.stringify(a)+','+JSON.stringify(b)+','+
+  native+',30,'+downsampled+')');
+assert.equal(gapCall(null,gapAt('12:00:00',0),false,true),false);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:05:00',0),false,true),false);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:05:00',0),false,false),true);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:00:30',1),false,true),true);
+assert.equal(gapCall(gapAt('12:00:00'),gapAt('12:05:00'),false,true),true);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:05:00'),false,true),true);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:01:00',0)),false);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:20:00',0),true,true),false);
+assert.equal(gapCall(gapAt('12:00:00',0),gapAt('12:20:00',0),true,false),true);
+const reducedFixture={
+ range_start:'2026-11-08T11:50:00Z',range_end:'2026-11-08T12:20:00Z',
+ metrics:{free_os_mb:{downsampled:true,observed_metric_points:3409,
+  samples:[
+   {recorded_at:'2026-11-08T12:00:00Z',reachable:1,free_os_mb:830,diag_segment:0},
+   {recorded_at:'2026-11-08T12:05:00Z',reachable:1,free_os_mb:850,diag_segment:0},
+   {recorded_at:'2026-11-08T12:10:00Z',reachable:1,free_os_mb:810,diag_segment:1},
+   {recorded_at:'2026-11-08T12:15:00Z',reachable:1,free_os_mb:825,diag_segment:1}
+  ]}},reboots:[],incidents:[]
+};
+const reducedSvg=harness();
+reducedSvg.el('range').value='6';
+reducedSvg.el('plotExtent').value='full';
+reducedSvg.el('timelineLayout').value='split';
+reducedSvg.run('timelineData='+JSON.stringify(reducedFixture)+';drawIncidentTimeline()');
+const memoryPath=()=>reducedSvg.el('incidentTimeline').children.find(
+ node=>node.tagName==='PATH'&&node.stroke==='#70b9ff').d;
+assert.equal(memoryPath().match(/[ML]/g).join(''),'MLML');
+reducedSvg.run('timelineData.metrics.free_os_mb.downsampled=false;drawIncidentTimeline()');
+assert.equal(memoryPath().match(/[ML]/g).join(''),'MMMM');
+// The canvas detail graph consumes the same gap contract as the SVG timeline.
+const reducedCanvas=harness(),canvasOps=[];
+const fakeContext={
+ scale(){},fillRect(){},fillText(){},setLineDash(){},beginPath(){},
+ moveTo(){if(this.strokeStyle==='#70b9ff'&&this.lineWidth===2.1)canvasOps.push('M');},
+ lineTo(){if(this.strokeStyle==='#70b9ff'&&this.lineWidth===2.1)canvasOps.push('L');},
+ stroke(){},save(){},rect(){},clip(){},restore(){},arc(){},fill(){}
+};
+reducedCanvas.el('graph').getContext=()=>fakeContext;
+reducedCanvas.el('plotExtent').value='full';
+reducedCanvas.el('metric').value='free_os_mb';
+const reducedDetail={start:Date.parse(reducedFixture.range_start),
+ end:Date.parse(reducedFixture.range_end),a:reducedFixture.metrics.free_os_mb.samples,
+ b:[],ak:'free_os_mb',bk:null,probe_seconds:30,
+ aDownsampled:true,bDownsampled:false,reboots:[],incidents:[]};
+reducedCanvas.run('timelineData='+JSON.stringify(reducedFixture)+
+ ';visual='+JSON.stringify(reducedDetail)+';draw()');
+assert.equal(canvasOps.join(''),'MLML');
+canvasOps.length=0;
+reducedCanvas.run('visual.aDownsampled=false;draw()');
+assert.equal(canvasOps.join(''),'MMMM');
+console.log('Downsampled chart tests passed: recorded continuity, real gaps, raw fallback, SVG and canvas.');
+
 console.log('Usability checks passed: safe Markdown/tables, original text, session reset/history, JSON download, diagnostics empty state and tab target.');
 
 // UI math is display-only; raw answer and receipts remain byte-identical.
