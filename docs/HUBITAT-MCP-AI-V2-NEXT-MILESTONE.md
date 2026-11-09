@@ -14,6 +14,14 @@ A new **offline-only** `hubitat-mcp-ai-v2/tools/source_real_acceptance.py` utili
 
 See [private capture instructions](HUBITAT-MCP-AI-V2-SOURCE-REAL-CAPTURE.md). **No actual new real-hub observations are supplied yet**; first-answer factual and causal quality remain `not_measured`. A **server-enforced read-only token** is required before any source-real collection through the installed Ask UI. The production model/tool loop is not changed, and the generic synthetic prompt candidate remains unpromoted.
 
+## 9 November 2026 — Phase 3: First ten source-real receipts supplied, preliminary review
+
+Ten new source-real Ask Technical JSON captures were supplied for `sr-01` through `sr-10`, all reporting the same installed alpha.26 and cloud model, ten distinct request identities, **21 native tool attempts / 20 successes / one server-side error**, 29 rounds and no device-control calls. The local frozen-question manifest/seal was **not** included in the attachments, and a read-only info response reported `writeEnabled: true`; source-real origin, first-attempt isolation and actual server-token read-only permission have **not been independently proven**. Treat these as useful *real-source receipts* but do **not** label the study fully integrity-verified.
+
+The receipt-bounded preliminary classifications were: four source-supported, four partial/qualified (including a motion sensor accidentally used as a contact test target), and two material errors. Mechanisms include wrong aggregation of returned values, bounded history assumed complete, truncated/filtered logs presented as wider coverage, a related app mistaken for the exact named target, and command/reboot intention conflated with verified effect. See [privacy-preserving case findings](HUBITAT-MCP-AI-V2-SOURCE-REAL-RESULTS.md).
+
+**Consequence:** These ten tests are now observed and cannot be a new unseen acceptance set for a candidate trained on their findings. Preserve the original answers. Do not promote the synthetic candidate or alter production behavior based on this single, assistant-informed provisional review. Next require the **original private manifest + SHA seal**, independent source/permission verification, then a prospective A/B study on a **newly frozen** case bank with causal calibration as the primary outcome.
+
 ## Scope and sequence
 
 1. **Review-grade capture (implemented in this phase):** Reuse the existing private first-answer Technical JSON auditor, which reports source-window limitations, tool schema rejections, tool calls, elapsed time and command evidence. An optional **separate human-review JSON** attaches claim-level factual grounding, definite unsupported causal claims, usefulness and sufficient-source assessments to the same privately ordered exports. Quality never becomes measured merely because MCP reads succeeded.
