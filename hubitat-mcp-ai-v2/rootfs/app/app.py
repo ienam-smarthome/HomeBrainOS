@@ -11,7 +11,8 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from benchmark import BenchmarkWorkspace, BenchmarkError, MAX_ZIP_BYTES, run_pairs
+from benchmark import BenchmarkWorkspace
+from benchmark_routes import router as benchmark_router
 from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
@@ -111,6 +112,7 @@ async def lifecycle(app: FastAPI):
 
 
 app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.21", lifespan=lifecycle)
+app.include_router(benchmark_router)
 
 
 @app.middleware("http")
