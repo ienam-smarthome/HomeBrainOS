@@ -132,6 +132,10 @@ assert.match(html,/graph-popout-detail/);
 assert(html.includes('id="timelineInspect"'));
 assert(html.includes('id="timelineAsk"'));
 assert(html.includes('id="detailReadout"'));
+assert(html.includes('id="resetTimelineZoom"'));
+assert(html.includes('id="resetDetailZoom"'));
+assert(html.includes('id="timelineZoomInfo"'));
+assert(html.includes('id="detailZoomInfo"'));
 assert(html.includes('<option value="native_load_pct">Native 5m load equivalent (%)</option>'));
 assert(html.includes('<option value="native_load5">Native 5m load (raw, unscaled)</option>'));
 assert.equal(rich.run("diagValue(15, 'native_load_pct')"),"15%");
@@ -191,6 +195,36 @@ assert(popoutURL.includes('layout=split'));
 assert(popoutURL.includes('metric=native_load_pct'));
 assert(!popoutURL.includes('source-1'));
 assert(!popoutURL.includes('PRIVATE'));
+// Source-isolated selection. A substantial drag creates a bounded time window,
+// not a fresh tool request or a modification to the original source rows.
+const fullSpan=timeline.run('timelineWindow(timelineData).end - timelineWindow(timelineData).start');
+const startDrag=timeline.run("startChartBrush('timeline',{clientX:200,pointerId:7,button:0})");
+assert.equal(startDrag,true);
+timeline.run("moveChartBrush('timeline',{clientX:500,pointerId:7})");
+assert(Math.abs(timeline.run('zoomBrush.to')-500)<.001);
+assert.equal(timeline.run("endChartBrush('timeline',{clientX:500,pointerId:7})"),true);
+assert.equal(timeline.run('diagnosticZoom!==null'),true);
+assert(timeline.run('diagnosticZoom.end-diagnosticZoom.start')<fullSpan);
+assert.equal(timeline.el('resetTimelineZoom').disabled,false);
+assert.equal(timeline.el('resetDetailZoom').disabled,false);
+assert.match(timeline.el('timelineZoomInfo').textContent,/Zoomed to/);
+const zoomURL=timeline.run("graphPageUrl('timeline').href");
+assert(zoomURL.includes('zoom_start=')&&zoomURL.includes('zoom_end='));
+assert(!zoomURL.includes('source-1'));
+const firstSpan=timeline.run('diagnosticZoom.end-diagnosticZoom.start');
+assert.equal(timeline.run("setDiagnosticZoom(diagnosticZoom.start+1000,diagnosticZoom.end-1000)"),true);
+assert(timeline.run('diagnosticZoom.end-diagnosticZoom.start')<firstSpan);
+timeline.run('resetDiagnosticZoom()');
+assert.equal(timeline.run('diagnosticZoom'),null);
+assert.equal(timeline.el('resetTimelineZoom').disabled,true);
+assert.equal(timeline.el('resetDetailZoom').disabled,true);
+assert(!timeline.run("graphPageUrl('detail').href").includes('zoom_start'));
+// A click or a tiny accidental movement remains an inspection, not a zoom.
+timeline.run("startChartBrush('timeline',{clientX:250,pointerId:9,button:0})");
+timeline.run("endChartBrush('timeline',{clientX:254,pointerId:9})");
+assert.equal(timeline.run('diagnosticZoom'),null);
+assert.equal(timeline.run('timelineSelection!==null'),true);
+assert.equal(timeline.askCalls,0);
 
 console.log('Usability checks passed: safe Markdown/tables, original text, session reset/history, JSON download, diagnostics empty state and tab target.');
 

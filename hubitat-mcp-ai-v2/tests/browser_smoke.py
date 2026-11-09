@@ -185,6 +185,38 @@ with sync_playwright() as p:
   popup.keyboard.press("Home")
   popup.keyboard.press("ArrowRight")
   assert "Selected" in popup.locator("#timelineReadout").inner_text()
+  # Drag a translucent selection through both synchronized time panels.
+  base_span=popup.evaluate("timelineShown.end-timelineShown.start")
+  geom=popup.evaluate("""() => {
+   const svg=document.querySelector('#incidentTimeline'),
+    rect=svg.getBoundingClientRect(),p=timelineShown.plot,
+    vx=svg.viewBox.baseVal.width,vy=svg.viewBox.baseVal.height;
+   const px=ratio=>rect.left+(p.left+(p.right-p.left)*ratio)*rect.width/vx;
+   return {x1:px(.2),x2:px(.7),x3:px(.35),x4:px(.75),
+    y:rect.top+(p.top+30)*rect.height/vy};
+  }""")
+  popup.mouse.move(geom["x1"],geom["y"])
+  popup.mouse.down()
+  popup.mouse.move(geom["x2"],geom["y"],steps=8)
+  assert popup.locator("#timelineBrush").get_attribute("visibility")=="visible"
+  popup.mouse.up()
+  assert popup.evaluate("diagnosticZoom!==null")
+  assert popup.evaluate("timelineShown.end-timelineShown.start")<base_span
+  assert "Zoomed to" in popup.locator("#timelineZoomInfo").inner_text()
+  assert popup.locator("#resetTimelineZoom").is_enabled()
+  first_zoom=popup.evaluate("timelineShown.end-timelineShown.start")
+  popup.mouse.move(geom["x3"],geom["y"])
+  popup.mouse.down()
+  popup.mouse.move(geom["x4"],geom["y"],steps=6)
+  popup.mouse.up()
+  assert popup.evaluate("timelineShown.end-timelineShown.start")<first_zoom
+  popup.locator("#resetTimelineZoom").click()
+  assert popup.evaluate("diagnosticZoom===null")
+  assert popup.locator("#resetTimelineZoom").is_disabled()
+  assert popup.evaluate("timelineShown.end-timelineShown.start")==base_span
+  popup.mouse.click(geom["x1"],geom["y"])
+  assert popup.evaluate("diagnosticZoom===null")
+  assert "Selected" in popup.locator("#timelineReadout").inner_text()
   popup.close()
   page.locator("#plotExtent").select_option("fit")
   assert page.locator("#recorderNotice").is_hidden()
@@ -234,6 +266,23 @@ with sync_playwright() as p:
   assert detailed.locator("#detailReturn").is_visible()
   assert detailed.locator("#metric").input_value()=="native_load5"
   assert detailed.locator("#graph").evaluate("(e)=>e.getBoundingClientRect().height")>=380
+  detail_span=detailed.evaluate("timelineWindow(timelineData).end-timelineWindow(timelineData).start")
+  box=detailed.locator("#graph").bounding_box()
+  dx1=box["x"]+60+(box["width"]-80)*.18
+  dx2=box["x"]+60+(box["width"]-80)*.74
+  dy=box["y"]+box["height"]*.55
+  detailed.mouse.move(dx1,dy)
+  detailed.mouse.down()
+  detailed.mouse.move(dx2,dy,steps=6)
+  assert detailed.evaluate("zoomBrush?.kind==='detail'")
+  detailed.mouse.up()
+  assert detailed.evaluate("diagnosticZoom!==null")
+  assert detailed.evaluate("timelineWindow(timelineData).end-timelineWindow(timelineData).start")<detail_span
+  assert detailed.locator("#resetDetailZoom").is_enabled()
+  assert "Zoomed to" in detailed.locator("#detailZoomInfo").inner_text()
+  detailed.locator("#resetDetailZoom").click()
+  assert detailed.evaluate("diagnosticZoom===null")
+  assert detailed.locator("#resetDetailZoom").is_disabled()
   detailed.close()
   count_before=len(requests)
   page.locator("#timelineAsk").click()
@@ -248,4 +297,4 @@ with sync_playwright() as p:
   page.close()
  browser.close()
 server.shutdown()
-print("Desktop/mobile browser acceptance passed: visible clipboard confirmations, exact raw copy, formatting, XSS, export, history/reset, tabs and recorder state.")
+print("Desktop/mobile browser acceptance passed: clipboard, formatting, popouts, drag-zoom/reset, timeline inspection and recorder state.")

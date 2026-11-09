@@ -98,6 +98,12 @@ body.graph-popout .graph-popout-return:not([hidden]){display:inline-flex}
 body.graph-popout .timeline-chart{min-width:0;min-height:460px;max-height:none;
  height:clamp(460px,68vh,1000px);width:100%}
 body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
+.graph-zoom-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:7px 0 11px}
+.graph-zoom-row button{font-size:12px;padding:7px 11px}
+.graph-zoom-hint{color:var(--muted);font-size:12px;line-height:1.45}
+.timeline-chart,#graph{cursor:crosshair;user-select:none}
+#timelineBrush{pointer-events:none}
+body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 @media(max-width:700px){body.graph-popout main{padding:8px}
  body.graph-popout .card{padding:12px}
  body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px;min-width:860px}
@@ -134,10 +140,11 @@ body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
 <p class="timeline-meta" id="timelineMeta">External recorder observations, native five-minute load and verified systemStart events. Missing history remains unknown.</p>
 <div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
 <div class="diag-controls">
-<label for="range">Range <select id="range" onchange="refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
+<label for="range">Range <select id="range" onchange="resetDiagnosticZoom();refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
 <label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · aligned panels</option><option value="combined">Combined · dual axes</option></select></label>
-<label for="plotExtent">Time axis <select id="plotExtent" onchange="redrawDiagnostics()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
+<label for="plotExtent">Time axis <select id="plotExtent" onchange="resetDiagnosticZoom()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
 </div>
+<div class="graph-zoom-row"><button id="resetTimelineZoom" onclick="resetDiagnosticZoom()" disabled>Reset zoom</button><span id="timelineZoomInfo" class="graph-zoom-hint" role="status">Drag across either graph panel to zoom into a time interval. Click to inspect a point.</span></div>
 <div class="timeline-scroll" role="region" aria-label="Scrollable synchronized memory and CPU chart"><svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 360" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg></div>
 <p class="timeline-readout" id="timelineReadout" aria-live="polite">Select an observed point on the timeline, or use the arrow keys. Source gaps are not zero.</p>
 <div class="timeline-actions">
@@ -155,6 +162,7 @@ body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
 </div>
 <div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
 <div class="legend"><span><i class="dot"></i><span id="detailPrimaryLegend">OS free memory (MB)</span></span><span id="detailCpuLegend"><i class="dot" style="background:var(--green)"></i>5m CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
+<div class="graph-zoom-row"><button id="resetDetailZoom" onclick="resetDiagnosticZoom()" disabled>Reset zoom</button><span id="detailZoomInfo" class="graph-zoom-hint" role="status">Drag horizontally across the graph to zoom in; click to inspect.</span></div>
 <div class="chartshell"><canvas id="graph" role="img" tabindex="0" aria-label="Detailed recorder history; use pointer or left/right arrow keys to inspect observed samples"></canvas><div id="hint"></div></div>
 <p id="detailReadout" class="timeline-readout" aria-live="polite">Hover or use the arrow keys to inspect exact measured values.</p>
 <div id="source" class="timeline-meta">Select a window to inspect saved timestamps.</div>
@@ -162,7 +170,7 @@ body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
 </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.19";
+const UI_VERSION="2.0.0-alpha.20";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -450,11 +458,121 @@ function sourcePoints(rows,key,native=false){
   return true;
  }).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
 }
+
+// Shared, view-only time selection for the synchronized timeline and history.
+// Zooming never asks Hubitat for new data: both plots reuse saved source rows.
+let diagnosticZoom=null,zoomBrush=null;
+function zoomViewWindow(base){
+ if(!base||!diagnosticZoom)return base;
+ const start=Math.max(base.start,diagnosticZoom.start);
+ const end=Math.min(base.end,diagnosticZoom.end);
+ if(!Number.isFinite(start)||!Number.isFinite(end)||end-start<1000){
+  diagnosticZoom=null;return base;
+ }
+ return {...base,start,end,zoomed:true,fit:false};
+}
+function showZoomStatus(){
+ const active=diagnosticZoom!==null;
+ for(const id of ['resetTimelineZoom','resetDetailZoom'])byId(id).disabled=!active;
+ const description=active?
+  'Zoomed to '+diagTime(diagnosticZoom.start)+' – '+diagTime(diagnosticZoom.end)+
+  ' · Drag again to zoom further, or reset.':
+  'Drag horizontally across the plot to zoom into a time interval. Click to inspect a point.';
+ byId('timelineZoomInfo').textContent=description;
+ byId('detailZoomInfo').textContent=description;
+}
+function resetDiagnosticZoom(){
+ diagnosticZoom=null;zoomBrush=null;hoverX=null;
+ redrawDiagnostics();
+}
+function setDiagnosticZoom(start,end){
+ const current=timelineWindow(timelineData);
+ if(!current||!Number.isFinite(start)||!Number.isFinite(end)||end-start<1000)return false;
+ const lo=Math.max(current.start,Math.min(current.end,start));
+ const hi=Math.max(current.start,Math.min(current.end,end));
+ if(hi-lo<1000||(hi-lo)>=current.end-current.start-500)return false;
+ diagnosticZoom={start:lo,end:hi};zoomBrush=null;hoverX=null;
+ redrawDiagnostics();return true;
+}
+function chartBrushGeometry(kind){
+ const view=timelineWindow(timelineData);
+ if(!view)return null;
+ if(kind==='timeline'){
+  if(!timelineShown)return null;
+  return {left:timelineShown.plot.left,right:timelineShown.plot.right,
+   top:timelineShown.plot.top,bottom:timelineShown.plot.cpuBottom,
+   start:timelineShown.start,end:timelineShown.end};
+ }
+ const rect=byId('graph').getBoundingClientRect();
+ if(!visual||rect.width<=110)return null;
+ return {left:60,right:rect.width-(visual.bk?64:20),
+  top:28,bottom:rect.height-43,start:view.start,end:view.end};
+}
+function chartBrushX(kind,event){
+ const element=byId(kind==='timeline'?'incidentTimeline':'graph');
+ const rect=element.getBoundingClientRect();
+ if(!rect.width)return NaN;
+ return kind==='timeline'?
+  (event.clientX-rect.left)/rect.width*(timelineShown?.chartWidth||860):
+  event.clientX-rect.left;
+}
+function paintTimelineBrush(){
+ const overlay=byId('timelineBrush');if(!overlay)return;
+ if(!zoomBrush||zoomBrush.kind!=='timeline'){
+  overlay.setAttribute('visibility','hidden');return;
+ }
+ overlay.setAttribute('x',Math.min(zoomBrush.from,zoomBrush.to));
+ overlay.setAttribute('width',Math.abs(zoomBrush.to-zoomBrush.from));
+ overlay.setAttribute('visibility','visible');
+}
+function startChartBrush(kind,event){
+ if(event.isPrimary===false||(event.button!==undefined&&event.button!==0))return false;
+ const plot=chartBrushGeometry(kind),x=chartBrushX(kind,event);
+ if(!plot||!Number.isFinite(x)||x<plot.left||x>plot.right)return false;
+ zoomBrush={...plot,kind,from:x,to:x,pointerId:event.pointerId};
+ const chart=byId(kind==='timeline'?'incidentTimeline':'graph');
+ if(event.pointerId!==undefined)chart.setPointerCapture?.(event.pointerId);
+ if(kind==='timeline')paintTimelineBrush();else draw();
+ return true;
+}
+function moveChartBrush(kind,event){
+ if(!zoomBrush||zoomBrush.kind!==kind||
+    (zoomBrush.pointerId!==undefined&&event.pointerId!==zoomBrush.pointerId))return false;
+ const x=chartBrushX(kind,event);
+ if(Number.isFinite(x)){
+  zoomBrush.to=Math.max(zoomBrush.left,Math.min(zoomBrush.right,x));
+  if(kind==='timeline')paintTimelineBrush();else draw();
+ }
+ return true;
+}
+function endChartBrush(kind,event){
+ if(!zoomBrush||zoomBrush.kind!==kind||
+    (zoomBrush.pointerId!==undefined&&event.pointerId!==zoomBrush.pointerId))return false;
+ moveChartBrush(kind,event);
+ const brush=zoomBrush;zoomBrush=null;
+ const px=Math.abs(brush.to-brush.from);
+ if(px>=12){
+  const ratio=t=>Math.max(0,Math.min(1,(t-brush.left)/(brush.right-brush.left)));
+  const first=brush.start+ratio(Math.min(brush.from,brush.to))*(brush.end-brush.start);
+  const last=brush.start+ratio(Math.max(brush.from,brush.to))*(brush.end-brush.start);
+  if(setDiagnosticZoom(first,last))return true;
+ }
+ if(kind==='timeline'){paintTimelineBrush();timelinePointer(event);}
+ else{hoverX=chartBrushX(kind,event);draw();}
+ return true;
+}
+function cancelChartBrush(kind){
+ if(!zoomBrush||zoomBrush.kind!==kind)return;
+ zoomBrush=null;
+ if(kind==='timeline')paintTimelineBrush();else draw();
+}
+
 function timelineWindow(data){
  if(!data)return null;
  const requestedStart=Date.parse(data.range_start),end=Date.parse(data.range_end);
  if(!Number.isFinite(requestedStart)||!Number.isFinite(end)||end<=requestedStart)return null;
- if(byId('plotExtent').value==='full')return {start:requestedStart,end,requestedStart,fit:false};
+ if(byId('plotExtent').value==='full')
+  return zoomViewWindow({start:requestedStart,end,requestedStart,fit:false});
  const metricRows=[...(data.metrics?.free_os_mb?.samples||[]),
                    ...(data.metrics?.native_load_pct?.samples||[])];
  const observed=metricRows.filter(r=>r&&r.reachable&&
@@ -464,10 +582,10 @@ function timelineWindow(data){
  const events=[...(data.reboots||[]).map(r=>Date.parse(r.occurred_at)),
   ...(data.incidents||[]).flatMap(r=>[Date.parse(r.started_at),Date.parse(r.recovered_at)])];
  const valid=[...observed,...events].filter(x=>Number.isFinite(x)&&x>=requestedStart&&x<=end);
- if(!valid.length)return {start:requestedStart,end,requestedStart,fit:false};
+ if(!valid.length)return zoomViewWindow({start:requestedStart,end,requestedStart,fit:false});
  const first=Math.min(...valid),margin=Math.max(60000,Math.min(10*60000,(end-first)*.035));
  const start=Math.max(requestedStart,first-margin);
- return {start,end,requestedStart,fit:start>requestedStart+60000};
+ return zoomViewWindow({start,end,requestedStart,fit:start>requestedStart+60000});
 }
 function niceDiagnosticScale(low,high,steps=6){
  const lo=Number.isFinite(low)?Math.max(0,low):0;
@@ -504,6 +622,10 @@ function graphPageUrl(kind){
  url.searchParams.set('extent',byId('plotExtent').value);
  url.searchParams.set('layout',byId('timelineLayout').value);
  url.searchParams.set('metric',byId('metric').value);
+ if(diagnosticZoom){
+  url.searchParams.set('zoom_start',String(diagnosticZoom.start));
+  url.searchParams.set('zoom_end',String(diagnosticZoom.end));
+ }
  if(kind==='timeline'&&Number.isFinite(timelineSelection))
   url.searchParams.set('selected',String(timelineSelection));
  return url;
@@ -522,6 +644,12 @@ function initGraphPopout(){
   const value=params.get(key),select=byId(id);
   if(value&&Array.from(select.options||[]).some(option=>option.value===value))
    select.value=value;
+ }
+ const zoomStart=params.get('zoom_start'),zoomEnd=params.get('zoom_end');
+ if(zoomStart!==null&&zoomEnd!==null){
+  const first=Number(zoomStart),last=Number(zoomEnd);
+  if(Number.isFinite(first)&&Number.isFinite(last)&&first>=0&&last-first>=1000)
+   diagnosticZoom={start:first,end:last};
  }
  const selected=params.get('selected');
  if(kind==='timeline'&&selected!==null&&Number.isFinite(Number(selected)))
@@ -542,6 +670,7 @@ function drawIncidentTimeline(){
  const svg=byId('incidentTimeline');svg.replaceChildren();
  timelineSeries={memory:[],cpu:[]};timelineFocusTimes=[];
  timelineShown=timelineWindow(timelineData);
+ showZoomStatus();
  if(!timelineShown){
   svg.append(svgNode('text',{x:75,y:100,fill:'#cbd5e1','font-size':15},'No saved recorder history available'));
   byId('timelineMeta').textContent='No recorded interval available. Unknown is not zero.';
@@ -557,8 +686,10 @@ function drawIncidentTimeline(){
  const chartHeight=fullView?Math.max(400,Math.round(bounds.height||460)):360;
  svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
  const memMetric=timelineData.metrics?.free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
- const mem=sourcePoints(memMetric.samples,'free_os_mb');
- const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true);
+ const mem=sourcePoints(memMetric.samples,'free_os_mb')
+  .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
+ const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true)
+  .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
  timelineSeries={memory:mem,cpu};
  const layout=byId('timelineLayout').value,combined=layout==='combined';
  const splitBoundary=Math.round(156+(chartHeight-360)*.5);
@@ -681,6 +812,11 @@ function drawIncidentTimeline(){
    stroke:'#fff','stroke-width':1.4,r:5,cx:0,cy:0,visibility:'hidden',
    'pointer-events':'none'}));
  }
+ svg.append(svgNode('rect',{id:'timelineBrush',x:plot.left,y:plot.top,width:0,
+  height:plot.cpuBottom-plot.top,fill:'#4e9ff7','fill-opacity':.2,
+  stroke:'#65b7ff','stroke-width':1.2,visibility:'hidden',
+  'pointer-events':'none'}));
+ paintTimelineBrush();
  events.sort((a,b)=>b.t-a.t);
  const list=byId('timelineEvents');list.replaceChildren();
  if(!events.length){const p=document.createElement('p');p.textContent=
@@ -783,11 +919,14 @@ function timelinePointer(event){
  selectTimelineTime(timelineShown.start+Math.max(0,Math.min(1,fraction))*
   (timelineShown.end-timelineShown.start));
 }
+byId('incidentTimeline').addEventListener('pointerdown',e=>startChartBrush('timeline',e));
 byId('incidentTimeline').addEventListener('pointermove',e=>{
- if(e.pointerType!=='touch')timelinePointer(e);
+ if(!moveChartBrush('timeline',e)&&e.pointerType!=='touch')timelinePointer(e);
 });
-byId('incidentTimeline').addEventListener('pointerdown',timelinePointer);
+byId('incidentTimeline').addEventListener('pointerup',e=>endChartBrush('timeline',e));
+byId('incidentTimeline').addEventListener('pointercancel',()=>cancelChartBrush('timeline'));
 byId('incidentTimeline').addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&zoomBrush){e.preventDefault();cancelChartBrush('timeline');return;}
  if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!timelineFocusTimes.length)return;
  e.preventDefault();
  let idx=0;
@@ -881,6 +1020,7 @@ async function refreshDiagnostics(){
 function draw(){
  const canvas=byId('graph'),rect=canvas.getBoundingClientRect();
  if(!rect.width)return;
+ showZoomStatus();
  const dpr=Math.min(window.devicePixelRatio||1,2);
  canvas.width=Math.floor(rect.width*dpr);canvas.height=Math.floor(rect.height*dpr);
  const g=canvas.getContext('2d');g.scale(dpr,dpr);
@@ -1009,6 +1149,13 @@ function draw(){
   }
  }
  g.restore();
+ if(zoomBrush?.kind==='detail'){
+  const x1=Math.min(zoomBrush.from,zoomBrush.to),
+   width=Math.abs(zoomBrush.to-zoomBrush.from);
+  g.fillStyle='rgba(78,159,247,.22)';g.fillRect(x1,top,width,H);
+  g.strokeStyle='#65b7ff';g.lineWidth=1.2;g.setLineDash([]);
+  g.strokeRect(x1,top,width,H);
+ }
  const stats=(rows,key,label)=>{
   if(!rows.length)return label+': no saved readings';
   const values=rows.map(r=>r[key]),last=rows[rows.length-1];
@@ -1026,10 +1173,19 @@ function draw(){
  hint.textContent=details.join(' | ');
  hint.style.display=hoverX!==null&&details.length?'block':'none';
 }
-byId('graph').addEventListener('pointermove',e=>{if(e.pointerType!=='touch'){hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()}});
-byId('graph').addEventListener('pointerdown',e=>{hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw()});
-byId('graph').addEventListener('pointerleave',()=>{hoverX=null;draw()});
+byId('graph').addEventListener('pointerdown',e=>startChartBrush('detail',e));
+byId('graph').addEventListener('pointermove',e=>{
+ if(!moveChartBrush('detail',e)&&e.pointerType!=='touch'){
+  hoverX=e.clientX-byId('graph').getBoundingClientRect().left;draw();
+ }
+});
+byId('graph').addEventListener('pointerup',e=>endChartBrush('detail',e));
+byId('graph').addEventListener('pointercancel',()=>cancelChartBrush('detail'));
+byId('graph').addEventListener('pointerleave',()=>{
+ if(!zoomBrush){hoverX=null;draw();}
+});
 byId('graph').addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&zoomBrush){e.preventDefault();cancelChartBrush('detail');return;}
  if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!detailPoints.length||!visual)return;
  e.preventDefault();
  const range=timelineWindow(timelineData);if(!range)return;
