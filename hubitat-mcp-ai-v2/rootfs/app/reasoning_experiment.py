@@ -352,9 +352,30 @@ class ReasoningExperiment:
             if set(mapping)=={"A","B"} and set(mapping.values())=={"baseline","candidate"}:
                 return mapping
             raise ValueError("Invalid private condition allocation; no new model runs authorised")
-        # One-time private assignment, not returned in status, receipts, case
-        # responses, prompts or export before all blind grades are saved.
-        mapping=({"A":"candidate","B":"baseline"} if secrets.randbits(1)
+        # Randomised *and counterbalanced*: across six cases, candidate is
+        # assigned A three times and B three times. This reduces order/label
+        # confounding while keeping the allocation private. Cases are started
+        # one at a time by the API; existing assignments are immutable.
+        earlier=[]
+        for other in self.catalog:
+            other_path=self._manifest_path(other)
+            if other==sid or not other_path.is_file():
+                continue
+            row=json.loads(other_path.read_text(encoding="utf-8"))
+            if set(row)!={"A","B"} or set(row.values())!={"baseline","candidate"}:
+                raise ValueError("Invalid previous private allocation")
+            earlier.append(row)
+        max_first=(len(self.catalog)+1)//2
+        max_second=len(self.catalog)//2
+        candidate_a=sum(row["A"]=="candidate" for row in earlier)
+        candidate_b=sum(row["B"]=="candidate" for row in earlier)
+        if candidate_a>=max_first:
+            first=False
+        elif candidate_b>=max_second:
+            first=True
+        else:
+            first=bool(secrets.randbits(1))
+        mapping=({"A":"candidate","B":"baseline"} if first
                  else {"A":"baseline","B":"candidate"})
         _private_write(path,json.dumps(mapping))
         return mapping
