@@ -1,8 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
 Updated: 2026-11-09
-**Current repository version:** Consult `hubitat-mcp-ai-v2/config.yaml` on `main` and the latest milestone at the end of this document. Alpha.25 was merged via PR #1560; alpha.26 is the blind-rating integrity correction tracked in PR #1561 (consult its current GitHub state for merge verification). A GitHub merge is not proof that the version has been installed in Home Assistant. **Installed v2 version is not verified for alpha.25/alpha.26.**
+**Current repository version:** Consult `hubitat-mcp-ai-v2/config.yaml` on `main` and the latest milestone at the end of this document. Alpha.25 was merged via PR #1560; alpha.26 blind-rating integrity was merged via PR #1561 (merge SHA `cf23106d7309c43bf2d71533159a6533cce13f4f`). A GitHub merge is not proof that the version has been installed in Home Assistant. **Installed v2 version is not verified for alpha.25/alpha.26.**
 **Historical acceptance:** The last cited private V2-R6 Technical JSON verified the UI as alpha.18 with unchanged Gemma/native flat model path; browser copy-button visual acceptance remains unverified. V2-R3, R2, R4, R5 and R6 source reviews are retained below. PR #1542 merged as `4e486befbc2cd996b6c9eaf635229efee94a0351` (evaluation-only checkpoint).
+
+## 9 November 2026 — Completed alpha.25/26 blinded synthetic reasoning holdout
+
+The user supplied a final six-case A/B report with **6/6 model pairs completed, 6/6 blind ratings entered, mapping revealed**, and zero live MCP calls/device actions. Experimental generic investigation-audit candidate vs production baseline: **36/50 (72%) vs 31/50 (62%)** manually rated points, four candidate wins and two baseline wins. Factual grounding **10/12 vs 7/12** and manual source completeness **7/12 vs 5/12** favored candidate, but the **primary causal calibration remained 7/12 vs 7/12**; usefulness **10/12 vs 10/12**, command outcome **2/2 vs 2/2**, and exact source-check retrieval **10/23 vs 10/23** also tied. Tool attempts 30 vs 35, schema errors 4 vs 3, total synthetic elapsed time 33.165s vs 31.045s (candidate vs baseline). Single evaluator ratings were ChatGPT-informed, sample is tiny/fictional, and the export does not establish the installed add-on SHA or configured model provider. See [the frozen detailed evaluation](HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md).
+
+**Decision:** The candidate is **not promoted**; its slight aggregate score improvement did not improve causal calibration or discriminating-source retrieval. Preserve the existing production model-led loop, upstream permissions, diagnostics, and v1. Next milestone is independent unseen, read-only, source-verified cross-domain first-answer acceptance and a prospective, general tool-schema/evidence-sufficiency experiment only if warranted. Do not patch these six revealed holdout cases or claim general reliability from them. No live operations or cloud runs occurred as part of this documentation update.
 
 ## Current user direction
 
