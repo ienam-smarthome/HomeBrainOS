@@ -129,7 +129,7 @@ assert(html.includes('id="autolabCoverage"'));
 assert(html.includes('id="autolabScores"'));
 assert(html.includes('id="autolabReportPreview"'));
 assert.match(html,/api\/autonomous\//);
-assert.match(html,/synthetic only/i);
+assert.match(html,/synthetic test only/i);
 
 assert(html.includes('id="benchZip"'));
 assert(html.includes('id="benchPrivateConsent"'));
