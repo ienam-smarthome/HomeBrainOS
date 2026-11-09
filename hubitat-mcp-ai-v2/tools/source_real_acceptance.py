@@ -193,7 +193,10 @@ def _permission_evidence_from_export(document: dict) -> list[tuple[bool | None, 
             continue
         if not isinstance(envelope, dict) or envelope.get("isError") is True:
             continue
-        for item in envelope.get("content", []):
+        blocks = envelope.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for item in blocks:
             if not isinstance(item, dict) or item.get("type") != "text":
                 continue
             try:
@@ -233,6 +236,8 @@ def _permission_evidence(documents: list[dict]) -> dict:
         status = "client_write_disabled_reported_not_independently_verified"
     elif client_write is True:
         status = "client_write_enabled_reported"
+    elif client_seen:
+        status = "client_access_permissions_missing_or_conflicting"
     elif global_write is True:
         status = "global_write_enabled_client_scope_not_shown"
     elif global_write is False:
