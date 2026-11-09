@@ -67,4 +67,5 @@ jobs:
           test "$ready" -eq 1
           python3 -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/v2-status.json')); assert d['mode']=='native-model-led-mcp'; assert not d['configured']"
           curl -fsS http://127.0.0.1:8789/api/diagnostics/status > "$RUNNER_TEMP/v2-diagnostics.json"
-          curl -fsS http://127.0.0.1:8789/ | grep -q "Hubitat MCP AI v2"
+          curl -fsS http://127.0.0.1:8789/ > "$RUNNER_TEMP/v2-home.html"
+          grep -q "Hubitat MCP AI v2" "$RUNNER_TEMP/v2-home.html"
