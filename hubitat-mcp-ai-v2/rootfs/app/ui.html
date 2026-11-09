@@ -109,11 +109,26 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
  body.graph-popout .timeline-chart{height:clamp(380px,64vh,800px);min-height:380px;min-width:860px}
  body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
 
+
+/* Private A/B model evaluation; keeps both untrusted answers as plain text. */
+.bench-field{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.bench-field label{color:var(--muted);font-size:13px}
+.bench-field select{padding:9px;max-width:100%}
+.bench-field input[type=file]{font:inherit;max-width:100%;font-size:13px;color:var(--txt)}
+.bench-consent{display:block;font-size:13px;line-height:1.5;margin:10px 0}
+.bench-consent input{accent-color:var(--blue);margin-right:9px}
+.bench-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.bench-pair pre{min-height:120px;max-height:460px;white-space:pre-wrap}
+.bench-score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.bench-score label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.bench-score select{padding:9px}
+.bench-privacy{border-left:3px solid var(--amber);padding:12px;background:#241f1b;border-radius:5px;font-size:13px;line-height:1.55}
+@media(max-width:690px){.bench-pair{grid-template-columns:1fr}nav{flex-wrap:wrap}}
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
-<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
+<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button></nav>
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
@@ -168,15 +183,63 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <div id="source" class="timeline-meta">Select a window to inspect saved timestamps.</div>
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div>
+</section>
+<section id="benchmark">
+ <div class="row"><h2>AI Benchmark · private A/B review</h2><button class="right" onclick="benchmarkRefresh()">Refresh</button></div>
+ <p class="muted">Evaluate the same frozen MCP evidence with and without generic source-role notes. This isolated test cannot invoke Hubitat or Home Assistant tools.</p>
+ <div class="card">
+  <h3>1 · Import private benchmark evidence</h3>
+  <p class="bench-privacy">This ZIP contains private home device history. It stays in this HomeBrainOS add-on’s /data directory until you explicitly delete it. People who can access this add-on may be able to view the evidence. Importing makes no model calls.</p>
+  <div class="bench-field"><input id="benchZip" type="file" accept=".zip,application/zip" aria-label="Prepared private benchmark ZIP">
+   <button id="benchImport" onclick="benchmarkUpload()">Import ZIP</button></div>
+  <p id="benchStatus" role="status" aria-live="polite">No benchmark imported.</p>
+ </div>
+ <div class="card">
+  <h3>2 · Generate paired answers</h3>
+  <p id="benchModel" class="session-note">Using your configured model; no native MCP tools are supplied.</p>
+  <div class="bench-field">
+   <label for="benchPilot1">First case</label><select id="benchPilot1"></select>
+   <label for="benchPilot2">Second case (optional)</label><select id="benchPilot2"></select>
+  </div>
+  <label class="bench-consent"><input id="benchPrivateConsent" type="checkbox">I authorise sending these recorded private MCP sources to the selected model for this benchmark.</label>
+  <label class="bench-consent"><input id="benchCloudConsent" type="checkbox">I understand that cloud/remote models may receive my private evidence and use paid credits.</label>
+  <div class="row"><button id="benchRun" class="primary" onclick="benchmarkRun()" disabled>Run selected A/B pairs</button>
+   <button id="benchStop" onclick="benchmarkStop()" disabled>Stop run</button></div>
+  <p id="benchRunStatus" role="status" aria-live="polite">Import the ZIP to begin.</p>
+ </div>
+ <div class="card">
+  <h3>3 · Blind review</h3>
+  <p class="session-note">Score A and B separately without seeing which one contains annotations. Score 0 = incorrect/unsupported, 1 = partial, 2 = supported; n/a = genuinely not applicable.</p>
+  <div class="bench-field"><label for="benchSelectCase">Review case</label>
+   <select id="benchSelectCase" onchange="benchmarkViewCase()"></select></div>
+  <p id="benchQuestion" class="session-note">No case selected.</p>
+  <details id="benchOriginalSources"><summary>Inspect the original MCP source receipts (no annotation labels)</summary>
+   <pre id="benchSource" aria-label="Original recorded MCP evidence"></pre></details>
+  <div class="bench-pair">
+   <div><h3>Answer A</h3><pre id="benchAnswerA">Not generated.</pre><div class="bench-score" id="benchScoresA"></div></div>
+   <div><h3>Answer B</h3><pre id="benchAnswerB">Not generated.</pre><div class="bench-score" id="benchScoresB"></div></div>
+  </div>
+  <div class="row"><button id="benchSave" onclick="benchmarkSaveScores()" disabled>Save blind scores</button>
+   <span id="benchReviewStatus" role="status" class="session-note"></span></div>
+ </div>
+ <div class="card">
+  <h3>4 · Aggregate comparison</h3>
+  <p class="session-note">Only fully scored A/B pairs count. The report never exports the original home evidence, model answers, case names or hidden A/B assignments.</p>
+  <div class="row"><button id="benchReportButton" onclick="benchmarkReport()" disabled>Generate report</button>
+   <button id="benchDownload" onclick="benchmarkDownloadReport()" disabled>Download report JSON</button></div>
+  <pre id="benchReportPreview">No scored results yet.</pre>
+  <details><summary>Private data controls</summary><p class="bench-privacy">Deleting clears all imported evidence, answers and ratings stored by this add-on. This does not revoke information already transmitted to a cloud model.</p>
+   <button id="benchDelete" onclick="benchmarkDelete()" disabled>Delete all benchmark data</button></details>
+ </div>
 </section></main>
 <script>
-const UI_VERSION="2.0.0-alpha.20";
+const UI_VERSION="2.0.0-alpha.21";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
-function tab(which){for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
+function tab(which){for(const id of ['ask','diagnostics','benchmark']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
