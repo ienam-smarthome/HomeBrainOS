@@ -215,6 +215,8 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         _fail("Complete all frozen cases before applying positional reviews")
     if reviews is not None and (carryover or attempted_commands):
         _fail("Do not rate a study with reported prior context or a device-command attempt")
+    if reviews is not None and (len(model_hashes) != 1 or len(versions) != 1):
+        _fail("Do not combine different models or add-on versions in a scored study")
     human_review = _read_json(reviews) if reviews else None
     try:
         outcome = summarize(records, human_reviews=human_review)
