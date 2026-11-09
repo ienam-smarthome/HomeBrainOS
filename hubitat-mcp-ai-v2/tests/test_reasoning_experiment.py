@@ -184,6 +184,8 @@ class BlindReasoningStudyTests(unittest.TestCase):
                         encoding="utf-8")
                 if i<5:
                     exp.score(sid,ratings)
+            self.assertEqual(sum(exp._allocation(sid)["A"]=="candidate" for sid in exp.catalog),3)
+            self.assertEqual(sum(exp._allocation(sid)["B"]=="candidate" for sid in exp.catalog),3)
             before=exp.report()
             self.assertFalse(before["condition_mapping_revealed"])
             self.assertNotIn("unblinded_conditions",before)
