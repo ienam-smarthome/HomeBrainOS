@@ -342,3 +342,25 @@ MCP write permission or synthetic evaluation changes. UI tests cover both SVG
 incident timelines and canvas detail views, including segment boundaries.
 Update the v2 add-on to **2.0.0-alpha.24** and reopen or refresh Hub Diagnostics.
 
+
+## Alpha.25 — Reasoning A/B holdout (synthetic, isolated)
+
+A new mobile **Reasoning A/B** tab tests whether generic evidence-quality
+guidance improves the *current* Gemma model's first answer. Each of six new
+fictional questions is run twice through the unchanged production
+\`Agent.answer\` and fresh in-memory MCP fixtures. Candidate and baseline
+differ only in an additional experiment-only general system instruction.
+A/B labels are random and remain hidden until all six pairs are scored.
+
+One pair at a time, with cloud/model consent. Source/tool receipts,
+client-side validation errors, simulator rejections and a five-axis
+blind human-scoring form are shown for each answer. Partial runs are
+resumable; existing successful answers and private benchmark datasets
+cannot be silently overwritten. The final report exports anonymised
+coverage and scores, unmasking the candidate only after all ratings.
+No real device is connected or controlled. No production agent
+reasoning was changed.
+
+The original Autonomous Lab dashboard now separately counts client-side
+schema errors and simulator rejections. See
+\`docs/HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md\`.
