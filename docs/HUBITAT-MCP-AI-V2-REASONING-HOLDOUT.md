@@ -89,7 +89,7 @@ a run. The user question must still not be considered proof of any event.
 ## Blinding and experimental safeguards
 
 - The first time a case is run, a hidden A/B assignment is created with
-  operating-system cryptographic randomness and stored in a private
+  operating-system cryptographic randomness with **balanced 3/3 candidate A/B assignment** over six cases and stored in a private
   \`/data/homebrain-v2-reasoning-ab\` file. Each arm starts with fresh
   \`SyntheticMCP\` state and an empty conversation history. The generator
   runs the same \`Agent.answer\` and the same tool gateway schema in both
