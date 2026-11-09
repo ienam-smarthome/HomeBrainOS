@@ -1518,6 +1518,163 @@ async function benchmarkDelete(){
  }catch(error){benchMessage('benchStatus','Deletion failed: '+error.message);}
 }
 
+
+// Synthetic autonomous first-answer evaluation. Tool access is entirely
+// provided by the in-memory backend simulator, NEVER by /api/ask.
+const AUTOLAB_CRITERIA=['factual_grounding','source_completeness',
+ 'causal_calibration','command_outcome','usefulness'];
+let autolabState=null,autolabDetail=null,autolabReportData=null,autolabPolling=null;
+async function autolabApi(path,config={}){
+ const result=await fetch('api/autonomous/'+path,{
+  ...config,cache:'no-store',
+  headers:{'X-Homebrain-Request':'1',...(config.headers||{})}
+ });
+ const data=await result.json();
+ if(!result.ok)throw Error(typeof data.detail==='string'?data.detail:'Synthetic lab request failed');
+ return data;
+}
+function autolabText(id,value){byId(id).textContent=String(value);}
+async function autolabRefresh(){
+ if(autolabPolling!==null){clearTimeout(autolabPolling);autolabPolling=null;}
+ try{
+  const response=await autolabApi('status');
+  autolabState=response;
+  const choices=response.cases.map(item=>[item.id,
+   item.id+' · '+item.title+(item.answered?' · answered':'')]);
+  const selected=byId('autolabSelect').value;
+  benchOptions('autolabSelect',choices,selected);
+  const active=response.cases.find(item=>item.id===byId('autolabSelect').value);
+  byId('autolabRun').disabled=response.running||!active||active.answered;
+  byId('autolabStop').disabled=!response.running;
+  autolabText('autolabStatus',response.running?
+   'Running '+(response.progress?.case_id||'')+
+    ' with fictional MCP data and a bounded model-round budget…':
+   response.error?'Last run: '+response.error:
+   response.cases.filter(c=>c.answered).length+' / '+response.cases.length+
+   ' synthetic cases answered; '+response.cases.filter(c=>c.graded).length+
+   ' manually scored.');
+  await autolabView();
+  if(response.running&&byId('autonomous').classList.contains('active'))
+   autolabPolling=setTimeout(autolabRefresh,2000);
+ }catch(error){autolabText('autolabStatus','Synthetic lab: '+error.message);}
+}
+async function autolabView(){
+ const sid=byId('autolabSelect').value;
+ if(!sid)return;
+ try{
+  const detail=await autolabApi('case/'+encodeURIComponent(sid));
+  if(byId('autolabSelect').value!==sid)return;
+  autolabDetail=detail;
+  autolabText('autolabQuestion',detail.question);
+  autolabText('autolabAnswer',detail.answer||'Run this synthetic case to see the model’s first answer.');
+  const coverage=byId('autolabCoverage');coverage.replaceChildren();
+  for(const row of detail.coverage||[]){
+   const part=document.createElement('div');
+   part.textContent=(row.observed?'✓ Retrieved: ':'○ Not retrieved: ')+row.label;
+   part.classList.add(row.observed?'autolab-pass':'autolab-missing');
+   coverage.appendChild(part);
+  }
+  autolabText('autolabMetrics',detail.answer?
+   'Model rounds: '+detail.rounds+' · Simulated commands: '+
+   detail.simulated_commands+' · Blocked attempts: '+detail.blocked_attempts+
+   ' · Live hub actions: 0 · Response time: '+
+   (Number(detail.elapsed_ms||0)/1000).toFixed(1)+' s':
+   'Model has not run this case.');
+  autolabText('autolabCalls',detail.tool_calls?
+   JSON.stringify(detail.tool_calls,null,2):'No synthetic tool receipts yet.');
+  const group=byId('autolabScores');group.replaceChildren();
+  if(detail.answer!==null){
+   for(const name of AUTOLAB_CRITERIA){
+    const wrapper=document.createElement('label');
+    wrapper.textContent=name.replaceAll('_',' ');
+    const select=document.createElement('select');
+    select.setAttribute('data-autolab-criterion',name);
+    for(const [value,text] of [
+     ['','Not scored'],['0','0 · Unsupported'],['1','1 · Partial'],
+     ['2','2 · Supported'],['n/a','n/a · Not applicable']
+    ]){
+     const option=document.createElement('option');
+     option.value=value;option.textContent=text;select.appendChild(option);
+    }
+    const score=detail.ratings?.[name];
+    select.value=score===undefined?'':String(score);
+    wrapper.appendChild(select);group.appendChild(wrapper);
+   }
+  }
+  byId('autolabSave').disabled=detail.answer===null;
+  autolabText('autolabReviewStatus',detail.ratings?'Saved manual assessment':
+   'Assess the retrieved evidence and the model answer, not just successful tool calls.');
+ }catch(error){autolabText('autolabReviewStatus','Could not load case: '+error.message);}
+}
+async function autolabRun(){
+ const id=byId('autolabSelect').value;
+ if(!byId('autolabModelConsent').checked||!byId('autolabCloudConsent').checked){
+  autolabText('autolabStatus','Review and approve both synthetic-model and cloud notices.');
+  return;
+ }
+ byId('autolabRun').disabled=true;
+ try{
+  await autolabApi('run',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({case_id:id,model_execution_consent:true,
+    cloud_transfer_consent:true})
+  });
+  await autolabRefresh();
+ }catch(error){
+  autolabText('autolabStatus','Could not start: '+error.message);
+  byId('autolabRun').disabled=false;
+ }
+}
+async function autolabStop(){
+ try{
+  await autolabApi('stop',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:'{}'});
+  await autolabRefresh();
+ }catch(error){autolabText('autolabStatus','Stop failed: '+error.message);}
+}
+async function autolabSave(){
+ if(!autolabDetail?.answer)return;
+ const scores={};
+ for(const control of byId('autolabScores').querySelectorAll('select')){
+  const value=control.value;
+  if(!value){autolabText('autolabReviewStatus','Score each criterion.');return;}
+  scores[control.getAttribute('data-autolab-criterion')]=value==='n/a'?'n/a':Number(value);
+ }
+ try{
+  await autolabApi('case/'+encodeURIComponent(autolabDetail.id)+'/score',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({scores})
+  });
+  await autolabRefresh();
+ }catch(error){autolabText('autolabReviewStatus','Could not save ratings: '+error.message);}
+}
+async function autolabReport(){
+ try{
+  autolabReportData=await autolabApi('report');
+  autolabText('autolabReportPreview',JSON.stringify(autolabReportData,null,2));
+  byId('autolabDownload').disabled=false;
+ }catch(error){autolabText('autolabReportPreview','Report error: '+error.message);}
+}
+function autolabDownload(){
+ if(!autolabReportData)return;
+ const blob=new Blob([JSON.stringify(autolabReportData,null,2)+'\n'],
+  {type:'application/json'});
+ const url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download='HomeBrain-v2-autonomous-lab-report.json';
+ document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+}
+async function autolabDelete(){
+ if(!window.confirm('Delete all six synthetic evaluation results and their ratings?'))return;
+ try{
+  await autolabApi('delete',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({confirm_delete:true})});
+  autolabDetail=null;autolabReportData=null;
+  byId('autolabDownload').disabled=true;
+  autolabText('autolabReportPreview','No evaluation report yet.');
+  await autolabRefresh();
+ }catch(error){autolabText('autolabStatus','Delete failed: '+error.message);}
+}
+
 initGraphPopout();
 loadStatus();
 </script></body></html>
