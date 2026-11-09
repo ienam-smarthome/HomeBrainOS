@@ -576,6 +576,22 @@ function sourcePoints(rows,key,native=false){
  }).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
 }
 
+// The recorder labels real gaps before reducing long histories into extrema.
+// A downsampled series can legitimately omit several minutes between retained
+// points; only a *change* in known segment IDs proves a break in that case.
+// Raw or older unlabelled series keep the strict probe-cadence fallback.
+function diagnosticTraceGap(previous,current,native,probeSeconds,downsampled=false){
+ if(!previous)return false;
+ const before=Number.isInteger(previous.diag_segment)?previous.diag_segment:null;
+ const after=Number.isInteger(current.diag_segment)?current.diag_segment:null;
+ if(before!==null&&after!==null){
+  if(before!==after)return true;
+  if(downsampled)return false;
+ }
+ const maxGap=native?900000:Math.max(120000,(Number(probeSeconds)||30)*3000);
+ return Date.parse(current.recorded_at)-Date.parse(previous.recorded_at)>maxGap;
+}
+
 // Shared, view-only time selection for the synchronized timeline and history.
 // Zooming never asks Hubitat for new data: both plots reuse saved source rows.
 let diagnosticZoom=null,zoomBrush=null;
@@ -864,16 +880,14 @@ function drawIncidentTimeline(){
   band.append(svgNode('title',{},'External probe outage · '+diagTime(begin)+
    ' · does not establish a hub reboot'));svg.append(band);
  }
- const drawTrace=(rows,key,kind,color)=>{
+ const drawTrace=(rows,key,kind,color,downsampled=false)=>{
   let path='',prev=null;
   for(const row of rows){
    const t=Date.parse(row.recorded_at);
    if(t<start||t>end)continue;
-   const seg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
-   const gap=prev!==null&&((seg!==null&&prev.seg!==null&&seg!==prev.seg)||
-    t-prev.t>(kind==='cpu'?900000:Math.max(120000,(Number(timelineData.probe_seconds)||30)*3000)));
+   const gap=diagnosticTraceGap(prev,row,kind==='cpu',timelineData.probe_seconds,downsampled);
    const command=(path&&!gap?' L':' M')+x(t).toFixed(2)+' '+yFor(kind,row[key]).toFixed(2);
-   path+=command;prev={t,seg};
+   path+=command;prev=row;
   }
   if(path)svg.append(svgNode('path',{d:path.trim(),fill:'none',stroke:color,
    'stroke-width':2.25,'stroke-linejoin':'round','stroke-linecap':'round'}));
@@ -886,8 +900,8 @@ function drawIncidentTimeline(){
    svg.append(dot);
   }
  };
- drawTrace(mem,'free_os_mb','memory','#70b9ff');
- drawTrace(cpu,'native_load_pct','cpu','#6ee7b7');
+ drawTrace(mem,'free_os_mb','memory','#70b9ff',!!memMetric.downsampled);
+ drawTrace(cpu,'native_load_pct','cpu','#6ee7b7',!!cpuMetric.downsampled);
  const events=[];
  for(const rec of timelineData.reboots||[]){
   const t=Date.parse(rec.occurred_at);if(!Number.isFinite(t)||t<start||t>end)continue;
@@ -1090,12 +1104,15 @@ async function refreshDiagnostics(){
    b:timeline.metrics?.native_load_pct?.samples||[],
    ak:'free_os_mb',bk:'native_load_pct',reboots:timeline.reboots||[],
    incidents:timeline.incidents||[],probe_seconds:timelineData.probe_seconds,
+   aDownsampled:!!timeline.metrics?.free_os_mb?.downsampled,
+   bDownsampled:!!timeline.metrics?.native_load_pct?.downsampled,
    description:'OS memory: external probes. 5m CPU: native source at collector receipt.'
   }:{
    start:Date.parse(detail.range_start),end:Date.parse(detail.range_end),
    a:detail.samples||[],b:[],ak:metric,bk:null,
    reboots:detail.reboots||[],incidents:detail.incidents||[],
    probe_seconds:timelineData.probe_seconds,
+   aDownsampled:!!detail.downsampled,bDownsampled:false,
    description:(metric==='native_load_pct'?
     'Native 5m load equivalent (%): load average ÷ configured CPU core count × 100; not measured CPU utilisation. One point per distinct native source; no repeated polls.':
     metric==='native_load5'?
@@ -1206,16 +1223,14 @@ function draw(){
   g.strokeStyle='#ffc76a';g.setLineDash([4,4]);
   g.beginPath();g.moveTo(x(t),top);g.lineTo(x(t),top+H);g.stroke();
  }
- const drawTrace=(rows,key,scale,color,native)=>{
+ const drawTrace=(rows,key,scale,color,native,downsampled=false)=>{
   let prev=null;g.strokeStyle=color;g.lineWidth=2.1;
   g.lineCap='round';g.lineJoin='round';g.setLineDash([]);g.beginPath();
   for(const row of rows){
    const t=Date.parse(row.recorded_at),yy=y(row[key],scale);
-   const seg=Number.isInteger(row.diag_segment)?row.diag_segment:null;
-   const gap=prev&&((seg!==null&&prev.seg!==null&&seg!==prev.seg)||
-      t-prev.t>(native?900000:Math.max(120000,(Number(visual.probe_seconds)||30)*3000)));
+   const gap=diagnosticTraceGap(prev,row,native,visual.probe_seconds,downsampled);
    if(prev&&!gap)g.lineTo(x(t),yy);else g.moveTo(x(t),yy);
-   prev={t,seg};
+   prev=row;
   }
   g.stroke();
   if(rows.length<=85){
@@ -1234,8 +1249,9 @@ function draw(){
   }
  };
  drawTrace(a,visual.ak,aScale,'#70b9ff',
-  visual.ak.startsWith('native_')||visual.ak.startsWith('java_'));
- if(visual.bk)drawTrace(b,visual.bk,bScale,'#6ee7b7',true);
+  visual.ak.startsWith('native_')||visual.ak.startsWith('java_'),
+  !!visual.aDownsampled);
+ if(visual.bk)drawTrace(b,visual.bk,bScale,'#6ee7b7',true,!!visual.bDownsampled);
  // The selected-time cursor is source-aware. No point is extrapolated across
  // missing observations; a distant timestamp produces "not nearby".
  const focus=hoverX===null?(a.length?x(Date.parse(a[a.length-1].recorded_at)):
