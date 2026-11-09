@@ -363,7 +363,7 @@ with sync_playwright() as p:
   page.locator("#benchSave").click()
   page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('1 blind scored')")
   page.locator("#benchReportButton").click()
-  assert "blind_reviewed_pairs" in page.locator("#benchReportPreview").inner_text()
+  page.wait_for_function("document.querySelector('#benchReportPreview').textContent.includes('blind_reviewed_pairs')")
   with page.expect_download() as download:
    page.locator("#benchDownload").click()
   exported=json.loads(Path(download.value.path()).read_text())
