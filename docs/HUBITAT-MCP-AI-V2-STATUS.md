@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 10 November 2026 — Alpha.37 release accepted by CI; next source-selection checkpoint
+
+**Repository verification:** `main` commit `ee7cb71d00d17d47979349bb504567a4d93da2c2` (v2 `2.0.0-alpha.37`), with four passing post-merge workflows. Alpha.37 improves visible British-format answer dates (GMT/BST) while preserving private original MCP and answer text. **No independent installed Home Assistant build or model-compliance check has been completed.**
+
+**Quality observation from a private, previously exposed alpha.36 first answer:** The model located a focal device OFF-state event and distinguished an event subscriber from an initiator, but treated a filtered *state-history* read as relevant to the absence of an OFF command, relied on connectivity results sampled much later, and viewed an app's root configuration without independently establishing event-specific unit settings or decision logs. The private device labels, timestamps, receipts and identifiers are intentionally excluded from GitHub.
+
+**General failure class:** The model needs to inspect the semantics of the source it has actually queried: attribute/event filter, limit and lookback, exact overlap with the focal event, config page/child scope, and whether the returned data could discriminate among alternative causes. All successful tool calls are not the same as sufficient evidence. A later successful diagnostic sample does not establish an earlier condition. This follows existing source-scope and negative-evidence guidance; **do not add another incident-specific prompt patch based on one newly reviewed answer**.
+
+**Next action:** Obtain an independent, fresh read-only first answer in a distinct historical controller domain, using a new conversation with the installed build/version recorded and a private `Copy for review` packet. Evaluate original successful receipts on chronology, filters, command issuer versus reporter, source completeness, historical-versus-current configuration and causal calibration (0/1/2 per dimension). If source-scope mistakes recur across domains, assess a general tool-schema/source-intent improvement without fixed tool routes, increased mandatory rounds, source rewrites or household-specific code.
+
+
 ## 10 November 2026 — Alpha.36 candidate: cross-domain negative-evidence calibration
 
 **Why:** Recent user-supplied first-answer receipts across unrelated lighting-controller and power-telemetry questions showed that a model can correctly retrieve observations yet make unjustified *negative* conclusions (for example, interpreting lack of a returned command row or a successful later report as proof that no interruption occurred). Those original private receipts remain **outside the repository**. This is a clustered evidence-quality failure, not measured model improvement, and a few exposed first answers cannot estimate population accuracy.
