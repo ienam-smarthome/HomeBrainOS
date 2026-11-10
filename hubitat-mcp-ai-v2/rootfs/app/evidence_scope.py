@@ -36,6 +36,16 @@ def _normalized_date(value: str):
         return None
 
 
+def _is_command_event(row: Any) -> bool:
+    """Classify only the native event-row command form, not inferred actions."""
+    if not isinstance(row, dict):
+        return False
+    name = row.get("name")
+    return row.get("type") == "command" or (
+        isinstance(name, str) and name.startswith("command-")
+    )
+
+
 def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
     """Derive only observational metadata, never conclusions about cause."""
     if not isinstance(result, dict) or result.get("isError"):
@@ -61,6 +71,16 @@ def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
     args = arguments if isinstance(arguments, dict) else {}
     leaf = args.get("args") if isinstance(args.get("args"), dict) else args
     limit = leaf.get("limit") if type(leaf.get("limit")) is int else None
+    requested_attribute = leaf.get("attribute")
+    if not isinstance(requested_attribute, str) or not requested_attribute.strip():
+        requested_attribute = None
+    upstream_attribute = source.get("attributeFilter")
+    if not isinstance(upstream_attribute, str) or not upstream_attribute.strip():
+        upstream_attribute = None
+    command_rows = sum(1 for row in rows if _is_command_event(row))
+    non_command_rows = [
+        row for row in rows if isinstance(row, dict) and not _is_command_event(row)
+    ]
     result_scope = {
         "source_scope": "returned event rows only",
         "events_returned": len(rows),
@@ -78,6 +98,35 @@ def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
         "requested_lookback_hours": leaf.get("hoursBack") if type(leaf.get("hoursBack")) is int else None,
         "requested_limit": limit,
         "limit_reached": len(rows) >= limit if limit is not None else None,
+        "requested_attribute_filter": requested_attribute,
+        "upstream_reported_attribute_filter": upstream_attribute,
+        "command_rows_in_this_response": command_rows,
+        "non_command_rows_in_this_response": len(non_command_rows),
+        "non_command_rows_with_reporter": sum(
+            1 for row in non_command_rows if isinstance(row.get("producedBy"), dict)
+        ),
+        "non_command_rows_tagged_physical": sum(
+            1 for row in non_command_rows if row.get("type") == "physical"
+        ),
+        "non_command_rows_with_triggered_listeners": sum(
+            1 for row in non_command_rows if isinstance(row.get("triggered"), list)
+        ),
+        "can_infer_unseen_commands_absent": False,
+        "can_infer_initiator_from_state_report_producer": False,
+        "can_infer_external_or_manual_initiation_from_physical_tag": False,
+        "can_infer_initiator_from_triggered_listeners": False,
+        "causal_source_boundary": (
+            "This response includes only the requested/returned event rows. "
+            "An attribute-filtered state history cannot determine whether "
+            "other event names (such as command rows) were recorded. "
+            "A producedBy actor on a device/bridge state row reports that "
+            "observation; it does not establish who initiated an earlier "
+            "command. An event type labelled physical does not, by itself, "
+            "prove manual or external initiation; triggered[] lists notified "
+            "listeners rather than command issuers. For a why-question, "
+            "choose relevant discriminating read-only sources if available, "
+            "or state that the initiating cause remains unknown."
+        ),
         "native_store_checked_independently": False,
         "can_infer_older_events_absent": False,
         "can_infer_requested_window_fully_covered": False,
@@ -123,8 +172,7 @@ def command_issuer_scope(result: dict) -> dict | None:
         if not isinstance(row, dict):
             continue
         name = row.get("name")
-        if row.get("type") != "command" and not (
-                isinstance(name, str) and name.startswith("command-")):
+        if not _is_command_event(row):
             continue
         returned_commands += 1
         if len(samples) >= 12:
