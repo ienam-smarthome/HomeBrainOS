@@ -181,8 +181,8 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
 <div class="card" id="timelineCard">
 <div class="row"><h2>Unified incident timeline</h2><a class="graph-popout-return" id="timelineReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link right" id="timelinePopout" href="?graph_view=timeline" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('timeline')">↗ Pop out full page</a><button id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
-<p class="timeline-meta" id="timelineMeta">External recorder observations, native five-minute load and verified systemStart events. Missing history remains unknown.</p>
-<div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
+<p class="timeline-meta" id="timelineMeta">External OS probes, original native five-minute memory/load readings, and verified systemStart events. Missing history remains unknown.</p>
+<div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:#c4a1ff"></i>OS memory (native 5m)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
 <div class="diag-controls">
 <label for="range">Range <select id="range" onchange="resetDiagnosticZoom();refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
 <label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · aligned panels</option><option value="combined">Combined · dual axes</option></select></label>
@@ -202,7 +202,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </div>
 <div class="card" id="detailCard">
 <div class="row"><h2>Detailed metric history</h2><a class="graph-popout-return" id="detailReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link" id="detailPopout" href="?graph_view=detail" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('detail')">↗ Pop out full page</a>
-<select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load_pct">Native 5m load equivalent (%)</option><option value="native_load5">Native 5m load (raw, unscaled)</option></select>
+<select id="metric" class="right" onchange="refreshDiagnostics()"><option value="combined">OS memory + CPU</option><option value="free_os_mb">OS memory (external MB)</option><option value="native_free_os_mb">OS memory (native 5m MB)</option><option value="java_free_mb">Java free MB</option><option value="java_allocated_heap_used_pct">Java heap used %</option><option value="latency_ms">HTTP response ms</option><option value="native_load_pct">Native 5m load equivalent (%)</option><option value="native_load5">Native 5m load (raw, unscaled)</option></select>
 </div>
 <div id="plotStats" class="plot-stats">Select a metric to inspect its actual minimum, maximum and latest reading.</div>
 <div class="legend"><span><i class="dot"></i><span id="detailPrimaryLegend">OS free memory (MB)</span></span><span id="detailCpuLegend"><i class="dot" style="background:var(--green)"></i>5m CPU load equivalent (%)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Probe outage</span></div>
@@ -440,7 +440,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.29";
+const UI_VERSION="2.0.0-alpha.30";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -704,8 +704,8 @@ function setCards(s){const l=s.last||{};const specs=[
 // V1-grade independent recorder display. Uses only the v2 saved SQLite timeline
 // API and DOM-created SVG; these source-aligned plots never fetch a hub device.
 const SVG_NS='http://www.w3.org/2000/svg';
-let timelineData=null,timelineSeries={memory:[],cpu:[]},timelineShown=null;
-let timelineSelection=null,timelineNearest={memory:null,cpu:null},timelineFocusTimes=[];
+let timelineData=null,timelineSeries={memory:[],nativeMemory:[],cpu:[]},timelineShown=null;
+let timelineSelection=null,timelineNearest={memory:null,nativeMemory:null,cpu:null},timelineFocusTimes=[];
 let diagnosticsSequence=0,detailPoints=[],detailSelectedIndex=-1;
 function svgNode(tag,attrs={},label){
  const node=document.createElementNS(SVG_NS,tag);
@@ -722,7 +722,7 @@ function diagTime(t){
 function diagValue(value,key){
  if(typeof value!=='number'||!Number.isFinite(value))return '—';
  const decimals=key==='native_load5'?2:1;
- const unit=key==='free_os_mb'||key==='java_free_mb'?' MB':
+ const unit=key==='free_os_mb'||key==='native_free_os_mb'||key==='java_free_mb'?' MB':
   key==='latency_ms'?' ms':key==='native_load5'?' load':'%';
  return new Intl.NumberFormat('en-GB',{maximumFractionDigits:decimals}).format(value)+unit;
 }
@@ -871,9 +871,11 @@ function timelineWindow(data){
  if(byId('plotExtent').value==='full')
   return zoomViewWindow({start:requestedStart,end,requestedStart,fit:false});
  const metricRows=[...(data.metrics?.free_os_mb?.samples||[]),
+                   ...(data.metrics?.native_free_os_mb?.samples||[]),
                    ...(data.metrics?.native_load_pct?.samples||[])];
  const observed=metricRows.filter(r=>r&&r.reachable&&
   ((typeof r.free_os_mb==='number'&&Number.isFinite(r.free_os_mb))||
+   (typeof r.native_free_os_mb==='number'&&Number.isFinite(r.native_free_os_mb))||
    (typeof r.native_load_pct==='number'&&Number.isFinite(r.native_load_pct))))
   .map(r=>Date.parse(r.recorded_at));
  const events=[...(data.reboots||[]).map(r=>Date.parse(r.occurred_at)),
@@ -965,7 +967,7 @@ function initGraphPopout(){
 function redrawDiagnostics(){drawIncidentTimeline();draw();}
 function drawIncidentTimeline(){
  const svg=byId('incidentTimeline');svg.replaceChildren();
- timelineSeries={memory:[],cpu:[]};timelineFocusTimes=[];
+ timelineSeries={memory:[],nativeMemory:[],cpu:[]};timelineFocusTimes=[];
  timelineShown=timelineWindow(timelineData);
  showZoomStatus();
  if(!timelineShown){
@@ -982,18 +984,21 @@ function drawIncidentTimeline(){
  const chartWidth=fullView?Math.max(860,Math.round(bounds.width||860)):860;
  const chartHeight=fullView?Math.max(400,Math.round(bounds.height||460)):360;
  svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
- const memMetric=timelineData.metrics?.free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
+ const memMetric=timelineData.metrics?.free_os_mb||{},nativeMemMetric=timelineData.metrics?.native_free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
  const mem=sourcePoints(memMetric.samples,'free_os_mb')
+  .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
+ const nativeMem=sourcePoints(nativeMemMetric.samples,'native_free_os_mb',true)
   .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
  const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true)
   .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
- timelineSeries={memory:mem,cpu};
+ timelineSeries={memory:mem,nativeMemory:nativeMem,cpu};
  const layout=byId('timelineLayout').value,combined=layout==='combined';
  const splitBoundary=Math.round(156+(chartHeight-360)*.5);
  const plot={left:76,right:chartWidth-(combined?84:60),top:combined?37:28,
   memBottom:combined?chartHeight-38:splitBoundary,
   cpuTop:combined?37:splitBoundary+46,cpuBottom:chartHeight-38};
- const memScale=scaleFor(mem,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
+ const allMemory=[...mem,...nativeMem.map(r=>({...r,free_os_mb:r.native_free_os_mb}))];
+ const memScale=scaleFor(allMemory,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
  const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
  const yFor=(kind,v)=>{
   const scale=kind==='memory'?memScale:cpuScale;
