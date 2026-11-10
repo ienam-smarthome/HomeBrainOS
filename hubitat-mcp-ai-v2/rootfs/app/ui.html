@@ -49,6 +49,9 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .timeline-scroll{width:100%;overflow-x:auto;overflow-y:hidden;border-radius:10px}
 .timeline-chart{width:100%;height:540px;display:block;max-height:none;min-height:540px;
  background:#101b2b;border-radius:10px;touch-action:pan-y}
+/* The selected two-source view gives each independent graph substantially more Y space. */
+.timeline-chart.timeline-two-tall{height:720px;min-height:720px}
+#timelinePairRow[hidden]{display:none!important}
 .timeline-chart:focus-visible,#graph:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
 .timeline-meta,.timeline-readout,.plot-stats{font-size:12px;line-height:1.55;color:var(--muted);margin:10px 0}
 .timeline-readout{min-height:38px;padding:8px 11px;border:1px solid var(--edge);
@@ -97,6 +100,8 @@ body.graph-popout .graph-popout-return:not([hidden]){display:inline-flex}
 .graph-popout-return[hidden]{display:none}
 body.graph-popout .timeline-chart{min-width:0;min-height:600px;max-height:none;
  height:clamp(600px,74vh,1100px);width:100%}
+body.graph-popout .timeline-chart.timeline-two-tall{
+ min-height:780px;height:clamp(780px,88vh,1400px)}
 body.graph-popout #graph{height:clamp(460px,68vh,1000px)}
 .graph-zoom-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:7px 0 11px}
 .graph-zoom-row button{font-size:12px;padding:7px 11px}
@@ -107,6 +112,8 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 @media(max-width:700px){body.graph-popout main{padding:8px}
  body.graph-popout .card{padding:12px}
  body.graph-popout .timeline-chart{height:clamp(600px,74vh,1100px);min-height:600px;min-width:860px}
+ body.graph-popout .timeline-chart.timeline-two-tall{min-height:780px;
+ height:clamp(780px,88vh,1400px)}
  body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
 
 
@@ -207,7 +214,8 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:#c4a1ff"></i>OS memory (native 5m)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
 <div class="diag-controls">
 <label for="range">Range <select id="range" onchange="resetDiagnosticZoom();refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
-<label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · 3 aligned panels</option><option value="combined">Memory overlaid · CPU separate</option><option value="overlay">Overlay all · dual axes</option></select></label>
+<label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · 3 aligned panels</option><option value="tall">2 aligned panels · taller</option><option value="combined">Memory overlaid · CPU separate</option><option value="overlay">Overlay all · dual axes</option></select></label>
+<label for="timelinePair" id="timelinePairRow" hidden>Show two <select id="timelinePair" onchange="drawIncidentTimeline()"><option value="external-cpu" selected>External memory + CPU</option><option value="native-cpu">Native memory + CPU</option><option value="external-native">External + native memory</option></select></label>
 <label for="plotExtent">Time axis <select id="plotExtent" onchange="resetDiagnosticZoom()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
 </div>
 <div class="graph-zoom-row"><button id="resetTimelineZoom" onclick="resetDiagnosticZoom()" disabled>Reset zoom</button><span id="timelineZoomInfo" class="graph-zoom-hint" role="status">Drag across a panel to zoom into a time interval. Click to inspect a point.</span></div>
@@ -463,7 +471,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.34";
+const UI_VERSION="2.0.0-alpha.35";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -1096,6 +1104,7 @@ function graphPageUrl(kind){
  url.searchParams.set('range',byId('range').value);
  url.searchParams.set('extent',byId('plotExtent').value);
  url.searchParams.set('layout',byId('timelineLayout').value);
+ url.searchParams.set('pair',byId('timelinePair').value);
  url.searchParams.set('metric',byId('metric').value);
  if(diagnosticZoom){
   url.searchParams.set('zoom_start',String(diagnosticZoom.start));
@@ -1115,7 +1124,7 @@ function initGraphPopout(){
  const params=new URLSearchParams(window.location.search),kind=params.get('graph_view');
  if(!['timeline','detail'].includes(kind))return;
  for(const [key,id] of [['range','range'],['extent','plotExtent'],
-                        ['layout','timelineLayout'],['metric','metric']]){
+                        ['layout','timelineLayout'],['pair','timelinePair'],['metric','metric']]){
   const value=params.get(key),select=byId(id);
   if(value&&Array.from(select.options||[]).some(option=>option.value===value))
    select.value=value;
