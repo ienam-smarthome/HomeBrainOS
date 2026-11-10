@@ -39,7 +39,12 @@ textarea{min-height:130px;font:inherit;line-height:1.5}#answer{white-space:norma
 .answer-table-wrap{overflow:auto;max-width:100%;border:1px solid var(--edge);border-radius:10px;margin:16px 0}
 .answer-table-wrap table{border-collapse:collapse;width:100%;min-width:460px}
 th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--edge);vertical-align:top}th{background:#203148}
-code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blockquote{border-left:3px solid var(--blue);margin:12px 0;padding:4px 16px}
+code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}
+#answer .answer-timestamp{display:inline-block;max-width:100%;padding:2px 7px;
+ background:#203650;border:1px solid #4c6b90;border-radius:6px;
+ color:#e6f2ff;font:inherit;font-variant-numeric:tabular-nums;
+ font-size:.95em;line-height:1.5;vertical-align:baseline;overflow-wrap:normal;
+ white-space:normal}blockquote{border-left:3px solid var(--blue);margin:12px 0;padding:4px 16px}
 #requestSummary{color:var(--muted)}#requestQuestion{font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
 .session-note{font-size:12px;color:var(--muted)}.previous-turn{padding:14px 0;border-bottom:1px solid var(--edge)}.previous-turn pre{max-height:220px}
 #recorderNotice{border-left:3px solid var(--amber);padding:12px 16px;background:var(--panel);margin:16px 0}
@@ -471,7 +476,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.36";
+const UI_VERSION="2.0.0-alpha.37";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -809,6 +814,45 @@ function inlineMathText(value){
  if(/[\\{}^]/.test(text))return null;
  return text;
 }
+// Format only complete timezone-qualified source timestamps for user-facing
+// answers. Do not alter the original answer, MCP receipts, code fences or JSON.
+const ANSWER_ISO_PATTERN=/\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})(?![\w.:])/g;
+function ukAnswerTimestamp(raw){
+ if(!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})$/.test(raw))return null;
+ const iso=raw.replace(' ','T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2');
+ const date=new Date(iso);
+ if(!Number.isFinite(date.getTime()))return null;
+ const formatter=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',
+  day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',
+  second:'2-digit',hourCycle:'h23',timeZoneName:'short'});
+ const parts=Object.fromEntries(formatter.formatToParts(date).filter(p=>p.type!=='literal')
+  .map(p=>[p.type,p.value]));
+ if(!['GMT','BST'].includes(parts.timeZoneName))return null;
+ const fraction=raw.match(/\.(\d{1,9})(?=Z|[+-]\d{2}:?\d{2}$)/)?.[1];
+ return parts.day+' '+parts.month+' '+parts.year+', '+
+  parts.hour+':'+parts.minute+':'+parts.second+
+  (fraction?'.'+fraction:'')+' '+parts.timeZoneName;
+}
+function answerTimestampNode(raw){
+ const formatted=ukAnswerTimestamp(raw);
+ if(formatted===null)return null;
+ const time=document.createElement('time');
+ time.className='answer-timestamp';
+ time.setAttribute('datetime',raw.replace(' ','T').replace(/([+-]\d{2})(\d{2})$/,'$1:$2'));
+ time.setAttribute('title','Original source timestamp: '+raw);
+ time.textContent=formatted;
+ return time;
+}
+function appendAnswerTimestampText(node,value){
+ let position=0;
+ for(const match of value.matchAll(ANSWER_ISO_PATTERN)){
+  const time=answerTimestampNode(match[0]);
+  if(!time)continue;
+  node.appendChild(document.createTextNode(value.slice(position,match.index)));
+  node.appendChild(time);position=match.index+match[0].length;
+ }
+ node.appendChild(document.createTextNode(value.slice(position)));
+}
 function appendMathText(node,text){
  const pattern=/\\\(([^)\n]*?)\\\)|\$(?!\s)([^$\n]*?\S)\$/g;
  let at=0;
@@ -816,12 +860,12 @@ function appendMathText(node,text){
   if(match.index<at||(match.index>0&&text[match.index-1]==='\\'))continue;
   const display=inlineMathText(match[1]===undefined?match[2]:match[1]);
   if(display===null)continue;
-  node.appendChild(document.createTextNode(text.slice(at,match.index)));
+  appendAnswerTimestampText(node,text.slice(at,match.index));
   const math=document.createElement('span');math.className='inline-math';
   math.textContent=display;node.appendChild(math);
   at=match.index+match[0].length;
  }
- node.appendChild(document.createTextNode(text.slice(at)));
+ appendAnswerTimestampText(node,text.slice(at));
 }
 function appendInline(node,text){
  const pattern=/(\x60[^\x60]+\x60|\*\*[^*]+\*\*|\*[^*]+\*)/g;let at=0;
@@ -829,8 +873,12 @@ function appendInline(node,text){
   appendMathText(node,text.slice(at,match.index));
   const token=match[0],tag=token[0]==='\x60'?'code':token.startsWith('**')?'strong':'em',n=document.createElement(tag);
   const inner=token.slice(tag==='strong'?2:1,tag==='strong'?-2:-1);
-  if(tag==='code')n.textContent=inner;else appendMathText(n,inner);
-  node.appendChild(n);at=match.index+token.length;
+  if(tag==='code'){
+   const time=answerTimestampNode(inner);
+   if(time)node.appendChild(time);
+   else{n.textContent=inner;node.appendChild(n);}
+  }else{appendMathText(n,inner);node.appendChild(n);}
+  at=match.index+token.length;
  }appendMathText(node,text.slice(at));
 }
 function tableCells(line){const value=line.trim();if(!value.startsWith('|')||!value.endsWith('|'))return null;return value.slice(1,-1).split('|').map(c=>c.trim());}
