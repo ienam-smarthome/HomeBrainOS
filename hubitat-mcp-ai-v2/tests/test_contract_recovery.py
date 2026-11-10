@@ -102,7 +102,12 @@ class ContractRecoveryTests(unittest.TestCase):
                 return leaf, False
             @staticmethod
             def validate_leaf_arguments(definition, args):
-                _validate_arguments(args, definition["inputSchema"])
+                try:
+                    _validate_arguments(args, definition["inputSchema"])
+                except MCPContractError as exc:
+                    raise MCPContractError(
+                        "Leaf arguments violate their live input schema: " + str(exc)
+                    ) from None
             async def call(self, name, args):
                 self.executed.append((name, args))
                 return {"content": [{"type": "text", "text": '{"checked":true}'}]}
