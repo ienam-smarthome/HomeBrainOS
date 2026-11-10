@@ -1,6 +1,12 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.35**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.36**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.36 — negative-evidence and interval-continuity reasoning (10 Nov 2026)
+
+A new, domain-neutral model skill section distinguishes **point readings** from assertions about an entire interval and **plausible explanations** from an excluded alternative. Following first-answer evaluations across unrelated controller and power-telemetry incidents, the agent is guided to ask whether a different event could have occurred inside unobserved gaps while all returned MCP receipts stayed exactly the same. A later successful report does not prove continuous connectivity or supply before that report; a currently-ON control state does not guarantee that a load received power continuously; an empty bounded command history does not prove that no command occurred. The guidance also preserves the converse: when an event-specific trigger, execution trace and result truly discriminate between causes, state the verified cause without reflexive uncertainty.
+
+This is a **model-owned evidence test**, not a deterministic validator, hardcoded device exception, extra tool round, automatic evidence fetch, answer rewrite or new access control. The model can select proportionate read-only discriminating evidence such as actual historical state/supply reports where available. The existing native MCP response and Technical JSON receipts are unchanged. Offline regression tests check skill delivery, unchanged source metadata and tool autonomy, and a positive-control answer. **Such tests cannot measure Ollama/Gemma compliance or independent live correctness**; re-evaluate on fresh cross-domain first answers after installing the release.
 
 ## Alpha.35 — two taller source-specific incident panels (10 Nov 2026)
 

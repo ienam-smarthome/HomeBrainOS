@@ -1,5 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 10 November 2026 — Alpha.36 candidate: cross-domain negative-evidence calibration
+
+**Why:** Recent user-supplied first-answer receipts across unrelated lighting-controller and power-telemetry questions showed that a model can correctly retrieve observations yet make unjustified *negative* conclusions (for example, interpreting lack of a returned command row or a successful later report as proof that no interruption occurred). Those original private receipts remain **outside the repository**. This is a clustered evidence-quality failure, not measured model improvement, and a few exposed first answers cannot estimate population accuracy.
+
+**Change:** Extend the existing model-loaded domain-neutral causal skill to distinguish point observations, bounded event lookbacks and interval-continuity claims; apply a counterexample check to definitive absence language; identify relevant but proportionate independent read-only sources when available; and preserve confident answers where execution/trigger/outcome sources actually establish a specific cause. No device-specific patches, fixed investigative tool chain, automatic extra round, output rewriting, source mutation, or added device permissions. Synthetic tests cover model prompt delivery, untouched original event-source coverage metadata and no extra MCP calls, plus a fictional confident positive control.
+
+**Release gate:** Required GitHub workflows must pass before merge. CI cannot demonstrate that a particular cloud model applied the instruction, or prove a real supply never failed. Installed acceptance requires fresh first-answer captures from *different* domains (including at least one genuine verified cause). Compare against original successful MCP receipts using 0/1/2 grounding, completeness, causal calibration and usefulness ratings. Do not repeat one exposed incident as an independent benchmark. The currently installed add-on version has not been independently verified.
+
+
 ## 10 November 2026 — Alpha.35 installed-acceptance and next reasoning milestone
 
 **Repository state (verified):** `main` at `68729a1cd71d0320ddf71396c057e860bb217f44`, add-on manifest `2.0.0-alpha.35`. PR #1577 added an optional taller two-panel incident timeline, including three user-selectable source pairs, independent Y-axis scales and preserved full-page selection/zoom; PR #1578 repaired a race in the unrelated synthetic reasoning browser acceptance. All four main-branch workflows completed successfully for that SHA. **The installed add-on version and actual plotted Home Assistant recorder data have not been independently verified.** Green CI is not proof of installed correctness.

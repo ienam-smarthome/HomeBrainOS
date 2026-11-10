@@ -1,5 +1,21 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.36 negative claims and continuity: prospective acceptance
+
+**Problem class:** Models may correctly report point samples but incorrectly infer that a device or whole system *never* lost supply, had *no* command, stayed *continuously* ON, or had *only one* possible causal mechanism. A bounded event query, current snapshot or later normal report cannot prove arbitrary unseen intermediate states.
+
+**Prospective, read-only acceptance questions (choose fresh private incidents, not known answer fixtures):**
+
+- **Continuity challenge:** Ask whether a short outage/interruption was excluded by point telemetry before and after a gap; model should identify the source coverage and what independent observation could discriminate.
+- **Negative-command challenge:** Ask whether a controller or person could have acted even though a filtered device event query has no matching row; model should compare command history, other controller sources and limits instead of asserting universal absence.
+- **Cross-system challenge:** Ask whether one or two apparently idle subsystems establish that no participating member required service during a past interval; model should not project current snapshots backwards or infer unqueried members.
+- **Positive control:** Ask about an event whose original successful receipts really include a trigger, specific controller execution and compatible observed state in one window; model should identify the supported cause confidently.
+
+Run a new **Ask** conversation for each first answer, include **Do not change anything**, and use **Copy for review** privately. Score factual grounding, source completeness, causal calibration and usefulness 0/1/2 (n/a only when truly inapplicable). Record exact times, timezones, lookback bounds, command issuers versus observers, tool errors and missing discriminating reads. This is human-reviewed evidence, not a blinded population metric.
+
+**Boundary:** No production change targeted at a particular named appliance, automation, timestamp or command. Prompt/skill guidance remains model-owned, not an answer-rewriting filter. Green CI establishes only integration; live deployment and improvement remain unverified until separately tested.
+
+
 ## 10 November 2026 — Alpha.35 next checkpoint: independent first-answer transfer tests
 
 **Current code baseline:** `2.0.0-alpha.35` on GitHub `main`, merge `68729a1c` after PRs #1577/#1578, with green main-branch CI. Installed Home Assistant version is not established from a repository merge. The previously tested household incidents and frozen synthetic holdouts are **exposed**, not unseen evidence for an unbiased improvement claim.
