@@ -7,6 +7,7 @@ No actual calls occur until the operator explicitly starts each pair.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 import secrets
@@ -252,13 +253,37 @@ class ProspectiveWorkspace:
         if ident not in self.questions:
             raise ProspectiveError("Unknown prospective case")
         case = self.questions[ident]
+        arms = deepcopy(case["arms"])
+        # Reviewers see original native MCP receipts but not a literal
+        # "candidate" marker: removing ONLY the client-added source ledger
+        # avoids trivially unblinding the assignment via Technical JSON.
+        # Natural answers may still disclose a variant's method; describe
+        # review blindness as allocation-hidden, not proof of full blinding.
+        for arm in arms.values():
+            result = arm.get("result")
+            if not isinstance(result, dict):
+                continue
+            for receipt in result.get("tool_calls", []):
+                if not isinstance(receipt, dict):
+                    continue
+                raw = receipt.get("response")
+                if not isinstance(raw, str):
+                    continue
+                try:
+                    body = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(body, dict) and "client_collection_source_ledger" in body:
+                    del body["client_collection_source_ledger"]
+                    receipt["response"] = json.dumps(body, ensure_ascii=False)
         return {
             "schema": SCHEMA,
             "id": ident, "question": case["question"],
-            "arms": case["arms"],
+            "arms": arms,
             "ratings": case["ratings"],
             "mapping_hidden": not self.summary()["condition_mapping_revealed"],
             "privacy": "private_answers_and_receipts_in_browser_response_only",
+            "source_ledger_marker_hidden_from_reviewer_receipts": True,
         }
 
     def rate(self, ident: str, scores: dict):
