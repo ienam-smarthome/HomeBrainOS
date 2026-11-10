@@ -1,5 +1,18 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 10 November 2026 — Alpha.35 installed-acceptance and next reasoning milestone
+
+**Repository state (verified):** `main` at `68729a1cd71d0320ddf71396c057e860bb217f44`, add-on manifest `2.0.0-alpha.35`. PR #1577 added an optional taller two-panel incident timeline, including three user-selectable source pairs, independent Y-axis scales and preserved full-page selection/zoom; PR #1578 repaired a race in the unrelated synthetic reasoning browser acceptance. All four main-branch workflows completed successfully for that SHA. **The installed add-on version and actual plotted Home Assistant recorder data have not been independently verified.** Green CI is not proof of installed correctness.
+
+**Evidence-quality development status:** Alpha.33 introduced general model-led causal timing/alternatives guidance. The user-supplied first answers on controller command attribution and ventilation were informative but did not prove that internal automation triggers were correctly identified. The recent chart layout releases alpha.34/35 are presentation/source-coverage changes, **not model-quality improvements**. Avoid attributing a population-level reasoning score to the small exposed examples.
+
+**Next milestone:** Prioritise fresh read-only, first-answer trials across unrelated device domains before further modifying the production prompt/agent loop. Review the original successful MCP receipts for exact chronology, lookback boundaries, command issuer versus event reporter, current settings versus historical settings, alternative mechanisms and the earliest genuinely discriminating evidence. Capture whether the model compared a predicted *sequence* (start, state, duration, stop) against observations—not merely whether timestamps coincided. Missing source rows and present-day attributes do not prove historical absence or continuous state. Keep each first answer uncoached, in a fresh conversation; apply 0/1/2 grounding, source completeness, causal calibration and usefulness scoring only against retrieved original receipts. Testing and grading remain human-supervised.
+
+**Engineering gate:** Cluster at least two materially distinct general failures before considering a new production causal instruction or runtime mechanism. A positive control with a genuinely supported event-specific cause is also valuable: the model should state evidence-supported causes confidently, rather than reflexively abstaining. Make any subsequent fix domain-neutral, model-led, read-only by default for diagnostic tests, and validate with fictional contract tests plus a new live first-answer capture. Avoid case-specific device patches and do not expose household receipts in GitHub.
+
+See `docs/HUBITAT-MCP-AI-V2-NEXT-MILESTONE.md` and `docs/HUBITAT-MCP-AI-V2-LIVE-REVIEW-WORKFLOW.md` for the test protocol.
+
+
 ## 10 November 2026 — Alpha.31: native memory reconciliation candidate
 
 The 9 Nov 21:55–22:57 screenshots showed Hub & Device Monitor reporting a native free OS memory peak near 22:20 (1,272.8 MB) not visible in the HomeBrain external-probe memory timeline. Source review identified the structural omission: the recorder read the *last* native five-minute CSV row only and the unified timeline omitted native OS-memory history. This does not prove that the original 22:20 row remains available.
