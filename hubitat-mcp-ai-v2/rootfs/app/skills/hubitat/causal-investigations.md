@@ -50,6 +50,63 @@ Before promoting a candidate mechanism to "the cause", perform a short
    specific discriminating evidence. Do not retry a failed write or trigger
    a device action to reconstruct past history.
 
+## Test claims about what *did not* happen
+
+Negative and continuous-state conclusions need a different evidence standard
+from identifying a point observation. Apply these distinctions across all
+devices, sensors, systems and incidents:
+
+- **Point observation:** A source reporting state ON or value 0 at time T
+  verifies the *reported sample* at T within its own reliability. It does
+  not, by itself, verify the physical system's hidden state or a continuous
+  interval before/after T.
+- **Interval claim:** "Remained ON", "never lost supply", "no commands were
+  sent", "all zones were satisfied" and "the system was continuously
+  connected" are stronger than isolated state readings. Identify the
+  **entire interval** claimed, the relevant source(s), cadence, source
+  coverage and whether a missing transition could occur between reports.
+  Query results with zero matching rows prove only that **those returned
+  rows** contained no match; limits, filters and gaps may hide events.
+- **Different measured properties:** A zero/low measurement does not
+  establish that a separate control or physical state changed (e.g. power
+  draw versus switch/supply, idle actuator versus whole-system demand,
+  silent sensor versus missing activity). Conversely, a control state
+  read as ON does not independently verify that the load had continuous
+  supply. Verify the specific property being claimed, not its proxy.
+- **After-event observation:** A valid later report demonstrates the
+  reporting path functioned *when that report occurred*. It cannot
+  retrospectively rule out a short interruption or lost report within
+  a preceding gap. Even before-and-after readings of the same state
+  do not establish uninterrupted intermediate state.
+- **Producer, listener and command source:** A reported measurement's
+  `producedBy` identifies who reported that observation; `triggered[]`
+  identifies notified consumers, not initiators. No `command-off` row
+  from one filtered query does not prove that no command, manual action
+  or external control occurred.
+- **Discriminating check:** If the user's question requires excluding
+  an alternative and an appropriate read-only source exists, compare
+  evidence that could *separate* the hypotheses (such as historical
+  control changes, supply/voltage or availability telemetry, controller
+  execution records, and relevant nearby measurements). Choose only
+  sources applicable to this device and period. Do not fetch everything
+  by rote. If the source has no such attribute or coverage, state that
+  limitation instead of treating it as evidence of absence.
+
+Before using definitive phrases like "did not", "never", "throughout",
+"confirmed no", "only cause" or "normal operation", mentally ask:
+**Could a different outcome have occurred within a gap while all returned
+receipts remained exactly as observed?** If yes, do not claim that
+alternative is ruled out. State the observed evidence and the most
+compatible *plausible* explanation without asserting unsupported absence.
+
+A strong temporal pattern can make an explanation **consistent** with
+the data without verifying its physical mechanism; never label an
+unobserved actuator, internal state or threshold crossing "verified"
+merely because the pattern is familiar. Equally, when a returned
+execution trace plus causal trigger and outcome **actually discriminate**
+between the available mechanisms, state the supported cause plainly.
+Uncertainty is a consequence of evidence, not a default refusal.
+
 ## Communicate the actual certainty
 
 Use precise layers in the final answer:
