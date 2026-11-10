@@ -1,5 +1,37 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.35 next checkpoint: independent first-answer transfer tests
+
+**Current code baseline:** `2.0.0-alpha.35` on GitHub `main`, merge `68729a1c` after PRs #1577/#1578, with green main-branch CI. Installed Home Assistant version is not established from a repository merge. The previously tested household incidents and frozen synthetic holdouts are **exposed**, not unseen evidence for an unbiased improvement claim.
+
+**Objective:** distinguish `can retrieve data` from `can decide which data proves an event-specific cause`. The next practical milestone is a short, diverse, **uncoached live first-answer series** rather than modifying the agent for one device, timer or chart.
+
+### Proposed cross-domain new-turn trials
+
+Use privately selected devices and recent incidents in the installed UI; the themes below deliberately contain no household identifiers or actual source data.
+
+1. **Historical switch/control investigation:** most recent switch OFF; separate explicit `off()` command issuer, device/bridge state reporter, controller settings, and the internal condition that initiated the command; check alternative configured OFF paths.
+2. **Power-versus-state discrimination:** investigate a low/zero-power reading and whether a physical supply loss is established. Correlate switch, voltage and historic meter events instead of equating 0 W with OFF.
+3. **Historical heating coherence:** compare a room valve's heating state to the main heating demand **at the same historical moment**, including participating zones and coordinator settings. Current idle readings cannot prove a historical no-demand condition.
+4. **Independent telemetry-source comparison:** compare an external probe and native five-minute samples by **original timestamps, source basis and lookback**; a graph correlation does not prove a reboot or root cause.
+5. **Positive-control incident:** when explicit triggering event, controller execution trace and resulting state are all actually returned and temporally compatible, test whether the model correctly says that cause is verified rather than hiding behind generic uncertainty.
+
+Each question should end in **"Do not change anything."** Start a new Ask conversation, copy the unedited first response and original private Technical JSON, and review outside the repository. If installed version differs from the target or a call failed, record it; do not silently switch test conditions or rerun as though it were the first attempt.
+
+### Acceptance dimensions
+
+| Criterion | 0 | 1 | 2 |
+| --- | --- | --- | --- |
+| Factual grounding | Contradicts/creates source facts | Mostly correct but material error or omission | All material factual claims match retrieved original successful receipts |
+| Source completeness | Misses essential discriminating source class | Relevant reads, significant coverage caveats unresolved | Proportionate relevant reads and accurate explicit scope; no invented complete history |
+| Causal calibration | Unsupported definite cause or contradicts temporal record | Properly qualified but significant logical/source weakness | Event-specific cause supported, or uncertainty correctly tied to named missing evidence |
+| Usefulness | No actionable/evaluable answer | Partial but useful | Direct, concise answer plus appropriately bounded evidence |
+
+`n/a` is allowed only where a dimension is genuinely inapplicable, not when a causal question is answered with "unknown." Distinguish *successful native receipt* from *true-world verification*. Record tool errors, source window, return limits, reporter versus actor, settings freshness and chronology separately.
+
+**Change policy:** No production changes simply because one answer is partial or a known question was coached. Group independent new failures by general source-coverage, sequence-comparison, tool-schema or causal-assertion category. Fix at a general abstraction boundary only when observed across domains; ensure native tool autonomy, privacy, permission/confirmation checks and non-incident-specific regression tests remain intact. Keep a positive-control test to guard against excessive abstention.
+
+
 **Established:** 9 November 2026. **Implementation phase:** independent measurement groundwork; no change to production agent behavior. **Baseline:** v2 repository version 2.0.0-alpha.26, or exact version/SHA captured at deployment. Do not assume that a merged build is installed.
 
 ## 10 November 2026 — Live-first development replaces mandatory A/B workflow (alpha.29)
