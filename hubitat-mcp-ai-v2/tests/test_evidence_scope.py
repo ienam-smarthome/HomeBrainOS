@@ -181,6 +181,104 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(scope["command_rows_in_this_response"], 0)
         self.assertFalse(scope["can_infer_unseen_commands_absent"])
 
+
+    def test_temporal_landmarks_keep_a_report_before_a_later_command(self):
+        # Fictional time-ordered events, deliberately returned newest first.
+        rows = [
+            {"name": "energy", "value": "52.4", "date": "2026-02-03T09:15:00Z"},
+            {"name": "power", "value": "0", "date": "2026-02-03T09:10:04Z"},
+            {"name": "command-off", "type": "command",
+             "producedBy": {"name": "Fictional energy controller", "appId": 700},
+             "date": "2026-02-03T09:10:00Z"},
+            {"name": "switch", "value": "off", "date": "2026-02-03T09:00:00Z"},
+            {"name": "power", "value": "3", "date": "2026-02-03T09:00:01Z"},
+            {"name": "switch", "value": "on", "date": "2026-02-03T08:00:00Z"},
+        ]
+        raw = event_response("Fixture motor", rows)
+        before = json.dumps(raw, sort_keys=True)
+        returned = model_result_with_scope(raw, {"limit": 6})
+        timeline = returned["client_event_chronology"]
+        self.assertEqual(timeline["command_rows_with_usable_timestamps"], 1)
+        stamps = [row["source_timestamp"] for row in timeline["landmarks"]]
+        self.assertEqual(stamps, sorted(stamps))
+        off = next(row for row in timeline["landmarks"] if
+                   row["event_name"] == "switch" and row.get("reported_value") == "off")
+        cmd = next(row for row in timeline["landmarks"] if
+                   row["event_name"] == "command-off")
+        power = next(row for row in timeline["landmarks"] if
+                     row["event_name"] == "power" and row.get("reported_value") == "0")
+        self.assertLess(stamps.index(off["source_timestamp"]),
+                        stamps.index(cmd["source_timestamp"]))
+        self.assertLess(stamps.index(cmd["source_timestamp"]),
+                        stamps.index(power["source_timestamp"]))
+        self.assertFalse(timeline["can_infer_command_caused_report_from_order_alone"])
+        self.assertIn("unspecified latency", timeline["note"])
+        self.assertEqual(returned["content"], raw["content"])
+        self.assertEqual(json.dumps(raw, sort_keys=True), before)
+
+    def test_positive_command_before_report_and_offset_normalization(self):
+        rows = [
+            {"name": "operatingState", "value": "idle",
+             "date": "2026-04-15T12:00:01.000+0200"},
+            {"name": "command-setMode", "type": "command",
+             "date": "2026-04-15T10:00:00.500Z"},
+            {"name": "operatingState", "value": "active",
+             "date": "2026-04-15T09:55:00+0000"},
+        ]
+        timeline = model_result_with_scope(event_response("Fixture actuator", rows))[
+            "client_event_chronology"]
+        stamps = [row["source_timestamp"] for row in timeline["landmarks"]]
+        self.assertEqual(stamps, [
+            "2026-04-15T09:55:00+0000",
+            "2026-04-15T10:00:00.500Z",
+            "2026-04-15T12:00:01.000+0200",
+        ])
+        self.assertFalse(timeline["can_infer_command_caused_report_from_order_alone"])
+        self.assertIn("preceding command", timeline["note"])
+
+    def test_chronology_omits_bad_clocks_and_is_bounded_without_filling_gaps(self):
+        rows = []
+        for n in range(15):
+            rows.append({
+                "name": f"fixture-attribute-{n}",
+                "value": str(n), "date": f"2026-01-01T10:{n:02d}:00Z",
+            })
+        for n in range(11):
+            rows.append({
+                "name": f"command-fixture-{n}", "type": "command",
+                "date": f"2026-01-01T11:{n:02d}:00+0000",
+            })
+        rows.extend([
+            {"name": "unknown-clock", "date": "2026-01-01T12:00:00"},
+            {"name": "unknown-clock", "date": "not a timestamp"},
+            {"name": "unknown-clock", "value": "no date"},
+        ])
+        raw = event_response("Fixture", rows)
+        indexed = model_result_with_scope(raw)
+        view = indexed["client_event_chronology"]
+        self.assertEqual(view["timestamped_rows_returned"], 26)
+        self.assertEqual(view["timestamped_rows_without_usable_order"], 3)
+        self.assertEqual(view["command_rows_with_usable_timestamps"], 11)
+        self.assertEqual(view["reported_event_names_with_usable_timestamps"], 15)
+        self.assertEqual(view["command_examples_omitted"], 3)
+        self.assertEqual(view["reported_event_name_groups_omitted"], 3)
+        self.assertEqual(len(view["landmarks"]), 20)
+        self.assertFalse(view["can_infer_command_caused_report_from_order_alone"])
+
+    def test_no_chronology_when_necessary_source_roles_are_missing(self):
+        alone = event_response("Fixture", [
+            {"name": "switch", "value": "off", "date": "2026-03-01T10:00:00Z"},
+        ])
+        self.assertNotIn("client_event_chronology", model_result_with_scope(alone))
+        commands_only = event_response("Fixture", [
+            {"name": "command-off", "type": "command",
+             "date": "2026-03-01T10:00:00Z"},
+        ])
+        self.assertNotIn("client_event_chronology", model_result_with_scope(commands_only))
+        failure = {"isError": True, "content": [{"type": "text",
+                     "text": '{"events":[{"name":"command-off","type":"command","date":"2026-03-01T10:00:00Z"},{"name":"switch","date":"2026-03-01T10:00:01Z"}]}'}]}
+        self.assertIs(model_result_with_scope(failure), failure)
+
     def test_command_actor_metadata_does_not_invent_internal_causes(self):
         rows = [
             {"name": "temperature", "date": "2026-04-05T08:12:00Z",
@@ -265,6 +363,7 @@ class ScopeTests(unittest.TestCase):
         # templates that try to turn a fixed pattern into a causal conclusion.
         self.assertIn("Before stopping at a recorded command issuer", _SKILL)
         self.assertIn("A state report is not a command-origin trace", _SKILL)
+        self.assertIn("Recorded chronology is not causality", _SKILL)
         self.assertNotIn("Bedroom 1", _SKILL)
         self.assertNotIn("Hubitat event retention limits are", _SKILL)
 
@@ -311,6 +410,8 @@ class ScopeTests(unittest.TestCase):
                 self.assertEqual(tool["content"], original["content"])
                 self.assertEqual(tool["client_event_source_scope"]["events_returned"], 2)
                 self.assertEqual(tool["client_command_issuer_scope"]["command_rows_returned"], 1)
+                self.assertEqual([item["event_name"] for item in tool["client_event_chronology"]["landmarks"]], ["command-off", "power"])
+                self.assertFalse(tool["client_event_chronology"]["can_infer_command_caused_report_from_order_alone"])
                 self.assertEqual(tool["client_command_issuer_scope"]["command_examples"][0]["reported_command_issuer"]["appId"], 72)
                 self.assertFalse(tool["client_event_source_scope"]["can_infer_cause_of_missing_records"])
                 self.assertEqual(tool["client_event_source_scope"]["command_rows_in_this_response"], 1)
