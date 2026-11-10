@@ -135,9 +135,11 @@ def native_sample_time(label: str, collected_at: str, hub_timezone: str,
             candidates = [t for t in candidates
                           if timedelta(seconds=-120) <= observed - t <=
                           timedelta(days=retention_days + 2)]
-            if not candidates:
+            # DST fall-back can give two distinct UTC instants the same
+            # yearless local label. Refuse to invent which one was observed.
+            if len(set(candidates)) != 1:
                 return None
-            source = max(candidates)
+            source = candidates[0]
         else:
             source = datetime.fromisoformat(str(label).strip().replace("Z", "+00:00"))
             # An ISO timestamp without an explicit offset uses the configured hub zone.
