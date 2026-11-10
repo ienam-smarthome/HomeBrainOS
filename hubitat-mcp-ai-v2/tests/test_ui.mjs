@@ -159,6 +159,11 @@ assert.match(html,/X-Homebrain-Request/);
 
 assert(html.includes('id="incidentTimeline"'));
 assert(html.includes('id="timelineLayout"'));
+assert(html.includes('id="timelinePair"'));
+assert(html.includes('2 aligned panels · taller'));
+assert(html.includes('External memory + CPU'));
+assert(html.includes('Native memory + CPU'));
+assert(html.includes('External + native memory'));
 assert(html.includes('id="timelineCoverage"'));
 assert(html.includes('Separate · 3 aligned panels'));
 assert(html.includes('Memory overlaid · CPU separate'));
@@ -261,6 +266,47 @@ timeline.run('drawIncidentTimeline()');
 assert(timeline.el('incidentTimeline').textContent.includes('CPU load equivalent · % (right)'));
 timeline.el('timelineLayout').value='split';
 timeline.run('drawIncidentTimeline()');
+// Two tall aligned graphs show only the selected pair, not overlaid traces.
+// The height and panel bands are larger than the default 3-panel layout.
+const chartPaths=()=>timeline.el('incidentTimeline').children
+ .filter(node=>node.tagName==='PATH').map(node=>node.stroke);
+const chartHeight=()=>Number(timeline.el('incidentTimeline').viewBox.split(' ').at(-1));
+const panelHeight=kind=>timeline.run('timelineShown.panels['+
+ JSON.stringify(kind)+'].bottom - timelineShown.panels['+JSON.stringify(kind)+'].top');
+const threePanelHeight=panelHeight('memory');
+assert.equal(timeline.el('timelinePairRow').hidden,true);
+timeline.el('timelineLayout').value='tall';
+timeline.el('timelinePair').value='external-cpu';
+timeline.run('drawIncidentTimeline()');
+assert.equal(timeline.el('timelinePairRow').hidden,false);
+assert(chartHeight()>=720);
+assert(panelHeight('memory')>threePanelHeight*2);
+assert(panelHeight('cpu')>threePanelHeight*2);
+assert(timeline.run('timelineShown.panels.memory.bottom')<
+       timeline.run('timelineShown.panels.cpu.top'));
+assert(chartPaths().includes('#70b9ff')&&chartPaths().includes('#6ee7b7'));
+assert(!chartPaths().includes('#c4a1ff'));
+timeline.el('timelinePair').value='native-cpu';
+timeline.run('drawIncidentTimeline()');
+assert(chartPaths().includes('#c4a1ff')&&chartPaths().includes('#6ee7b7'));
+assert(!chartPaths().includes('#70b9ff'));
+timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:00:00Z'))");
+assert.equal(timeline.el('timelineDotmemory').visibility,'hidden');
+assert.equal(timeline.el('timelineDotcpu').visibility,'visible');
+timeline.el('timelinePair').value='external-native';
+timeline.run('drawIncidentTimeline()');
+assert(chartPaths().includes('#70b9ff')&&chartPaths().includes('#c4a1ff'));
+assert(!chartPaths().includes('#6ee7b7'));
+assert(timeline.run('timelineShown.panels.memory.bottom')<
+       timeline.run('timelineShown.panels.nativeMemory.top'));
+assert.equal(timeline.el('timelineDotcpu').visibility,'hidden');
+timeline.run("window.location={origin:'http://127.0.0.1:8789',pathname:'/ingress/homebrain',search:''}");
+let tallUrl=timeline.run("graphPageUrl('timeline').href");
+assert(tallUrl.includes('layout=tall'));
+assert(tallUrl.includes('pair=external-native'));
+timeline.el('timelineLayout').value='split';
+timeline.run('drawIncidentTimeline()');
+assert.equal(timeline.el('timelinePairRow').hidden,true);
 // Overnight date+time labels must have enough actual logical SVG space,
 // rather than being counted from CSS pixels and placed into an 860-unit plot.
 timeline.run("timelineData.range_start='2026-11-07T06:00:00Z'; drawIncidentTimeline()");
