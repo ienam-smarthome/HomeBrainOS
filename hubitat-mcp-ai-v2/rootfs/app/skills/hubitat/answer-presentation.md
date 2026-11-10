@@ -7,8 +7,8 @@ Do not rewrite or convert tool arguments, returned receipts, Technical JSON,
 debug logs, source query bounds or quoted code/data examples.
 
 In **natural-language answers intended for the user**, prefer a readable,
-unambiguous UK date with 24-hour time: for example, **10 Nov 2026,
-08:10:10.107 GMT** rather than `2026-11-10T08:10:10.107+0000`.
+unambiguous UK date with 24-hour time: for example, **18 Feb 2026,
+14:05:06.123 GMT** rather than `2026-02-18T14:05:06.123+0000`.
 Interpret *explicitly offset-aware* timestamps in `Europe/London` and
 show **GMT** in winter or **BST** in summer, respecting UK daylight saving.
 A source stamp such as `2026-07-10T08:10:10+0000` should display as
