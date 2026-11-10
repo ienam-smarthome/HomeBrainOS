@@ -358,6 +358,7 @@ class ExternalHubDiagnostics:
         self._last_good: str | None = None
         self._pending_failure_start: str | None = None
         self._native: dict[str, Any] = {}
+        self._native_seen_labels: set[str] = set()
         self._native_last_attempt: float = -1e12
         self._events_last_attempt: float = -1e12
         self._last_prune_at: float = 0
@@ -404,6 +405,14 @@ class ExternalHubDiagnostics:
                     "SELECT MAX(recorded_at) FROM samples WHERE reachable=1"
                 ).fetchone()[0]
             self._prune(db)
+            # Native CSV may return thousands of already saved records on every
+            # five-minute fetch. Keep only label keys in memory to avoid
+            # repeatedly writing the entire historical CSV back to SQLite.
+            self._native_seen_labels = {
+                str(row[0]) for row in db.execute(
+                    "SELECT native_sample_label FROM native_samples"
+                )
+            }
             self._last_prune_at = time.monotonic()
             if db.execute("SELECT 1 FROM incidents WHERE recovered_at IS NULL "
                           "AND kind='hub-unreachable' LIMIT 1").fetchone():
@@ -428,6 +437,7 @@ class ExternalHubDiagnostics:
                   "error_kind", "native_sample_label", "native_load5", "native_free_os_mb",
                   "java_total_mb", "java_free_mb", "java_direct_mb",
                   "java_allocated_heap_used_pct")
+        new_native_labels: set[str] = set()
         with self._connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO samples (" + ",".join(fields) + ") VALUES (" +
@@ -435,14 +445,18 @@ class ExternalHubDiagnostics:
                 tuple(row.get(k) for k in fields),
             )
             for native in native_samples:
+                label = native["native_sample_label"]
+                if label in self._native_seen_labels or label in new_native_labels:
+                    continue
                 db.execute(
                     "INSERT OR IGNORE INTO native_samples "
                     "(native_sample_label,recorded_at,collected_at,native_free_os_mb,native_load5,timestamp_basis) "
                     "VALUES (?,?,?,?,?,?)",
-                    (native["native_sample_label"], native["recorded_at"],
+                    (label, native["recorded_at"],
                      native["collected_at"], native["native_free_os_mb"],
                      native["native_load5"], native["timestamp_basis"]),
                 )
+                new_native_labels.add(label)
             if opened:
                 existing = db.execute(
                     "SELECT id FROM incidents WHERE recovered_at IS NULL "
@@ -468,6 +482,8 @@ class ExternalHubDiagnostics:
                 )
             if prune:
                 self._prune(db)
+        # Update the in-memory cache only AFTER the SQLite transaction commits.
+        self._native_seen_labels.update(new_native_labels)
 
     async def _poll(self, client: httpx.AsyncClient) -> None:
         row: dict[str, Any] = {
