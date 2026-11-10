@@ -4,6 +4,8 @@ Synthetic records. No live hub or network access.
 """
 import importlib.util
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from tempfile import TemporaryDirectory
 from pathlib import Path
 import unittest
 
@@ -133,6 +135,93 @@ class NativeSeriesTests(unittest.TestCase):
         self.assertEqual(max(r["native_load5"] for r in result["samples"]), 2.4)
         self.assertEqual(len({r["native_sample_label"] for r in result["samples"]}),
                          len(result["samples"]))
+
+
+    def test_native_csv_recovers_peak_between_polls_using_original_hub_labels(self):
+        observed = "2026-11-09T22:26:53+00:00"
+        csv = (
+            "11-09 22:15:10,870400,0.6,262144,131072\n"
+            "11-09 22:20:10,1303347,0.8,262144,131072\n"
+            "11-09 22:20:10,1303347,0.8,262144,131072\n"  # same source
+            "11-09 22:25:10,945152,4.8,262144,131072\n"
+        )
+        rows = _module.parse_native_history(
+            csv, collected_at=observed, hub_timezone="Europe/London",
+            retention_days=30,
+        )
+        self.assertEqual(len(rows), 3)
+        peak = max(rows, key=lambda r: r["native_free_os_mb"])
+        self.assertEqual(peak["native_free_os_mb"], 1272.8)
+        self.assertEqual(peak["recorded_at"], "2026-11-09T22:20:10.000+00:00")
+        self.assertEqual(peak["collected_at"], observed)
+        self.assertEqual(peak["native_sample_label"], "11-09 22:20:10")
+        self.assertEqual(peak["timestamp_basis"], "native_label_hub_timezone")
+
+    def test_native_time_requires_valid_timezone_and_nonfuture_source(self):
+        observed = "2026-11-09T22:26:53+00:00"
+        self.assertIsNone(_module.native_sample_time(
+            "11-09 22:20:10", observed, "Invalid/Timezone", 30))
+        self.assertIsNone(_module.native_sample_time(
+            "11-09 23:59:10", observed, "Europe/London", 30))
+        self.assertEqual(_module.native_sample_time(
+            "11-09 22:20:10", observed, "Europe/London", 30),
+            "2026-11-09T22:20:10.000+00:00")
+        # Summer hub-local time is NOT UTC.
+        self.assertEqual(_module.native_sample_time(
+            "07-01 21:20:10", "2026-07-01T21:26:53+00:00",
+            "Europe/London", 30),
+            "2026-07-01T20:20:10.000+00:00")
+
+    def test_native_peak_persists_separately_and_timeline_retains_source_time(self):
+        now = datetime.now(timezone.utc)
+        zone = ZoneInfo("Europe/London")
+        source_times = [now - timedelta(minutes=11),
+                        now - timedelta(minutes=6),
+                        now - timedelta(minutes=1)]
+        lines = [
+            f"{t.astimezone(zone):%m-%d %H:%M:%S},{free},0.8,262144,131072"
+            for t, free in zip(source_times, (870400, 1303347, 945152))
+        ]
+        captured = stamp(now)
+        native = _module.parse_native_history(
+            "\n".join(lines), collected_at=captured,
+            hub_timezone="Europe/London", retention_days=30,
+        )
+        self.assertEqual(len(native), 3)
+        with TemporaryDirectory() as folder:
+            recorder = _module.ExternalHubDiagnostics(
+                enabled=True, hub_url="http://192.168.1.239",
+                path=Path(folder) / "diagnostics.sqlite3",
+                hub_timezone="Europe/London",
+            )
+            recorder._initialize()
+            recorder._save(
+                {"recorded_at":captured, "reachable":1, "free_os_mb":230.0},
+                opened=None, recovered=False, native_samples=native,
+            )
+            recorder._save(
+                {"recorded_at":stamp(now + timedelta(milliseconds=1)),
+                 "reachable":0, "free_os_mb":None},
+                opened=stamp(now), recovered=False,
+            )
+            timeline = recorder.timeline(1)
+            external = timeline["metrics"]["free_os_mb"]["samples"]
+            rows = timeline["metrics"]["native_free_os_mb"]["samples"]
+            self.assertTrue(any(r["free_os_mb"] == 230.0 for r in external))
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(max(r["native_free_os_mb"] for r in rows), 1272.8)
+            self.assertEqual(timeline["metrics"]["native_free_os_mb"]["timestamp_basis"],
+                             "native_label_hub_timezone")
+            self.assertTrue(all(r["collected_at"] == captured for r in rows))
+            self.assertEqual(len(timeline["metrics"]["native_load_pct"]["samples"]), 3)
+            self.assertEqual(recorder.history(1, "native_free_os_mb")["observed_metric_points"], 3)
+            # Replay the same CSV after restart/reconnect: no duplicate history.
+            recorder._save(
+                {"recorded_at":stamp(now + timedelta(milliseconds=2)),
+                 "reachable":1, "free_os_mb":940.0},
+                opened=None, recovered=True, native_samples=native,
+            )
+            self.assertEqual(len(recorder.timeline(1)["metrics"]["native_free_os_mb"]["samples"]), 3)
 
 
 if __name__ == "__main__":
