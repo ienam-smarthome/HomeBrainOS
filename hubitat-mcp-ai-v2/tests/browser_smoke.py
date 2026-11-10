@@ -233,6 +233,31 @@ with sync_playwright() as p:
   assert page.evaluate("window.injected===undefined")
   assert page.locator("#rawAnswer").text_content()==answer
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  # Speak/read-aloud controls stay compact and do not alter private answer receipts.
+  assert page.locator("#speak").is_visible()
+  assert page.locator("#readAnswer").is_enabled()
+  assert page.locator("#readAnswers").is_visible()
+  assert page.locator("#voiceStatus").get_attribute("role")=="status"
+  page.evaluate("""() => {
+    window.__spoken=[];
+    window.__audioStops=0;
+    window.SpeechSynthesisUtterance=class {
+      constructor(text){this.text=text;this.lang='';this.onstart=null;this.onend=null;}
+    };
+    Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{
+      getVoices:()=>[],
+      cancel:()=>{window.__audioStops+=1;},
+      speak:utterance=>{window.__spoken.push(utterance.text);utterance.onstart?.();}
+    }});
+  }""")
+  page.locator("#readAnswer").click()
+  assert page.locator("#readAnswer").inner_text()=="■ Stop audio"
+  assert "Desk lamp" in page.evaluate("window.__spoken[0]")
+  assert "window.injected" not in page.evaluate("window.__spoken[0]")
+  page.locator("#readAnswer").click()
+  assert page.locator("#readAnswer").inner_text()=="🔊 Read answer"
+  assert page.evaluate("window.__audioStops")>=1
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   # Ensure the feedback is visible at the clicked action on desktop and phone,
   # and the exact original text is written (not rendered/rewritten HTML).
   page.evaluate("""() => {
@@ -285,6 +310,39 @@ with sync_playwright() as p:
   assert requests[-1]["history"]==[]
   assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
   assert resets==[requests[-2]["conversation_id"]]
+  # Browser microphone recognizer: auto-submit exactly one final transcript.
+  page.evaluate("""() => {
+    window.__recognizers=[];
+    window.SpeechRecognition=class {
+      start(){window.__recognizers.push(this);}
+      abort(){this.onend?.();}
+    };
+    window.webkitSpeechRecognition=undefined;
+  }""")
+  before_voice=len(requests)
+  page.locator("#speak").click()
+  assert page.locator("#speak").get_attribute("aria-pressed")=="true"
+  page.evaluate("""() => {
+    const recognizer=window.__recognizers.at(-1);
+    const row=[{transcript:'How is the hallway temperature?'}];row.isFinal=true;
+    recognizer.onresult({results:[row]});
+    recognizer.onend();
+  }""")
+  page.wait_for_function("turns.length===2")
+  assert len(requests)==before_voice+1
+  assert requests[-1]["question"]=="How is the hallway temperature?"
+  assert page.locator("#question").input_value()==requests[-1]["question"]
+  assert page.locator("#speak").get_attribute("aria-pressed")=="false"
+  # Stop listening cancels; it must not send a partial or phantom question.
+  before_cancel=len(requests)
+  page.locator("#speak").click()
+  page.locator("#speak").click()
+  assert len(requests)==before_cancel
+  assert "cancelled" in page.locator("#voiceStatus").inner_text().lower()
+  page.evaluate("window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined")
+  page.locator("#speak").click()
+  assert "not supported" in page.locator("#voiceStatus").inner_text()
+  assert len(requests)==before_cancel
   page.locator("#diagnosticsTab").click()
   page.wait_for_function("document.querySelector('#source').textContent.startsWith('online')")
   page.locator("#incidentTimeline path").first.wait_for()
