@@ -1,6 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.34**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.35**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.35 — two taller source-specific incident panels (10 Nov 2026)
+
+- In **Hub Diagnostics → Unified incident timeline → Memory + CPU layout**, choose **2 aligned panels · taller** to allocate approximately **720px chart height on the dashboard** (versus 540px for the three-panel layout), and at least **780px** in the full-page popout. The two plots share the same time axis but have separate Y scales; no automatic interpolation or extra source polling.
+- The adjacent **Show two** selector offers **External memory + CPU**, **Native memory + CPU**, or **External + native memory**, so neither memory source needs to be overlaid. The default remains **Separate · 3 aligned panels**, with the previous combined and overlay modes retained.
+- Show only the two chosen plot traces and selected-point markers; retain all underlying source records and read-only inspection details regardless of which pair is visible. Source gaps remain unknown, not zero.
+- Preserve the layout and pair choice when opening a full-page popout, including selected timestamp and zoom interval. Keyboard inspection and desktop/mobile zoom use the existing code paths.
+- Add synthetic UI and Chromium desktop/mobile acceptance checks for each pair, independent geometry, full-page option restoration and unchanged source evidence. No Hubitat or Home Assistant writes; no database migration.
 
 ## Alpha.34 — source coverage repair and timeline readability (10 Nov 2026)
 
