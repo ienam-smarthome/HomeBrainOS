@@ -186,6 +186,14 @@ class AgentContractTests(unittest.TestCase):
         finally:
             asyncio.run(agent.close())
 
+    def test_cpu_load_interpretation_keeps_existing_uninitialised_subclasses_safe(self):
+        # Lab/experimental agents may override __init__ without calling super().
+        class LabAgent(Agent):
+            def __init__(self):
+                pass
+        original = {"content": [{"type": "text", "text": '{"state":"off"}'}]}
+        self.assertEqual(LabAgent().present_native_result(original, {}), original)
+
     def test_cpu_load_equivalent_does_not_invent_missing_or_invalid_values(self):
         self.assertIsNone(cpu_load_context({"content": [
             {"type": "text", "text": '{"entries":[{"cpuLoad5min":"nan"},'
