@@ -21,7 +21,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
                      "skills" / "hubitat" / "causal-investigations.md").read_text()
         self.assertIn(reference.strip(), _SKILL)
         self.assertIn("T-D", _SKILL)
-        self.assertIn("configuration at the historical event time", _SKILL)
+        self.assertIn("settings at the historical event time", _SKILL)
         self.assertIn("does not explain a later short timer", _SKILL)
         self.assertIn("source timestamp and time zone", _SKILL)
         self.assertIn("only plausible cause", _SKILL)
