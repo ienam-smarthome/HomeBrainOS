@@ -1036,7 +1036,7 @@ function drawIncidentTimeline(){
  yGrid(cpuScale,'cpu',combined);
  text('text',{x:plot.left,y:17,fill:'#93c5fd','font-size':12},
   combined?'OS memory (left · MB) / 5m CPU equivalent (right · %)':
-  'OS memory · MB (external probes; independent scale)');
+  'OS memory · MB (external probes + native 5m; independent scale)');
  if(!combined)text('text',{x:plot.left,y:plot.cpuTop-11,fill:'#86efac','font-size':12},
   '5m CPU load equivalent · % (native; independent scale)');
  const incidents=(timelineData.incidents||[]).filter(v=>v&&v.kind==='hub-unreachable');
