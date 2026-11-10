@@ -233,12 +233,13 @@ timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:03:00Z'))");
 assert(timeline.el('timelineReadout').textContent.includes('Native 5m OS memory'));
 assert(timeline.el('timelineReadout').textContent.includes('1,272.8 MB'));
 assert(timeline.el('timelineReadout').textContent.includes('native_label_hub_timezone'));
-timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:35:00Z'))");
-assert(timeline.el('timelineReadout').textContent.includes('no reading within 3 minutes'));
 
 timeline.run('inspectTimelineSelection()');
 assert(timeline.el('timelineEvidence').textContent.includes('native_memory_reading'));
 assert(timeline.el('timelineEvidence').textContent.includes('11-08 12:03:00'));
+timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:35:00Z'))");
+assert(timeline.el('timelineReadout').textContent.includes('no reading within 3 minutes'));
+
 
 assert(timeline.el('timelineMeta').textContent.includes('Time axis fitted'));
 assert(timeline.el('timelineEvents').textContent.includes('Confirmed startup'));
