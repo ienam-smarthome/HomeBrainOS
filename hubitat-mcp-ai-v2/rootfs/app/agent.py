@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 import time
 from pathlib import Path
 from copy import deepcopy
@@ -185,6 +186,66 @@ def model_tools(
                          "parameters": schema},
         })
     return rendered
+
+
+
+def live_contract_error_context(
+    catalog: list[dict], tool_name: str, error: str,
+    leaf_definition: dict | None = None, leaf_name: str = "",
+) -> dict | None:
+    """Expose *only* server-advertised schema metadata for a local rejection.
+
+    The model selects any subsequent call. No MCP call or retry is made here.
+    The original catalog, source receipts and request arguments are untouched.
+    """
+    declaration = next((item for item in catalog
+                        if isinstance(item, dict) and item.get("name") == tool_name), None)
+    if declaration is None:
+        return None
+    is_leaf = bool(leaf_name and isinstance(leaf_definition, dict)
+                   and error.startswith("Leaf arguments violate their live input schema"))
+    source = leaf_definition if is_leaf else declaration
+    schema = source.get("inputSchema") if isinstance(source, dict) else None
+    if not isinstance(schema, (dict, bool)):
+        return None
+    safe = redact({"inputSchema": schema})["inputSchema"]
+    if not isinstance(safe, dict):
+        return {"tool": tool_name, "schema_scope": "leaf" if is_leaf else "direct",
+                "leaf": leaf_name if is_leaf else None, "inputSchema": safe}
+    # Some server catalogs expose very large nested contract descriptions.
+    # Show the field implicated by the validator and a concise truthful
+    # excerpt, rather than injecting a huge or syntactically truncated JSON.
+    if len(json.dumps(safe, ensure_ascii=False, default=str)) > 5500:
+        path = re.search(r" at ([^ ]+) \((?:type|required|enum|additionalProperties|"
+                         r"minimum|maximum|pattern|format|oneOf|anyOf|const|"
+                         r"minLength|maxLength)[)]", error)
+        focus = path.group(1).split("/")[-1] if path else ""
+        props = safe.get("properties")
+        selected = {}
+        if isinstance(props, dict):
+            names = ([focus] if focus in props else []) + [
+                key for key in props if key != focus
+            ]
+            for key in names:
+                value = props[key]
+                selected[key] = value
+                if len(json.dumps(selected, ensure_ascii=False, default=str)) > 3200:
+                    selected.pop(key)
+                    break
+        safe = {
+            "type": safe.get("type", "object"),
+            "properties": selected,
+            "required": safe.get("required", []),
+            "additionalProperties": safe.get("additionalProperties", True),
+            "_excerpt": ("Partial server-advertised schema: consult the live "
+                         "catalog for omitted conditional/other fields."),
+        }
+    return {
+        "tool": tool_name,
+        "schema_scope": "leaf" if is_leaf else "direct",
+        **({"leaf": leaf_name} if is_leaf else {}),
+        "inputSchema": safe,
+    }
 
 
 def arguments_of(call: dict) -> dict:
@@ -415,6 +476,7 @@ class Agent:
                 name = str(function.get("name") or "")
                 args = arguments_of(call) if isinstance(call, dict) else {}
                 started_call = time.monotonic()
+                leaf_def = None  # For error receipts; never authorizes execution.
                 try:
                     if deadline - time.monotonic() <= 0:
                         raise MCPError("Request deadline reached before this operation")
@@ -505,7 +567,22 @@ class Agent:
                     if isinstance(exc, MCPContractError):
                         record["result_kind"] = "contract_error"
                         record["operation_executed"] = False
-                        error_payload.update({"result_kind": "contract_error", "operation_executed": False})
+                        error_payload.update({
+                            "result_kind": "contract_error",
+                            "operation_executed": False,
+                            "note": ("The rejected argument contract prevented this "
+                                     "MCP operation from executing. If a read is "
+                                     "still relevant, the model may choose a "
+                                     "corrected call based on the live schema. "
+                                     "Never blindly retry writes, failed/uncertain "
+                                     "executions or user-declined operations."),
+                        })
+                        contract = live_contract_error_context(
+                            catalog, name, str(exc), leaf_def,
+                            args.get("tool", "") if isinstance(args.get("tool"), str) else "",
+                        )
+                        if contract is not None:
+                            error_payload["live_input_contract"] = contract
                     content = json.dumps(error_payload)
                 # Preserve exactly the bounded, redacted source view sent to the model.
                 record["response"] = content
