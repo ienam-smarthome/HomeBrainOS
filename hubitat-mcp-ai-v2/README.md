@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.27**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.28**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
