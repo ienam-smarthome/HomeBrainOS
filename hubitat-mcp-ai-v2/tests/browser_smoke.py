@@ -635,7 +635,11 @@ with sync_playwright() as p:
   # separate A/B scoring and report that is not prematurely unblinded.
   page.locator("#reasoningTab").click()
   assert page.locator("#reasoning").is_visible()
+  # Case options load before the separate asynchronous detail fetch completes.
+  # Wait for the genuine fictional question, then test the same XSS contract.
   page.wait_for_function("document.querySelector('#reasoningSelect').value === 'hold-01'")
+  page.wait_for_function(
+   "document.querySelector('#reasoningQuestion').textContent.includes('<script>window.injected=true</script>')")
   assert "<script>window.injected=true</script>" in page.locator("#reasoningQuestion").inner_text()
   assert page.locator("#reasoningQuestion script").count()==0
   page.locator("#reasoningRun").click()
