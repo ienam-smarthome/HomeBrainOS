@@ -1139,6 +1139,7 @@ function drawIncidentTimeline(){
  timelineShown=timelineWindow(timelineData);
  showZoomStatus();
  if(!timelineShown){
+  byId('timelineCoverage').textContent='No saved native observations in this requested interval; unknown is not zero.';
   svg.append(svgNode('text',{x:75,y:100,fill:'#cbd5e1','font-size':15},'No saved recorder history available'));
   byId('timelineMeta').textContent='No recorded interval available. Unknown is not zero.';
   byId('timelineReadout').textContent='Waiting for saved recorder measurements.';
@@ -1267,26 +1268,32 @@ function drawIncidentTimeline(){
    ' · does not establish a hub reboot'));svg.append(band);
  }
  const drawTrace=(rows,key,kind,color,downsampled=false)=>{
-  let path='',prev=null;
+  let path='',prev=null,runLength=0,runStart=null;
+  const isolated=row=>{
+   const at=Date.parse(row.recorded_at);
+   const circle=svgNode('circle',{cx:x(at),cy:yFor(kind,row[key]),r:3,
+    fill:color,stroke:'#101b2b','stroke-width':1,'data-role':'isolated-source-sample'});
+   circle.append(svgNode('title',{},'Single observed sample, not an interpolated line · '+
+    diagTime(at)+' · '+diagValue(row[key],key)));
+   svg.append(circle);
+  };
   for(const row of rows){
    const t=Date.parse(row.recorded_at);
    if(t<start||t>end)continue;
-   const gap=diagnosticTraceGap(prev,row,kind!=='memory',timelineData.probe_seconds,downsampled);
-   const command=(path&&!gap?' L':' M')+x(t).toFixed(2)+' '+yFor(kind,row[key]).toFixed(2);
-   path+=command;prev=row;
+   const gap=diagnosticTraceGap(prev,row,kind!=='memory',
+    timelineData.probe_seconds,downsampled);
+   if(gap&&runLength===1)isolated(runStart);
+   if(gap||!runLength){runLength=0;runStart=row;}
+   path+=(path&&!gap?' L':' M')+x(t).toFixed(2)+' '+yFor(kind,row[key]).toFixed(2);
+   runLength++;prev=row;
   }
   if(path)svg.append(svgNode('path',{d:path.trim(),fill:'none',stroke:color,
    'stroke-width':2.25,'stroke-linejoin':'round','stroke-linecap':'round'}));
-  if(rows.length<=55)for(const row of rows){
-   const t=Date.parse(row.recorded_at);if(t<start||t>end)continue;
-   const dot=svgNode('circle',{cx:x(t),cy:yFor(kind,row[key]),r:2.3,fill:color});
-   dot.append(svgNode('title',{},diagTime(t)+' · '+diagValue(row[key],key)+
-    (kind!=='memory'?' · native source '+String(row.native_sample_label||'unknown')+
-     (row.collected_at?' · collected '+diagTime(Date.parse(row.collected_at)):''):
-     ' · external probe')));
-   svg.append(dot);
-  }
+  if(runLength===1)isolated(runStart);
+  // No unconditional circles at every native 5m sample or at extrema.
+  // Only true singleton points and the active inspection cursor are marked.
  };
+
  drawTrace(mem,'free_os_mb','memory','#70b9ff',!!memMetric.downsampled);
  drawTrace(nativeMem,'native_free_os_mb','nativeMemory','#c4a1ff',!!nativeMemMetric.downsampled);
  drawTrace(cpu,'native_load_pct','cpu','#6ee7b7',!!cpuMetric.downsampled);
@@ -1320,15 +1327,6 @@ function drawIncidentTimeline(){
  if(maxCpu)events.push({t:Date.parse(maxCpu.recorded_at),kind:'Highest observed 5m CPU load',
   detail:diagValue(maxCpu.native_load_pct,'native_load_pct')+' · native source '+
    String(maxCpu.native_sample_label||'unknown')+'; derived load, not measured utilisation'});
- for(const [row,key,kind,color] of [
-  [minMem,'free_os_mb','memory','#70b9ff'],
-  [maxNativeMem,'native_free_os_mb','nativeMemory','#c4a1ff'],
-  [maxCpu,'native_load_pct','cpu','#6ee7b7']]){
-  if(!row)continue;
-  const t=Date.parse(row.recorded_at);
-  svg.append(svgNode('circle',{cx:x(t),cy:yFor(kind,row[key]),r:4.3,fill:color,
-   stroke:'#f2f7fe','stroke-width':1.4}));
- }
  svg.append(svgNode('line',{id:'timelineCursor',x1:0,x2:0,y1:plot.top,y2:plot.cpuBottom,
   stroke:'#f1f5ff','stroke-width':1.5,'stroke-dasharray':'2 4',
   visibility:'hidden','pointer-events':'none'}));
@@ -1396,7 +1394,8 @@ function selectTimelineTime(when){
   ['nativeMemory','native_free_os_mb','Native 5m OS memory','hub-local source label'],
   ['cpu','native_load_pct','5m CPU equivalent','native source']]){
   const row=nearestDiagnosticRow(timelineSeries[kind],at);
-  const near=row&&Math.abs(x(Date.parse(row.recorded_at))-xx)<=26;
+  const tolerance=kind==='memory'?Math.max(60000,(Number(timelineData.probe_seconds)||30)*1500):180000;
+  const near=row&&Math.abs(Date.parse(row.recorded_at)-at)<=tolerance;
   const dot=byId('timelineDot'+kind);
   if(dot)dot.setAttribute('visibility',near?'visible':'hidden');
   if(near){
@@ -1407,7 +1406,9 @@ function selectTimelineTime(when){
     ' ('+basis+(kind!=='memory'?', label '+String(row.native_sample_label||'unknown')+
     ', timestamp basis '+String(row.timestamp_basis||'legacy_collector_reception')+
     (row.collected_at?', fetched '+diagTime(Date.parse(row.collected_at)):''):'')+')');
-  }else evidence.push(label+': no nearby reading (not zero)');
+  }else evidence.push(label+': no reading within '+
+   (kind==='memory'?'probe tolerance':'3 minutes')+' (not zero)'+
+   (row?' · nearest observed '+diagTime(Date.parse(row.recorded_at)):' · none in displayed range'));
  }
  byId('timelineReadout').textContent=evidence.join(' · ')+' · These readings do not establish a cause.';
  byId('timelineInspect').disabled=false;byId('timelineAsk').disabled=false;
