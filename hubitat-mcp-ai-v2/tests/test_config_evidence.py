@@ -209,6 +209,8 @@ class ConfigSourceMapTests(unittest.TestCase):
             async def call(self, name, args):
                 raise AssertionError("Unexpected read/action")
         class Direct(Agent):
+            def __init__(self):
+                pass  # A synthetic fixed-response model has no API client.
             async def round(self, messages, tools, remaining):
                 return {"content": ("The fictional execution trace records the "
                         "trigger callback and command, so that recorded cause is verified.")}
