@@ -153,6 +153,23 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 #question{height:82px;min-height:76px}
 .live-review-note{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0}
 @media(max-width:690px){.lab-menu{width:100%;margin-left:0}.lab-buttons button{flex:1 1 42%}}
+
+/* V1-compatible voice controls, without a persistent microphone or voice transcript. */
+.voice-controls{margin:9px 0 6px;gap:9px;align-items:center}
+.voice-controls button{min-height:42px;white-space:nowrap}
+#speak.listening{background:#b91c1c;color:#fff}
+.voice-toggle{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer}
+.voice-toggle input{accent-color:var(--blue);width:18px;height:18px;cursor:pointer}
+.voice-status{flex:1 1 240px;font-size:12px;color:var(--muted);line-height:1.4}
+#readAnswer{min-height:38px}
+@media(max-width:600px){
+ .voice-controls{align-items:stretch}
+ .voice-controls button{flex:0 0 auto}
+ .voice-controls .voice-toggle{flex:1 1 auto}
+ .voice-status{flex-basis:100%}
+ #ask .card>.row:has(#copyAnswer){gap:6px}
+ #ask .card>.row:has(#copyAnswer) button{font-size:12px}
+}
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
@@ -161,6 +178,11 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><details class="session-note"><summary>Conversation and evidence details</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
+<div class="row voice-controls" role="group" aria-label="Voice controls">
+ <button id="speak" type="button" onclick="startVoice()" aria-pressed="false">🎤 Speak</button>
+ <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
+ <span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Voice input needs browser microphone support. Speech recognition may use an online browser service.</span>
+</div>
 <div class="row"><small class="muted">Ask naturally. The assistant chooses tools from your connected Hubitat server.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
 </div>
 <details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details><div class="card" id="activityCard" hidden><h2>Current operation</h2><pre id="activity"></pre>
@@ -168,7 +190,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
 <button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
 <div class="card">
-<div class="row"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
+<div class="row"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
 <p id="requestSummary" role="status" aria-live="polite">No request yet.</p><p id="requestQuestion" hidden></p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p>
 <div id="answer" class="muted">Your response will appear here.</div>
 <details><summary>Technical details / Tool receipts</summary>
@@ -440,12 +462,13 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.31";
+const UI_VERSION="2.0.0-alpha.32";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
+let ttsInfo={enabled:false};
 function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning','prospective']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();if(which==='prospective')prospectiveRefresh();if(which==='ask'||which==='diagnostics')byId('labMenu').open=false;}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
@@ -461,6 +484,7 @@ async function loadStatus(){
   }
   byId('reloadUI').hidden=true;
   configuredModel=d.model;
+  ttsInfo=d.tts||{enabled:false};
   byId('state').textContent=d.version+' · '+(d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model'));
   return true;
  }catch(e){byId('state').textContent=String(e.message);return false;}
@@ -507,9 +531,11 @@ function resetCopyFeedback(){
  status.classList.remove('copy-status-error');
 }
 function clearResult(){
+ stopAudio();
  resetCopyFeedback();
  lastAnswer=null;technicalDetails=null;configuredModel=null;
  byId('copyAnswer').disabled=true;byId('copyReview').disabled=true;byId('copyTechnical').disabled=true;
+ byId('readAnswer').disabled=true;
  byId('responseTime').textContent='Response time: —';
  byId('receipts').textContent='No tool calls yet.';
  byId('downloadTechnical').disabled=true;
@@ -535,6 +561,7 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
   'Response time: '+(clientMs/1000).toFixed(1)+' s';
  byId('responseTime').title='Total browser elapsed time, including network and queueing. Server elapsed time is retained in technical details when returned.';
  byId('copyAnswer').disabled=false;byId('copyReview').disabled=false;byId('copyTechnical').disabled=false;
+ byId('readAnswer').disabled=false;
 }
 async function copyText(text){
  if(navigator.clipboard?.writeText){
@@ -594,11 +621,146 @@ async function submitAsk(){
  try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({request_id:activeRequest,conversation_id:conversationId,question:q,history:messages.slice(-12)})});
   showResult(q,d.answer||'No answer returned.',d,performance.now()-started);
   messages.push({role:'user',content:q},{role:'assistant',content:d.answer||''});
+  if(d.success&&readAnswers&&d.answer)void speakAnswer(d.answer);
  }catch(e){
   showResult(q,'Request failed: '+e.message,null,performance.now()-started,{type:'transport',message:e.message});
  }
  finally{clearInterval(activityTimer);clearInterval(responseTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;send.disabled=false;byId('newConversation').disabled=false;}
 }
+
+// V1 Speak and answer playback, isolated from agent/MCP tool semantics.
+// Recognition can be unavailable (for example, Firefox). Never start
+// microphone capture except from a direct user click.
+let activeRecognition=null, audioUtterance=null, nativeSpeechActive=false;
+let audioGeneration=0, readAnswers=false;
+try{readAnswers=localStorage.getItem('homebrain_v2_read_answers')==='true'}catch{}
+byId('readAnswers').checked=readAnswers;
+function voiceMessage(message){byId('voiceStatus').textContent=message;}
+function toggleAutoRead(enabled){
+ readAnswers=!!enabled;
+ try{localStorage.setItem('homebrain_v2_read_answers',String(readAnswers))}catch{}
+ if(!readAnswers)stopAudio();
+ voiceMessage(readAnswers?'Replies will be read aloud when playback is allowed.':'Read-aloud is off; you can still select Read answer.');
+}
+function stopVoice(){
+ const previous=activeRecognition;
+ activeRecognition=null;
+ byId('speak').textContent='🎤 Speak';byId('speak').classList.remove('listening');
+ byId('speak').setAttribute('aria-pressed','false');
+ if(previous){try{previous.abort()}catch{}}
+}
+function startVoice(){
+ if(activeRecognition){stopVoice();voiceMessage('Voice capture cancelled; nothing submitted.');return;}
+ if(byId('send').disabled){voiceMessage('Finish the current request before speaking.');return;}
+ stopAudio();
+ const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!Recognition){
+  voiceMessage('Speech recognition is not supported in this browser. Use Chrome or Edge for Speak, or type your question.');return;
+ }
+ const recognition=new Recognition();let transcript='',cancelled=false;
+ activeRecognition=recognition;
+ recognition.lang='en-GB';recognition.continuous=false;
+ recognition.interimResults=false;recognition.maxAlternatives=1;
+ recognition.onresult=event=>{
+  if(activeRecognition!==recognition)return;
+  for(const row of Array.from(event.results||[])){
+   if(row.isFinal!==false&&row[0]&&typeof row[0].transcript==='string')transcript=row[0].transcript.trim();
+  }
+  if(transcript){byId('question').value=transcript;voiceMessage('Heard: '+transcript);}
+ };
+ recognition.onerror=event=>{
+  if(activeRecognition!==recognition)return;
+  cancelled=true;
+  const error=String(event.error||'unknown');
+  voiceMessage(error==='not-allowed'||error==='service-not-allowed'?
+   'Microphone or speech-service permission denied. Allow microphone access, or type your question.':
+   'Speech recognition stopped: '+error+'. You can type your question.');
+ };
+ recognition.onend=()=>{
+  if(activeRecognition!==recognition)return;
+  activeRecognition=null;byId('speak').textContent='🎤 Speak';
+  byId('speak').classList.remove('listening');byId('speak').setAttribute('aria-pressed','false');
+  if(!cancelled&&transcript&&!byId('send').disabled){voiceMessage('Submitting spoken question…');void submitAsk();}
+  else if(!cancelled&&!transcript)voiceMessage('No speech recognised. Try again or type your question.');
+ };
+ try{
+  recognition.start();byId('speak').textContent='■ Stop listening';
+  byId('speak').classList.add('listening');byId('speak').setAttribute('aria-pressed','true');
+  voiceMessage('Listening… tap Stop listening to cancel without submitting.');
+ }catch(error){stopVoice();voiceMessage('Unable to start microphone: '+(error.message||error));}
+}
+function spokenAnswerText(value){
+ return String(value||'').replace(/\x60{3}[\s\S]*?\x60{3}/g,' ')
+  .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+  .replace(/^\s*#{1,6}\s*/gm,'').replace(/^\s*[-*+]\s+/gm,'')
+  .replace(/\bCPU\b/g,'C P U').replace(/(\d+(?:\.\d+)?)\s*%/g,'$1 percent')
+  .replace(/[*_\x60|]/g,' ').replace(/→/g,' to ').replace(/\s+/g,' ').trim();
+}
+function audioButtonIdle(){byId('readAnswer').textContent='🔊 Read answer';}
+function stopAudio(){
+ const hadNative=nativeSpeechActive;
+ audioGeneration++;nativeSpeechActive=false;
+ if('speechSynthesis' in window){try{window.speechSynthesis.cancel()}catch{}}
+ audioUtterance=null;audioButtonIdle();
+ if(hadNative){
+  void readJson('api/tts/stop',{method:'POST',headers:{'X-Homebrain-Request':'1'}})
+   .catch(()=>voiceMessage('Unable to stop companion-app audio; use phone media controls.'));
+ }
+}
+function toggleAnswerAudio(){
+ if(audioUtterance||nativeSpeechActive){stopAudio();voiceMessage('Playback stopped.');return;}
+ if(lastAnswer!==null)void speakAnswer(lastAnswer);
+}
+async function speakAnswer(answer){
+ const plain=spokenAnswerText(answer);
+ if(!plain){voiceMessage('No answer text to read.');return false;}
+ stopAudio();
+ const token=audioGeneration;
+ const spoken=plain.slice(0,1450);
+ if(plain.length>1450)voiceMessage('Long answer: reading only the first 1,450 characters.');
+ const androidWebview=/Android/i.test(navigator.userAgent)&&
+  (/\bwv\b/i.test(navigator.userAgent)||/Home Assistant/i.test(navigator.userAgent));
+ const canNative=ttsInfo.enabled===true;
+ if(androidWebview&&canNative){
+  try{
+   await readJson('api/tts',{method:'POST',headers:{
+    'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({text:spoken})});
+   if(token!==audioGeneration){
+    void readJson('api/tts/stop',{method:'POST',headers:{'X-Homebrain-Request':'1'}}).catch(()=>{});
+    return false;
+   }
+   nativeSpeechActive=true;byId('readAnswer').textContent='■ Stop phone audio';
+   voiceMessage('Answer sent to your configured Home Assistant mobile TTS service.');
+   return true;
+  }catch(error){
+   if(token!==audioGeneration)return false;
+   voiceMessage('Home Assistant phone TTS unavailable: '+error.message+'. Trying browser audio.');
+  }
+ }
+ if(!('speechSynthesis' in window)||!('SpeechSynthesisUtterance' in window)){
+  voiceMessage('Read-aloud is unavailable here. Enable Home Assistant mobile TTS in add-on options if using Android, or use a browser with speech synthesis.');
+  return false;
+ }
+ try{
+  const utterance=new SpeechSynthesisUtterance(spoken);
+  utterance.lang='en-GB';utterance.rate=.95;utterance.pitch=1;
+  const voices=window.speechSynthesis.getVoices();
+  utterance.voice=voices.find(v=>v.lang?.toLowerCase().startsWith('en-gb')&&v.localService)||
+   voices.find(v=>v.lang?.toLowerCase().startsWith('en-gb'))||
+   voices.find(v=>v.lang?.toLowerCase().startsWith('en'))||null;
+  audioUtterance=utterance;
+  utterance.onstart=()=>{
+   if(token!==audioGeneration)return;
+   byId('readAnswer').textContent='■ Stop audio';
+   if(plain.length<=1450)voiceMessage('Reading answer aloud.');
+  };
+  utterance.onend=()=>{if(token!==audioGeneration)return;audioUtterance=null;audioButtonIdle();};
+  utterance.onerror=()=>{if(token!==audioGeneration)return;audioUtterance=null;audioButtonIdle();voiceMessage('Browser audio failed. Try Read answer again or use HA mobile TTS.');};
+  window.speechSynthesis.speak(utterance);
+  return true;
+ }catch(error){audioUtterance=null;audioButtonIdle();voiceMessage('Browser audio unavailable: '+(error.message||error));return false;}
+}
+
 byId('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))submitAsk();});
 
 // Small, offline-safe *display* subset of common inline TeX, not a math
@@ -682,6 +844,7 @@ function renderTurns(){
 }
 function newConversation(){
  if(byId('send').disabled)return;
+ stopVoice();stopAudio();
  const oldConversation=conversationId;conversationId=newRequestId();
  void readJson('api/conversation/clear',{method:'POST',
   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
