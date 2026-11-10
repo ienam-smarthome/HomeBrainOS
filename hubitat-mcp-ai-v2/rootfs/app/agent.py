@@ -222,7 +222,8 @@ def cpu_load_context(result: dict, core_count: int) -> dict | None:
         return None
     payload = result if isinstance(result.get("entries"), list) else None
     if payload is None:
-        for part in result.get("content", []):
+        parts = result.get("content")
+        for part in parts if isinstance(parts, list) else []:
             if not isinstance(part, dict) or not isinstance(part.get("text"), str):
                 continue
             try:
