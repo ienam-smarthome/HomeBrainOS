@@ -1,6 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.37**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.38**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.38 — model-led recovery from pre-execution MCP contract errors (10 Nov 2026)
+
+When a selected MCP call fails **local input-schema validation**, the existing tool loop now returns a redacted, bounded extract of the **actual connected server-advertised input schema** in its failed tool receipt (`live_input_contract`). The model can recognise a wrong argument type or required field and **choose** a corrected read in its normal remaining rounds; no hidden retry, added planner or mandatory read is introduced. Both direct tool and discovered gateway-leaf contracts are supported, without assuming static tool names. Oversized schemas are truthfully labelled partial excerpts. The failed call retains `success=false`, `result_kind=contract_error`, and `operation_executed=false` in Technical JSON even if a later valid read succeeds.
+
+**Safety:** This metadata applies only to `MCPContractError` raised by local pre-execution validation. Timeouts, server `isError` results, transport failures and ambiguous write outcomes do **not** get the same claim. The production confirmation boundary is unchanged; no automatic retries or actions are introduced, and denied or uncertain operations must never be silently retried. The model skill also instructs that a necessary unsuccessful configuration/history read is a **source-completeness gap**, not proof that configuration was checked.
+
+**Tests:** Synthetic model-led direct-argument and gateway-leaf corrections, immutable original receipts, bounded/redacted schema excerpt, model-declined write retry and unchanged simple answers. The test suite establishes contract delivery/integration, not that a particular cloud model will always recover correctly in a new live investigation. Recheck with a fresh, uncoached first-answer capture across unrelated device domains. **No live hub, HA, router or recorder changes.**
 
 ## Alpha.37 — readable UK answer timestamps (10 Nov 2026)
 
