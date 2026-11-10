@@ -1001,9 +1001,9 @@ function drawIncidentTimeline(){
  const memScale=scaleFor(allMemory,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
  const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
  const yFor=(kind,v)=>{
-  const scale=kind==='memory'?memScale:cpuScale;
-  const top=kind==='memory'?plot.top:plot.cpuTop;
-  const bottom=kind==='memory'?plot.memBottom:plot.cpuBottom;
+  const scale=kind==='cpu'?cpuScale:memScale;
+  const top=kind==='cpu'?plot.cpuTop:plot.top;
+  const bottom=kind==='cpu'?plot.cpuBottom:plot.memBottom;
   return bottom-(v-scale.min)/(scale.max-scale.min)*(bottom-top);
  };
  const text=(tag,attrs,value)=>svg.append(svgNode(tag,attrs,value));
@@ -1054,7 +1054,7 @@ function drawIncidentTimeline(){
   for(const row of rows){
    const t=Date.parse(row.recorded_at);
    if(t<start||t>end)continue;
-   const gap=diagnosticTraceGap(prev,row,kind==='cpu',timelineData.probe_seconds,downsampled);
+   const gap=diagnosticTraceGap(prev,row,kind!=='memory',timelineData.probe_seconds,downsampled);
    const command=(path&&!gap?' L':' M')+x(t).toFixed(2)+' '+yFor(kind,row[key]).toFixed(2);
    path+=command;prev=row;
   }
@@ -1064,12 +1064,14 @@ function drawIncidentTimeline(){
    const t=Date.parse(row.recorded_at);if(t<start||t>end)continue;
    const dot=svgNode('circle',{cx:x(t),cy:yFor(kind,row[key]),r:2.3,fill:color});
    dot.append(svgNode('title',{},diagTime(t)+' · '+diagValue(row[key],key)+
-    (kind==='cpu'?' · native source '+String(row.native_sample_label||'unknown'):
+    (kind!=='memory'?' · native source '+String(row.native_sample_label||'unknown')+
+     (row.collected_at?' · collected '+diagTime(Date.parse(row.collected_at)):''):
      ' · external probe')));
    svg.append(dot);
   }
  };
  drawTrace(mem,'free_os_mb','memory','#70b9ff',!!memMetric.downsampled);
+ drawTrace(nativeMem,'native_free_os_mb','nativeMemory','#c4a1ff',!!nativeMemMetric.downsampled);
  drawTrace(cpu,'native_load_pct','cpu','#6ee7b7',!!cpuMetric.downsampled);
  const events=[];
  for(const rec of timelineData.reboots||[]){
@@ -1090,14 +1092,20 @@ function drawIncidentTimeline(){
     detail:'External recorder recovered; cause not established'});
  }
  const minMem=mem.length?mem.reduce((a,b)=>a.free_os_mb<=b.free_os_mb?a:b):null;
+ const maxNativeMem=nativeMem.length?nativeMem.reduce((a,b)=>a.native_free_os_mb>=b.native_free_os_mb?a:b):null;
  const maxCpu=cpu.length?cpu.reduce((a,b)=>a.native_load_pct>=b.native_load_pct?a:b):null;
  if(minMem)events.push({t:Date.parse(minMem.recorded_at),kind:'Lowest observed OS memory',
   detail:diagValue(minMem.free_os_mb,'free_os_mb')+' · external probe, not a diagnosis'});
+ if(maxNativeMem)events.push({t:Date.parse(maxNativeMem.recorded_at),kind:'Highest native 5m OS memory',
+  detail:diagValue(maxNativeMem.native_free_os_mb,'native_free_os_mb')+
+   ' · native label '+String(maxNativeMem.native_sample_label||'unknown')+
+   ' · source-time interpretation uses configured hub time zone'});
  if(maxCpu)events.push({t:Date.parse(maxCpu.recorded_at),kind:'Highest observed 5m CPU load',
   detail:diagValue(maxCpu.native_load_pct,'native_load_pct')+' · native source '+
    String(maxCpu.native_sample_label||'unknown')+'; derived load, not measured utilisation'});
  for(const [row,key,kind,color] of [
   [minMem,'free_os_mb','memory','#70b9ff'],
+  [maxNativeMem,'native_free_os_mb','nativeMemory','#c4a1ff'],
   [maxCpu,'native_load_pct','cpu','#6ee7b7']]){
   if(!row)continue;
   const t=Date.parse(row.recorded_at);
@@ -1107,7 +1115,7 @@ function drawIncidentTimeline(){
  svg.append(svgNode('line',{id:'timelineCursor',x1:0,x2:0,y1:plot.top,y2:plot.cpuBottom,
   stroke:'#f1f5ff','stroke-width':1.5,'stroke-dasharray':'2 4',
   visibility:'hidden','pointer-events':'none'}));
- for(const [kind,color] of [['memory','#70b9ff'],['cpu','#6ee7b7']]){
+ for(const [kind,color] of [['memory','#70b9ff'],['nativeMemory','#c4a1ff'],['cpu','#6ee7b7']]){
   svg.append(svgNode('circle',{id:'timelineDot'+kind,fill:color,
    stroke:'#fff','stroke-width':1.4,r:5,cx:0,cy:0,visibility:'hidden',
    'pointer-events':'none'}));
@@ -1136,15 +1144,18 @@ function drawIncidentTimeline(){
   rest.textContent='Showing 35 of '+events.length+' event markers. View source JSON for the full bounded response.';
   list.append(rest)}
  timelineFocusTimes=[...new Set([
-  ...mem.map(x=>Date.parse(x.recorded_at)),...cpu.map(x=>Date.parse(x.recorded_at)),
+  ...mem.map(x=>Date.parse(x.recorded_at)),...nativeMem.map(x=>Date.parse(x.recorded_at)),
+  ...cpu.map(x=>Date.parse(x.recorded_at)),
   ...events.map(x=>x.t)
  ])].filter(t=>Number.isFinite(t)&&t>=start&&t<=end).sort((a,b)=>a-b);
- const memCount=memMetric.observed_metric_points??mem.length,cpuCount=cpuMetric.observed_metric_points??cpu.length;
+ const memCount=memMetric.observed_metric_points??mem.length,nativeCount=nativeMemMetric.observed_metric_points??nativeMem.length;
+ const cpuCount=cpuMetric.observed_metric_points??cpu.length;
  byId('timelineMeta').textContent=memCount+' external OS-memory observations · '+
+  nativeCount+' native 5m memory readings · '+
   cpuCount+' distinct native 5m CPU readings · '+(timelineData.reboots||[]).length+
   ' recorded startup(s) · '+incidents.length+' observed connectivity episode(s)'+
   (fit?' · Time axis fitted to recorded observations within the '+byId('range').value+'-hour request':'')+
-  ((memMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
+  ((memMetric.downsampled||nativeMemMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
   ' · Partial source coverage; time alignment is not causation.';
  timelineShown={...timelineShown,x,yFor,plot,chartWidth};
  const previous=timelineSelection;
