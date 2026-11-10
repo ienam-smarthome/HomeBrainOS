@@ -159,6 +159,11 @@ assert.match(html,/X-Homebrain-Request/);
 
 assert(html.includes('id="incidentTimeline"'));
 assert(html.includes('id="timelineLayout"'));
+assert(html.includes('id="timelineCoverage"'));
+assert(html.includes('Separate · 3 aligned panels'));
+assert(html.includes('Memory overlaid · CPU separate'));
+assert(html.includes('Overlay all · dual axes'));
+
 assert(html.includes('id="plotExtent"'));
 assert(html.includes('id="timelineSource"'));
 assert(html.includes('id="timelinePopout"'));
@@ -207,6 +212,20 @@ const sourceFixture={
 timeline.run('timelineData='+JSON.stringify(sourceFixture));
 timeline.run('drawIncidentTimeline()');
 assert(timeline.el('incidentTimeline').children.some(n=>n.tagName==='PATH'));
+assert(timeline.el('timelineCoverage').textContent.includes('Native OS memory'));
+assert(timeline.el('timelineCoverage').textContent.includes('Native CPU load'));
+assert(timeline.el('timelineCoverage').textContent.includes('unknown, not 0%'));
+const yFrom=(kind,value)=>timeline.run('timelineShown.yFor('+JSON.stringify(kind)+','+value+')');
+assert(yFrom('memory',830)<yFrom('nativeMemory',1272.8));
+assert(yFrom('nativeMemory',1272.8)<yFrom('cpu',20));
+const unsolicitedDots=timeline.el('incidentTimeline').children.filter(n=>
+ n.tagName==='CIRCLE'&&!n.id&&n['data-role']!=='isolated-source-sample');
+assert.equal(unsolicitedDots.length,0,
+ 'No permanent circles at all extrema or every native reading');
+assert.equal(timeline.el('incidentTimeline').children.filter(n=>
+ n['data-role']==='isolated-source-sample').length,1,
+ 'A genuine single native memory reading remains visibly marked');
+
 assert(timeline.el('timelineMeta').textContent.includes('2 distinct native 5m CPU readings'));
 assert(timeline.el('timelineMeta').textContent.includes('1 native 5m memory readings'));
 assert(timeline.el('timelineEvents').textContent.includes('Highest native 5m OS memory'));
@@ -214,6 +233,9 @@ timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:03:00Z'))");
 assert(timeline.el('timelineReadout').textContent.includes('Native 5m OS memory'));
 assert(timeline.el('timelineReadout').textContent.includes('1,272.8 MB'));
 assert(timeline.el('timelineReadout').textContent.includes('native_label_hub_timezone'));
+timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:35:00Z'))");
+assert(timeline.el('timelineReadout').textContent.includes('no reading within 3 minutes'));
+
 timeline.run('inspectTimelineSelection()');
 assert(timeline.el('timelineEvidence').textContent.includes('native_memory_reading'));
 assert(timeline.el('timelineEvidence').textContent.includes('11-08 12:03:00'));
@@ -229,6 +251,15 @@ assert.equal(timeline.askCalls,0);
 timeline.el('plotExtent').value='full';
 timeline.run('redrawDiagnostics=()=>drawIncidentTimeline();redrawDiagnostics()');
 assert(!timeline.el('timelineMeta').textContent.includes('Time axis fitted'));
+timeline.el('timelineLayout').value='combined';
+timeline.run('drawIncidentTimeline()');
+assert(timeline.el('incidentTimeline').textContent.includes('shared scale'));
+assert(timeline.el('incidentTimeline').textContent.includes('not utilisation'));
+timeline.el('timelineLayout').value='overlay';
+timeline.run('drawIncidentTimeline()');
+assert(timeline.el('incidentTimeline').textContent.includes('CPU load equivalent · % (right)'));
+timeline.el('timelineLayout').value='split';
+timeline.run('drawIncidentTimeline()');
 // Overnight date+time labels must have enough actual logical SVG space,
 // rather than being counted from CSS pixels and placed into an 860-unit plot.
 timeline.run("timelineData.range_start='2026-11-07T06:00:00Z'; drawIncidentTimeline()");
