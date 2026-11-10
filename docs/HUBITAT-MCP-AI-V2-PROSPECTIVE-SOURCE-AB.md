@@ -1,6 +1,6 @@
 # HomeBrainOS v2 alpha.27 — prospective source-real A/B (private, opt-in)
 
-**Milestone:** engineering test capability only. **No new live A/B answers have been run or measured.** The ten original sr-series real cases and six earlier fictional holdout cases are exposed and cannot serve as new unseen validation.
+**Milestone:** opt-in evaluation capability; the first two real-source A/B pilot pairs are now complete and manually scored, but candidate promotion is not justified. The ten original sr-series cases, six earlier fictional holdouts and two new-series pilot cases are exposed and cannot serve as future unseen validation.
 
 ## Evaluation update — 10 November 2026
 
