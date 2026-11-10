@@ -1,5 +1,14 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.38: contract-recovery transfer acceptance
+
+**Independent live acceptance goal:** In a new, read-only investigation on a genuinely different controller/device class, determine whether the agent (a) selects relevant source classes, (b) responds appropriately to a local JSON-schema type failure using server-advertised `live_input_contract` instead of inventing parameters, (c) leaves the failed attempt in Technical JSON, and (d) names essential settings/history as unavailable if a correcting read does not succeed. A normal successful tool call that never encounters a contract error is also acceptable but does **not** demonstrate recovery.
+
+**Suggested user question:** "Investigate why my bathroom fan most recently entered Boost mode. Identify the command issuer, relevant humidity and schedule/manual conditions, and the controller's actual settings and execution history around that time. Distinguish what is recorded from competing possibilities. Do not change anything." This is an example of the task shape; **do not use already-exposed incidents as blinded improvement evidence**. Prefer a genuinely new, independent event and preserve the original first response in a private `Copy for review` packet. Do not publish private device IDs or logs into GitHub.
+
+**Scoring:** 0/1/2 for factual grounding, source completeness, causal calibration and usefulness; note exact source return window, event filters, reporter versus initiator, config freshness, tool failures and whether `operation_executed` was actually established. A model that tries to correct a read but still lacks evidence must explicitly qualify the conclusion. A positive control with a properly verified event-specific cause guards against excessive abstention. No automatic write retries or additional generic route/round limits.
+
+
 ## 10 November 2026 — Alpha.37 acceptance: correct source for the question
 
 The UK time display and speech-readability change is merged and CI-green but does not by itself improve retrieval accuracy. **Installed version and visible formatting require a separate user-facing check.** Next evaluate whether the model selects sources that can *actually* answer an event-specific question. A synthetic success and a previous private first-answer failure are not independent evidence of a future improvement.
