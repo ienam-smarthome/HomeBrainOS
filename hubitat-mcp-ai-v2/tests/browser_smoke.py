@@ -236,6 +236,25 @@ with sync_playwright() as p:
 
   assert page.evaluate("window.injected===undefined")
   assert page.locator("#rawAnswer").text_content()==answer
+  # Display-only UK formatting: original source and local-time ambiguities survive.
+  date_parts=page.evaluate("""() => {
+    const rendered=renderAnswer(
+      'Timestamp: 2026-11-10T08:10:10.107+0000. Summer: 2026-07-10T08:10:10Z. No zone: 2026-11-10T08:10:10.');
+    const dates=[...rendered.querySelectorAll('time')];
+    return {
+      formatted:dates.map(node=>node.textContent),
+      original:dates[0].getAttribute('title'),
+      datetime:dates[0].getAttribute('datetime'),
+      unqualified:rendered.textContent.includes('No zone: 2026-11-10T08:10:10.')
+    };
+  }""")
+  assert date_parts["formatted"]==[
+    "10 Nov 2026, 08:10:10.107 GMT",
+    "10 Jul 2026, 09:10:10 BST"
+  ],date_parts
+  assert "2026-11-10T08:10:10.107+0000" in date_parts["original"]
+  assert date_parts["datetime"]=="2026-11-10T08:10:10.107+00:00"
+  assert date_parts["unqualified"] is True
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   # Speak/read-aloud controls stay compact and do not alter private answer receipts.
   assert page.locator("#speak").is_visible()
