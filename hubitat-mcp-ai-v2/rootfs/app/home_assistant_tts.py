@@ -77,7 +77,7 @@ class HomeAssistantTTS:
         service = str(value or "").strip()
         if service.startswith("notify."):
             service = service[len("notify.") :]
-        if not service.startswith("mobile_app_"):
+        if not re.fullmatch(r"mobile_app_[a-z0-9_]+", service):
             raise HomeAssistantTTSConfigurationError(
                 "ha_tts_notify_service must be a notify.mobile_app_* service"
             )
