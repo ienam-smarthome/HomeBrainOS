@@ -1173,10 +1173,11 @@ function selectTimelineTime(when){
  const xx=x(at),cursor=byId('timelineCursor');
  if(cursor){cursor.setAttribute('x1',xx);cursor.setAttribute('x2',xx);cursor.setAttribute('visibility','visible')}
  const evidence=['Selected '+diagTime(at)];
- timelineNearest={memory:null,cpu:null};
+ timelineNearest={memory:null,nativeMemory:null,cpu:null};
  for(const [kind,key,label,basis] of [
   ['memory','free_os_mb','OS memory','external probe'],
-  ['cpu','native_load_pct','5m CPU equivalent','native source at collection']]){
+  ['nativeMemory','native_free_os_mb','Native 5m OS memory','hub-local source label'],
+  ['cpu','native_load_pct','5m CPU equivalent','native source']]){
   const row=nearestDiagnosticRow(timelineSeries[kind],at);
   const near=row&&Math.abs(x(Date.parse(row.recorded_at))-xx)<=26;
   const dot=byId('timelineDot'+kind);
@@ -1186,7 +1187,9 @@ function selectTimelineTime(when){
    dot.setAttribute('cy',yFor(kind,row[key]));
    timelineNearest[kind]=row;
    evidence.push(label+' '+diagValue(row[key],key)+' at '+diagTime(Date.parse(row.recorded_at))+
-    ' ('+basis+(kind==='cpu'?', label '+String(row.native_sample_label||'unknown'):'')+')');
+    ' ('+basis+(kind!=='memory'?', label '+String(row.native_sample_label||'unknown')+
+    ', timestamp basis '+String(row.timestamp_basis||'legacy_collector_reception')+
+    (row.collected_at?', fetched '+diagTime(Date.parse(row.collected_at)):''):'')+')');
   }else evidence.push(label+': no nearby reading (not zero)');
  }
  byId('timelineReadout').textContent=evidence.join(' · ')+' · These readings do not establish a cause.';
@@ -1204,6 +1207,7 @@ function inspectTimelineSelection(){
  const detail={selected_utc:new Date(timelineSelection).toISOString(),
   evidence_type:'saved_external_recorder_only',causality:'not established',
   memory_reading:timelineNearest.memory||null,
+  native_memory_reading:timelineNearest.nativeMemory||null,
   native_cpu_reading:timelineNearest.cpu||null,
   matching_connectivity_episodes:incidents,nearby_recorded_system_starts:nearbyStartups,
   note:'A nearby source record is not an observation at the selected instant. An empty interval remains unknown.'};
@@ -1295,6 +1299,8 @@ async function refreshDiagnostics(){
    aDownsampled:!!detail.downsampled,bDownsampled:false,
    description:(metric==='native_load_pct'?
     'Native 5m load equivalent (%): load average ÷ configured CPU core count × 100; not measured CPU utilisation. One point per distinct native source; no repeated polls.':
+    metric==='native_free_os_mb'?
+    'Native five-minute OS free memory. Source labels use the configured hub time zone; pre-upgrade points use collector receipt time.':
     metric==='native_load5'?
     'Raw five-minute load average (unscaled, not % utilisation). The percentage-equivalent option uses load ÷ configured CPU cores × 100.':
     metric.startsWith('java_')?
