@@ -21,6 +21,7 @@ import sqlite3
 import time
 from typing import Any, Iterable
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -91,14 +92,96 @@ def parse_native_sample(value: str) -> dict[str, Any]:
 
 
 
+_NATIVE_LOCAL_LABEL = re.compile(
+    r"^(?P<month>\d{1,2})[-/](?P<day>\d{1,2})[ T]"
+    r"(?P<hour>\d{1,2}):(?P<minute>\d{2}):(?P<second>\d{2})$"
+)
+
+
+def native_sample_time(label: str, collected_at: str, hub_timezone: str,
+                       retention_days: int) -> str | None:
+    """Resolve a native source timestamp, never pretend collection time is sample time.
+
+    Hubitat's MM-DD HH:MM:SS CSV labels have no year or offset. The configured
+    hub time zone supplies the offset; nearest non-future year supplies the
+    year. Unresolvable, out-of-retention and nonexistent DST wall times are
+    omitted, not plotted at the collector's receipt timestamp.
+    """
+    try:
+        observed = datetime.fromisoformat(collected_at.replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            return None
+        observed = observed.astimezone(timezone.utc)
+        zone = ZoneInfo(hub_timezone)
+        local = _NATIVE_LOCAL_LABEL.fullmatch(str(label).strip())
+        if local:
+            parts = {key: int(value) for key, value in local.groupdict().items()}
+            candidates: list[datetime] = []
+            for year in (observed.astimezone(zone).year - 1,
+                         observed.astimezone(zone).year,
+                         observed.astimezone(zone).year + 1):
+                for fold in (0, 1):
+                    try:
+                        value = datetime(year, parts["month"], parts["day"],
+                                         parts["hour"], parts["minute"],
+                                         parts["second"], tzinfo=zone, fold=fold)
+                        utc = value.astimezone(timezone.utc)
+                        # Reject local times skipped by daylight-saving changes.
+                        if utc.astimezone(zone).replace(tzinfo=None) != value.replace(tzinfo=None):
+                            continue
+                        candidates.append(utc)
+                    except ValueError:
+                        continue
+            candidates = [t for t in candidates
+                          if timedelta(seconds=-120) <= observed - t <=
+                          timedelta(days=retention_days + 2)]
+            if not candidates:
+                return None
+            source = max(candidates)
+        else:
+            source = datetime.fromisoformat(str(label).strip().replace("Z", "+00:00"))
+            # An ISO timestamp without an explicit offset uses the configured hub zone.
+            if source.tzinfo is None:
+                source = source.replace(tzinfo=zone)
+            source = source.astimezone(timezone.utc)
+            if not timedelta(seconds=-120) <= observed - source <= timedelta(days=retention_days + 2):
+                return None
+        return source.isoformat(timespec="milliseconds")
+    except (ValueError, TypeError, ZoneInfoNotFoundError):
+        return None
+
+
+def parse_native_history(payload: str, *, collected_at: str,
+                         hub_timezone: str, retention_days: int) -> tuple[dict[str, Any], ...]:
+    """Parse all timestamped native CSV rows; dedupe by original Hubitat label."""
+    samples: dict[str, dict[str, Any]] = {}
+    # Bounded response processing; preserve all available rows within 90-day retention.
+    for raw in str(payload).splitlines()[-30000:]:
+        if not raw.strip():
+            continue
+        try:
+            row = parse_native_sample(raw)
+        except ValueError:
+            continue  # Header and malformed records are not measurements.
+        label = row["native_sample_label"]
+        stamp = native_sample_time(label, collected_at, hub_timezone, retention_days)
+        if stamp is None:
+            continue
+        samples[label] = {
+            **row, "recorded_at": stamp, "collected_at": collected_at,
+            "reachable": 1, "timestamp_basis": "native_label_hub_timezone",
+        }
+    return tuple(sorted(samples.values(), key=lambda row: row["recorded_at"]))
+
+
 _HUB_EVENTS = "/hub/eventsJson"
 _HISTORY_METRICS = frozenset((
     "free_os_mb", "java_free_mb", "java_allocated_heap_used_pct",
-    "native_load_pct", "native_load5", "latency_ms",
+    "native_load_pct", "native_load5", "native_free_os_mb", "latency_ms",
 ))
 _NATIVE_METRICS = frozenset((
     "java_free_mb", "java_allocated_heap_used_pct", "native_load_pct",
-    "native_load5",
+    "native_load5", "native_free_os_mb",
 ))
 
 
@@ -250,7 +333,7 @@ class ExternalHubDiagnostics:
     def __init__(self, *, enabled: bool = False, hub_url: str = "",
                  path: str | Path = "/data/homebrain-hub-diagnostics.sqlite3",
                  probe_seconds: int = 30, retention_days: int = 30,
-                 cpu_cores: int = 4) -> None:
+                 cpu_cores: int = 4, hub_timezone: str = "Europe/London") -> None:
         self.enabled = bool(enabled)
         self.path = Path(path)
         self.probe_seconds = max(30, min(300, int(probe_seconds)))
@@ -259,12 +342,14 @@ class ExternalHubDiagnostics:
         # processor-capacity equivalent, not measured CPU utilisation.
         self.cpu_cores = max(1, min(64, int(cpu_cores)))
         self.hub_url = ""
+        self.hub_timezone = str(hub_timezone).strip()
         self.error: str | None = None
         if self.enabled:
             try:
+                ZoneInfo(self.hub_timezone)
                 self.hub_url = validate_hub_url(hub_url)
-            except ValueError as exc:
-                self.error = str(exc)
+            except (ValueError, ZoneInfoNotFoundError) as exc:
+                self.error = "Invalid hub time zone or LAN URL: " + str(exc)
         self._task: asyncio.Task | None = None
         self._last: dict[str, Any] | None = None
         self._failures = 0
@@ -292,6 +377,12 @@ class ExternalHubDiagnostics:
                 native_free_os_mb REAL, java_total_mb REAL, java_free_mb REAL,
                 java_direct_mb REAL, java_allocated_heap_used_pct REAL
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS native_samples (
+                native_sample_label TEXT PRIMARY KEY, recorded_at TEXT NOT NULL,
+                collected_at TEXT NOT NULL, native_free_os_mb REAL,
+                native_load5 REAL, timestamp_basis TEXT NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS native_samples_time ON native_samples(recorded_at)")
             db.execute("""CREATE TABLE IF NOT EXISTS incidents (
                 id INTEGER PRIMARY KEY, started_at TEXT NOT NULL,
                 recovered_at TEXT, kind TEXT NOT NULL,
@@ -320,6 +411,7 @@ class ExternalHubDiagnostics:
         cutoff = (datetime.now(timezone.utc) -
                   timedelta(days=self.retention_days)).isoformat(timespec="milliseconds")
         db.execute("DELETE FROM samples WHERE recorded_at < ?", (cutoff,))
+        db.execute("DELETE FROM native_samples WHERE recorded_at < ?", (cutoff,))
         db.execute("DELETE FROM hub_startups WHERE occurred_at < ?", (cutoff,))
         db.execute(
             "DELETE FROM incidents WHERE recovered_at IS NOT NULL AND recovered_at < ?",
@@ -328,7 +420,8 @@ class ExternalHubDiagnostics:
 
     def _save(self, row: dict[str, Any], opened: str | None,
               recovered: bool, prune: bool = False,
-              startups: tuple[dict[str, str], ...] = ()) -> None:
+              startups: tuple[dict[str, str], ...] = (),
+              native_samples: tuple[dict[str, Any], ...] = ()) -> None:
         fields = ("recorded_at", "reachable", "latency_ms", "free_os_mb", "http_status",
                   "error_kind", "native_sample_label", "native_load5", "native_free_os_mb",
                   "java_total_mb", "java_free_mb", "java_direct_mb",
@@ -339,6 +432,15 @@ class ExternalHubDiagnostics:
                 ",".join("?" for _ in fields) + ")",
                 tuple(row.get(k) for k in fields),
             )
+            for native in native_samples:
+                db.execute(
+                    "INSERT OR IGNORE INTO native_samples "
+                    "(native_sample_label,recorded_at,collected_at,native_free_os_mb,native_load5,timestamp_basis) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (native["native_sample_label"], native["recorded_at"],
+                     native["collected_at"], native["native_free_os_mb"],
+                     native["native_load5"], native["timestamp_basis"]),
+                )
             if opened:
                 existing = db.execute(
                     "SELECT id FROM incidents WHERE recovered_at IS NULL "
@@ -388,6 +490,7 @@ class ExternalHubDiagnostics:
             row["error_kind"] = "invalid_response_or_request"
 
         startups: tuple[dict[str, str], ...] = ()
+        native_samples: tuple[dict[str, Any], ...] = ()
         if row["reachable"]:
             self._failures = 0
             self._last_good = row["recorded_at"]
@@ -400,6 +503,11 @@ class ExternalHubDiagnostics:
                     native_response = await client.get(self.hub_url + _MEMORY_CSV)
                     native_response.raise_for_status()
                     self._native = parse_native_sample(native_response.text)
+                    native_samples = parse_native_history(
+                        native_response.text, collected_at=row["recorded_at"],
+                        hub_timezone=self.hub_timezone,
+                        retention_days=self.retention_days,
+                    )
                 except (httpx.HTTPError, ValueError):
                     # Keep older Java figures with original native timestamp; never
                     # imply the previous Java sample has been refreshed.
@@ -427,7 +535,7 @@ class ExternalHubDiagnostics:
         prune = time.monotonic() - self._last_prune_at >= 86400
         if prune:
             self._last_prune_at = time.monotonic()
-        await asyncio.to_thread(self._save, row, opened, recovered, prune, startups)
+        await asyncio.to_thread(self._save, row, opened, recovered, prune, startups, native_samples)
 
     async def _run(self) -> None:
         async with httpx.AsyncClient(
@@ -473,6 +581,7 @@ class ExternalHubDiagnostics:
         row = self._with_load_pct(self._last or {})
         return {
             "enabled": self.enabled, "running": bool(self._task and not self._task.done()),
+            "hub_timezone": self.hub_timezone,
             "error": self.error, "probe_seconds": self.probe_seconds,
             "retention_days": self.retention_days, "cpu_cores": self.cpu_cores,
             "last": dict(row),
