@@ -15,6 +15,7 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from evidence_scope import model_result_with_scope
+from config_evidence import config_source_map
 
 
 _SKILL_DIR = Path(__file__).parent / "skills" / "hubitat"
@@ -362,8 +363,15 @@ class Agent:
         """
         original_with_scope = model_result_with_scope(result, arguments)
         cpu = cpu_load_context(result, getattr(self, "cpu_cores", 4))
-        return ({**original_with_scope, "client_cpu_load_context": cpu}
-                if cpu is not None else original_with_scope)
+        config_map = config_source_map(result)
+        # Add only source-derived metadata beside the untouched native result.
+        # Neither addon metadata nor configuration pages verify actual callback
+        # execution; the model still chooses whether to investigate further.
+        return {
+            **original_with_scope,
+            **({"client_cpu_load_context": cpu} if cpu is not None else {}),
+            **({"client_config_source_map": config_map} if config_map is not None else {}),
+        }
 
     async def round(self, messages: list[dict], tools: list[dict], remaining: float) -> dict:
         try:
