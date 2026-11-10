@@ -1,5 +1,18 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.38 next first-answer transfer: alternative controller paths
+
+**Status:** `main` is `2.0.0-alpha.38` (commit `4bada4960f9f28557d2cafd619a13f22c5fbd4f3`); its four main-branch workflows succeeded. The uploaded review packet labels its UI `2.0.0-alpha.38`, but there was no independent installed build or current state verification. Its four tool calls all succeeded, so **live-schema correction was not exercised**. A successful test of the latter requires an actual rejected local argument call and subsequent model-chosen corrected read.
+
+**New cross-domain challenge:** Investigate a new ventilation/boost event (not an earlier exposed event) and whether humidity, a scheduled cycle or manual operation caused it. The model should select the actual relevant controller configuration, the initiating command if recorded, **all participating input data** in the event-time window and execution traces where available. Treat simultaneous alignment with more than one configured timer, or more than one plausible control path, as a hypothesis-comparison problem rather than proving one path by timestamp coincidence. A missing callback log does not establish that it did not run. Report whether a source was actually queried, returned no rows, was filtered/truncated or failed. Do not create side effects.
+
+**Suggested new-conversation question:** "Investigate why the bathroom ventilation Fan Boost most recently switched ON. Determine the event time and whether humidity demand, a scheduled cycle or a manual command initiated it. Compare the actual controller configuration, all relevant sensor readings and the nearby event/execution logs. Say what is verified versus plausible and identify missing evidence. Do not change anything."
+
+**Scoring:** 0/1/2 for factual grounding, source completeness, causal calibration and usefulness; N/A only when genuinely inapplicable. Check both timing alignment *and whether it discriminates*, source time ranges and return limits, historical versus current settings, producer/reporter/consumer roles, every necessary input, tool failures and any surviving alternative. Preserve the unedited first answer and original private `Copy for review`. Do not coach or rerun the same answer as a new blind benchmark. The previously captured lighting event is an exposed diagnostic example and must not be the sole regression gate.
+
+**Next engineering gate:** Only after materially independent cases show the same failure category should a domain-neutral improvement to model source choice, typed controller-contract discoverability or causal evidence sufficiency be considered. Preserve model-led tool use, existing permissions and write confirmation, and the exact original MCP receipts. Add a genuinely verified positive control to avoid training the agent to be noncommittal.
+
+
 ## 10 November 2026 — Alpha.38: contract-recovery transfer acceptance
 
 **Independent live acceptance goal:** In a new, read-only investigation on a genuinely different controller/device class, determine whether the agent (a) selects relevant source classes, (b) responds appropriately to a local JSON-schema type failure using server-advertised `live_input_contract` instead of inventing parameters, (c) leaves the failed attempt in Technical JSON, and (d) names essential settings/history as unavailable if a correcting read does not succeed. A normal successful tool call that never encounters a contract error is also acceptable but does **not** demonstrate recovery.
