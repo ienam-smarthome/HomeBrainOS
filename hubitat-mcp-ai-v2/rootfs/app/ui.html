@@ -690,7 +690,11 @@ function startVoice(){
  }catch(error){stopVoice();voiceMessage('Unable to start microphone: '+(error.message||error));}
 }
 function spokenAnswerText(value){
- return String(value||'').replace(/\x60{3}[\s\S]*?\x60{3}/g,' ')
+ return String(value||'')
+  .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
+  .replace(/<[^>]+>/g,' ')
+  .replace(/\x60{3}[\s\S]*?\x60{3}/g,' ')
   .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
   .replace(/^\s*#{1,6}\s*/gm,'').replace(/^\s*[-*+]\s+/gm,'')
   .replace(/\bCPU\b/g,'C P U').replace(/(\d+(?:\.\d+)?)\s*%/g,'$1 percent')
