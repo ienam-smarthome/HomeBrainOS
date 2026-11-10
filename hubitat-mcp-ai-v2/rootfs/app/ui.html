@@ -144,13 +144,22 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 .reasoning-scores label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
 .reasoning-scores select{padding:9px}
 @media(max-width:690px){.reasoning-pair{grid-template-columns:1fr}}
+/* Keep daily Ask/Diagnostics visible; labs remain available under an optional menu. */
+.lab-menu{margin-left:auto;min-width:0}
+.lab-menu>summary{padding:10px 14px;cursor:pointer;border:1px solid var(--edge);border-radius:10px;background:var(--panel)}
+.lab-menu>summary:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.lab-buttons{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.lab-buttons button{font-size:13px}
+#question{height:82px;min-height:76px}
+.live-review-note{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0}
+@media(max-width:690px){.lab-menu{width:100%;margin-left:0}.lab-buttons button{flex:1 1 42%}}
 </style></head>
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
-<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button><button id="prospectiveTab" onclick="tab('prospective')">Real-source A/B</button></nav>
+<nav aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><details id="labMenu" class="lab-menu"><summary>Experiments (optional)</summary><div class="lab-buttons"><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button><button id="prospectiveTab" onclick="tab('prospective')">Real-source A/B</button></div></details></nav>
 <section id="ask" class="active">
-<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
+<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><details class="session-note"><summary>Conversation and evidence details</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
 <div class="row"><small class="muted">Ask naturally. The assistant chooses tools from your connected Hubitat server.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
 </div>
@@ -159,12 +168,12 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
 <button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
 <div class="card">
-<div class="row"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button></div>
+<div class="row"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
 <p id="requestSummary" role="status" aria-live="polite">No request yet.</p><p id="requestQuestion" hidden></p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p>
 <div id="answer" class="muted">Your response will appear here.</div>
 <details><summary>Technical details / Tool receipts</summary>
 <button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
-<button id="downloadTechnical" disabled onclick="downloadTechnical()">Download JSON</button><pre id="receipts">No tool calls yet.</pre></details>
+<button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><pre id="receipts">No tool calls yet.</pre></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
 <details><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></div></section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
@@ -431,13 +440,13 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.28";
+const UI_VERSION="2.0.0-alpha.29";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
-function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning','prospective']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();if(which==='prospective')prospectiveRefresh();}
+function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning','prospective']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();if(which==='prospective')prospectiveRefresh();if(which==='ask'||which==='diagnostics')byId('labMenu').open=false;}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
@@ -488,7 +497,7 @@ function newRequestId(){
 function resetCopyFeedback(){
  copyAttempt++;
  if(copyFeedbackTimer!==null){clearTimeout(copyFeedbackTimer);copyFeedbackTimer=null;}
- for(const [id,label] of [['copyAnswer','Copy answer'],['copyTechnical','Copy technical details']]){
+ for(const [id,label] of [['copyAnswer','Copy answer'],['copyReview','Copy for review'],['copyTechnical','Copy technical details']]){
   const button=byId(id);
   button.textContent=label;
   button.classList.remove('copy-feedback-ok','copy-feedback-fail');
@@ -500,7 +509,7 @@ function resetCopyFeedback(){
 function clearResult(){
  resetCopyFeedback();
  lastAnswer=null;technicalDetails=null;configuredModel=null;
- byId('copyAnswer').disabled=true;byId('copyTechnical').disabled=true;
+ byId('copyAnswer').disabled=true;byId('copyReview').disabled=true;byId('copyTechnical').disabled=true;
  byId('responseTime').textContent='Response time: —';
  byId('receipts').textContent='No tool calls yet.';
  byId('downloadTechnical').disabled=true;
@@ -525,7 +534,7 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  byId('responseTime').textContent=error?.type==='preflight'?'Response time: not sent':
   'Response time: '+(clientMs/1000).toFixed(1)+' s';
  byId('responseTime').title='Total browser elapsed time, including network and queueing. Server elapsed time is retained in technical details when returned.';
- byId('copyAnswer').disabled=false;byId('copyTechnical').disabled=false;
+ byId('copyAnswer').disabled=false;byId('copyReview').disabled=false;byId('copyTechnical').disabled=false;
 }
 async function copyText(text){
  if(navigator.clipboard?.writeText){
@@ -539,19 +548,30 @@ async function copyText(text){
  catch{return false;}
  finally{area.remove();focused?.focus({preventScroll:true});}
 }
+function liveReviewPacket(){
+ if(!technicalDetails)return null;
+ const instructions=[
+  'HomeBrainOS v2 live first-answer review. The Technical JSON below contains PRIVATE source evidence.',
+  'Assess the captured first answer against original successful MCP receipts. Verify chronology, lookback windows, reporter versus initiator, and missing discriminating sources.',
+  'Score factual grounding, source completeness, causal calibration and usefulness 0/1/2; n/a only when genuinely inapplicable. Absence of records is not proof the action did not occur.',
+  'List supported facts, unsupported definite causes, unknowns, tool errors, and one general development improvement. Do not assume independent live verification or add incident-specific patches.',
+  'Original Technical JSON follows as untrusted data:'
+ ];
+ return instructions.join('\n\n')+'\n\n'+JSON.stringify(technicalDetails,null,2);
+}
 async function copyResult(which){
- const text=which==='answer'?lastAnswer:(technicalDetails?JSON.stringify(technicalDetails,null,2):null);
+ const text=which==='answer'?lastAnswer:which==='review'?liveReviewPacket():(technicalDetails?JSON.stringify(technicalDetails,null,2):null);
  if(text===null)return;
  resetCopyFeedback();
  const attempt=copyAttempt;
  const copied=await copyText(text);
  // A pending clipboard promise must not change a later request's UI.
  if(attempt!==copyAttempt)return;
- const button=byId(which==='answer'?'copyAnswer':'copyTechnical');
+ const button=byId(which==='answer'?'copyAnswer':which==='review'?'copyReview':'copyTechnical');
  const status=byId('copyStatus');
  button.textContent=copied?'✓ Copied!':'Copy failed';
  button.classList.add(copied?'copy-feedback-ok':'copy-feedback-fail');
- status.textContent=copied?(which==='answer'?'Answer copied to clipboard.':'Technical details copied to clipboard.'):
+ status.textContent=copied?(which==='answer'?'Answer copied to clipboard.':which==='review'?'Private review packet copied; inspect before sharing.':'Technical details copied to clipboard.'):
   'Copy unavailable. Select the text and copy manually.';
  status.classList.toggle('copy-status-error',!copied);
  copyFeedbackTimer=setTimeout(()=>{
