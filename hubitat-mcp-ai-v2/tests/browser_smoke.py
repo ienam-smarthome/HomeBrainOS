@@ -387,9 +387,30 @@ with sync_playwright() as p:
   assert positions["external"]<positions["native"]<positions["cpu"],positions
   assert positions["height"]>=540,positions
   assert positions["extras"]==0,"No permanent per-point/extrema dot decorations"
+  # Two aligned tall panels are taller and each has an independent scale.
+  page.locator("#timelineLayout").select_option("tall")
+  assert page.locator("#timelinePair").is_visible()
+  assert page.locator("#incidentTimeline").evaluate("(el)=>el.viewBox.baseVal.height")>=720
+  pair_areas=page.evaluate("""() => ({
+    top:timelineShown.panels.memory,
+    bottom:timelineShown.panels.cpu,
+    visible:timelineShown.visibleKinds
+  })""")
+  assert pair_areas["top"]["bottom"]<pair_areas["bottom"]["top"],pair_areas
+  assert pair_areas["visible"]==["memory","cpu"],pair_areas
+  page.locator("#timelinePair").select_option("native-cpu")
+  assert page.evaluate("timelineShown.visibleKinds.join(',')")=="nativeMemory,cpu"
+  assert page.locator("#incidentTimeline path[stroke='#70b9ff']").count()==0
+  assert page.locator("#incidentTimeline path[stroke='#c4a1ff']").count()==1
+  page.locator("#timelinePair").select_option("external-native")
+  assert page.evaluate("timelineShown.visibleKinds.join(',')")=="memory,nativeMemory"
+  assert page.locator("#incidentTimeline path[stroke='#6ee7b7']").count()==0
   page.locator("#timelineLayout").select_option("overlay")
   assert "CPU load equivalent" in page.locator("#incidentTimeline").text_content()
   page.locator("#timelineLayout").select_option("split")
+  assert page.locator("#timelinePair").is_hidden()
+  page.locator("#timelineLayout").select_option("tall")
+  page.locator("#timelinePair").select_option("native-cpu")
   page.locator("#plotExtent").select_option("full")
   assert "fitted to recorded observations" not in page.locator("#timelineMeta").inner_text()
   # A real new-tab popout refetches the same saved recorder data; no native
@@ -400,6 +421,9 @@ with sync_playwright() as p:
   popup=popup_info.value
   popup.locator("#incidentTimeline path").first.wait_for()
   assert "graph_view=timeline" in popup.url
+  assert "layout=tall" in popup.url and "pair=native-cpu" in popup.url
+  assert popup.locator("#timelineLayout").input_value()=="tall"
+  assert popup.locator("#timelinePair").input_value()=="native-cpu"
   assert popup.locator("#timelineCard").is_visible()
   assert popup.locator("#detailCard").is_hidden()
   assert popup.locator("#timelineReturn").is_visible()
@@ -409,7 +433,7 @@ with sync_playwright() as p:
    height:el.viewBox.baseVal.height,
    cssWidth:el.getBoundingClientRect().width
   })""")
-  assert viewport["width"]>=860 and viewport["height"]>=400
+  assert viewport["width"]>=860 and viewport["height"]>=780
   assert viewport["width"]>=viewport["cssWidth"]-4
   # Span midnight and compare the real text bounding boxes for collisions.
   popup.evaluate("""() => {
@@ -459,6 +483,7 @@ with sync_playwright() as p:
   assert popup.evaluate("diagnosticZoom===null")
   assert "Selected" in popup.locator("#timelineReadout").inner_text()
   popup.close()
+  page.locator("#timelineLayout").select_option("split")
   page.locator("#plotExtent").select_option("fit")
   assert page.locator("#recorderNotice").is_hidden()
   page.evaluate("""() => {
