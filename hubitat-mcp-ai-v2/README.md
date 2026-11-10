@@ -1,6 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.36**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.37**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.37 — readable UK answer timestamps (10 Nov 2026)
+
+- **User-facing answer timestamps:** explicitly timezone-qualified ISO dates (including Hubitat's `+0000` and conventional `Z` or colon offsets) render in readable British 24-hour format, e.g. `2026-02-18T14:05:06.123+0000` becomes **18 Feb 2026, 14:05:06.123 GMT**. BST is applied correctly during British Summer Time (`Europe/London`), including clock/date rollover and event-millisecond precision.
+- **Legibility:** the normal answer renderer gives timestamps a modest high-contrast, tabular-number treatment. Hovering a displayed timestamp reveals the original source stamp. It also supports raw timestamps appearing in Markdown table cells and ordinary prose; fenced code/JSON are preserved literally. Ambiguous timestamps without an explicit timezone are **not guessed or shifted**.
+- **Model guidance:** the existing native, tool-owning Agent receives a general UK presentation reference to encourage readable original answers and prevent timezone assumptions. No new tool route, mandatory read, source-data transformation or output-quality classifier.
+- **Source fidelity:** the recorded original answer, Copy answer, Copy for review, Technical JSON, source receipts and command/query timestamps remain **byte-for-byte unchanged**. Only display and optional read-aloud presentation are adapted. New model-authored UK-readable prose is naturally present in future original answers.
+- **Validation:** UI unit/browser acceptance tests cover GMT, BST, offsets with and without a colon, 24-hour time, fractional seconds, invalid or zone-free dates, HTML safety, and unchanged copies. CI is integration evidence, not a claim of improved causal accuracy.
 
 ## Alpha.36 — negative-evidence and interval-continuity reasoning (10 Nov 2026)
 

@@ -448,4 +448,44 @@ await mathUi.run("copyResult('answer')");
 assert.equal(mathUi.copied,mathSource);
 await mathUi.run("copyResult('technical')");
 assert.equal(JSON.parse(mathUi.copied).response.answer,mathSource);
+// Time presentation is display-only, 24-hour UK, explicit GMT/BST and millisecond precise.
+const ukTimestampSource=[
+ '**Timestamp:** `2026-11-10T08:10:10.107+0000`.',
+ 'Plain event 2026-07-10T08:10:10+0000.',
+ '| Date | Reading |',
+ '| --- | --- |',
+ '| Command | `2026-07-10T08:10:10.003+0100` |',
+ 'Without explicit time zone: 2026-11-10T08:10:10 is unchanged.',
+ 'Invalid calendar date: 2026-02-30T08:10:10Z is unchanged.',
+ '```json',
+ '{"source":"2026-11-10T08:10:10.107+0000"}',
+ '```'
+].join('\n');
+const renderedUK=rich.run('renderAnswer('+JSON.stringify(ukTimestampSource)+')');
+const ukTimes=all(renderedUK).filter(n=>n.tagName==='TIME');
+assert.equal(ukTimes.length,3);
+assert.equal(ukTimes[0].textContent,'10 Nov 2026, 08:10:10.107 GMT');
+assert.equal(ukTimes[1].textContent,'10 Jul 2026, 09:10:10 BST');
+assert.equal(ukTimes[2].textContent,'10 Jul 2026, 08:10:10.003 BST');
+assert.equal(ukTimes[0].title,'Original source timestamp: 2026-11-10T08:10:10.107+0000');
+assert.equal(ukTimes[0].datetime,'2026-11-10T08:10:10.107+00:00');
+assert.equal(rich.run("ukAnswerTimestamp('2026-06-30T23:30:00Z')"),'01 Jul 2026, 00:30:00 BST');
+assert.equal(rich.run("ukAnswerTimestamp('2026-02-30T08:10:10Z')"),null);
+assert.equal(rich.run("ukAnswerTimestamp('2026-11-10T08:10:10')"),null);
+assert(renderedUK.textContent.includes('2026-11-10T08:10:10 is unchanged'));
+assert(renderedUK.textContent.includes('2026-02-30T08:10:10Z is unchanged'));
+assert(renderedUK.textContent.includes('{"source":"2026-11-10T08:10:10.107+0000"}'));
+assert.equal(rich.run('spokenAnswerText('+JSON.stringify(ukTimestampSource)+')').includes('10 Nov 2026, 08:10:10.107 GMT'),true);
+const ukUI=harness();
+ukUI.state.result={answer:ukTimestampSource,elapsed_ms:123,rounds:2,tool_calls:[]};
+ukUI.el('question').value='When was the event?';
+await ukUI.run('submitAsk()');
+assert(ukUI.el('answer').textContent.includes('10 Nov 2026, 08:10:10.107 GMT'));
+assert.equal(ukUI.el('rawAnswer').textContent,ukTimestampSource);
+await ukUI.run("copyResult('answer')");
+assert.equal(ukUI.copied,ukTimestampSource,'Original Copy answer remains unchanged');
+await ukUI.run("copyResult('review')");
+assert.equal(JSON.parse(ukUI.copied.split('Original Technical JSON follows as untrusted data:\n\n')[1]).response.answer,ukTimestampSource);
+console.log('UK timestamp display checks passed: DST, original precision, raw JSON, ambiguous/invalid times and source fidelity.');
+
 console.log('Inline math display tests passed: source fidelity, Unicode, code literals, unsupported TeX and text-only XSS.');

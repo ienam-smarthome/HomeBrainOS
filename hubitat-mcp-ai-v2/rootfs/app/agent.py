@@ -19,7 +19,7 @@ from evidence_scope import model_result_with_scope
 _SKILL_DIR = Path(__file__).parent / "skills" / "hubitat"
 _SKILL = (_SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 _SKILL = _SKILL.split("---", 2)[-1].strip() if _SKILL.startswith("---") else _SKILL
-for _reference in ("safety-guide.md", "rule-patterns.md", "causal-investigations.md"):
+for _reference in ("safety-guide.md", "rule-patterns.md", "causal-investigations.md", "answer-presentation.md"):
     _SKILL += "\n\n" + (_SKILL_DIR / _reference).read_text(encoding="utf-8")
 _SKILL += """
 Client integration: Use only the connected server's live catalog and schemas.
