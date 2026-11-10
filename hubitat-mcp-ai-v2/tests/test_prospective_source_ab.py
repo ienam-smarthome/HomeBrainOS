@@ -139,6 +139,65 @@ class ReadOnlyGateTests(unittest.TestCase):
         asyncio.run(run())
 
 
+class FakeGatewayMCP(FakeMCP):
+    def __init__(self):
+        super().__init__()
+        self.catalog.append({
+            "name": "hub_read_environment",
+            "annotations": {"readOnlyHint": True},
+            "inputSchema": {"type": "object", "properties": {
+                "tool": {"type": "string"}, "args": {"type": "object"}}},
+        })
+        self.catalog.append({
+            "name": "hub_manage_devices",
+            "annotations": {"readOnlyHint": False},
+            "inputSchema": {"type": "object", "properties": {
+                "tool": {"type": "string"}, "args": {"type": "object"}}},
+        })
+
+    async def gateway_leaf_schema(self, name, leaf):
+        if name != "hub_read_environment":
+            raise AssertionError("Write-bearing gateway metadata should not be touched")
+        if leaf == "hub_list_temperature":
+            return {"name": leaf, "annotations": {"readOnlyHint": True},
+                    "inputSchema": {"type": "object"}}, False
+        if leaf == "hub_set_temperature":
+            return {"name": leaf, "annotations": {"readOnlyHint": False},
+                    "inputSchema": {"type": "object"}}, False
+        return None, False
+
+    async def call(self, name, args):
+        if name == "hub_read_environment":
+            self.calls.append((name, args))
+            return wrapped({"temperature": "18"})
+        return await super().call(name, args)
+
+
+class GatewaySafetyTests(unittest.TestCase):
+    def test_native_subtool_must_itself_be_explicitly_read_only(self):
+        async def run():
+            mcp = FakeGatewayMCP()
+            safe = ReadOnlyMCP(mcp)
+            names = [t["name"] for t in await safe.list_tools(refresh=True)]
+            self.assertIn("hub_read_environment", names)
+            self.assertNotIn("hub_manage_devices", names)
+            result = await safe.call("hub_read_environment",
+                                     {"tool": "hub_list_temperature", "args": {}})
+            self.assertEqual(json.loads(result["content"][0]["text"])["temperature"], "18")
+            with self.assertRaises(MCPContractError):
+                await safe.call("hub_read_environment",
+                                {"tool": "hub_set_temperature", "args": {}})
+            with self.assertRaises(MCPContractError):
+                await safe.call("hub_manage_devices",
+                                {"tool": "hub_set_temperature", "args": {}})
+            self.assertEqual(
+                [x for x in mcp.calls if x[0] == "hub_read_environment"],
+                [("hub_read_environment",
+                  {"tool": "hub_list_temperature", "args": {}})]
+            )
+        asyncio.run(run())
+
+
 class TrialWorkspaceTests(unittest.TestCase):
     def test_prepare_is_frozen_and_rejects_reused_question_text(self):
         workspace = ProspectiveWorkspace()
