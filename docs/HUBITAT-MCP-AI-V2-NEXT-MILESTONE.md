@@ -1,5 +1,16 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.39 first-answer acceptance: discrimination without rigid paths
+
+**Repository candidate:** Alpha.39 enriches only **successful installed-app configuration page reads** with a `client_config_source_map` describing actual fields and linked pages. It neither fetches another page automatically nor rewrites native MCP receipts. New reasoning guidance emphasises materially competing mechanisms and complete *relevant* input histories. The installed add-on version and improved model performance remain unverified until a new private live capture.
+
+**New independent challenge:** In a fresh Ask conversation, investigate the most recent **Bedroom 1 TRV heating-setpoint change**: report the event time, its command issuer if recorded, and which of the scheduler's heat-demand, early-off or protection paths actually caused that setpoint change. Examine contemporaneous TRV/temperature events, linked controller configuration pages and any available execution traces. If several mechanisms are consistent, compare their necessary conditions and identify the missing discriminating source rather than promoting a timestamp match to proof. End with `Do not change anything.`
+
+**Review:** Capture first answer + original `Copy for review` privately. Check if config map's linked page references and selected input groups are correctly distinguished from evidence the model actually read. Verify event time, pre/post observations, command producer versus state reporter, current versus historical settings, relevant source freshness, query windows, data limits, tool errors and whether a unique internal callback is really supported. Score 0/1/2 for grounding/completeness/calibration/usefulness. If no controller page is returned, absence of a map is expected and does not prove settings absent. Include a positive control with a genuinely supported trigger and outcome.
+
+**Release/engineering gate:** Require clean pilot tests, repository validation, container/release assurance and post-merge checks. Avoid modifying the production reasoning loop again for one known event. Use new examples before claiming general improvement; preserve read-only test scope and existing write confirmation.
+
+
 ## 10 November 2026 — Alpha.38 next first-answer transfer: alternative controller paths
 
 **Status:** `main` is `2.0.0-alpha.38` (commit `4bada4960f9f28557d2cafd619a13f22c5fbd4f3`); its four main-branch workflows succeeded. The uploaded review packet labels its UI `2.0.0-alpha.38`, but there was no independent installed build or current state verification. Its four tool calls all succeeded, so **live-schema correction was not exercised**. A successful test of the latter requires an actual rejected local argument call and subsequent model-chosen corrected read.
