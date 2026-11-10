@@ -1168,7 +1168,12 @@ function drawIncidentTimeline(){
  const fullView=document.body?.classList?.contains('graph-popout')||false;
  const bounds=svg.getBoundingClientRect();
  const chartWidth=Math.max(860,Math.round(bounds.width||860));
- const chartHeight=fullView?Math.max(600,Math.round(bounds.height||600)):540;
+ const twoTall=byId('timelineLayout').value==='tall';
+ byId('timelinePairRow').hidden=!twoTall;
+ svg.classList.toggle('timeline-two-tall',twoTall);
+ const chartHeight=fullView?
+  Math.max(twoTall?780:600,Math.round(bounds.height||(twoTall?780:600))):
+  (twoTall?720:540);
  svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
  const memMetric=timelineData.metrics?.free_os_mb||{},nativeMemMetric=timelineData.metrics?.native_free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
  const mem=sourcePoints(memMetric.samples,'free_os_mb')
@@ -1179,23 +1184,31 @@ function drawIncidentTimeline(){
   .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
  timelineSeries={memory:mem,nativeMemory:nativeMem,cpu};
  const layout=byId('timelineLayout').value;
- const split=layout==='split',overlay=layout==='overlay';
- const panelCount=split?3:overlay?1:2;
- const panelGap=split?47:52,top=overlay?38:30,bottom=chartHeight-38;
+ const split=layout==='split',overlay=layout==='overlay',tall=layout==='tall';
+ const pairChoices={
+  'external-cpu':['memory','cpu'],
+  'native-cpu':['nativeMemory','cpu'],
+  'external-native':['memory','nativeMemory']
+ };
+ const tallPair=pairChoices[byId('timelinePair').value]||pairChoices['external-cpu'];
+ const visibleKinds=tall?tallPair:['memory','nativeMemory','cpu'];
+ const panelCount=tall?2:split?3:overlay?1:2;
+ const panelGap=tall?60:split?47:52,top=overlay?38:30,bottom=chartHeight-38;
  const height=(bottom-top-(panelCount-1)*panelGap)/panelCount;
  const panel=index=>({top:top+(height+panelGap)*index,
                      bottom:top+(height+panelGap)*index+height});
+ const tallIndex=kind=>Math.max(0,tallPair.indexOf(kind));
  const panels={
-  memory:panel(0),
-  nativeMemory:panel(split?1:0),
-  cpu:panel(split?2:overlay?0:1)
+  memory:panel(tall?tallIndex('memory'):0),
+  nativeMemory:panel(tall?tallIndex('nativeMemory'):split?1:0),
+  cpu:panel(tall?tallIndex('cpu'):split?2:overlay?0:1)
  };
  const plot={left:76,right:chartWidth-(overlay?84:60),
              top,cpuBottom:bottom,memBottom:panels.memory.bottom,
              cpuTop:panels.cpu.top};
  const allMemory=[...mem,...nativeMem.map(r=>({...r,free_os_mb:r.native_free_os_mb}))];
  const memScale=scaleFor(split?mem:allMemory,'free_os_mb');
- const nativeScale=split?scaleFor(nativeMem,'native_free_os_mb'):memScale;
+ const nativeScale=(split||tall)?scaleFor(nativeMem,'native_free_os_mb'):memScale;
  const cpuScale=scaleFor(cpu,'native_load_pct',true);
  const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
  const yFor=(kind,v)=>{
@@ -1231,14 +1244,22 @@ function drawIncidentTimeline(){
     diagValue(value,labelKey));
   }
  };
- if(mem.length)yGrid(memScale,'memory');
- if(split&&nativeMem.length)yGrid(nativeScale,'nativeMemory');
- if(cpu.length)yGrid(cpuScale,'cpu',overlay);
+ if(mem.length&&visibleKinds.includes('memory'))yGrid(memScale,'memory');
+ if((split||tall)&&nativeMem.length&&visibleKinds.includes('nativeMemory'))
+  yGrid(nativeScale,'nativeMemory');
+ if(cpu.length&&visibleKinds.includes('cpu'))yGrid(cpuScale,'cpu',overlay);
  const cpuLabel='5m CPU load equivalent · % (native, '+
   String(timelineData.cpu_cores||4)+'-core configured; not utilisation)';
- const labels=split?
-  [['memory','OS memory · MB (external probe; independent scale)'],
-   ['nativeMemory','OS memory · MB (native 5m; independent scale)'],
+ const separateLabels={
+  memory:'OS memory · MB (external probe; independent scale)',
+  nativeMemory:'OS memory · MB (native 5m; independent scale)',
+  cpu:cpuLabel
+ };
+ const labels=tall?
+  tallPair.map(kind=>[kind,separateLabels[kind]]):
+  split?
+  [['memory',separateLabels.memory],
+   ['nativeMemory',separateLabels.nativeMemory],
    ['cpu',cpuLabel]]:
   overlay?
   [['memory','OS memory · MB (left) / CPU load equivalent · % (right)']]:
@@ -1262,8 +1283,8 @@ function drawIncidentTimeline(){
   coverageText(nativeMem,'Native OS memory')+' · '+
   coverageText(cpu,'Native CPU load')+
   ' · Blank regions are unknown, not 0%.';
- for(const kind of ['memory','nativeMemory','cpu']){
-  if(kind==='nativeMemory'&&!split)continue;
+ for(const kind of (tall?tallPair:['memory','nativeMemory','cpu'])){
+  if(kind==='nativeMemory'&&!split&&!tall)continue;
   if(kind==='cpu'&&overlay)continue;
   const rows=timelineSeries[kind],region=panels[kind];
   const first=rows.length?Date.parse(rows[0].recorded_at):NaN;
@@ -1311,9 +1332,12 @@ function drawIncidentTimeline(){
   // Only true singleton points and the active inspection cursor are marked.
  };
 
- drawTrace(mem,'free_os_mb','memory','#70b9ff',!!memMetric.downsampled);
- drawTrace(nativeMem,'native_free_os_mb','nativeMemory','#c4a1ff',!!nativeMemMetric.downsampled);
- drawTrace(cpu,'native_load_pct','cpu','#6ee7b7',!!cpuMetric.downsampled);
+ if(visibleKinds.includes('memory'))
+  drawTrace(mem,'free_os_mb','memory','#70b9ff',!!memMetric.downsampled);
+ if(visibleKinds.includes('nativeMemory'))
+  drawTrace(nativeMem,'native_free_os_mb','nativeMemory','#c4a1ff',!!nativeMemMetric.downsampled);
+ if(visibleKinds.includes('cpu'))
+  drawTrace(cpu,'native_load_pct','cpu','#6ee7b7',!!cpuMetric.downsampled);
  const events=[];
  for(const rec of timelineData.reboots||[]){
   const t=Date.parse(rec.occurred_at);if(!Number.isFinite(t)||t<start||t>end)continue;
@@ -1389,7 +1413,7 @@ function drawIncidentTimeline(){
   (fit?' · Time axis fitted to recorded observations within the '+byId('range').value+'-hour request':'')+
   ((memMetric.downsampled||nativeMemMetric.downsampled||cpuMetric.downsampled)?' · Plot preserves real extrema and gap boundaries':'')+
   ' · Partial source coverage; time alignment is not causation.';
- timelineShown={...timelineShown,x,yFor,plot,chartWidth};
+ timelineShown={...timelineShown,x,yFor,plot,chartWidth,visibleKinds,panels};
  const previous=timelineSelection;
  if(Number.isFinite(previous)&&previous>=start&&previous<=end)selectTimelineTime(previous);
  else if(timelineFocusTimes.length)selectTimelineTime(timelineFocusTimes[timelineFocusTimes.length-1]);
@@ -1414,10 +1438,13 @@ function selectTimelineTime(when){
   const tolerance=kind==='memory'?Math.max(60000,(Number(timelineData.probe_seconds)||30)*1500):180000;
   const near=row&&Math.abs(Date.parse(row.recorded_at)-at)<=tolerance;
   const dot=byId('timelineDot'+kind);
-  if(dot)dot.setAttribute('visibility',near?'visible':'hidden');
+  const onPanel=timelineShown.visibleKinds.includes(kind);
+  if(dot)dot.setAttribute('visibility',near&&onPanel?'visible':'hidden');
   if(near){
-   dot.setAttribute('cx',x(Date.parse(row.recorded_at)));
-   dot.setAttribute('cy',yFor(kind,row[key]));
+   if(dot&&onPanel){
+    dot.setAttribute('cx',x(Date.parse(row.recorded_at)));
+    dot.setAttribute('cy',yFor(kind,row[key]));
+   }
    timelineNearest[kind]=row;
    evidence.push(label+' '+diagValue(row[key],key)+' at '+diagTime(Date.parse(row.recorded_at))+
     ' ('+basis+(kind!=='memory'?', label '+String(row.native_sample_label||'unknown')+
