@@ -2126,7 +2126,8 @@ async function prospectiveView(){
    const part=data.arms[label];
    byId('prospectiveAnswer'+label).textContent=part?.result?.answer||'Not completed.';
    byId('prospectiveReceipts'+label).textContent=
-    part?JSON.stringify(part.result.tool_calls||[],null,2):'Not completed.';
+    part?JSON.stringify((part.result.tool_calls||[]).map((row,index)=>
+     ({...row,review_receipt_index:index})),null,2):'Not completed.';
    prospectivePanel(label,data.ratings?.[label],!!part&&!data.ratings&&
        !!data.arms.A&&!!data.arms.B,data.study_mode==='causal');
    if(data.study_mode==='causal'){
