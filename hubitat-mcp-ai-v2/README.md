@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.26**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.27**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Architecture and scope
 
@@ -15,6 +15,16 @@ The configured model uses native Ollama-compatible `/api/chat` function calling 
 - Retain credential redaction, request deadlines, per-call timeouts and context transport bounds. There is no fixed model/tool round quota or incident-specific investigation recipe.
 
 **This version can perform writes allowed by your MCP connection.** To run a read-only acceptance test, use an upstream read-only client token or disable the server Write master. V2 does not change hub permissions. Server Read/Write masters, per-client access, Advanced overrides, required backups and confirmation flags remain authoritative. Client confirmation does not override a server refusal.
+
+## Alpha.27 — opt-in prospective real-source read-only A/B
+
+The **Real-source A/B** tab is **separate from ordinary Ask**. It prepares **2–10 NEW questions** privately, then compares the unchanged production model-led agent with the experimental generic source-collection ledger variant. A/B assignments are kept hidden until all first answers have been reviewed and scored. The experiment is not proof of improved reasoning by itself.
+
+This study **cannot start a model run without the connected token proving its own read-only grant**. On the tab, click **Check client access**. A fresh `hub_get_info` must include `clientAccess.readEnabled=true` and `clientAccess.writeEnabled=false`. The global `writeEnabled=true` master may remain on for other clients. Missing `clientAccess`, main token, writable client, or unannotated tool blocks the experiment. The runner also uses only upstream tools with `annotations.readOnlyHint=true`, and checks the server's per-client permission again before **each** arm. No write test is attempted.
+
+**To use:** configure a dedicated per-client token (Read ON, Write OFF) privately in the v2 add-on options, restart the add-on, verify its grant, freeze genuinely unseen questions, tick both model/private-evidence consents and cloud-transfer consent if using a remote model, then click **Run blinded read-only pair**. Each arm is a fresh model conversation that selects its own read-only native tools. Both arms incur model inference/possible cloud credit usage. No run is scheduled, and ordinary Ask requests are unaffected.
+
+The study is **memory-only**, so download each case's **PRIVATE JSON** (contains source data) before restarting or deleting the add-on; do not upload or commit the raw source to public GitHub. A privacy-safe aggregate report hides questions, answers and household records. Reviewers score first answers against actual returned receipts; the synthetic `hold-..` and already-exposed `sr-..` cases are NOT fresh holdouts. Because the arms query a live hub sequentially, source state can change between them; matching source snapshots and independent model accuracy are **not automatically verified**. No automatic success judgement, no production candidate promotion.
 
 ## Setup
 
