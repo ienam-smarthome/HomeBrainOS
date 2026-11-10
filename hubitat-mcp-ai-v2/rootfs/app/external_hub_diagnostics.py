@@ -597,9 +597,39 @@ class ExternalHubDiagnostics:
                 "Free OS memory is observed at probe time; Java/CPU are from "
                 "Hubitat's separate native five-minute sample. CPU percent is "
                 "load average divided by configured core count, not utilisation. "
-                "No direct Metaspace metric."
+                "Native history is backfilled from the Hubitat CSV using the "
+                "configured hub time zone; existing legacy rows only have collector "
+                "timestamps. CPU is not measured utilisation. No direct Metaspace metric."
             ),
         }
+
+
+    @staticmethod
+    def _native_history_rows(db: sqlite3.Connection, cutoff: str, end: str) -> list[dict[str, Any]]:
+        """Native source-time history; pre-upgrade samples remain collector-time."""
+        return [
+            {"reachable": 1, **dict(row)}
+            for row in db.execute(
+                "SELECT * FROM native_samples WHERE recorded_at>=? AND recorded_at<=? "
+                "ORDER BY recorded_at ASC", (cutoff, end),
+            )
+        ]
+
+    def _history_source_rows(self, db: sqlite3.Connection, metric: str,
+                             cutoff: str, end: str) -> tuple[Iterable[dict[str, Any]], str]:
+        native_metrics = ("native_free_os_mb", "native_load_pct", "native_load5")
+        if metric in native_metrics:
+            native_rows = self._native_history_rows(db, cutoff, end)
+            if native_rows:
+                return (self._with_load_pct(row) for row in native_rows), "native_label_hub_timezone"
+        # Migration fallback: collector-reception times for pre-upgrade cached rows.
+        return (
+            (self._with_load_pct(dict(row)) for row in db.execute(
+                "SELECT * FROM samples WHERE recorded_at>=? AND recorded_at<=? "
+                "ORDER BY recorded_at ASC", (cutoff, end),
+            )),
+            "legacy_collector_reception" if metric in native_metrics else "external_probe_recorded_at",
+        )
 
     def history(self, hours: int = 6,
                 metric: str = "free_os_mb") -> dict[str, Any]:
@@ -621,12 +651,8 @@ class ExternalHubDiagnostics:
         if not self.enabled or not self.path.exists():
             return empty
         with self._connect() as db:
-            sample_rows = (
-                self._with_load_pct(dict(row))
-                for row in db.execute(
-                    "SELECT * FROM samples WHERE recorded_at>=? ORDER BY recorded_at ASC",
-                    (cutoff,),
-                )
+            sample_rows, basis = self._history_source_rows(
+                db, metric, cutoff, finish.isoformat(timespec="milliseconds"),
             )
             chart = summarize_history_samples(
                 sample_rows, metric=metric, start=start, finish=finish,
@@ -651,6 +677,8 @@ class ExternalHubDiagnostics:
             "range_start": cutoff,
             "range_end": finish.isoformat(timespec="milliseconds"),
             "display_point_count": len(chart["samples"]),
+            "timestamp_basis": basis,
+            "hub_timezone": self.hub_timezone,
             "summarization": ("first_last_min_max_actual_per_time_bucket"
                               if chart["downsampled"] else "original_records"),
             "coverage": "partial_observations_not_proof_of_cause",
@@ -658,15 +686,16 @@ class ExternalHubDiagnostics:
                 "confirmed_systemStart_events_returned_by_hub_eventsJson"
             ),
             "native_java_resolution_seconds": 300,
+            "native_memory_resolution_seconds": 300,
         }
 
 
     def timeline(self, hours: int = 24) -> dict[str, Any]:
-        """One aligned time window for external memory, native load and observed incidents.
+        """Aligned external probe and native source-time observations.
 
-        Reads the same local SQLite recorder as history(); never contacts Hubitat.
-        CPU entries use original native labels but their x-coordinate is the
-        collector reception timestamp, not a fabricated native measurement time.
+        Reads local SQLite only. Native yearless labels are interpreted using
+        the configured Hubitat timezone; pre-upgrade collector-time data is
+        explicitly marked as legacy when original native rows are unavailable.
         """
         window = max(1, min(720, self.retention_days * 24, int(hours)))
         finish = datetime.now(timezone.utc)
@@ -680,16 +709,18 @@ class ExternalHubDiagnostics:
         output: dict[str, Any] = {
             "range_start": cutoff, "range_end": end, "hours": window,
             "retention_days": self.retention_days,
-            "cpu_cores": self.cpu_cores,
+            "cpu_cores": self.cpu_cores, "hub_timezone": self.hub_timezone,
             "metrics": {
                 "free_os_mb": dict(empty_metric),
                 "native_load_pct": dict(empty_metric),
+                "native_free_os_mb": dict(empty_metric),
             },
             "incidents": [], "reboots": [],
             "coverage": "not_recorded",
             "timestamp_basis": {
                 "free_os_mb": "external_probe_recorded_at",
-                "native_load_pct": "collector_recorded_at_with_native_sample_label",
+                "native_load_pct": "native_label_hub_timezone_or_legacy_collector",
+                "native_free_os_mb": "native_label_hub_timezone_or_legacy_collector",
                 "incidents": "external_probe_failure_and_recovery",
                 "reboots": "hub_events_json_systemStart_offset_aware",
             },
@@ -702,21 +733,17 @@ class ExternalHubDiagnostics:
             return output
 
         with self._connect() as db:
-            for metric in ("free_os_mb", "native_load_pct"):
-                # Stream bounded display points. The summarizer preserves
-                # actual extrema and segment boundaries, not averaged values.
-                samples = (
-                    self._with_load_pct(dict(row))
-                    for row in db.execute(
-                        "SELECT * FROM samples WHERE recorded_at>=? "
-                        "AND recorded_at<=? ORDER BY recorded_at ASC",
-                        (cutoff, end),
-                    )
-                )
-                output["metrics"][metric] = summarize_history_samples(
+            for metric in ("free_os_mb", "native_load_pct", "native_free_os_mb"):
+                # Native series use original source timestamps after backfill,
+                # not the time at which a later collector first saw the row.
+                samples, basis = self._history_source_rows(db, metric, cutoff, end)
+                chart = summarize_history_samples(
                     samples, metric=metric, start=start, finish=finish,
                     probe_seconds=self.probe_seconds,
                 )
+                chart["timestamp_basis"] = basis
+                output["timestamp_basis"][metric] = basis
+                output["metrics"][metric] = chart
             output["incidents"] = [dict(row) for row in db.execute(
                 "SELECT started_at,recovered_at,kind,detail FROM incidents "
                 "WHERE started_at<=? AND (recovered_at IS NULL OR recovered_at>=?) "
