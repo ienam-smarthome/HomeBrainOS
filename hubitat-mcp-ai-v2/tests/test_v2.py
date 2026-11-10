@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
-from agent import Agent, arguments_of, compact_tool_result, model_tools
+from agent import Agent, arguments_of, compact_tool_result, model_tools, cpu_load_context
 from external_hub_diagnostics import ExternalHubDiagnostics, validate_hub_url
 from mcp import MCPError, MCPClient, redact
 from interaction import Interaction, needs_confirmation
@@ -158,6 +158,48 @@ class ToolSafetyTests(unittest.TestCase):
 
 
 class AgentContractTests(unittest.TestCase):
+
+    def test_cpu_load_equivalent_uses_configured_cores_and_preserves_receipt(self):
+        source = {"content": [{"type": "text", "text": json.dumps({
+            "entries": [
+                {"timestamp": "11-10 10:53:32", "cpuLoad5min": "0.68"},
+                {"timestamp": "11-10 10:58:32", "cpuLoad5min": "0.65"},
+            ],
+            "summary": {"showing": "2 of 152 (most recent)"},
+        })}]}
+        original = json.dumps(source, sort_keys=True)
+        agent = Agent("http://localhost:11434", "mock", "", 20, cpu_cores=4)
+        try:
+            visible = agent.present_native_result(source, {})
+            self.assertEqual(json.dumps(source, sort_keys=True), original)
+            self.assertEqual(visible["content"], source["content"])
+            meta = visible["client_cpu_load_context"]
+            self.assertEqual(meta["configured_cpu_cores"], 4)
+            self.assertEqual(meta["last_returned_sample"]["load_average_5min"], 0.65)
+            self.assertEqual(meta["last_returned_sample"]["core_normalised_load_pct"], 16.25)
+            self.assertEqual(meta["returned_samples"][0]["core_normalised_load_pct"], 17.0)
+            self.assertEqual(meta["source_showing"], "2 of 152 (most recent)")
+            self.assertIn("not measured utilisation", meta["metric_label"])
+            self.assertEqual(
+                Agent("http://localhost:11434", "mock", "", 20, cpu_cores=8
+                      ).present_native_result(source, {})["client_cpu_load_context"]
+                ["last_returned_sample"]["core_normalised_load_pct"], 8.12)
+        finally:
+            asyncio.run(agent.close())
+
+    def test_cpu_load_equivalent_does_not_invent_missing_or_invalid_values(self):
+        self.assertIsNone(cpu_load_context({"content": [
+            {"type": "text", "text": '{"entries":[{"cpuLoad5min":"nan"},'
+                                     '{"cpuLoad5min":null},{"cpuLoad5min":true}]}'}]}, 4))
+        self.assertIsNone(cpu_load_context({"content": [
+            {"type": "text", "text": '{"state":"off"}'}]}, 4))
+        self.assertIsNone(cpu_load_context({"isError": True,
+                                             "entries": [{"cpuLoad5min": "0.65"}]}, 4))
+        # Load is a run-queue pressure metric and may legitimately exceed 100%.
+        context = cpu_load_context({"entries": [
+            {"timestamp": "x", "cpuLoad5min": "5.0"}]}, 4)
+        self.assertEqual(context["last_returned_sample"]["core_normalised_load_pct"], 125.0)
+
     def test_model_selects_real_tools_and_answers_without_preplan(self):
         class FakeMCP:
             def __init__(self):
