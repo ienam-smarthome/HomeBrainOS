@@ -25,8 +25,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
         self.assertIn("does not explain a later short timer", _SKILL)
         self.assertIn("source timestamp and time zone", _SKILL)
         self.assertIn("only plausible cause", _SKILL)
-        self.assertIn("do not trigger", _SKILL.lower() if "do not trigger" in _SKILL.lower()
-                      else reference.lower() + " do not trigger")
+        self.assertIn("Do not retry a failed write", reference)
         for incident in ("Hallway Light", "4012", "7752", "7770", "FP300", "Bedroom 1"):
             self.assertNotIn(incident, reference)
 
