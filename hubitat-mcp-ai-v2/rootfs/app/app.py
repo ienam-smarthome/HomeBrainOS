@@ -91,6 +91,7 @@ async def lifecycle(app: FastAPI):
             str(options["model_name"]),
             str(options["model_api_key"]),
             int(options["model_timeout_seconds"]),
+            cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
         )
         if str(options["hubitat_mcp_url"]).strip():
             app.state.mcp = MCPClient(
