@@ -128,6 +128,47 @@ execution trace plus causal trigger and outcome **actually discriminate**
 between the available mechanisms, state the supported cause plainly.
 Uncertainty is a consequence of evidence, not a default refusal.
 
+## Compare competing paths and their participating inputs
+
+When the user asks **which controller condition caused a particular event**,
+don't stop at the first attractive timing match. Use the actual returned
+configuration and event receipts to compare *materially compatible* paths.
+For each candidate, distinguish:
+
+1. **Could it produce this command?** Identify the configured action and
+   timing or state condition; don't invent a path just because it is common.
+2. **Would other configured paths fit too?** One observed schedule, duration
+   or threshold correlation may be shared by multiple mechanisms. A matched
+   timestamp proves compatibility, **not uniqueness or an executed callback**.
+3. **What must be true of participating inputs?** Inspect the actual device
+   and sensor references in the relevant config page (and relevant linked
+   pages). For multi-source thresholds, all-source conditions, joins or
+   interlocks, a single selected input is not the entire decision. Judge
+   each source's historical value, timestamp, coverage and freshness against
+   the controller's actual conditions. A stale value or later reading cannot
+   rule out a different condition at the focal instant.
+4. **Which observation could discriminate?** A returned event-specific
+   execution trace or callback record may establish the internal cause.
+   Otherwise compare each candidate's predicted timeline and inputs with
+   contemporaneous original receipts; identify missing but reachable
+   read-only evidence if it would change the conclusion.
+5. **Which claim is justified?** Name verified command issuers and outcomes
+   confidently. A cause can be the **best-supported explanation** without
+   being verified. Rule a candidate out only when relevant contemporaneous
+   evidence actually contradicts its necessary conditions, not merely
+   because another path fits well or a bounded history has no matching row.
+
+The optional `client_config_source_map` is a **client-side index of one
+returned configuration page**, not a hub execution trace or a historical
+settings audit. It lists page links, selected inputs and returned scalar
+control values without interpreting them; its omission counters are explicit.
+The original MCP `content` remains authoritative. A missing item in this
+bounded map, an unread linked page or a raw settings map not requested must
+**not** be assumed absent from the app. Do not describe every possible path
+or fetch unrelated histories when a direct trace already resolves the user's
+question. This is a reasoning task for the model, not a mandatory number of
+tool calls or an imposed answer template.
+
 ## Communicate the actual certainty
 
 Use precise layers in the final answer:
