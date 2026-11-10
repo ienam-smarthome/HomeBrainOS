@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
 from external_hub_diagnostics import ExternalHubDiagnostics
+from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp import MCPError, MCPClient
 from interaction import Interaction
 from conversation import ConversationEvidence
@@ -43,6 +45,9 @@ DEFAULTS: dict[str, Any] = {
     "external_hub_diagnostics_cpu_cores": 4,
     "external_hub_diagnostics_hub_timezone": "Europe/London",
     "external_hub_diagnostics_retention_days": 30,
+    "ha_tts_enabled": False,
+    "ha_tts_notify_service": "",
+    "ha_tts_media_stream": "",
 }
 
 
@@ -86,6 +91,12 @@ async def lifecycle(app: FastAPI):
     app.state.mcp = None
     app.state.model = None
     app.state.configuration_error = None
+    app.state.tts = HomeAssistantTTS(
+        enabled=bool(options["ha_tts_enabled"]),
+        supervisor_token=str(os.getenv("SUPERVISOR_TOKEN") or os.getenv("HASSIO_TOKEN") or ""),
+        notify_service=str(options["ha_tts_notify_service"]),
+        media_stream=str(options["ha_tts_media_stream"]),
+    )
     try:
         app.state.model = Agent(
             http_base(str(options["model_base_url"])),
@@ -140,13 +151,14 @@ async def lifecycle(app: FastAPI):
             except asyncio.CancelledError:
                 pass
         await app.state.recorder.close()
+        await app.state.tts.close()
         if app.state.mcp:
             await app.state.mcp.close()
         if app.state.model:
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.31", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.32", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -162,6 +174,10 @@ async def prevent_stale_interface(request: Request, call_next):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=1500)
 
 
 class AskRequest(BaseModel):
@@ -181,7 +197,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.31",
+        "version": "2.0.0-alpha.32",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
@@ -190,6 +206,7 @@ async def status():
         "configuration_error": app.state.configuration_error,
         "model": str(options["model_name"]),
         "recorder": app.state.recorder.status(),
+        "tts": app.state.tts.status(),
     }
 
 
@@ -198,6 +215,33 @@ def require_ui_request(request: Request):
     # CORS preflight, which this app does not enable. Forms cannot supply it.
     if request.headers.get("x-homebrain-request") != "1":
         raise HTTPException(403, "Interface is out of date or the request header is missing. Close and reopen the v2 interface, then refresh the page. API clients must send X-Homebrain-Request: 1")
+
+
+
+@app.post("/api/tts")
+async def speak_tts(payload: TTSRequest, request: Request):
+    """Explicit answer playback through configured HA companion notify service."""
+    require_ui_request(request)
+    try:
+        return {"success": True, **(await app.state.tts.speak(payload.text))}
+    except HomeAssistantTTSConfigurationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except Exception as exc:
+        # Do not echo downstream HA errors containing private data or tokens.
+        raise HTTPException(502, "Home Assistant mobile TTS delivery failed") from exc
+
+
+@app.post("/api/tts/stop")
+async def stop_tts(request: Request):
+    require_ui_request(request)
+    try:
+        return {"success": True, **(await app.state.tts.stop())}
+    except HomeAssistantTTSConfigurationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except Exception as exc:
+        raise HTTPException(502, "Home Assistant mobile TTS stop failed") from exc
 
 
 @app.get("/api/activity/{request_id}")
