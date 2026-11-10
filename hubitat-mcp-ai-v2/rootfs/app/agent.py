@@ -356,10 +356,11 @@ class Agent:
         await self.client.aclose()
 
     def present_native_result(self, result: dict, arguments: dict) -> dict:
-        """Unchanged production evidence presentation; experiment may override.
+        """Preserve original MCP responses while adding observational source notes.
 
-        Production always uses the existing returned-event scope only.
-        This hook does not change the native tool choice or execution path.
+        Returned-event coverage and recorded command-issuer metadata describe
+        only evidence in each source reply. Experiments may override this hook;
+        no source cue selects tools, retries operations or verifies a cause.
         """
         original_with_scope = model_result_with_scope(result, arguments)
         cpu = cpu_load_context(result, getattr(self, "cpu_cores", 4))

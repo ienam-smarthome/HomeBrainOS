@@ -103,9 +103,79 @@ def scope_of(result: dict, arguments: dict | None = None) -> dict | None:
     return result_scope
 
 
+
+def command_issuer_scope(result: dict) -> dict | None:
+    """Index only command actors from returned event rows, not their causes.
+
+    Command rows can establish a recorded issuer and chronological sequence.
+    They do not, by themselves, identify which internal callback or configured
+    condition led that issuer to act. This is source metadata, not a rule about
+    what the model must read next.
+    """
+    if not isinstance(result, dict) or result.get("isError"):
+        return None
+    source = _payload(result)
+    if source is None:
+        return None
+    returned_commands = 0
+    samples = []
+    for row in source["events"]:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("name")
+        if row.get("type") != "command" and not (
+                isinstance(name, str) and name.startswith("command-")):
+            continue
+        returned_commands += 1
+        if len(samples) >= 12:
+            continue
+        issuer = row.get("producedBy")
+        actor = {}
+        if isinstance(issuer, dict):
+            for key in ("name", "appId", "deviceId"):
+                value = issuer.get(key)
+                if isinstance(value, (str, int)) and not isinstance(value, bool):
+                    if len(str(value)) <= 120:
+                        actor[key] = value
+        sample = {"event_name": name[:100] if isinstance(name, str) else None}
+        stamp = row.get("date")
+        if isinstance(stamp, str) and len(stamp) <= 80:
+            sample["timestamp"] = stamp
+        if actor:
+            sample["reported_command_issuer"] = actor
+        samples.append(sample)
+    if not returned_commands:
+        return None
+    return {
+        "source_scope": "command rows in this returned event response only",
+        "command_rows_returned": returned_commands,
+        "command_examples": samples,
+        "command_examples_omitted": max(0, returned_commands - len(samples)),
+        "issuer_field_alone_proves_internal_trigger": False,
+        "note": (
+            "The command row's producedBy identifies its recorded issuer, not "
+            "the internal decision that caused the issuer to act. A device's "
+            "subsequent state report or an event's triggered[] subscribers do "
+            "not establish that decision either. If the question asks why "
+            "a controller issued a command, consider proportionate available "
+            "read-only sources for its configuration, participating inputs "
+            "and event-specific execution or callback evidence. Clock-time "
+            "coincidence and an app's name cannot uniquely establish a "
+            "scheduled cause. This index does not prove missing history, "
+            "historical configuration or a global absence of cause evidence; "
+            "the model owns source selection and may report unresolved cause."
+        ),
+    }
+
+
 def model_result_with_scope(result: dict, arguments: dict | None = None) -> dict:
     """Retain exact original payload under its original keys plus a separate note."""
     info = scope_of(result, arguments)
-    if info is None:
+    commands = command_issuer_scope(result)
+    if info is None and commands is None:
         return result
-    return {**result, "client_event_source_scope": info}
+    return {
+        **result,
+        **({"client_event_source_scope": info} if info is not None else {}),
+        **({"client_command_issuer_scope": commands} if commands is not None else {}),
+    }

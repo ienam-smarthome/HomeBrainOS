@@ -107,6 +107,63 @@ class ScopeTests(unittest.TestCase):
         self.assertIsNone(empty["largest_gap_between_returned_events_seconds"])
         self.assertFalse(empty["can_infer_uninterrupted_state_between_events"])
 
+
+    def test_command_actor_metadata_does_not_invent_internal_causes(self):
+        rows = [
+            {"name": "temperature", "date": "2026-04-05T08:12:00Z",
+             "producedBy": {"name": "Synthetic sensor"}},
+            {"name": "command-setLevel", "type": "command",
+             "date": "2026-04-05T08:14:00Z",
+             "producedBy": {"name": "Fictional Controller", "appId": 123}},
+            {"name": "switch", "value": "off",
+             "date": "2026-04-05T08:14:01Z",
+             "producedBy": {"name": "Test Bridge"},
+             "triggered": [{"name": "Fictional Controller", "appId": 123}]},
+        ]
+        raw = event_response("Synthetic actuator", rows)
+        original = json.dumps(raw, sort_keys=True)
+        indexed = model_result_with_scope(raw, {"limit": 100})
+        self.assertEqual(indexed["content"], raw["content"])
+        self.assertEqual(indexed["_meta"], raw["_meta"])
+        command = indexed["client_command_issuer_scope"]
+        self.assertEqual(command["command_rows_returned"], 1)
+        self.assertEqual(command["command_examples"][0]["reported_command_issuer"],
+                         {"name": "Fictional Controller", "appId": 123})
+        self.assertFalse(command["issuer_field_alone_proves_internal_trigger"])
+        self.assertIn("read-only sources", command["note"])
+        self.assertIn("Clock-time coincidence", command["note"])
+        self.assertNotIn("Test Bridge", json.dumps(command))
+        self.assertEqual(original, json.dumps(raw, sort_keys=True))
+
+    def test_command_issuer_examples_bounded_and_no_assumed_actor(self):
+        rows = [
+            {"name": "command-off", "date": "2026-02-01T10:00:00Z",
+             "type": "command", "producedBy": {"name": "Fictional Controller"}}
+            for _ in range(20)
+        ]
+        rows.append({"name": "command-on", "type": "command",
+                     "date": "2026-02-01T10:01:00Z"})
+        commands = model_result_with_scope(event_response("Synthetic", rows))
+        index = commands["client_command_issuer_scope"]
+        self.assertEqual(index["command_rows_returned"], 21)
+        self.assertEqual(len(index["command_examples"]), 12)
+        self.assertEqual(index["command_examples_omitted"], 9)
+        empty_actor = model_result_with_scope(event_response("Synthetic", [
+            {"name": "command-off", "date": "2026-02-01T10:01:00Z"}
+        ]))["client_command_issuer_scope"]["command_examples"][0]
+        self.assertNotIn("reported_command_issuer", empty_actor)
+
+    def test_command_scope_is_not_applied_to_unrelated_reads_or_errors(self):
+        plain = event_response("Synthetic", [
+            {"name": "temperature", "date": "2026-02-01T10:00:00Z"},
+            {"name": "switch", "date": "2026-02-01T10:01:00Z",
+             "triggered": [{"name": "Observer", "appId": 999}]},
+        ])
+        self.assertNotIn("client_command_issuer_scope", model_result_with_scope(plain))
+        failure = {"isError": True, "content": [{"type": "text", "text": (
+            '{"events":[{"name":"command-off","type":"command"}]}')} ]}
+        self.assertIs(model_result_with_scope(failure), failure)
+
     def test_other_tools_and_error_payload_are_unchanged(self):
         device = {"content": [{"type": "text", "text": '{"devices":[]}'}]}
         self.assertIsNone(scope_of(device))
@@ -133,11 +190,15 @@ class ScopeTests(unittest.TestCase):
             self.assertIn(expected, _SKILL)
         # Generic source-quality wording instead of hard-coded device/incident
         # templates that try to turn a fixed pattern into a causal conclusion.
+        self.assertIn("Before stopping at a recorded command issuer", _SKILL)
         self.assertNotIn("Bedroom 1", _SKILL)
         self.assertNotIn("Hubitat event retention limits are", _SKILL)
 
     def test_agent_receives_scope_as_separate_metadata_without_tool_replay(self):
         original = event_response("Synthetic controller", [
+            {"name": "command-off", "type": "command",
+             "producedBy": {"name": "Fixture Coordinator", "appId": 72},
+             "date": "2026-11-06T11:00:54.000+0000"},
             {"name": "power", "value": "off",
              "date": "2026-11-06T11:00:55.000+0000"},
         ])
@@ -174,7 +235,9 @@ class ScopeTests(unittest.TestCase):
                 self.assertEqual(hub.calls, [("hub_read_history", {"hoursBack": 48})])
                 tool = json.loads(agent.messages_seen[-1]["content"])
                 self.assertEqual(tool["content"], original["content"])
-                self.assertEqual(tool["client_event_source_scope"]["events_returned"], 1)
+                self.assertEqual(tool["client_event_source_scope"]["events_returned"], 2)
+                self.assertEqual(tool["client_command_issuer_scope"]["command_rows_returned"], 1)
+                self.assertEqual(tool["client_command_issuer_scope"]["command_examples"][0]["reported_command_issuer"]["appId"], 72)
                 self.assertFalse(tool["client_event_source_scope"]["can_infer_cause_of_missing_records"])
                 receipt = json.loads(response["tool_calls"][0]["response"])
                 self.assertEqual(tool, receipt)

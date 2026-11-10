@@ -1,5 +1,15 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.40 first-answer acceptance: command issuer is not internal decision
+
+**Candidate:** A successful native event-history read with command rows now includes `client_command_issuer_scope`: a bounded, source-derived record of the reported command actor and event time. It does not assert that the actor's scheduling, threshold, demand or manual path fired. No automatic tool calls, deterministic causal audit or final-answer rewrite are introduced; the model still decides source selection.
+
+**Fresh cross-domain test (not a previously exposed lighting, ventilation or heating case):** Select a genuinely new, read-only historical controller action in another device/automation class. Ask for (1) the exact command and subsequent event outcome, (2) the recorded issuer, (3) **why that issuer acted**, and (4) which competing configured mechanisms are ruled in/out by event-specific configuration, all participating inputs and callback/execution evidence. Finish with "Do not change anything." Use the installed version shown in the UI, the untouched first answer and private Copy for review/Technical JSON.
+
+**Evaluate:** Did the model see the issuer-sidecar, then choose relevant configuration/execution reads where available—or did it stop at actor identification and infer a cause from app name/time? Check tool name+arguments, source windows/limits, chronology, actor/reporter/listener roles, current-versus-historical configuration, missing pertinent sources, errors and precise unsupported claims. Rate grounding, completeness, causal calibration and usefulness 0/1/2. A no-command history should not fabricate an actor or sidecar. Also test an independently supported positive control whose original execution and trigger receipts genuinely identify the cause.
+
+**Guardrails:** The score of one exposed alpha.39 answer (3/8) is not model accuracy. Synthetic CI verifies code contracts only; do not claim Gemma improved until new private live first answers corroborate it. No household receipts or private identifiers in repository notes, no incident-specific rules, fixed read chains, arbitrary model-round limits or device writes.
+
 ## 10 November 2026 — Alpha.39 first-answer acceptance: discrimination without rigid paths
 
 **Repository candidate:** Alpha.39 enriches only **successful installed-app configuration page reads** with a `client_config_source_map` describing actual fields and linked pages. It neither fetches another page automatically nor rewrites native MCP receipts. New reasoning guidance emphasises materially competing mechanisms and complete *relevant* input histories. The installed add-on version and improved model performance remain unverified until a new private live capture.

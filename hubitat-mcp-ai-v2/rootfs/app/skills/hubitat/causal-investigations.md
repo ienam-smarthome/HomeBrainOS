@@ -128,6 +128,28 @@ execution trace plus causal trigger and outcome **actually discriminate**
 between the available mechanisms, state the supported cause plainly.
 Uncertainty is a consequence of evidence, not a default refusal.
 
+## Before stopping at a recorded command issuer
+
+For a question about *why a controller acted*, a command-history event may
+establish exactly **who called the command**, while leaving its internal
+decision wholly open. Treat finding the issuer as a useful intermediate
+result, not automatically as completion of the causal inquiry. A matching
+round clock time, app name or typical control convention is not evidence of
+a specific scheduler callback. If the connected server offers proportionate
+read-only controller configuration, participating-input history or execution
+evidence that could discriminate between plausible causes, the model should
+decide whether to consult it **before** presenting a preferred explanation.
+A current config snapshot is not proof of what ran at the historical instant.
+
+The optional `client_command_issuer_scope` is a bounded index derived only
+from returned command rows. It shows the actor recorded in `producedBy`,
+which is different from an event's reporting device or `triggered[]` listeners.
+The indexed rows cannot establish a historical internal trigger **from the
+issuer field alone**. The index is not a source-availability oracle or a
+requirement for further reads. If evidence is unavailable, redundant or
+insufficient, report the command issuer confidently and leave the exact
+trigger unverified; never infer the absence of a cause.
+
 ## Compare competing paths and their participating inputs
 
 When the user asks **which controller condition caused a particular event**,
