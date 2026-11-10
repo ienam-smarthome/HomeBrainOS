@@ -2,6 +2,8 @@
 
 Standalone experimental Home Assistant add-on, version **2.0.0-alpha.40**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
+**Alpha.40 — command actor versus controller decision.** Successful event-history receipts containing command rows can now include a bounded `client_command_issuer_scope` with source timestamps and recorded issuers. This is a navigation/coverage aid for the model, not verification of the historical trigger or an instruction to call specific tools. It complements the alpha.39 configuration-page map, leaves original receipts intact and adds no automatic read, write, model round or answer rewrite. First-answer effectiveness remains to be checked on new private live incidents.
+
 ## Alpha.39 — model-led discriminating evidence from configuration sources (10 Nov 2026)
 
 **Problem class:** independent first-answer reviews across lighting and ventilation identified exact commands, sensible timing and apparently consistent controller settings, but prematurely treated one plausible control path as verified while other configured timers, participating sensor inputs and execution histories remained unexamined. This release does **not** claim those historical triggers are now verified or that first-answer accuracy has improved without fresh model testing.
