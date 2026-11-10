@@ -216,14 +216,113 @@ def command_issuer_scope(result: dict) -> dict | None:
     }
 
 
+
+def chronology_landmarks(result: dict) -> dict | None:
+    """Expose bounded temporal landmarks from ONE returned event result.
+
+    This is a source-derived reading aid, not an inferred command-to-outcome
+    relationship or a claim that event clocks are independently synchronized.
+    The model chooses its own next reads and causal explanation.
+    """
+    if not isinstance(result, dict) or result.get("isError"):
+        return None
+    source = _payload(result)
+    if source is None:
+        return None
+
+    dated = []
+    for row_number, row in enumerate(source["events"], start=1):
+        if not isinstance(row, dict):
+            continue
+        stamp = row.get("date")
+        name = row.get("name")
+        if not isinstance(stamp, str) or not isinstance(name, str):
+            continue
+        if len(name) > 120 or len(stamp) > 100:
+            continue
+        instant = _normalized_date(stamp)
+        if instant is None:
+            continue
+        command = _is_command_event(row)
+        item = {
+            "source_row_number": row_number,
+            "source_timestamp": stamp,
+            "event_name": name,
+            "event_role": "recorded_command" if command else "reported_event",
+        }
+        value = row.get("value")
+        if isinstance(value, (str, int, float, bool)):
+            if isinstance(value, str) and len(value) > 100:
+                pass
+            else:
+                item["reported_value"] = value
+        dated.append((instant, row_number, command, name, item))
+
+    commands = [row for row in dated if row[2]]
+    reports = [row for row in dated if not row[2]]
+    if not commands or not reports:
+        return None
+
+    # Choose up to eight newest returned commands, without assuming their
+    # relationship to nearby observations or their names' intended effect.
+    selected = {row[1]: row for row in sorted(
+        commands, key=lambda row: (row[0], row[1]), reverse=True
+    )[:8]}
+
+    # Each non-command event name gets only its earliest and latest returned
+    # observation. This keeps a sparse attribute visible even when numerous
+    # telemetry rows of another attribute surround a command.
+    by_name = {}
+    for row in reports:
+        by_name.setdefault(row[3], []).append(row)
+    ranked = sorted(
+        by_name.items(),
+        key=lambda item: max((row[0], row[1]) for row in item[1]),
+        reverse=True,
+    )
+    for _, entries in ranked[:12]:
+        ordered = sorted(entries, key=lambda row: (row[0], row[1]))
+        selected[ordered[0][1]] = ordered[0]
+        selected[ordered[-1][1]] = ordered[-1]
+    landmarks = [
+        row[4] for row in sorted(selected.values(), key=lambda row: (row[0], row[1]))
+    ]
+    return {
+        "source_scope": "timestamped events in this returned response only",
+        "chronology": "ascending by parsed UTC instant; exact original source stamps preserved",
+        "timestamped_rows_returned": len(dated),
+        "timestamped_rows_without_usable_order": len(source["events"]) - len(dated),
+        "command_rows_with_usable_timestamps": len(commands),
+        "reported_event_names_with_usable_timestamps": len(by_name),
+        "command_examples_omitted": max(0, len(commands) - 8),
+        "reported_event_name_groups_omitted": max(0, len(by_name) - 12),
+        "landmarks": landmarks,
+        "can_infer_command_caused_report_from_order_alone": False,
+        "note": (
+            "Landmarks are only selected rows, not continuous history or an "
+            "event-to-command correlation. Compare original timestamp order "
+            "before saying a command preceded or followed a reported outcome: "
+            "a later recorded command cannot be used as proof of causing an "
+            "earlier report merely by reversing their sequence or invoking "
+            "unspecified latency. A preceding command is compatible with a "
+            "subsequent event but does not establish its cause. Clock skew, "
+            "missing rows, source filters and return limits remain unverified. "
+            "Consult the original MCP source and discriminating read-only "
+            "evidence when the causal explanation matters."
+        ),
+    }
+
+
 def model_result_with_scope(result: dict, arguments: dict | None = None) -> dict:
     """Retain exact original payload under its original keys plus a separate note."""
     info = scope_of(result, arguments)
     commands = command_issuer_scope(result)
-    if info is None and commands is None:
+    chronology = chronology_landmarks(result)
+    if info is None and commands is None and chronology is None:
         return result
     return {
         **result,
         **({"client_event_source_scope": info} if info is not None else {}),
         **({"client_command_issuer_scope": commands} if commands is not None else {}),
+        **({"client_event_chronology": chronology} if chronology is not None else {}),
     }
