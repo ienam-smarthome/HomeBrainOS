@@ -70,7 +70,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}blo
 .copy-feedback-fail{background:#663139;border-color:#ee8c95;color:#fff3f5}
 .copy-status{font-size:13px;font-weight:600;color:var(--green);line-height:1.4}
 .copy-status.copy-status-error{color:#ffb2bc}
-@media(max-width:530px){.timeline-chart{min-width:700px;min-height:540px}.timeline-event{flex-wrap:wrap}
+@media(max-width:530px){.timeline-chart{min-width:860px;min-height:540px}.timeline-event{flex-wrap:wrap}
 .timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
 .diag-controls select{margin-left:0}}
 
@@ -975,6 +975,14 @@ function chartBrushGeometry(kind){
 }
 function chartBrushX(kind,event){
  const element=byId(kind==='timeline'?'incidentTimeline':'graph');
+ if(kind==='timeline'&&element.createSVGPoint&&element.getScreenCTM){
+  const transform=element.getScreenCTM();
+  if(transform){
+   const point=element.createSVGPoint();
+   point.x=event.clientX;point.y=event.clientY;
+   return point.matrixTransform(transform.inverse()).x;
+  }
+ }
  const rect=element.getBoundingClientRect();
  if(!rect.width)return NaN;
  return kind==='timeline'?
@@ -1150,7 +1158,7 @@ function drawIncidentTimeline(){
  // The popup increases plot geometry; it is not merely a magnified 860px SVG.
  const fullView=document.body?.classList?.contains('graph-popout')||false;
  const bounds=svg.getBoundingClientRect();
- const chartWidth=fullView?Math.max(860,Math.round(bounds.width||860)):860;
+ const chartWidth=Math.max(860,Math.round(bounds.width||860));
  const chartHeight=fullView?Math.max(600,Math.round(bounds.height||600)):540;
  svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
  const memMetric=timelineData.metrics?.free_os_mb||{},nativeMemMetric=timelineData.metrics?.native_free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
@@ -1443,9 +1451,8 @@ function prepareTimelineQuestion(){
 }
 function timelinePointer(event){
  if(!timelineShown)return;
- const svg=byId('incidentTimeline'),rect=svg.getBoundingClientRect();
- if(!rect.width)return;
- const px=(event.clientX-rect.left)/rect.width*(timelineShown.chartWidth||860);
+ const px=chartBrushX('timeline',event);
+ if(!Number.isFinite(px))return;
  if(px<timelineShown.plot.left-12||px>timelineShown.plot.right+12)return;
  const fraction=(px-timelineShown.plot.left)/
   (timelineShown.plot.right-timelineShown.plot.left);
