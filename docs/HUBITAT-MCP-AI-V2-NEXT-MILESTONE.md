@@ -1,5 +1,13 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.41 first-answer acceptance: evidence role before origin
+
+**Candidate:** Native event-history model output now presents (a) the requested attribute filter versus the upstream response's reported filter, (b) returned command/non-command and reporter/physical/listener rows, and (c) explicit limits on treating `producedBy`, `type: physical`, or `triggered[]` as proof of who *initiated* the action. Model guidance now makes report-versus-command-versus-execution roles more salient. This adds no data read; it does not change the upstream native MCP payload, force tool sequences or rewrite answers.
+
+**Fresh independent acceptance:** After installing and verifying `2.0.0-alpha.41`, select an uncoached historical event from a **different automation/device class than the exposed alpha.39/40 examples**. Ask: "Why did [target device or controller action] most recently occur? Do not change anything." Capture first answer, Copy for review/Technical JSON and installed version. Inspect exactly which tool calls succeeded; whether history was filtered, command rows and proper issuer were read, controller input/config/execution evidence discriminated plausible causes, and reporter versus issuer versus downstream listener stayed separate. Score grounding, completeness, causal calibration and usefulness 0/1/2 against original receipts. Avoid reusing a previously exposed event to claim generalisation.
+
+**Positive control and guardrails:** On a separate synthetic or source-real fully supported cause, confirm the model can state a causally verified explanation and does not always default to unknown. No private source artifacts in public GitHub notes, writes, fixed post-answer audits, arbitrary tool quotas or false population-level model-accuracy claims. CI tests source presentation and regression safety only.
+
 ## 10 November 2026 — Alpha.40 first-answer acceptance: command issuer is not internal decision
 
 **Candidate:** A successful native event-history read with command rows now includes `client_command_issuer_scope`: a bounded, source-derived record of the reported command actor and event time. It does not assert that the actor's scheduling, threshold, demand or manual path fired. No automatic tool calls, deterministic causal audit or final-answer rewrite are introduced; the model still decides source selection.
