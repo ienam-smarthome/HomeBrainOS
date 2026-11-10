@@ -41,6 +41,7 @@ DEFAULTS: dict[str, Any] = {
     "external_hub_diagnostics_hub_url": "",
     "external_hub_diagnostics_probe_seconds": 30,
     "external_hub_diagnostics_cpu_cores": 4,
+    "external_hub_diagnostics_hub_timezone": "Europe/London",
     "external_hub_diagnostics_retention_days": 30,
 }
 
@@ -106,6 +107,7 @@ async def lifecycle(app: FastAPI):
         path="/data/hubitat-mcp-ai-v2-diagnostics.sqlite3",
         probe_seconds=int(options["external_hub_diagnostics_probe_seconds"]),
         cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
+        hub_timezone=str(options["external_hub_diagnostics_hub_timezone"]),
         retention_days=int(options["external_hub_diagnostics_retention_days"]),
     )
     await app.state.recorder.start()
