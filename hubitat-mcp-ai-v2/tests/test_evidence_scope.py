@@ -108,6 +108,79 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(empty["can_infer_uninterrupted_state_between_events"])
 
 
+
+    def test_attribute_filtered_state_reports_do_not_disprove_command_issuers(self):
+        rows = [
+            {"name": "switch", "value": "off",
+             "date": "2026-05-06T15:11:12.222+0000",
+             "type": "physical",
+             "producedBy": {"name": "Test relay bridge", "deviceId": "bridge-12"},
+             "triggered": [{"name": "Fictional scene listener", "appId": 123}]},
+            {"name": "switch", "value": "on",
+             "date": "2026-05-06T15:10:58.000+0000",
+             "type": "physical",
+             "producedBy": {"name": "Test relay bridge", "deviceId": "bridge-12"}},
+        ]
+        raw = event_response("Fixture relay", rows, attributeFilter="switch")
+        original = json.dumps(raw, sort_keys=True)
+        decorated = model_result_with_scope(raw, {
+            "tool": "hub_list_device_events",
+            "args": {"deviceId": "relay-1", "attribute": "switch", "limit": 20}
+        })
+        scope = decorated["client_event_source_scope"]
+        self.assertEqual(scope["requested_attribute_filter"], "switch")
+        self.assertEqual(scope["upstream_reported_attribute_filter"], "switch")
+        self.assertEqual(scope["command_rows_in_this_response"], 0)
+        self.assertEqual(scope["non_command_rows_in_this_response"], 2)
+        self.assertEqual(scope["non_command_rows_with_reporter"], 2)
+        self.assertEqual(scope["non_command_rows_tagged_physical"], 2)
+        self.assertEqual(scope["non_command_rows_with_triggered_listeners"], 1)
+        self.assertFalse(scope["can_infer_unseen_commands_absent"])
+        self.assertFalse(scope["can_infer_initiator_from_state_report_producer"])
+        self.assertFalse(scope["can_infer_external_or_manual_initiation_from_physical_tag"])
+        self.assertFalse(scope["can_infer_initiator_from_triggered_listeners"])
+        self.assertIn("command rows", scope["causal_source_boundary"])
+        self.assertIn("physical", scope["causal_source_boundary"])
+        self.assertNotIn("client_command_issuer_scope", decorated)
+        self.assertEqual(original, json.dumps(raw, sort_keys=True))
+        self.assertEqual(decorated["content"], raw["content"])
+        self.assertEqual(decorated["_meta"], raw["_meta"])
+
+    def test_command_positive_control_preserves_both_actor_and_reporter(self):
+        rows = [
+            {"name": "command-off", "type": "command",
+             "date": "2026-06-01T10:20:00.100Z",
+             "producedBy": {"name": "Fixture automation", "appId": 55}},
+            {"name": "switch", "type": "physical", "value": "off",
+             "date": "2026-06-01T10:20:00.333Z",
+             "producedBy": {"name": "Fixture radio bridge", "deviceId": 77},
+             "triggered": [{"name": "Fixture automation", "appId": 55}]},
+        ]
+        raw = event_response("Fixture outlet", rows, attributeFilter=None)
+        decorated = model_result_with_scope(raw, {"limit": 100})
+        scope = decorated["client_event_source_scope"]
+        self.assertIsNone(scope["requested_attribute_filter"])
+        self.assertIsNone(scope["upstream_reported_attribute_filter"])
+        self.assertEqual(scope["command_rows_in_this_response"], 1)
+        self.assertEqual(scope["non_command_rows_with_reporter"], 1)
+        issuer = decorated["client_command_issuer_scope"]
+        self.assertEqual(issuer["command_examples"][0]["reported_command_issuer"]["appId"], 55)
+        self.assertFalse(issuer["issuer_field_alone_proves_internal_trigger"])
+        self.assertFalse(scope["can_infer_initiator_from_state_report_producer"])
+        self.assertEqual(decorated["content"], raw["content"])
+
+    def test_reported_filter_and_requested_filter_are_kept_distinct(self):
+        raw = event_response("Fixture", [
+            {"name": "temperature", "date": "2026-07-01T12:00:00Z"}
+        ])
+        scope = scope_of(raw, {"tool": "hub_read_history", "args": {
+            "attribute": "temperature", "limit": 50
+        }})
+        self.assertEqual(scope["requested_attribute_filter"], "temperature")
+        self.assertIsNone(scope["upstream_reported_attribute_filter"])
+        self.assertEqual(scope["command_rows_in_this_response"], 0)
+        self.assertFalse(scope["can_infer_unseen_commands_absent"])
+
     def test_command_actor_metadata_does_not_invent_internal_causes(self):
         rows = [
             {"name": "temperature", "date": "2026-04-05T08:12:00Z",
@@ -191,6 +264,7 @@ class ScopeTests(unittest.TestCase):
         # Generic source-quality wording instead of hard-coded device/incident
         # templates that try to turn a fixed pattern into a causal conclusion.
         self.assertIn("Before stopping at a recorded command issuer", _SKILL)
+        self.assertIn("A state report is not a command-origin trace", _SKILL)
         self.assertNotIn("Bedroom 1", _SKILL)
         self.assertNotIn("Hubitat event retention limits are", _SKILL)
 
@@ -239,6 +313,8 @@ class ScopeTests(unittest.TestCase):
                 self.assertEqual(tool["client_command_issuer_scope"]["command_rows_returned"], 1)
                 self.assertEqual(tool["client_command_issuer_scope"]["command_examples"][0]["reported_command_issuer"]["appId"], 72)
                 self.assertFalse(tool["client_event_source_scope"]["can_infer_cause_of_missing_records"])
+                self.assertEqual(tool["client_event_source_scope"]["command_rows_in_this_response"], 1)
+                self.assertFalse(tool["client_event_source_scope"]["can_infer_initiator_from_state_report_producer"])
                 receipt = json.loads(response["tool_calls"][0]["response"])
                 self.assertEqual(tool, receipt)
             finally:
