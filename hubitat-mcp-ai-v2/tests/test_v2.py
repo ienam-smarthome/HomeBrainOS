@@ -181,8 +181,7 @@ class AgentContractTests(unittest.TestCase):
             self.assertEqual(meta["source_showing"], "2 of 152 (most recent)")
             self.assertIn("not measured utilisation", meta["metric_label"])
             self.assertEqual(
-                Agent("http://localhost:11434", "mock", "", 20, cpu_cores=8
-                      ).present_native_result(source, {})["client_cpu_load_context"]
+                cpu_load_context(source, 8)
                 ["last_returned_sample"]["core_normalised_load_pct"], 8.12)
         finally:
             asyncio.run(agent.close())
@@ -195,6 +194,7 @@ class AgentContractTests(unittest.TestCase):
             {"type": "text", "text": '{"state":"off"}'}]}, 4))
         self.assertIsNone(cpu_load_context({"isError": True,
                                              "entries": [{"cpuLoad5min": "0.65"}]}, 4))
+        self.assertIsNone(cpu_load_context({"content": None}, 4))
         # Load is a run-queue pressure metric and may legitimately exceed 100%.
         context = cpu_load_context({"entries": [
             {"timestamp": "x", "cpuLoad5min": "5.0"}]}, 4)
