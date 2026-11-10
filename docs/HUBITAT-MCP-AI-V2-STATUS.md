@@ -1,8 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
-Updated: 2026-11-09
+Updated: 2026-11-10
 **Current repository version:** Consult `hubitat-mcp-ai-v2/config.yaml` on `main` and the latest milestone at the end of this document. Alpha.25 was merged via PR #1560; alpha.26 blind-rating integrity was merged via PR #1561 (merge SHA `cf23106d7309c43bf2d71533159a6533cce13f4f`). A GitHub merge is not proof that the version has been installed in Home Assistant. **Installed v2 version is not verified for alpha.25/alpha.26.**
 **Historical acceptance:** The last cited private V2-R6 Technical JSON verified the UI as alpha.18 with unchanged Gemma/native flat model path; browser copy-button visual acceptance remains unverified. V2-R3, R2, R4, R5 and R6 source reviews are retained below. PR #1542 merged as `4e486befbc2cd996b6c9eaf635229efee94a0351` (evaluation-only checkpoint).
+
+## 10 November 2026 — First prospective source-ledger A/B pair study completed: no promotion
+
+Two newly frozen real-source alpha.27 A/B pairs (`new-01` and `new-02`) have now been completed, blind-scored and unblinded. The generic source-ledger candidate performed **worse** than unchanged Agent on factual grounding **2/4 vs baseline 3/4** and source completeness **2/4 vs baseline 3/4**, while scoring higher on usefulness **3/4 vs baseline 2/4**. The candidate used **6** model-selected MCP attempts vs baseline **5**, with **1** reported failure each; its paired median response time was **462 ms slower**. **Causal calibration was not rated** for either question (0 applicable pairs), and the report does not independently verify model accuracy, identical live source snapshots or token enforcement.
+
+Case-level analysis: both variants miscounted device voltage attributes in `new-01`, despite the baseline better distinguishing full device identity inventory from authorized currentStates coverage; both largely grounded app status correctly in `new-02`, where candidate's more exact counts increased usefulness. This is a **two-question exploratory outcome only**, not a general performance estimate. **Do not promote the candidate or repeat these exposed questions as unseen validation.** Keep normal Ask on the original model-led Agent; focus future study on causality, evidence sufficiency and independently verified source aggregation across a fresh unseen set. Details: [two-pair study results](HUBITAT-MCP-AI-V2-SOURCE-LEDGER-PILOT-RESULTS.md). No MCP device, HA or repository runtime changes were made by this documentation update.
 
 ## 10 November 2026 — Alpha.27 prospective source-real A/B runner (explicit opt-in)
 

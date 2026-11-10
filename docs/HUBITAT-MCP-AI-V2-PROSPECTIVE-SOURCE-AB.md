@@ -1,6 +1,10 @@
 # HomeBrainOS v2 alpha.27 — prospective source-real A/B (private, opt-in)
 
-**Milestone:** engineering test capability only. **No new live A/B answers have been run or measured.** The ten original sr-series real cases and six earlier fictional holdout cases are exposed and cannot serve as new unseen validation.
+**Milestone:** opt-in evaluation capability; the first two real-source A/B pilot pairs are now complete and manually scored, but candidate promotion is not justified. The ten original sr-series cases, six earlier fictional holdouts and two new-series pilot cases are exposed and cannot serve as future unseen validation.
+
+## Evaluation update — 10 November 2026
+
+The first two genuine source-real A/B pairs are now complete and scored. **The experimental source ledger has not been promoted:** it scored lower on factual grounding and source completeness, higher on usefulness, and causal calibration was not tested. This small pilot does not establish a general effect. The exact scores, limits, and next unseen evaluation gate are in [source-ledger pilot results](HUBITAT-MCP-AI-V2-SOURCE-LEDGER-PILOT-RESULTS.md). The previously frozen pair questions are now exposed and should not be reused as new validation. The Real-source A/B tab remains opt-in; ordinary Ask behavior is unchanged.
 
 ## What changes
 
