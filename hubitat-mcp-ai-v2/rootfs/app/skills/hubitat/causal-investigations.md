@@ -31,6 +31,36 @@ command versus non-command rows and describes what a `physical` tag or
 `producedBy` field cannot establish. It is client-side context, not a
 second read, proof of full history or a list of tools the model must call.
 
+## Recorded chronology is not causality
+
+When an explanation relates a command, input, state report or measurement,
+explicitly compare their original source timestamps as absolute instants,
+including offsets and UK DST where relevant. **Do not reverse the order** of
+a command and an earlier report simply because the command's name fits
+the report, or explain a minutes-long reversal by unspecified reporting
+latency. A later command cannot be treated as evidence that it caused an
+earlier recorded report. If independent clock alignment or later telemetry
+is uncertain, state that uncertainty rather than claiming a proven sequence.
+
+A recorded command preceding a state report is *compatible* with
+command-to-outcome causation, but does not alone establish that the command
+caused that report, which controller callback fired, or whether the device
+physically followed it. Distinguish the latest **command** from the latest
+**state change** when the question asks about the latter. Cross-check
+observation time, event type, relevant preceding state and any independently
+supported execution link before asserting causation.
+
+The optional `client_event_chronology` shows bounded **earliest and latest
+returned observations per event name** plus recent command rows, sorted by
+parseable UTC instants. It is a reading index of one successful MCP response,
+not complete history, synchronized-clock verification, a command-to-event
+join or an instruction to make another tool call. It may omit intermediate
+rows or whole event names when bounded; use the original source for a
+specific claim, and investigate proportionately if missing evidence matters.
+Equal instants, naive source clocks, clock skew, filters and missing rows may
+prevent establishing the true physical event order. Preserve the original
+source stamps and label any unverified link as unknown.
+
 ## Establish the focal event before explaining it
 
 - Identify the specific event and its **source timestamp and time zone**.

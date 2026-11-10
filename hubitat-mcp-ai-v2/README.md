@@ -1,6 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.41**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.42**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+**Alpha.42 — chronology of returned evidence.** When a native event-history result contains timestamped commands and reported events, a bounded `client_event_chronology` index lists source landmarks in actual UTC order while preserving the original timestamps and omissions. It is not a causal command-to-state join: a later recorded command cannot justify claiming it preceded an earlier report, and a preceding command alone does not verify the mechanism. No automatic reads, extra model rounds, answer rewrite, permissions or writes are changed. New source-real first-answer acceptance remains pending.
 
 **Alpha.41 — state report versus command origin.** Successful native event-history receipts also expose which attribute filter was requested and which one the upstream response reported, plus bounded command/non-command and state-reporter role counts. A bridge/device `physical` event is a reported observation, not proof that an action came from manual or external control. A history filtered to state attributes cannot rule out unseen command events. The model remains responsible for selecting proportionate read-only evidence; the native MCP response is untouched and no extra calls, writes, deterministic answer rewrite or mandatory investigation round are introduced. Live first-answer effectiveness is unverified.
 

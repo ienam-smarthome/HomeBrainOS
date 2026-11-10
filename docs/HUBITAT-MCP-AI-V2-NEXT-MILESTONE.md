@@ -1,5 +1,13 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.42 acceptance: chronological evidence before causal attribution
+
+**Candidate:** A new passive `client_event_chronology` sidecar accompanies successful native history reads that return both timestamped command and non-command rows. It sorts bounded recent command and earliest/latest per-name observation landmarks by **parsed UTC instants**, retaining source stamps and explicit omission counts. This is only an aid for reading returned evidence, not a causal pairing, clock-synchronization proof, complete history or extra MCP call. Model guidance asks for strict recorded ordering and distinguishing latest state report from latest command.
+
+**Live independent first-answer challenge:** After separately installing and verifying `2.0.0-alpha.42`, choose a new read-only event in a domain not exposed by the previous heating, lighting, ventilation or dehumidifier cases. Ask the uncoached normal-model question *why did the event happen? Do not change anything*. Capture Copy for review and full private Technical JSON. Check the installed source version; exact chronology (including offset, milliseconds and possible clock skew); report versus command versus issuer; relevant lookback, filter and row limit; whether the first answer uses a source-derived landmark without reversing timestamps; and whether it seeks discriminating configuration/execution sources or leaves cause unverified. Rate grounding, source completeness, causal calibration and usefulness 0/1/2 against original successful receipts, not the assistant's own claims.
+
+**Positive control and safety:** Evaluate a separate case where contemporaneous command/execution evidence genuinely supports the command-to-state mechanism, as well as a contradictory later-command case. No source order may be rewritten to manufacture a cause. Do not claim model improvement from synthetic CI or reused examples. No private records in public notes; do not add forced tool calls, rules tied to real devices, mandatory review rounds, arbitrary quotas or live device operations.
+
 ## 10 November 2026 — Alpha.41 first-answer acceptance: evidence role before origin
 
 **Candidate:** Native event-history model output now presents (a) the requested attribute filter versus the upstream response's reported filter, (b) returned command/non-command and reporter/physical/listener rows, and (c) explicit limits on treating `producedBy`, `type: physical`, or `triggered[]` as proof of who *initiated* the action. Model guidance now makes report-versus-command-versus-execution roles more salient. This adds no data read; it does not change the upstream native MCP payload, force tool sequences or rewrite answers.
