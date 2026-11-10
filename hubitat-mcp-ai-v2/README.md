@@ -1,6 +1,16 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.38**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.39**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.39 — model-led discriminating evidence from configuration sources (10 Nov 2026)
+
+**Problem class:** independent first-answer reviews across lighting and ventilation identified exact commands, sensible timing and apparently consistent controller settings, but prematurely treated one plausible control path as verified while other configured timers, participating sensor inputs and execution histories remained unexamined. This release does **not** claim those historical triggers are now verified or that first-answer accuracy has improved without fresh model testing.
+
+**General read-only enhancement:** The agent now places a `client_config_source_map` beside successfully retrieved installed-app configuration pages, containing only literal source fields: page identity and links, selected device/input references, and returned scalar control values. The map is bounded with explicit omitted-item counts. It marks the result as a **single present-time config snapshot**, not an event-specific execution trace, a verification of historical settings, or proof that any callback ran. The original MCP `content`, source receipt, Technical JSON and raw answer remain unchanged. A failed read, a non-config result, or an upstream `isError` never gets this map.
+
+**Reasoning reference:** For a causal question, the model is encouraged to compare materially compatible paths and participating-input histories, recognise when the same timing or duration fits multiple mechanisms, and distinguish a verified command issuer from an unverified internal trigger. It can choose relevant linked-page, historical input or execution reads where available; it is **not required** to read every source, take extra model rounds, rewrite its answer, or follow a fixed per-device pipeline. Strong event-specific execution proof still supports a direct confident answer.
+
+**Safety / evidence:** No device-specific patches, device actions, raw settings modifications, extra MCP permissions, write retries, automated evidence fetching, post-answer classifier, or altered confirmation flow. Synthetic tests cover page links, multi-input controls, source fidelity, explicit truncation, sensitive-value minimisation, original native history response, no forced tool calls and a positive control. CI does **not** prove compliance by the configured cloud model. Reassess against new uncoached read-only questions after installation.
 
 ## Alpha.38 — model-led recovery from pre-execution MCP contract errors (10 Nov 2026)
 
