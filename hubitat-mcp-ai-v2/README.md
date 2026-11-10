@@ -1,6 +1,10 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.28**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.29**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Everyday use and live review
+
+Open **Ask / Chat** for normal questions. To request a receipt-backed review, click **Copy for review** after the answer and paste the private packet in your review chat, or choose **Technical details → Download PRIVATE JSON**. Check household data before sharing. Copying is browser-local and no automatic ChatGPT call or device action occurs. Historical labs remain under **Experiments (optional)**. See [live review workflow](../docs/HUBITAT-MCP-AI-V2-LIVE-REVIEW-WORKFLOW.md).
 
 ## Architecture and scope
 

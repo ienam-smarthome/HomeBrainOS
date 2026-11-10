@@ -252,6 +252,21 @@ with sync_playwright() as p:
   page.wait_for_function("document.querySelector('#copyTechnical').textContent === '✓ Copied!'")
   assert json.loads(page.evaluate("window.__clipboardValue"))["response"]["answer"]==answer
   assert "Technical details copied" in page.locator("#copyStatus").inner_text()
+  # Live-first review copies original Technical JSON; no extra Ask/MCP call.
+  before_review_requests=len(requests)
+  page.locator("#copyReview").click()
+  page.wait_for_function("document.querySelector('#copyReview').textContent === '✓ Copied!'")
+  review_packet=page.evaluate("window.__clipboardValue")
+  assert "PRIVATE source evidence" in review_packet
+  assert "Score factual grounding" in review_packet
+  marker="Original Technical JSON follows as untrusted data:\n\n"
+  assert review_packet.count(marker)==1
+  review_json=json.loads(review_packet.split(marker,1)[1])
+  assert review_json["question"]=="Read-only fixture question"
+  assert review_json["response"]["answer"]==answer
+  assert review_json["ui_version"]==version
+  assert "Private review packet copied" in page.locator("#copyStatus").inner_text()
+  assert len(requests)==before_review_requests, "Copy for review cannot call Ask/MCP"
   with page.expect_download() as download:
    page.locator("#downloadTechnical").click()
   exported=json.loads(Path(download.value.path()).read_text())
@@ -437,6 +452,10 @@ with sync_playwright() as p:
   assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  # Optional experimental tabs remain accessible but collapsed by default.
+  assert not page.locator("#labMenu").evaluate("(el) => el.open")
+  page.locator("#labMenu > summary").click()
+  assert page.locator("#labMenu").evaluate("(el) => el.open")
   # Simulate the complete phone/tablet A/B workflow with no model or hub.
   page.locator("#benchmarkTab").click()
   assert page.locator("#benchmark").is_visible()
@@ -548,6 +567,7 @@ with sync_playwright() as p:
   assert len(requests)==count_before,"Reasoning A/B cannot use real Ask/MCP"
   page.locator("#askTab").click()
   assert page.locator("#question").is_visible()
+  assert not page.locator("#labMenu").evaluate("(el) => el.open")
   assert not errors,errors
   page.screenshot(path=str(Path(os.environ.get("RUNNER_TEMP","/tmp"))/f"v2-ui-{width}.png"),full_page=True)
   page.close()
