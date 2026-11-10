@@ -190,6 +190,7 @@ class ScopeTests(unittest.TestCase):
             self.assertIn(expected, _SKILL)
         # Generic source-quality wording instead of hard-coded device/incident
         # templates that try to turn a fixed pattern into a causal conclusion.
+        self.assertIn("Before stopping at a recorded command issuer", _SKILL)
         self.assertNotIn("Bedroom 1", _SKILL)
         self.assertNotIn("Hubitat event retention limits are", _SKILL)
 
