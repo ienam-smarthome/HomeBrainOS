@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.30"
+version: "2.0.0-alpha.31"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -33,6 +33,7 @@ options:
   external_hub_diagnostics_hub_url: ""
   external_hub_diagnostics_probe_seconds: 30
   external_hub_diagnostics_cpu_cores: 4
+  external_hub_diagnostics_hub_timezone: "Europe/London"
   external_hub_diagnostics_retention_days: 30
 schema:
   hubitat_mcp_url: str?
@@ -47,4 +48,5 @@ schema:
   external_hub_diagnostics_hub_url: str?
   external_hub_diagnostics_probe_seconds: int(30,300)
   external_hub_diagnostics_cpu_cores: int(1,64)
+  external_hub_diagnostics_hub_timezone: str
   external_hub_diagnostics_retention_days: int(1,90)

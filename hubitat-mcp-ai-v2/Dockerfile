@@ -5,7 +5,7 @@ ARG BUILD_VERSION
 ARG BUILD_ARCH
 LABEL io.hass.version="${BUILD_VERSION}" io.hass.arch="${BUILD_ARCH}"
 
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache python3 py3-pip tzdata
 WORKDIR /app
 COPY rootfs/app /app
 RUN pip3 install --break-system-packages --no-cache-dir -r /app/requirements.txt

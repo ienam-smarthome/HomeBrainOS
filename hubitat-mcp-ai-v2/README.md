@@ -1,6 +1,16 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.30**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.31**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.31 — native memory source reconciliation (10 Nov 2026)
+
+**Root cause:** the external recorder showed frequent OS-memory probes, but the five-minute native CSV read used only its last row. The unified timeline did not plot native OS-memory values, so a transient native peak around a restart could be invisible despite the endpoint exposing it.
+
+Each successful five-minute native fetch now parses every available timestamped CSV row, deduplicates by original label and stores native memory/load in a separate SQLite table with the original label and collector time. The incident timeline plots native memory in purple alongside the independent blue external probes, with native CPU in green. The detailed metrics selector includes native five-minute free OS memory.
+
+The option `external_hub_diagnostics_hub_timezone` defaults to `Europe/London`. Set it to **the time zone configured on your Hubitat hub**, because yearless native `MM-DD HH:MM:SS` labels otherwise cannot be mapped reliably. Rows whose time cannot be resolved are not assigned invented source times. Older saved collector-time records can still appear as an explicitly marked legacy fallback. A source reading that has already expired from Hubitat history cannot be reconstructed.
+
+These are read-only source and visualization changes; no device control, rule changes or causal conclusions. The 9 Nov 22:20 native reading is not independently recovered until a live recorder fetch confirms it.
 
 ## Everyday use and live review
 

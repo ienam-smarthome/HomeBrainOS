@@ -41,6 +41,7 @@ DEFAULTS: dict[str, Any] = {
     "external_hub_diagnostics_hub_url": "",
     "external_hub_diagnostics_probe_seconds": 30,
     "external_hub_diagnostics_cpu_cores": 4,
+    "external_hub_diagnostics_hub_timezone": "Europe/London",
     "external_hub_diagnostics_retention_days": 30,
 }
 
@@ -107,6 +108,7 @@ async def lifecycle(app: FastAPI):
         path="/data/hubitat-mcp-ai-v2-diagnostics.sqlite3",
         probe_seconds=int(options["external_hub_diagnostics_probe_seconds"]),
         cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
+        hub_timezone=str(options["external_hub_diagnostics_hub_timezone"]),
         retention_days=int(options["external_hub_diagnostics_retention_days"]),
     )
     await app.state.recorder.start()
@@ -144,7 +146,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.30", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.31", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -179,7 +181,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.30",
+        "version": "2.0.0-alpha.31",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"

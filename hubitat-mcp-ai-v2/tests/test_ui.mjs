@@ -193,6 +193,11 @@ const sourceFixture={
    {recorded_at:'2026-11-08T12:00:00Z',reachable:1,free_os_mb:830,diag_segment:0},
    {recorded_at:'2026-11-08T12:00:30Z',reachable:1,free_os_mb:835,diag_segment:0}
   ],observed_metric_points:2},
+  native_free_os_mb:{samples:[
+   {recorded_at:'2026-11-08T12:03:00Z',collected_at:'2026-11-08T12:06:00Z',
+    reachable:1,native_free_os_mb:1272.8,native_sample_label:'11-08 12:03:00',
+    timestamp_basis:'native_label_hub_timezone',diag_segment:0}
+  ],observed_metric_points:1,timestamp_basis:'native_label_hub_timezone'},
   native_load_pct:{samples:[
    {recorded_at:'2026-11-08T12:00:00Z',reachable:1,native_load_pct:20,native_sample_label:'source-1',diag_segment:0},
    {recorded_at:'2026-11-08T12:05:00Z',reachable:1,native_load_pct:23,native_sample_label:'source-2',diag_segment:0}
@@ -203,6 +208,16 @@ timeline.run('timelineData='+JSON.stringify(sourceFixture));
 timeline.run('drawIncidentTimeline()');
 assert(timeline.el('incidentTimeline').children.some(n=>n.tagName==='PATH'));
 assert(timeline.el('timelineMeta').textContent.includes('2 distinct native 5m CPU readings'));
+assert(timeline.el('timelineMeta').textContent.includes('1 native 5m memory readings'));
+assert(timeline.el('timelineEvents').textContent.includes('Highest native 5m OS memory'));
+timeline.run("selectTimelineTime(Date.parse('2026-11-08T12:03:00Z'))");
+assert(timeline.el('timelineReadout').textContent.includes('Native 5m OS memory'));
+assert(timeline.el('timelineReadout').textContent.includes('1,272.8 MB'));
+assert(timeline.el('timelineReadout').textContent.includes('native_label_hub_timezone'));
+timeline.run('inspectTimelineSelection()');
+assert(timeline.el('timelineEvidence').textContent.includes('native_memory_reading'));
+assert(timeline.el('timelineEvidence').textContent.includes('11-08 12:03:00'));
+
 assert(timeline.el('timelineMeta').textContent.includes('Time axis fitted'));
 assert(timeline.el('timelineEvents').textContent.includes('Confirmed startup'));
 assert.equal(timeline.el('timelineInspect').disabled,false);

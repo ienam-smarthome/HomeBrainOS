@@ -21,6 +21,7 @@ import sqlite3
 import time
 from typing import Any, Iterable
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -91,14 +92,98 @@ def parse_native_sample(value: str) -> dict[str, Any]:
 
 
 
+_NATIVE_LOCAL_LABEL = re.compile(
+    r"^(?P<month>\d{1,2})[-/](?P<day>\d{1,2})[ T]"
+    r"(?P<hour>\d{1,2}):(?P<minute>\d{2}):(?P<second>\d{2})$"
+)
+
+
+def native_sample_time(label: str, collected_at: str, hub_timezone: str,
+                       retention_days: int) -> str | None:
+    """Resolve a native source timestamp, never pretend collection time is sample time.
+
+    Hubitat's MM-DD HH:MM:SS CSV labels have no year or offset. The configured
+    hub time zone supplies the offset; nearest non-future year supplies the
+    year. Unresolvable, out-of-retention and nonexistent DST wall times are
+    omitted, not plotted at the collector's receipt timestamp.
+    """
+    try:
+        observed = datetime.fromisoformat(collected_at.replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            return None
+        observed = observed.astimezone(timezone.utc)
+        zone = ZoneInfo(hub_timezone)
+        local = _NATIVE_LOCAL_LABEL.fullmatch(str(label).strip())
+        if local:
+            parts = {key: int(value) for key, value in local.groupdict().items()}
+            candidates: list[datetime] = []
+            for year in (observed.astimezone(zone).year - 1,
+                         observed.astimezone(zone).year,
+                         observed.astimezone(zone).year + 1):
+                for fold in (0, 1):
+                    try:
+                        value = datetime(year, parts["month"], parts["day"],
+                                         parts["hour"], parts["minute"],
+                                         parts["second"], tzinfo=zone, fold=fold)
+                        utc = value.astimezone(timezone.utc)
+                        # Reject local times skipped by daylight-saving changes.
+                        if utc.astimezone(zone).replace(tzinfo=None) != value.replace(tzinfo=None):
+                            continue
+                        candidates.append(utc)
+                    except ValueError:
+                        continue
+            candidates = [t for t in candidates
+                          if timedelta(seconds=-120) <= observed - t <=
+                          timedelta(days=retention_days + 2)]
+            # DST fall-back can give two distinct UTC instants the same
+            # yearless local label. Refuse to invent which one was observed.
+            if len(set(candidates)) != 1:
+                return None
+            source = candidates[0]
+        else:
+            source = datetime.fromisoformat(str(label).strip().replace("Z", "+00:00"))
+            # An ISO timestamp without an explicit offset uses the configured hub zone.
+            if source.tzinfo is None:
+                source = source.replace(tzinfo=zone)
+            source = source.astimezone(timezone.utc)
+            if not timedelta(seconds=-120) <= observed - source <= timedelta(days=retention_days + 2):
+                return None
+        return source.isoformat(timespec="milliseconds")
+    except (ValueError, TypeError, ZoneInfoNotFoundError):
+        return None
+
+
+def parse_native_history(payload: str, *, collected_at: str,
+                         hub_timezone: str, retention_days: int) -> tuple[dict[str, Any], ...]:
+    """Parse all timestamped native CSV rows; dedupe by original Hubitat label."""
+    samples: dict[str, dict[str, Any]] = {}
+    # Bounded response processing; preserve all available rows within 90-day retention.
+    for raw in str(payload).splitlines()[-30000:]:
+        if not raw.strip():
+            continue
+        try:
+            row = parse_native_sample(raw)
+        except ValueError:
+            continue  # Header and malformed records are not measurements.
+        label = row["native_sample_label"]
+        stamp = native_sample_time(label, collected_at, hub_timezone, retention_days)
+        if stamp is None:
+            continue
+        samples[label] = {
+            **row, "recorded_at": stamp, "collected_at": collected_at,
+            "reachable": 1, "timestamp_basis": "native_label_hub_timezone",
+        }
+    return tuple(sorted(samples.values(), key=lambda row: row["recorded_at"]))
+
+
 _HUB_EVENTS = "/hub/eventsJson"
 _HISTORY_METRICS = frozenset((
     "free_os_mb", "java_free_mb", "java_allocated_heap_used_pct",
-    "native_load_pct", "native_load5", "latency_ms",
+    "native_load_pct", "native_load5", "native_free_os_mb", "latency_ms",
 ))
 _NATIVE_METRICS = frozenset((
     "java_free_mb", "java_allocated_heap_used_pct", "native_load_pct",
-    "native_load5",
+    "native_load5", "native_free_os_mb",
 ))
 
 
@@ -250,7 +335,7 @@ class ExternalHubDiagnostics:
     def __init__(self, *, enabled: bool = False, hub_url: str = "",
                  path: str | Path = "/data/homebrain-hub-diagnostics.sqlite3",
                  probe_seconds: int = 30, retention_days: int = 30,
-                 cpu_cores: int = 4) -> None:
+                 cpu_cores: int = 4, hub_timezone: str = "Europe/London") -> None:
         self.enabled = bool(enabled)
         self.path = Path(path)
         self.probe_seconds = max(30, min(300, int(probe_seconds)))
@@ -259,18 +344,21 @@ class ExternalHubDiagnostics:
         # processor-capacity equivalent, not measured CPU utilisation.
         self.cpu_cores = max(1, min(64, int(cpu_cores)))
         self.hub_url = ""
+        self.hub_timezone = str(hub_timezone).strip()
         self.error: str | None = None
         if self.enabled:
             try:
+                ZoneInfo(self.hub_timezone)
                 self.hub_url = validate_hub_url(hub_url)
-            except ValueError as exc:
-                self.error = str(exc)
+            except (ValueError, ZoneInfoNotFoundError) as exc:
+                self.error = "Invalid hub time zone or LAN URL: " + str(exc)
         self._task: asyncio.Task | None = None
         self._last: dict[str, Any] | None = None
         self._failures = 0
         self._last_good: str | None = None
         self._pending_failure_start: str | None = None
         self._native: dict[str, Any] = {}
+        self._native_seen_labels: set[str] = set()
         self._native_last_attempt: float = -1e12
         self._events_last_attempt: float = -1e12
         self._last_prune_at: float = 0
@@ -292,6 +380,12 @@ class ExternalHubDiagnostics:
                 native_free_os_mb REAL, java_total_mb REAL, java_free_mb REAL,
                 java_direct_mb REAL, java_allocated_heap_used_pct REAL
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS native_samples (
+                native_sample_label TEXT PRIMARY KEY, recorded_at TEXT NOT NULL,
+                collected_at TEXT NOT NULL, native_free_os_mb REAL,
+                native_load5 REAL, timestamp_basis TEXT NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS native_samples_time ON native_samples(recorded_at)")
             db.execute("""CREATE TABLE IF NOT EXISTS incidents (
                 id INTEGER PRIMARY KEY, started_at TEXT NOT NULL,
                 recovered_at TEXT, kind TEXT NOT NULL,
@@ -311,6 +405,14 @@ class ExternalHubDiagnostics:
                     "SELECT MAX(recorded_at) FROM samples WHERE reachable=1"
                 ).fetchone()[0]
             self._prune(db)
+            # Native CSV may return thousands of already saved records on every
+            # five-minute fetch. Keep only label keys in memory to avoid
+            # repeatedly writing the entire historical CSV back to SQLite.
+            self._native_seen_labels = {
+                str(row[0]) for row in db.execute(
+                    "SELECT native_sample_label FROM native_samples"
+                )
+            }
             self._last_prune_at = time.monotonic()
             if db.execute("SELECT 1 FROM incidents WHERE recovered_at IS NULL "
                           "AND kind='hub-unreachable' LIMIT 1").fetchone():
@@ -320,6 +422,7 @@ class ExternalHubDiagnostics:
         cutoff = (datetime.now(timezone.utc) -
                   timedelta(days=self.retention_days)).isoformat(timespec="milliseconds")
         db.execute("DELETE FROM samples WHERE recorded_at < ?", (cutoff,))
+        db.execute("DELETE FROM native_samples WHERE recorded_at < ?", (cutoff,))
         db.execute("DELETE FROM hub_startups WHERE occurred_at < ?", (cutoff,))
         db.execute(
             "DELETE FROM incidents WHERE recovered_at IS NOT NULL AND recovered_at < ?",
@@ -328,17 +431,32 @@ class ExternalHubDiagnostics:
 
     def _save(self, row: dict[str, Any], opened: str | None,
               recovered: bool, prune: bool = False,
-              startups: tuple[dict[str, str], ...] = ()) -> None:
+              startups: tuple[dict[str, str], ...] = (),
+              native_samples: tuple[dict[str, Any], ...] = ()) -> None:
         fields = ("recorded_at", "reachable", "latency_ms", "free_os_mb", "http_status",
                   "error_kind", "native_sample_label", "native_load5", "native_free_os_mb",
                   "java_total_mb", "java_free_mb", "java_direct_mb",
                   "java_allocated_heap_used_pct")
+        new_native_labels: set[str] = set()
         with self._connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO samples (" + ",".join(fields) + ") VALUES (" +
                 ",".join("?" for _ in fields) + ")",
                 tuple(row.get(k) for k in fields),
             )
+            for native in native_samples:
+                label = native["native_sample_label"]
+                if label in self._native_seen_labels or label in new_native_labels:
+                    continue
+                db.execute(
+                    "INSERT OR IGNORE INTO native_samples "
+                    "(native_sample_label,recorded_at,collected_at,native_free_os_mb,native_load5,timestamp_basis) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (label, native["recorded_at"],
+                     native["collected_at"], native["native_free_os_mb"],
+                     native["native_load5"], native["timestamp_basis"]),
+                )
+                new_native_labels.add(label)
             if opened:
                 existing = db.execute(
                     "SELECT id FROM incidents WHERE recovered_at IS NULL "
@@ -364,6 +482,8 @@ class ExternalHubDiagnostics:
                 )
             if prune:
                 self._prune(db)
+        # Update the in-memory cache only AFTER the SQLite transaction commits.
+        self._native_seen_labels.update(new_native_labels)
 
     async def _poll(self, client: httpx.AsyncClient) -> None:
         row: dict[str, Any] = {
@@ -388,6 +508,7 @@ class ExternalHubDiagnostics:
             row["error_kind"] = "invalid_response_or_request"
 
         startups: tuple[dict[str, str], ...] = ()
+        native_samples: tuple[dict[str, Any], ...] = ()
         if row["reachable"]:
             self._failures = 0
             self._last_good = row["recorded_at"]
@@ -400,6 +521,11 @@ class ExternalHubDiagnostics:
                     native_response = await client.get(self.hub_url + _MEMORY_CSV)
                     native_response.raise_for_status()
                     self._native = parse_native_sample(native_response.text)
+                    native_samples = parse_native_history(
+                        native_response.text, collected_at=row["recorded_at"],
+                        hub_timezone=self.hub_timezone,
+                        retention_days=self.retention_days,
+                    )
                 except (httpx.HTTPError, ValueError):
                     # Keep older Java figures with original native timestamp; never
                     # imply the previous Java sample has been refreshed.
@@ -427,7 +553,7 @@ class ExternalHubDiagnostics:
         prune = time.monotonic() - self._last_prune_at >= 86400
         if prune:
             self._last_prune_at = time.monotonic()
-        await asyncio.to_thread(self._save, row, opened, recovered, prune, startups)
+        await asyncio.to_thread(self._save, row, opened, recovered, prune, startups, native_samples)
 
     async def _run(self) -> None:
         async with httpx.AsyncClient(
@@ -473,6 +599,7 @@ class ExternalHubDiagnostics:
         row = self._with_load_pct(self._last or {})
         return {
             "enabled": self.enabled, "running": bool(self._task and not self._task.done()),
+            "hub_timezone": self.hub_timezone,
             "error": self.error, "probe_seconds": self.probe_seconds,
             "retention_days": self.retention_days, "cpu_cores": self.cpu_cores,
             "last": dict(row),
@@ -488,9 +615,39 @@ class ExternalHubDiagnostics:
                 "Free OS memory is observed at probe time; Java/CPU are from "
                 "Hubitat's separate native five-minute sample. CPU percent is "
                 "load average divided by configured core count, not utilisation. "
-                "No direct Metaspace metric."
+                "Native history is backfilled from the Hubitat CSV using the "
+                "configured hub time zone; existing legacy rows only have collector "
+                "timestamps. CPU is not measured utilisation. No direct Metaspace metric."
             ),
         }
+
+
+    @staticmethod
+    def _native_history_rows(db: sqlite3.Connection, cutoff: str, end: str) -> list[dict[str, Any]]:
+        """Native source-time history; pre-upgrade samples remain collector-time."""
+        return [
+            {"reachable": 1, **dict(row)}
+            for row in db.execute(
+                "SELECT * FROM native_samples WHERE recorded_at>=? AND recorded_at<=? "
+                "ORDER BY recorded_at ASC", (cutoff, end),
+            )
+        ]
+
+    def _history_source_rows(self, db: sqlite3.Connection, metric: str,
+                             cutoff: str, end: str) -> tuple[Iterable[dict[str, Any]], str]:
+        native_metrics = ("native_free_os_mb", "native_load_pct", "native_load5")
+        if metric in native_metrics:
+            native_rows = self._native_history_rows(db, cutoff, end)
+            if native_rows:
+                return (self._with_load_pct(row) for row in native_rows), "native_label_hub_timezone"
+        # Migration fallback: collector-reception times for pre-upgrade cached rows.
+        return (
+            (self._with_load_pct(dict(row)) for row in db.execute(
+                "SELECT * FROM samples WHERE recorded_at>=? AND recorded_at<=? "
+                "ORDER BY recorded_at ASC", (cutoff, end),
+            )),
+            "legacy_collector_reception" if metric in native_metrics else "external_probe_recorded_at",
+        )
 
     def history(self, hours: int = 6,
                 metric: str = "free_os_mb") -> dict[str, Any]:
@@ -512,12 +669,8 @@ class ExternalHubDiagnostics:
         if not self.enabled or not self.path.exists():
             return empty
         with self._connect() as db:
-            sample_rows = (
-                self._with_load_pct(dict(row))
-                for row in db.execute(
-                    "SELECT * FROM samples WHERE recorded_at>=? ORDER BY recorded_at ASC",
-                    (cutoff,),
-                )
+            sample_rows, basis = self._history_source_rows(
+                db, metric, cutoff, finish.isoformat(timespec="milliseconds"),
             )
             chart = summarize_history_samples(
                 sample_rows, metric=metric, start=start, finish=finish,
@@ -542,6 +695,8 @@ class ExternalHubDiagnostics:
             "range_start": cutoff,
             "range_end": finish.isoformat(timespec="milliseconds"),
             "display_point_count": len(chart["samples"]),
+            "timestamp_basis": basis,
+            "hub_timezone": self.hub_timezone,
             "summarization": ("first_last_min_max_actual_per_time_bucket"
                               if chart["downsampled"] else "original_records"),
             "coverage": "partial_observations_not_proof_of_cause",
@@ -549,15 +704,16 @@ class ExternalHubDiagnostics:
                 "confirmed_systemStart_events_returned_by_hub_eventsJson"
             ),
             "native_java_resolution_seconds": 300,
+            "native_memory_resolution_seconds": 300,
         }
 
 
     def timeline(self, hours: int = 24) -> dict[str, Any]:
-        """One aligned time window for external memory, native load and observed incidents.
+        """Aligned external probe and native source-time observations.
 
-        Reads the same local SQLite recorder as history(); never contacts Hubitat.
-        CPU entries use original native labels but their x-coordinate is the
-        collector reception timestamp, not a fabricated native measurement time.
+        Reads local SQLite only. Native yearless labels are interpreted using
+        the configured Hubitat timezone; pre-upgrade collector-time data is
+        explicitly marked as legacy when original native rows are unavailable.
         """
         window = max(1, min(720, self.retention_days * 24, int(hours)))
         finish = datetime.now(timezone.utc)
@@ -571,16 +727,18 @@ class ExternalHubDiagnostics:
         output: dict[str, Any] = {
             "range_start": cutoff, "range_end": end, "hours": window,
             "retention_days": self.retention_days,
-            "cpu_cores": self.cpu_cores,
+            "cpu_cores": self.cpu_cores, "hub_timezone": self.hub_timezone,
             "metrics": {
                 "free_os_mb": dict(empty_metric),
                 "native_load_pct": dict(empty_metric),
+                "native_free_os_mb": dict(empty_metric),
             },
             "incidents": [], "reboots": [],
             "coverage": "not_recorded",
             "timestamp_basis": {
                 "free_os_mb": "external_probe_recorded_at",
-                "native_load_pct": "collector_recorded_at_with_native_sample_label",
+                "native_load_pct": "native_label_hub_timezone_or_legacy_collector",
+                "native_free_os_mb": "native_label_hub_timezone_or_legacy_collector",
                 "incidents": "external_probe_failure_and_recovery",
                 "reboots": "hub_events_json_systemStart_offset_aware",
             },
@@ -593,21 +751,17 @@ class ExternalHubDiagnostics:
             return output
 
         with self._connect() as db:
-            for metric in ("free_os_mb", "native_load_pct"):
-                # Stream bounded display points. The summarizer preserves
-                # actual extrema and segment boundaries, not averaged values.
-                samples = (
-                    self._with_load_pct(dict(row))
-                    for row in db.execute(
-                        "SELECT * FROM samples WHERE recorded_at>=? "
-                        "AND recorded_at<=? ORDER BY recorded_at ASC",
-                        (cutoff, end),
-                    )
-                )
-                output["metrics"][metric] = summarize_history_samples(
+            for metric in ("free_os_mb", "native_load_pct", "native_free_os_mb"):
+                # Native series use original source timestamps after backfill,
+                # not the time at which a later collector first saw the row.
+                samples, basis = self._history_source_rows(db, metric, cutoff, end)
+                chart = summarize_history_samples(
                     samples, metric=metric, start=start, finish=finish,
                     probe_seconds=self.probe_seconds,
                 )
+                chart["timestamp_basis"] = basis
+                output["timestamp_basis"][metric] = basis
+                output["metrics"][metric] = chart
             output["incidents"] = [dict(row) for row in db.execute(
                 "SELECT started_at,recovered_at,kind,detail FROM incidents "
                 "WHERE started_at<=? AND (recovered_at IS NULL OR recovered_at>=?) "
