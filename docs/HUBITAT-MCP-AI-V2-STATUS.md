@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
-Updated: 2026-11-09
+Updated: 2026-11-10
 **Current repository version:** Consult `hubitat-mcp-ai-v2/config.yaml` on `main` and the latest milestone at the end of this document. Alpha.25 was merged via PR #1560; alpha.26 blind-rating integrity was merged via PR #1561 (merge SHA `cf23106d7309c43bf2d71533159a6533cce13f4f`). A GitHub merge is not proof that the version has been installed in Home Assistant. **Installed v2 version is not verified for alpha.25/alpha.26.**
 **Historical acceptance:** The last cited private V2-R6 Technical JSON verified the UI as alpha.18 with unchanged Gemma/native flat model path; browser copy-button visual acceptance remains unverified. V2-R3, R2, R4, R5 and R6 source reviews are retained below. PR #1542 merged as `4e486befbc2cd996b6c9eaf635229efee94a0351` (evaluation-only checkpoint).
 
