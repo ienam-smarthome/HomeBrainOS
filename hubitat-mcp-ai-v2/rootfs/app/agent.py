@@ -224,6 +224,14 @@ class Agent:
     async def close(self) -> None:
         await self.client.aclose()
 
+    def present_native_result(self, result: dict, arguments: dict) -> dict:
+        """Unchanged production evidence presentation; experiment may override.
+
+        Production always uses the existing returned-event scope only.
+        This hook does not change the native tool choice or execution path.
+        """
+        return model_result_with_scope(result, arguments)
+
     async def round(self, messages: list[dict], tools: list[dict], remaining: float) -> dict:
         try:
             response = await asyncio.wait_for(
@@ -412,7 +420,7 @@ class Agent:
                         }
                     else:
                         record["result_kind"] = "tool_result"
-                        model_result = model_result_with_scope(result, args)
+                        model_result = self.present_native_result(result, args)
                     content = compact_tool_result(model_result)
                     record["response_characters"] = len(content)
                 except (MCPError, ValueError, asyncio.TimeoutError) as exc:
