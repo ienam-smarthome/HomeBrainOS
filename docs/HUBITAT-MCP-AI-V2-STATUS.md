@@ -1,5 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 10 November 2026 — Alpha.38 candidate: model-directed live-schema error recovery
+
+**Motivation:** A recent private first-answer historical heating investigation retrieved a device transition and a controller setpoint command, but failed to obtain important controller configuration because a selected MCP read passed an argument of the wrong JSON type. The rejected request was correctly marked as an unexecuted contract error; the model did not recover its critical read. Other evidence limits remain: contemporaneous sensor and execution trace were not fully available, and a current or later snapshot alone does not verify a historic triggering condition. Private source receipts, device names and event timestamps are intentionally **not** copied into public GitHub notes.
+
+**General implementation:** Return a *bounded, redacted, server-origin* `live_input_contract` with locally rejected MCP calls, including exact declared type of the implicated parameter for direct tools or discovered gateway leaves. The normal model decides whether to issue a corrected **read**; no additional obligatory model turn, auto-tool retry, workaround writer, inferred confirmation or incident-specific route. Always retain the failed `contract_error` receipt with `operation_executed=false`; never apply that status to transport/server errors of uncertain execution. Updated causal skill treats a failed necessary read as **unavailable evidence**, not checked settings.
+
+**Acceptance:** CI/synthetic tests exercise a fake direct read, gateway leaf, intentionally invalid action, bounded/redacted catalog excerpt and original source fidelity. Passing CI establishes code integration only; a fresh installed first-answer investigation must establish whether Gemma itself actually recovers and whether its conclusion is calibrated. No change to Hubitat/Home Assistant, backups, network or recorder.
+
+
 ## 10 November 2026 — Alpha.37 release accepted by CI; next source-selection checkpoint
 
 **Repository verification:** `main` commit `ee7cb71d00d17d47979349bb504567a4d93da2c2` (v2 `2.0.0-alpha.37`), with four passing post-merge workflows. Alpha.37 improves visible British-format answer dates (GMT/BST) while preserving private original MCP and answer text. **No independent installed Home Assistant build or model-compliance check has been completed.**
