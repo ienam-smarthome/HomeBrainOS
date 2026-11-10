@@ -148,7 +148,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <body>
 <header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
 <main>
-<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button></nav>
+<nav><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button><button id="prospectiveTab" onclick="tab('prospective')">Real-source A/B</button></nav>
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><p class="session-note">Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
@@ -344,15 +344,63 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
   </details>
  </div>
 </section>
+<section id="prospective">
+ <div class="row"><h2>Real-source A/B · private read-only evaluation</h2><button class="right" onclick="prospectiveRefresh()">Refresh</button></div>
+ <p class="bench-privacy"><strong>Opt-in, real Hubitat reads.</strong> This study requires a fresh server response showing the configured v2 token's own <code>clientAccess.writeEnabled: false</code> before each arm. Write tools are also excluded by native read-only annotations. No question is sent until you click Run and approve the model/cloud consents. Each pair may use cloud credits. Do not use this for device control. The study stays in add-on memory only and is lost on restart.</p>
+ <div class="card">
+  <h3>1 · Verify restricted MCP token</h3>
+  <button onclick="prospectivePermission()">Check client access (one read-only hub request)</button>
+  <pre id="prospectivePermissionStatus">Not checked. The global writeEnabled field is not enough.</pre>
+ </div>
+ <div class="card">
+  <h3>2 · Freeze a NEW set of 2–10 questions (one per line)</h3>
+  <p class="session-note">Choose genuinely new subjects, not the six exposed synthetic holdouts or earlier sr-01–sr-10. Independently check that device/app names and capabilities actually exist before preparing. Do not put credentials here. The questions freeze after preparation; first answers cannot be retried.</p>
+  <textarea id="prospectiveQuestions" placeholder="Question 1...&#10;Question 2..."></textarea>
+  <div class="row"><button onclick="prospectivePrepare()">Freeze new question set</button>
+   <span id="prospectiveFrozen" class="session-note" role="status">Not prepared.</span></div>
+ </div>
+ <div class="card">
+  <h3>3 · Explicit model evaluation</h3>
+  <div class="bench-field"><label for="prospectiveSelect">Question</label>
+   <select id="prospectiveSelect" onchange="prospectiveView()"></select></div>
+  <label class="bench-consent"><input id="prospectiveModelConsent" type="checkbox">I authorise two independent model answers for this private evaluation.</label>
+  <label class="bench-consent"><input id="prospectivePrivateConsent" type="checkbox">I authorise the model to read relevant household evidence through the restricted MCP token.</label>
+  <label class="bench-consent"><input id="prospectiveCloudConsent" type="checkbox">I approve private evidence transfer and possible charges if the configured model is cloud/remote.</label>
+  <div class="row"><button id="prospectiveRun" class="primary" disabled onclick="prospectiveRun()">Run blinded read-only pair</button>
+   <button id="prospectiveStop" disabled onclick="prospectiveStop()">Stop run</button>
+   <button onclick="prospectiveDownloadPrivate()">Download PRIVATE case JSON</button></div>
+  <p id="prospectiveRunStatus" class="session-note" role="status">No run yet.</p>
+ </div>
+ <div class="card">
+  <h3>4 · Review A and B without seeing the condition mapping</h3>
+  <p class="session-note">Both arms use the same model and independently choose native read tools. Source state may drift between live reads. Independently judge each claim against actual receipts. 0 = unsupported, 1 = partial, 2 = supported, n/a = inapplicable. Only fully rated studies reveal the mapping.</p>
+  <p id="prospectiveQuestion" class="session-note"></p>
+  <div class="bench-pair">
+   <div><h3>Answer A</h3><pre id="prospectiveAnswerA">No answer.</pre><div class="bench-score" id="prospectiveScoresA"></div></div>
+   <div><h3>Answer B</h3><pre id="prospectiveAnswerB">No answer.</pre><div class="bench-score" id="prospectiveScoresB"></div></div>
+  </div>
+  <details><summary>Private tool receipts (A)</summary><pre id="prospectiveReceiptsA"></pre></details>
+  <details><summary>Private tool receipts (B)</summary><pre id="prospectiveReceiptsB"></pre></details>
+  <button id="prospectiveScore" onclick="prospectiveScore()" disabled>Save blind ratings</button>
+  <span id="prospectiveScoreStatus" class="session-note" role="status"></span>
+ </div>
+ <div class="card">
+  <h3>5 · Aggregate evidence</h3>
+  <div class="row"><button onclick="prospectiveReport()">Refresh aggregate report</button>
+   <button onclick="prospectiveDownloadReport()">Download privacy-safe report</button></div>
+  <pre id="prospectiveReportPreview">Not measured.</pre>
+  <details><summary>Delete private in-memory question set</summary><button onclick="prospectiveDelete()">Delete experiment</button></details>
+ </div>
+</section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.26";
+const UI_VERSION="2.0.0-alpha.27";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
-function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();}
+function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning','prospective']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();if(which==='prospective')prospectiveRefresh();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
@@ -1932,6 +1980,163 @@ async function reasoningDelete(){
   reasoningText('reasoningReportPreview','No A/B report yet.');
   await reasoningRefresh();
  }catch(error){reasoningText('reasoningStatus','Delete failed: '+error.message);}
+}
+
+
+// Private prospective read-only A/B. All output is textContent (untrusted).
+const PROSPECTIVE_DIMENSIONS=['factual_grounding','source_completeness','causal_calibration','usefulness'];
+let prospectiveState=null,prospectiveCase=null,prospectiveReportData=null,prospectivePoll=null;
+async function prospectiveApi(path,options={}){
+ const response=await fetch('api/prospective-ab/'+path,{
+  ...options,cache:'no-store',
+  headers:{'X-Homebrain-Request':'1',...(options.headers||{})}
+ });
+ const data=await response.json();
+ if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Trial API request failed');
+ return data;
+}
+async function prospectivePermission(){
+ try{
+  const data=await prospectiveApi('permission');
+  byId('prospectivePermissionStatus').textContent=JSON.stringify(data,null,2);
+ }catch(error){byId('prospectivePermissionStatus').textContent=error.message;}
+}
+async function prospectiveRefresh(){
+ if(prospectivePoll!==null){clearTimeout(prospectivePoll);prospectivePoll=null;}
+ try{
+  const data=await prospectiveApi('status');
+  prospectiveState=data;
+  const previous=byId('prospectiveSelect').value;
+  benchOptions('prospectiveSelect',data.cases.map(row=>[
+   row.id,row.id+' · '+(row.blind_ratings_saved?'scored':row.arms_completed.length===2?'review ready':
+    row.arms_completed.length?'partial':'not run')
+  ]),previous);
+  const item=data.cases.find(row=>row.id===byId('prospectiveSelect').value);
+  byId('prospectiveRun').disabled=!!data.active_case||!item||item.arms_completed.length>0;
+  byId('prospectiveStop').disabled=!data.active_case;
+  byId('prospectiveFrozen').textContent=data.cases_prepared?
+   'Frozen '+data.cases_prepared+' questions · SHA256 '+data.study_sha256.slice(0,16)+'…':
+   'No private question set prepared.';
+  byId('prospectiveRunStatus').textContent=data.active_case?
+   'Running '+data.active_case+' · read-only token check before each arm':
+   (data.last_error||data.cases.filter(r=>r.arms_completed.length===2).length+
+    ' / '+data.cases.length+' pairs completed');
+  await prospectiveView();
+  if(data.active_case&&byId('prospective').classList.contains('active'))
+   prospectivePoll=setTimeout(prospectiveRefresh,2500);
+ }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
+}
+async function prospectivePrepare(){
+ const questions=byId('prospectiveQuestions').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ try{
+  await prospectiveApi('prepare',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({questions})});
+  byId('prospectiveQuestions').value='';
+  await prospectiveRefresh();
+ }catch(error){byId('prospectiveFrozen').textContent=error.message;}
+}
+async function prospectiveRun(){
+ if(!byId('prospectiveSelect').value)return;
+ try{
+  await prospectiveApi('run',{method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({
+    case_id:byId('prospectiveSelect').value,
+    model_execution_consent:byId('prospectiveModelConsent').checked,
+    private_evidence_consent:byId('prospectivePrivateConsent').checked,
+    cloud_transfer_consent:byId('prospectiveCloudConsent').checked
+   })});
+  await prospectiveRefresh();
+ }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
+}
+async function prospectiveStop(){
+ try{await prospectiveApi('stop',{method:'POST'});await prospectiveRefresh();}
+ catch(error){byId('prospectiveRunStatus').textContent=error.message;}
+}
+function prospectivePanel(label,ratings,enabled){
+ const panel=byId('prospectiveScores'+label);panel.replaceChildren();
+ for(const dimension of PROSPECTIVE_DIMENSIONS){
+  const field=document.createElement('label');field.textContent=dimension.replaceAll('_',' ');
+  const select=document.createElement('select');select.dataset.dimension=dimension;
+  for(const [value,text] of [['','Choose…'],['0','0 - unsupported'],['1','1 - partial'],
+                             ['2','2 - supported'],['n/a','n/a']]){
+   const opt=document.createElement('option');opt.value=value;opt.textContent=text;
+   select.appendChild(opt);
+  }
+  if(ratings&&ratings[dimension]!==undefined)select.value=String(ratings[dimension]);
+  select.disabled=!enabled;field.appendChild(select);panel.appendChild(field);
+ }
+}
+async function prospectiveView(){
+ const ident=byId('prospectiveSelect').value;
+ if(!ident){prospectiveCase=null;return;}
+ try{
+  const data=await prospectiveApi('case/'+encodeURIComponent(ident));
+  prospectiveCase=data;
+  byId('prospectiveQuestion').textContent=data.question;
+  for(const label of ['A','B']){
+   const part=data.arms[label];
+   byId('prospectiveAnswer'+label).textContent=part?.result?.answer||'Not completed.';
+   byId('prospectiveReceipts'+label).textContent=
+    part?JSON.stringify(part.result.tool_calls||[],null,2):'Not completed.';
+   prospectivePanel(label,data.ratings?.[label],!!part&&!data.ratings&&
+       !!data.arms.A&&!!data.arms.B);
+  }
+  byId('prospectiveScore').disabled=!!data.ratings||!data.arms.A||!data.arms.B;
+  byId('prospectiveScoreStatus').textContent=data.ratings?'Blind scores saved.':'';
+ }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
+}
+async function prospectiveScore(){
+ if(!prospectiveCase)return;
+ const scores={};
+ for(const label of ['A','B']){
+  scores[label]={};
+  for(const select of byId('prospectiveScores'+label).querySelectorAll('select')){
+   if(!select.value){
+    byId('prospectiveScoreStatus').textContent='Rate all dimensions in both answers.';
+    return;
+   }
+   scores[label][select.dataset.dimension]=select.value==='n/a'?'n/a':Number(select.value);
+  }
+ }
+ try{
+  await prospectiveApi('case/'+encodeURIComponent(prospectiveCase.id)+'/score',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({scores})});
+  await prospectiveRefresh();
+ }catch(error){byId('prospectiveScoreStatus').textContent=error.message;}
+}
+async function prospectiveReport(){
+ try{
+  prospectiveReportData=await prospectiveApi('report');
+  byId('prospectiveReportPreview').textContent=JSON.stringify(prospectiveReportData,null,2);
+ }catch(error){byId('prospectiveReportPreview').textContent=error.message;}
+}
+function prospectiveDownload(filename,data){
+ const uri=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)+'\n'],
+   {type:'application/json'}));
+ const a=document.createElement('a');a.href=uri;a.download=filename;
+ document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(uri);
+}
+async function prospectiveDownloadPrivate(){
+ if(!prospectiveCase)return;
+ if(!window.confirm('This contains PRIVATE household questions, answers and MCP source receipts. Save securely; do not publish or commit it.'))return;
+ prospectiveDownload('PRIVATE-HomeBrain-v2-'+prospectiveCase.id+'.json',prospectiveCase);
+}
+async function prospectiveDownloadReport(){
+ if(!prospectiveReportData)await prospectiveReport();
+ if(prospectiveReportData)
+  prospectiveDownload('HomeBrain-v2-source-ledger-ab-summary.json',prospectiveReportData);
+}
+async function prospectiveDelete(){
+ if(!window.confirm('Delete this private in-memory study, answers and ratings? This does not recall data sent to a cloud model.'))return;
+ try{
+  await prospectiveApi('delete',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm_delete:true})});
+  prospectiveCase=null;prospectiveReportData=null;
+  byId('prospectiveReportPreview').textContent='Not measured.';
+  await prospectiveRefresh();
+ }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
 }
 
 initGraphPopout();
