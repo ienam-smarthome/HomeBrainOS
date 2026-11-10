@@ -50,6 +50,27 @@ Before promoting a candidate mechanism to "the cause", perform a short
    specific discriminating evidence. Do not retry a failed write or trigger
    a device action to reconstruct past history.
 
+## Recover from read-only tool contract errors
+
+A tool attempt is not evidence that its intended read succeeded. When a call
+returns `result_kind: contract_error` with `operation_executed: false`, the
+client rejected its arguments *before* executing the MCP operation. The
+`live_input_contract`, if supplied, is a bounded excerpt of the server's
+actual declared input schema; use the declared types and required properties,
+not a guessed type or static memory. The model may choose a corrected,
+proportionate **read-only** call during the ordinary remaining tool loop.
+Do not treat a failed configuration/history read as checked, or claim the
+resulting investigation is complete while necessary evidence is missing.
+
+Distinguish this pre-execution validation failure from a timeout, transport
+error, server `isError` result or uncertain operation outcome: those do
+**not** establish that execution was prevented. Never automatically or
+blindly retry a modifying operation, invent approval, bypass confirmation,
+or treat a declined operation as recoverable. If no safe corrected read is
+possible within the available time/tools, state the specific missing
+evidence and the reported tool error. A successful retry supplies new
+evidence but does not erase the earlier failed attempt from Technical JSON.
+
 ## Test claims about what *did not* happen
 
 Negative and continuous-state conclusions need a different evidence standard
