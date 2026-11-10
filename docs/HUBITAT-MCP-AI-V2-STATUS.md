@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
-## 10 November 2026 — Alpha.30: native memory reconciliation candidate
+## 10 November 2026 — Alpha.31: native memory reconciliation candidate
 
 The 9 Nov 21:55–22:57 screenshots showed Hub & Device Monitor reporting a native free OS memory peak near 22:20 (1,272.8 MB) not visible in the HomeBrain external-probe memory timeline. Source review identified the structural omission: the recorder read the *last* native five-minute CSV row only and the unified timeline omitted native OS-memory history. This does not prove that the original 22:20 row remains available.
 
