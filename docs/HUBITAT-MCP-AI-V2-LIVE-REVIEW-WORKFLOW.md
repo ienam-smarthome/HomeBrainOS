@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — live first-answer review (alpha.29)
 
+## Causal-path discrimination checklist (10 November 2026)
+
+A credible command issuer and an exact event timestamp may be fully supported even when **why the issuer acted** is unknown. For a causal first answer, the reviewer must compare all materially configured explanations that could create the focal action, not just the closest timestamp. When multiple timers or mechanisms align, mark the internal trigger **plausible but unverified** unless event-specific callback/decision evidence, comprehensive participating inputs or another discriminating source establishes a unique path. Distinguish current settings from those demonstrably active at the event time, and preserve original timezone and sub-second event order. Treat a tool call that returned data as distinct from complete historical coverage; record missing sensor/actor sources, window limits and any actual tool errors. A schema-recovery feature is **not tested** by a case containing zero schema failures.
+
+
 **Default (10 November 2026):** Ordinary Ask/Chat replaces compulsory blind A/B scoring as the main development feedback loop. The original experimental pages remain available under **Experiments (optional)**. This is not independently blinded accuracy measurement.
 
 ## Daily workflow
