@@ -193,6 +193,10 @@ with sync_playwright() as p:
              {"recorded_at":"2026-11-08T12:01:00Z","reachable":1,"diag_segment":0,"free_os_mb":810.0},
              {"recorded_at":"2026-11-08T12:02:00Z","reachable":1,"diag_segment":0,"free_os_mb":828.0}
            ]},
+           "native_free_os_mb":{"observed_metric_points":2,"source_sample_count":2,"samples":[
+             {"recorded_at":"2026-11-08T12:00:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:00","native_free_os_mb":845.0},
+             {"recorded_at":"2026-11-08T12:05:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:05","native_free_os_mb":855.0}
+           ]},
            "native_load_pct":{"observed_metric_points":3,"source_sample_count":40,"samples":[
              {"recorded_at":"2026-11-08T12:00:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:00","native_load_pct":15.0},
              {"recorded_at":"2026-11-08T12:05:00Z","reachable":1,"diag_segment":0,"native_sample_label":"12:05","native_load_pct":22.0},
