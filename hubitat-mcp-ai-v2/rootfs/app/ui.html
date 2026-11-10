@@ -710,6 +710,7 @@ function spokenAnswerText(value){
   .replace(/<[^>]+>/g,' ')
   .replace(/\x60{3}[\s\S]*?\x60{3}/g,' ')
   .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+  .replace(ANSWER_ISO_PATTERN,raw=>ukAnswerTimestamp(raw)||raw)
   .replace(/^\s*#{1,6}\s*/gm,'').replace(/^\s*[-*+]\s+/gm,'')
   .replace(/\bCPU\b/g,'C P U').replace(/(\d+(?:\.\d+)?)\s*%/g,'$1 percent')
   .replace(/[*_\x60|]/g,' ').replace(/→/g,' to ').replace(/\s+/g,' ').trim();
