@@ -112,8 +112,12 @@ async def run(body: RunRequest, request: Request):
     if app.state.configuration_error or app.state.mcp is None or app.state.model is None:
         raise HTTPException(503, "Configure the model and Hubitat MCP endpoint")
     if (app.state.prospective_task and not app.state.prospective_task.done()) or any(
-        app.state.__dict__.get(x) and not app.state.__dict__[x].done()
-        for x in ("benchmark_task", "autolab_task", "reasoning_task")
+        (task is not None and not task.done())
+        for task in (
+            getattr(app.state, "benchmark_task", None),
+            getattr(app.state, "autolab_task", None),
+            getattr(app.state, "reasoning_task", None),
+        )
     ):
         raise HTTPException(409, "Another evaluation is active")
     try:
