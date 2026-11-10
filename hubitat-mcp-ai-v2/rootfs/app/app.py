@@ -91,6 +91,7 @@ async def lifecycle(app: FastAPI):
             str(options["model_name"]),
             str(options["model_api_key"]),
             int(options["model_timeout_seconds"]),
+            cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
         )
         if str(options["hubitat_mcp_url"]).strip():
             app.state.mcp = MCPClient(
@@ -143,7 +144,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.29", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.30", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -178,7 +179,7 @@ async def status():
     options = app.state.options
     mcp: MCPClient | None = app.state.mcp
     return {
-        "version": "2.0.0-alpha.29",
+        "version": "2.0.0-alpha.30",
         "mode": "native-model-led-mcp",
         "configured": bool(mcp and app.state.model and (
             str(options["model_base_url"]).rstrip("/") != "https://ollama.com"

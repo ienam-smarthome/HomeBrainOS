@@ -1,10 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.29**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.30**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Everyday use and live review
 
 Open **Ask / Chat** for normal questions. To request a receipt-backed review, click **Copy for review** after the answer and paste the private packet in your review chat, or choose **Technical details → Download PRIVATE JSON**. Check household data before sharing. Copying is browser-local and no automatic ChatGPT call or device action occurs. Historical labs remain under **Experiments (optional)**. See [live review workflow](../docs/HUBITAT-MCP-AI-V2-LIVE-REVIEW-WORKFLOW.md).
+
+## Alpha.30 — normalised CPU load in Ask/Chat
+
+Hub Diagnostics already shows **native five-minute CPU load equivalent (%)**. Ask/Chat now receives a clearly marked derived interpretation whenever a native memory-history MCP receipt contains `cpuLoad5min` samples: `load / configured_cpu_cores × 100`. The original MCP payload remains unchanged in the receipt. Responses should show both the raw five-minute load and the equivalent percentage, with the original sample time. This is **not measured CPU utilisation**, may exceed 100%, and does not prove load or usage between samples. Both Ask/Chat and the external recorder use the same configurable `external_hub_diagnostics_cpu_cores` setting (default 4), even when external recording is disabled. Verify that number against the hub hardware. No extra hub poll, automatic write, or investigation-specific rule was added.
 
 ## Architecture and scope
 
