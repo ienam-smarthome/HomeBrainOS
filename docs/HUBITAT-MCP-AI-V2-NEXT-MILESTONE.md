@@ -1,5 +1,16 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 10 November 2026 — Alpha.37 acceptance: correct source for the question
+
+The UK time display and speech-readability change is merged and CI-green but does not by itself improve retrieval accuracy. **Installed version and visible formatting require a separate user-facing check.** Next evaluate whether the model selects sources that can *actually* answer an event-specific question. A synthetic success and a previous private first-answer failure are not independent evidence of a future improvement.
+
+**One new, read-only cross-domain test:** Investigate the main heating controller's most recently reported transition into heating, using historical thermostat events, participating zone/device history and the relevant coordination/controller configuration. Determine the exact timestamp, distinguish a heat-request command from a thermostat operating-state report and identify whether the contemporaneous reason for heating can be verified. Do not infer historical demand from only current room temperatures or setpoints, and do not assume the source list is complete. End the submitted request with `Do not change anything.`
+
+**Evaluation:** Keep the first answer and original Tool/Technical JSON private; do not retest in the same conversation to obtain a better "first" result. Check whether each returned MCP source is filtered to the correct events (a `switch` attribute filter cannot establish absence of a separate `command-off` event type), overlaps the event-time window, includes enough history, and reaches the specific relevant controller config page where needed. Separate source reporters, subscribers, command issuers and verified decision causes. Later diagnostics do not retroactively demonstrate earlier connectivity. Rate grounding, source completeness, calibration and usefulness 0/1/2; mark tool errors explicitly. A source-name match is not proof of complete configuration.
+
+**Development gate:** If independent tests reproduce source-selection mistakes in unrelated domains, improve general reasoning/tool-description discoverability or source-coverage semantics, not case-specific code or forced read sequences. Preserve model agency, permission and confirmation checks and original evidence fidelity. Pair future negative-evidence tests with a positive-control incident whose source-specific cause is actually established.
+
+
 ## 10 November 2026 — Alpha.36 negative claims and continuity: prospective acceptance
 
 **Problem class:** Models may correctly report point samples but incorrectly infer that a device or whole system *never* lost supply, had *no* command, stayed *continuously* ON, or had *only one* possible causal mechanism. A bounded event query, current snapshot or later normal report cannot prove arbitrary unseen intermediate states.
