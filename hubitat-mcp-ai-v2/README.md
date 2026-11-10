@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.31**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.32**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 ## Alpha.31 — native memory source reconciliation (10 Nov 2026)
 
@@ -19,6 +19,14 @@ Open **Ask / Chat** for normal questions. To request a receipt-backed review, cl
 ## Alpha.30 — normalised CPU load in Ask/Chat
 
 Hub Diagnostics already shows **native five-minute CPU load equivalent (%)**. Ask/Chat now receives a clearly marked derived interpretation whenever a native memory-history MCP receipt contains `cpuLoad5min` samples: `load / configured_cpu_cores × 100`. The original MCP payload remains unchanged in the receipt. Responses should show both the raw five-minute load and the equivalent percentage, with the original sample time. This is **not measured CPU utilisation**, may exceed 100%, and does not prove load or usage between samples. Both Ask/Chat and the external recorder use the same configurable `external_hub_diagnostics_cpu_cores` setting (default 4), even when external recording is disabled. Verify that number against the hub hardware. No extra hub poll, automatic write, or investigation-specific rule was added.
+
+## Alpha.32 — everyday Speak / read-aloud interface
+
+The Ask/Chat interface has **Speak** to capture an English (UK) voice question using the browser's SpeechRecognition API and submit it through the unchanged v2 Ask route. **Read answer / Stop audio** plays only the most recent model answer; **Read replies aloud** is an optional preference. Voice capture only starts after a user tap. The browser may use an online speech service; this feature does not promise offline recognition. No audio is uploaded to v2 or the MCP server by the UI. Chrome/Edge or other browsers with Web Speech recognition support are required; browsers without support (including common Firefox versions) get a visible explanation and can continue to type.
+
+Answer playback prefers browser speech synthesis, using an English (UK) voice where available. For the Home Assistant Android WebView, optional v1-compatible companion TTS can be enabled explicitly using add-on options `ha_tts_enabled: true` and `ha_tts_notify_service: notify.mobile_app_<your_device>` (optionally `ha_tts_media_stream`). The default is disabled; the service may be auto-discovered only when unambiguous. This sends answer text to Home Assistant's mobile-app notification service, not audio to Hubitat; it requires the add-on supervisor token and correctly configured mobile TTS. A failed native TTS request is reported, not silently attributed to device state. TTS endpoints require the same `X-Homebrain-Request: 1` header as the existing Ask route. No wake-word, always-on mic, new model routing, device permissions, or auto-approval is introduced.
+
+The interface also uses a compact voice toolbar with clear listening, unsupported-browser, playback and privacy feedback, while keeping Copy for review and Technical JSON accessible.
 
 ## Architecture and scope
 
