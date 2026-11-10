@@ -166,6 +166,10 @@ class NativeSeriesTests(unittest.TestCase):
         self.assertEqual(_module.native_sample_time(
             "11-09 22:20:10", observed, "Europe/London", 30),
             "2026-11-09T22:20:10.000+00:00")
+        # Ambiguous local DST fall-back time must not be fabricated.
+        self.assertIsNone(_module.native_sample_time(
+            "10-25 01:30:00", "2026-10-25T03:00:00+00:00",
+            "Europe/London", 30))
         # Summer hub-local time is NOT UTC.
         self.assertEqual(_module.native_sample_time(
             "07-01 21:20:10", "2026-07-01T21:26:53+00:00",
