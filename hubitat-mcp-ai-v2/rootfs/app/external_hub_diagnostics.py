@@ -286,7 +286,10 @@ def summarize_history_samples(
                     raw.append(row)
                 else:
                     raw = None
-        if previous and (unknown or stamp - previous[0] > gap_seconds):
+        if previous and (unknown or stamp - previous[0] > gap_seconds or
+                         (native and row.get("timestamp_basis") !=
+                          previous[1].get("timestamp_basis"))):
+            # Do not imply continuity across incompatible clock bases.
             segment += 1
         row["diag_segment"] = segment
         unknown = False
@@ -636,17 +639,52 @@ class ExternalHubDiagnostics:
     def _history_source_rows(self, db: sqlite3.Connection, metric: str,
                              cutoff: str, end: str) -> tuple[Iterable[dict[str, Any]], str]:
         native_metrics = ("native_free_os_mb", "native_load_pct", "native_load5")
-        if metric in native_metrics:
-            native_rows = self._native_history_rows(db, cutoff, end)
-            if native_rows:
-                return (self._with_load_pct(row) for row in native_rows), "native_label_hub_timezone"
-        # Migration fallback: collector-reception times for pre-upgrade cached rows.
+        if metric not in native_metrics:
+            return (
+                (self._with_load_pct(dict(row)) for row in db.execute(
+                    "SELECT * FROM samples WHERE recorded_at>=? AND recorded_at<=? "
+                    "ORDER BY recorded_at ASC", (cutoff, end),
+                )),
+                "external_probe_recorded_at",
+            )
+
+        # Alpha.31's exclusive native-table preference hid older collected
+        # samples as soon as *any* new source-time row entered the query.
+        # Reconcile only pre-native evidence; NEVER rewrite history or pretend
+        # collector reception times are original Hubitat sample times.
+        native_rows = self._native_history_rows(db, cutoff, end)
+        oldest_native = db.execute(
+            "SELECT MIN(recorded_at) FROM native_samples"
+        ).fetchone()[0]
+        legacy_end = min(end, oldest_native) if oldest_native else end
+        legacy_rows: list[dict[str, Any]] = []
+        if cutoff < legacy_end:
+            legacy_rows = [
+                {**dict(row), "timestamp_basis": "legacy_collector_reception",
+                 "collected_at": row["recorded_at"]}
+                for row in db.execute(
+                    "SELECT s.* FROM samples s "
+                    "WHERE s.recorded_at>=? AND s.recorded_at<? "
+                    "AND s.reachable=1 AND s.native_sample_label IS NOT NULL "
+                    "AND TRIM(s.native_sample_label)<>'' "
+                    "AND NOT EXISTS (SELECT 1 FROM native_samples n "
+                    " WHERE n.native_sample_label=s.native_sample_label) "
+                    "ORDER BY s.recorded_at ASC",
+                    (cutoff, legacy_end),
+                )
+            ]
+
+        if legacy_rows and native_rows:
+            basis = "mixed_legacy_collector_and_native_source"
+        elif native_rows:
+            basis = "native_label_hub_timezone"
+        else:
+            basis = "legacy_collector_reception"
+        # Legacy rows precede the first persisted native source time.
+        # Summarization removes duplicate cached 30s polls by source label.
         return (
-            (self._with_load_pct(dict(row)) for row in db.execute(
-                "SELECT * FROM samples WHERE recorded_at>=? AND recorded_at<=? "
-                "ORDER BY recorded_at ASC", (cutoff, end),
-            )),
-            "legacy_collector_reception" if metric in native_metrics else "external_probe_recorded_at",
+            (self._with_load_pct(row) for row in (*legacy_rows, *native_rows)),
+            basis,
         )
 
     def history(self, hours: int = 6,

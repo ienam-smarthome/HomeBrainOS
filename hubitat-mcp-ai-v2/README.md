@@ -1,6 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.33**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.34**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.34 — source coverage repair and timeline readability (10 Nov 2026)
+
+- **Data restored to the chart, not changed in SQLite:** the alpha.31 migration to a native five-minute source-time table previously hid earlier legacy collected readings whenever newer native rows existed. The history/timeline now reconciles eligible pre-native collector-time records *before the earliest true native timestamp* with source-time native rows, deduplicates repeated cached polls by native label, and breaks the plotted line when timestamp provenance changes. Read-only queries do not convert old collector receipt times into new source times, create historical measurements, or mutate existing observations.
+- **Three-panel default:** external OS free memory, native 5-minute OS free memory and 5-minute CPU load equivalent have separate, aligned panels and independent Y-axis scales; retain optional combined-memory and all-overlaid layouts. The percentage is load average divided by configured core count, not measured utilisation.
+- **Explicit coverage:** a separate summary names first/last returned native readings, indicates incomplete earlier intervals and identifies legacy collector-time observations. Blank means unknown, never zero.
+- **Point markers:** remove universal dots on every native point and decorations at extrema; show dots only for genuinely isolated one-point segments and the deliberately selected inspection cursor. Extrema remain available in the event list. Nearest-source matching uses time tolerance (three minutes native) instead of arbitrary screen pixels, so zooming does not change evidence classification.
+- **Tests:** synthetic mixed-era source reconciliation, duplicate-label exclusion, source-basis break, native CPU percentage, desktop/mobile three-panel geometry, coverage notes, no decorative dots, and popout/zoom compatibility. No network/device writes and no change to the original database schema.
 
 ## Alpha.33 — causal inference and temporal evidence discipline (10 Nov 2026)
 

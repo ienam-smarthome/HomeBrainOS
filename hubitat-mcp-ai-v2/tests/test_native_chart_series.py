@@ -227,6 +227,107 @@ class NativeSeriesTests(unittest.TestCase):
             )
             self.assertEqual(len(recorder.timeline(1)["metrics"]["native_free_os_mb"]["samples"]), 3)
 
+    def test_mixed_era_chart_restores_older_collector_rows_without_moving_times(self):
+        """Native source backfill must not hide earlier saved collector evidence."""
+        import sqlite3
+        now = datetime.now(timezone.utc)
+        old1 = now - timedelta(minutes=45)
+        old2 = now - timedelta(minutes=40)
+        source1 = now - timedelta(minutes=15)
+        source2 = now - timedelta(minutes=10)
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "diagnostics.sqlite3"
+            recorder = _module.ExternalHubDiagnostics(
+                enabled=True, hub_url="http://192.168.1.239",
+                path=path, hub_timezone="Europe/London", cpu_cores=4,
+            )
+            recorder._initialize()
+            for when, label, load, mem in (
+                (old1, "legacy-a", .8, 810.0),
+                (old1 + timedelta(seconds=30), "legacy-a", .8, 810.0),
+                (old2, "legacy-b", 1.0, 820.0),
+                (old2 + timedelta(seconds=30), "legacy-b", 1.0, 820.0),
+            ):
+                recorder._save({
+                    "recorded_at": stamp(when), "reachable": 1, "free_os_mb": 900.,
+                    "native_sample_label": label, "native_load5": load,
+                    "native_free_os_mb": mem,
+                }, opened=None, recovered=False)
+            persisted = [
+                {
+                    "native_sample_label": label,
+                    "recorded_at": stamp(when),
+                    "collected_at": stamp(now),
+                    "native_free_os_mb": mem,
+                    "native_load5": load,
+                    "timestamp_basis": "native_label_hub_timezone",
+                }
+                for when, label, load, mem in (
+                    (source1, "native-a", 1.2, 830.),
+                    (source2, "native-b", .6, 840.),
+                )
+            ]
+            recorder._save({
+                "recorded_at": stamp(now), "reachable": 1,
+                "free_os_mb": 890.,
+            }, opened=None, recovered=False, native_samples=tuple(persisted))
+            output = recorder.timeline(1)
+            for metric, key in (
+                ("native_free_os_mb", "native_free_os_mb"),
+                ("native_load_pct", "native_load_pct"),
+            ):
+                series = output["metrics"][metric]
+                rows = series["samples"]
+                self.assertEqual(series["timestamp_basis"],
+                                 "mixed_legacy_collector_and_native_source")
+                self.assertEqual([r["native_sample_label"] for r in rows],
+                                 ["legacy-a", "legacy-b", "native-a", "native-b"])
+                self.assertEqual(rows[0]["recorded_at"], stamp(old1))
+                self.assertEqual(rows[1]["recorded_at"], stamp(old2))
+                self.assertEqual(rows[2]["recorded_at"], stamp(source1))
+                self.assertEqual(rows[2]["collected_at"], stamp(now))
+                self.assertEqual(rows[0]["timestamp_basis"],
+                                 "legacy_collector_reception")
+                self.assertGreater(rows[2]["diag_segment"], rows[1]["diag_segment"])
+                self.assertEqual(series["observed_metric_points"], 4)
+            cpu = output["metrics"]["native_load_pct"]["samples"]
+            self.assertEqual([r["native_load_pct"] for r in cpu],
+                             [20.0, 25.0, 30.0, 15.0])
+            self.assertEqual(len(recorder.history(1, "native_load5")["samples"]), 4)
+            self.assertEqual(len(recorder.history(1, "free_os_mb")["samples"]), 5)
+            with sqlite3.connect(path) as db:
+                # Reading the timeline must not modify legacy or native stores.
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM samples").fetchone()[0], 5)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM native_samples").fetchone()[0], 2)
+
+    def test_backfill_does_not_duplicate_an_existing_native_label(self):
+        now = datetime.now(timezone.utc)
+        with TemporaryDirectory() as folder:
+            recorder = _module.ExternalHubDiagnostics(
+                enabled=True, hub_url="http://192.168.1.239",
+                path=Path(folder) / "diagnostics.sqlite3",
+            )
+            recorder._initialize()
+            recorder._save({
+                "recorded_at": stamp(now - timedelta(minutes=30)),
+                "reachable": 1, "native_sample_label": "same-label",
+                "native_load5": .7, "native_free_os_mb": 850.,
+            }, opened=None, recovered=False)
+            recorder._save({
+                "recorded_at": stamp(now), "reachable": 1,
+            }, opened=None, recovered=False, native_samples=({
+                "native_sample_label": "same-label",
+                "recorded_at": stamp(now - timedelta(minutes=15)),
+                "collected_at": stamp(now),
+                "native_free_os_mb": 850.,
+                "native_load5": .7,
+                "timestamp_basis": "native_label_hub_timezone",
+            },))
+            rows = recorder.timeline(1)["metrics"]["native_load_pct"]["samples"]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["timestamp_basis"], "native_label_hub_timezone")
+
+
 
 if __name__ == "__main__":
     unittest.main()
