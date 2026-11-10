@@ -2,6 +2,10 @@
 
 **Established:** 9 November 2026. **Implementation phase:** independent measurement groundwork; no change to production agent behavior. **Baseline:** v2 repository version 2.0.0-alpha.26, or exact version/SHA captured at deployment. Do not assume that a merged build is installed.
 
+## 10 November 2026 — Current next gate: alpha.28 causal evidence audit
+
+The two newly frozen alpha.27 real-source pilot pairs are now complete. Their experimental collection-ledger candidate was **not promoted** (lower factual-grounding and source-completeness scores; causal calibration not applicable). The upcoming alpha.28 opt-in evaluation adds private claim-by-claim causal review and strict comparison of original source read receipts, **without changing model-led production behavior**. Plan a fresh, cross-domain, read-only causality study with independently checked target/capability/time details, human evidence review, and explicit unanswered-source treatment. Do not reuse the exposed alpha.27 pairs, source-real ten-case captures or older fictional holdouts for independent validation. See [alpha.28 study runbook](HUBITAT-MCP-AI-V2-CAUSAL-REVIEW-READINESS.md) and [alpha.27 pilot result](HUBITAT-MCP-AI-V2-SOURCE-LEDGER-PILOT-RESULTS.md). This update supersedes the earlier "not yet captured" phase descriptions below, which are retained as historical milestone notes.
+
 ## Why this milestone exists
 
 The frozen six-case fictional A/B evaluation was fully completed and unblinded. An extra generic investigation-completion prompt scored 36/50 vs 31/50 for unchanged baseline, but **causal calibration tied at 7/12** and the strict discriminating-source checks also tied at 10/23. Therefore the experimental prompt is **not promoted** and those six revealed scenarios cannot serve as fresh validation. These are small, ChatGPT-assisted human ratings, not independent accuracy estimates.

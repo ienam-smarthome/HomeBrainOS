@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from urllib.parse import urlsplit
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, StrictBool
@@ -32,13 +33,17 @@ async def status(request: Request):
 
 class FreezeQuestions(BaseModel):
     questions: list[str] = Field(min_length=2, max_length=10)
+    causal_mode: StrictBool = False
+    target_check_attested: StrictBool = False
 
 
 @router.post("/prepare")
 async def prepare(body: FreezeQuestions, request: Request):
     guard(request)
     try:
-        return request.app.state.prospective.prepare(body.questions)
+        return request.app.state.prospective.prepare(
+            body.questions, body.causal_mode, body.target_check_attested
+        )
     except ProspectiveError as exc:
         raise HTTPException(409, str(exc)) from None
 
@@ -161,13 +166,16 @@ async def case(case_id: str, request: Request):
 
 class Score(BaseModel):
     scores: dict[str, dict[str, int | str]]
+    causal_review: dict[str, Any] | None = None
 
 
 @router.post("/case/{case_id}/score")
 async def score(case_id: str, body: Score, request: Request):
     guard(request)
     try:
-        request.app.state.prospective.rate(case_id, body.scores)
+        request.app.state.prospective.rate(
+            case_id, body.scores, body.causal_review
+        )
     except ProspectiveError as exc:
         raise HTTPException(409, str(exc)) from None
     return {"saved": True, "mapping_hidden_until_all_rated": True}
