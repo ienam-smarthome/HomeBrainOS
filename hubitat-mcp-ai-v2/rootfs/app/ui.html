@@ -353,9 +353,11 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
   <pre id="prospectivePermissionStatus">Not checked. The global writeEnabled field is not enough.</pre>
  </div>
  <div class="card">
-  <h3>2 · Freeze a NEW set of 2–10 questions (one per line)</h3>
-  <p class="session-note">Choose genuinely new subjects, not the six exposed synthetic holdouts or earlier sr-01–sr-10. Independently check that device/app names and capabilities actually exist before preparing. Do not put credentials here. The questions freeze after preparation; first answers cannot be retried.</p>
-  <textarea id="prospectiveQuestions" placeholder="Question 1...&#10;Question 2..."></textarea>
+  <h3>2 · Freeze a NEW study (one question per line)</h3>
+  <p class="session-note">For causal investigations, prepare 4–10 genuinely unseen questions across different domains. Do not reuse exposed holdout, sr-series or new-01/new-02 cases. Verify each exact target, capability and time scope independently before freezing. Do not put credentials here. Frozen questions and original first answers cannot be retried.</p>
+  <textarea id="prospectiveQuestions" placeholder="One new causal investigation per line…"></textarea>
+  <label class="bench-consent"><input id="prospectiveCausalMode" type="checkbox" checked> Causal evidence study (4–10 questions; requires claim-by-claim review)</label>
+  <label class="bench-consent"><input id="prospectiveTargetAttestation" type="checkbox"> I have independently checked each named target, relevant capability and requested time scope. This is my attestation, not an automated hub verification.</label>
   <div class="row"><button onclick="prospectivePrepare()">Freeze new question set</button>
    <span id="prospectiveFrozen" class="session-note" role="status">Not prepared.</span></div>
  </div>
@@ -379,8 +381,43 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
    <div><h3>Answer A</h3><pre id="prospectiveAnswerA">No answer.</pre><div class="bench-score" id="prospectiveScoresA"></div></div>
    <div><h3>Answer B</h3><pre id="prospectiveAnswerB">No answer.</pre><div class="bench-score" id="prospectiveScoresB"></div></div>
   </div>
+  <p id="prospectiveParity" class="session-note">Original source-response comparability: not checked.</p>
   <details><summary>Private tool receipts (A)</summary><pre id="prospectiveReceiptsA"></pre></details>
   <details><summary>Private tool receipts (B)</summary><pre id="prospectiveReceiptsB"></pre></details>
+  <div id="prospectiveCausalReview" class="card" hidden>
+   <h3>Required causal evidence audit — human review, not automatic proof</h3>
+   <p class="session-note">Inspect each original MCP receipt before scoring. Record every <strong>definite causal assertion</strong> made by each answer (not simply a device state, correlation, possibility or an explicit refusal to infer a cause). Each line: <code>supported | short exact claim | 0,2</code>, <code>unsupported | short claim |</code>, or <code>unverified | short claim | 1</code>. Receipt indices are zero-based positions in that answer's tool receipt list. A supported cause MUST reference at least one successful original tool result. Leave the claims field empty if the model makes no definite cause assertion; still rate whether its uncertainty was appropriate (0–2, not n/a). Private claim quotations are never included in the aggregate report.</p>
+   <div class="bench-pair">
+    <div>
+     <h3>Answer A — source-grounded cause review</h3>
+     <label class="bench-consent"><input id="prospectiveReviewedA" type="checkbox">I inspected A's original receipts</label>
+     <label class="bench-consent"><input id="prospectiveAllClaimsA" type="checkbox">All definite cause claims in A are reviewed</label>
+     <label for="prospectiveCoverageA" class="session-note">Evidence for distinguishing competing causes</label>
+     <select id="prospectiveCoverageA" aria-label="Answer A source coverage">
+      <option value="">Choose source coverage…</option>
+      <option value="sufficient">Sufficient for stated conclusion</option>
+      <option value="partial">Partial / missing discriminating reads</option>
+      <option value="unavailable">Relevant source unavailable</option>
+      <option value="not_verified">Not verified</option>
+     </select>
+     <textarea id="prospectiveClaimsA" rows="5" aria-label="Answer A definite cause claim review" placeholder="supported | cause assertion | 0,1&#10;unsupported | unsupported claim |"></textarea>
+    </div>
+    <div>
+     <h3>Answer B — source-grounded cause review</h3>
+     <label class="bench-consent"><input id="prospectiveReviewedB" type="checkbox">I inspected B's original receipts</label>
+     <label class="bench-consent"><input id="prospectiveAllClaimsB" type="checkbox">All definite cause claims in B are reviewed</label>
+     <label for="prospectiveCoverageB" class="session-note">Evidence for distinguishing competing causes</label>
+     <select id="prospectiveCoverageB" aria-label="Answer B source coverage">
+      <option value="">Choose source coverage…</option>
+      <option value="sufficient">Sufficient for stated conclusion</option>
+      <option value="partial">Partial / missing discriminating reads</option>
+      <option value="unavailable">Relevant source unavailable</option>
+      <option value="not_verified">Not verified</option>
+     </select>
+     <textarea id="prospectiveClaimsB" rows="5" aria-label="Answer B definite cause claim review" placeholder="unverified | possible cause | 1"></textarea>
+    </div>
+   </div>
+  </div>
   <button id="prospectiveScore" onclick="prospectiveScore()" disabled>Save blind ratings</button>
   <span id="prospectiveScoreStatus" class="session-note" role="status"></span>
  </div>
@@ -394,7 +431,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.27";
+const UI_VERSION="2.0.0-alpha.28";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -2015,8 +2052,10 @@ async function prospectiveRefresh(){
   byId('prospectiveRun').disabled=!!data.active_case||!item||item.arms_completed.length>0;
   byId('prospectiveStop').disabled=!data.active_case;
   byId('prospectiveFrozen').textContent=data.cases_prepared?
-   'Frozen '+data.cases_prepared+' questions · SHA256 '+data.study_sha256.slice(0,16)+'…':
-   'No private question set prepared.';
+   'Frozen '+data.cases_prepared+' '+data.study_mode+' questions · SHA256 '+
+   data.study_sha256.slice(0,16)+'…':'No private question set prepared.';
+  byId('prospectiveCausalMode').disabled=!!data.cases_prepared;
+  byId('prospectiveTargetAttestation').disabled=!!data.cases_prepared;
   byId('prospectiveRunStatus').textContent=data.active_case?
    'Running '+data.active_case+' · read-only token check before each arm':
    (data.last_error||data.cases.filter(r=>r.arms_completed.length===2).length+
@@ -2030,7 +2069,11 @@ async function prospectivePrepare(){
  const questions=byId('prospectiveQuestions').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
  try{
   await prospectiveApi('prepare',{method:'POST',
-   headers:{'Content-Type':'application/json'},body:JSON.stringify({questions})});
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    questions,
+    causal_mode:byId('prospectiveCausalMode').checked,
+    target_check_attested:byId('prospectiveTargetAttestation').checked
+   })});
   byId('prospectiveQuestions').value='';
   await prospectiveRefresh();
  }catch(error){byId('prospectiveFrozen').textContent=error.message;}
@@ -2053,13 +2096,14 @@ async function prospectiveStop(){
  try{await prospectiveApi('stop',{method:'POST'});await prospectiveRefresh();}
  catch(error){byId('prospectiveRunStatus').textContent=error.message;}
 }
-function prospectivePanel(label,ratings,enabled){
+function prospectivePanel(label,ratings,enabled,causalStudy=false){
  const panel=byId('prospectiveScores'+label);panel.replaceChildren();
  for(const dimension of PROSPECTIVE_DIMENSIONS){
   const field=document.createElement('label');field.textContent=dimension.replaceAll('_',' ');
   const select=document.createElement('select');select.dataset.dimension=dimension;
   for(const [value,text] of [['','Choose…'],['0','0 - unsupported'],['1','1 - partial'],
                              ['2','2 - supported'],['n/a','n/a']]){
+   if(causalStudy&&dimension==='causal_calibration'&&value==='n/a')continue;
    const opt=document.createElement('option');opt.value=value;opt.textContent=text;
    select.appendChild(opt);
   }
@@ -2072,19 +2116,52 @@ async function prospectiveView(){
  if(!ident){prospectiveCase=null;return;}
  try{
   const data=await prospectiveApi('case/'+encodeURIComponent(ident));
+  const changed=prospectiveCase?.id!==data.id;
   prospectiveCase=data;
   byId('prospectiveQuestion').textContent=data.question;
+  byId('prospectiveCausalReview').hidden=data.study_mode!=='causal';
+  byId('prospectiveParity').textContent='Original source-response comparability (not source truth): '+
+   JSON.stringify(data.source_parity||{});
   for(const label of ['A','B']){
    const part=data.arms[label];
    byId('prospectiveAnswer'+label).textContent=part?.result?.answer||'Not completed.';
    byId('prospectiveReceipts'+label).textContent=
     part?JSON.stringify(part.result.tool_calls||[],null,2):'Not completed.';
    prospectivePanel(label,data.ratings?.[label],!!part&&!data.ratings&&
-       !!data.arms.A&&!!data.arms.B);
+       !!data.arms.A&&!!data.arms.B,data.study_mode==='causal');
+   if(data.study_mode==='causal'){
+    const review=data.causal_review?.[label];
+    if(changed||review){
+     byId('prospectiveReviewed'+label).checked=!!review?.receipts_inspected;
+     byId('prospectiveAllClaims'+label).checked=!!review?.all_definite_cause_claims_reviewed;
+     byId('prospectiveCoverage'+label).value=review?.source_coverage||'';
+     byId('prospectiveClaims'+label).value=(review?.claims||[]).map(c=>
+      c.verdict+' | '+c.text+' | '+c.receipt_indices.join(',')).join('\n');
+    }
+    for(const id of ['prospectiveReviewed','prospectiveAllClaims','prospectiveCoverage','prospectiveClaims'])
+     byId(id+label).disabled=!!data.ratings;
+   }
   }
   byId('prospectiveScore').disabled=!!data.ratings||!data.arms.A||!data.arms.B;
   byId('prospectiveScoreStatus').textContent=data.ratings?'Blind scores saved.':'';
  }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
+}
+function prospectiveParseClaims(label){
+ const rows=byId('prospectiveClaims'+label).value.split(/\r?\n/)
+  .map(x=>x.trim()).filter(Boolean);
+ if(rows.length>20)throw Error('Maximum 20 definite cause claims per answer.');
+ return rows.map((line,i)=>{
+  const pieces=line.split('|').map(x=>x.trim());
+  if(pieces.length!==3)throw Error(label+' claim '+(i+1)+': use verdict | claim | 0,2');
+  const [verdict,description,refs]=pieces;
+  if(!['supported','unsupported','unverified'].includes(verdict))
+   throw Error(label+' claim '+(i+1)+': unknown evidence verdict.');
+  const indices=refs?refs.split(',').map(x=>{
+   if(!/^\d+$/.test(x.trim()))throw Error(label+': invalid receipt index '+x);
+   return Number(x.trim());
+  }):[];
+  return {verdict,text:description,receipt_indices:indices};
+ });
 }
 async function prospectiveScore(){
  if(!prospectiveCase)return;
@@ -2100,9 +2177,21 @@ async function prospectiveScore(){
   }
  }
  try{
+  let causal_review=null;
+  if(prospectiveCase.study_mode==='causal'){
+   causal_review={};
+   for(const label of ['A','B']){
+    causal_review[label]={
+     receipts_inspected:byId('prospectiveReviewed'+label).checked,
+     all_definite_cause_claims_reviewed:byId('prospectiveAllClaims'+label).checked,
+     source_coverage:byId('prospectiveCoverage'+label).value,
+     claims:prospectiveParseClaims(label)
+    };
+   }
+  }
   await prospectiveApi('case/'+encodeURIComponent(prospectiveCase.id)+'/score',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({scores})});
+   body:JSON.stringify({scores,causal_review})});
   await prospectiveRefresh();
  }catch(error){byId('prospectiveScoreStatus').textContent=error.message;}
 }
