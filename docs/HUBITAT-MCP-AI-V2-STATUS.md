@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 10 November 2026 — Alpha.38 first-answer finding: competing causal paths not distinguished
+
+**Private first-answer review:** One alpha.38 response to a newly captured lighting-controller question correctly identified the reported state transition, the exact preceding OFF-command issuer, the relevant app's current configuration and a motion event whose timing was compatible with an inactive-delay rule. The four original MCP read receipts succeeded; there were no local schema failures. **This does not test alpha.38's new contract-recovery capability.** First-answer quality was assessed as **3/8** (grounding 1, completeness 1, calibration 0, usefulness 1); this is a reviewer score for one exposed example, not a general model accuracy statistic.
+
+**Newly identified competing explanation:** The same OFF command also occurred close to a second, separately configured backup-off interval following the most recent reported ON state. The returned evidence therefore supports **at least two timing-compatible candidate control paths**. The model declared the inactivity trigger verified without establishing the state of **every configured participating motion input** or reading event-specific application execution/timer logs. A current app configuration confirms available paths, not which timer actually fired or whether that config was identical at the historical moment.
+
+**General issue:** Event chronology can be accurate while *causal path selection* is not. A close time match is not necessarily unique. Before making a definitive source-to-outcome claim, compare materially competing configured paths and ask what **discriminating observations** would separate them. Neither `producedBy` nor `triggered[]` on a physical event substitutes for internal execution receipts. Unread sensors and missing logs are unknown, not proof they were inactive or irrelevant. Do not mistake a successful-but-narrow MCP read for full investigation coverage.
+
+**Development decision:** No runtime edits, device-specific answer rules, deterministic routing, mandatory second investigation, or changed permissions for this exposed case. Record as a cross-domain causal-sufficiency finding and run a **fresh, uncoached, read-only investigation of a different controller class** before considering a general model/tool-schema improvement. Keep household events, IDs, raw settings, tokens and source receipts private; CI does not establish the installed version or live causal accuracy.
+
+
 ## 10 November 2026 — Alpha.38 candidate: model-directed live-schema error recovery
 
 **Motivation:** A recent private first-answer historical heating investigation retrieved a device transition and a controller setpoint command, but failed to obtain important controller configuration because a selected MCP read passed an argument of the wrong JSON type. The rejected request was correctly marked as an unexecuted contract error; the model did not recover its critical read. Other evidence limits remain: contemporaneous sensor and execution trace were not fully available, and a current or later snapshot alone does not verify a historic triggering condition. Private source receipts, device names and event timestamps are intentionally **not** copied into public GitHub notes.
