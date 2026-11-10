@@ -366,9 +366,26 @@ with sync_playwright() as p:
   page.keyboard.press("ArrowRight")
   assert "Selected" in page.locator("#timelineReadout").inner_text()
   page.locator("#timelineLayout").select_option("combined")
-  assert "5m CPU equivalent" in page.locator("#incidentTimeline").text_content()
+  assert "5m CPU load equivalent" in page.locator("#incidentTimeline").text_content()
   page.locator("#timelineLayout").select_option("split")
   assert "independent scale" in page.locator("#incidentTimeline").text_content()
+  assert "Native OS memory" in page.locator("#timelineCoverage").inner_text()
+  assert "not 0%" in page.locator("#timelineCoverage").inner_text()
+  # The new source-specific layout has distinct panel locations/scales.
+  positions=page.evaluate("""() => ({
+    external:timelineShown.yFor('memory',830),
+    native:timelineShown.yFor('nativeMemory',850),
+    cpu:timelineShown.yFor('cpu',15),
+    height:document.querySelector('#incidentTimeline').viewBox.baseVal.height,
+    extras:[...document.querySelectorAll('#incidentTimeline circle')]
+     .filter(e=>!e.id&&e.dataset.role!=='isolated-source-sample').length
+  })""")
+  assert positions["external"]<positions["native"]<positions["cpu"],positions
+  assert positions["height"]>=540,positions
+  assert positions["extras"]==0,"No permanent per-point/extrema dot decorations"
+  page.locator("#timelineLayout").select_option("overlay")
+  assert "CPU load equivalent" in page.locator("#incidentTimeline").text_content()
+  page.locator("#timelineLayout").select_option("split")
   page.locator("#plotExtent").select_option("full")
   assert "fitted to recorded observations" not in page.locator("#timelineMeta").inner_text()
   # A real new-tab popout refetches the same saved recorder data; no native
