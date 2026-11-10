@@ -72,7 +72,7 @@ def source_parity(arms: dict) -> dict:
         "same_call_different_response": shared - exact,
         "only_A_read_invocations": n_a - shared,
         "only_B_read_invocations": n_b - shared,
-        "identical_read_receipt_multisets": n_a == n_b == exact,
+        "identical_read_receipt_multisets": bool(n_a) and n_a == n_b == exact,
         "interpretation": (
             "Exact comparison of returned successful tool receipts, not "
             "independent proof of matched time windows, source truth, or "
