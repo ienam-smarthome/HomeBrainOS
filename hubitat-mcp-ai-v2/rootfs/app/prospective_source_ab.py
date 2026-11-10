@@ -17,8 +17,12 @@ from typing import Any
 from agent import Agent
 from mcp import MCPClient, MCPError, MCPContractError, is_tool_catalog
 from source_ledger_experiment import SourceLedgerExperimentalAgent
+from causal_review import (
+    CausalReviewError, validate_causal_review, aggregate_causal_review,
+    source_parity,
+)
 
-SCHEMA = "homebrain-v2-prospective-source-ledger-ab.v1"
+SCHEMA = "homebrain-v2-prospective-source-ledger-ab.v2"
 CRITERIA = ("factual_grounding", "source_completeness", "causal_calibration",
             "usefulness")
 MAX_CASES = 10
@@ -154,27 +158,45 @@ class ProspectiveWorkspace:
         self.active_case: str | None = None
         self.error: str | None = None
         self.locked = False
+        self.causal_mode = False
+        self.target_check_attested = False
 
-    def prepare(self, questions: list[str]) -> dict:
+    def prepare(self, questions: list[str], causal_mode: bool = False,
+                target_check_attested: bool = False) -> dict:
         if self.questions or self.active_case:
             raise ProspectiveError("Existing study is frozen; delete it before preparing another")
         if (not isinstance(questions, list) or not 2 <= len(questions) <= MAX_CASES
                 or any(not isinstance(q, str) or not q.strip()
                        or len(q) > 5000 for q in questions)):
             raise ProspectiveError("Prepare two to ten private, nonempty questions")
+        if type(causal_mode) is not bool or type(target_check_attested) is not bool:
+            raise ProspectiveError("Causal study and target verification flags must be booleans")
+        if causal_mode and (len(questions) < 4 or target_check_attested is not True):
+            raise ProspectiveError(
+                "For a causal study freeze 4–10 new questions and attest that "
+                "each named target, capability and requested time scope was "
+                "checked outside the model. This is an operator attestation, "
+                "not independently verified by the app."
+            )
         cleaned = [q.strip() for q in questions]
         if len(set(cleaned)) != len(cleaned):
             raise ProspectiveError("Repeated questions are not permitted")
         # Prospective study order is sealed in this process. No previously
         # exposed or incident-specific question is provided by the application.
         commitment = hashlib.sha256(
-            json.dumps(cleaned, ensure_ascii=False,
-                       separators=(",", ":")).encode("utf-8")
+            json.dumps(
+                {"questions": cleaned,
+                 "study_mode": "causal" if causal_mode else "general"},
+                ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
         ).hexdigest()
+        self.causal_mode = causal_mode
+        self.target_check_attested = target_check_attested
         for index, question in enumerate(cleaned, 1):
             ident = f"new-{index:02d}"
             self.questions[ident] = {
                 "id": ident, "question": question, "arms": {}, "ratings": None,
+                "causal_review": None,
             }
         self.commitment = commitment
         self.error = None
@@ -184,6 +206,9 @@ class ProspectiveWorkspace:
         return {
             "schema": SCHEMA,
             "study_sha256": getattr(self, "commitment", None),
+            "study_mode": "causal" if self.causal_mode else "general",
+            "target_check_operator_attested": self.target_check_attested,
+            "target_check_independently_verified": False,
             "cases_prepared": len(self.questions),
             "active_case": self.active_case,
             "last_error": self.error,
@@ -285,13 +310,16 @@ class ProspectiveWorkspace:
                 case["question"].encode("utf-8")
             ).hexdigest(),
             "arms": arms,
+            "source_parity": source_parity(case["arms"]),
             "ratings": case["ratings"],
+            "causal_review": deepcopy(case["causal_review"]),
+            "study_mode": "causal" if self.causal_mode else "general",
             "mapping_hidden": not self.summary()["condition_mapping_revealed"],
             "privacy": "private_answers_and_receipts_in_browser_response_only",
             "source_ledger_marker_hidden_from_reviewer_receipts": True,
         }
 
-    def rate(self, ident: str, scores: dict):
+    def rate(self, ident: str, scores: dict, review: dict | None = None):
         if ident not in self.questions:
             raise ProspectiveError("Unknown prospective case")
         case = self.questions[ident]
@@ -308,6 +336,28 @@ class ProspectiveWorkspace:
             for value in d.values():
                 if not (value == "n/a" or (type(value) is int and value in (0, 1, 2))):
                     raise ProspectiveError("Scores must be 0, 1, 2, or n/a")
+        if self.causal_mode:
+            if any(type(scores[label]["causal_calibration"]) is not int
+                   for label in ("A", "B")):
+                raise ProspectiveError(
+                    "In a causality-focused study, rate causal calibration "
+                    "0–2 for BOTH arms, including appropriately uncertain answers"
+                )
+            try:
+                validated_review = validate_causal_review(
+                    review, case["arms"], scores
+                )
+            except CausalReviewError as exc:
+                raise ProspectiveError(str(exc)) from None
+        else:
+            if review is not None:
+                raise ProspectiveError(
+                    "The claim-level causal audit is available only in causal study mode"
+                )
+            validated_review = None
+        # Atomically freeze scores and the private claim audit only after
+        # both have validated; never expose allocation through this operation.
+        case["causal_review"] = validated_review
         case["ratings"] = {k: dict(v) for k, v in scores.items()}
 
     def report(self) -> dict:
@@ -361,9 +411,46 @@ class ProspectiveWorkspace:
                     timing_deltas.append(
                         times["candidate"] - times["baseline"]
                     )
+        paired_sources = [
+            source_parity(case["arms"])
+            for case in self.questions.values()
+            if set(case["arms"]) == {"A", "B"}
+        ]
         return {
             "schema": SCHEMA,
             "study_sha256": getattr(self, "commitment", None),
+            "study_mode": "causal" if self.causal_mode else "general",
+            "causal_claim_audit": (
+                aggregate_causal_review(
+                    self.questions, self.private_conditions, finished
+                ) if self.causal_mode else None
+            ),
+            "source_parity": {
+                "pairs_with_two_completed_arms": len(paired_sources),
+                "same_name_and_arguments": sum(
+                    p["same_name_and_arguments"] for p in paired_sources
+                ),
+                "exactly_matching_response_payloads": sum(
+                    p["exactly_matching_response_payloads"] for p in paired_sources
+                ),
+                "same_call_different_response": sum(
+                    p["same_call_different_response"] for p in paired_sources
+                ),
+                "only_A_read_invocations": sum(
+                    p["only_A_read_invocations"] for p in paired_sources
+                ),
+                "only_B_read_invocations": sum(
+                    p["only_B_read_invocations"] for p in paired_sources
+                ),
+                "pairs_with_identical_nonempty_receipts": sum(
+                    p["identical_read_receipt_multisets"] for p in paired_sources
+                ),
+                "interpretation": (
+                    "Receipt comparison only. Unmatched reads or changed payloads "
+                    "confound paired claims. Identical receipts still cannot "
+                    "independently prove true cause or complete retained history."
+                ),
+            },
             "model_response_time_comparison": {
                 "paired_samples": len(timing_deltas),
                 "median_candidate_minus_baseline_ms": (
@@ -386,6 +473,8 @@ class ProspectiveWorkspace:
             ),
             "condition_mapping_revealed": finished,
             "effects": effects,
+            "target_check_independently_verified": False,
+            "causal_claim_truth_independently_verified": False,
             "model_accuracy_independently_verified": False,
             "matching_live_source_snapshots_verified": False,
             "token_enforcement_independently_verified": False,
@@ -404,5 +493,7 @@ class ProspectiveWorkspace:
         self.private_conditions.clear()
         self.error = None
         self.locked = False
+        self.causal_mode = False
+        self.target_check_attested = False
         if hasattr(self, "commitment"):
             del self.commitment
