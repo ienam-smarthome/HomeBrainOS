@@ -1150,7 +1150,7 @@ function drawIncidentTimeline(){
  const fullView=document.body?.classList?.contains('graph-popout')||false;
  const bounds=svg.getBoundingClientRect();
  const chartWidth=fullView?Math.max(860,Math.round(bounds.width||860)):860;
- const chartHeight=fullView?Math.max(400,Math.round(bounds.height||460)):360;
+ const chartHeight=fullView?Math.max(600,Math.round(bounds.height||600)):540;
  svg.setAttribute('viewBox','0 0 '+chartWidth+' '+chartHeight);
  const memMetric=timelineData.metrics?.free_os_mb||{},nativeMemMetric=timelineData.metrics?.native_free_os_mb||{},cpuMetric=timelineData.metrics?.native_load_pct||{};
  const mem=sourcePoints(memMetric.samples,'free_os_mb')
@@ -1160,19 +1160,30 @@ function drawIncidentTimeline(){
  const cpu=sourcePoints(cpuMetric.samples,'native_load_pct',true)
   .filter(row=>{const t=Date.parse(row.recorded_at);return t>=start&&t<=end;});
  timelineSeries={memory:mem,nativeMemory:nativeMem,cpu};
- const layout=byId('timelineLayout').value,combined=layout==='combined';
- const splitBoundary=Math.round(156+(chartHeight-360)*.5);
- const plot={left:76,right:chartWidth-(combined?84:60),top:combined?37:28,
-  memBottom:combined?chartHeight-38:splitBoundary,
-  cpuTop:combined?37:splitBoundary+46,cpuBottom:chartHeight-38};
+ const layout=byId('timelineLayout').value;
+ const split=layout==='split',overlay=layout==='overlay';
+ const panelCount=split?3:overlay?1:2;
+ const panelGap=split?47:52,top=overlay?38:30,bottom=chartHeight-38;
+ const height=(bottom-top-(panelCount-1)*panelGap)/panelCount;
+ const panel=index=>({top:top+(height+panelGap)*index,
+                     bottom:top+(height+panelGap)*index+height});
+ const panels={
+  memory:panel(0),
+  nativeMemory:panel(split?1:0),
+  cpu:panel(split?2:overlay?0:1)
+ };
+ const plot={left:76,right:chartWidth-(overlay?84:60),
+             top,cpuBottom:bottom,memBottom:panels.memory.bottom,
+             cpuTop:panels.cpu.top};
  const allMemory=[...mem,...nativeMem.map(r=>({...r,free_os_mb:r.native_free_os_mb}))];
- const memScale=scaleFor(allMemory,'free_os_mb'),cpuScale=scaleFor(cpu,'native_load_pct',true);
+ const memScale=scaleFor(split?mem:allMemory,'free_os_mb');
+ const nativeScale=split?scaleFor(nativeMem,'native_free_os_mb'):memScale;
+ const cpuScale=scaleFor(cpu,'native_load_pct',true);
  const x=t=>plot.left+(t-start)/(end-start)*(plot.right-plot.left);
  const yFor=(kind,v)=>{
-  const scale=kind==='cpu'?cpuScale:memScale;
-  const top=kind==='cpu'?plot.cpuTop:plot.top;
-  const bottom=kind==='cpu'?plot.cpuBottom:plot.memBottom;
-  return bottom-(v-scale.min)/(scale.max-scale.min)*(bottom-top);
+  const scale=kind==='cpu'?cpuScale:kind==='nativeMemory'?nativeScale:memScale;
+  const {top:pt,bottom:pb}=panels[kind];
+  return pb-(v-scale.min)/(scale.max-scale.min)*(pb-pt);
  };
  const text=(tag,attrs,value)=>svg.append(svgNode(tag,attrs,value));
  // Reserve enough logical SVG width for long labels spanning date boundaries.
@@ -1190,23 +1201,61 @@ function drawIncidentTimeline(){
    'data-axis':'time','text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
  }
  const yGrid=(scale,kind,right=false)=>{
+  const labelKey=kind==='cpu'?'native_load_pct':
+   kind==='nativeMemory'?'native_free_os_mb':'free_os_mb';
+  const color=kind==='cpu'?'#86efac':kind==='nativeMemory'?'#c4a1ff':'#93c5fd';
   for(let i=0;i<=scale.count;i++){
    const value=scale.min+scale.step*i,yy=yFor(kind,value);
    if(!right)text('line',{x1:plot.left,x2:plot.right,y1:yy,y2:yy,
     stroke:'#44566b','stroke-opacity':.7,'stroke-width':.75,'stroke-dasharray':'2 5'});
-   const key=kind==='memory'?'free_os_mb':'native_load_pct';
    text('text',{x:right?plot.right+9:plot.left-8,y:yy+4,
-    fill:kind==='memory'?'#93c5fd':'#86efac','font-size':11,
-    'text-anchor':right?'start':'end'},diagValue(value,key));
+    fill:color,'font-size':11,'text-anchor':right?'start':'end'},
+    diagValue(value,labelKey));
   }
  };
- yGrid(memScale,'memory');
- yGrid(cpuScale,'cpu',combined);
- text('text',{x:plot.left,y:17,fill:'#93c5fd','font-size':12},
-  combined?'OS memory (left · MB) / 5m CPU equivalent (right · %)':
-  'OS memory · MB (external probes + native 5m; independent scale)');
- if(!combined)text('text',{x:plot.left,y:plot.cpuTop-11,fill:'#86efac','font-size':12},
-  '5m CPU load equivalent · % (native; independent scale)');
+ if(mem.length)yGrid(memScale,'memory');
+ if(split&&nativeMem.length)yGrid(nativeScale,'nativeMemory');
+ if(cpu.length)yGrid(cpuScale,'cpu',overlay);
+ const cpuLabel='5m CPU load equivalent · % (native, '+
+  String(timelineData.cpu_cores||4)+'-core configured; not utilisation)';
+ const labels=split?
+  [['memory','OS memory · MB (external probe; independent scale)'],
+   ['nativeMemory','OS memory · MB (native 5m; independent scale)'],
+   ['cpu',cpuLabel]]:
+  overlay?
+  [['memory','OS memory · MB (left) / CPU load equivalent · % (right)']]:
+  [['memory','OS memory · MB (external + native, shared scale)'],
+   ['cpu',cpuLabel]];
+ for(const [kind,label] of labels){
+  const yy=panels[kind].top-11;
+  text('text',{x:plot.left,y:yy,fill:kind==='cpu'?'#86efac':
+   kind==='nativeMemory'?'#c4a1ff':'#93c5fd','font-size':12},label);
+ }
+ const coverageText=(rows,label)=>{
+  if(!rows.length)return label+': no observations (not zero)';
+  const first=Date.parse(rows[0].recorded_at),last=Date.parse(rows[rows.length-1].recorded_at);
+  const unknown=first-start>600000?' · earlier interval has no observed reading':'';
+  const legacy=rows.filter(r=>r.timestamp_basis==='legacy_collector_reception').length;
+  return label+': '+diagTime(first)+' to '+diagTime(last)+
+   ' · '+rows.length+' observations'+unknown+
+   (legacy?' · '+legacy+' legacy collector-time reading(s), not native sample timestamps':'');
+ };
+ byId('timelineCoverage').textContent=
+  coverageText(nativeMem,'Native OS memory')+' · '+
+  coverageText(cpu,'Native CPU load')+
+  ' · Blank regions are unknown, not 0%.';
+ for(const kind of ['memory','nativeMemory','cpu']){
+  if(kind==='nativeMemory'&&!split)continue;
+  if(kind==='cpu'&&overlay)continue;
+  const rows=timelineSeries[kind],region=panels[kind];
+  const first=rows.length?Date.parse(rows[0].recorded_at):NaN;
+  if(!rows.length||first-start>600000){
+   const note=!rows.length?'No readings in this panel · unknown, not zero':
+    'No recorded observations before '+diagTime(first);
+   text('text',{x:plot.left+10,y:region.top+23,fill:'#8c9caf',
+    'font-size':11,'data-coverage':kind},note);
+  }
+ }
  const incidents=(timelineData.incidents||[]).filter(v=>v&&v.kind==='hub-unreachable');
  for(const row of incidents){
   const begin=Date.parse(row.started_at),stop=row.recovered_at?Date.parse(row.recovered_at):end;
