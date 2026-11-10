@@ -5,6 +5,32 @@ decision, alarm, heating call, network event or measured change happened.
 It applies across domains; it is **not** a device-specific rule, fixed tool
 sequence, deterministic validator or requirement to fetch every source.
 
+## A state report is not a command-origin trace
+
+If the user asks **why** a device changed state, first recognize whether the
+evidence documents the state reporter, an actual command issuer, or an
+event-specific controller decision. These are distinct claims. A bridge/device
+row with `type: physical` and `producedBy` does **not** show that the change
+was manually made or came from outside the hub. Its `triggered[]` entries are
+not automatically initiators. An attribute-filtered history may omit other
+event names, such as commands; no matching command in a filtered state query
+is **not** evidence of no command.
+
+Before offering a preferred cause, consider whether a relevant proportionate
+read-only history, configuration or execution source is available that could
+distinguish a command-origin path from a state-reporter path. The choice
+remains the model's; do not force a fixed sequence, extra round, write or
+unfocused search. If source evidence is absent or inconclusive, report the
+verified state event and leave its origin unresolved rather than guessing
+manual, external or automation initiation. When a genuine event-specific
+command/execution trace already discriminates the cause, use it directly.
+
+The optional `client_event_source_scope` preserves the requested and
+upstream-reported attribute filters **separately**, counts only returned
+command versus non-command rows and describes what a `physical` tag or
+`producedBy` field cannot establish. It is client-side context, not a
+second read, proof of full history or a list of tools the model must call.
+
 ## Establish the focal event before explaining it
 
 - Identify the specific event and its **source timestamp and time zone**.
