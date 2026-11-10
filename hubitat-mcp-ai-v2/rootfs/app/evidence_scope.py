@@ -289,7 +289,7 @@ def chronology_landmarks(result: dict) -> dict | None:
     ]
     return {
         "source_scope": "timestamped events in this returned response only",
-        "chronology": "ascending by parsed UTC instant; exact original source stamps preserved",
+        "chronology": "ascending by parsed UTC instant (equal timestamps do not establish order); exact original stamps preserved",
         "timestamped_rows_returned": len(dated),
         "timestamped_rows_without_usable_order": len(source["events"]) - len(dated),
         "command_rows_with_usable_timestamps": len(commands),
@@ -306,7 +306,7 @@ def chronology_landmarks(result: dict) -> dict | None:
             "earlier report merely by reversing their sequence or invoking "
             "unspecified latency. A preceding command is compatible with a "
             "subsequent event but does not establish its cause. Clock skew, "
-            "missing rows, source filters and return limits remain unverified. "
+            "equal timestamps, missing rows, source filters and return limits remain unverified. "
             "Consult the original MCP source and discriminating read-only "
             "evidence when the causal explanation matters."
         ),
