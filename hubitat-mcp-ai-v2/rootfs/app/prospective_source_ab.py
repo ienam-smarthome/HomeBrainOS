@@ -11,6 +11,7 @@ from copy import deepcopy
 import hashlib
 import json
 import secrets
+import statistics
 from typing import Any
 
 from agent import Agent
@@ -279,6 +280,10 @@ class ProspectiveWorkspace:
         return {
             "schema": SCHEMA,
             "id": ident, "question": case["question"],
+            "study_sha256": getattr(self, "commitment", None),
+            "question_sha256": hashlib.sha256(
+                case["question"].encode("utf-8")
+            ).hexdigest(),
             "arms": arms,
             "ratings": case["ratings"],
             "mapping_hidden": not self.summary()["condition_mapping_revealed"],
@@ -332,9 +337,46 @@ class ProspectiveWorkspace:
                 "baseline_better": sum(x < 0 for x in values),
                 "ties": sum(x == 0 for x in values),
             }
+        timing_deltas = []
+        attempts = {"baseline": 0, "candidate": 0}
+        failures = {"baseline": 0, "candidate": 0}
+        if finished:
+            for ident, case in self.questions.items():
+                conditions = self.private_conditions[ident]
+                times = {}
+                for label in ("A", "B"):
+                    condition = conditions[label]
+                    result = case["arms"][label]["result"]
+                    attempts[condition] += len(result.get("tool_calls", []))
+                    failures[condition] += sum(
+                        item.get("success") is False
+                        for item in result.get("tool_calls", [])
+                        if isinstance(item, dict)
+                    )
+                    ms = result.get("elapsed_ms")
+                    times[condition] = (
+                        ms if type(ms) in (int, float) and ms >= 0 else None
+                    )
+                if all(value is not None for value in times.values()):
+                    timing_deltas.append(
+                        times["candidate"] - times["baseline"]
+                    )
         return {
             "schema": SCHEMA,
             "study_sha256": getattr(self, "commitment", None),
+            "model_response_time_comparison": {
+                "paired_samples": len(timing_deltas),
+                "median_candidate_minus_baseline_ms": (
+                    round(statistics.median(timing_deltas), 3)
+                    if timing_deltas else None
+                ),
+            },
+            "tool_attempts_by_condition": (
+                attempts if finished else None
+            ),
+            "reported_tool_failures_by_condition": (
+                failures if finished else None
+            ),
             "cases_expected": len(self.questions),
             "first_answer_pairs_complete": sum(
                 set(case["arms"]) == {"A", "B"} for case in self.questions.values()
