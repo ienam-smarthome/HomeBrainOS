@@ -39,7 +39,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
             "same state",
             "reporting path functioned",
             "returned rows",
-            "no `command-off` row",
+            "No `command-off` row",
             "Could a different outcome have occurred within a gap",
             "execution trace plus causal trigger",
             "Uncertainty is a consequence of evidence",
@@ -130,6 +130,8 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
                 raise AssertionError("No model tool selection expected")
 
         class PositiveAgent(Agent):
+            def __init__(self):
+                pass  # A fixed synthetic responder never connects to Ollama.
             async def round(self, messages, tools, remaining):
                 return {"content": ("The synthetic execution trace explicitly names "
                                     "the enabled threshold callback and its state "
