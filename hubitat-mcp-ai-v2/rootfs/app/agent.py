@@ -300,7 +300,7 @@ class Agent:
         This hook does not change the native tool choice or execution path.
         """
         original_with_scope = model_result_with_scope(result, arguments)
-        cpu = cpu_load_context(result, self.cpu_cores)
+        cpu = cpu_load_context(result, getattr(self, "cpu_cores", 4))
         return ({**original_with_scope, "client_cpu_load_context": cpu}
                 if cpu is not None else original_with_scope)
 
