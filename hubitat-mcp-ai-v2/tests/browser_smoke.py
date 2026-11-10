@@ -622,6 +622,10 @@ with sync_playwright() as p:
   page.locator("#autonomousTab").click()
   assert page.locator("#autonomous").is_visible()
   page.wait_for_function("document.querySelector('#autolabSelect').value === 'lab-05'")
+  # Case list loads before asynchronous case detail. Wait for its actual
+  # untrusted question text; selector readiness alone is not content readiness.
+  page.wait_for_function(
+   "() => document.querySelector('#autolabQuestion').textContent.includes('<script>window.injected=true</script>')")
   assert "<script>window.injected=true</script>" in page.locator("#autolabQuestion").inner_text()
   assert page.locator("#autolabQuestion script").count()==0
   page.locator("#autolabRun").click()
