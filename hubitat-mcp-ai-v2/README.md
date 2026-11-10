@@ -1,6 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.32**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.33**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+## Alpha.33 — causal inference and temporal evidence discipline (10 Nov 2026)
+
+Based on live first-answer reviews, **source retrieval alone is not proof of why** an action happened. The model now receives a domain-neutral causal-investigation reference in addition to the existing upstream Hubitat MCP skill. Before describing a specific timer, automation, threshold, command chain or other mechanism as *the cause*, it should predict what time and state evidence that mechanism requires; compare that prediction to retrieved timestamps, lookback windows and record limits; consider competing configured paths; and report an unresolved decision when event-specific evidence cannot discriminate.
+
+Important distinctions: command issuer versus state reporter versus downstream listener; configuration at read time versus configuration when a historical event occurred; and an empty bounded history versus proof of a device never changing state. For a claimed simple delay, the model should calculate its implied starting time and **check** whether that event is actually supported, rather than retroactively inventing an unobserved earlier transition.
+
+**Implementation is instruction-only** in the native model's existing `Agent.answer` loop: no new hardcoded device patterns, regular-expression causal classifier, forced source list, automatic extra model round, answer rewriting, device polling or writes. The model still decides which reads matter and how far to investigate. Added offline tests assert prompt inclusion, preserve model-selected tool sequences and check that no new tool operations are inserted. **Green CI is contract validation, not proof the cloud model will reason correctly on every incident**; evaluate on new, varied first answers without modifying the agent for individual incidents.
 
 ## Alpha.31 — native memory source reconciliation (10 Nov 2026)
 
