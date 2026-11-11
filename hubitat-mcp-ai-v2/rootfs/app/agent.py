@@ -428,7 +428,7 @@ class Agent:
         self, question: str, history: list[dict], mcp: MCPClient,
         deadline_seconds: int, before_call=None,
         prior_evidence: str = "", prior_receipts: int = 0,
-        prior_reader=None,
+        prior_reader=None, enable_source_review: bool = True,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -502,7 +502,7 @@ class Agent:
                 # The connected model decides whether further read-only
                 # sources are useful; no native tool is selected or invoked
                 # automatically, and no fixed tool sequence is required.
-                if should_review_completion(
+                if enable_source_review and should_review_completion(
                     question, available_tools=bool(read_only_review_catalog(tools)),
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
