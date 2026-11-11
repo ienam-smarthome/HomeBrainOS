@@ -124,11 +124,31 @@ def config_source_map(result: dict) -> dict | None:
                         "name": name, "title": title, "type": kind,
                         "value": raw_value,
                     })
+    # Surface only booleans actually present in the returned typed app record.
+    # An absent flag stays absent rather than being silently read as false.
+    # An interface button (e.g. Pause/Resume) is a control, NOT a status read.
+    app_record = payload["app"]
+    direct_flags = {
+        key: value for key, value in app_record.items()
+        if isinstance(key, str) and len(key) <= 80
+        and not _SENSITIVE_FIELD.search(key) and type(value) is bool
+    }
+    direct_flags = dict(list(direct_flags.items())[:24])
+    app_type = app_record.get("appType")
+    type_identity = ({
+        "namespace": _short(app_type.get("namespace"), 120),
+        "name": _short(app_type.get("name"), 120),
+        "system": app_type.get("system") if type(app_type.get("system")) is bool else None,
+    } if isinstance(app_type, dict) else None)
     # Preserve source field names and literal values. Do not label options as
     # schedules, causes, conditions, "active" or "verified" in this client map.
     return {
         "source_scope": "one returned current installed-app configuration page",
         "installed_app_id": payload["app"].get("id"),
+        "returned_app_type_identity": type_identity,
+        "typed_boolean_flags_in_returned_app_record": direct_flags,
+        "ui_control_labels_verify_status": False,
+        "app_flags_absent_from_this_record_are_unknown": True,
         "stored_parent_app_id": payload["app"].get("parentAppId"),
         "parent_app_identity_verified_by_this_page": False,
         "page_name": _short(page.get("name"), 120),
@@ -144,6 +164,10 @@ def config_source_map(result: dict) -> dict | None:
         "event_specific_callback_or_timer_proven_by_this_page": False,
         "note": (
             "This map restates fields from one returned configuration page. "
+            "Only actually returned typed app boolean flags are reported; "
+            "a missing flag is unknown, not false. UI button labels, button "
+            "availability and a different flag (such as disabled) cannot "
+            "prove an independent status property. "
             "It neither establishes historical settings nor proves which "
             "internal path ran. Linked pages can contain additional controls; "
             "selected input groups are not proof of their historical state. "
