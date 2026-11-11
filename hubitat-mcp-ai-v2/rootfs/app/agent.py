@@ -22,6 +22,7 @@ from investigation_review import (
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
+from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 
 
 _SKILL_DIR = Path(__file__).parent / "skills" / "hubitat"
@@ -393,6 +394,8 @@ class Agent:
         original_with_scope = model_result_with_scope(result, arguments)
         cpu = cpu_load_context(result, getattr(self, "cpu_cores", 4))
         config_map = config_source_map(result)
+        attr_scope = event_attribute_scope(result)
+        chunk_scope = file_chunk_scope(result)
         # Add only source-derived metadata beside the untouched native result.
         # Neither addon metadata nor configuration pages verify actual callback
         # execution; the model still chooses whether to investigate further.
@@ -400,6 +403,8 @@ class Agent:
             **original_with_scope,
             **({"client_cpu_load_context": cpu} if cpu is not None else {}),
             **({"client_config_source_map": config_map} if config_map is not None else {}),
+            **({"client_event_attribute_scope": attr_scope} if attr_scope is not None else {}),
+            **({"client_file_chunk_scope": chunk_scope} if chunk_scope is not None else {}),
         }
 
     async def round(self, messages: list[dict], tools: list[dict], remaining: float) -> dict:
@@ -453,6 +458,34 @@ class Agent:
             raise MCPError("Connected MCP catalog conflicts with reserved local monitor reader")
         if device_monitor is not None:
             tools.append(MONITOR_TOOL_DEFINITION)
+        native_read_tools = [
+            item["name"] for item in catalog
+            if isinstance(item, dict) and is_read_only_review_tool(item.get("name"))
+        ]
+        # This is a tool-availability inventory, not a connection probe or
+        # proof of archived samples. It is safe for private Technical JSON.
+        source_catalog = {
+            "native_mcp": {"catalog_checked": True,
+                           "read_tools_offered": len(native_read_tools)},
+            "hub_device_monitor": {
+                "configured": device_monitor is not None,
+                "offered_to_model": device_monitor is not None,
+                "connection_verified_by_catalog": False,
+                "structured_history_tool": MONITOR_TOOL if device_monitor is not None else None,
+            },
+        }
+        source_context = (
+            "Available sources in THIS Ask tool catalog (availability is NOT "
+            "evidence of historical coverage): native Hubitat MCP read tools "
+            + str(len(native_read_tools)) + "; optional separate "
+            "Hub & Device Monitor saved measurement history "
+            + ("IS configured and tool " + MONITOR_TOOL + " is available."
+               if device_monitor is not None else "is NOT configured or offered.")
+            + " Native File Manager listings or incomplete file chunks do not "
+              "verify a specific device's archived measurements. When useful, "
+              "independently select the structured history tool rather than "
+              "treating unrelated raw-file excerpts as exhaustive."
+        )
         history = [
             {"role": row["role"], "content": row["content"][:10000]}
             for row in history[-16:]
@@ -461,7 +494,7 @@ class Agent:
             and isinstance(row.get("content"), str)
         ]
         messages: list[dict] = [
-            {"role": "system", "content": _SKILL},
+            {"role": "system", "content": _SKILL + "\n\n" + source_context},
             *history,
             *([{"role": "user", "content": prior_evidence}] if prior_evidence else []),
             {"role": "user", "content": question},
@@ -471,6 +504,7 @@ class Agent:
         leaf_schema_discoveries = 0
         source_review_invoked = False
         source_review_kind = None
+        file_reads = FileReadCoverage()
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -534,6 +568,8 @@ class Agent:
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "source_review_invoked": source_review_invoked,
                     "source_review_kind": source_review_kind,
+                    "available_read_sources": source_catalog,
+                    "file_read_coverage": file_reads.snapshot(),
                     "tool_calls": receipts,
                     "rounds": rounds,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
@@ -640,6 +676,13 @@ class Agent:
                     else:
                         record["result_kind"] = "tool_result"
                         model_result = self.present_native_result(result, args)
+                        # File chunks remain unchanged in mcp_result; only
+                        # successful returned ranges contribute to in-request
+                        # completeness metadata. No automatic extra reads.
+                        chunk = file_chunk_scope(result)
+                        if chunk is not None:
+                            cumulative = file_reads.add(chunk)
+                            model_result["client_file_cumulative_coverage"] = cumulative
                     content = compact_tool_result(model_result)
                     record["response_characters"] = len(content)
                 except (MCPError, ValueError, asyncio.TimeoutError) as exc:
