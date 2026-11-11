@@ -30,6 +30,9 @@ _METRIC_FIELDS = {
 }
 _ALLOWED_RANGES = frozenset({"1h", "6h", "12h", "24h", "3d", "7d", "custom"})
 _BIN_PERIOD_MS = {"5m": 300_000, "hourly": 3_600_000}
+_COMPARE_RANGES = {"1h": timedelta(hours=1), "6h": timedelta(hours=6),
+                   "12h": timedelta(hours=12), "24h": timedelta(hours=24)}
+MAX_COMPARISON_DEVICES = 5
 
 TOOL_DEFINITION = {
     "type": "function",
@@ -41,8 +44,12 @@ TOOL_DEFINITION = {
             "This is a separate source from native Hubitat device-event history. "
             "Choose it when historical measurements may be absent from native "
             "event history, or to compare sources. No polling or writes. "
-            "Use mode=status first to discover which devices are selected for "
-            "monitoring and their IDs. mode=history requires a monitored device_id. "
+            "Use mode=status to discover selected device IDs. mode=history "
+            "reads one device; mode=compare reads 2–5 distinct selected "
+            "device_ids with ONE shared interval, per-device source-derived "
+            "extrema, counts and consecutive missing/held runs. The compare "
+            "mode returns bounded summaries, not fabricated raw samples; "
+            "use mode=history for a full per-device saved-bin list. "
             "For exact periods and device comparisons, use range=custom with BOTH "
             "start AND end offset-aware ISO times (e.g. 2026-11-10T20:00:00Z). "
             "For a relative last-12-hours request, range=12h is supported; "
@@ -60,7 +67,12 @@ TOOL_DEFINITION = {
         "parameters": {
             "type": "object",
             "properties": {
-                "mode": {"type": "string", "enum": ["status", "history"]},
+                "mode": {"type": "string", "enum": ["status", "history", "compare"]},
+                "device_ids": {
+                    "type": "array", "minItems": 2, "maxItems": 5,
+                    "items": {"type": "string", "pattern": "^[0-9]{1,12}$"},
+                    "description": "2–5 unique monitored device IDs for a shared-window comparison.",
+                },
                 "device_id": {
                     "type": "string",
                     "description": "Exact selected device ID from the monitor's status response.",
@@ -188,6 +200,7 @@ def _event_samples(raw: dict, metric: str, device_id: str,
     non_null_times = set()
     null_times = set()
     report_total = 0
+    held_times = set()
     for row in candidates:
         if not isinstance(row, dict):
             ignored_invalid_time_rows += 1
@@ -229,6 +242,7 @@ def _event_samples(raw: dict, metric: str, device_id: str,
                 report_total += count
             elif source_iso:
                 provenance = "held_from_report"
+                held_times.add(at)
             else:
                 provenance = "unclassified_bin"
             classes[provenance] += 1
@@ -306,6 +320,42 @@ def _event_samples(raw: dict, metric: str, device_id: str,
         # the requested interval never influence the statistics.
         empty_times = [stamp for stamp in expected_times if stamp not in non_null_times]
         absent_times = [stamp for stamp in expected_times if stamp not in observed_time_bins]
+        def consecutive_runs(matched):
+            # Runs describe saved-bin *positions* only. They do not prove
+            # telemetry outage or a continuous physical reading between bins.
+            runs = []
+            first_missing = previous_missing = None
+            for stamp in expected_times:
+                if matched(stamp):
+                    if first_missing is None:
+                        first_missing = stamp
+                    previous_missing = stamp
+                elif first_missing is not None:
+                    runs.append((first_missing, previous_missing + step))
+                    first_missing = previous_missing = None
+            if first_missing is not None:
+                runs.append((first_missing, previous_missing + step))
+            duration = lambda r: (r[1] - r[0]) // step
+            longest = max(runs, key=duration) if runs else None
+            return {
+                "count": len(runs),
+                "total_bin_positions": sum(duration(r) for r in runs),
+                "longest": ({
+                    "start_utc": _iso_ms(longest[0]),
+                    "end_exclusive_utc": _iso_ms(longest[1]),
+                    "bin_count": duration(longest),
+                    "duration_minutes": (longest[1] - longest[0]) // 60000,
+                } if longest else None),
+                "runs_preview": [{
+                    "start_utc": _iso_ms(a), "end_exclusive_utc": _iso_ms(b),
+                    "bin_count": (b - a) // step,
+                    "duration_minutes": (b - a) // 60000,
+                } for a, b in runs[:16]],
+                "preview_truncated": len(runs) > 16,
+                "meaning": "bin-position coverage only, not a verified physical or reporting outage",
+            }
+        missing_runs = consecutive_runs(lambda stamp: stamp not in non_null_times)
+        held_runs = consecutive_runs(lambda stamp: stamp in held_times) if metric == "power" else None
         summary.update({
             "expected_bin_positions": expected,
             "populated_bin_positions": sum(stamp in non_null_times for stamp in expected_times),
@@ -315,6 +365,8 @@ def _event_samples(raw: dict, metric: str, device_id: str,
             "all_expected_bin_positions_populated": len(empty_times) == 0,
             "missing_bin_start_utc_preview": [_iso_ms(stamp) for stamp in empty_times[:20]],
             "missing_bin_preview_truncated": len(empty_times) > 20,
+            "missing_runs": missing_runs,
+            "held_value_runs": held_runs,
             "bin_grid_complete_does_not_prove_observation_continuity": True,
         })
     else:
@@ -325,11 +377,103 @@ def _event_samples(raw: dict, metric: str, device_id: str,
             "absent_bin_positions": None,
             "null_bin_positions_within_expected": None,
             "all_expected_bin_positions_populated": None,
+            "missing_runs": None,
+            "held_value_runs": None,
         })
     return samples, summary
 
 class HubDeviceMonitor:
     """Read an existing installed Hubitat app; no subscription or mutation."""
+
+    async def _compare(self, arguments: dict) -> dict:
+        """Model-selected, read-only comparison pinned to one absolute UTC interval.
+
+        Relative intervals end at the last complete five-minute boundary;
+        this avoids treating an in-progress bin as a fully observed interval.
+        The captured end is used unchanged for ALL selected devices.
+        """
+        if set(arguments) - {"mode", "device_ids", "metric", "range", "start", "end"}:
+            raise ValueError("Unsupported monitor comparison arguments")
+        ids = arguments.get("device_ids")
+        if (not isinstance(ids, list) or not 2 <= len(ids) <= MAX_COMPARISON_DEVICES
+                or not all(isinstance(x, str) and re.fullmatch(r"[0-9]{1,12}", x) for x in ids)
+                or len(set(ids)) != len(ids)):
+            raise ValueError("Monitor comparison requires 2–5 distinct numeric device_ids")
+        metric = arguments.get("metric", "power")
+        if metric not in _METRIC_FIELDS:
+            raise ValueError("Monitor comparison metric is unsupported")
+        window = arguments.get("range", "12h")
+        if window not in {*_COMPARE_RANGES, "custom"}:
+            raise ValueError("Monitor comparison supports 1h, 6h, 12h, 24h or custom")
+        captured_now = datetime.now(timezone.utc)
+        if window == "custom":
+            if not arguments.get("start") or not arguments.get("end"):
+                raise ValueError("Custom monitor comparison requires BOTH start and end offset-aware ISO times")
+            start = _timestamp(arguments["start"])
+            end = _timestamp(arguments["end"])
+            if end <= start:
+                raise ValueError("Custom monitor comparison end must be later than start")
+            aligned = False
+        else:
+            step = _BIN_PERIOD_MS["5m"] / 1000
+            # Round END down only for default relative comparisons; a user
+            # supplied custom interval remains exact.
+            end = datetime.fromtimestamp(
+                int(captured_now.timestamp() // step * step), timezone.utc
+            )
+            start = end - _COMPARE_RANGES[window]
+            aligned = True
+
+        start_text = start.isoformat()
+        end_text = end.isoformat()
+        histories = []
+        for device_id in ids:
+            # A regular history query validates the same contract and source
+            # read independently; no retries or separate relative "now" calls.
+            reading = await self.query({
+                "mode": "history", "device_id": device_id,
+                "metric": metric, "range": "custom",
+                "start": start_text, "end": end_text,
+            })
+            histories.append({
+                "device_id": device_id, "unit": reading["unit"],
+                "requested_interval_start_utc": reading["historical_start_utc"],
+                "requested_interval_end_exclusive_utc": reading["historical_end_utc"],
+                "upstream_returned_window_start_utc": reading["upstream_returned_window_start_utc"],
+                "upstream_returned_window_end_utc": reading["upstream_returned_window_end_utc"],
+                "resolution": reading["returned_resolution"],
+                "summary": reading["summary"],
+                "saved_sample_count": len(reading["samples"]),
+                "full_sample_list_included": False,
+                "full_samples_available_via": "homebrain_read_device_monitor mode=history",
+                "monitor_note": reading["monitor_note"],
+            })
+        return {
+            "source": "Hub & Device Monitor installed-app saved history",
+            "mode": "compare", "read_only": True, "metric": metric,
+            "unit": _METRIC_FIELDS[metric][2],
+            "requested_range": window,
+            "shared_window_start_utc": start_text,
+            "shared_window_end_exclusive_utc": end_text,
+            "shared_window_verified": True,
+            "relative_end_aligned_to_last_complete_5m_boundary": aligned,
+            "time_of_comparison_request_utc": captured_now.isoformat(),
+            "monitored_device_count": len(histories),
+            "devices": histories,
+            "source_note": (
+                "All devices queried from the SAME saved-history source using "
+                "identical explicit UTC boundaries. Bins can be recorded, "
+                "held or unavailable; source-derived extrema refer to saved "
+                "bins, not continuous physical peaks. A missing saved value "
+                "does not prove a power reading of 0, a reporting outage or "
+                "a device state. Source returned-window boundaries may differ "
+                "slightly even when the requested windows match. For absolute "
+                "custom times no rounding occurs. Missing_runs describe bin "
+                "coverage, not a verified outage. Read per-device history "
+                "separately if raw saved-bin points are needed."
+            ),
+        }
+
     def __init__(self, api_base: str, access_token: str):
         self.base = validate_api_base(api_base)
         token = str(access_token).strip()
@@ -374,6 +518,8 @@ class HubDeviceMonitor:
         if not isinstance(arguments, dict):
             raise ValueError("Monitor tool arguments must be an object")
         mode = arguments.get("mode")
+        if mode == "compare":
+            return await self._compare(arguments)
         if mode == "status":
             if set(arguments) != {"mode"}:
                 raise ValueError("Monitor status accepts only mode=status")
