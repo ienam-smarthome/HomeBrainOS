@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from agent import Agent
 from investigation_review import (
     SOURCE_REVIEW_PROMPT, is_causal_question, should_review_completion,
+    is_read_only_review_tool, read_only_review_catalog,
 )
 
 
@@ -83,6 +84,17 @@ class ReviewDecisionTests(unittest.TestCase):
         self.assertFalse(should_review_completion(
             "Why did this happen?", available_tools=False,
             already_reviewed=False, remaining_seconds=30))
+
+    def test_review_catalog_excludes_any_write_or_manage_gateway(self):
+        self.assertTrue(is_read_only_review_tool("hub_read_history"))
+        self.assertTrue(is_read_only_review_tool("hub_get_tool_guide"))
+        self.assertFalse(is_read_only_review_tool("hub_manage_apps"))
+        self.assertFalse(is_read_only_review_tool("hub_set_rule"))
+        names = ["hub_read_history", "hub_manage_apps", "hub_set_rule"]
+        tools = [{"type": "function", "function": {"name": name}} for name in names]
+        self.assertEqual([item["function"]["name"]
+                          for item in read_only_review_catalog(tools)],
+                         ["hub_read_history"])
 
     def test_prompt_is_general_and_explicitly_read_only(self):
         self.assertIn("READ-ONLY", SOURCE_REVIEW_PROMPT)
@@ -173,6 +185,32 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["source_review_invoked"])
         self.assertEqual(hub.calls, [])
         self.assertEqual(result["tool_calls"], [])
+
+    async def test_supplemental_review_rejects_unadvertised_write(self):
+        hub = FakeMCP()
+        agent = ScriptedAgent([
+            {"content": "Cause unknown.", "tool_calls": []},
+            {"content": "", "tool_calls": [
+                {"function": {"name": "hub_manage_apps",
+                              "arguments": {"tool": "hub_set_native_app", "args": {}}}}]},
+            {"content": "No safe supporting source was retrieved.",
+             "tool_calls": []},
+        ])
+        try:
+            result = await agent.answer("Why was the valve closed?", [], hub, 60)
+        finally:
+            await agent.close()
+        self.assertTrue(result["source_review_invoked"])
+        self.assertEqual(hub.calls, [])
+        self.assertEqual(result["rounds"], 3)
+        self.assertEqual(len(result["tool_calls"]), 1)
+        self.assertFalse(result["tool_calls"][0]["success"])
+        self.assertIn("read-only", result["tool_calls"][0]["error"])
+        self.assertEqual([i["function"]["name"]
+                          for i in agent.round_messages[1] and
+                          [{"function": {"name": "hub_read_history"}}]],
+                         ["hub_read_history"])
+
 
 
 if __name__ == "__main__":
