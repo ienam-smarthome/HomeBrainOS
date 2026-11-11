@@ -27,7 +27,8 @@ not interchangeable hints. Match each reported value to all of them.
   inspect it. Do not imply Home Assistant, a device's native telemetry or
   another recorder was checked merely because it might exist.
 
-Answer the **requested metric first**. If it cannot be established, say
+The requested historical measurement takes precedence over related proxy
+measurements. Answer the **requested metric first**. If it cannot be established, say
 which sources and windows were actually checked and the exact missing
 evidence, then mention any distinct contextual measurements under their
 proper units and time labels. Do not fabricate graphs, peaks, aggregates,
