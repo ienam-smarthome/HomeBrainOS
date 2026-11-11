@@ -16,8 +16,9 @@ from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from evidence_scope import model_result_with_scope
 from investigation_review import (
-    SOURCE_REVIEW_PROMPT, should_review_completion,
+    should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
+    review_kind, review_prompt,
 )
 from config_evidence import config_source_map
 
@@ -454,6 +455,7 @@ class Agent:
         rounds = 0
         leaf_schema_discoveries = 0
         source_review_invoked = False
+        source_review_kind = None
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -506,13 +508,15 @@ class Agent:
                     remaining_seconds=deadline - time.monotonic(),
                 ):
                     source_review_invoked = True
-                    messages.append({"role": "user", "content": SOURCE_REVIEW_PROMPT})
+                    source_review_kind = review_kind(question)
+                    messages.append({"role": "user", "content": review_prompt(source_review_kind)})
                     continue
                 return {
                     "success": bool(text), "prior_receipts_used": prior_receipts,
                     "answer": text or "The model returned an empty answer.",
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "source_review_invoked": source_review_invoked,
+                    "source_review_kind": source_review_kind,
                     "tool_calls": receipts,
                     "rounds": rounds,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
