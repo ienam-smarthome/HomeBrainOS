@@ -175,7 +175,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.46", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.47", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -239,6 +239,39 @@ def require_ui_request(request: Request):
     if request.headers.get("x-homebrain-request") != "1":
         raise HTTPException(403, "Interface is out of date or the request header is missing. Close and reopen the v2 interface, then refresh the page. API clients must send X-Homebrain-Request: 1")
 
+
+
+@app.get("/api/sources/device-monitor/check")
+async def check_device_monitor(request: Request):
+    """Explicit, one-shot, read-only connectivity check; never return tokens."""
+    require_ui_request(request)
+    monitor = getattr(app.state, "device_monitor", None)
+    if monitor is None:
+        return {
+            "configured": False, "reachable": False,
+            "error": "Optional Hub & Device Monitor connection is not configured",
+        }
+    try:
+        result = await asyncio.wait_for(monitor.query({"mode": "status"}), timeout=10)
+    except (ValueError, asyncio.TimeoutError):
+        # Do not expose backend URLs, tokens or arbitrary downstream text.
+        return {"configured": True, "reachable": False,
+                "error": "Read-only monitor status query failed; check LAN reachability and app OAuth"}
+    selected = result.get("selected_devices")
+    if not isinstance(selected, list):
+        return {"configured": True, "reachable": False,
+                "error": "Monitor returned invalid selected-device inventory"}
+    return {
+        "configured": True, "reachable": True, "read_only": True,
+        "monitor_version": result.get("monitor_version"),
+        "monitor_observed_at_utc": result.get("monitor_observed_at_utc"),
+        "selected_devices": len(selected),
+        "selected_power_capable_devices": sum(
+            1 for x in selected if isinstance(x, dict) and x.get("has_power") is True
+        ),
+        "historical_sample_coverage_verified": False,
+        "note": "Reachability/status do not establish whether any device has saved measurements in the requested time interval.",
+    }
 
 
 @app.post("/api/tts")

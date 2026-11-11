@@ -1,5 +1,13 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.47 acceptance: source catalog, archive completeness, per-attribute chronology
+
+Alpha.46's live questions demonstrated two failure types: a monitor-inventory response that inferred per-device saved data from configured selectors and files; and a PC history response that inferred archive absence after reading disjoint chunks while attributing late-morning watt values to overnight amperage timestamps. Neither attempt called the optional source-specific monitor tool; the receipts did not expose whether that tool was configured/offered. The empty native result, partial archive file and later timestamped events are not proof of historical absence or measured interval wattage.
+
+**Next candidate:** Prefer existing Hub & Device Monitor as read-only source over duplicate polling. Expose per-Ask availability of the optional structured history tool in Technical JSON and model context (configured/offered, *not* connectivity-verified). Provide a user-invoked, one-shot, credential-free connectivity check in Ask. Add conservative original-source per-file character coverage and per-event-attribute UTC bounds; no extra native fetch, fixed tool ordering, answer rewrite or write-path change. Review historical-source inventory questions as well as time-scoped history. Preserve original receipts and show unknown gaps explicitly.
+
+**Acceptance after CI and installation:** Verify alpha.47, inspect monitor connection result, distinguish not-configured/failed status from model nonselection. Ask a first-time historical question for a confirmed selected meter; capture \`available_read_sources\`, local monitor tool receipts, exact custom start/end, report-containing saved bins, held/unknown bins and correctness of peak terminology. Confirm raw-file fragment coverage is never mistaken for archive completeness and that watt values are not attributed to timestamps belonging to a different event name. Recheck missing-history positive control and normal current-only control. Synthetic CI does not prove Gemma source selection, coverage or correctness. No live infrastructure changed.
+
 ## 11 November 2026 — Alpha.46 status-version contract acceptance
 
 **Blocked alpha.45 live trial:** UI/add-on metadata alpha.45, reported API status alpha.44. An Ask preflight produced no model, no MCP/monitor reads and no result; answer-quality criteria are N/A. Root cause verified in source: `/api/status.version` remained hardcoded to alpha.44 while FastAPI was alpha.45. This is an API-version contract defect, not proof of a stale image or missing device power history.

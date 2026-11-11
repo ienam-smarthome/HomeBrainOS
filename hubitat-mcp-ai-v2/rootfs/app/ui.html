@@ -189,6 +189,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <nav aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><details id="labMenu" class="lab-menu"><summary>Experiments (optional)</summary><div class="lab-buttons"><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button><button id="prospectiveTab" onclick="tab('prospective')">Real-source A/B</button></div></details></nav>
 <section id="ask" class="active">
 <div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><details class="session-note"><summary>Conversation and evidence details</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
+<div class="row"><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Hub & Device Monitor: checking configuration…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request to verify whether saved-monitor data can be reached">Test monitor connection</button></div>
 <textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
 <div class="row voice-controls" role="group" aria-label="Voice controls">
  <button id="speak" type="button" onclick="startVoice()" aria-pressed="false">🎤 Speak</button>
@@ -476,7 +477,7 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.46";
+const UI_VERSION="2.0.0-alpha.47";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -498,11 +499,35 @@ async function loadStatus(){
   }
   byId('reloadUI').hidden=true;
   configuredModel=d.model;
+  const monitor=d.device_monitor||{};
+  byId('monitorSourceStatus').textContent=monitor.configured
+    ? 'Hub & Device Monitor: configured · connection not tested'
+    : monitor.enabled
+      ? 'Hub & Device Monitor: configuration invalid'
+      : 'Hub & Device Monitor: not configured';
   ttsInfo=d.tts||{enabled:false};
   byId('state').textContent=d.version+' · '+(d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model'));
   return true;
  }catch(e){byId('state').textContent=String(e.message);return false;}
 }
+async function checkMonitorSource(){
+ const btn=byId('checkMonitor'),out=byId('monitorSourceStatus');
+ btn.disabled=true;out.textContent='Hub & Device Monitor: checking read-only connection…';
+ try{
+  const d=await readJson('api/sources/device-monitor/check',
+   {headers:{'X-Homebrain-Request':'1'}});
+  if(d.reachable){
+   out.textContent='Hub & Device Monitor: reachable · '+d.selected_devices+
+     ' selected devices ('+d.selected_power_capable_devices+
+     ' power capable) · historical samples not verified';
+  }else{
+   out.textContent='Hub & Device Monitor: '+(d.error||'not reachable');
+  }
+ }catch(e){
+  out.textContent='Hub & Device Monitor check failed: '+String(e.message);
+ }finally{btn.disabled=false;}
+}
+
 async function pollActivity(){
  if(!activeRequest)return;
  const requestId=activeRequest;
