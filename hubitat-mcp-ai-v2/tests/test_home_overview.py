@@ -101,7 +101,7 @@ class OverviewCountingTests(unittest.TestCase):
         self.assertEqual(metrics["lights_on"]["devices_with_state"], 4)
         self.assertEqual([x["name"] for x in metrics["lights_on"]["members"]],
                          ["Ceiling bulb", "Colour controller", "Livingroom Light 2"])
-        self.assertEqual(result["unclassified_on_switches"], 3)
+        self.assertEqual(result["unclassified_on_switches"], 4)
         self.assertEqual(metrics["motion_active"]["members"],
                          [{"name": "Hallway FP300"}])
         self.assertEqual(metrics["battery_low"]["members"],
