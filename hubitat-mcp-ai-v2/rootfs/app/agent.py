@@ -114,6 +114,12 @@ client_event_chronology is present, it is only bounded returned-row landmarks
 in chronological order; original MCP receipts and independent clock/source
 limitations remain authoritative. Distinguish a latest command from a latest
 state change. The model still chooses any necessary further reads.
+When client_claim_evidence_headline is present, it is a source-derived
+index rather than an independent receipt. A UI control label is never proof
+of the corresponding live status, and missing typed properties remain unknown.
+When an event-history query reaches its row limit, disclose that returned-row
+scope if the question would otherwise imply complete coverage. Keep the
+original source's command issuer and reporter roles distinct.
 When client_monitor_evidence_scope is present, read its field meanings
 alongside the unchanged underlying monitor source. The compact scope does
 NOT certify sensor freshness, an exact physical threshold-crossing time,
@@ -419,10 +425,40 @@ class Agent:
         config_map = config_source_map(result)
         attr_scope = event_attribute_scope(result)
         chunk_scope = file_chunk_scope(result)
+        # A compact headline makes the actual boundaries visible before a
+        # potentially long native receipt. This is an index of source fields,
+        # never a second source or a verification of unreturned properties.
+        event_scope = original_with_scope.get("client_event_source_scope")
+        headline = None
+        if config_map is not None:
+            headline = {
+                "source_kind": "one current installed-app configuration page",
+                "app_type_returned": config_map.get("returned_app_type_identity"),
+                "typed_app_boolean_fields": config_map.get(
+                    "typed_boolean_flags_in_returned_app_record", {}),
+                "other_status_properties_not_returned_are_unknown": True,
+                "ui_control_labels_are_not_typed_status_values": True,
+                "parent_app_identity_independently_verified": False,
+                "event_specific_execution_verified_by_config": False,
+            }
+        elif isinstance(event_scope, dict):
+            headline = {
+                "source_kind": "bounded returned device event rows",
+                "returned_row_count": event_scope.get("events_returned"),
+                "requested_row_limit": event_scope.get("requested_limit"),
+                "row_limit_reached": event_scope.get("limit_reached"),
+                "oldest_returned_event": event_scope.get("oldest_returned_event"),
+                "newest_returned_event": event_scope.get("newest_returned_event"),
+                "requested_attribute_filter": event_scope.get("requested_attribute_filter"),
+                "observed_command_row_count": event_scope.get("command_rows_in_this_response"),
+                "unseen_rows_or_commands_proven_absent": False,
+                "source_scope": "returned rows only, not complete historical coverage",
+            }
         # Add only source-derived metadata beside the untouched native result.
         # Neither addon metadata nor configuration pages verify actual callback
         # execution; the model still chooses whether to investigate further.
         return {
+            **({"client_claim_evidence_headline": headline} if headline is not None else {}),
             **original_with_scope,
             **({"client_cpu_load_context": cpu} if cpu is not None else {}),
             **({"client_config_source_map": config_map} if config_map is not None else {}),
