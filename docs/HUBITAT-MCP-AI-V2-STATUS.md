@@ -1,5 +1,15 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 11 November 2026 — Alpha.42 live first-answer failure; alpha.43 sufficiency candidate
+
+**Private alpha.42 evaluation (reused case, not independent generalisation):** The model retrieved the correct latest reported state event and its bridge reporter, but incorrectly favoured external initiation without command-origin evidence. Both MCP reads succeeded. The state history was attribute-filtered, so the command-history chronology feature was never exercised. Reviewer score: **2/8** (grounding 1, completeness 0, calibration 0, usefulness 1). Four unpaired alpha.39–42 examples cannot establish a population accuracy trend. No private device names, IDs, timestamps or receipts are published.
+
+**Lifecycle defect:** Alpha.39–42 provided source-derived passive metadata, but the agent returned on the model's first text-only completion. No metadata can help if the discriminating source was never requested.
+
+**Alpha.43 candidate:** An eligible causal completion opens one conditional extra **model-led** evidence-sufficiency deliberation. Gemma examines its successful receipts, filters, source gaps and causal claim, then independently decides whether to choose proportionate read-only MCP sources or stop with a calibrated answer. The client executes no automatic read, retry or fixed tool sequence; it makes no deterministic causal verdict or answer rewrite and changes no write permissions. The API reports a source_review_invoked flag. Extra model latency is a tradeoff; time-short requests retain normal completion. This deliberately revises the earlier no-extra-model-round design, not the prohibition on automatic MCP reads.
+
+**Gate:** Fictional tests for model-chosen follow-up read, model-chosen stop, noncausal bypass and native receipt preservation; CI and post-merge checks; separately installed version verification and genuinely unseen read-only first-answer and positive-control captures. No claim of improved Gemma accuracy before source-real acceptance. No live device or recorder changes.
+
 ## 10 November 2026 — Alpha.42 candidate: chronological landmarks without inferred causality
 
 **Private alpha.41 first-answer review (not an overall accuracy rate):** A fresh read-only power-control question led to three successful MCP reads (device lookup, empty 24-hour filtered state query, older unfiltered 50-row event history), no tool errors, four model rounds. The model correctly found a recorded command issuer in the older history, but described a separate OFF-state report as occurring *after* that command when the actual source stamps put the state report almost ten minutes *before* the later command. Later low-power telemetry was separately observed and cannot retroactively establish that the command caused the earlier state report. The 50-row mixed history reached its row limit; app configuration and event-specific callback evidence were not examined. Reviewer score: **3/8** (grounding 1, completeness 1, calibration 0, usefulness 1), one independent sample only. No private device/app names, IDs, event stamps or original receipts are published.
