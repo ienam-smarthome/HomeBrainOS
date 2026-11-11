@@ -63,6 +63,22 @@ _READ_INTENT = re.compile(
     r"trend|values?|samples?|peak|average|maximum|minimum)\b",
     re.IGNORECASE,
 )
+# Historical data-availability questions also need source sufficiency review,
+# even when the user did not specify a clock-time interval.
+_HISTORY_SOURCE_INVENTORY = re.compile(
+    r"\b(?:history|historical|archives?|archived|recorded|saved)\b",
+    re.IGNORECASE,
+)
+_HISTORY_INVENTORY_TARGET = re.compile(
+    r"\b(?:devices?|meters?|sensors?|sources?|readings?|samples?|records?|"
+    r"measurement|measurements)\b",
+    re.IGNORECASE,
+)
+_HISTORY_INVENTORY_INTENT = re.compile(
+    r"\b(?:which|what|available|list|show|identify|find|check|compare|"
+    r"have|has|contain|stored)\b",
+    re.IGNORECASE,
+)
 _WRITE_INTENT_AT_START = re.compile(
     r"^\s*(?:turn|switch|set|update|delete|reboot|restart|"
     r"create|configure|enable|disable|start|stop)\b",
@@ -87,6 +103,15 @@ the measurement unavailable from every other source. Do not silently
 substitute a current snapshot, a different metric or inferred activity for
 the requested historical measurement.
 
+A device being selected for monitoring and the existence of an archive
+filename do NOT establish the presence of saved samples for that device.
+A file chunk with hasMore=true or partial retrieved-character coverage cannot
+justify a claim about contents of unread ranges. Inspect client_file_cumulative_coverage
+and original source receipts before asserting an archive is empty or complete.
+Keep per-attribute event timestamps separate: an amperage or energy event
+time is NOT a power event timestamp. Relative times must map into the
+requested window with the source timezone and explicit offset.
+
 If a proportionate permitted READ-ONLY source (native MCP or a configured
 local archived measurement tool) could supply the requested data, you may
 independently select and call it. Native event history and a separate
@@ -105,8 +130,13 @@ def is_historical_measurement_question(question: str) -> bool:
     return (
         isinstance(question, str)
         and not bool(_WRITE_INTENT_AT_START.search(question))
-        and bool(_HISTORICAL_PERIOD.search(question))
-        and bool(_READ_INTENT.search(question))
+        and (
+            bool(_HISTORICAL_PERIOD.search(question))
+            and bool(_READ_INTENT.search(question))
+            or bool(_HISTORY_SOURCE_INVENTORY.search(question))
+            and bool(_HISTORY_INVENTORY_TARGET.search(question))
+            and bool(_HISTORY_INVENTORY_INTENT.search(question))
+        )
     )
 
 
