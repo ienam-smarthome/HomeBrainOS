@@ -82,7 +82,7 @@ class OverviewCountingTests(unittest.TestCase):
 
     def test_non_lights_and_misleading_label_are_excluded(self):
         fixture = [
-            {"label": "Livingroom Light 2", "currentStates": {"switch": "on"}},
+            {"label": "Lab Sample Light 2", "currentStates": {"switch": "on"}},
             {"label": "Kitchen lamp", "currentStates": {"switch": "off"}},
             {"label": "Ceiling bulb", "currentStates": {"switch": "on"}},
             {"label": "Aqara Light Sensor", "currentStates": {"switch": "on"}},
@@ -93,19 +93,19 @@ class OverviewCountingTests(unittest.TestCase):
             {"label": "Hue Light", "currentStates": {"switch": "on"},
              "type": "Smart Plug"},
             {"label": "Unidentified relay", "currentStates": {"switch": "on"}},
-            {"label": "Hallway FP300", "currentStates": {"motion": "active", "battery": 19.5}},
+            {"label": "Lab Motion A", "currentStates": {"motion": "active", "battery": 19.5}},
         ]
         result = summarize_device_inventory(inventory_reply(fixture, total=9))
         metrics = result["metrics"]
         self.assertEqual(metrics["lights_on"]["count"], 3)
         self.assertEqual(metrics["lights_on"]["devices_with_state"], 4)
         self.assertEqual([x["name"] for x in metrics["lights_on"]["members"]],
-                         ["Ceiling bulb", "Colour controller", "Livingroom Light 2"])
+                         ["Ceiling bulb", "Colour controller", "Lab Sample Light 2"])
         self.assertEqual(result["unclassified_on_switches"], 4)
         self.assertEqual(metrics["motion_active"]["members"],
-                         [{"name": "Hallway FP300"}])
+                         [{"name": "Lab Motion A"}])
         self.assertEqual(metrics["battery_low"]["members"],
-                         [{"name": "Hallway FP300", "battery_pct": 19.5}])
+                         [{"name": "Lab Motion A", "battery_pct": 19.5}])
 
     def test_bounded_all_active_names_and_values_not_only_five_examples(self):
         devices = [
