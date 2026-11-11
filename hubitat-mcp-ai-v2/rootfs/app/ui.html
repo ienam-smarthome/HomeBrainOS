@@ -122,50 +122,6 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
  body.graph-popout #graph{height:clamp(380px,64vh,800px)}}
 
 
-/* Private A/B model evaluation; keeps both untrusted answers as plain text. */
-.bench-field{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
-.bench-field label{color:var(--muted);font-size:13px}
-.bench-field select{padding:9px;max-width:100%}
-.bench-field input[type=file]{font:inherit;max-width:100%;font-size:13px;color:var(--txt)}
-.bench-consent{display:block;font-size:13px;line-height:1.5;margin:10px 0}
-.bench-consent input{accent-color:var(--blue);margin-right:9px}
-.bench-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.bench-pair pre{min-height:120px;max-height:460px;white-space:pre-wrap}
-.bench-score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
-.bench-score label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
-.bench-score select{padding:9px}
-.bench-privacy{border-left:3px solid var(--amber);padding:12px;background:#241f1b;border-radius:5px;font-size:13px;line-height:1.55}
-@media(max-width:690px){.bench-pair{grid-template-columns:1fr}nav{flex-wrap:wrap}}
-
-.autolab-scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px}
-.autolab-scores label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
-.autolab-scores select{padding:10px}
-.autolab-risk{padding:12px;border:1px solid var(--edge);border-left:3px solid var(--green);border-radius:8px;background:#102c2d}
-.autolab-evidence{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:12px 0}
-.autolab-evidence>div{padding:10px;border:1px solid var(--edge);border-radius:8px}
-.autolab-pass{color:var(--green)}.autolab-missing{color:var(--amber)}
-.autolab-select{padding:8px;max-width:100%}
-#autolabAnswer{min-height:150px;max-height:550px;overflow:auto;white-space:pre-wrap}
-#autolabCalls{max-height:450px}
-@media(max-width:550px){.autolab-evidence{grid-template-columns:1fr}}
-
-.reasoning-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.reasoning-pair pre{max-height:430px;min-height:110px;overflow:auto}
-.reasoning-evidence{font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--muted)}
-.reasoning-scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}
-.reasoning-scores label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
-.reasoning-scores select{padding:9px}
-@media(max-width:690px){.reasoning-pair{grid-template-columns:1fr}}
-/* Keep daily Ask/Diagnostics visible; labs remain available under an optional menu. */
-.lab-menu{margin-left:auto;min-width:0}
-.lab-menu>summary{padding:10px 14px;cursor:pointer;border:1px solid var(--edge);border-radius:10px;background:var(--panel)}
-.lab-menu>summary:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
-.lab-buttons{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-.lab-buttons button{font-size:13px}
-#question{height:82px;min-height:76px}
-.live-review-note{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0}
-@media(max-width:690px){.lab-menu{width:100%;margin-left:0}.lab-buttons button{flex:1 1 42%}}
-
 /* V1-compatible voice controls, without a persistent microphone or voice transcript. */
 .voice-controls{margin:9px 0 6px;gap:9px;align-items:center}
 .voice-controls button{min-height:42px;white-space:nowrap}
@@ -182,34 +138,88 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
  #ask .card>.row:has(#copyAnswer){gap:6px}
  #ask .card>.row:has(#copyAnswer) button{font-size:12px}
 }
+
+/* Alpha.50 everyday UI: presentation-only, no changes to answers or evidence. */
+:root{--bg:#0a1220;--panel:#132033;--edge:#2b3c52;--txt:#f1f6fd;--muted:#a8b8ce;--blue:#8bc8ff;--green:#68dbb0;--amber:#f8c476}
+html{scroll-behavior:smooth}
+body{min-height:100vh;background:radial-gradient(ellipse 900px 500px at 85% -180px,#1a3859 0,transparent 72%),linear-gradient(180deg,#0b1422,#0c1726);font-size:15px;line-height:1.55}
+header{padding:0;background:rgba(10,18,31,.94);border-bottom:1px solid rgba(128,166,203,.16)}
+.header-inner{max-width:1168px;width:100%;margin:auto;padding:17px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:13px;min-width:0}
+.brand-mark{width:41px;height:41px;border:1px solid #3b678b;border-radius:13px;display:grid;place-items:center;background:linear-gradient(155deg,#224e74,#133450);color:#e5f5ff;font-size:24px;font-weight:600;box-shadow:inset 0 1px 0 #ffffff1a}
+.brand h1{font-size:19px;line-height:1.25;letter-spacing:-.035em;margin:0 0 3px}
+.brand h1 .brand-v{color:var(--blue)}.brand-copy small{color:#9aaec6;font-size:12px}
+.header-status{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#state{display:inline-flex;align-items:center;gap:9px;border:1px solid #37516b;background:#13273b;color:#c3d9ed;border-radius:999px;padding:7px 12px;font-size:12px;font-variant-numeric:tabular-nums}
+#state:before{content:'';display:inline-block;width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#68d9a9;box-shadow:0 0 0 3px #68d9a91b}
+main{max-width:1168px;padding:23px 24px 32px}
+.app-tabs{display:flex;gap:4px;align-items:center;width:max-content;max-width:100%;padding:4px;border:1px solid #30445b;background:#101c2d;border-radius:13px;margin:0 0 20px}
+.app-tabs button{border:0;border-radius:9px;background:transparent;color:#afc1d6;min-height:40px;padding:9px 17px;font-weight:600;font-size:13px;transition:background .14s ease,color .14s ease}
+.app-tabs button:hover{background:#1a3048;color:#f8fbff}
+.app-tabs button.active{background:#28689d;color:#fff;box-shadow:0 1px 7px #0003}
+.card{background:linear-gradient(180deg,#152338,#142034);border:1px solid #2a4058;border-radius:17px;padding:22px 24px;box-shadow:0 10px 28px #00000010;margin-bottom:17px}
+.card h2{font-size:17px;font-weight:670;margin:0;letter-spacing:-.025em}
+.compose-heading{align-items:start;justify-content:space-between;margin-bottom:8px}
+.compose-subtitle{font-size:13px;color:var(--muted);margin:5px 0 0}
+.compose-card{padding-bottom:18px}
+#newConversation{font-size:12px;padding:8px 12px;color:#c5d9ef;background:#192d43;white-space:nowrap}
+.evidence-disclosure{font-size:12px;margin:6px 0 0;color:var(--muted)}
+.evidence-disclosure summary{font-size:12px}.evidence-disclosure p{margin:8px 0}
+.monitor-row{margin:14px 0 10px;gap:8px;min-width:0}
+.monitor-indicator{height:8px;width:8px;border-radius:50%;background:#6b91b7;flex:0 0 auto}
+#monitorSourceStatus{font-size:12px;flex:1 1 320px;line-height:1.5}
+#checkMonitor{padding:5px 10px;font-size:12px;border-radius:8px;background:#162a40;color:#bdd8f0;white-space:nowrap}
+#question{height:101px;min-height:82px;max-height:420px;padding:14px 16px;background:#0f1b2b;border:1px solid #36506d;border-radius:12px;line-height:1.6;resize:vertical;font-size:15px;box-shadow:inset 0 2px 5px #00000012}
+#question::placeholder{color:#8ea4c0}#question:focus{border-color:#70baff;box-shadow:0 0 0 3px #65b7fa24;outline:none}
+.compose-actions{margin-top:9px;gap:10px}.compose-actions button{min-height:39px}
+.voice-controls .voice-status{flex:1 1 200px;color:#94a9c2;font-size:11.5px}
+#speak{padding:8px 12px;background:#192e46}
+#send{background:#1974b3;border:1px solid #3d9cda;border-radius:10px;padding:9px 20px;font-weight:700;white-space:nowrap;min-width:84px}
+#send:hover:not(:disabled){background:#2586c9;border-color:#80c9ff}
+.answer-card{padding-top:20px}.answer-heading{gap:8px;margin-bottom:10px}
+.answer-heading h2{margin-right:auto}.answer-heading button{font-size:12px;padding:8px 11px}
+.answer-meta{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px;padding-bottom:11px;border-bottom:1px solid #30445c}
+#requestSummary,#responseTime{margin:0;font-size:12px;color:#aabdd2}
+#requestQuestion{font-size:12px;color:#9baec6;max-width:100%;font-weight:400;margin:0}
+#answer{font-size:15px;line-height:1.75;min-height:64px}
+#answer h2,#answer h3{color:#c6dfff}#answer p{margin:10px 0 12px}#answer li{margin:5px 0}
+.answer-card .evidence-panel{margin-top:17px;border-top:1px solid #31455d;padding-top:11px}
+.answer-card .evidence-panel summary{font-size:12px;color:#b2c6dc}
+.live-review-note{font-size:11.5px;color:#90a6c0;line-height:1.5}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+button{transition:border-color .15s ease,background-color .15s ease}button:hover:not(:disabled){border-color:#5c88ab}
+@media(max-width:720px){.header-inner{padding:14px 16px}.header-status{width:100%}main{padding:15px 12px 24px}.card{padding:17px 15px}.app-tabs{width:100%}.app-tabs button{flex:1}.voice-controls .voice-status{flex-basis:100%;order:2}.voice-controls #send{margin-left:auto}.answer-heading{align-items:center}.answer-heading button{padding:8px 10px}}
+@media(max-width:480px){.brand h1{font-size:17px}.brand-mark{width:36px;height:36px}.monitor-row{gap:6px}#monitorSourceStatus{flex:1 1 100%}#checkMonitor{margin-left:14px}.compose-actions{gap:8px}.voice-toggle{font-size:12px}.answer-heading h2{width:100%}.answer-heading button{flex:1 1 auto}#answer{font-size:14px}.answer-meta{align-items:start}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
+
 </style></head>
 <body>
-<header><div><h1>Hubitat MCP AI v2</h1><small>Clean native MCP assistant · native server capabilities</small></div><div><small id="state">Checking configuration…</small> <button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></header>
+<header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><small id="state">Checking configuration…</small><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
-<nav aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><details id="labMenu" class="lab-menu"><summary>Experiments (optional)</summary><div class="lab-buttons"><button id="benchmarkTab" onclick="tab('benchmark')">AI Benchmark</button><button id="autonomousTab" onclick="tab('autonomous')">Autonomous Lab</button><button id="reasoningTab" onclick="tab('reasoning')">Reasoning A/B</button><button id="prospectiveTab" onclick="tab('prospective')">Real-source A/B</button></div></details></nav>
+<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active">
-<div class="card"><div class="row"><h2>Ask Hubitat</h2><button id="newConversation" class="right" onclick="newConversation()">New conversation</button></div><details class="session-note"><summary>Conversation and evidence details</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
-<div class="row"><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Hub & Device Monitor: checking configuration…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request to verify whether saved-monitor data can be reached">Test monitor connection</button></div>
-<textarea id="question" aria-label="Your question" placeholder="Ask about a device, an automation, or your hub…"></textarea>
-<div class="row voice-controls" role="group" aria-label="Voice controls">
+<div class="card compose-card"><div class="row compose-heading"><div><h2>Ask HomeBrain</h2><p class="compose-subtitle">Ask about a device, automation or saved history.</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
+<div class="row monitor-row"><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
+<label class="sr-only" for="question">Ask HomeBrain a question</label><textarea id="question" aria-label="Your question" placeholder="Ask a question, investigate an event, or compare device histories…" spellcheck="true"></textarea>
+<div class="row voice-controls compose-actions" role="group" aria-label="Voice controls">
  <button id="speak" type="button" onclick="startVoice()" aria-pressed="false">🎤 Speak</button>
  <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
- <span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Voice input needs browser microphone support. Speech recognition may use an online browser service.</span>
+ <span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Voice input may use a browser speech service.</span>
+<button id="send" class="primary right" onclick="submitAsk()">Ask <span aria-hidden="true">↗</span></button>
 </div>
-<div class="row"><small class="muted">Ask naturally. The assistant chooses tools from your connected Hubitat server.</small><button id="send" class="primary right" onclick="submitAsk()">Ask</button></div>
 </div>
 <details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details><div class="card" id="activityCard" hidden><h2>Current operation</h2><pre id="activity"></pre>
 <div id="approval" hidden><p>Review this operation and its effects. Approve only if you intend this exact change.</p>
 <button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
 <button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
-<div class="card">
-<div class="row"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
-<p id="requestSummary" role="status" aria-live="polite">No request yet.</p><p id="requestQuestion" hidden></p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p>
+<div class="card answer-card">
+<div class="row answer-heading"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
+<div class="answer-meta"><p id="requestSummary" role="status" aria-live="polite">Your answer will appear here.</p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p></div><p id="requestQuestion" hidden></p>
 <div id="answer" class="muted">Your response will appear here.</div>
-<details><summary>Technical details / Tool receipts</summary>
+<details class="evidence-panel"><summary>Evidence & technical details</summary>
 <button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
 <button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><pre id="receipts">No tool calls yet.</pre></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
-<details><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></div></section>
+<details class="evidence-panel"><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></div></section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
@@ -250,241 +260,16 @@ body.graph-popout .graph-zoom-row{margin:12px 0 15px}
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div>
 </section>
-<section id="benchmark">
- <div class="row"><h2>AI Benchmark · private A/B review</h2><button class="right" onclick="benchmarkRefresh()">Refresh</button></div>
- <p class="muted">Evaluate the same frozen MCP evidence with and without generic source-role notes. This isolated test cannot invoke Hubitat or Home Assistant tools.</p>
- <div class="card">
-  <h3>1 · Import private benchmark evidence</h3>
-  <p class="bench-privacy">This ZIP contains private home device history. It stays in this HomeBrainOS add-on’s /data directory until you explicitly delete it. People who can access this add-on may be able to view the evidence. Importing makes no model calls.</p>
-  <div class="bench-field"><input id="benchZip" type="file" accept=".zip,application/zip" aria-label="Prepared private benchmark ZIP">
-   <button id="benchImport" onclick="benchmarkUpload()">Import ZIP</button></div>
-  <p id="benchStatus" role="status" aria-live="polite">No benchmark imported.</p>
- </div>
- <div class="card">
-  <h3>2 · Generate paired answers</h3>
-  <p id="benchModel" class="session-note">Using your configured model; no native MCP tools are supplied.</p>
-  <div class="bench-field">
-   <label for="benchPilot1">First case</label><select id="benchPilot1"></select>
-   <label for="benchPilot2">Second case (optional)</label><select id="benchPilot2"></select>
-  </div>
-  <label class="bench-consent"><input id="benchPrivateConsent" type="checkbox">I authorise sending these recorded private MCP sources to the selected model for this benchmark.</label>
-  <label class="bench-consent"><input id="benchCloudConsent" type="checkbox">I understand that cloud/remote models may receive my private evidence and use paid credits.</label>
-  <div class="row"><button id="benchRun" class="primary" onclick="benchmarkRun()" disabled>Run selected A/B pairs</button>
-   <button id="benchStop" onclick="benchmarkStop()" disabled>Stop run</button></div>
-  <p id="benchRunStatus" role="status" aria-live="polite">Import the ZIP to begin.</p>
- </div>
- <div class="card">
-  <h3>3 · Blind review</h3>
-  <p class="session-note">Score A and B separately without seeing which one contains annotations. Score 0 = incorrect/unsupported, 1 = partial, 2 = supported; n/a = genuinely not applicable.</p>
-  <div class="bench-field"><label for="benchSelectCase">Review case</label>
-   <select id="benchSelectCase" onchange="benchmarkViewCase()"></select></div>
-  <p id="benchQuestion" class="session-note">No case selected.</p>
-  <details id="benchOriginalSources"><summary>Inspect the original MCP source receipts (no annotation labels)</summary>
-   <pre id="benchSource" aria-label="Original recorded MCP evidence"></pre></details>
-  <div class="bench-pair">
-   <div><h3>Answer A</h3><pre id="benchAnswerA">Not generated.</pre><div class="bench-score" id="benchScoresA"></div></div>
-   <div><h3>Answer B</h3><pre id="benchAnswerB">Not generated.</pre><div class="bench-score" id="benchScoresB"></div></div>
-  </div>
-  <div class="row"><button id="benchSave" onclick="benchmarkSaveScores()" disabled>Save blind scores</button>
-   <span id="benchReviewStatus" role="status" class="session-note"></span></div>
- </div>
- <div class="card">
-  <h3>4 · Aggregate comparison</h3>
-  <p class="session-note">Only fully scored A/B pairs count. The report never exports the original home evidence, model answers, case names or hidden A/B assignments.</p>
-  <div class="row"><button id="benchReportButton" onclick="benchmarkReport()" disabled>Generate report</button>
-   <button id="benchDownload" onclick="benchmarkDownloadReport()" disabled>Download report JSON</button></div>
-  <pre id="benchReportPreview">No scored results yet.</pre>
-  <details><summary>Private data controls</summary><p class="bench-privacy">Deleting clears all imported evidence, answers and ratings stored by this add-on. This does not revoke information already transmitted to a cloud model.</p>
-   <button id="benchDelete" onclick="benchmarkDelete()" disabled>Delete all benchmark data</button></details>
- </div>
-</section>
-<section id="autonomous">
- <div class="row"><h2>Autonomous First-Answer Lab</h2>
-  <button class="right" onclick="autolabRefresh()">Refresh</button></div>
- <p class="autolab-risk"><strong>Synthetic test only.</strong> Gemma selects native-shaped MCP tools independently, but the MCP server in this test is an in-memory simulator. No connection to your real Hubitat, Home Assistant, devices or household evidence is used. A model run can consume cloud credits if you use Ollama Cloud.</p>
- <div class="card">
-  <h3>1 · Select a new synthetic investigation</h3>
-  <div class="row"><select id="autolabSelect" class="autolab-select" aria-label="Synthetic evaluation scenario" onchange="autolabView()"></select></div>
-  <p id="autolabQuestion" class="session-note">Choose a case to review its fixed question.</p>
-  <label class="bench-consent"><input id="autolabModelConsent" type="checkbox">I authorise one model-led evaluation using only fictional test data; model tokens or cloud credits may be used.</label>
-  <label class="bench-consent"><input id="autolabCloudConsent" type="checkbox">I approve sending this fictional scenario to my configured cloud/remote model if applicable.</label>
-  <div class="row">
-   <button class="primary" id="autolabRun" onclick="autolabRun()">Run selected synthetic case</button>
-   <button id="autolabStop" onclick="autolabStop()" disabled>Stop run</button>
-  </div>
-  <p class="session-note" role="status" aria-live="polite" id="autolabStatus">Loading sandbox cases…</p>
- </div>
- <div class="card">
-  <h3>2 · Autonomous answer and evidence trace</h3>
-  <p class="session-note">The first answer is generated by the unchanged v2 model-led loop. Requested tool discovery, tool calls and follow-up reads occur only inside the sandbox.</p>
-  <pre id="autolabAnswer">No synthetic answer yet.</pre>
-  <div id="autolabCoverage" class="autolab-evidence"></div>
-  <p class="session-note" id="autolabMetrics"></p>
-  <details><summary>Exact synthetic tool-call receipts (never real Hubitat data)</summary>
-   <pre id="autolabCalls">No test run yet.</pre></details>
- </div>
- <div class="card">
-  <h3>3 · Score first-answer quality</h3>
-  <p class="session-note">Source coverage is checked automatically, but whether Gemma's explanation is correct requires independent human review. Score 0 = unsupported, 1 = partial, 2 = supported, or n/a for a genuinely inapplicable criterion.</p>
-  <div class="autolab-scores" id="autolabScores"></div>
-  <div class="row"><button id="autolabSave" onclick="autolabSave()" disabled>Save assessment</button>
-   <span id="autolabReviewStatus" role="status" class="session-note"></span></div>
- </div>
- <div class="card">
-  <h3>4 · Offline-safe evaluation report</h3>
-  <p class="session-note">The report includes tool coverage, simulated attempts, ratings and elapsed times only; it contains no household source records, prompt texts or raw answers.</p>
-  <div class="row"><button onclick="autolabReport()">Generate report</button>
-   <button id="autolabDownload" onclick="autolabDownload()" disabled>Download JSON</button></div>
-  <pre id="autolabReportPreview">No evaluation report yet.</pre>
-  <details><summary>Clear synthetic results</summary>
-   <button onclick="autolabDelete()">Delete all local synthetic evaluations</button></details>
- </div>
-</section>
-
-<section id="reasoning">
- <div class="row"><h2>Reasoning A/B — fresh synthetic holdout</h2>
- <button class="right" onclick="reasoningRefresh()">Refresh</button></div>
- <p class="autolab-risk"><strong>Synthetic evaluation only.</strong> The current alpha.24 production reasoning is the baseline. An isolated candidate uses the same Agent.answer and native-shaped in-memory MCP tools, with one additional general evidence-quality instruction. The A/B assignments remain hidden until all six cases have been rated. No real device or home data is used. Your configured cloud model may consume credits.</p>
- <div class="card">
-  <h3>1 · Run one blinded pair</h3>
-  <div class="row"><select id="reasoningSelect" class="autolab-select" aria-label="Select fresh synthetic holdout case" onchange="reasoningView()"></select></div>
-  <p id="reasoningQuestion" class="session-note">Choose a fictional case.</p>
-  <label class="bench-consent"><input id="reasoningModelConsent" type="checkbox">I approve two independent fictional model investigations for this case. Cloud credits may be consumed.</label>
-  <label class="bench-consent"><input id="reasoningCloudConsent" type="checkbox">I approve transferring fictional questions and fictional MCP evidence to my configured remote/cloud model, if applicable.</label>
-  <div class="row">
-   <button class="primary" id="reasoningRun" onclick="reasoningRun()">Run blinded A/B pair</button>
-   <button id="reasoningStop" onclick="reasoningStop()" disabled>Stop pair</button>
-  </div>
-  <p class="session-note" id="reasoningStatus" role="status" aria-live="polite">Loading...</p>
- </div>
- <div class="card">
-  <h3>2 · Review Answer A and Answer B blind</h3>
-  <p class="session-note">Read the model answers and the actual synthetic tool-call receipts. Coverage is an observed-source check, not proof that an explanation is correct. Neither answer is identified as the baseline or candidate while grading.</p>
-  <div class="reasoning-pair">
-   <div><h3>Answer A</h3><pre id="reasoningAnswerA">Not generated yet.</pre>
-    <div id="reasoningMetricsA" class="reasoning-evidence"></div>
-    <details><summary>View exact synthetic tool receipts A</summary><pre id="reasoningCallsA">No receipts.</pre></details></div>
-   <div><h3>Answer B</h3><pre id="reasoningAnswerB">Not generated yet.</pre>
-    <div id="reasoningMetricsB" class="reasoning-evidence"></div>
-    <details><summary>View exact synthetic tool receipts B</summary><pre id="reasoningCallsB">No receipts.</pre></details></div>
-  </div>
- </div>
- <div class="card">
-  <h3>3 · Independent blind assessment</h3>
-  <p class="session-note">Score each arm on factual grounding, source completeness, causal calibration, command outcome, and usefulness: 0 unsupported, 1 partial, 2 supported, or n/a if inapplicable. Rate the full answer, not just retrieved-tool counts. Saved scores are locked to protect blind evaluation; review carefully before submitting.</p>
-  <div class="reasoning-pair">
-   <div><h3>A scores</h3><div class="reasoning-scores" id="reasoningScoresA"></div></div>
-   <div><h3>B scores</h3><div class="reasoning-scores" id="reasoningScoresB"></div></div>
-  </div>
-  <div class="row"><button id="reasoningSave" onclick="reasoningSave()" disabled>Save both blind scores</button>
-   <span class="session-note" id="reasoningReviewStatus" role="status"></span></div>
- </div>
- <div class="card">
-  <h3>4 · Aggregate report (reveals mapping only after 6/6 scored)</h3>
-  <p class="session-note">Private experiment reports contain ratings and source-retrieval counts only, never prompts, raw answers, private allocation keys, household records, or model credentials. The final report unmasks the A/B assignment only after every pair has been blindly scored.</p>
-  <div class="row"><button onclick="reasoningReport()">Generate aggregate report</button>
-   <button id="reasoningDownload" onclick="reasoningDownload()" disabled>Download report JSON</button></div>
-  <pre id="reasoningReportPreview">No A/B report yet.</pre>
-  <details><summary>Delete only this synthetic A/B study</summary>
-   <button onclick="reasoningDelete()">Delete A/B results and ratings</button>
-  </details>
- </div>
-</section>
-<section id="prospective">
- <div class="row"><h2>Real-source A/B · private read-only evaluation</h2><button class="right" onclick="prospectiveRefresh()">Refresh</button></div>
- <p class="bench-privacy"><strong>Opt-in, real Hubitat reads.</strong> This study requires a fresh server response showing the configured v2 token's own <code>clientAccess.writeEnabled: false</code> before each arm. Write tools are also excluded by native read-only annotations. No question is sent until you click Run and approve the model/cloud consents. Each pair may use cloud credits. Do not use this for device control. The study stays in add-on memory only and is lost on restart.</p>
- <div class="card">
-  <h3>1 · Verify restricted MCP token</h3>
-  <button onclick="prospectivePermission()">Check client access (one read-only hub request)</button>
-  <pre id="prospectivePermissionStatus">Not checked. The global writeEnabled field is not enough.</pre>
- </div>
- <div class="card">
-  <h3>2 · Freeze a NEW study (one question per line)</h3>
-  <p class="session-note">For causal investigations, prepare 4–10 genuinely unseen questions across different domains. Do not reuse exposed holdout, sr-series or new-01/new-02 cases. Verify each exact target, capability and time scope independently before freezing. Do not put credentials here. Frozen questions and original first answers cannot be retried.</p>
-  <textarea id="prospectiveQuestions" placeholder="One new causal investigation per line…"></textarea>
-  <label class="bench-consent"><input id="prospectiveCausalMode" type="checkbox" checked> Causal evidence study (4–10 questions; requires claim-by-claim review)</label>
-  <label class="bench-consent"><input id="prospectiveTargetAttestation" type="checkbox"> I have independently checked each named target, relevant capability and requested time scope. This is my attestation, not an automated hub verification.</label>
-  <div class="row"><button onclick="prospectivePrepare()">Freeze new question set</button>
-   <span id="prospectiveFrozen" class="session-note" role="status">Not prepared.</span></div>
- </div>
- <div class="card">
-  <h3>3 · Explicit model evaluation</h3>
-  <div class="bench-field"><label for="prospectiveSelect">Question</label>
-   <select id="prospectiveSelect" onchange="prospectiveView()"></select></div>
-  <label class="bench-consent"><input id="prospectiveModelConsent" type="checkbox">I authorise two independent model answers for this private evaluation.</label>
-  <label class="bench-consent"><input id="prospectivePrivateConsent" type="checkbox">I authorise the model to read relevant household evidence through the restricted MCP token.</label>
-  <label class="bench-consent"><input id="prospectiveCloudConsent" type="checkbox">I approve private evidence transfer and possible charges if the configured model is cloud/remote.</label>
-  <div class="row"><button id="prospectiveRun" class="primary" disabled onclick="prospectiveRun()">Run blinded read-only pair</button>
-   <button id="prospectiveStop" disabled onclick="prospectiveStop()">Stop run</button>
-   <button onclick="prospectiveDownloadPrivate()">Download PRIVATE case JSON</button></div>
-  <p id="prospectiveRunStatus" class="session-note" role="status">No run yet.</p>
- </div>
- <div class="card">
-  <h3>4 · Review A and B without seeing the condition mapping</h3>
-  <p class="session-note">Both arms use the same model and independently choose native read tools. Source state may drift between live reads. Independently judge each claim against actual receipts. 0 = unsupported, 1 = partial, 2 = supported, n/a = inapplicable. Only fully rated studies reveal the mapping.</p>
-  <p id="prospectiveQuestion" class="session-note"></p>
-  <div class="bench-pair">
-   <div><h3>Answer A</h3><pre id="prospectiveAnswerA">No answer.</pre><div class="bench-score" id="prospectiveScoresA"></div></div>
-   <div><h3>Answer B</h3><pre id="prospectiveAnswerB">No answer.</pre><div class="bench-score" id="prospectiveScoresB"></div></div>
-  </div>
-  <p id="prospectiveParity" class="session-note">Original source-response comparability: not checked.</p>
-  <details><summary>Private tool receipts (A)</summary><pre id="prospectiveReceiptsA"></pre></details>
-  <details><summary>Private tool receipts (B)</summary><pre id="prospectiveReceiptsB"></pre></details>
-  <div id="prospectiveCausalReview" class="card" hidden>
-   <h3>Required causal evidence audit — human review, not automatic proof</h3>
-   <p class="session-note">Inspect each original MCP receipt before scoring. Record every <strong>definite causal assertion</strong> made by each answer (not simply a device state, correlation, possibility or an explicit refusal to infer a cause). Each line: <code>supported | short exact claim | 0,2</code>, <code>unsupported | short claim |</code>, or <code>unverified | short claim | 1</code>. Receipt indices are zero-based positions in that answer's tool receipt list. A supported cause MUST reference at least one successful original tool result. Leave the claims field empty if the model makes no definite cause assertion; still rate whether its uncertainty was appropriate (0–2, not n/a). Private claim quotations are never included in the aggregate report.</p>
-   <div class="bench-pair">
-    <div>
-     <h3>Answer A — source-grounded cause review</h3>
-     <label class="bench-consent"><input id="prospectiveReviewedA" type="checkbox">I inspected A's original receipts</label>
-     <label class="bench-consent"><input id="prospectiveAllClaimsA" type="checkbox">All definite cause claims in A are reviewed</label>
-     <label for="prospectiveCoverageA" class="session-note">Evidence for distinguishing competing causes</label>
-     <select id="prospectiveCoverageA" aria-label="Answer A source coverage">
-      <option value="">Choose source coverage…</option>
-      <option value="sufficient">Sufficient for stated conclusion</option>
-      <option value="partial">Partial / missing discriminating reads</option>
-      <option value="unavailable">Relevant source unavailable</option>
-      <option value="not_verified">Not verified</option>
-     </select>
-     <textarea id="prospectiveClaimsA" rows="5" aria-label="Answer A definite cause claim review" placeholder="supported | cause assertion | 0,1&#10;unsupported | unsupported claim |"></textarea>
-    </div>
-    <div>
-     <h3>Answer B — source-grounded cause review</h3>
-     <label class="bench-consent"><input id="prospectiveReviewedB" type="checkbox">I inspected B's original receipts</label>
-     <label class="bench-consent"><input id="prospectiveAllClaimsB" type="checkbox">All definite cause claims in B are reviewed</label>
-     <label for="prospectiveCoverageB" class="session-note">Evidence for distinguishing competing causes</label>
-     <select id="prospectiveCoverageB" aria-label="Answer B source coverage">
-      <option value="">Choose source coverage…</option>
-      <option value="sufficient">Sufficient for stated conclusion</option>
-      <option value="partial">Partial / missing discriminating reads</option>
-      <option value="unavailable">Relevant source unavailable</option>
-      <option value="not_verified">Not verified</option>
-     </select>
-     <textarea id="prospectiveClaimsB" rows="5" aria-label="Answer B definite cause claim review" placeholder="unverified | possible cause | 1"></textarea>
-    </div>
-   </div>
-  </div>
-  <button id="prospectiveScore" onclick="prospectiveScore()" disabled>Save blind ratings</button>
-  <span id="prospectiveScoreStatus" class="session-note" role="status"></span>
- </div>
- <div class="card">
-  <h3>5 · Aggregate evidence</h3>
-  <div class="row"><button onclick="prospectiveReport()">Refresh aggregate report</button>
-   <button onclick="prospectiveDownloadReport()">Download privacy-safe report</button></div>
-  <pre id="prospectiveReportPreview">Not measured.</pre>
-  <details><summary>Delete private in-memory question set</summary><button onclick="prospectiveDelete()">Delete experiment</button></details>
- </div>
-</section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.49";
+const UI_VERSION="2.0.0-alpha.50";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
-function tab(which){for(const id of ['ask','diagnostics','benchmark','autonomous','reasoning','prospective']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='benchmark')benchmarkRefresh();if(which==='autonomous')autolabRefresh();if(which==='reasoning')reasoningRefresh();if(which==='prospective')prospectiveRefresh();if(which==='ask'||which==='diagnostics')byId('labMenu').open=false;}
+function tab(which){if(which!=='ask'&&which!=='diagnostics')return;for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
@@ -586,7 +371,8 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
   server_elapsed_ms:response?.elapsed_ms??null,response,error};
  byId('answer').classList.remove('muted');byId('answer').replaceChildren(renderAnswer(answer));
  byId('rawAnswer').textContent=answer;
- byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=question;
+ // The question remains visible in the composer and private receipts.
+ byId('requestQuestion').hidden=true;byId('requestQuestion').textContent=question;
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
@@ -1862,754 +1648,6 @@ window.addEventListener('resize',()=>{
 
 // Standalone mobile benchmark. The raw source never enters the Ask/Chat MCP
 // conversation and model answers are rendered as plain text, not HTML.
-const BENCH_SCORE_NAMES=['factual_grounding','source_completeness',
- 'causal_calibration','command_outcome','usefulness'];
-let benchSnapshot=null,benchCurrent=null,benchReportData=null,benchPollTimer=null;
-async function benchApi(path,options={}){
- const headers={'X-Homebrain-Request':'1',...(options.headers||{})};
- const reply=await fetch('api/benchmark/'+path,{...options,headers,cache:'no-store'});
- const payload=await reply.json();
- if(!reply.ok)throw Error(typeof payload.detail==='string'?payload.detail:'Benchmark request failed');
- return payload;
-}
-function benchMessage(id,value){byId(id).textContent=String(value);}
-function benchOptions(id,choices,selected){
- const select=byId(id);select.replaceChildren();
- for(const [value,label] of choices){
-  const item=document.createElement('option');item.value=value;item.textContent=label;
-  select.appendChild(item);
- }
- select.value=choices.some(row=>row[0]===selected)?selected:(choices[0]?.[0]||'');
-}
-async function benchmarkRefresh(){
- if(benchPollTimer!==null){clearTimeout(benchPollTimer);benchPollTimer=null;}
- try{
-  const result=await benchApi('status');
-  benchSnapshot=result;
-  const cases=result.cases||[],running=!!result.running;
-  benchMessage('benchModel','Configured model: '+(configuredModel||'check add-on settings')+
-   ' · tool-free frozen-evidence evaluation');
-  benchMessage('benchStatus',result.imported?
-   cases.length+' private question pairs imported · '+cases.filter(x=>x.answered).length+
-   ' answered · '+cases.filter(x=>x.graded).length+' blind scored':
-   'No private benchmark imported. Choose the prepared ZIP above.');
-  const select1=byId('benchPilot1'),select2=byId('benchPilot2'),review=byId('benchSelectCase');
-  const old1=select1.value,old2=select2.value,oldReview=review.value;
-  const choices=cases.map(x=>[x.id,x.id+(x.answered?' · answered':'')]);
-  benchOptions('benchPilot1',choices,old1||choices[0]?.[0]);
-  benchOptions('benchPilot2',[['','One case only'],...choices],old2||'');
-  benchOptions('benchSelectCase',choices,oldReview||choices[0]?.[0]);
-  byId('benchRun').disabled=!result.imported||running;
-  byId('benchStop').disabled=!running;
-  byId('benchImport').disabled=result.imported||running;
-  byId('benchReportButton').disabled=!result.imported;
-  byId('benchDelete').disabled=!result.imported||running;
-  const p=result.progress||{};
-  benchMessage('benchRunStatus',running?
-   'Running: '+(p.completed_requests||0)+' of '+(p.total_requests||0)+
-   ' model responses saved. No Hubitat tools enabled.':
-   result.error?'Last run: '+result.error:
-   result.imported?'Ready. Select one or two cases and approve the data transfer.':
-   'Import the ZIP to begin.');
-  if(result.imported&&review.value){
-   if(!benchCurrent||benchCurrent.id!==review.value)await benchmarkViewCase();
-  }else{
-   benchCurrent=null;
-   benchMessage('benchQuestion','No case selected.');
-   benchMessage('benchAnswerA','Not generated.');
-   benchMessage('benchAnswerB','Not generated.');
-  }
-  if(running&&byId('benchmark').classList.contains('active')){
-   benchPollTimer=setTimeout(benchmarkRefresh,1800);
-  }else if(benchCurrent&&benchCurrent.id===review.value&&
-           cases.find(x=>x.id===review.value)?.answered&&!benchCurrent.both_answered){
-   await benchmarkViewCase();
-  }
- }catch(error){benchMessage('benchStatus','Benchmark: '+error.message);}
-}
-async function benchmarkUpload(){
- const file=byId('benchZip').files?.[0];
- if(!file){benchMessage('benchStatus','Select the prepared private ZIP first.');return;}
- if(file.size>8*1024*1024){
-  benchMessage('benchStatus','The ZIP exceeds the 8 MB safety limit.');return;
- }
- byId('benchImport').disabled=true;
- try{
-  await benchApi('import',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
-  benchCurrent=null;benchReportData=null;
-  byId('benchZip').value='';
-  await benchmarkRefresh();
- }catch(error){
-  benchMessage('benchStatus','Import failed: '+error.message);
-  byId('benchImport').disabled=false;
- }
-}
-async function benchmarkRun(){
- const first=byId('benchPilot1').value,second=byId('benchPilot2').value;
- const selected=[...new Set([first,second].filter(Boolean))];
- if(!selected.length){benchMessage('benchRunStatus','Select at least one case.');return;}
- if(!byId('benchPrivateConsent').checked||!byId('benchCloudConsent').checked){
-  benchMessage('benchRunStatus','Approve both private evidence and cloud/remote transfer notices.');
-  return;
- }
- byId('benchRun').disabled=true;
- try{
-  const response=await benchApi('run',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({case_ids:selected,private_evidence_consent:true,
-    cloud_transfer_consent:true})});
-  benchMessage('benchRunStatus',response.started?
-   'Benchmark started. The A/B answers are created with no MCP tools.':
-   response.message||'All requested answers already exist.');
-  await benchmarkRefresh();
- }catch(error){
-  benchMessage('benchRunStatus','Could not run: '+error.message);
-  byId('benchRun').disabled=false;
- }
-}
-async function benchmarkStop(){
- try{
-  await benchApi('stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-  benchMessage('benchRunStatus','Stop requested. Completed paired answers are retained.');
-  await benchmarkRefresh();
- }catch(error){benchMessage('benchRunStatus','Could not stop: '+error.message);}
-}
-function benchScorePanel(label,previous,enabled){
- const root=byId('benchScores'+label);
- root.replaceChildren();
- if(!enabled)return;
- for(const name of BENCH_SCORE_NAMES){
-  const wrapper=document.createElement('label');
-  wrapper.textContent=name.replaceAll('_',' ');
-  const select=document.createElement('select');
-  select.setAttribute('data-bench-label',label);
-  select.setAttribute('data-bench-category',name);
-  for(const [value,text] of [['','Not scored'],['0','0 · Unsupported'],
-                             ['1','1 · Partial'],['2','2 · Supported'],
-                             ['n/a','n/a · Not applicable']]){
-   const option=document.createElement('option');
-   option.value=value;option.textContent=text;select.appendChild(option);
-  }
-  const old=previous?.ratings?.[name];
-  select.value=old===null||old===undefined?'':String(old);
-  wrapper.appendChild(select);root.appendChild(wrapper);
- }
-}
-async function benchmarkViewCase(){
- const key=byId('benchSelectCase').value;
- if(!key)return;
- try{
-  const detail=await benchApi('case/'+encodeURIComponent(key));
-  if(key!==byId('benchSelectCase').value)return;
-  benchCurrent=detail;
-  benchMessage('benchQuestion',detail.id+': '+detail.question);
-  benchMessage('benchSource',JSON.stringify(detail.source,null,2));
-  benchMessage('benchAnswerA',detail.answers?.A||'Not generated yet.');
-  benchMessage('benchAnswerB',detail.answers?.B||'Not generated yet.');
-  benchScorePanel('A',detail.ratings?.A,detail.both_answered);
-  benchScorePanel('B',detail.ratings?.B,detail.both_answered);
-  byId('benchSave').disabled=!detail.both_answered;
-  benchMessage('benchReviewStatus',detail.both_answered?
-   'Read both answers and the original sources. Score both versions without opening the hidden manifest.':
-   'Both model answers must be available before scoring.');
- }catch(error){benchMessage('benchReviewStatus','Case error: '+error.message);}
-}
-async function benchmarkSaveScores(){
- if(!benchCurrent?.both_answered)return;
- const scores={A:{},B:{}};
- for(const label of ['A','B']){
-  const selections=byId('benchScores'+label).querySelectorAll('select');
-  for(const element of selections){
-   const key=element.getAttribute('data-bench-category'),value=element.value;
-   if(!value){benchMessage('benchReviewStatus','Score every dimension on both answers.');return;}
-   scores[label][key]=value==='n/a'?'n/a':Number(value);
-  }
- }
- try{
-  await benchApi('case/'+encodeURIComponent(benchCurrent.id)+'/score',{
-   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores})});
-  benchMessage('benchReviewStatus','Blind scores saved. The A/B assignment remains hidden.');
-  await benchmarkRefresh();
- }catch(error){benchMessage('benchReviewStatus','Score not saved: '+error.message);}
-}
-async function benchmarkReport(){
- try{
-  benchReportData=await benchApi('report');
-  benchMessage('benchReportPreview',JSON.stringify(benchReportData,null,2));
-  byId('benchDownload').disabled=false;
- }catch(error){benchMessage('benchReportPreview','Report unavailable: '+error.message);}
-}
-function benchmarkDownloadReport(){
- if(!benchReportData)return;
- const text=JSON.stringify(benchReportData,null,2)+'\n';
- const blob=new Blob([text],{type:'application/json'});
- const url=URL.createObjectURL(blob);
- const link=document.createElement('a');link.href=url;link.download='HomeBrain-v2-benchmark-report.json';
- document.body.appendChild(link);link.click();link.remove();
- URL.revokeObjectURL(url);
-}
-async function benchmarkDelete(){
- if(!window.confirm('Delete ALL locally stored benchmark evidence, answers and ratings? This cannot undo cloud submissions.'))return;
- try{
-  await benchApi('delete',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({confirm_delete:true})});
-  benchSnapshot=null;benchCurrent=null;benchReportData=null;
-  byId('benchDownload').disabled=true;
-  benchMessage('benchReportPreview','No scored results yet.');
-  await benchmarkRefresh();
- }catch(error){benchMessage('benchStatus','Deletion failed: '+error.message);}
-}
-
-
-// Synthetic autonomous first-answer evaluation. Tool access is entirely
-// provided by the in-memory backend simulator, NEVER by /api/ask.
-const AUTOLAB_CRITERIA=['factual_grounding','source_completeness',
- 'causal_calibration','command_outcome','usefulness'];
-let autolabState=null,autolabDetail=null,autolabReportData=null,autolabPolling=null;
-async function autolabApi(path,config={}){
- const result=await fetch('api/autonomous/'+path,{
-  ...config,cache:'no-store',
-  headers:{'X-Homebrain-Request':'1',...(config.headers||{})}
- });
- const data=await result.json();
- if(!result.ok)throw Error(typeof data.detail==='string'?data.detail:'Synthetic lab request failed');
- return data;
-}
-function autolabText(id,value){byId(id).textContent=String(value);}
-async function autolabRefresh(){
- if(autolabPolling!==null){clearTimeout(autolabPolling);autolabPolling=null;}
- try{
-  const response=await autolabApi('status');
-  autolabState=response;
-  const choices=response.cases.map(item=>[item.id,
-   item.id+' · '+item.title+(item.failed?' · failed (retry available)':item.answered?' · answered':'')]);
-  const selected=byId('autolabSelect').value;
-  benchOptions('autolabSelect',choices,selected);
-  const active=response.cases.find(item=>item.id===byId('autolabSelect').value);
-  byId('autolabRun').disabled=response.running||!active||active.answered;
-  byId('autolabRun').textContent=active?.failed?'Retry failed case':'Run selected synthetic case';
-  byId('autolabStop').disabled=!response.running;
-  autolabText('autolabStatus',response.running?
-   'Running '+(response.progress?.case_id||'')+
-    ' with fictional MCP data and a bounded model-round budget…':
-   response.error?'Last run: '+response.error:
-   response.cases.filter(c=>c.answered).length+' / '+response.cases.length+
-   ' completed; '+response.cases.filter(c=>c.failed).length+' failed; '+
-   response.cases.filter(c=>c.graded).length+' manually scored.');
-  await autolabView();
-  if(response.running&&byId('autonomous').classList.contains('active'))
-   autolabPolling=setTimeout(autolabRefresh,2000);
- }catch(error){autolabText('autolabStatus','Synthetic lab: '+error.message);}
-}
-async function autolabView(){
- const sid=byId('autolabSelect').value;
- if(!sid)return;
- try{
-  const detail=await autolabApi('case/'+encodeURIComponent(sid));
-  if(byId('autolabSelect').value!==sid)return;
-  autolabDetail=detail;
-  autolabText('autolabQuestion',detail.question);
-  autolabText('autolabAnswer',detail.answer||'Run this synthetic case to see the model’s first answer.');
-  const coverage=byId('autolabCoverage');coverage.replaceChildren();
-  for(const row of detail.coverage||[]){
-   const part=document.createElement('div');
-   part.textContent=(row.observed?'✓ Retrieved: ':'○ Not retrieved: ')+row.label;
-   part.classList.add(row.observed?'autolab-pass':'autolab-missing');
-   coverage.appendChild(part);
-  }
-  autolabText('autolabMetrics',detail.answer?
-   'Model rounds: '+detail.rounds+' · Simulated commands: '+
-   detail.simulated_commands+' · Client schema errors: '+(detail.client_contract_errors||0)+
-   ' · Simulator rejections: '+detail.blocked_attempts+
-   (Object.keys(detail.blocked_reasons||{}).length?' ('+
-    Object.entries(detail.blocked_reasons).map(([k,v])=>k+': '+v).join(', ')+')':'')+
-   ' · Previous failed runs: '+(detail.previous_failed_attempts||0)+
-   ' · Live hub actions: 0 · Response time: '+
-   (Number(detail.elapsed_ms||0)/1000).toFixed(1)+' s':
-   'Model has not run this case.');
-  autolabText('autolabCalls',detail.tool_calls?
-   JSON.stringify(detail.tool_calls,null,2):'No synthetic tool receipts yet.');
-  const group=byId('autolabScores');group.replaceChildren();
-  if(detail.answer!==null){
-   for(const name of AUTOLAB_CRITERIA){
-    const wrapper=document.createElement('label');
-    wrapper.textContent=name.replaceAll('_',' ');
-    const select=document.createElement('select');
-    select.setAttribute('data-autolab-criterion',name);
-    for(const [value,text] of [
-     ['','Not scored'],['0','0 · Unsupported'],['1','1 · Partial'],
-     ['2','2 · Supported'],['n/a','n/a · Not applicable']
-    ]){
-     const option=document.createElement('option');
-     option.value=value;option.textContent=text;select.appendChild(option);
-    }
-    const score=detail.ratings?.[name];
-    select.value=score===undefined?'':String(score);
-    wrapper.appendChild(select);group.appendChild(wrapper);
-   }
-  }
-  byId('autolabSave').disabled=detail.answer===null||detail.success===false;
-  autolabText('autolabReviewStatus',detail.success===false?
-   'Model evaluation failed — inspect synthetic receipts. This is not a completed answer. Retry only after reviewing consent.':
-   detail.ratings?'Saved manual assessment':
-   'Assess the retrieved evidence and the model answer, not just successful tool calls.');
- }catch(error){autolabText('autolabReviewStatus','Could not load case: '+error.message);}
-}
-async function autolabRun(){
- const id=byId('autolabSelect').value;
- const retry=!!autolabState?.cases.find(x=>x.id===id)?.failed;
- if(retry&&!window.confirm('Retry this FAILED synthetic case? The previous failed result will be archived. This can use more cloud credits.'))return;
- if(!byId('autolabModelConsent').checked||!byId('autolabCloudConsent').checked){
-  autolabText('autolabStatus','Review and approve both synthetic-model and cloud notices.');
-  return;
- }
- byId('autolabRun').disabled=true;
- try{
-  await autolabApi('run',{
-   method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({case_id:id,model_execution_consent:true,
-    cloud_transfer_consent:true,retry_failed:retry})
-  });
-  await autolabRefresh();
- }catch(error){
-  autolabText('autolabStatus','Could not start: '+error.message);
-  byId('autolabRun').disabled=false;
- }
-}
-async function autolabStop(){
- try{
-  await autolabApi('stop',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:'{}'});
-  await autolabRefresh();
- }catch(error){autolabText('autolabStatus','Stop failed: '+error.message);}
-}
-async function autolabSave(){
- if(!autolabDetail?.answer)return;
- const scores={};
- for(const control of byId('autolabScores').querySelectorAll('select')){
-  const value=control.value;
-  if(!value){autolabText('autolabReviewStatus','Score each criterion.');return;}
-  scores[control.getAttribute('data-autolab-criterion')]=value==='n/a'?'n/a':Number(value);
- }
- try{
-  await autolabApi('case/'+encodeURIComponent(autolabDetail.id)+'/score',{
-   method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({scores})
-  });
-  await autolabRefresh();
- }catch(error){autolabText('autolabReviewStatus','Could not save ratings: '+error.message);}
-}
-async function autolabReport(){
- try{
-  autolabReportData=await autolabApi('report');
-  autolabText('autolabReportPreview',JSON.stringify(autolabReportData,null,2));
-  byId('autolabDownload').disabled=false;
- }catch(error){autolabText('autolabReportPreview','Report error: '+error.message);}
-}
-function autolabDownload(){
- if(!autolabReportData)return;
- const blob=new Blob([JSON.stringify(autolabReportData,null,2)+'\n'],
-  {type:'application/json'});
- const url=URL.createObjectURL(blob),link=document.createElement('a');
- link.href=url;link.download='HomeBrain-v2-autonomous-lab-report.json';
- document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
-}
-async function autolabDelete(){
- if(!window.confirm('Delete all six synthetic evaluation results and their ratings?'))return;
- try{
-  await autolabApi('delete',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({confirm_delete:true})});
-  autolabDetail=null;autolabReportData=null;
-  byId('autolabDownload').disabled=true;
-  autolabText('autolabReportPreview','No evaluation report yet.');
-  await autolabRefresh();
- }catch(error){autolabText('autolabStatus','Delete failed: '+error.message);}
-}
-
-
-// Candidate-vs-baseline blind synthetic paired experiment. No /api/ask calls.
-const REASONING_SCORE_NAMES=['factual_grounding','source_completeness',
- 'causal_calibration','command_outcome','usefulness'];
-let reasoningState=null,reasoningDetail=null,reasoningReportData=null,reasoningPoll=null;
-async function reasoningApi(path,options={}){
- const res=await fetch('api/reasoning-ab/'+path,{
-  ...options,cache:'no-store',
-  headers:{'X-Homebrain-Request':'1',...(options.headers||{})}
- });
- const data=await res.json();
- if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:'Paired experiment request failed');
- return data;
-}
-function reasoningText(id,value){byId(id).textContent=String(value);}
-async function reasoningRefresh(){
- if(reasoningPoll!==null){clearTimeout(reasoningPoll);reasoningPoll=null;}
- try{
-  const data=await reasoningApi('status');
-  reasoningState=data;
-  const selected=byId('reasoningSelect').value;
-  const choices=data.cases.map(row=>[row.id,row.id+' · '+row.title+
-   (row.graded?' · rated':row.ready_to_rate?' · ready to rate':
-    Object.values(row.arms).includes('failed')?' · retry available':'')]);
-  benchOptions('reasoningSelect',choices,selected);
-  const entry=data.cases.find(x=>x.id===byId('reasoningSelect').value);
-  const done=entry?.ready_to_rate||entry?.graded;
-  byId('reasoningRun').disabled=!!data.running||!entry||done;
-  byId('reasoningRun').textContent=entry&&Object.values(entry.arms).includes('failed')?
-   'Retry failed A/B arm':'Run blinded A/B pair';
-  byId('reasoningStop').disabled=!data.running;
-  reasoningText('reasoningStatus',data.running?
-   'Running fictional pair '+(data.progress?.case_id||'')+
-   ' · Answer '+(data.progress?.arm||'')+' · No live hub actions':
-   data.error?'Last result: '+data.error:
-   data.cases.filter(x=>x.ready_to_rate).length+' / '+data.cases.length+
-   ' pairs completed · '+data.cases.filter(x=>x.graded).length+' blindly scored.');
-  await reasoningView();
-  if(data.running&&byId('reasoning').classList.contains('active'))
-   reasoningPoll=setTimeout(reasoningRefresh,2200);
- }catch(error){reasoningText('reasoningStatus',error.message);}
-}
-function reasoningRatingPanel(label,ratings,enabled,locked=false){
- const holder=byId('reasoningScores'+label);holder.replaceChildren();
- if(!enabled)return;
- for(const criterion of REASONING_SCORE_NAMES){
-  const row=document.createElement('label');
-  row.textContent=criterion.replaceAll('_',' ');
-  const select=document.createElement('select');
-  select.setAttribute('data-reasoning-label',label);
-  select.setAttribute('data-reasoning-criterion',criterion);
-  for(const [value,title] of [['','Not scored'],['0','0 · Unsupported'],
-   ['1','1 · Partial'],['2','2 · Supported'],['n/a','n/a · Not applicable']]){
-   const option=document.createElement('option');option.value=value;
-   option.textContent=title;select.appendChild(option);
-  }
-  const prior=ratings?.[criterion];
-  select.value=prior===undefined?'':String(prior);
-  select.disabled=locked;
-  row.appendChild(select);holder.appendChild(row);
- }
-}
-async function reasoningView(){
- const sid=byId('reasoningSelect').value;
- if(!sid)return;
- try{
-  const detail=await reasoningApi('case/'+encodeURIComponent(sid));
-  if(sid!==byId('reasoningSelect').value)return;
-  reasoningDetail=detail;
-  reasoningText('reasoningQuestion',detail.question);
-  for(const label of ['A','B']){
-   const arm=detail.arms?.[label];
-   reasoningText('reasoningAnswer'+label,arm?.answer||
-    (arm?.success===false?'Failed model trial; review synthetic receipts.':
-     'Not generated yet.'));
-   reasoningText('reasoningCalls'+label,arm?.tool_calls?
-    JSON.stringify(arm.tool_calls,null,2):'No tool receipts.');
-   const checks=arm?.coverage||[];
-   reasoningText('reasoningMetrics'+label,arm?
-    'Evidence: '+checks.filter(x=>x.observed).length+'/'+checks.length+
-    ' · Model rounds: '+arm.rounds+
-    ' · Time: '+(Number(arm.elapsed_ms||0)/1000).toFixed(1)+' s'+
-    ' · Client schema errors: '+(arm.client_contract_errors||0)+
-    ' · Simulator rejections: '+(arm.simulator_rejections||0)+
-    ' · In-memory commands: '+(arm.simulated_commands||0)+
-    ' · Real hub actions: 0\n'+
-    checks.map(c=>(c.observed?'✓ ':'○ ')+c.label).join('\n'):
-    'No model result yet.');
-   reasoningRatingPanel(label,detail.ratings?.[label],
-    detail.arms?.A?.success===true&&detail.arms?.B?.success===true,
-    !!detail.ratings);
-  }
-  const ready=detail.arms?.A?.success===true&&detail.arms?.B?.success===true;
-  byId('reasoningSave').disabled=!ready||!!reasoningState?.running||!!detail.ratings;
-  reasoningText('reasoningReviewStatus',detail.ratings?
-   'Blind ratings saved and locked; the completed study reveals allocation in its final report.':
-   ready?'Read both answers and receipts, then score both without guessing their allocation.':
-   'Both model answers must complete before blind rating.');
- }catch(error){reasoningText('reasoningReviewStatus','Case error: '+error.message);}
-}
-async function reasoningRun(){
- const sid=byId('reasoningSelect').value;
- const entry=reasoningState?.cases.find(x=>x.id===sid);
- const retry=!!entry&&Object.values(entry.arms).includes('failed');
- if(!byId('reasoningModelConsent').checked||
-    !byId('reasoningCloudConsent').checked){
-  reasoningText('reasoningStatus','Approve both model and remote/cloud notices.');
-  return;
- }
- if(retry&&!window.confirm('Retry only the failed fictional arm? Its prior failure will be archived. This can consume more cloud credits.'))return;
- byId('reasoningRun').disabled=true;
- try{
-  await reasoningApi('run',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({case_id:sid,model_execution_consent:true,
-    cloud_transfer_consent:true,retry_failed:retry})});
-  await reasoningRefresh();
- }catch(error){
-  reasoningText('reasoningStatus','Could not run pair: '+error.message);
-  byId('reasoningRun').disabled=false;
- }
-}
-async function reasoningStop(){
- try{
-  await reasoningApi('stop',{method:'POST',
-   headers:{'Content-Type':'application/json'},body:'{}'});
-  await reasoningRefresh();
- }catch(error){reasoningText('reasoningStatus','Stop failed: '+error.message);}
-}
-async function reasoningSave(){
- if(!reasoningDetail)return;
- const scores={A:{},B:{}};
- for(const label of ['A','B']){
-  for(const select of byId('reasoningScores'+label).querySelectorAll('select')){
-   const value=select.value;
-   if(!value){reasoningText('reasoningReviewStatus','Score all dimensions on both answers.');return;}
-   scores[label][select.getAttribute('data-reasoning-criterion')]=
-    value==='n/a'?'n/a':Number(value);
-  }
- }
- try{
-  await reasoningApi('case/'+encodeURIComponent(reasoningDetail.id)+'/score',{
-   method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({scores})});
-  await reasoningRefresh();
- }catch(error){reasoningText('reasoningReviewStatus',error.message);}
-}
-async function reasoningReport(){
- try{
-  reasoningReportData=await reasoningApi('report');
-  reasoningText('reasoningReportPreview',JSON.stringify(reasoningReportData,null,2));
-  byId('reasoningDownload').disabled=false;
- }catch(error){reasoningText('reasoningReportPreview',error.message);}
-}
-function reasoningDownload(){
- if(!reasoningReportData)return;
- const data=new Blob([JSON.stringify(reasoningReportData,null,2)+'\n'],
-  {type:'application/json'});
- const uri=URL.createObjectURL(data);
- const link=document.createElement('a');link.href=uri;
- link.download='HomeBrain-v2-reasoning-holdout-report.json';
- document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(uri);
-}
-async function reasoningDelete(){
- if(!window.confirm('Permanently delete ONLY the new fictional reasoning A/B results, ratings and private allocation?'))return;
- try{
-  await reasoningApi('delete',{method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({confirm_delete:true})});
-  reasoningDetail=null;reasoningReportData=null;
-  byId('reasoningDownload').disabled=true;
-  reasoningText('reasoningReportPreview','No A/B report yet.');
-  await reasoningRefresh();
- }catch(error){reasoningText('reasoningStatus','Delete failed: '+error.message);}
-}
-
-
-// Private prospective read-only A/B. All output is textContent (untrusted).
-const PROSPECTIVE_DIMENSIONS=['factual_grounding','source_completeness','causal_calibration','usefulness'];
-let prospectiveState=null,prospectiveCase=null,prospectiveReportData=null,prospectivePoll=null;
-async function prospectiveApi(path,options={}){
- const response=await fetch('api/prospective-ab/'+path,{
-  ...options,cache:'no-store',
-  headers:{'X-Homebrain-Request':'1',...(options.headers||{})}
- });
- const data=await response.json();
- if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Trial API request failed');
- return data;
-}
-async function prospectivePermission(){
- try{
-  const data=await prospectiveApi('permission');
-  byId('prospectivePermissionStatus').textContent=JSON.stringify(data,null,2);
- }catch(error){byId('prospectivePermissionStatus').textContent=error.message;}
-}
-async function prospectiveRefresh(){
- if(prospectivePoll!==null){clearTimeout(prospectivePoll);prospectivePoll=null;}
- try{
-  const data=await prospectiveApi('status');
-  prospectiveState=data;
-  const previous=byId('prospectiveSelect').value;
-  benchOptions('prospectiveSelect',data.cases.map(row=>[
-   row.id,row.id+' · '+(row.blind_ratings_saved?'scored':row.arms_completed.length===2?'review ready':
-    row.arms_completed.length?'partial':'not run')
-  ]),previous);
-  const item=data.cases.find(row=>row.id===byId('prospectiveSelect').value);
-  byId('prospectiveRun').disabled=!!data.active_case||!item||item.arms_completed.length>0;
-  byId('prospectiveStop').disabled=!data.active_case;
-  byId('prospectiveFrozen').textContent=data.cases_prepared?
-   'Frozen '+data.cases_prepared+' '+data.study_mode+' questions · SHA256 '+
-   data.study_sha256.slice(0,16)+'…':'No private question set prepared.';
-  byId('prospectiveCausalMode').disabled=!!data.cases_prepared;
-  byId('prospectiveTargetAttestation').disabled=!!data.cases_prepared;
-  byId('prospectiveRunStatus').textContent=data.active_case?
-   'Running '+data.active_case+' · read-only token check before each arm':
-   (data.last_error||data.cases.filter(r=>r.arms_completed.length===2).length+
-    ' / '+data.cases.length+' pairs completed');
-  await prospectiveView();
-  if(data.active_case&&byId('prospective').classList.contains('active'))
-   prospectivePoll=setTimeout(prospectiveRefresh,2500);
- }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
-}
-async function prospectivePrepare(){
- const questions=byId('prospectiveQuestions').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
- try{
-  await prospectiveApi('prepare',{method:'POST',
-   headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    questions,
-    causal_mode:byId('prospectiveCausalMode').checked,
-    target_check_attested:byId('prospectiveTargetAttestation').checked
-   })});
-  byId('prospectiveQuestions').value='';
-  await prospectiveRefresh();
- }catch(error){byId('prospectiveFrozen').textContent=error.message;}
-}
-async function prospectiveRun(){
- if(!byId('prospectiveSelect').value)return;
- try{
-  await prospectiveApi('run',{method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({
-    case_id:byId('prospectiveSelect').value,
-    model_execution_consent:byId('prospectiveModelConsent').checked,
-    private_evidence_consent:byId('prospectivePrivateConsent').checked,
-    cloud_transfer_consent:byId('prospectiveCloudConsent').checked
-   })});
-  await prospectiveRefresh();
- }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
-}
-async function prospectiveStop(){
- try{await prospectiveApi('stop',{method:'POST'});await prospectiveRefresh();}
- catch(error){byId('prospectiveRunStatus').textContent=error.message;}
-}
-function prospectivePanel(label,ratings,enabled,causalStudy=false){
- const panel=byId('prospectiveScores'+label);panel.replaceChildren();
- for(const dimension of PROSPECTIVE_DIMENSIONS){
-  const field=document.createElement('label');field.textContent=dimension.replaceAll('_',' ');
-  const select=document.createElement('select');select.dataset.dimension=dimension;
-  for(const [value,text] of [['','Choose…'],['0','0 - unsupported'],['1','1 - partial'],
-                             ['2','2 - supported'],['n/a','n/a']]){
-   if(causalStudy&&dimension==='causal_calibration'&&value==='n/a')continue;
-   const opt=document.createElement('option');opt.value=value;opt.textContent=text;
-   select.appendChild(opt);
-  }
-  if(ratings&&ratings[dimension]!==undefined)select.value=String(ratings[dimension]);
-  select.disabled=!enabled;field.appendChild(select);panel.appendChild(field);
- }
-}
-async function prospectiveView(){
- const ident=byId('prospectiveSelect').value;
- if(!ident){prospectiveCase=null;return;}
- try{
-  const data=await prospectiveApi('case/'+encodeURIComponent(ident));
-  const changed=prospectiveCase?.id!==data.id;
-  prospectiveCase=data;
-  byId('prospectiveQuestion').textContent=data.question;
-  byId('prospectiveCausalReview').hidden=data.study_mode!=='causal';
-  byId('prospectiveParity').textContent='Original source-response comparability (not source truth): '+
-   JSON.stringify(data.source_parity||{});
-  for(const label of ['A','B']){
-   const part=data.arms[label];
-   byId('prospectiveAnswer'+label).textContent=part?.result?.answer||'Not completed.';
-   byId('prospectiveReceipts'+label).textContent=
-    part?JSON.stringify((part.result.tool_calls||[]).map((row,index)=>
-     ({...row,review_receipt_index:index})),null,2):'Not completed.';
-   prospectivePanel(label,data.ratings?.[label],!!part&&!data.ratings&&
-       !!data.arms.A&&!!data.arms.B,data.study_mode==='causal');
-   if(data.study_mode==='causal'){
-    const review=data.causal_review?.[label];
-    if(changed||review){
-     byId('prospectiveReviewed'+label).checked=!!review?.receipts_inspected;
-     byId('prospectiveAllClaims'+label).checked=!!review?.all_definite_cause_claims_reviewed;
-     byId('prospectiveCoverage'+label).value=review?.source_coverage||'';
-     byId('prospectiveClaims'+label).value=(review?.claims||[]).map(c=>
-      c.verdict+' | '+c.text+' | '+c.receipt_indices.join(',')).join('\n');
-    }
-    for(const id of ['prospectiveReviewed','prospectiveAllClaims','prospectiveCoverage','prospectiveClaims'])
-     byId(id+label).disabled=!!data.ratings;
-   }
-  }
-  byId('prospectiveScore').disabled=!!data.ratings||!data.arms.A||!data.arms.B;
-  byId('prospectiveScoreStatus').textContent=data.ratings?'Blind scores saved.':'';
- }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
-}
-function prospectiveParseClaims(label){
- const rows=byId('prospectiveClaims'+label).value.split(/\r?\n/)
-  .map(x=>x.trim()).filter(Boolean);
- if(rows.length>20)throw Error('Maximum 20 definite cause claims per answer.');
- return rows.map((line,i)=>{
-  const pieces=line.split('|').map(x=>x.trim());
-  if(pieces.length!==3)throw Error(label+' claim '+(i+1)+': use verdict | claim | 0,2');
-  const [verdict,description,refs]=pieces;
-  if(!['supported','unsupported','unverified'].includes(verdict))
-   throw Error(label+' claim '+(i+1)+': unknown evidence verdict.');
-  const indices=refs?refs.split(',').map(x=>{
-   if(!/^\d+$/.test(x.trim()))throw Error(label+': invalid receipt index '+x);
-   return Number(x.trim());
-  }):[];
-  return {verdict,text:description,receipt_indices:indices};
- });
-}
-async function prospectiveScore(){
- if(!prospectiveCase)return;
- const scores={};
- for(const label of ['A','B']){
-  scores[label]={};
-  for(const select of byId('prospectiveScores'+label).querySelectorAll('select')){
-   if(!select.value){
-    byId('prospectiveScoreStatus').textContent='Rate all dimensions in both answers.';
-    return;
-   }
-   scores[label][select.dataset.dimension]=select.value==='n/a'?'n/a':Number(select.value);
-  }
- }
- try{
-  let causal_review=null;
-  if(prospectiveCase.study_mode==='causal'){
-   causal_review={};
-   for(const label of ['A','B']){
-    causal_review[label]={
-     receipts_inspected:byId('prospectiveReviewed'+label).checked,
-     all_definite_cause_claims_reviewed:byId('prospectiveAllClaims'+label).checked,
-     source_coverage:byId('prospectiveCoverage'+label).value,
-     claims:prospectiveParseClaims(label)
-    };
-   }
-  }
-  await prospectiveApi('case/'+encodeURIComponent(prospectiveCase.id)+'/score',{
-   method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({scores,causal_review})});
-  await prospectiveRefresh();
- }catch(error){byId('prospectiveScoreStatus').textContent=error.message;}
-}
-async function prospectiveReport(){
- try{
-  prospectiveReportData=await prospectiveApi('report');
-  byId('prospectiveReportPreview').textContent=JSON.stringify(prospectiveReportData,null,2);
- }catch(error){byId('prospectiveReportPreview').textContent=error.message;}
-}
-function prospectiveDownload(filename,data){
- const uri=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)+'\n'],
-   {type:'application/json'}));
- const a=document.createElement('a');a.href=uri;a.download=filename;
- document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(uri);
-}
-async function prospectiveDownloadPrivate(){
- if(!prospectiveCase)return;
- if(!window.confirm('This contains PRIVATE household questions, answers and MCP source receipts. Save securely; do not publish or commit it.'))return;
- prospectiveDownload('PRIVATE-HomeBrain-v2-'+prospectiveCase.id+'.json',prospectiveCase);
-}
-async function prospectiveDownloadReport(){
- if(!prospectiveReportData)await prospectiveReport();
- if(prospectiveReportData)
-  prospectiveDownload('HomeBrain-v2-source-ledger-ab-summary.json',prospectiveReportData);
-}
-async function prospectiveDelete(){
- if(!window.confirm('Delete this private in-memory study, answers and ratings? This does not recall data sent to a cloud model.'))return;
- try{
-  await prospectiveApi('delete',{method:'POST',
-   headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm_delete:true})});
-  prospectiveCase=null;prospectiveReportData=null;
-  byId('prospectiveReportPreview').textContent='Not measured.';
-  await prospectiveRefresh();
- }catch(error){byId('prospectiveRunStatus').textContent=error.message;}
-}
-
 initGraphPopout();
 loadStatus();
 </script></body></html>

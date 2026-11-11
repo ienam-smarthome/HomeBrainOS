@@ -575,130 +575,27 @@ with sync_playwright() as p:
   assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-  # Optional experimental tabs remain accessible but collapsed by default.
-  assert not page.locator("#labMenu").evaluate("(el) => el.open")
-  page.locator("#labMenu > summary").click()
-  assert page.locator("#labMenu").evaluate("(el) => el.open")
-  # Simulate the complete phone/tablet A/B workflow with no model or hub.
-  page.locator("#benchmarkTab").click()
-  assert page.locator("#benchmark").is_visible()
-  page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('No private benchmark')")
-  page.locator("#benchZip").set_input_files({
-   "name":"synthetic-private.zip","mimeType":"application/zip","buffer":b"PKSYNTHETIC"
-  })
-  page.locator("#benchImport").click()
-  page.wait_for_function("document.querySelector('#benchPilot1').value === 'case-001'")
-  assert page.locator("#benchRun").is_enabled()
-  assert page.locator("#benchImport").is_disabled()
-  page.locator("#benchRun").click()
-  assert "Approve both" in page.locator("#benchRunStatus").inner_text()
-  assert len(bench_runs)==0
-  page.locator("#benchPrivateConsent").check()
-  page.locator("#benchCloudConsent").check()
-  page.locator("#benchRun").click()
-  page.wait_for_function("document.querySelector('#benchSave').disabled === false")
-  assert len(bench_runs)==1
-  assert "<script>answer A</script>" in page.locator("#benchAnswerA").inner_text()
-  assert page.locator("#benchAnswerA script").count()==0
-  assert page.locator("#benchQuestion img").count()==0
-  page.locator("#benchOriginalSources summary").click()
-  assert "<script>window.injected=true</script>" in page.locator("#benchSource").inner_text()
-  assert page.evaluate("window.injected===undefined")
-  for select in page.locator("#benchScoresA select").all()+page.locator("#benchScoresB select").all():
-   select.select_option("2")
-  page.locator("#benchSave").click()
-  page.wait_for_function("document.querySelector('#benchStatus').textContent.includes('1 blind scored')")
-  page.locator("#benchReportButton").click()
-  page.wait_for_function("document.querySelector('#benchReportPreview').textContent.includes('blind_reviewed_pairs')")
-  with page.expect_download() as download:
-   page.locator("#benchDownload").click()
-  exported=json.loads(Path(download.value.path()).read_text())
-  assert exported["blind_reviewed_pairs"]==1
-  assert exported["private_values_exported"] is False
-  assert "SYNTHETIC" not in json.dumps(exported)
-  assert len(requests)==count_before,"Benchmark cannot send an Ask/MCP request"
-  # Autonomous lab uses fictional native-shaped MCP only. UI must display
-  # untrusted model/source content as text and never call the live Ask endpoint.
-  page.locator("#autonomousTab").click()
-  assert page.locator("#autonomous").is_visible()
-  page.wait_for_function("document.querySelector('#autolabSelect').value === 'lab-05'")
-  # Case list loads before asynchronous case detail. Wait for its actual
-  # untrusted question text; selector readiness alone is not content readiness.
-  page.wait_for_function(
-   "() => document.querySelector('#autolabQuestion').textContent.includes('<script>window.injected=true</script>')")
-  assert "<script>window.injected=true</script>" in page.locator("#autolabQuestion").inner_text()
-  assert page.locator("#autolabQuestion script").count()==0
-  page.locator("#autolabRun").click()
-  assert "approve both" in page.locator("#autolabStatus").inner_text().lower()
-  assert len(lab_runs)==0
-  page.locator("#autolabModelConsent").check()
-  page.locator("#autolabCloudConsent").check()
-  page.locator("#autolabRun").click()
-  page.wait_for_function("document.querySelector('#autolabAnswer').textContent.includes('Stale readings')")
-  assert len(lab_runs)==1
-  assert page.locator("#autolabAnswer img").count()==0
-  assert page.evaluate("window.injected===undefined")
-  assert "Retrieved" in page.locator("#autolabCoverage").inner_text()
-  assert "Not retrieved" in page.locator("#autolabCoverage").inner_text()
-  page.locator("#autolabRun").is_disabled()
-  for select in page.locator("#autolabScores select").all():
-   select.select_option("2")
-  page.locator("#autolabSave").click()
-  page.wait_for_function("document.querySelector('#autolabStatus').textContent.includes('1 manually scored')")
-  page.get_by_role("button",name="Generate report").last.click()
-  page.wait_for_function("document.querySelector('#autolabReportPreview').textContent.includes('cases_graded')")
-  with page.expect_download() as download:
-   page.locator("#autolabDownload").click()
-  summary=json.loads(Path(download.value.path()).read_text())
-  assert summary["cases_graded"]==1
-  assert summary["live_mcp_calls"]==0
-  assert "window.injected" not in json.dumps(summary)
-  assert len(requests)==count_before,"Autonomous sandbox must not use real Ask/MCP"
-  # Blind paired reasoning study: no real MCP calls, safe untrusted text,
-  # separate A/B scoring and report that is not prematurely unblinded.
-  page.locator("#reasoningTab").click()
-  assert page.locator("#reasoning").is_visible()
-  # Case options load before the separate asynchronous detail fetch completes.
-  # Wait for the genuine fictional question, then test the same XSS contract.
-  page.wait_for_function("document.querySelector('#reasoningSelect').value === 'hold-01'")
-  page.wait_for_function(
-   "document.querySelector('#reasoningQuestion').textContent.includes('<script>window.injected=true</script>')")
-  assert "<script>window.injected=true</script>" in page.locator("#reasoningQuestion").inner_text()
-  assert page.locator("#reasoningQuestion script").count()==0
-  page.locator("#reasoningRun").click()
-  assert "Approve both" in page.locator("#reasoningStatus").inner_text()
-  assert not paired_runs
-  page.locator("#reasoningModelConsent").check()
-  page.locator("#reasoningCloudConsent").check()
-  page.locator("#reasoningRun").click()
-  page.wait_for_function("document.querySelector('#reasoningAnswerA').textContent.includes('not confirmed')")
-  assert len(paired_runs)==1
-  assert page.locator("#reasoningAnswerA img").count()==0
-  assert page.locator("#reasoningAnswerB script").count()==0
-  assert page.evaluate("window.injected===undefined")
-  assert "Power history" in page.locator("#reasoningMetricsA").inner_text()
-  assert "Client schema errors: 1" in page.locator("#reasoningMetricsB").inner_text()
-  for select in page.locator("#reasoningScoresA select").all():
-   select.select_option("2")
-  for select in page.locator("#reasoningScoresB select").all():
-   select.select_option("1")
-  page.locator("#reasoningSave").click()
-  page.wait_for_function("document.querySelector('#reasoningSave').disabled && document.querySelector('#reasoningStatus').textContent.includes('1 blindly scored')")
-  assert all(el.is_disabled() for el in page.locator("#reasoningScoresA select").all())
-  assert all(el.is_disabled() for el in page.locator("#reasoningScoresB select").all())
-  assert "saved and locked" in page.locator("#reasoningReviewStatus").inner_text()
-  page.get_by_role("button",name="Generate aggregate report").click()
-  page.wait_for_function("document.querySelector('#reasoningReportPreview').textContent.includes('paired_blind_ratings')")
-  with page.expect_download() as download:
-   page.locator("#reasoningDownload").click()
-  exported_pair=json.loads(Path(download.value.path()).read_text())
-  assert exported_pair["paired_blind_ratings"]==1
-  assert exported_pair["condition_mapping_revealed"] is False
-  assert "window.injected" not in json.dumps(exported_pair)
-  assert len(requests)==count_before,"Reasoning A/B cannot use real Ask/MCP"
-  page.locator("#askTab").click()
+  # Everyday UI: retired experiment controls are absent. Browser-side
+  # study code is not required to load, and nothing should auto-run.
+  for retired in ("#labMenu","#benchmarkTab","#autonomousTab","#reasoningTab",
+                  "#prospectiveTab","#benchmark","#autonomous","#reasoning","#prospective"):
+   assert page.locator(retired).count()==0,retired
+  assert page.locator("#askTab").is_visible()
+  assert page.locator("#diagnosticsTab").is_visible()
+  assert page.locator("#checkMonitor").is_visible()
+  assert page.locator("#copyReview").is_visible()
+  assert page.locator("#downloadTechnical").count()==1
+  assert page.locator("#speak").is_visible()
+  assert page.locator("#send").is_visible()
   assert page.locator("#question").is_visible()
-  assert not page.locator("#labMenu").evaluate("(el) => el.open")
+  assert page.locator("#answer").is_visible()
+  page.locator("#diagnosticsTab").click()
+  assert page.locator("#diagnostics").is_visible()
+  page.locator("#askTab").click()
+  assert page.locator("#ask").is_visible()
+  assert page.locator("#question").is_visible()
+  assert len(requests)==count_before,"Switching tabs must never submit Ask/MCP"
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   assert not errors,errors
   page.screenshot(path=str(Path(os.environ.get("RUNNER_TEMP","/tmp"))/f"v2-ui-{width}.png"),full_page=True)
   page.close()
