@@ -61,7 +61,10 @@ def test_event_and_app_log_allowlist_redaction_and_timestamp_basis(tmp_path):
 
 def test_journal_persists_and_deduplicates_source_timestamps(tmp_path):
     journal = make_journal(tmp_path)
-    received = "2026-10-12T07:18:23.830000+00:00"
+    # Keep the fixture inside journal retention. A fixed October 2026 date
+    # fell outside the moving retention window in November 2026 CI.
+    observed = datetime.now(timezone.utc) - timedelta(minutes=1)
+    received = observed.isoformat()
     packet = {
         "source": "DEVICE", "deviceId": 7774, "name": "motion",
         "value": "inactive", "date": received,
@@ -69,7 +72,8 @@ def test_journal_persists_and_deduplicates_source_timestamps(tmp_path):
     }
     one = journal._row("events", packet, received, journal.log_app_ids)
     two = journal._row(
-        "events", packet, "2026-10-12T07:18:29.830000+00:00", journal.log_app_ids
+        "events", packet, (observed + timedelta(seconds=6)).isoformat(),
+        journal.log_app_ids
     )
     assert one is not None and two is not None
     assert one["timestamp_basis"] == "source"
@@ -77,8 +81,8 @@ def test_journal_persists_and_deduplicates_source_timestamps(tmp_path):
     restored = make_journal(tmp_path)
     reply = restored.query(
         device_id="7774", attribute="motion",
-        since="2026-10-12T07:18:00+00:00",
-        until="2026-10-12T07:19:00+00:00",
+        since=(observed - timedelta(seconds=23)).isoformat(),
+        until=(observed + timedelta(seconds=37)).isoformat(),
     )
     assert reply["count"] == 1
     assert reply["coverage_complete"] is False
