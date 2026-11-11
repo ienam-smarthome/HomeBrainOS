@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.51 overview acceptance and V1/V2 read-only parity
+
+**Immediate installed test:** Verify 2.0.0-alpha.51 UI/API match; opening Ask triggers a single read-only /api/overview inventory, populating four source-scoped tiles without an AI query. Inspect the number of devices actually returned; switch totals include plugs, and motion/low battery totals count only devices reporting those attributes. Missing/unauthorised inventory must display unavailable rather than fabricated zeros. Refresh should use one further read without device commands. The separate external recorder status derives from existing /api/status.
+
+**V1 parity boundary:** V1 active rooms, lights on and scheduled system-check warnings should not be treated as equivalent to V2 switches on, available motion reports, attribute-only battery alerts or recorder status. Future source-real evidence may justify typed opt-in light/room classification and a limited system audit; do not copy V1's journal/notification stack without a demonstrated need. Continue held-out paired V1/V2 tests and Rule Machine identity work from docs/HOMEBRAIN-V1-V2-CAPABILITY-GAP-PLAN-20261111.md.
 ## 11 November 2026 — Alpha.50 everyday UI acceptance and V1/V2 stage two
 
 Verify the two-tab UI on desktop/mobile with simplified composer and answer, preserved diagnostics, approvals, conversation reset, voice and Copy for review. Confirm retired experiment panels are absent from daily navigation and scripts but isolated backend/test code and saved study data remain unchanged. Retain the alpha.49 source-real positive comparison as a previously exposed validation, not an unseen held-out case.
