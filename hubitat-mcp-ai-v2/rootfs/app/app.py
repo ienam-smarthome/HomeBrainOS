@@ -331,13 +331,20 @@ async def ask(request: AskRequest, http_request: Request):
                     return app.state.conversations.read_receipt(
                         str(request.conversation_id), receipt_id, offset, max_chars
                     )
+                # Do not alter the existing Ask call signature when the
+                # optional historian is absent (including test-model shims).
+                monitor_kwargs = (
+                    {"device_monitor": app.state.device_monitor}
+                    if getattr(app.state, "device_monitor", None) is not None
+                    else {}
+                )
                 result = await app.state.model.answer(
                     request.question, request.history,
                     app.state.mcp, int(app.state.options["investigation_timeout_seconds"]),
                     before_call=interaction.before_call,
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
-                    device_monitor=getattr(app.state, "device_monitor", None),
+                    **monitor_kwargs,
                 )
                 result["prior_sources_indexed"] = indexed
                 result["prior_evidence_reads"] = sum(
