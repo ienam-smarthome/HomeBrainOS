@@ -31,6 +31,13 @@ the remaining hypotheses, select its exact tool and arguments now. You own
 that decision; there is no prescribed source order or required tool call.
 If the existing evidence already establishes the answer, or no proportionate
 useful read-only source remains, answer now, calibrating unsupported claims.
+Preserve individually verified facts (such as a recorded command issuer and
+its timestamp) even when the internal trigger, concurrent controller or
+ultimate physical cause is not independently established. A partial causal
+answer is more useful than hiding verified receipts behind an overall
+"unresolved" label. Do not equate a configuration match with an
+execution-specific callback or say that no alternatives remain without
+source evidence excluding them.
 Do not request unnecessary reads, invent missing evidence, or change any
 device, automation, setting, or external record. Follow the original user's
 read-only or approval restrictions. Do not mention this internal checkpoint.
@@ -123,6 +130,12 @@ do not reuse a 24-hour source summary for a 12-hour question.
 sensor_freshness_unverified means that freshness is UNKNOWN: neither
 "every bin is stale" nor "every bin is fresh" follows. If the upstream
 source cannot establish fresh readings, report saved-bin extrema only.
+The client_monitor_evidence_scope, when present, is a compact index of the
+same original monitor response, not independent corroboration. For threshold
+questions, a difference between saved-bin timestamps may be stated AS a
+saved-bin proxy, but not as verified time between physical crossings without
+relevant fresh timestamped reports. A fully populated grid is not proof of
+continuous sensor observations.
 For a custom time window provide BOTH start and end; for relative twelve
 hours the local monitor tool supports range=12h.
 

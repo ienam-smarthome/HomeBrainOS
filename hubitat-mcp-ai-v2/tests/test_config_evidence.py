@@ -43,6 +43,9 @@ class ConfigSourceMapTests(unittest.TestCase):
         index = config_source_map(original)
         self.assertEqual(index["source_scope"], "one returned current installed-app configuration page")
         self.assertEqual(index["page_name"], "mainPage")
+        self.assertEqual(index["installed_app_id"], 123)
+        self.assertIsNone(index["stored_parent_app_id"])
+        self.assertFalse(index["parent_app_identity_verified_by_this_page"])
         self.assertEqual(len(index["linked_pages"]), 2)
         self.assertEqual(index["linked_pages"][0]["page"], "controllerPageA")
         self.assertFalse(index["raw_settings_included_in_source"])
@@ -50,6 +53,15 @@ class ConfigSourceMapTests(unittest.TestCase):
         self.assertFalse(index["event_specific_callback_or_timer_proven_by_this_page"])
         self.assertIn("one returned configuration page", index["note"])
         self.assertEqual(json.dumps(original, sort_keys=True), before)
+
+    def test_native_parent_pointer_is_not_parent_identity(self):
+        result = config_reply({"name": "mainPage", "sections": []},
+                              app={"id": 425, "name": "Fictional Rule",
+                                   "parentAppId": 169, "disabled": False})
+        scope = config_source_map(result)
+        self.assertEqual(scope["stored_parent_app_id"], 169)
+        self.assertEqual(scope["installed_app_id"], 425)
+        self.assertFalse(scope["parent_app_identity_verified_by_this_page"])
 
     def test_multiple_selected_inputs_and_competing_settings_are_source_only(self):
         source = config_reply({

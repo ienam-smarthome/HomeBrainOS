@@ -128,6 +128,9 @@ def config_source_map(result: dict) -> dict | None:
     # schedules, causes, conditions, "active" or "verified" in this client map.
     return {
         "source_scope": "one returned current installed-app configuration page",
+        "installed_app_id": payload["app"].get("id"),
+        "stored_parent_app_id": payload["app"].get("parentAppId"),
+        "parent_app_identity_verified_by_this_page": False,
         "page_name": _short(page.get("name"), 120),
         "linked_pages": linked_pages,
         "linked_pages_omitted": max(0, len(pages) - len(linked_pages)),
