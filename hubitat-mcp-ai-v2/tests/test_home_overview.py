@@ -1,8 +1,8 @@
-"""Alpha.51 hub overview — fictional source, read-only request contract.
+"""Alpha.53 named light/motion/battery overview — fictional read-only source.
 
 Tests are offline and use synthetic native MCP replies, no live devices or
 Hubitat credentials. Counts are based on returned states, never inferred
-completeness, health, lighting type, battery freshness, or missing values.
+completeness, health, lighting type without positive evidence, or freshness.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ DEVICES = [
 
 
 class OverviewCountingTests(unittest.TestCase):
-    def test_counts_are_source_scoped_and_do_not_call_switches_lights(self):
+    def test_counts_require_positive_light_evidence_and_list_names(self):
         result = summarize_device_inventory(inventory_reply(
             DEVICES, unfilteredTotal=6, count=6,
         ))
@@ -58,15 +58,75 @@ class OverviewCountingTests(unittest.TestCase):
         self.assertEqual(result["returned_devices"], 6)
         self.assertEqual(result["source_declared_total"], 6)
         metrics = result["metrics"]
-        self.assertEqual(metrics["switch_on"]["count"], 2)
-        self.assertEqual(metrics["switch_on"]["devices_with_state"], 3)
+        self.assertEqual(metrics["lights_on"]["count"], 1)
+        self.assertEqual(metrics["lights_on"]["devices_with_state"], 1)
         self.assertEqual(metrics["motion_active"]["count"], 2)
         self.assertEqual(metrics["motion_active"]["devices_with_state"], 4)
         self.assertEqual(metrics["battery_low"]["count"], 2)
         self.assertEqual(metrics["battery_low"]["devices_with_state"], 3)
         self.assertEqual(metrics["battery_low"]["threshold_exclusive_pct"], 20)
-        self.assertIn("not just lights", result["notes"][0])
-        self.assertNotIn("lights_on", metrics)
+        self.assertEqual(result["unclassified_on_switches"], 1)
+        self.assertEqual(metrics["lights_on"]["members"], [{"name": "Sample ceiling lamp"}])
+        self.assertEqual(
+            metrics["motion_active"]["members"],
+            [{"name": "Sample mains socket"}, {"name": "Sample motion sensor"}],
+        )
+        self.assertEqual(
+            metrics["battery_low"]["members"],
+            [{"name": "Sample motion sensor", "battery_pct": 5.0},
+             {"name": "Sample ceiling lamp", "battery_pct": 17.0}],
+        )
+        self.assertEqual(metrics["battery_low"]["members_omitted"], 0)
+        self.assertIn("unidentified ON switches", result["notes"][0])
+        self.assertNotIn("switch_on", metrics)
+
+    def test_non_lights_and_misleading_label_are_excluded(self):
+        fixture = [
+            {"label": "Livingroom Light 2", "currentStates": {"switch": "on"}},
+            {"label": "Kitchen lamp", "currentStates": {"switch": "off"}},
+            {"label": "Ceiling bulb", "currentStates": {"switch": "on"}},
+            {"label": "Aqara Light Sensor", "currentStates": {"switch": "on"}},
+            {"label": "Metering socket", "currentStates": {"switch": "on"},
+             "capabilities": ["SwitchLevel"]},
+            {"label": "Colour controller", "currentStates": {"switch": "on"},
+             "capabilities": [{"name": "ColorControl"}]},
+            {"label": "Hue Light", "currentStates": {"switch": "on"},
+             "type": "Smart Plug"},
+            {"label": "Unidentified relay", "currentStates": {"switch": "on"}},
+            {"label": "Hallway FP300", "currentStates": {"motion": "active", "battery": 19.5}},
+        ]
+        result = summarize_device_inventory(inventory_reply(fixture, total=9))
+        metrics = result["metrics"]
+        self.assertEqual(metrics["lights_on"]["count"], 3)
+        self.assertEqual(metrics["lights_on"]["devices_with_state"], 4)
+        self.assertEqual([x["name"] for x in metrics["lights_on"]["members"]],
+                         ["Ceiling bulb", "Colour controller", "Livingroom Light 2"])
+        self.assertEqual(result["unclassified_on_switches"], 3)
+        self.assertEqual(metrics["motion_active"]["members"],
+                         [{"name": "Hallway FP300"}])
+        self.assertEqual(metrics["battery_low"]["members"],
+                         [{"name": "Hallway FP300", "battery_pct": 19.5}])
+
+    def test_bounded_all_active_names_and_values_not_only_five_examples(self):
+        devices = [
+            {"label": f"Light {i:03}", "currentStates": {"switch": "on"}}
+            for i in range(17)
+        ]
+        devices += [
+            {"label": f"Motion {i:03}", "currentStates": {"motion": "active"}}
+            for i in range(13)
+        ]
+        result = summarize_device_inventory(inventory_reply(devices, total=30))
+        self.assertEqual(result["metrics"]["lights_on"]["count"], 17)
+        self.assertEqual(len(result["metrics"]["lights_on"]["members"]), 17)
+        self.assertEqual(len(result["metrics"]["motion_active"]["members"]), 13)
+        self.assertEqual(result["metrics"]["lights_on"]["members_omitted"], 0)
+        large = [{"label": f"Light {i:03}", "currentStates": {"switch": "on"}}
+                 for i in range(251)]
+        limited = summarize_device_inventory(inventory_reply(large, total=251))
+        self.assertEqual(limited["metrics"]["lights_on"]["count"], 251)
+        self.assertEqual(len(limited["metrics"]["lights_on"]["members"]), 250)
+        self.assertEqual(limited["metrics"]["lights_on"]["members_omitted"], 1)
 
     def test_partial_inventory_must_not_be_termed_complete(self):
         result = summarize_device_inventory(inventory_reply(
@@ -98,7 +158,8 @@ class OverviewCountingTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["battery_low"]["count"], 0)
         self.assertEqual(result["metrics"]["battery_low"]["devices_with_state"], 0)
         self.assertEqual(result["metrics"]["motion_active"]["count"], 1)
-        self.assertEqual(result["metrics"]["switch_on"]["count"], 1)
+        self.assertEqual(result["metrics"]["lights_on"]["count"], 0)
+        self.assertEqual(result["unclassified_on_switches"], 1)
         self.assertIn("stale", result["notes"][2])
 
     def test_missing_or_error_inventory_not_interpreted_as_empty_hub(self):
@@ -141,7 +202,7 @@ class OverviewMCPTests(unittest.IsolatedAsyncioTestCase):
         data = await read_overview(fake)
         self.assertEqual(fake.list_count, 1)
         self.assertEqual(fake.calls, [("hub_list_devices", {})])
-        self.assertEqual(data["metrics"]["switch_on"]["count"], 2)
+        self.assertEqual(data["metrics"]["lights_on"]["count"], 1)
 
     async def test_nested_gateway_uses_only_schema_advertised_read_leaf(self):
         fake = FakeCatalog([{
