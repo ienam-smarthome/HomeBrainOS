@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
 from external_hub_diagnostics import ExternalHubDiagnostics
+from device_monitor import HubDeviceMonitor
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp import MCPError, MCPClient
 from interaction import Interaction
@@ -45,6 +46,9 @@ DEFAULTS: dict[str, Any] = {
     "external_hub_diagnostics_cpu_cores": 4,
     "external_hub_diagnostics_hub_timezone": "Europe/London",
     "external_hub_diagnostics_retention_days": 30,
+    "device_monitor_enabled": False,
+    "device_monitor_api_base": "",
+    "device_monitor_access_token": "",
     "ha_tts_enabled": False,
     "ha_tts_notify_service": "",
     "ha_tts_media_stream": "",
@@ -91,6 +95,17 @@ async def lifecycle(app: FastAPI):
     app.state.mcp = None
     app.state.model = None
     app.state.configuration_error = None
+    app.state.device_monitor = None
+    app.state.device_monitor_error = None
+    if bool(options["device_monitor_enabled"]):
+        try:
+            app.state.device_monitor = HubDeviceMonitor(
+                str(options["device_monitor_api_base"]),
+                str(options["device_monitor_access_token"]),
+            )
+        except ValueError as exc:
+            # The optional monitor does not prevent normal model/MCP reads.
+            app.state.device_monitor_error = str(exc)
     app.state.tts = HomeAssistantTTS(
         enabled=bool(options["ha_tts_enabled"]),
         supervisor_token=str(os.getenv("SUPERVISOR_TOKEN") or os.getenv("HASSIO_TOKEN") or ""),
@@ -151,6 +166,8 @@ async def lifecycle(app: FastAPI):
             except asyncio.CancelledError:
                 pass
         await app.state.recorder.close()
+        if app.state.device_monitor:
+            await app.state.device_monitor.close()
         await app.state.tts.close()
         if app.state.mcp:
             await app.state.mcp.close()
@@ -158,7 +175,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.44", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.45", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -206,6 +223,12 @@ async def status():
         "configuration_error": app.state.configuration_error,
         "model": str(options["model_name"]),
         "recorder": app.state.recorder.status(),
+        "device_monitor": {
+            "enabled": bool(options["device_monitor_enabled"]),
+            "configured": app.state.device_monitor is not None,
+            "configuration_error": app.state.device_monitor_error,
+            "read_only": True,
+        },
         "tts": app.state.tts.status(),
     }
 
@@ -314,6 +337,7 @@ async def ask(request: AskRequest, http_request: Request):
                     before_call=interaction.before_call,
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
+                    device_monitor=app.state.device_monitor,
                 )
                 result["prior_sources_indexed"] = indexed
                 result["prior_evidence_reads"] = sum(
