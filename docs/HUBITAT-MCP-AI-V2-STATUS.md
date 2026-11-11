@@ -1,5 +1,13 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 11 November 2026 — V1/V2 Gate B: private source-real paired first-answer benchmark
+
+**Installed alpha.51 UI observation:** The user supplied an installed V2 screenshot showing a reconciled native inventory and populated source-scoped Switches ON, Motion active, Low battery and Devices inspected tiles, with external diagnostics online. That is evidence of the overview displaying data, **not** independent confirmation of each device's state or a V1/V2 AI answer comparison. The monitor status line remains "configured; connection not tested" on that page session.
+
+**Next development gate, not another runtime patch:** Implement a strictly OFFLINE, manual-score V1/V2 source-real first-answer comparison pack in docs/HOMEBRAIN-V1-V2-PAIRED-ACCEPTANCE-20261111.md and hubitat-mcp-ai-v2/evaluation/v1_v2_pairs.py. Twelve *new* paired read-only question templates cover system health, hub resource incidents, current states, last-OFF causality, Rule Machine native identity/dated triggers, historical power, two-device comparison, humidity threshold timing and missing history. Prefer identical models/providers, absolute matching windows and fresh conversations; score original receipts separately from answer fluency. A privacy-first local manifest hashes supplied first-answer capture files (SHA-256) and reports only human-entered 0/1/2 scores, pairing comparability, source-review category counts and reported unexpected mutation flags. Incomplete pairs remain unscored, and causal calibration may be N/A only where inapplicable. No model runs, connector calls, Hubitat/HA changes, writing to public repo with private captures or user-visible experiment panels.
+
+**Capability decision:** Preserve V2 alpha.51 as installed baseline; do not build a new system-check engine, author native Rule Machine rules or import V1's host-owned causal patches before unseen paired receipts demonstrate a general, reproducible gap. V1 v0.18.459 remains independently installed and unchanged. The evaluator only tests existing functionality and must not imply the scores were independently verified.
+
 ## 11 November 2026 — Alpha.51 candidate: safe home overview informed by V1 side-by-side
 
 The user provided running V2 alpha.50 and V1 0.18.459 screenshots. V2's clean two-tab UI, connected monitor status and diagnostics are working but lack V1's at-a-glance operational state. V1 shows active rooms, lights, motion, low batteries, MCP/provider badges, scheduled system check, external recorder and historical journal. These are different source contracts: do not import V1's system audit, presume all switches are lights, or present missing telemetry as healthy.
