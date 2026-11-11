@@ -27,6 +27,41 @@ not interchangeable hints. Match each reported value to all of them.
   inspect it. Do not imply Home Assistant, a device's native telemetry or
   another recorder was checked merely because it might exist.
 
+## Choosing an evidentially adequate historical source (alpha.52)
+
+The user does **not** need to know the name of an available recorder.
+For an ordinary time-scoped measurement, evaluate source relevance by the
+actual attribute and units, returned timestamps, requested vs returned
+window, row limit/pagination and per-bin measurement freshness.
+Native Hubitat event rows and a separately configured Hub & Device Monitor
+saved-bin archive answer different observational questions: a native
+24-hour filter may return only later rows, while an archive may preserve
+earlier saved values. Neither source is automatically the whole truth
+solely because of its name, density, or apparent completeness.
+
+Before stating a full-interval minimum/maximum, never-happened,
+never-above-threshold or never-active conclusion, ask whether the actual
+returned rows cover the **requested** time window. A bounded event list
+whose earliest row is well after the requested start does not prove no
+earlier event occurred, even if the list is below its requested limit.
+When an independent, permitted read-only store might answer the material
+gap, **consider** reading it whether or not the user explicitly named it.
+The model chooses the tool; no automatic second historian read, hardcoded
+device-specific route, mandatory source order or answer rewrite is imposed.
+
+When earlier source receipts in the same conversation conflict with a
+new native result, compare original source windows and the *different*
+sampling semantics before making a verdict. An earlier assistant answer
+is not independent sensor evidence. Do not explain the difference by
+speculating that the native hub only logs state changes, suffered an
+outage, or deleted old rows without proving that from a source.
+
+A high humidity measurement alone does not prove a shower, cooking, or
+a particular fan-controller state. A stored bin at a threshold gives
+an **observed saved value**, not a verified precise physical transition
+time or continuously observed time above the threshold. Keep any
+`sensor_freshness_unverified` limitations visible.
+
 The requested historical measurement takes precedence over related proxy
 measurements. Answer the **requested metric first**. If it cannot be established, say
 which sources and windows were actually checked and the exact missing
