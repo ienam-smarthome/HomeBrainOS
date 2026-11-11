@@ -37,6 +37,30 @@ read-only or approval restrictions. Do not mention this internal checkpoint.
 """
 
 
+
+def is_read_only_review_tool(name: str) -> bool:
+    """Only exposed read-only core tools/gateways and local receipt reads.
+
+    In the Hubitat MCP skill, hub_read_* gateways are read-only and flat
+    hub_get_*, hub_list_* and hub_search_* tools are informational. Manage
+    gateways can be mixed read/write and are deliberately not exposed during
+    this supplemental checkpoint. The original model loop is untouched.
+    """
+    return name == "homebrain_read_prior_evidence" or (
+        isinstance(name, str)
+        and name.startswith(("hub_read_", "hub_get_", "hub_list_", "hub_search_"))
+    )
+
+
+def read_only_review_catalog(tools: list[dict]) -> list[dict]:
+    """Select only safe tool definitions; never execute or discover a leaf."""
+    return [
+        item for item in tools if isinstance(item, dict)
+        and isinstance(item.get("function"), dict)
+        and is_read_only_review_tool(item["function"].get("name"))
+    ]
+
+
 def is_causal_question(question: str) -> bool:
     """Broad intent hint, independent of a specific device or subsystem."""
     return isinstance(question, str) and bool(_CAUSAL_QUESTION.search(question))
