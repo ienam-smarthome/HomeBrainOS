@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, StrictBool
 from agent import Agent
 from external_hub_diagnostics import ExternalHubDiagnostics
 from device_monitor import HubDeviceMonitor
+from home_overview import OverviewUnavailable, read_overview
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp import MCPError, MCPClient
 from interaction import Interaction
@@ -175,7 +176,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.50", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.51", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -239,6 +240,24 @@ def require_ui_request(request: Request):
     if request.headers.get("x-homebrain-request") != "1":
         raise HTTPException(403, "Interface is out of date or the request header is missing. Close and reopen the v2 interface, then refresh the page. API clients must send X-Homebrain-Request: 1")
 
+
+
+@app.get("/api/overview")
+async def overview(request: Request):
+    """One bounded read-only native inventory snapshot; no model or writes."""
+    require_ui_request(request)
+    mcp = getattr(app.state, "mcp", None)
+    if mcp is None:
+        return {"available": False, "read_only": True,
+                "reason": "Native Hubitat MCP is not configured"}
+    try:
+        snapshot = await asyncio.wait_for(read_overview(mcp), timeout=12)
+    except (MCPError, OverviewUnavailable, ValueError, asyncio.TimeoutError):
+        # Do not leak upstream error details, tool response text, secrets,
+        # private device lists, or private connection URLs to browser errors.
+        return {"available": False, "read_only": True,
+                "reason": "Read-only inventory unavailable; verify MCP connectivity and inventory permissions"}
+    return {"available": True, **snapshot}
 
 
 @app.get("/api/sources/device-monitor/check")
