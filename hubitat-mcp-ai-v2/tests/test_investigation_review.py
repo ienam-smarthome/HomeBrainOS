@@ -61,9 +61,11 @@ class ScriptedAgent(Agent):
         super().__init__("http://127.0.0.1:11434", "fictional", "", 15)
         self.replies = list(replies)
         self.round_messages = []
+        self.round_tools = []
 
     async def round(self, messages, tools, remaining):
         self.round_messages.append([dict(row) for row in messages])
+        self.round_tools.append([item["function"]["name"] for item in tools])
         return self.replies.pop(0)
 
 
@@ -206,10 +208,7 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["tool_calls"]), 1)
         self.assertFalse(result["tool_calls"][0]["success"])
         self.assertIn("read-only", result["tool_calls"][0]["error"])
-        self.assertEqual([i["function"]["name"]
-                          for i in agent.round_messages[1] and
-                          [{"function": {"name": "hub_read_history"}}]],
-                         ["hub_read_history"])
+        self.assertEqual(agent.round_tools[1], ["hub_read_history"])
 
 
 
