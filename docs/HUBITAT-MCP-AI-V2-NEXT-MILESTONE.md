@@ -1,5 +1,13 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — V1/V2 read-only paired acceptance, no runtime release
+
+The installed V2 alpha.51 overview is populated and its native inventory reconciles, but this is not a model answer or system audit. The next gate is **paired first-answer acceptance against V1**, not additional homepage tiles.
+
+Use docs/HOMEBRAIN-V1-V2-PAIRED-ACCEPTANCE-20261111.md for twelve new read-only cases, fresh conversations, identical prompt text, matched model/provider where practical, absolute time windows for history and original private source receipts. Store raw data privately and validate file hashes and human-entered scores with hubitat-mcp-ai-v2/evaluation/v1_v2_pairs.py. Causal claims must be tied to command/rule/log discriminators; unknown data is not proof of absence. Score 0/1/2 with only genuinely noncausal calibration N/A; compare execution errors, missing sources and unapproved mutations independently. Never expose private device evidence or OAuth tokens in public commits.
+
+**First case:** Run the same read-only system-health prompt once against verified installed V1 and V2 and preserve both first answers before offering corrections. Then collect a second pair for a never-before-reviewed causal latest-OFF event and a third for native Rule Machine parent identity/dated trigger evidence. Only source-real gaps justify V2 changes; do not add a scheduler, generic device historian or UI experiments by default.
+
 ## 11 November 2026 — Alpha.51 overview acceptance and V1/V2 read-only parity
 
 **Immediate installed test:** Verify 2.0.0-alpha.51 UI/API match; opening Ask triggers a single read-only /api/overview inventory, populating four source-scoped tiles without an AI query. Inspect the number of devices actually returned; switch totals include plugs, and motion/low battery totals count only devices reporting those attributes. Missing/unauthorised inventory must display unavailable rather than fabricated zeros. Refresh should use one further read without device commands. The separate external recorder status derives from existing /api/status.
