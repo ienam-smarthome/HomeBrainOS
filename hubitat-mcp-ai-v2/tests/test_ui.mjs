@@ -119,44 +119,26 @@ rich.run("draw=()=>{}; fetch=async url=>({ok:true,json:async()=>url.includes('/s
 rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('refreshDiagnostics()');
 assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
 assert(html.includes('id="diagnosticsTab"'));
-assert(html.includes('id="benchmarkTab"'));
-assert(html.includes('id="autonomousTab"'));
-assert(html.includes('id="reasoningTab"'));
-assert(html.includes('id="reasoningSelect"'));
-assert(html.includes('id="reasoningModelConsent"'));
-assert(html.includes('id="reasoningCloudConsent"'));
-assert(html.includes('id="reasoningRun"'));
-assert(html.includes('id="reasoningAnswerA"'));
-assert(html.includes('id="reasoningAnswerB"'));
-assert(html.includes('id="reasoningScoresA"'));
-assert(html.includes('id="reasoningScoresB"'));
-assert(html.includes('id="reasoningReportPreview"'));
-assert.match(html,/api\/reasoning-ab\//);
-assert.match(html,/condition.mapping.remains.hidden|assignments.remain.hidden/);
-
-assert(html.includes('id="autolabSelect"'));
-assert(html.includes('id="autolabRun"'));
-assert(html.includes('id="autolabModelConsent"'));
-assert(html.includes('id="autolabCloudConsent"'));
-assert(html.includes('id="autolabCoverage"'));
-assert(html.includes('id="autolabScores"'));
-assert(html.includes('id="autolabReportPreview"'));
-assert.match(html,/api\/autonomous\//);
-assert.match(html,/synthetic test only/i);
-
-assert(html.includes('id="benchZip"'));
-assert(html.includes('id="benchPrivateConsent"'));
-assert(html.includes('id="benchCloudConsent"'));
-assert(html.includes('id="benchPilot1"'));
-assert(html.includes('id="benchPilot2"'));
-assert(html.includes('id="benchSource"'));
-assert(html.includes('id="benchScoresA"'));
-assert(html.includes('id="benchScoresB"'));
-assert(html.includes('id="benchDelete"'));
-assert.match(html,/score both versions|Score A and B/i);
-assert.match(html,/api\/benchmark\//);
-assert.match(html,/X-Homebrain-Request/);
-
+// Finished experiments are retired from the everyday UI. Their isolated
+// backend evaluation suites remain available without changing live Ask.
+for(const id of ['labMenu','benchmarkTab','autonomousTab','reasoningTab','prospectiveTab',
+                 'benchZip','autolabSelect','reasoningSelect','prospectiveSelect']){
+ assert(!html.includes('id="'+id+'"'), 'Retired UI must not expose '+id);
+}
+assert(!html.includes('<section id="benchmark">'));
+assert(!html.includes('<section id="autonomous">'));
+assert(!html.includes('<section id="reasoning">'));
+assert(!html.includes('<section id="prospective">'));
+assert.match(html,/class="app-tabs"/);
+assert(html.includes('id="askTab"'));
+assert(html.includes('id="diagnosticsTab"'));
+assert(html.includes('id="copyReview"'));
+assert(html.includes('id="downloadTechnical"'));
+assert(html.includes('id="checkMonitor"'));
+assert(html.includes('id="send"'));
+assert(html.includes('class="card compose-card"'));
+assert(html.includes('class="card answer-card"'));
+assert(!html.includes('benchmarkRefresh()'));
 assert(html.includes('id="incidentTimeline"'));
 assert(html.includes('id="timelineLayout"'));
 assert(html.includes('id="timelinePair"'));
