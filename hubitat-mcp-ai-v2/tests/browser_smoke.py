@@ -182,11 +182,11 @@ with sync_playwright() as p:
           "observed_at_utc":"2026-11-11T12:00:00Z",
           "metrics":{
            "lights_on":{"count":1,"devices_with_state":1,"members":[
-                {"name":"Livingroom Light 2"}],"members_omitted":0},
+                {"name":"Lab Sample Light 2"}],"members_omitted":0},
            "motion_active":{"count":1,"devices_with_state":2,"members":[
-                {"name":"Hallway FP300"}],"members_omitted":0},
+                {"name":"Lab Motion A"}],"members_omitted":0},
            "battery_low":{"count":1,"devices_with_state":4,"members":[
-                {"name":"Bedroom Sensor","battery_pct":9}],"members_omitted":0}},
+                {"name":"Lab Battery Sensor","battery_pct":9}],"members_omitted":0}},
            "unclassified_on_switches":1}
    elif "/api/status" in request.url:data={
     "version":version,"configured":True,"model":"fixture-model",
@@ -241,9 +241,9 @@ with sync_playwright() as p:
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
   page.wait_for_function("document.querySelector('#overviewLights').textContent === '1'")
-  assert page.locator("#overviewLightsNames").inner_text()=="Livingroom Light 2"
-  assert page.locator("#overviewMotionNames").inner_text()=="Hallway FP300"
-  assert page.locator("#overviewBatteryNames").inner_text()=="Bedroom Sensor · 9%"
+  assert page.locator("#overviewLightsNames").inner_text()=="Lab Sample Light 2"
+  assert page.locator("#overviewMotionNames").inner_text()=="Lab Motion A"
+  assert page.locator("#overviewBatteryNames").inner_text()=="Lab Battery Sensor · 9%"
   assert "ON switches not identified as lights" in page.locator("#overviewStatus").inner_text()
   assert page.locator("#overviewMotion").inner_text()=="1"
   assert page.locator("#overviewBattery").inner_text()=="1"
