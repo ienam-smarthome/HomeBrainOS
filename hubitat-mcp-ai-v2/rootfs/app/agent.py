@@ -21,6 +21,7 @@ from investigation_review import (
     review_kind, review_prompt,
 )
 from config_evidence import config_source_map
+from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
 
 
 _SKILL_DIR = Path(__file__).parent / "skills" / "hubitat"
@@ -78,6 +79,13 @@ For native CPU load history, use client_cpu_load_context when supplied to
 report core-normalised 5-minute CPU load as a percentage alongside the raw
 load and source sample time. This is a load equivalent, NOT measured CPU
 utilisation; do not claim current CPU usage from a five-minute load average.
+A separately configured Hub & Device Monitor may expose read-only saved
+power and sensor history even when native Hubitat event history returns no
+rows. Discover its selected devices with homebrain_read_device_monitor status,
+then request the exact historical window if useful. A saved 5-minute power
+bin is a snapshot/aggregation, not a continuously measured physical peak.
+Stored intervals without newly reported values do not prove zero or activity.
+If this optional source is absent, do not claim it was checked.
 For a WHY question, distinguish a reported state event from the command
 which requested it and from the controller decision behind that command.
 A device/bridge producedBy on a physical-tagged state row does not prove
@@ -429,6 +437,7 @@ class Agent:
         deadline_seconds: int, before_call=None,
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
+        device_monitor=None,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -438,6 +447,12 @@ class Agent:
             if any(tool.get("name") == _PRIOR_TOOL for tool in catalog):
                 raise MCPError("Connected MCP catalog conflicts with local receipt reader")
             tools.append(_PRIOR_TOOL_DEFINITION)
+        # Reserved local tool names must never be impersonated by upstream
+        # catalogs (even when the optional monitor is disabled).
+        if any(item.get("name") == MONITOR_TOOL for item in catalog):
+            raise MCPError("Connected MCP catalog conflicts with reserved local monitor reader")
+        if device_monitor is not None:
+            tools.append(MONITOR_TOOL_DEFINITION)
         history = [
             {"role": row["role"], "content": row["content"][:10000]}
             for row in history[-16:]
@@ -461,6 +476,8 @@ class Agent:
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
                 if prior_evidence and prior_reader:
                     tools.append(_PRIOR_TOOL_DEFINITION)
+                if device_monitor is not None:
+                    tools.append(MONITOR_TOOL_DEFINITION)
             # Once the extra model review starts, expose only read-only
             # tool definitions. Never widen an explicitly read-only request
             # just because the model chose to investigate further.
@@ -536,12 +553,15 @@ class Agent:
                     if source_review_invoked and not is_read_only_review_tool(name):
                         raise MCPError("Evidence sufficiency follow-up permits read-only tools only")
                     is_prior = name == _PRIOR_TOOL
+                    is_monitor = name == MONITOR_TOOL
+                    if is_monitor and device_monitor is None:
+                        raise MCPError("Device Monitor history source is not configured")
                     if is_prior:
                         if prior_reader is None or not prior_evidence:
                             raise MCPError("No prior conversation evidence is available")
                         if set(args) - {"receipt_id", "offset", "max_chars"} or "receipt_id" not in args:
                             raise MCPError("Use only receipt_id, offset and max_chars for prior evidence")
-                    if not is_prior and isinstance(args.get("tool"), str) and hasattr(
+                    if not is_prior and not is_monitor and isinstance(args.get("tool"), str) and hasattr(
                             mcp, "gateway_leaf_schema"):
                         # Optional, metadata-only discovery. Model selection
                         # determines which gateway/leaf is inspected. A schema
@@ -577,6 +597,13 @@ class Agent:
                                 args.get("max_chars", 12000)
                             )
                         }
+                    elif is_monitor:
+                        result = {
+                            "local_device_monitor": await asyncio.wait_for(
+                                device_monitor.query(args),
+                                timeout=max(0.1, deadline - time.monotonic()),
+                            )
+                        }
                     else:
                         result = await asyncio.wait_for(
                             mcp.call(name, args),
@@ -593,6 +620,11 @@ class Agent:
                     if is_prior:
                         record["result_kind"] = "prior_evidence_read"
                         record["operation_executed"] = False
+                        model_result = result
+                    elif is_monitor:
+                        record["result_kind"] = "local_monitor_read"
+                        record["operation_executed"] = True
+                        record["read_only"] = True
                         model_result = result
                     elif is_tool_catalog(result):
                         record["result_kind"] = "tool_catalog"
