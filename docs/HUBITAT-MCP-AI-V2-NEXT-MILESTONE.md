@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.52 historical-source sufficiency acceptance
+
+Two private alpha.51 humidity captures show the same measurement objective succeeded only when the user named Hub & Device Monitor. The unnamed request was answered from an event list with 11 rows beginning 04:56 despite a 24h request, and the first answer fabricated an evening shower cause from saved humidity bins. Neither problem proves tool failure. Implement generalized model-guidance cross-source coverage and contradiction review (no forced reads), with fictional tests; then test on a NEW uncoached historical sensor/metric in an installed alpha.52 build, capturing both normal review and original private receipts. Verify source selected based on actual missing coverage, no blanket historian preference and calibrated unknowns.
+
+Preserve V1/V2 paired acceptance plan: docs/HOMEBRAIN-V1-V2-PAIRED-ACCEPTANCE-20261111.md. This exposed humidity pair should not count as held-out first-answer evidence. Continue fresh system health, rule identity and causal event read-only comparisons after verifying model source selection in a fresh case.
 ## 11 November 2026 — V1/V2 read-only paired acceptance, no runtime release
 
 The installed V2 alpha.51 overview is populated and its native inventory reconciles, but this is not a model answer or system audit. The next gate is **paired first-answer acceptance against V1**, not additional homepage tiles.
