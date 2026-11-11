@@ -9,11 +9,12 @@ function harness(){
  const elements=new Map(),timers=new Map(),timeouts=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0,clearCalls=0,askBodies=[];
  const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},getBoundingClientRect(){return {width:860,height:360,left:0};},value:'',disabled:false,hidden:false,style:{},classList:(()=>{const classes=new Set();return{add(...names){names.forEach(n=>classes.add(n));},remove(...names){names.forEach(n=>classes.delete(n));},toggle(name,on){if(on===undefined? !classes.has(name):on){classes.add(name);return true;}classes.delete(name);return false;},contains(name){return classes.has(name);}}})(),addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
  const el=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
- const state={status:{version,configured:true,model:'gemma4:31b-cloud'},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true,askBodies};
+ const state={status:{version,configured:true,model:'gemma4:31b-cloud',recorder:{status:'online',last:{free_os_mb:800,native_load_pct:20}}},overview:{available:true,read_only:true,returned_devices:5,source_declared_total:6,inventory_full_coverage_verified:false,observed_at_utc:'2026-11-11T12:00:00Z',metrics:{switch_on:{count:2,devices_with_state:3},motion_active:{count:1,devices_with_state:2},battery_low:{count:1,devices_with_state:4}}},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true,askBodies};
  const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElementNS(_ns,tag){return element(tag);},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
  const navigator={clipboard:{writeText:async text=>{copied=text;}}};
  const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout(fn){const id=++seq;timeouts.set(id,fn);return id;},clearTimeout(id){timeouts.delete(id);},Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
  if(url==='api/status')return{ok:true,json:async()=>state.status};
+ if(url==='api/overview'){assert.equal(init.headers['X-Homebrain-Request'],'1');return{ok:true,json:async()=>state.overview};}
  if(url==='api/conversation/clear'){clearCalls++;assert.equal(init.headers['X-Homebrain-Request'],'1');assert.equal(typeof JSON.parse(init.body).conversation_id,'string');return{ok:true,json:async()=>({cleared:true})};}
  assert.equal(url,'api/ask');askCalls++;askBodies.push(JSON.parse(init.body));assert.equal(init.headers['X-Homebrain-Request'],'1');
  assert.equal(el('copyAnswer').disabled,true);assert.equal(el('copyTechnical').disabled,true);
@@ -25,7 +26,27 @@ function harness(){
  vm.runInContext(script,context);
  return{state,el,timers,timeouts,navigator,run:code=>vm.runInContext(code,context),flushTimeouts(){const scheduled=[...timeouts.values()];timeouts.clear();for(const fn of scheduled)fn();},get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;},get clearCalls(){return clearCalls;}};
 }
-const h=harness();h.el('question').value='Read only question';
+const h=harness();
+// The overview is an independently authenticated, read-only source request.
+assert(html.includes('id="refreshOverview"'));
+assert(html.includes('id="overviewSwitches"'));
+assert(html.includes('id="overviewMotion"'));
+assert(html.includes('id="overviewBattery"'));
+assert(html.includes('id="overviewDevices"'));
+assert(html.includes('id="overviewRecorder"'));
+await h.run('refreshOverview()');
+assert.equal(h.el('overviewSwitches').textContent,'2');
+assert.equal(h.el('overviewMotion').textContent,'1');
+assert.equal(h.el('overviewBattery').textContent,'1');
+assert.equal(h.el('overviewDevices').textContent,'5');
+assert.match(h.el('overviewStatus').textContent,/may be partial/);
+assert.equal(h.askCalls,0,'Overview does not call AI/MCP Ask');
+h.state.overview={available:false,reason:'fixture source unavailable'};
+await h.run('refreshOverview()');
+assert.equal(h.el('overviewSwitches').textContent,'—');
+assert.match(h.el('overviewStatus').textContent,/unavailable/);
+assert.equal(h.askCalls,0);
+h.el('question').value='Read only question';
 await h.run('submitAsk()');
 assert.equal(h.el('responseTime').textContent,'Response time: 2.5 s');
 assert.equal(h.timers.size,0);assert.equal(h.el('send').disabled,false);
