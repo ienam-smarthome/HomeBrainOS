@@ -1,5 +1,11 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.53 named overview acceptance (UI-only)
+
+After installing alpha.53 and verifying UI/API versions match, check that **Lights ON** lists only actual named light loads (not generic power plugs or relays), **Motion active** lists each reporting active sensor, and **Low battery** gives the device name and the observed percentage below 20%. Check count-to-name agreement, all names via the card scroll area, and any unclassified ON switches. Compare this classification with installed V1 only after accounting for different source definitions. This single read-only inventory snapshot does not prove any device is freshly reporting, nor does it run V1's scheduled health audit. Record actual mismatch examples privately for a *general* classifier fix; do not add household-specific exceptions.
+
+The source-led alpha.52 historical acceptance and 12-case V1/V2 paired first-answer benchmark remain required; do not treat UI acceptance as evidence of AI reasoning parity.
+
 ## 11 November 2026 — Alpha.52 historical-source sufficiency acceptance
 
 Two private alpha.51 humidity captures show the same measurement objective succeeded only when the user named Hub & Device Monitor. The unnamed request was answered from an event list with 11 rows beginning 04:56 despite a 24h request, and the first answer fabricated an evening shower cause from saved humidity bins. Neither problem proves tool failure. Implement generalized model-guidance cross-source coverage and contradiction review (no forced reads), with fictional tests; then test on a NEW uncoached historical sensor/metric in an installed alpha.52 build, capturing both normal review and original private receipts. Verify source selected based on actual missing coverage, no blanket historian preference and calibrated unknowns.

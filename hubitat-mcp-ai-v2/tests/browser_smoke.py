@@ -181,9 +181,13 @@ with sync_playwright() as p:
           "source_declared_total":6,"inventory_full_coverage_verified":False,
           "observed_at_utc":"2026-11-11T12:00:00Z",
           "metrics":{
-           "switch_on":{"count":2,"devices_with_state":3},
-           "motion_active":{"count":1,"devices_with_state":2},
-           "battery_low":{"count":1,"devices_with_state":4}}}
+           "lights_on":{"count":1,"devices_with_state":1,"members":[
+                {"name":"Lab Sample Light 2"}],"members_omitted":0},
+           "motion_active":{"count":1,"devices_with_state":2,"members":[
+                {"name":"Lab Motion A"}],"members_omitted":0},
+           "battery_low":{"count":1,"devices_with_state":4,"members":[
+                {"name":"Lab Battery Sensor","battery_pct":9}],"members_omitted":0}},
+           "unclassified_on_switches":1}
    elif "/api/status" in request.url:data={
     "version":version,"configured":True,"model":"fixture-model",
     "recorder":{"status":"online","last":{
@@ -236,7 +240,11 @@ with sync_playwright() as p:
   page.context.route("**/api/**",api)
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
-  page.wait_for_function("document.querySelector('#overviewSwitches').textContent === '2'")
+  page.wait_for_function("document.querySelector('#overviewLights').textContent === '1'")
+  assert page.locator("#overviewLightsNames").inner_text()=="Lab Sample Light 2"
+  assert page.locator("#overviewMotionNames").inner_text()=="Lab Motion A"
+  assert page.locator("#overviewBatteryNames").inner_text()=="Lab Battery Sensor · 9%"
+  assert "ON switches not identified as lights" in page.locator("#overviewStatus").inner_text()
   assert page.locator("#overviewMotion").inner_text()=="1"
   assert page.locator("#overviewBattery").inner_text()=="1"
   assert page.locator("#overviewDevices").inner_text()=="5"
@@ -248,7 +256,7 @@ with sync_playwright() as p:
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   page.locator("#refreshOverview").click()
   page.wait_for_function("!document.querySelector('#refreshOverview').disabled")
-  assert page.locator("#overviewSwitches").inner_text()=="2"
+  assert page.locator("#overviewLights").inner_text()=="1"
   assert len(requests)==0,"Overview refresh is read-only; no Ask call"
   page.locator("#question").fill("Read-only fixture question")
   page.locator("#send").click()

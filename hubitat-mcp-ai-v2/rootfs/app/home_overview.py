@@ -64,12 +64,53 @@ def _body(response):
 
 
 def _safe_label(item):
-    text = item.get("label") or item.get("name") or "Unnamed device"
-    return str(text)[:100] if isinstance(text, str) else "Unnamed device"
+    text = item.get("label") or item.get("name")
+    if not isinstance(text, str):
+        return "Unnamed device"
+    return " ".join(text.split())[:100] or "Unnamed device"
+
+
+# Positive evidence, rather than assuming every Switch is a light. Hubitat's
+# generic switch and dimmer capabilities are also used by plugs, relays and
+# non-light loads; neither proves lighting on its own.
+_LIGHT_WORDS = re.compile(
+    r"\b(?:lights?|lamps?|bulbs?|downlights?|spotlights?|spotlights?|"
+    r"spots?|pendants?|chandeliers?|sconces?|floodlights?|"
+    r"led[\s-]?strips?)\b", re.I,
+)
+_NON_LIGHT_WORDS = re.compile(
+    r"\b(?:light\s+(?:level\s+)?sensors?|illuminance|lux\s+(?:sensors?|meters?)|"
+    r"light\s+meters?|buttons?|smart\s+plugs?|plugs?|sockets?|outlets?)\b", re.I,
+)
+_LIGHT_CAPABILITIES = frozenset({
+    "light", "colorcontrol", "colortemperature", "bulb", "lighteffects",
+})
+
+
+def _is_recognised_light(device, label):
+    """Conservatively classify labelled/typed light *loads*, not switches."""
+    details = [label]
+    for key in ("type", "typeName", "deviceType", "deviceTypeName",
+                "driver", "deviceClass", "category"):
+        value = device.get(key)
+        if isinstance(value, str):
+            details.append(value)
+    descriptions = " ".join(details)
+    if _NON_LIGHT_WORDS.search(descriptions):
+        return False
+    capabilities = device.get("capabilities")
+    if isinstance(capabilities, (list, tuple)):
+        for item in capabilities:
+            name = (item if isinstance(item, str)
+                    else item.get("name", item.get("capability", ""))
+                    if isinstance(item, dict) else "")
+            if isinstance(name, str) and name.lower().replace("capability.", "") in _LIGHT_CAPABILITIES:
+                return True
+    return bool(_LIGHT_WORDS.search(descriptions))
 
 
 def summarize_device_inventory(response):
-    """Return only observed attributes; never interpret missing as OFF or OK."""
+    """Return bounded named observed states, never infer absent readings."""
     source = _body(response)
     devices = source["devices"]
     if len(devices) > 3000:
@@ -78,9 +119,11 @@ def summarize_device_inventory(response):
     if type(total) is not int or total < len(devices) or total > 100000:
         total = None
     observed = 0
-    switch_on = motion_active = battery_low = 0
-    switch_covered = motion_covered = battery_covered = 0
-    examples = {"switch_on": [], "motion_active": [], "battery_low": []}
+    lights_on = motion_active = battery_low = 0
+    light_covered = motion_covered = battery_covered = 0
+    unclassified_switch_on = 0
+    members = {"lights_on": [], "motion_active": [], "battery_low": []}
+    max_members_per_metric = 250
     for device in devices:
         if not isinstance(device, dict):
             continue
@@ -88,27 +131,44 @@ def summarize_device_inventory(response):
         states = _states(device)
         label = _safe_label(device)
         switch = states.get("switch")
-        if isinstance(switch, str) and switch.lower() in ("on", "off"):
-            switch_covered += 1
-            if switch.lower() == "on":
-                switch_on += 1
-                if len(examples["switch_on"]) < 5:
-                    examples["switch_on"].append(label)
+        if isinstance(switch, str) and switch.strip().lower() in ("on", "off"):
+            is_light = _is_recognised_light(device, label)
+            if is_light:
+                light_covered += 1
+                if switch.strip().lower() == "on":
+                    lights_on += 1
+                    if len(members["lights_on"]) < max_members_per_metric:
+                        members["lights_on"].append({"name": label})
+            elif switch.strip().lower() == "on":
+                unclassified_switch_on += 1
         motion = states.get("motion")
-        if isinstance(motion, str) and motion.lower() in ("active", "inactive"):
+        if isinstance(motion, str) and motion.strip().lower() in ("active", "inactive"):
             motion_covered += 1
-            if motion.lower() == "active":
+            if motion.strip().lower() == "active":
                 motion_active += 1
-                if len(examples["motion_active"]) < 5:
-                    examples["motion_active"].append(label)
+                if len(members["motion_active"]) < max_members_per_metric:
+                    members["motion_active"].append({"name": label})
         level = _numeric(states.get("battery"))
         if level is not None:
             battery_covered += 1
             if level < 20:
                 battery_low += 1
-                if len(examples["battery_low"]) < 5:
-                    examples["battery_low"].append(label)
+                if len(members["battery_low"]) < max_members_per_metric:
+                    members["battery_low"].append({"name": label, "battery_pct": level})
+    for key in ("lights_on", "motion_active"):
+        members[key].sort(key=lambda item: item["name"].casefold())
+    members["battery_low"].sort(key=lambda item: (item["battery_pct"], item["name"].casefold()))
     partial = total is None or total > len(devices) or observed != len(devices)
+
+    def metric(key, count, covered, **extra):
+        return {
+            "count": count,
+            "devices_with_state": covered,
+            "members": members[key],
+            "members_omitted": max(0, count - len(members[key])),
+            **extra,
+        }
+
     return {
         "read_only": True,
         "source": "native Hubitat MCP device inventory",
@@ -116,18 +176,16 @@ def summarize_device_inventory(response):
         "returned_devices": observed,
         "source_declared_total": total,
         "inventory_full_coverage_verified": not partial,
+        "unclassified_on_switches": unclassified_switch_on,
         "metrics": {
-            "switch_on": {"count": switch_on, "devices_with_state": switch_covered,
-                          "examples": examples["switch_on"]},
-            "motion_active": {"count": motion_active, "devices_with_state": motion_covered,
-                              "examples": examples["motion_active"]},
-            "battery_low": {"count": battery_low, "devices_with_state": battery_covered,
-                            "threshold_exclusive_pct": 20,
-                            "examples": examples["battery_low"]},
+            "lights_on": metric("lights_on", lights_on, light_covered),
+            "motion_active": metric("motion_active", motion_active, motion_covered),
+            "battery_low": metric("battery_low", battery_low, battery_covered,
+                                  threshold_exclusive_pct=20),
         },
         "notes": [
-            "Switches ON includes all switch devices, not just lights.",
-            "Only returned devices reporting the relevant attribute are counted.",
+            "Lights ON uses positive light names, device-type or colour-capability evidence; unidentified ON switches are excluded rather than counted as lights.",
+            "Only returned devices reporting the relevant attribute are counted; names are truncated and the list is bounded.",
             "Absent or stale attributes are unknown, not confirmed OFF, inactive or healthy.",
             "A snapshot is not the V1 scheduled system audit or proof of recent device reporting.",
         ],
