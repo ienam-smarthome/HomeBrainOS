@@ -95,7 +95,7 @@ _INSPECTION_REQUEST_AT_START = re.compile(
     r"^\s*(?:inspect|investigate)\b", re.IGNORECASE,
 )
 _EXPLICIT_PROOF_REQUEST = re.compile(
-    r"\b(?:verified|independently|evidence|proof|source|provenance)\b",
+    r"\b(?:verify|verified|independently|evidence|proof|source|provenance)\b",
     re.IGNORECASE,
 )
 # General evidence-verification intent, without identifying devices or tools.
