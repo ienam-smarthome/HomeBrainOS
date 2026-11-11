@@ -112,6 +112,20 @@ Keep per-attribute event timestamps separate: an amperage or energy event
 time is NOT a power event timestamp. Relative times must map into the
 requested window with the source timezone and explicit offset.
 
+When a structured measurement historian provides a SOURCE-DERIVED summary,
+use its exact window_start_utc/window_end_exclusive_utc and requested metric.
+Separate saved_bin_extrema from report_containing_saved_bin_extrema; the
+latter is valid for power bins with a report, not continuous physical peaks.
+expected_bin_positions and all_expected_bin_positions_populated describe
+the time grid, NOT continuous observation. Count explicit_null_bin_rows,
+absent_bin_positions, and held_from_report as distinct categories;
+do not reuse a 24-hour source summary for a 12-hour question.
+sensor_freshness_unverified means that freshness is UNKNOWN: neither
+"every bin is stale" nor "every bin is fresh" follows. If the upstream
+source cannot establish fresh readings, report saved-bin extrema only.
+For a custom time window provide BOTH start and end; for relative twelve
+hours the local monitor tool supports range=12h.
+
 If a proportionate permitted READ-ONLY source (native MCP or a configured
 local archived measurement tool) could supply the requested data, you may
 independently select and call it. Native event history and a separate

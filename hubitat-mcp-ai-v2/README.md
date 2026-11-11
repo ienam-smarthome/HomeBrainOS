@@ -1,14 +1,16 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.47**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.48**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
-**Alpha.47 — historical source-coverage visibility.** Rather than duplicate the existing Hub & Device Monitor historian, normal Ask now exposes \`available_read_sources\` in private Technical JSON showing whether the authenticated structured history tool was **offered** to the model. The model also receives a truthful source-catalog note (catalog availability does not prove connectivity or saved samples). The Ask page shows monitor configuration status and a user-invoked **Test monitor connection** button which performs only one read-only status request and reveals no OAuth token; successful reachability still does not prove interval history coverage. Native MCP file reads retain their original content and now disclose per-chunk/cumulative character coverage, so partially read JSON cannot be treated as complete. Native history results also disclose per-attribute timestamp bounds to keep power chronology separate from amperage/energy event times. The conditional model-led sufficiency review now includes questions about which sources/devices have saved historical readings, even without a specified clock time. No new collection, app polling, device writes or answer rewriting.
+**Alpha.48 — precise monitor-history evidence.** The existing `homebrain_read_device_monitor` tool now supports `range=12h` through an upstream *custom* 12-hour history query (rather than treating a 24-hour report as if it were 12 hours). Explicit `range=custom` requires BOTH offset-aware `start` and `end`. Every history result includes interval-scoped source-derived `saved_bin_extrema`, and power additionally includes `report_containing_saved_bin_extrema` for bins with actual received reports. The summary distinguishes saved populated bins, held power values, explicit-null rows, and absent time positions in the exact half-open interval. An entirely populated five-minute grid does **not** verify continuous physical observation or peaks. Temperature, humidity and other sensors are marked `sensor_freshness_unverified` because the monitor does not encode per-bin report-freshness; unknown is neither certainly fresh nor certainly held. No second historian, poller, automatic tool chain or device writes.
+
+**Alpha.47 — historical source-coverage visibility.** Rather than duplicate the existing Hub & Device Monitor historian, normal Ask now exposes `available_read_sources` in private Technical JSON showing whether the authenticated structured history tool was **offered** to the model. The model also receives a truthful source-catalog note (catalog availability does not prove connectivity or saved samples). The Ask page shows monitor configuration status and a user-invoked **Test monitor connection** button which performs only one read-only status request and reveals no OAuth token; successful reachability still does not prove interval history coverage. Native MCP file reads retain their original content and now disclose per-chunk/cumulative character coverage, so partially read JSON cannot be treated as complete. Native history results also disclose per-attribute timestamp bounds to keep power chronology separate from amperage/energy event times. The conditional model-led sufficiency review now includes questions about which sources/devices have saved historical readings, even without a specified clock time. No new collection, app polling, device writes or answer rewriting.
 
 **Alpha.46 — correct runtime version reporting.** The alpha.45 API advertised an outdated alpha.44 version in `/api/status` despite the FastAPI runtime and interface being alpha.45, so the browser's safety preflight blocked all Ask requests before contacting the model or MCP server. `/api/status.version` now derives from the actual FastAPI application version; a regression test verifies the HTTP endpoint and UI/config version alignment. No history recorder, MCP permission, device-control or source-data behavior changed. Install alpha.46 and reload the interface, then check the optional `device_monitor` connection separately.
 
-**Alpha.45 — optional read-only Hub & Device Monitor history.** If you have installed the separate Hubitat **Hub & Device Monitor** Groovy app (v0.3.27+), it already saves selected wattage and sensor history in Hubitat File Manager. HomeBrainOS v2 can read the app's existing authenticated status/history API only when you explicitly configure a LAN endpoint and private OAuth token. The normal model sees the optional \`homebrain_read_device_monitor\` tool and selects when to use it; there is no automatic device poll, new scheduled logger, archive import, write operation, or source rewriting. It exposes saved power bins/report timestamps and provenance—not fabricated raw watt samples or a guaranteed physical peak. Current readings are snapshots; historical bins may be held/unknown. The monitor's daily \`w\` output actually denotes Wh, so the bridge will not present it as W.
+**Alpha.45 — optional read-only Hub & Device Monitor history.** If you have installed the separate Hubitat **Hub & Device Monitor** Groovy app (v0.3.27+), it already saves selected wattage and sensor history in Hubitat File Manager. HomeBrainOS v2 can read the app's existing authenticated status/history API only when you explicitly configure a LAN endpoint and private OAuth token. The normal model sees the optional `homebrain_read_device_monitor` tool and selects when to use it; there is no automatic device poll, new scheduled logger, archive import, write operation, or source rewriting. It exposes saved power bins/report timestamps and provenance—not fabricated raw watt samples or a guaranteed physical peak. Current readings are snapshots; historical bins may be held/unknown. The monitor's daily `w` output actually denotes Wh, so the bridge will not present it as W.
 
-**Setup (Home Assistant add-on Options):** Set \`device_monitor_enabled: true\`, \`device_monitor_api_base: "http://YOUR-HUB-LAN-IP/apps/api/YOUR-INSTALLED-MONITOR-APP-ID"\`, and enter \`device_monitor_access_token\` in its **password** option. Extract the base from **Hub & Device Monitor → Open this instance dashboard** by removing \`/dashboard?access_token=...\` from its link; enter only the token in the password field. Do **not** paste the OAuth URL/token into Ask or public logs. Monitor status is reported (without credentials) at \`GET /api/status\` under \`device_monitor\`. Only explicitly selected monitored devices can be read. For multiple independent Hubitat monitor instances, the initial bridge connects one configured instance.
+**Setup (Home Assistant add-on Options):** Set `device_monitor_enabled: true`, `device_monitor_api_base: "http://YOUR-HUB-LAN-IP/apps/api/YOUR-INSTALLED-MONITOR-APP-ID"`, and enter `device_monitor_access_token` in its **password** option. Extract the base from **Hub & Device Monitor → Open this instance dashboard** by removing `/dashboard?access_token=...` from its link; enter only the token in the password field. Do **not** paste the OAuth URL/token into Ask or public logs. Monitor status is reported (without credentials) at `GET /api/status` under `device_monitor`. Only explicitly selected monitored devices can be read. For multiple independent Hubitat monitor instances, the initial bridge connects one configured instance.
 
 **Alpha.44 — requested-measurement fidelity.** For broad time-scoped measurement/data requests, the normal agent may perform one conditional additional **model** evidence-sufficiency deliberation. Gemma must distinguish requested quantity, units, target, historical window and statistic from different measurements, current state and sparse event gaps. It autonomously chooses any useful permitted read-only source or explains unavailable history; the client does not inject a tool call, infer readings, rewrite answers, or change write gates. Normal successful replies expose `source_review_kind` (`causal`, `historical_measurement` or null) alongside `source_review_invoked`. Synthetic CI is not proof of real-model improvement. The older blinded synthetic A/B guidance study deliberately disables the additional checkpoint for both arms to preserve its original experimental conditions.
 
@@ -415,8 +417,8 @@ privacy/rollback notes. Update to **2.0.0-alpha.21** to use this new UI.
 The fourth HomeBrainOS v2 UI tab evaluates native-model-selected MCP tool
 discovery, evidence reads and initial answer quality on **six fresh fictional
 cases** without connecting to your real Hubitat, Home Assistant, devices or
-private A/B benchmark ZIP. The production \`Agent.answer\` loop operates
-against an in-memory \`SyntheticMCP\` adapter; even allowed synthetic device
+private A/B benchmark ZIP. The production `Agent.answer` loop operates
+against an in-memory `SyntheticMCP` adapter; even allowed synthetic device
 commands cannot reach real hardware. Each case is opt-in and capped at eight
 model rounds and 24 synthetic calls.
 
@@ -426,7 +428,7 @@ JSON report. Cloud/remote model use requires explicit consent and may use
 credits. No model requests or synthetic commands occur merely by opening the
 tab. The original AI Benchmark page, native Ask/Chat and Hub Diagnostics
 remain unchanged. Instructions and privacy boundaries:
-\`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\`.
+`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md`.
 
 
 ## Alpha.23 — Corrected native-contract synthetic evaluation
@@ -434,7 +436,7 @@ remain unchanged. Instructions and privacy boundaries:
 Following the first installed alpha.22 synthetic Lab 01 attempt, which
 reached the model-round limit without executing the simulated command,
 the evaluator now models the actual MCP gateway and device-command
-wire contract rather than an invented \`params\` format. Leaf schemas
+wire contract rather than an invented `params` format. Leaf schemas
 are disclosed progressively, as in the live MCP client, and rejected
 calls report machine-readable safe diagnostic codes.
 
@@ -443,7 +445,7 @@ a failed case without deleting all other synthetic results; the original
 failed evidence is archived. The evaluation-only budgets are 12 model
 rounds, 40 synthetic tool attempts and 120 seconds. All native MCP,
 Home Assistant, Hub Diagnostics and v1 behaviour remain unchanged.
-See \`docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md\`.
+See `docs/HUBITAT-MCP-AI-V2-AUTONOMOUS-LAB.md`.
 
  
 ## Alpha.24 — Join downsampled diagnostic traces without masking outages
@@ -468,7 +470,7 @@ Update the v2 add-on to **2.0.0-alpha.24** and reopen or refresh Hub Diagnostics
 A new mobile **Reasoning A/B** tab tests whether generic evidence-quality
 guidance improves the *current* Gemma model's first answer. Each of six new
 fictional questions is run twice through the unchanged production
-\`Agent.answer\` and fresh in-memory MCP fixtures. Candidate and baseline
+`Agent.answer` and fresh in-memory MCP fixtures. Candidate and baseline
 differ only in an additional experiment-only general system instruction.
 A/B labels are random and remain hidden until all six pairs are scored.
 
@@ -483,7 +485,7 @@ reasoning was changed.
 
 The original Autonomous Lab dashboard now separately counts client-side
 schema errors and simulator rejections. See
-\`docs/HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md\`.
+`docs/HUBITAT-MCP-AI-V2-REASONING-HOLDOUT.md`.
 
 
 ## Alpha.26 — immutable blinded reasoning ratings (9 November 2026)

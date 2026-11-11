@@ -28,7 +28,8 @@ _METRIC_FIELDS = {
     "heating_setpoint": ("sensors", "setpointC", "°C"),
     "level": ("levels", "levelPct", "%"),
 }
-_ALLOWED_RANGES = frozenset({"1h", "6h", "24h", "3d", "7d", "custom"})
+_ALLOWED_RANGES = frozenset({"1h", "6h", "12h", "24h", "3d", "7d", "custom"})
+_BIN_PERIOD_MS = {"5m": 300_000, "hourly": 3_600_000}
 
 TOOL_DEFINITION = {
     "type": "function",
@@ -42,12 +43,18 @@ TOOL_DEFINITION = {
             "event history, or to compare sources. No polling or writes. "
             "Use mode=status first to discover which devices are selected for "
             "monitoring and their IDs. mode=history requires a monitored device_id. "
-            "For exact periods, set range=custom with start/end offset-aware ISO "
-            "times (e.g. 2026-11-10T20:00:00Z). Other ranges are relative to "
-            "the monitor's current time. Each wattage value is a SAVED BIN "
-            "value, not a continuous peak or a direct report at the bin start. "
-            "powerReports>0 identifies a bin containing a report; other "
-            "values may be held/cached. Unknown bins are NOT zero. "
+            "For exact periods and device comparisons, use range=custom with BOTH "
+            "start AND end offset-aware ISO times (e.g. 2026-11-10T20:00:00Z). "
+            "For a relative last-12-hours request, range=12h is supported; "
+            "other ranges are relative to the monitor clock. For comparisons "
+            "prefer the same explicit custom window across devices. "
+            "History includes conservative source-derived extrema, counts "
+            "and missing positions scoped to the ACTUAL returned interval. "
+            "A saved bin is not a continuous physical measurement or peak; "
+            "powerReports>0 means at least one report in that bin. A sensor "
+            "bin's freshness is UNKNOWN, not definitely held or reported. "
+            "Do not mix held bins, absent bin positions and explicit nulls. "
+            "Unknown bins are NOT zero. "
             "No history predating the monitor's installation can be recovered."
         ),
         "parameters": {
@@ -61,7 +68,7 @@ TOOL_DEFINITION = {
                 "metric": {"type": "string", "enum": list(_METRIC_FIELDS)},
                 "range": {
                     "type": "string", "enum": sorted(_ALLOWED_RANGES),
-                    "description": "Relative monitor window or custom ISO timestamp interval.",
+                    "description": "Relative duration (including 12h) or custom exact interval; when custom, BOTH start and end are REQUIRED.",
                 },
                 "start": {
                     "type": "string",
@@ -138,7 +145,14 @@ def _count(value: Any, maximum: int = 100000) -> int:
 
 
 def _event_samples(raw: dict, metric: str, device_id: str,
-                   start_ms: int | None, end_ms: int | None) -> tuple[list[dict], dict]:
+                   start_ms: int | None, end_ms: int | None,
+                   *, resolution: str = "5m") -> tuple[list[dict], dict]:
+    """Summarize ONLY saved-bin readings in a specified half-open source window.
+
+    No synthetic observations, continuous-state interpolation or assumed sensor
+    reports. Timestamps are bin STARTS. Null rows and absent bin positions are
+    tracked separately from held values. Raw upstream data is left untouched.
+    """
     source, key, unit = _METRIC_FIELDS[metric]
     if source == "series":
         candidates = raw.get("series")
@@ -158,34 +172,61 @@ def _event_samples(raw: dict, metric: str, device_id: str,
         raise ValueError("Monitor returned an unexpectedly large historical series")
 
     samples = []
-    missing = 0
-    classes = {"reported_bin": 0, "held_from_report": 0,
-               "unclassified_bin": 0, "derived_or_held_sensor_bin": 0}
-    observed_reported = []
+    explicit_nulls = 0
+    ignored_invalid_time_rows = 0
+    ignored_outside_window_rows = 0
+    classes = {
+        "reported_bin": 0, "held_from_report": 0,
+        "unclassified_bin": 0, "sensor_freshness_unverified": 0,
+        # Keep the legacy summary count as a compatibility alias. This does
+        # NOT mean all sensor readings were definitely carried forward.
+        "derived_or_held_sensor_bin": 0,
+    }
+    reported = []
+    saved = []
+    observed_time_bins = set()
+    non_null_times = set()
+    null_times = set()
+    report_total = 0
     for row in candidates:
         if not isinstance(row, dict):
+            ignored_invalid_time_rows += 1
             continue
         at = row.get("t")
         if type(at) is not int or not _iso_ms(at):
+            ignored_invalid_time_rows += 1
             continue
-        if start_ms is not None and at < start_ms:
+        if (start_ms is not None and at < start_ms) or (
+                end_ms is not None and at >= end_ms):
+            ignored_outside_window_rows += 1
             continue
-        if end_ms is not None and at >= end_ms:
-            continue
-        reading = _num(row.get(key), min_value=-80 if metric == "temperature" else 0,
-                       max_value=1000000 if metric == "power" else 200)
+        # Archive and pending chunks may overlap. A repeated bin timestamp
+        # is ambiguous; rejecting avoids inventing a trustworthy extremum.
+        if at in observed_time_bins:
+            raise ValueError("Monitor returned duplicate timestamp bins; history is ambiguous")
+        observed_time_bins.add(at)
+        reading = _num(
+            row.get(key), min_value=-80 if metric == "temperature" else 0,
+            max_value=1000000 if metric == "power" else 200)
         if reading is None:
-            missing += 1
+            explicit_nulls += 1
+            null_times.add(at)
             continue
-        record = {"bin_start_utc": _iso_ms(at), "bin_start_epoch_ms": at,
-                  "saved_value": reading, "unit": unit}
+        non_null_times.add(at)
+        record = {
+            "bin_start_utc": _iso_ms(at),
+            "bin_start_epoch_ms": at,
+            "saved_value": reading,
+            "unit": unit,
+        }
+        saved.append((reading, at))
         if metric == "power":
             count = _count(row.get("powerReports"))
-            source_at = row.get("powerSourceAt")
-            source_iso = _iso_ms(source_at)
+            source_iso = _iso_ms(row.get("powerSourceAt"))
             if count:
                 provenance = "reported_bin"
-                observed_reported.append((reading, at))
+                reported.append((reading, at))
+                report_total += count
             elif source_iso:
                 provenance = "held_from_report"
             else:
@@ -198,31 +239,94 @@ def _event_samples(raw: dict, metric: str, device_id: str,
                 "last_monitor_report_in_bin_utc": _iso_ms(row.get("powerReportAt")),
             })
         else:
-            record["sample_class"] = "derived_or_held_sensor_bin"
+            # The current monitor export does not contain per-sensor report
+            # counters: this value MAY be newly reported OR cached/held.
+            record["sample_class"] = "sensor_freshness_unverified"
+            record["fresh_sensor_report_verified"] = False
+            classes["sensor_freshness_unverified"] += 1
             classes["derived_or_held_sensor_bin"] += 1
         samples.append(record)
+    samples.sort(key=lambda item: item["bin_start_epoch_ms"])
 
     if len(samples) > MAX_SAMPLES:
-        # Reject, rather than present silently incomplete extrema/samples.
         raise ValueError("Monitor query exceeds safe sample bound; request a shorter interval")
-    extrema = {}
-    if observed_reported:
-        low = min(observed_reported, key=lambda item: item[0])
-        high = max(observed_reported, key=lambda item: item[0])
-        extrema = {
-            "lowest_report_containing_saved_bin": {"value": low[0], "bin_start_utc": _iso_ms(low[1]), "unit": unit},
-            "highest_report_containing_saved_bin": {"value": high[0], "bin_start_utc": _iso_ms(high[1]), "unit": unit},
+
+    def _extrema(values: list[tuple[float, int]]) -> dict | None:
+        if not values:
+            return None
+        minimum = min(values, key=lambda item: (item[0], item[1]))
+        maximum = max(values, key=lambda item: (item[0], -item[1]))
+        return {
+            "lowest": {"value": minimum[0], "bin_start_utc": _iso_ms(minimum[1]), "unit": unit},
+            "highest": {"value": maximum[0], "bin_start_utc": _iso_ms(maximum[1]), "unit": unit},
         }
-    return samples, {
+
+    summary = {
         "returned_non_null_bins": len(samples),
-        "returned_null_or_unclassified_missing_bins": missing,
+        "returned_null_or_unclassified_missing_bins": explicit_nulls,
+        "explicit_null_bin_rows": explicit_nulls,
+        "returned_bin_positions_with_rows": len(observed_time_bins),
+        "ignored_outside_window_rows": ignored_outside_window_rows,
+        "ignored_invalid_time_rows": ignored_invalid_time_rows,
+        "statistics_scope": "returned bin starts within the displayed half-open interval",
+        "window_start_utc": _iso_ms(start_ms),
+        "window_end_exclusive_utc": _iso_ms(end_ms),
+        "resolution": resolution,
         **classes,
-        **extrema,
+        "saved_bin_extrema": _extrema(saved),
+        "report_containing_saved_bin_extrema": _extrema(reported) if metric == "power" else None,
+        "fresh_sensor_reports_verified": None if metric != "power" else False,
+        "sensor_freshness_known_from_source": False if metric != "power" else None,
+        "power_report_rows_in_bins": report_total if metric == "power" else None,
         "coverage_complete": False,
         "continuous_physical_peak_verified": False,
         "zero_for_unobserved_bins": False,
     }
+    if reported:
+        low = min(reported, key=lambda item: (item[0], item[1]))
+        high = max(reported, key=lambda item: (item[0], -item[1]))
+        summary.update({
+            "lowest_report_containing_saved_bin": {
+                "value": low[0], "bin_start_utc": _iso_ms(low[1]), "unit": unit,
+            },
+            "highest_report_containing_saved_bin": {
+                "value": high[0], "bin_start_utc": _iso_ms(high[1]), "unit": unit,
+            },
+        })
 
+    step = _BIN_PERIOD_MS.get(resolution)
+    if (step is not None and start_ms is not None and end_ms is not None
+            and end_ms > start_ms):
+        first = ((start_ms + step - 1) // step) * step
+        expected = max(0, (end_ms - 1 - first) // step + 1)
+        if expected > 9000:
+            raise ValueError("Monitor history window exceeds the supported summary interval")
+        expected_times = range(first, end_ms, step)
+        # Only fully in-window time positions are counted; samples outside
+        # the requested interval never influence the statistics.
+        empty_times = [stamp for stamp in expected_times if stamp not in non_null_times]
+        absent_times = [stamp for stamp in expected_times if stamp not in observed_time_bins]
+        summary.update({
+            "expected_bin_positions": expected,
+            "populated_bin_positions": sum(stamp in non_null_times for stamp in expected_times),
+            "missing_bin_positions_total": len(empty_times),
+            "absent_bin_positions": len(absent_times),
+            "null_bin_positions_within_expected": sum(stamp in null_times for stamp in expected_times),
+            "all_expected_bin_positions_populated": len(empty_times) == 0,
+            "missing_bin_start_utc_preview": [_iso_ms(stamp) for stamp in empty_times[:20]],
+            "missing_bin_preview_truncated": len(empty_times) > 20,
+            "bin_grid_complete_does_not_prove_observation_continuity": True,
+        })
+    else:
+        summary.update({
+            "expected_bin_positions": None,
+            "populated_bin_positions": None,
+            "missing_bin_positions_total": None,
+            "absent_bin_positions": None,
+            "null_bin_positions_within_expected": None,
+            "all_expected_bin_positions_populated": None,
+        })
+    return samples, summary
 
 class HubDeviceMonitor:
     """Read an existing installed Hubitat app; no subscription or mutation."""
@@ -327,9 +431,24 @@ class HubDeviceMonitor:
             raise ValueError("Monitor history range is unsupported")
         params = {"device": device_id, "range": window}
         start_ms = end_ms = None
-        if window == "custom":
-            start = _timestamp(arguments.get("start"))
-            finish = _timestamp(arguments.get("end"))
+        if window == "12h":
+            # The installed monitor supports 'custom' but not native 12h.
+            # Do not expand a 12-hour comparison to 24 hours and let the
+            # model mistakenly reuse 24-hour maxima or missing-bin totals.
+            finish = datetime.now(timezone.utc)
+            start = finish - timedelta(hours=12)
+            start_ms = int(start.timestamp() * 1000)
+            end_ms = int(finish.timestamp() * 1000)
+            params = {"device": device_id, "range": "custom",
+                      "from": str(start_ms), "to": str(end_ms)}
+        elif window == "custom":
+            if not arguments.get("start") or not arguments.get("end"):
+                raise ValueError(
+                    "Custom monitor history requires BOTH start and end "
+                    "as offset-aware ISO 8601 timestamps; alternatively "
+                    "use range=12h or range=24h")
+            start = _timestamp(arguments["start"])
+            finish = _timestamp(arguments["end"])
             now = datetime.now(timezone.utc)
             if finish <= start or finish - start < timedelta(minutes=10):
                 raise ValueError("Monitor history window must be at least ten minutes")
@@ -355,7 +474,15 @@ class HubDeviceMonitor:
         interval_end = data.get("end")
         if type(interval_start) is not int or type(interval_end) is not int:
             raise ValueError("Monitor omitted historical interval boundaries")
-        samples, summary = _event_samples(data, metric, device_id, start_ms, end_ms)
+        # Relative ranges use the monitor's actual returned boundaries;
+        # exact custom/12h ranges preserve the local requested bounds.
+        effective_start = start_ms if start_ms is not None else interval_start
+        effective_end = end_ms if end_ms is not None else interval_end
+        if effective_end <= effective_start:
+            raise ValueError("Monitor returned invalid history time boundaries")
+        samples, summary = _event_samples(
+            data, metric, device_id, effective_start, effective_end,
+            resolution=data["resolution"])
         return {
             "source": "Hub & Device Monitor installed-app saved history",
             "read_only": True,
@@ -364,8 +491,10 @@ class HubDeviceMonitor:
             "unit": _METRIC_FIELDS[metric][2],
             "range": window,
             "returned_resolution": data["resolution"],
-            "historical_start_utc": _iso_ms(interval_start),
-            "historical_end_utc": _iso_ms(interval_end),
+            "historical_start_utc": _iso_ms(effective_start),
+            "historical_end_utc": _iso_ms(effective_end),
+            "upstream_returned_window_start_utc": _iso_ms(interval_start),
+            "upstream_returned_window_end_utc": _iso_ms(interval_end),
             "summary": summary,
             "samples": samples,
             "source_note": (
@@ -376,12 +505,16 @@ class HubDeviceMonitor:
                 "not an independently authenticated Tasmota device-source clock. "
                 "Other values may be carried forward from earlier "
                 "reports, while legacy bins may have unknown provenance. "
-                "For temperature/humidity/setpoint, the monitor holds cached "
-                "or previously reported values; a plotted bin does NOT prove "
-                "a fresh physical measurement at that time. The source may "
-                "have collection/archive gaps, and absent rows do not equal "
-                "zero. Report only the sampled-bin extrema supported by the "
-                "returned source; do not claim unobserved physical peaks."
+                "For sensor measurements the monitor does not supply per-bin "
+                "fresh-report provenance. sensor_freshness_unverified means "
+                "the bin MAY contain a fresh or a held value; it does NOT "
+                "prove that all readings are stale. The summary's extrema, "
+                "report/held counts and missing positions refer ONLY to "
+                "the returned requested interval. Explicit null rows, "
+                "missing bin positions and populated held bins are distinct. "
+                "A fully populated bin grid does not prove uninterrupted "
+                "physical measurement or any unobserved peak. "
+                "Absent rows do not equal zero."
             ),
             "monitor_note": str(data.get("note") or "")[:450],
         }
