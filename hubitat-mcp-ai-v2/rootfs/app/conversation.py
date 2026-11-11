@@ -32,6 +32,52 @@ def _source_shape(raw: str) -> dict:
         if isinstance(inner, dict):
             value = inner
             break
+    # The server-held optional historian can return a very large sample
+    # array. A bounded, verified-shape summary in the prior-source index
+    # keeps earlier numeric evidence discoverable even when sample excerpts
+    # are clipped. These are SAVED historical bins, not current values or
+    # proof of actual physical continuity. No new read is made here.
+    monitor = value.get("local_device_monitor")
+    if isinstance(monitor, dict):
+        details = {
+            "historical_source_kind": "separate_saved_device_monitor",
+            "historical_metric": str(monitor.get("metric") or "")[:32],
+            "historical_device_id": str(monitor.get("device_id") or "")[:32],
+        }
+        for source_key, detail_key in (
+            ("historical_start_utc", "historical_requested_start_utc"),
+            ("historical_end_utc", "historical_requested_end_utc"),
+        ):
+            entry = monitor.get(source_key)
+            if isinstance(entry, str) and len(entry) <= 45:
+                details[detail_key] = entry
+        summary = monitor.get("summary")
+        if isinstance(summary, dict):
+            bounds = summary.get("saved_bin_extrema")
+            if isinstance(bounds, dict):
+                for kind in ("highest", "lowest"):
+                    record = bounds.get(kind)
+                    if not isinstance(record, dict):
+                        continue
+                    value_num = record.get("value")
+                    time = record.get("bin_start_utc")
+                    unit = record.get("unit")
+                    if (type(value_num) in (int, float)
+                            and isinstance(time, str) and len(time) <= 45
+                            and isinstance(unit, str) and len(unit) <= 12):
+                        details["saved_bin_" + kind] = {
+                            "value": value_num, "bin_start_utc": time,
+                            "unit": unit,
+                        }
+            for key in ("expected_bin_positions", "populated_bin_positions",
+                        "missing_bin_positions_total"):
+                n = summary.get(key)
+                if type(n) is int and 0 <= n <= 100000:
+                    details[key] = n
+            if type(summary.get("sensor_freshness_known_from_source")) is bool:
+                details["sensor_freshness_known_from_source"] = (
+                    summary["sensor_freshness_known_from_source"])
+        return details
     info = {}
     for key in ("device", "deviceId", "source", "count", "total", "hasMore",
                 "hoursBack", "sinceTimestamp", "attributeFilter"):
