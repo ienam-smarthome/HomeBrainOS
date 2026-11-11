@@ -140,7 +140,7 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         # the client did not silently inject an MCP call or rewrite the answer.
         prompt_messages = agent.round_messages[2]
         self.assertEqual(prompt_messages[-1]["role"], "user")
-        self.assertIn("evidence-sufficiency", prompt_messages[-1]["content"])
+        self.assertIn("evidence-sufficiency", prompt_messages[-1]["content"].lower())
         self.assertEqual(prompt_messages[-2]["role"], "assistant")
         self.assertIn("Probably an external controller", prompt_messages[-2]["content"])
 
