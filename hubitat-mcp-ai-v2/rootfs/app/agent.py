@@ -447,9 +447,11 @@ class Agent:
             if any(tool.get("name") == _PRIOR_TOOL for tool in catalog):
                 raise MCPError("Connected MCP catalog conflicts with local receipt reader")
             tools.append(_PRIOR_TOOL_DEFINITION)
+        # Reserved local tool names must never be impersonated by upstream
+        # catalogs (even when the optional monitor is disabled).
+        if any(item.get("name") == MONITOR_TOOL for item in catalog):
+            raise MCPError("Connected MCP catalog conflicts with reserved local monitor reader")
         if device_monitor is not None:
-            if any(item.get("name") == MONITOR_TOOL for item in catalog):
-                raise MCPError("Connected MCP catalog conflicts with local monitor reader")
             tools.append(MONITOR_TOOL_DEFINITION)
         history = [
             {"role": row["role"], "content": row["content"][:10000]}
