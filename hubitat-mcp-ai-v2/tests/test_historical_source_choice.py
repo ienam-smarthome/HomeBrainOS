@@ -113,11 +113,6 @@ class HistoricalChoiceTests(unittest.TestCase):
                 "historical_measurement",
             )
 
-    def test_no_monitor_is_not_claimed_available_or_auto_run(self):
-        self.assertIn("NOT configured or offered", (
-            "NOT configured or offered"   # source context remains explicit
-        ))
-
 
 class ModelDecidesHistorySourceTests(unittest.IsolatedAsyncioTestCase):
     async def test_model_can_choose_archive_after_incomplete_native_interval(self):
