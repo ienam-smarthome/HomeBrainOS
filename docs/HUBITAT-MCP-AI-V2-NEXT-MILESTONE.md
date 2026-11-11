@@ -1,5 +1,13 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.43: autonomous evidence sufficiency
+
+A private alpha.42 first answer failed 2/8: correct observed OFF event, unsupported external-initiation claim; only inventory and attribute-filtered state history were retrieved, not commands. The new chronology index was not exercised. This repeats an exposed case and does not establish comparative accuracy.
+
+**Candidate lifecycle:** At the first attempted answer to an eligible causal question, the client may offer one conditional further **model** deliberation. Gemma independently reviews returned evidence versus what would distinguish plausible explanations and selects any useful permitted read-only MCP call. It may instead conclude that a cause remains unverified or that existing evidence is sufficient. No hardcoded domain path, forced MCP call, automatic tool retry, deterministic cause scoring or post-hoc answer rewrite. Noncausal requests remain single-pass. The API exposes source_review_invoked; one additional model round adds possible latency. Deadline-short requests skip this checkpoint.
+
+**Acceptance:** Fictional tests verify both model-selected extra reads and deliberate stopping with no extra reads, unchanged MCP results, safe approval gates and noncausal bypass. Require exact-PR-head v2 pilot, repository validation and release assurance, then post-merge checks. Separately install and verify alpha.43, obtain an **unseen uncoached** read-only causal first answer from a different domain than prior lighting/heating/ventilation/dehumidifier examples, and a source-supported positive control. Inspect actual MCP tools, filters, windows, caps, chronology, command issuer versus reporter and evidence for internal execution, as well as latency. Score grounding, completeness, causal calibration and usefulness 0/1/2 against original successful receipts. Do not use synthetic CI as proof of live Gemma improvement. Do not commit private household evidence or change live systems.
+
 ## 10 November 2026 — Alpha.42 acceptance: chronological evidence before causal attribution
 
 **Candidate:** A new passive `client_event_chronology` sidecar accompanies successful native history reads that return both timestamped command and non-command rows. It sorts bounded recent command and earliest/latest per-name observation landmarks by **parsed UTC instants**, retaining source stamps and explicit omission counts. This is only an aid for reading returned evidence, not a causal pairing, clock-synchronization proof, complete history or extra MCP call. Model guidance asks for strict recorded ordering and distinguishing latest state report from latest command.
