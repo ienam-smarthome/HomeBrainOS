@@ -182,9 +182,9 @@ class CatalogAndReceiptTests(unittest.IsolatedAsyncioTestCase):
         receipt=json.loads(reply["tool_calls"][0]["response"])
         self.assertIn("client_file_cumulative_coverage",receipt)
         self.assertEqual(receipt["client_file_cumulative_coverage"]["unread_range_count"],1)
-        self.assertIn("mcp_result",receipt)
+        # Original MCP reply remains at its normal top-level 'content' key.
         self.assertEqual(
-            json.loads(receipt["mcp_result"]["content"][0]["text"])["content"],
+            json.loads(receipt["content"][0]["text"])["content"],
             "x"*1000,
         )
 
