@@ -87,9 +87,12 @@ the measurement unavailable from every other source. Do not silently
 substitute a current snapshot, a different metric or inferred activity for
 the requested historical measurement.
 
-If the permitted live MCP catalog offers a proportionate READ-ONLY source
-that could supply the requested data, you may independently select and
-call it. The client does not choose a source or prescribe a fixed sequence.
+If a proportionate permitted READ-ONLY source (native MCP or a configured
+local archived measurement tool) could supply the requested data, you may
+independently select and call it. Native event history and a separate
+monitor's archived bins are distinct evidence sources. Do not claim you
+checked a monitor unless you actually used its tool. The client does
+not choose a source or prescribe a fixed sequence.
 If sufficient evidence already exists, answer with it. If no useful
 read-only source exists or history remains missing, state the verified
 coverage and what cannot be determined. Do not invent readings or perform
@@ -130,7 +133,7 @@ def is_read_only_review_tool(name: str) -> bool:
     gateways can be mixed read/write and are deliberately not exposed during
     this supplemental checkpoint. The original model loop is untouched.
     """
-    return name == "homebrain_read_prior_evidence" or (
+    return name in {"homebrain_read_prior_evidence", "homebrain_read_device_monitor"} or (
         isinstance(name, str)
         and name.startswith(("hub_read_", "hub_get_", "hub_list_", "hub_search_"))
     )
