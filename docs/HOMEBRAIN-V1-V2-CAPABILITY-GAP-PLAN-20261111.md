@@ -75,6 +75,10 @@ Keep V1 stable until V2 has comparable read-only usefulness and safe, user-appro
 Side-by-side screenshots establish a user-facing gap: V1 shows operational tiles (active rooms, lights, motion, low batteries), MCP/provider readiness, a scheduled system check, external diagnostics and journal affordances on the landing page, while V2 alpha.50 exposed only Ask/Chat and Hub Diagnostics. Alpha.51 restores the useful *pattern* of an at-a-glance read-only overview without claiming equivalent sources: switches-on includes plugs, not just lights; motion/battery are reported native attributes; returned inventories can be partial; and V2 does not run the V1 scheduled health audit. Do not infer numerical parity between differently classified tiles.
 
 This is a visibility improvement, not evidence V2 matches V1's proactive health checks, provider routing, alerts or device-control safeguards. Held-out first-answer source-real acceptance remains the gate.
+## Gate B evaluation kit (11 November 2026)
+
+The installed alpha.51 overview is now present. To progress from UI confirmation to a meaningful V1/V2 first-answer comparison, use the [private, paired, source-real acceptance pack](HOMEBRAIN-V1-V2-PAIRED-ACCEPTANCE-20261111.md). A local-only review validator hashes raw captures and summarises human-assigned scores without interpreting the private answers. This is evaluation-only and does not change either installed add-on, the V2 browser UI, MCP permission gates or the existing historian.
+
 ## Current unknowns
 
 - Whether installed V1 version matches repository v0.18.459, and which optional V1 journal/health/provider features are enabled.
