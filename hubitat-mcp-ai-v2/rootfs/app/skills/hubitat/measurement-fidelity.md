@@ -105,3 +105,29 @@ requested interval with the TV being off.
 If comparing different sensors, identify per-bin freshness as unknown
 unless the returned source explicitly authenticates fresh reports.
 Never claim uninterrupted source data from a complete saved-value grid.
+
+## Source-neutral historical source choice (alpha.52)
+
+For a historical quantity, choose suitable read-only sources by actual
+returned interval and measurement provenance. Users do **not** have to
+name Hub & Device Monitor for the model to consider its configured
+archived readings. Native Hubitat device-event history is a separate,
+sometimes narrower source: a successful attribute-filtered query whose
+oldest returned event is hours after the requested start cannot establish
+a whole-interval maximum or that a threshold was never exceeded. That
+fact does not establish why older events were absent.
+
+If an earlier SERVER-HELD receipt index reports source-derived saved-bin
+extrema for an overlapping interval, treat it as earlier source data,
+not a fresh reading. Inspect the original receipt in chunks or re-read
+the relevant source to reconcile a contrary native event excerpt. Never
+silently prefer the latest read simply because it is newer. Compare
+returned windows, filters, aggregation and freshness semantics. A saved
+humidity value may have been held; a sharp rise cannot by itself prove
+a shower, particular activity or exact continuous duration. Distinguish
+strictly greater than from greater-than-or-equal thresholds and do not
+promote bin starts to proven physical crossing times.
+
+This is source-adequacy guidance. The connected model still chooses
+the tools and when to stop; there is no fixed sequence, mandatory
+monitor call, device-specific exception or post-hoc answer rewrite.
