@@ -96,7 +96,7 @@ class ScriptedAgent(Agent):
 class HistoricalChoiceTests(unittest.TestCase):
     def test_prompts_apply_to_any_metric_without_device_name(self):
         self.assertIn("whether or not the user named that source", _SKILL)
-        self.assertIn("actual source coverage", _SKILL)
+        self.assertIn("returned timestamps/window", _SKILL)
         self.assertIn("no mandatory source order", _SKILL)
         self.assertIn("whether the user named a historian", MEASUREMENT_REVIEW_PROMPT)
         self.assertIn("returned native event interval", MEASUREMENT_REVIEW_PROMPT)
