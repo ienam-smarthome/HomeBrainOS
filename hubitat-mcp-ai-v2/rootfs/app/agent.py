@@ -15,6 +15,10 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from evidence_scope import model_result_with_scope
+from investigation_review import (
+    SOURCE_REVIEW_PROMPT, should_review_completion,
+    is_read_only_review_tool, read_only_review_catalog,
+)
 from config_evidence import config_source_map
 
 
@@ -449,11 +453,17 @@ class Agent:
         receipts: list[dict] = []
         rounds = 0
         leaf_schema_discoveries = 0
+        source_review_invoked = False
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
                 if prior_evidence and prior_reader:
                     tools.append(_PRIOR_TOOL_DEFINITION)
+            # Once the extra model review starts, expose only read-only
+            # tool definitions. Never widen an explicitly read-only request
+            # just because the model chose to investigate further.
+            if source_review_invoked:
+                tools = read_only_review_catalog(tools)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return {
@@ -486,10 +496,23 @@ class Agent:
             messages.append(clean_message)
 
             if not calls:
+                # A first completed draft is not proof of evidence sufficiency.
+                # The connected model decides whether further read-only
+                # sources are useful; no native tool is selected or invoked
+                # automatically, and no fixed tool sequence is required.
+                if should_review_completion(
+                    question, available_tools=bool(read_only_review_catalog(tools)),
+                    already_reviewed=source_review_invoked,
+                    remaining_seconds=deadline - time.monotonic(),
+                ):
+                    source_review_invoked = True
+                    messages.append({"role": "user", "content": SOURCE_REVIEW_PROMPT})
+                    continue
                 return {
                     "success": bool(text), "prior_receipts_used": prior_receipts,
                     "answer": text or "The model returned an empty answer.",
                     "leaf_schema_discoveries": leaf_schema_discoveries,
+                    "source_review_invoked": source_review_invoked,
                     "tool_calls": receipts,
                     "rounds": rounds,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
@@ -506,6 +529,8 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
+                    if source_review_invoked and not is_read_only_review_tool(name):
+                        raise MCPError("Evidence sufficiency follow-up permits read-only tools only")
                     is_prior = name == _PRIOR_TOOL
                     if is_prior:
                         if prior_reader is None or not prior_evidence:

@@ -404,9 +404,11 @@ class ScopeTests(unittest.TestCase):
             try:
                 response = await agent.answer("Investigate why", [], hub, 60)
                 self.assertTrue(response["success"])
-                self.assertEqual(response["rounds"], 2)
+                self.assertEqual(response["rounds"], 3)
+                self.assertTrue(response["source_review_invoked"])
                 self.assertEqual(hub.calls, [("hub_read_history", {"hoursBack": 48})])
-                tool = json.loads(agent.messages_seen[-1]["content"])
+                tool = json.loads(next(row["content"] for row in agent.messages_seen
+                                       if row["role"] == "tool"))
                 self.assertEqual(tool["content"], original["content"])
                 self.assertEqual(tool["client_event_source_scope"]["events_returned"], 2)
                 self.assertEqual(tool["client_command_issuer_scope"]["command_rows_returned"], 1)

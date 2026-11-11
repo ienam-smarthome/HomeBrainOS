@@ -1,6 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.42**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.43**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+
+**Alpha.43 — model-led sufficiency before stopping.** For causal questions, the agent offers one conditional extra model deliberation when Gemma initially tries to finalise. It reviews actual MCP evidence and independently chooses a relevant read-only source or stops with a calibrated answer. No native MCP call or answer rewrite is injected automatically, and no live permissions or v1 behaviour change. Additional model latency is possible. The API exposes source_review_invoked; real first-answer improvement remains unverified.
 
 **Alpha.42 — chronology of returned evidence.** When a native event-history result contains timestamped commands and reported events, a bounded `client_event_chronology` index lists source landmarks in actual UTC order while preserving the original timestamps and omissions. It is not a causal command-to-state join: a later recorded command cannot justify claiming it preceded an earlier report, and a preceding command alone does not verify the mechanism. No automatic reads, extra model rounds, answer rewrite, permissions or writes are changed. New source-real first-answer acceptance remains pending.
 

@@ -228,7 +228,8 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
             mcp = TwoSources()
             result = await model.answer("Why did Synthetic Appliance turn off?", [], mcp, 30)
             self.assertTrue(result["success"])
-            self.assertEqual(result["rounds"], 3)
+            self.assertEqual(result["rounds"], 4)
+            self.assertTrue(result["source_review_invoked"])
             self.assertEqual(len(result["tool_calls"]), 2)
             self.assertEqual([name for name, _ in mcp.calls],
                              ["hub_list_device_events", "hub_get_app_config"])
