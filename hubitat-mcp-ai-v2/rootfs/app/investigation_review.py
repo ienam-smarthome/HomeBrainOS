@@ -45,14 +45,15 @@ _HISTORICAL_PERIOD = re.compile(
     r"\b(?:yesterday|overnight|earlier\s+today|"
     r"last\s+(?:night|evening|morning|afternoon|weekend|"
     r"hour|day|week|month|year|few\s+(?:hours|days|weeks))|"
-    r"past\s+(?:\d+|few|several)\s*(?:minutes?|hours?|days?|weeks?|months?)|"
+    r"(?:past|last)\s+(?:\d+|few|several)\s*(?:minutes?|hours?|days?|weeks?|months?)|"
     r"previous\s+(?:hour|day|week|month|night)|"
     r"this\s+(?:morning|afternoon|evening|week)|"
     r"today|historical(?:ly)?|history|"
     r"\d{4}-\d{2}-\d{2})\b"
     r"|\b(?:between|from|during)\b[^\n]{0,65}"
     r"\b(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm)|"
-    r"yesterday|today|last\s+night)\b",
+    r"yesterday|today|last\s+night)\b"
+    r"|\b(?:at|around|by)\s*(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm))\b",
     re.IGNORECASE,
 )
 _READ_INTENT = re.compile(
