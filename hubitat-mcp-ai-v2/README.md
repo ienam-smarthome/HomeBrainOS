@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Standalone experimental Home Assistant add-on, version **2.0.0-alpha.54**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
+Standalone experimental Home Assistant add-on, version **2.0.0-alpha.55**. V2 has its own runtime and data; it does not load v1 routers, causal planners, incident-specific patches, answer rewriting, historical journal or benchmark pipeline. V1 remains separate.
 
 **Alpha.53 — named, read-only Home overview.** Replace "Switches ON" with conservatively identified "Lights ON" and show the named lights currently reporting ON, named active motion sensors, and named below-20% battery devices with their percentages. Light type is inferred only from positive label/type/colour capability hints; generic ON plugs/relays are excluded and counted separately as unclassified. Show all entries for the normal home inventory (bounded to 250 names per category), scroll locally in each tile, preserve partial-inventory/unknown-freshness warnings, and clear lists on failed refresh. One native inventory read on page open or manual refresh only; no AI, writes, additional subscription, or V1 change. Classification and actual state freshness require installed verification, and the separate first-answer V1/V2 Gate B evaluation remains unchanged.
 
