@@ -70,6 +70,11 @@ Only after Gate B:
 
 Keep V1 stable until V2 has comparable read-only usefulness and safe, user-approved actions in held-out source-real tests. Compare performance/cost under the **same model/provider configuration** where possible; otherwise disclose non-equivalent conditions. Do not infer any installed feature from packaged repo defaults. Preserve rollback instructions, no cross-version data migration without explicit request, and retain the independent Hub & Device Monitor archive.
 
+## 11 November 2026 — UI evidence from installed V1 0.18.459 and V2 alpha.50
+
+Side-by-side screenshots establish a user-facing gap: V1 shows operational tiles (active rooms, lights, motion, low batteries), MCP/provider readiness, a scheduled system check, external diagnostics and journal affordances on the landing page, while V2 alpha.50 exposed only Ask/Chat and Hub Diagnostics. Alpha.51 restores the useful *pattern* of an at-a-glance read-only overview without claiming equivalent sources: switches-on includes plugs, not just lights; motion/battery are reported native attributes; returned inventories can be partial; and V2 does not run the V1 scheduled health audit. Do not infer numerical parity between differently classified tiles.
+
+This is a visibility improvement, not evidence V2 matches V1's proactive health checks, provider routing, alerts or device-control safeguards. Held-out first-answer source-real acceptance remains the gate.
 ## Current unknowns
 
 - Whether installed V1 version matches repository v0.18.459, and which optional V1 journal/health/provider features are enabled.

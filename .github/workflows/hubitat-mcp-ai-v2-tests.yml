@@ -26,14 +26,20 @@ jobs:
           node --check /tmp/v2-ui.js
       - name: Test answer copying and response timing
         run: node hubitat-mcp-ai-v2/tests/test_ui.mjs
-      - name: Install browser acceptance dependencies
-        run: |
-          python -m pip install playwright==1.56.0
-          python -m playwright install --with-deps chromium
-      - name: Check desktop and mobile interface in Chromium
-        run: python hubitat-mcp-ai-v2/tests/browser_smoke.py
+      # Keep native/approval regressions independent of external browser
+      # package installation; any missing browser still FAILS the CI job.
       - name: Run native MCP, confirmation and recorder tests
         run: python -m unittest discover -v -s hubitat-mcp-ai-v2/tests
+      - name: Install browser acceptance dependencies
+        timeout-minutes: 6
+        run: |
+          python -m pip install playwright==1.56.0
+          # Ubuntu 24.04 hosted runners already include Chromium's runtime
+          # libraries. Do not run an unbounded apt --with-deps transaction.
+          python -m playwright install chromium
+      - name: Check desktop and mobile interface in Chromium
+        timeout-minutes: 5
+        run: python hubitat-mcp-ai-v2/tests/browser_smoke.py
 
   container-smoke-v2:
     name: Build and probe v2 add-on container

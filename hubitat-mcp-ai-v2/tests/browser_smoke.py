@@ -175,7 +175,19 @@ with sync_playwright() as p:
     else:raise AssertionError("Unexpected benchmark route "+path)
     route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
     return
-   if "/api/status" in request.url:data={"version":version,"configured":True,"model":"fixture-model"}
+   if "/api/overview" in request.url:
+    assert request.headers.get("x-homebrain-request")=="1"
+    data={"available":True,"read_only":True,"returned_devices":5,
+          "source_declared_total":6,"inventory_full_coverage_verified":False,
+          "observed_at_utc":"2026-11-11T12:00:00Z",
+          "metrics":{
+           "switch_on":{"count":2,"devices_with_state":3},
+           "motion_active":{"count":1,"devices_with_state":2},
+           "battery_low":{"count":1,"devices_with_state":4}}}
+   elif "/api/status" in request.url:data={
+    "version":version,"configured":True,"model":"fixture-model",
+    "recorder":{"status":"online","last":{
+      "free_os_mb":807.0,"native_load_pct":20.0}}}
    elif "/api/conversation/clear" in request.url:
     assert request.headers.get("x-homebrain-request")=="1"
     resets.append(request.post_data_json["conversation_id"]);data={"cleared":True}
@@ -224,6 +236,20 @@ with sync_playwright() as p:
   page.context.route("**/api/**",api)
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
+  page.wait_for_function("document.querySelector('#overviewSwitches').textContent === '2'")
+  assert page.locator("#overviewMotion").inner_text()=="1"
+  assert page.locator("#overviewBattery").inner_text()=="1"
+  assert page.locator("#overviewDevices").inner_text()=="5"
+  assert "of 6 declared" in page.locator("#overviewDevicesScope").inner_text()
+  assert "may be partial" in page.locator("#overviewStatus").inner_text()
+  assert "807 MB" in page.locator("#overviewRecorder").inner_text()
+  assert "20.0%" in page.locator("#overviewRecorder").inner_text()
+  assert len(requests)==0,"Overview must not invoke the model or ordinary Ask"
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  page.locator("#refreshOverview").click()
+  page.wait_for_function("!document.querySelector('#refreshOverview').disabled")
+  assert page.locator("#overviewSwitches").inner_text()=="2"
+  assert len(requests)==0,"Overview refresh is read-only; no Ask call"
   page.locator("#question").fill("Read-only fixture question")
   page.locator("#send").click()
   page.locator("#answer table").wait_for()

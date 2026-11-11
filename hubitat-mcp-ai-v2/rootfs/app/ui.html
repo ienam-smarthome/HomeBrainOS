@@ -192,12 +192,47 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 @media(max-width:480px){.brand h1{font-size:17px}.brand-mark{width:36px;height:36px}.monitor-row{gap:6px}#monitorSourceStatus{flex:1 1 100%}#checkMonitor{margin-left:14px}.compose-actions{gap:8px}.voice-toggle{font-size:12px}.answer-heading h2{width:100%}.answer-heading button{flex:1 1 auto}#answer{font-size:14px}.answer-meta{align-items:start}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
 
+
+/* Alpha.51 source-scoped overview, avoiding a heavyweight V1 dashboard. */
+.overview-shell{border:1px solid #2c435b;border-radius:16px;padding:17px 20px;background:linear-gradient(150deg,#132239,#111e31);margin-bottom:17px}
+.overview-head{margin-bottom:13px;justify-content:space-between;align-items:center}
+.overview-head h2{font-size:16px;margin:0;font-weight:680;letter-spacing:-.02em}
+.overview-head p{font-size:12px;color:var(--muted);margin:3px 0 0}
+#refreshOverview{font-size:12px;padding:7px 12px;background:#192d45;color:#c4def5;white-space:nowrap}
+.overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.overview-tile{background:#0e1b2c;border:1px solid #30455c;border-radius:12px;padding:12px 14px;min-width:0;display:flex;flex-direction:column;gap:1px}
+.overview-tile span{color:#b1c7df;font-size:12px;line-height:1.4}
+.overview-tile strong{color:#f3f8ff;font-size:28px;font-weight:710;font-variant-numeric:tabular-nums;line-height:1.25;margin:3px 0}
+.overview-tile small{color:#90a8c1;font-size:11.5px;line-height:1.35}
+.overview-footer{display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between;margin-top:13px}
+.overview-footer small{font-size:11.5px;color:#9db4cb}
+.overview-limits{font-size:11px;color:#98aec6;margin-top:8px}
+.overview-limits summary{font-size:11.5px;color:#a2bbd4}
+.overview-limits p{margin:7px 0 0;line-height:1.55}
+@media(max-width:720px){.overview-shell{padding:14px}.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-head{align-items:flex-start}}
+@media(max-width:410px){.overview-tile{padding:10px}.overview-tile strong{font-size:24px}.overview-head p{max-width:210px}}
+
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><small id="state">Checking configuration…</small><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
 <nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active">
+<div class="overview-shell" aria-label="Current hub overview">
+ <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
+  <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
+ <div class="overview-grid">
+  <div class="overview-tile"><span>Switches ON</span><strong id="overviewSwitches" aria-live="polite">—</strong><small id="overviewSwitchScope">Waiting for source</small></div>
+  <div class="overview-tile"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small></div>
+  <div class="overview-tile"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small></div>
+  <div class="overview-tile"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></div>
+ </div>
+ <div class="overview-footer">
+  <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
+  <small id="overviewRecorder" class="overview-recorder">External diagnostics: checking…</small>
+ </div>
+ <details class="overview-limits"><summary>About these counts</summary><p>Counts cover only returned devices with a reported matching attribute. Switches include plugs and other switches, not just lights. Missing or stale attributes are unknown, not proven OFF, inactive or healthy. This is not V1's scheduled system check.</p></details>
+</div>
 <div class="card compose-card"><div class="row compose-heading"><div><h2>Ask HomeBrain</h2><p class="compose-subtitle">Ask about a device, automation or saved history.</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
 <div class="row monitor-row"><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
 <label class="sr-only" for="question">Ask HomeBrain a question</label><textarea id="question" aria-label="Your question" placeholder="Ask a question, investigate an event, or compare device histories…" spellcheck="true"></textarea>
@@ -262,7 +297,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.50";
+const UI_VERSION="2.0.0-alpha.51";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -291,10 +326,66 @@ async function loadStatus(){
       ? 'Hub & Device Monitor: configuration invalid'
       : 'Hub & Device Monitor: not configured';
   ttsInfo=d.tts||{enabled:false};
+  setRecorderOverview(d.recorder);
   byId('state').textContent=d.version+' · '+(d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model'));
   return true;
  }catch(e){byId('state').textContent=String(e.message);return false;}
 }
+let overviewPending=false;
+function setOverviewCounts(data){
+ const m=data.metrics||{};
+ for(const [key,countId,scopeId] of [
+  ['switch_on','overviewSwitches','overviewSwitchScope'],
+  ['motion_active','overviewMotion','overviewMotionScope'],
+  ['battery_low','overviewBattery','overviewBatteryScope']]){
+  const metric=m[key]||{};
+  byId(countId).textContent=Number.isInteger(metric.count)?String(metric.count):'—';
+  byId(scopeId).textContent=Number.isInteger(metric.devices_with_state)
+   ?'of '+metric.devices_with_state+' devices reporting':'Source scope unknown';
+ }
+ byId('overviewDevices').textContent=Number.isInteger(data.returned_devices)
+  ?String(data.returned_devices):'—';
+ byId('overviewDevicesScope').textContent=Number.isInteger(data.source_declared_total)
+  ?'of '+data.source_declared_total+' declared':'Returned inventory only';
+ const stamp=data.observed_at_utc?new Date(data.observed_at_utc):null;
+ const time=stamp&&!Number.isNaN(stamp.getTime())?stamp.toLocaleTimeString('en-GB',
+  {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown';
+ byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
+  (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
+  ' · no device commands';
+}
+function setRecorderOverview(recorder){
+ const r=recorder||{},last=r.last||{};
+ let line='External diagnostics: '+String(r.status||'unknown');
+ if(typeof last.free_os_mb==='number'&&Number.isFinite(last.free_os_mb))
+  line+=' · '+Math.round(last.free_os_mb)+' MB OS free (saved)';
+ if(typeof last.native_load_pct==='number'&&Number.isFinite(last.native_load_pct))
+  line+=' · '+last.native_load_pct.toFixed(1)+'% 5m load equivalent';
+ byId('overviewRecorder').textContent=line;
+}
+async function refreshOverview(){
+ if(overviewPending)return;
+ overviewPending=true;
+ const button=byId('refreshOverview');
+ button.disabled=true;
+ byId('overviewStatus').textContent='Reading native device inventory (read-only)…';
+ try{
+  const data=await readJson('api/overview',
+   {headers:{'X-Homebrain-Request':'1'}});
+  if(!data.available){
+   byId('overviewStatus').textContent='Overview unavailable · '+(data.reason||'check MCP source');
+   for(const id of ['overviewSwitches','overviewMotion','overviewBattery','overviewDevices'])
+    byId(id).textContent='—';
+   return;
+  }
+  setOverviewCounts(data);
+ }catch(error){
+  byId('overviewStatus').textContent='Overview unavailable · '+String(error.message);
+  for(const id of ['overviewSwitches','overviewMotion','overviewBattery','overviewDevices'])
+   byId(id).textContent='—';
+ }finally{overviewPending=false;button.disabled=false}
+}
+
 async function checkMonitorSource(){
  const btn=byId('checkMonitor'),out=byId('monitorSourceStatus');
  btn.disabled=true;out.textContent='Hub & Device Monitor: checking read-only connection…';
@@ -1649,5 +1740,7 @@ window.addEventListener('resize',()=>{
 // Standalone mobile benchmark. The raw source never enters the Ask/Chat MCP
 // conversation and model answers are rendered as plain text, not HTML.
 initGraphPopout();
-loadStatus();
+loadStatus().then(ready=>{
+ if(ready&&byId('ask').classList.contains('active'))void refreshOverview();
+});
 </script></body></html>
