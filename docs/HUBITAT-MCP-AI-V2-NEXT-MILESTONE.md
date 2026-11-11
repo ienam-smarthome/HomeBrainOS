@@ -1,5 +1,11 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.46 status-version contract acceptance
+
+**Blocked alpha.45 live trial:** UI/add-on metadata alpha.45, reported API status alpha.44. An Ask preflight produced no model, no MCP/monitor reads and no result; answer-quality criteria are N/A. Root cause verified in source: `/api/status.version` remained hardcoded to alpha.44 while FastAPI was alpha.45. This is an API-version contract defect, not proof of a stale image or missing device power history.
+
+**Repair and acceptance:** Replace that duplicate literal with `app.version`, bump add-on, FastAPI and interface to alpha.46, and verify the **actual HTTP `/api/status` response** matches the mounted runtime and interface, plus config version. Maintain strict browser preflight for real mismatches. Require candidate/post-merge CI, then install alpha.46, reload browser, verify API status and `device_monitor` configuration separately, and repeat the read-only historical wattage question. Archive original MCP/monitor receipts privately. No live hub/device changes.
+
 ## 11 November 2026 — Alpha.45 source-real acceptance: optional Hub & Device Monitor history
 
 A separate Hubitat dashboard already archives power readings locally and exposes a read-only per-instance OAuth status/history API. This source is separate from native Hubitat device events, which can return zero power rows. V1's general journal and v2's external hub diagnostics recorder do not already expose these power-bin archives to v2 Ask.

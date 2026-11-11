@@ -1,5 +1,11 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 11 November 2026 — Alpha.45 installed Ask preflight blocked by stale version response; alpha.46 repair
+
+**Private source-real observation:** The HA add-on card showed alpha.45 and the browser rendered UI alpha.45, while `/api/status.version` reported alpha.44. The preflight rejected the Ask before it reached the model or MCP, so the captured response was null, no native or monitor tools were called, and all answer-quality criteria are **N/A, not attempted**. No command/state cause can be inferred. The repository directly revealed the defect: the FastAPI application and static UI declared alpha.45, but the status endpoint retained a literal alpha.44 version string. This is not evidence of an outdated installed executable or a failed monitor OAuth connection.
+
+**Alpha.46 general repair:** Derive `/api/status.version` from the running FastAPI app's version property instead of a separate hardcoded literal. Bump add-on, runtime and interface to alpha.46 so HA can offer a distinct update, and add an HTTP contract regression proving status/UI/config consistency. Preserve version-mismatch fail-closed behaviour for genuinely stale client/server combinations, all original receipts, read-only monitor tool behavior and unchanged live systems. CI proves the code contract only; subsequent installed-status and source-real measurement retrieval remain unverified.
+
 ## 11 November 2026 — Alpha.45 candidate: reuse an existing device historian, read-only
 
 **Finding:** A separate, user-managed Hubitat Hub & Device Monitor Groovy app already saves five-minute power-bin history into daily archive files (plus pending bins), with authenticated read-only \`/api/status\` and \`/api/history\` endpoints. Its graph can show wattage samples even when native \`hub_list_device_events(attribute=power)\` returns no rows. This does NOT show that native history was deleted; it demonstrates two different historical stores. The v1 historical journal's websocket allowlist also does not collect generic numerical power readings, and v2's existing external diagnostics recorder stores hub resources rather than device wattage. Duplicating sampling before using the known archive would add cost without evidence of need.

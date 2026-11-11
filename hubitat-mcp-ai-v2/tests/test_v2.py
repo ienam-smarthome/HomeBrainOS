@@ -347,6 +347,52 @@ class InteractionTests(unittest.TestCase):
                 await agent.close()
         asyncio.run(run())
 
+    def test_http_status_reports_actual_runtime_version_and_packaged_ui(self):
+        # Regression: alpha.45 had an alpha.45 app/UI but accidentally
+        # returned alpha.44 from /api/status; Ask preflight then refused
+        # to contact the model or the MCP server.
+        from types import SimpleNamespace
+        import app as runtime
+        config_path = Path(__file__).resolve().parents[1] / "config.yaml"
+        config_text = config_path.read_text(encoding="utf-8")
+        addon_version = next(
+            line.split('"')[1]
+            for line in config_text.splitlines() if line.startswith("version: ")
+        )
+        saved = runtime.app.state._state.copy()
+        async def run():
+            runtime.app.state.options = {
+                "model_base_url": "https://ollama.com",
+                "model_api_key": "",
+                "model_name": "synthetic",
+                "device_monitor_enabled": True,
+            }
+            runtime.app.state.mcp = None
+            runtime.app.state.model = None
+            runtime.app.state.configuration_error = None
+            runtime.app.state.recorder = SimpleNamespace(status=lambda: {"enabled": False})
+            runtime.app.state.tts = SimpleNamespace(status=lambda: {"enabled": False})
+            runtime.app.state.device_monitor = object()
+            runtime.app.state.device_monitor_error = None
+            async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=runtime.app),
+                    base_url="http://test") as client:
+                response = await client.get("/api/status")
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("no-store", response.headers["cache-control"])
+                self.assertEqual(response.json()["version"], runtime.app.version)
+                self.assertEqual(response.json()["version"], addon_version)
+                self.assertEqual(response.json()["device_monitor"]["configured"], True)
+                self.assertNotIn("access_token", response.text)
+                page = await client.get("/")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn('UI_VERSION="'+addon_version+'"', page.text)
+        try:
+            asyncio.run(run())
+        finally:
+            runtime.app.state._state.clear()
+            runtime.app.state._state.update(saved)
+
     def test_interface_cannot_be_cached_across_updates(self):
         import app as runtime
         async def run():
