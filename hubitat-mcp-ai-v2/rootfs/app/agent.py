@@ -484,7 +484,18 @@ class Agent:
             + " Native File Manager listings or incomplete file chunks do not "
               "verify a specific device's archived measurements. When useful, "
               "independently select the structured history tool rather than "
-              "treating unrelated raw-file excerpts as exhaustive."
+              "treating unrelated raw-file excerpts as exhaustive. "
+              "Historical measurement requests are SOURCE-NEUTRAL: users "
+              "need not explicitly name this monitor to ask for a trend, "
+              "maximum, threshold or whole-period history. Independently "
+              "choose the accessible source with appropriate time coverage "
+              "and provenance. Native returned event rows can be a shorter "
+              "subset than a separate saved-history archive; never report a "
+              "whole-period maximum or absence from a narrower returned window. "
+              "When earlier indexed receipts from another source cover the "
+              "same interval, reconcile their returned values and provenance "
+              "or disclose an unresolved mismatch rather than choosing one "
+              "without inspecting the source."
         )
         history = [
             {"role": row["role"], "content": row["content"][:10000]}
