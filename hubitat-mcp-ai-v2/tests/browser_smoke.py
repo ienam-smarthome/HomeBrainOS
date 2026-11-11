@@ -241,10 +241,10 @@ with sync_playwright() as p:
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
   page.wait_for_function("document.querySelector('#overviewLights').textContent === '1'")
-   assert page.locator("#overviewLightsNames").inner_text()=="Livingroom Light 2"
-   assert page.locator("#overviewMotionNames").inner_text()=="Hallway FP300"
-   assert page.locator("#overviewBatteryNames").inner_text()=="Bedroom Sensor · 9%"
-   assert "ON switches not identified as lights" in page.locator("#overviewStatus").inner_text()
+  assert page.locator("#overviewLightsNames").inner_text()=="Livingroom Light 2"
+  assert page.locator("#overviewMotionNames").inner_text()=="Hallway FP300"
+  assert page.locator("#overviewBatteryNames").inner_text()=="Bedroom Sensor · 9%"
+  assert "ON switches not identified as lights" in page.locator("#overviewStatus").inner_text()
   assert page.locator("#overviewMotion").inner_text()=="1"
   assert page.locator("#overviewBattery").inner_text()=="1"
   assert page.locator("#overviewDevices").inner_text()=="5"
