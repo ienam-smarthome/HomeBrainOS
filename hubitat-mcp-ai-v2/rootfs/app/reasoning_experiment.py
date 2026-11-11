@@ -467,8 +467,13 @@ class ReasoningExperiment:
             synthetic=SyntheticMCP(scenario)
             agent=ExperimentalAgent(configured_model,
                                     candidate=mapping[label]=="candidate")
+            # This blinded two-arm study measures the pre-existing guidance
+            # contrast. Keep its historical one-completion-per-arm protocol;
+            # alpha.44's extra source-review round belongs to normal Ask.
+            # Both arms use the identical opt-out, so condition isolation holds.
             result=await agent.answer(SANDBOX_NOTICE+scenario["question"],[],
-                                      synthetic,SANDBOX_DEADLINE_SECONDS)
+                                      synthetic,SANDBOX_DEADLINE_SECONDS,
+                                      enable_source_review=False)
             payload=tool_metrics(result,synthetic,scenario)
             payload["id"]=sid
             payload["label"]=label

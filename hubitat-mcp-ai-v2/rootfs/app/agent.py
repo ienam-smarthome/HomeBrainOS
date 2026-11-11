@@ -16,8 +16,9 @@ from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from evidence_scope import model_result_with_scope
 from investigation_review import (
-    SOURCE_REVIEW_PROMPT, should_review_completion,
+    should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
+    review_kind, review_prompt,
 )
 from config_evidence import config_source_map
 
@@ -25,7 +26,7 @@ from config_evidence import config_source_map
 _SKILL_DIR = Path(__file__).parent / "skills" / "hubitat"
 _SKILL = (_SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 _SKILL = _SKILL.split("---", 2)[-1].strip() if _SKILL.startswith("---") else _SKILL
-for _reference in ("safety-guide.md", "rule-patterns.md", "causal-investigations.md", "answer-presentation.md"):
+for _reference in ("safety-guide.md", "rule-patterns.md", "causal-investigations.md", "measurement-fidelity.md", "answer-presentation.md"):
     _SKILL += "\n\n" + (_SKILL_DIR / _reference).read_text(encoding="utf-8")
 _SKILL += """
 Client integration: Use only the connected server's live catalog and schemas.
@@ -427,7 +428,7 @@ class Agent:
         self, question: str, history: list[dict], mcp: MCPClient,
         deadline_seconds: int, before_call=None,
         prior_evidence: str = "", prior_receipts: int = 0,
-        prior_reader=None,
+        prior_reader=None, enable_source_review: bool = True,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -454,6 +455,7 @@ class Agent:
         rounds = 0
         leaf_schema_discoveries = 0
         source_review_invoked = False
+        source_review_kind = None
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -500,19 +502,21 @@ class Agent:
                 # The connected model decides whether further read-only
                 # sources are useful; no native tool is selected or invoked
                 # automatically, and no fixed tool sequence is required.
-                if should_review_completion(
+                if enable_source_review and should_review_completion(
                     question, available_tools=bool(read_only_review_catalog(tools)),
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                 ):
                     source_review_invoked = True
-                    messages.append({"role": "user", "content": SOURCE_REVIEW_PROMPT})
+                    source_review_kind = review_kind(question)
+                    messages.append({"role": "user", "content": review_prompt(source_review_kind)})
                     continue
                 return {
                     "success": bool(text), "prior_receipts_used": prior_receipts,
                     "answer": text or "The model returned an empty answer.",
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "source_review_invoked": source_review_invoked,
+                    "source_review_kind": source_review_kind,
                     "tool_calls": receipts,
                     "rounds": rounds,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
