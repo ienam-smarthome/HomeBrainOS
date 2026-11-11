@@ -5,6 +5,16 @@ decision, alarm, heating call, network event or measured change happened.
 It applies across domains; it is **not** a device-specific rule, fixed tool
 sequence, deterministic validator or requirement to fetch every source.
 
+## Active source sufficiency before stopping
+
+On eligible causal questions, v2 can offer one conditional extra **model**
+source-sufficiency checkpoint when the model tries to finish. Treat the
+earlier draft as unverified, compare it against original successful MCP
+receipts, and independently choose either a relevant permitted read-only
+source or a calibrated final answer. This is not an automatic MCP read,
+fixed tool order, deterministic causal verdict or answer rewrite. A further
+model round can add latency. If evidence really proves the mechanism, say so.
+
 ## A state report is not a command-origin trace
 
 If the user asks **why** a device changed state, first recognize whether the
@@ -19,7 +29,7 @@ is **not** evidence of no command.
 Before offering a preferred cause, consider whether a relevant proportionate
 read-only history, configuration or execution source is available that could
 distinguish a command-origin path from a state-reporter path. The choice
-remains the model's; do not force a fixed sequence, extra round, write or
+remains the model's; do not force a fixed tool sequence, native call, write or
 unfocused search. If source evidence is absent or inconclusive, report the
 verified state event and leave its origin unresolved rather than guessing
 manual, external or automation initiation. When a genuine event-specific
