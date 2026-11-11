@@ -87,6 +87,17 @@ then request the exact historical window if useful. A saved 5-minute power
 bin is a snapshot/aggregation, not a continuously measured physical peak.
 Stored intervals without newly reported values do not prove zero or activity.
 If this optional source is absent, do not claim it was checked.
+For any time-scoped measurement, compare what each available source can
+actually establish: returned timestamps/window, metric/unit, query filters,
+row limits, sampling density and per-bin freshness. A native event query
+returning rows from only part of a requested interval does not establish a
+whole-period minimum, maximum or absence of threshold excursions.
+When a separately available historian can materially address this gap,
+consider it whether or not the user named that source. No source is
+automatically authoritative just because its name sounds more complete.
+Previous source receipts or answers that conflict with a new bounded read
+require explicit reconciliation of scopes, not a guessed explanation.
+A humidity spike alone cannot prove showering or another physical cause.
 For a WHY question, distinguish a reported state event from the command
 which requested it and from the controller decision behind that command.
 A device/bridge producedBy on a physical-tagged state row does not prove
@@ -481,10 +492,19 @@ class Agent:
             "Hub & Device Monitor saved measurement history "
             + ("IS configured and tool " + MONITOR_TOOL + " is available."
                if device_monitor is not None else "is NOT configured or offered.")
-            + " Native File Manager listings or incomplete file chunks do not "
-              "verify a specific device's archived measurements. When useful, "
-              "independently select the structured history tool rather than "
-              "treating unrelated raw-file excerpts as exhaustive."
+            + " Historical source choice depends on the measured "
+              "quantity, requested time window, and actual source coverage, "
+              "NOT on whether the user named an archive. An attribute-filtered "
+              "native event result may cover only part of a requested period "
+              "even if its hoursBack filter spans that period. If a separate "
+              "saved-bin historian could materially resolve a missing interval "
+              "or contradictory peak, consider reading it independently "
+              "before giving a whole-period trend or threshold verdict. "
+              "Compare original source scopes rather than inventing a "
+              "reason or a physical cause. Native File Manager listings or "
+              "incomplete file chunks do not verify archived measurements. "
+              "The model owns source selection; no mandatory source order "
+              "or automatic history call is imposed."
         )
         history = [
             {"role": row["role"], "content": row["content"][:10000]}
