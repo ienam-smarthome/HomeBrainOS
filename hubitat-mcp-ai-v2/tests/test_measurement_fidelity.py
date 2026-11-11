@@ -239,6 +239,21 @@ class MeasurementLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply["source_review_kind"], "historical_measurement")
         self.assertIn("28 W", reply["answer"])
 
+    async def test_blinded_protocol_can_disable_review_without_extra_calls(self):
+        hub = FictionalHistoryHub()
+        agent = ScriptedAgent([
+            {"content": "Synthetic study answer.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("show recorded voltage last night", [],
+                                       hub, 90, enable_source_review=False)
+        finally:
+            await agent.close()
+        self.assertEqual(reply["rounds"], 1)
+        self.assertFalse(reply["source_review_invoked"])
+        self.assertIsNone(reply["source_review_kind"])
+        self.assertEqual(hub.calls, [])
+
     async def test_current_snapshot_request_skips_review(self):
         hub = FictionalHistoryHub()
         agent = ScriptedAgent([
