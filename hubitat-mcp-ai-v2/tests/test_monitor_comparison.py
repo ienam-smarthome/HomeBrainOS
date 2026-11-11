@@ -105,21 +105,24 @@ class FictionalMonitorHTTP(unittest.IsolatedAsyncioTestCase):
             start=int(request.url.params["from"])
             end=int(request.url.params["to"])
             device_id=request.url.params["device"]
+            # Physical five-minute monitor bins remain clock-aligned even
+            # when a custom requested time has seconds/minutes off-grid.
+            first=((start+STEP-1)//STEP)*STEP
             if device_id=="101":
                 rows=[
-                    {"t":start,"w":25,"powerReports":1,
-                     "powerSourceAt":start+5000},
-                    {"t":start+STEP,"w":25,"powerReports":0,
-                     "powerSourceAt":start+5000},
-                    {"t":start+2*STEP,"w":None},
-                    {"t":start+4*STEP,"w":72,"powerReports":2,
-                     "powerSourceAt":start+4*STEP+15000},
+                    {"t":first,"w":25,"powerReports":1,
+                     "powerSourceAt":first+5000},
+                    {"t":first+STEP,"w":25,"powerReports":0,
+                     "powerSourceAt":first+5000},
+                    {"t":first+2*STEP,"w":None},
+                    {"t":first+4*STEP,"w":72,"powerReports":2,
+                     "powerSourceAt":first+4*STEP+15000},
                 ]
             else:
-                rows=[{"t":start,"w":0,"powerReports":1,
-                       "powerSourceAt":start+1000},
-                      {"t":start+3*STEP,"w":14,"powerReports":1,
-                       "powerSourceAt":start+3*STEP+15000}]
+                rows=[{"t":first,"w":0,"powerReports":1,
+                       "powerSourceAt":first+1000},
+                      {"t":first+3*STEP,"w":14,"powerReports":1,
+                       "powerSourceAt":first+3*STEP+15000}]
             return httpx.Response(200,json={
                 "success":True, "device":device_id,"resolution":"5m",
                 "start":start,"end":end-950,"series":rows,
@@ -206,10 +209,16 @@ class FictionalMonitorHTTP(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests,[])
 
     async def test_rejected_one_source_does_not_claim_complete_comparison(self):
-        # An upstream 403 on second device aborts the entire comparison;
-        # no partial table is returned with a misleading complete flag.
+        # A successful first device followed by a 403 aborts the comparison;
+        # no misleading complete result or token-bearing error is returned.
         def respond(request):
             self.requests.append(request)
+            if request.url.params["device"]=="101":
+                return httpx.Response(200,json={
+                    "success":True, "device":"101", "resolution":"5m",
+                    "start":int(request.url.params["from"]),
+                    "end":int(request.url.params["to"]), "series":[],
+                })
             return httpx.Response(403,text="Sensitive upstream error")
         await self.monitor._client.aclose()
         self.monitor._client=httpx.AsyncClient(
@@ -218,7 +227,7 @@ class FictionalMonitorHTTP(unittest.IsolatedAsyncioTestCase):
             await self.monitor.query({
                 "mode":"compare","device_ids":["101","202"],"range":"12h"
             })
-        self.assertEqual(len(self.requests),1)
+        self.assertEqual(len(self.requests),2)
 
 
 if __name__=="__main__":
