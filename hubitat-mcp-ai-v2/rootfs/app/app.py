@@ -224,9 +224,9 @@ async def status():
         "model": str(options["model_name"]),
         "recorder": app.state.recorder.status(),
         "device_monitor": {
-            "enabled": bool(options["device_monitor_enabled"]),
-            "configured": app.state.device_monitor is not None,
-            "configuration_error": app.state.device_monitor_error,
+            "enabled": bool(options.get("device_monitor_enabled", False)),
+            "configured": getattr(app.state, "device_monitor", None) is not None,
+            "configuration_error": getattr(app.state, "device_monitor_error", None),
             "read_only": True,
         },
         "tts": app.state.tts.status(),
@@ -337,7 +337,7 @@ async def ask(request: AskRequest, http_request: Request):
                     before_call=interaction.before_call,
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
-                    device_monitor=app.state.device_monitor,
+                    device_monitor=getattr(app.state, "device_monitor", None),
                 )
                 result["prior_sources_indexed"] = indexed
                 result["prior_evidence_reads"] = sum(
