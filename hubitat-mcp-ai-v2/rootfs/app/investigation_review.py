@@ -87,15 +87,22 @@ _HISTORY_INVENTORY_INTENT = re.compile(
     r"have|has|contain|stored)\b",
     re.IGNORECASE,
 )
-_VERIFICATION_REQUEST = re.compile(
-    r"\b(?:inspect|investigate|verify|validate|audit|confirm|establish)\b",
+_VERIFICATION_REQUEST_AT_START = re.compile(
+    r"^\s*(?:verify|validate|audit|confirm|establish)\b",
+    re.IGNORECASE,
+)
+_INSPECTION_REQUEST_AT_START = re.compile(
+    r"^\s*(?:inspect|investigate)\b", re.IGNORECASE,
+)
+_EXPLICIT_PROOF_REQUEST = re.compile(
+    r"\b(?:verified|independently|evidence|proof|source|provenance)\b",
     re.IGNORECASE,
 )
 # General evidence-verification intent, without identifying devices or tools.
 _VERIFICATION_SUBJECT = re.compile(
     r"\b(?:status|state|configuration|settings|triggers?|actions?|"
     r"history|events?|readings?|measurements?|sources?|evidence|"
-    r"identity|type|parent|logs?|device|rule|controller|automation)\b",
+    r"identity|type|parent|health|flags?|service|logs?|device|rule|controller|automation)\b",
     re.IGNORECASE,
 )
 _WRITE_INTENT_AT_START = re.compile(
@@ -218,8 +225,12 @@ def is_source_verification_question(question: str) -> bool:
     return (
         isinstance(question, str)
         and not bool(_WRITE_INTENT_AT_START.search(question))
-        and bool(_VERIFICATION_REQUEST.search(question))
         and bool(_VERIFICATION_SUBJECT.search(question))
+        and (
+            bool(_VERIFICATION_REQUEST_AT_START.search(question))
+            or bool(_INSPECTION_REQUEST_AT_START.search(question))
+            and bool(_EXPLICIT_PROOF_REQUEST.search(question))
+        )
     )
 
 
