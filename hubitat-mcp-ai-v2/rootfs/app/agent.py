@@ -15,7 +15,10 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from evidence_scope import model_result_with_scope
-from investigation_review import SOURCE_REVIEW_PROMPT, should_review_completion
+from investigation_review import (
+    SOURCE_REVIEW_PROMPT, should_review_completion,
+    is_read_only_review_tool, read_only_review_catalog,
+)
 from config_evidence import config_source_map
 
 
@@ -456,6 +459,11 @@ class Agent:
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
                 if prior_evidence and prior_reader:
                     tools.append(_PRIOR_TOOL_DEFINITION)
+            # Once the extra model review starts, expose only read-only
+            # tool definitions. Never widen an explicitly read-only request
+            # just because the model chose to investigate further.
+            if source_review_invoked:
+                tools = read_only_review_catalog(tools)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return {
@@ -493,7 +501,7 @@ class Agent:
                 # sources are useful; no native tool is selected or invoked
                 # automatically, and no fixed tool sequence is required.
                 if should_review_completion(
-                    question, available_tools=bool(tools),
+                    question, available_tools=bool(read_only_review_catalog(tools)),
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                 ):
@@ -521,6 +529,8 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
+                    if source_review_invoked and not is_read_only_review_tool(name):
+                        raise MCPError("Evidence sufficiency follow-up permits read-only tools only")
                     is_prior = name == _PRIOR_TOOL
                     if is_prior:
                         if prior_reader is None or not prior_evidence:
