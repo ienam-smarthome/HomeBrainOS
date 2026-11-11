@@ -1,5 +1,13 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.45 source-real acceptance: optional Hub & Device Monitor history
+
+A separate Hubitat dashboard already archives power readings locally and exposes a read-only per-instance OAuth status/history API. This source is separate from native Hubitat device events, which can return zero power rows. V1's general journal and v2's external hub diagnostics recorder do not already expose these power-bin archives to v2 Ask.
+
+**Candidate:** Add optional private configured Hub & Device Monitor API connection with one model-owned read-only tool (status and device-specific saved measurement history). Do not import or rewrite v1, modify the Groovy app, add duplicate polling, auto-route every wattage question, or widen write permissions. Strict LAN installed-app path, fixed GET endpoints, token kept out of model tool arguments/receipts. Preserve sampled-bin vs direct report distinction, report/hold provenance, collection gaps, exact requested custom interval and the distinction between the monitor's daily estimated Wh and watts.
+
+**Acceptance:** Verify version and configured-but-private status in the installed add-on. Ask an uncoached precise *historical wattage* question for a monitor-selected device and inspect the raw Tool receipts. A successful independent read must show \`homebrain_read_device_monitor\` in the tool-call record and source-marked saved bins with \`powerReports\` provenance, not infer archive content from the screenshot or a native zero-row result. Test a distinct monitored sensor and a missing/held bin case. Compare UTC source stamps, held versus received reports, exact requested window, returned bucket granularity, gaps, and absence of false continuous peak claims. Review same four dimensions (grounding/completeness/calibration/usefulness); synthetic CI does not verify a real model/source improvement. No source changes to the user's live monitoring app and no credential disclosure.
+
 ## 11 November 2026 — Alpha.44 acceptance: requested measurement fidelity
 
 **Observed private alpha.43 failure:** In a time-scoped historical measurement request, the correct metric filter returned zero rows, followed by a mixed event query with different quantities/units. Gemma summarised the different data as if it answered the requested history, and inferred activity not proven by those rows. A separate current measurement does not answer the historical interval. Three successful MCP calls, no tool errors; the causal-only alpha.43 checkpoint was not eligible. Reviewer score 2/8, **one nonmatched example only**; private evidence remains private.
