@@ -123,6 +123,11 @@ class EvidencePropertiesTests(unittest.TestCase):
         self.assertEqual(review_kind(
             "Investigate whether a pump's last change was caused by a timer"),
             "causal")
+        self.assertFalse(is_source_verification_question(
+            "Investigate the last reported activity of a sensor. Distinguish "
+            "stale telemetry from proven outage or session failure. Check "
+            "device health, relevant events and logs. State limitations."
+        ))
         self.assertIsNone(review_kind("Show current status"))
         self.assertFalse(is_source_verification_question(
             "Turn on the valve then inspect its status"
