@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 11 November 2026 — Alpha.50 everyday UI acceptance and V1/V2 stage two
+
+Verify the two-tab UI on desktop/mobile with simplified composer and answer, preserved diagnostics, approvals, conversation reset, voice and Copy for review. Confirm retired experiment panels are absent from daily navigation and scripts but isolated backend/test code and saved study data remain unchanged. Retain the alpha.49 source-real positive comparison as a previously exposed validation, not an unseen held-out case.
+
+Next: follow docs/HOMEBRAIN-V1-V2-CAPABILITY-GAP-PLAN-20261111.md. Collect at least 12 new read-only first-answer tests across multiple domains; compare verified installed V1/V2 on matched source/time windows, model/provider where possible. Prioritise generic source coverage and Rule Machine read-only evidence. Defer automated authoring, provider failover, scheduled audits and permanent v2 cutover until measured need. Avoid duplicating V1's incident-specific host publication patches.
 ## 11 November 2026 — Alpha.49 acceptance and next V1/V2 comparison gates
 
 **Immediate:** Candidate `homebrain_read_device_monitor(mode=compare)` aligns 2–5 monitored device history reads to one explicit UTC window and returns source-derived extrema and consecutive missing/held bin runs. Relative comparisons use the last completed UTC five-minute boundary (reported explicitly); custom windows preserve user input. It uses the existing authenticated read-only monitor; no duplicate recorder. For full per-device saved-bin audit choose mode=history. A summary is not independent proof of continuous physical observation or underlying outage, even with complete bin coverage.
