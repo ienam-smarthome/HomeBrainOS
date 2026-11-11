@@ -97,7 +97,7 @@ consider it whether or not the user named that source. No source is
 automatically authoritative just because its name sounds more complete.
 Previous source receipts or answers that conflict with a new bounded read
 require explicit reconciliation of scopes, not a guessed explanation.
-A humidity spike alone cannot prove showering or another physical cause.
+A measurement excursion alone cannot establish the physical activity or initiating cause behind it.
 For a WHY question, distinguish a reported state event from the command
 which requested it and from the controller decision behind that command.
 A device/bridge producedBy on a physical-tagged state row does not prove
