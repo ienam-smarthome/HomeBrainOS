@@ -48,7 +48,7 @@ _HISTORICAL_PERIOD = re.compile(
     r"(?:past|last)\s+(?:\d+|few|several)\s*(?:minutes?|hours?|days?|weeks?|months?)|"
     r"previous\s+(?:hour|day|week|month|night)|"
     r"this\s+(?:morning|afternoon|evening|week)|"
-    r"today|historical(?:ly)?|history|"
+    r"today|"
     r"\d{4}-\d{2}-\d{2})\b"
     r"|\b(?:between|from|during)\b[^\n]{0,65}"
     r"\b(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm)|"
@@ -71,9 +71,8 @@ _WRITE_INTENT_AT_START = re.compile(
 
 MEASUREMENT_REVIEW_PROMPT = """Requested-measurement fidelity checkpoint (internal to this answer).
 The user's original question is the specification, not your preceding draft.
-Before completing, compare the evidence with the exact requested target,
-quantity/attribute, unit, historical interval, and requested statistic or
-series. Identify which ORIGINAL returned rows measure that quantity in that
+Before completing, compare the evidence with the exact requested quantity/
+attribute, unit, target, historical interval, and requested statistic or series. Identify which ORIGINAL returned rows measure that quantity in that
 interval, versus different properties, today's state, commands, or indirect
 proxies. Check timestamps, requested/returned filters, row limits, source
 freshness, missing intervals and uncertainty. For physical quantities,
