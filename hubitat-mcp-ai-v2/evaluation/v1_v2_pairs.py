@@ -159,7 +159,7 @@ def validate(payload: Any, root: Path) -> dict:
             raise PairReviewError("Each pair needs a unique pair-NN ID")
         seen.add(key)
         domain = case.get("domain")
-        if domain not in DOMAINS:
+        if not isinstance(domain, str) or domain not in DOMAINS:
             raise PairReviewError("Unknown evidence domain")
         question = case.get("question")
         if not isinstance(question, str) or not 8 <= len(question.strip()) <= 2000:
@@ -249,6 +249,18 @@ def render_markdown(report: dict) -> str:
             f"| {c['id']} | {c['domain']} | {rating(arms.get('v1'))} | "
             f"{rating(arms.get('v2'))} | {captures} | {model_equivalence} |"
         )
+    lines.extend(["", "## Capture fingerprints (local files only)", "",
+                  "| Pair | System | SHA-256 | Bytes |",
+                  "|---|---|---|---:|"])
+    for item in report["cases"]:
+        for arm in ("v1", "v2"):
+            entry = item["arms"].get(arm)
+            if entry:
+                capture = entry["capture"]
+                lines.append(
+                    f"| {item['id']} | {arm.upper()} | "
+                    f"`{capture['sha256']}` | {capture['bytes']} |"
+                )
     lines.extend([
         "",
         f"Pairs captured: **{report['counts']['paired']}/{report['counts']['cases']}**. "
