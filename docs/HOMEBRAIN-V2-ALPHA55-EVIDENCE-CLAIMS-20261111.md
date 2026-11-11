@@ -76,3 +76,12 @@ been introduced. Confirmation and source access checks are unchanged.
 **Non-claims:** CI cannot verify how the installed cloud model will reason.
 This change does not independently validate a connected native rule parent,
 prove a calendar-dated trigger, or cause any appliance/automation action.
+
+## Separate baseline CI maintenance
+
+Full-repository release assurance exposed an unrelated, wall-clock-dependent
+October replay test in the pre-existing V1 suite after its historical lookback
+crossed the source's maximum. The test fixture clock was frozen via **PR #1604**,
+merged independently from alpha.55. No V1 runtime behaviour changed. The
+alpha.55 candidate requires fresh CI against that corrected baseline before
+merge or live installation.
