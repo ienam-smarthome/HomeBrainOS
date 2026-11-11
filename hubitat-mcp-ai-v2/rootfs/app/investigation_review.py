@@ -103,6 +103,29 @@ the measurement unavailable from every other source. Do not silently
 substitute a current snapshot, a different metric or inferred activity for
 the requested historical measurement.
 
+A historical claim about an ENTIRE requested interval needs evidence for
+that interval. When the oldest returned native event is LATER than the
+interval start, the returned rows alone cannot prove a whole-period maximum,
+minimum, uninterrupted state, or absence of threshold crossings. Neither
+an event limit below its cap nor a success flag proves retention coverage.
+Compare the actual time span and sampling/provenance of each available
+independent source; use neither a native event query nor an archived-bin
+series as universal ground truth outside its returned observations.
+
+If a previous server-held receipt indexed an interval-overlapping saved
+measurement from a different source, do not overwrite or silently dismiss
+its source-derived values with a newer but narrower event query. Inspect
+that original receipt if necessary, reconcile what the sources actually
+cover, or explicitly state that their differences remain unresolved.
+The requested question need not contain the name of a historian for its
+read-only saved-history tool to be considered.
+
+An observed measurement trend cannot by itself establish a specific human
+activity, mechanical cause, or an exact continuous physical duration.
+For threshold descriptions distinguish > from >=; check the first and
+last qualifying saved sample and the next nonqualifying sample, then
+qualify intervals between discrete/possibly cached observations.
+
 A device being selected for monitoring and the existence of an archive
 filename do NOT establish the presence of saved samples for that device.
 A file chunk with hasMore=true or partial retrieved-character coverage cannot
