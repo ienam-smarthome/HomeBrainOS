@@ -17,6 +17,7 @@ APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
 from investigation_v2.evidence import build_case_file
+import investigation_v2.incident_retrieval as incident_retrieval_module
 from investigation_v2.incident_retrieval import incident_first_proposals
 from investigation_v2.investigation_report import format_investigation_report
 from investigation_v2.model_adapter import V2ModelProposer
@@ -31,6 +32,22 @@ from tool_registry import ToolEffect
 QUESTION = "Investigate why Bedroom 3 Mesh went offline on 12 October 2026"
 WINDOW = explicit_incident_window(QUESTION, zone_name="Europe/London")
 assert WINDOW is not None
+
+
+class _ReplayClock(datetime):
+    """Pin the synthetic Oct-2026 test timeline independently of wall time."""
+    @classmethod
+    def now(cls, tz=None):
+        moment = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+        return moment.astimezone(tz) if tz is not None else moment.replace(tzinfo=None)
+
+
+@pytest.fixture(autouse=True)
+def _stable_replay_clock(monkeypatch):
+    # incident_first_proposals uses this module-local datetime only to
+    # calculate the live lookback horizon. No production code is patched.
+    monkeypatch.setattr(incident_retrieval_module, "datetime", _ReplayClock)
+
 
 
 def gateway(*, with_window=True, max_hours=744, limit_cap=500):
