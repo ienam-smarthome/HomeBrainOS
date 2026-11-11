@@ -193,7 +193,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
 
 
-/* Alpha.51 source-scoped overview, avoiding a heavyweight V1 dashboard. */
+/* Alpha.53 source-scoped named overview, avoiding a heavyweight V1 dashboard. */
 .overview-shell{border:1px solid #2c435b;border-radius:16px;padding:17px 20px;background:linear-gradient(150deg,#132239,#111e31);margin-bottom:17px}
 .overview-head{margin-bottom:13px;justify-content:space-between;align-items:center}
 .overview-head h2{font-size:16px;margin:0;font-weight:680;letter-spacing:-.02em}
@@ -204,6 +204,12 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 .overview-tile span{color:#b1c7df;font-size:12px;line-height:1.4}
 .overview-tile strong{color:#f3f8ff;font-size:28px;font-weight:710;font-variant-numeric:tabular-nums;line-height:1.25;margin:3px 0}
 .overview-tile small{color:#90a8c1;font-size:11.5px;line-height:1.35}
+.overview-names{display:flex;flex-direction:column;gap:4px;max-height:146px;overflow-y:auto;overflow-x:hidden;margin-top:7px;padding-right:4px;scrollbar-color:#4c6885 transparent}
+.overview-name{font-size:11.5px;line-height:1.4;color:#dce9f8;padding:3px 0;border-top:1px solid #2c4057;overflow-wrap:anywhere}
+.overview-name:first-child{border-top:0}
+.overview-name.empty{color:#829cb8;font-style:italic}
+.overview-name .battery-value{font-weight:730;color:#f8d68a}
+.overview-names:empty{display:none}
 .overview-footer{display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between;margin-top:13px}
 .overview-footer small{font-size:11.5px;color:#9db4cb}
 .overview-limits{font-size:11px;color:#98aec6;margin-top:8px}
@@ -222,16 +228,16 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
  <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
   <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
  <div class="overview-grid">
-  <div class="overview-tile"><span>Switches ON</span><strong id="overviewSwitches" aria-live="polite">—</strong><small id="overviewSwitchScope">Waiting for source</small></div>
-  <div class="overview-tile"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small></div>
-  <div class="overview-tile"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small></div>
+  <div class="overview-tile"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><div class="overview-names" id="overviewLightsNames" aria-label="Names of lights reporting on"></div></div>
+  <div class="overview-tile"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><div class="overview-names" id="overviewMotionNames" aria-label="Names of active motion sensors"></div></div>
+  <div class="overview-tile"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><div class="overview-names" id="overviewBatteryNames" aria-label="Names and percentages of low battery devices"></div></div>
   <div class="overview-tile"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></div>
  </div>
  <div class="overview-footer">
   <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
   <small id="overviewRecorder" class="overview-recorder">External diagnostics: checking…</small>
  </div>
- <details class="overview-limits"><summary>About these counts</summary><p>Counts cover only returned devices with a reported matching attribute. Switches include plugs and other switches, not just lights. Missing or stale attributes are unknown, not proven OFF, inactive or healthy. This is not V1's scheduled system check.</p></details>
+ <details class="overview-limits"><summary>About these counts</summary><p>Counts cover only returned devices with a reported matching attribute. Lights ON requires light-identifying names, device types or colour capabilities: plugs and uncertain ON switches are not silently counted as lights. Member lists reflect the same snapshot, not a live feed. Missing or stale attributes are unknown, not proven OFF, inactive or healthy. This is not V1's scheduled system check.</p></details>
 </div>
 <div class="card compose-card"><div class="row compose-heading"><div><h2>Ask HomeBrain</h2><p class="compose-subtitle">Ask about a device, automation or saved history.</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
 <div class="row monitor-row"><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
@@ -332,16 +338,61 @@ async function loadStatus(){
  }catch(e){byId('state').textContent=String(e.message);return false;}
 }
 let overviewPending=false;
+function showOverviewNames(id,metric,kind){
+ const container=byId(id);
+ container.replaceChildren();
+ const members=Array.isArray(metric.members)?metric.members:[];
+ if(!members.length){
+  const empty=document.createElement('div');
+  empty.className='overview-name empty';
+  empty.textContent=metric.count===0?'None reported':(Number.isInteger(metric.count)?'Device names unavailable':'');
+  if(empty.textContent)container.appendChild(empty);
+  return;
+ }
+ for(const item of members){
+  if(!item||typeof item.name!=='string')continue;
+  const name=item.name.trim().slice(0,100);
+  if(!name)continue;
+  const line=document.createElement('div');
+  line.className='overview-name';
+  line.textContent=name;
+  if(kind==='battery'&&typeof item.battery_pct==='number'&&
+      Number.isFinite(item.battery_pct)&&item.battery_pct>=0&&item.battery_pct<20){
+   const value=document.createElement('span');
+   value.className='battery-value';
+   const pct=Number.isInteger(item.battery_pct)?String(item.battery_pct):item.battery_pct.toFixed(1);
+   value.textContent=' · '+pct+'%';
+   line.appendChild(value);
+  }
+  container.appendChild(line);
+ }
+ if(Number.isInteger(metric.members_omitted)&&metric.members_omitted>0){
+  const limit=document.createElement('div');
+  limit.className='overview-name empty';
+  limit.textContent='+'+metric.members_omitted+' further devices omitted from this bounded list';
+  container.appendChild(limit);
+ }
+}
+function clearOverviewCounts(){
+ for(const id of ['overviewLights','overviewMotion','overviewBattery','overviewDevices'])
+  byId(id).textContent='—';
+ for(const id of ['overviewLightsNames','overviewMotionNames','overviewBatteryNames'])
+  byId(id).replaceChildren();
+ for(const id of ['overviewLightsScope','overviewMotionScope','overviewBatteryScope','overviewDevicesScope'])
+  byId(id).textContent='Source scope unavailable';
+}
 function setOverviewCounts(data){
  const m=data.metrics||{};
- for(const [key,countId,scopeId] of [
-  ['switch_on','overviewSwitches','overviewSwitchScope'],
-  ['motion_active','overviewMotion','overviewMotionScope'],
-  ['battery_low','overviewBattery','overviewBatteryScope']]){
+ for(const [key,countId,scopeId,listId,kind] of [
+  ['lights_on','overviewLights','overviewLightsScope','overviewLightsNames','light'],
+  ['motion_active','overviewMotion','overviewMotionScope','overviewMotionNames','motion'],
+  ['battery_low','overviewBattery','overviewBatteryScope','overviewBatteryNames','battery']]){
   const metric=m[key]||{};
   byId(countId).textContent=Number.isInteger(metric.count)?String(metric.count):'—';
   byId(scopeId).textContent=Number.isInteger(metric.devices_with_state)
-   ?'of '+metric.devices_with_state+' devices reporting':'Source scope unknown';
+   ? 'of '+metric.devices_with_state+(kind==='light'?' identified lights reporting':' devices reporting')
+   : 'Source scope unknown';
+  showOverviewNames(listId,metric,kind);
  }
  byId('overviewDevices').textContent=Number.isInteger(data.returned_devices)
   ?String(data.returned_devices):'—';
@@ -350,9 +401,11 @@ function setOverviewCounts(data){
  const stamp=data.observed_at_utc?new Date(data.observed_at_utc):null;
  const time=stamp&&!Number.isNaN(stamp.getTime())?stamp.toLocaleTimeString('en-GB',
   {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown';
+ const excluded=Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0
+  ?' · '+data.unclassified_on_switches+' ON switches not identified as lights':'';
  byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
   (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
-  ' · no device commands';
+  excluded+' · no device commands';
 }
 function setRecorderOverview(recorder){
  const r=recorder||{},last=r.last||{};
@@ -374,15 +427,13 @@ async function refreshOverview(){
    {headers:{'X-Homebrain-Request':'1'}});
   if(!data.available){
    byId('overviewStatus').textContent='Overview unavailable · '+(data.reason||'check MCP source');
-   for(const id of ['overviewSwitches','overviewMotion','overviewBattery','overviewDevices'])
-    byId(id).textContent='—';
+   clearOverviewCounts();
    return;
   }
   setOverviewCounts(data);
  }catch(error){
   byId('overviewStatus').textContent='Overview unavailable · '+String(error.message);
-  for(const id of ['overviewSwitches','overviewMotion','overviewBattery','overviewDevices'])
-   byId(id).textContent='—';
+  clearOverviewCounts();
  }finally{overviewPending=false;button.disabled=false}
 }
 
