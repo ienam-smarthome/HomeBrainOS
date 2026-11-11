@@ -74,3 +74,34 @@ For multiple devices, prefer the same explicit custom start/end.
   resolutions; source reports fetched separately may use slightly different
   relative end times. Report differences as observational patterns, not
   demonstrated appliance operating causes.
+
+
+## Shared historical comparisons (alpha.49)
+
+For multiple selected devices and the same quantity, the optional monitor
+tool supports `mode=compare` with 2–5 distinct `device_ids`, a `metric`
+and relative `range` 1h/6h/12h/24h or `range=custom` plus BOTH offset-aware
+`start`/`end`. The MODEL chooses whether a grouped read is useful; there
+is no automatic sequence, forced tool call or device action. Source status can
+discover monitored IDs. The comparison returns only compact per-device
+source-derived histories; for original full saved-bin samples use the
+independent `mode=history` query.
+
+The comparison pins one captured UTC interval for every device.
+Relative requests end at the last complete five-minute boundary, not
+necessarily the current second; the result reports the clock capture and
+boundary alignment. Custom intervals preserve user-provided boundaries
+and may contain partial edge bins. Inspect both each device's requested
+interval and the upstream returned interval before stating coverage.
+
+`summary.missing_runs` reports consecutive bin-position spans without a
+non-null saved value; `summary.held_value_runs` reports consecutive power
+bins with carried-forward values. Use `count`, `longest` and bounded
+`runs_preview`, and disclose truncation. These spans are NOT observed
+physical-off durations, measured zeros, reporting outages or proof the
+underlying source stopped. Do not equate an empty TV power archive in the
+requested interval with the TV being off.
+
+If comparing different sensors, identify per-bin freshness as unknown
+unless the returned source explicitly authenticates fresh reports.
+Never claim uninterrupted source data from a complete saved-value grid.
