@@ -148,7 +148,7 @@ class IntervalSourceTests(unittest.TestCase):
 
 
 class ControlledHTTPTests(unittest.IsolatedAsyncioTestCase):
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.requests = []
         self.monitor = HubDeviceMonitor(
             "http://192.168.1.239/apps/api/1234",
