@@ -194,8 +194,8 @@ def _event_samples(raw: dict, metric: str, device_id: str,
             record.update({
                 "sample_class": provenance,
                 "reports_in_bin": count,
-                "last_source_report_utc": source_iso,
-                "last_report_in_bin_utc": _iso_ms(row.get("powerReportAt")),
+                "last_monitor_power_event_at_utc": source_iso,
+                "last_monitor_report_in_bin_utc": _iso_ms(row.get("powerReportAt")),
             })
         else:
             record["sample_class"] = "derived_or_held_sensor_bin"
@@ -302,7 +302,7 @@ class HubDeviceMonitor:
                         "has_humidity": row.get("hasHumidity") is True,
                         "power_w": _num(row.get("powerW"), min_value=0, max_value=1000000),
                         "power_fresh": row.get("powerFresh") is True,
-                        "last_power_report_utc": _iso_ms(row.get("lastPowerEventAt")),
+                        "last_monitor_power_event_at_utc": _iso_ms(row.get("lastPowerEventAt")),
                     }
                     for row in devices if isinstance(row, dict)
                 ],
@@ -372,7 +372,9 @@ class HubDeviceMonitor:
                 "Power chart bins are archived wattage snapshots/aggregation, "
                 "not raw, continuously sampled device-event history. A bin "
                 "with reports_in_bin>0 contains at least one received power "
-                "report. Other values may be carried forward from earlier "
+                "report. Report times come from the monitor's Hubitat app handler, "
+                "not an independently authenticated Tasmota device-source clock. "
+                "Other values may be carried forward from earlier "
                 "reports, while legacy bins may have unknown provenance. "
                 "For temperature/humidity/setpoint, the monitor holds cached "
                 "or previously reported values; a plotted bin does NOT prove "
