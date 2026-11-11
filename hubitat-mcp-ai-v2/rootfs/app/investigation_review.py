@@ -11,7 +11,8 @@ import re
 _CAUSAL_QUESTION = re.compile(
     r"\bwhy\b|\bwhat\s+(?:caused|triggered|initiated|made|explains)\b"
     r"|\b(?:cause|reason|trigger)\s+(?:of|for|behind)\b"
-    r"|\bwho\s+(?:turned|switched|set|changed|started|stopped|issued)\b",
+    r"|\bwho\s+(?:turned|switched|set|changed|started|stopped|issued)\b"
+    r"|\b(?:was|were|is|are|been)\s+caused\s+by\b",
     re.IGNORECASE,
 )
 
@@ -86,6 +87,17 @@ _HISTORY_INVENTORY_INTENT = re.compile(
     r"have|has|contain|stored)\b",
     re.IGNORECASE,
 )
+_VERIFICATION_REQUEST = re.compile(
+    r"\b(?:inspect|investigate|verify|validate|audit|confirm|establish)\b",
+    re.IGNORECASE,
+)
+# General evidence-verification intent, without identifying devices or tools.
+_VERIFICATION_SUBJECT = re.compile(
+    r"\b(?:status|state|configuration|settings|triggers?|actions?|"
+    r"history|events?|readings?|measurements?|sources?|evidence|"
+    r"identity|type|parent|logs?|device|rule|controller|automation)\b",
+    re.IGNORECASE,
+)
 _WRITE_INTENT_AT_START = re.compile(
     r"^\s*(?:turn|switch|set|update|delete|reboot|restart|"
     r"create|configure|enable|disable|start|stop)\b",
@@ -136,6 +148,12 @@ questions, a difference between saved-bin timestamps may be stated AS a
 saved-bin proxy, but not as verified time between physical crossings without
 relevant fresh timestamped reports. A fully populated grid is not proof of
 continuous sensor observations.
+Honor the user's evidence conditions BEFORE concluding or calculating. If a
+duration is requested ONLY when two transitions are confirmed by fresh
+timestamped observations, saved-but-freshness-unknown bins do not satisfy
+that condition; you may give a clearly labelled bin-time difference as
+context but NOT a verified physical transition duration. Do not infer
+continuous state between samples merely from a fully populated bin grid.
 For a custom time window provide BOTH start and end; for relative twelve
 hours the local monitor tool supports range=12h.
 
@@ -166,6 +184,45 @@ actions. Do not mention this internal checkpoint.
 """
 
 
+VERIFICATION_REVIEW_PROMPT = """Source-to-claim verification checkpoint (internal).
+Your preceding answer is a draft, not an independent source. Compare EACH
+requested factual property or user-specified proof condition against the
+ORIGINAL returned receipts. Distinguish:
+- directly returned typed state or event fields from a displayed UI control,
+  a different property, cached snapshot, or inferred state;
+- current configuration from historical configuration or actual execution;
+- a stored ID pointer from independently read identity;
+- reported events and recorded command issuers from internal decisions;
+- actual returned history boundaries and caps from complete coverage.
+
+A button that offers an action is not a typed status observation. An absent
+field is UNKNOWN, not a negative value. One status flag does not establish
+another status property. A UI configuration page alone does not prove an
+event-specific execution. When the user requires verified evidence, do not
+promote compatible indirect evidence into the requested direct proof.
+
+If one proportionate READ-ONLY source may resolve a material requested
+property, independently choose its actual tool and arguments now. Never
+use UI controls, mutating tools or speculative actions to probe status.
+There is no mandated tool or fixed read sequence; you can finish without
+more tools when the evidence is already adequate or no useful read is
+available. Preserve supported facts, label remaining unknowns precisely,
+and disclose material row caps and unobserved intervals. Do not perform
+actions, manufacture evidence, rewrite a past receipt or mention this
+internal checkpoint.
+"""
+
+
+def is_source_verification_question(question: str) -> bool:
+    """Broad inspect/verification questions, independent of named devices."""
+    return (
+        isinstance(question, str)
+        and not bool(_WRITE_INTENT_AT_START.search(question))
+        and bool(_VERIFICATION_REQUEST.search(question))
+        and bool(_VERIFICATION_SUBJECT.search(question))
+    )
+
+
 def is_historical_measurement_question(question: str) -> bool:
     """General time-scoped data request, not a domain or device-name patch."""
     return (
@@ -187,12 +244,18 @@ def review_kind(question: str) -> str | None:
         return "causal"
     if is_historical_measurement_question(question):
         return "historical_measurement"
+    if is_source_verification_question(question):
+        return "source_verification"
     return None
 
 
 def review_prompt(kind: str) -> str:
     """Choose review guidance, not a tool or a computed answer."""
-    return MEASUREMENT_REVIEW_PROMPT if kind == "historical_measurement" else SOURCE_REVIEW_PROMPT
+    if kind == "historical_measurement":
+        return MEASUREMENT_REVIEW_PROMPT
+    if kind == "source_verification":
+        return VERIFICATION_REVIEW_PROMPT
+    return SOURCE_REVIEW_PROMPT
 
 
 
