@@ -96,6 +96,53 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
 
+    async def test_api_rejects_missing_consent_and_missing_ui_header(self):
+        from app import evaluation_replay, EvaluationReplayRequest
+        from fastapi import HTTPException
+        from starlette.requests import Request
+
+        allowed = Request({"type": "http",
+                           "headers": [(b"x-homebrain-request", b"1")]})
+        blocked = Request({"type": "http", "headers": []})
+        with self.assertRaises(HTTPException) as denied:
+            await evaluation_replay(EvaluationReplayRequest(capture=capture()),
+                                    allowed)
+        self.assertEqual(denied.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as forbidden:
+            await evaluation_replay(EvaluationReplayRequest(
+                capture=capture(),
+                send_private_evidence_to_configured_model=True), blocked)
+        self.assertEqual(forbidden.exception.status_code, 403)
+
+    async def test_api_can_run_with_existing_configured_model_without_mcp(self):
+        from app import app, evaluation_replay, EvaluationReplayRequest
+        from starlette.requests import Request
+
+        previous = dict(app.state._state)
+        try:
+            model = FakeModel([{"content": "Unverified"},
+                               {"content": "Still unverified"},
+                               {"content": "Initiator unknown"}])
+            app.state.model = model
+            app.state.options = {
+                "model_base_url": "https://ollama.com",
+                "model_api_key": "fictional-placeholder",
+                "investigation_timeout_seconds": 120,
+            }
+            app.state.configuration_error = None
+            app.state.ask_lock = asyncio.Lock()
+            request = Request({"type": "http",
+                               "headers": [(b"x-homebrain-request", b"1")]})
+            result = await evaluation_replay(EvaluationReplayRequest(
+                capture=capture(),
+                send_private_evidence_to_configured_model=True), request)
+            self.assertEqual(result["mcp_calls_executed"], 0)
+            self.assertEqual(len(model.calls), 3)
+            self.assertEqual(result["model_rounds"], 3)
+        finally:
+            app.state._state.clear()
+            app.state._state.update(previous)
+
     async def test_no_hidden_prior_receipts_and_replay_requires_evidence(self):
         p = capture()
         p["response"]["prior_receipts_used"] = 1
