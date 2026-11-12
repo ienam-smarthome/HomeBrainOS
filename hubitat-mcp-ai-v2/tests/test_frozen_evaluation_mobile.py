@@ -96,6 +96,46 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
 
+    async def test_failed_local_monitor_validation_is_retained_as_failed_read(self):
+        p = capture()
+        p["response"]["tool_calls"].append({
+            "name": "homebrain_read_device_monitor", "success": False,
+            "arguments": {"mode": "history", "metric": "temperature",
+                          "device_id": "FICTION-42", "range": "custom",
+                          "start": "2026-11-11T20:00:00Z"},
+            "error": "Custom history requires both start and end",
+            "response": '{"error":"Custom history requires both start and end"}'
+        })
+        frozen = freeze_capture(p)
+        self.assertEqual(frozen["failed_reads"], 2)
+        self.assertEqual(frozen["successful_reads"], 1)
+        self.assertIn("Custom history requires both start and end",
+                      frozen["serialized"])
+        model = FakeModel([{"content": "Initial"},
+                           {"content": "Review"},
+                           {"content": "Final"}])
+        result = await replay_frozen_capture(model, frozen)
+        self.assertEqual(result["failed_tool_receipts"], 2)
+        self.assertEqual(result["mcp_calls_executed"], 0)
+        self.assertEqual(len(model.calls), 3)
+
+    async def test_monitor_exception_does_not_extend_to_write_like_modes_or_native_reads(self):
+        p = capture()
+        record = {"name": "homebrain_read_device_monitor", "success": False,
+                  "arguments": {"mode": "mutate", "device_id": "FICTION-42"},
+                  "error": "Rejected action"}
+        p["response"]["tool_calls"].append(record)
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+        record["arguments"]["mode"] = "history"
+        record["read_only"] = False
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+        record["read_only"] = True
+        record["name"] = "hub_get_logs"
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+
     async def test_api_rejects_missing_consent_and_missing_ui_header(self):
         from app import evaluation_replay, EvaluationReplayRequest
         from fastapi import HTTPException
