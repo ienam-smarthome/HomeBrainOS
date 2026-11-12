@@ -82,10 +82,15 @@ def frozen_packet(raw: dict) -> dict:
             raise ReplayError("Only original read-only receipt names are supported")
         if type(item.get("success")) is not bool:
             raise ReplayError("Original receipt success status must be explicit")
-        # The reserved local Hub & Device Monitor helper is read-only for
-        # status/history. A validation failure can lack operation_executed and
-        # result_kind metadata; keep its original failed receipt intact.
-        # Do not extend this to native MCP or mixed-action gateway tools.
+        # A timeout in a contractually read-only core native tool may lack
+        # execution metadata. A read can execute without causing a device write;
+        # keep this *failed* receipt rather than blocking an otherwise safe
+        # frozen replay. Do not allow mixed-action hub_manage_* gateways.
+        contract_read_only_attempt = (
+            name.startswith(READ_TOOLS)
+            and item.get("read_only") is not False
+        )
+        # Retain alpha.60's reserved local monitor validation exception.
         local_monitor_read_attempt = (
             name == "homebrain_read_device_monitor"
             and isinstance(item.get("arguments"), dict)
@@ -95,7 +100,8 @@ def frozen_packet(raw: dict) -> dict:
         if item["success"] is False and not (
                 item.get("operation_executed") is False
                 or item.get("result_kind") == "contract_error"
-                or local_monitor_read_attempt):
+                or local_monitor_read_attempt
+                or contract_read_only_attempt):
             raise ReplayError("Failed receipt is not verified read-only")
         if item["success"] is True and not isinstance(item.get("response"), (str, dict, list)):
             raise ReplayError("Successful receipt is missing its original response")
