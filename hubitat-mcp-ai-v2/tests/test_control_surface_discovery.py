@@ -175,6 +175,8 @@ class EligibilityTests(unittest.TestCase):
         self.assertFalse(is_capability_denial_draft(
             "An alternative device advertises the required command."))
         self.assertFalse(is_capability_denial_draft(None))
+        self.assertFalse(is_capability_denial_draft(
+            "Cannot verify cause from synthetic returned sources."))
         self.assertTrue(should_review_completion(
             "Enable a lamp", available_tools=True, already_reviewed=False,
             remaining_seconds=30, draft="I cannot do it from this device."))
