@@ -166,6 +166,35 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
 
+    async def test_frozen_inventory_verification_question_without_live_review(self):
+        p = capture()
+        p["question"] = (
+            "Which battery-powered devices currently have battery below 20%? "
+            "Give their latest reading times and identify verified offline status. "
+            "Do not change anything."
+        )
+        p["response"]["tool_calls"].insert(0, {
+            "name": "hub_list_devices", "success": False,
+            "arguments": {"format": "detailed"},
+            "error": "MCP timed out",
+            "response": '{"error":"MCP timed out"}'
+        })
+        frozen = freeze_capture(p)
+        self.assertEqual(frozen["review_kind"], "source_verification")
+        model = FakeModel([{"content": "Initial inventory answer"},
+                           {"content": "Review device age and attribute times"},
+                           {"content": "Verified status remains unknown"}])
+        outcome = await replay_frozen_capture(model, frozen)
+        self.assertEqual(outcome["mcp_calls_executed"], 0)
+        self.assertEqual(outcome["failed_tool_receipts"], 2)
+        self.assertEqual(outcome["model_rounds"], 3)
+        p["question"] = "Turn on a fictional device"
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+        p["question"] = "Tell me a joke"
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+
     async def test_api_rejects_missing_consent_and_missing_ui_header(self):
         from app import evaluation_replay, EvaluationReplayRequest
         from fastapi import HTTPException
