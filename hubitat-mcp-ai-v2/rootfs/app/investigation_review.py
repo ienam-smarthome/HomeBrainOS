@@ -267,6 +267,48 @@ this internal checkpoint.
 
 
 
+
+CAPABILITY_DISCOVERY_REVIEW_PROMPT = """Capability/control-surface source review (internal).
+The user's desired EFFECT, named physical target, and timing are separate
+questions from which Hubitat device/integration implements the effect.
+Review the original returned tool receipts before declaring an operation
+unsupported or requiring an automation. Did you inspect just a media,
+sensor, thermostat, virtual helper, or app endpoint rather than the
+controller of the requested effect? Different device records may represent
+the SAME physical target while exposing different controls. Do not equate
+the absence of one capability on one matched record with the absence of a
+separate actuator or rule. An on/off command for media or power is NOT
+evidence of internet, water, heating or other unrelated effect.
+
+Consider the REAL scope of earlier inventory queries. A labelFilter,
+roomFilter, capabilityFilter, returned subset or count below unfilteredTotal
+is NOT a complete inventory of action controllers. If a broader inventory
+read, cross-integration device relationship, alternate control name, or
+recorded prior source could resolve the mismatch, independently choose
+proportionate READ-ONLY tools from the actual available catalog. Prefer
+the already-offered native list/get/read tools and inspect the advertised
+commands of any candidate. Shared network ID, IP, hardware label, location
+or other identifier is only a candidate relationship: verify that the
+controller really targets the intended physical entity before any write.
+Do not conclude a direct operation exists merely from a similar label,
+or infer that a model guessed the correct controller.
+
+Check the timing and operation semantics against each ACTUAL candidate
+command. A delayed start is distinct from an immediate temporary state.
+If another controller exists but cannot provide the requested timing,
+state precisely which part is supported and what is unverified. If you
+cannot identify a matching controller, describe the search scope and
+remaining unknowns rather than claiming no controller exists anywhere.
+
+This review is strictly READ-ONLY. Do not dispatch a first or corrective
+write, create a rule or proxy, auto-select another device without identity
+evidence, retry or change permissions. The model chooses tools and the
+final source-bounded conclusion; this checkpoint does not itself search,
+schedule or grant authorization. Do not mention the internal checkpoint.
+"""
+
+
+
 # This is a separate final model pass, AFTER any model-selected evidence reads.
 # It does not select tools, parse claims, rewrite text mechanically or decide
 # the answer. The model compares its own final wording against original receipts.
@@ -532,6 +574,8 @@ def review_prompt(kind: str) -> str:
         return VERIFICATION_REVIEW_PROMPT
     if kind == "action_outcome":
         return ACTION_OUTCOME_REVIEW_PROMPT
+    if kind == "capability_discovery":
+        return CAPABILITY_DISCOVERY_REVIEW_PROMPT
     return SOURCE_REVIEW_PROMPT
 
 
@@ -565,18 +609,45 @@ def is_causal_question(question: str) -> bool:
     return isinstance(question, str) and bool(_CAUSAL_QUESTION.search(question))
 
 
+# Review eligibility checks only the model's OWN completed draft. This is
+# not a device/tool router, negative-answer validator, permission grant or
+# response rewrite: only the model can decide which further read matters.
+_CAPABILITY_DENIAL_DRAFT = re.compile(
+    r"\b(?:(?:cannot|can't|unable\s+to)\s+"
+    r"(?:(?:currently|directly|reliably|safely)\s+)?(?:be\s+)?"
+    r"(?:implement|perform|execute|do|control|operate|schedule|trigger|"
+    r"start|stop|enable|disable|use|unblock|block|switch|set|send|call|"
+    r"provide|turn|create)\w*|"
+    r"not\s+possible|not\s+supported|isn't\s+supported|"
+    r"doesn't\s+support|does\s+not\s+support|"
+    r"neither\b[^.\n]{0,90}\b(?:direct|possible|implemented)|"
+    r"no\s+[^.\n]{0,80}\b(?:capabilit(?:y|ies)|commands?|actuators?))",
+    re.IGNORECASE,
+)
+
+def is_capability_denial_draft(draft: str) -> bool:
+    """Review-worthy model denial, not proof that a capability is absent."""
+    return isinstance(draft, str) and bool(_CAPABILITY_DENIAL_DRAFT.search(draft))
+
+
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
+    draft: str = "",
 ) -> bool:
-    """Only open a model review when there is a chance to investigate safely.
+    """One optional model-led review when a claim may need better sources.
 
-    A short deadline leaves the original model response intact rather than
-    risking a second model timeout. No MCP call is made by this helper.
+    A short deadline leaves the original answer intact. This helper never
+    selects or executes an MCP tool, turns a denial into permission, or
+    forces an additional data read.
     """
     return (
         not already_reviewed
         and available_tools
         and remaining_seconds > 8
-        and (review_kind(question) is not None or has_action_receipt)
+        and (
+            review_kind(question) is not None
+            or has_action_receipt
+            or is_capability_denial_draft(draft)
+        )
     )
