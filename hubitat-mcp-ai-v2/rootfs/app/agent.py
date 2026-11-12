@@ -796,7 +796,10 @@ class Agent:
                 # sources are useful; no native tool is selected or invoked
                 # automatically, and no fixed tool sequence is required.
                 if enable_source_review and should_review_completion(
-                    question, available_tools=bool(read_only_review_catalog(tools)),
+                    question, available_tools=any(
+                        item["function"]["name"] != _CATALOG_TOOL
+                        for item in read_only_review_catalog(tools)
+                    ),
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                 ):
