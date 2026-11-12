@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.64 — exact live MCP catalog inspection and scoped unavailable-tool recovery.** V2 now offers a model-selected, local read-only `homebrain_inspect_mcp_catalog` helper over the native `tools/list` snapshot already fetched for each Ask: list top-level tools, inspect a directly listed schema, or identify gateway-leaf candidates from server-advertised selector enums. If the model tries an unavailable helper, the error now distinguishes that missing name from an unverified target capability and exposes safe catalog-navigation evidence; no native operation is executed. A gateway `{}` discovery remains model-selected and cannot perform a device command. Visibility alone does not prove write authorization. No scheduler, device-specific routing, additional model round or V1 change. Fictional regressions verify flat and gateway cases; installed model-led first-answer acceptance is still required. See [alpha.64 note](../docs/HOMEBRAIN-V2-ALPHA64-LIVE-CATALOG-RECOVERY-20261112.md).
+
+
 **Alpha.63 — optional frozen replay accepts general read-only inventory questions.** The mobile and CLI AI Evaluation prompts now support broad inventory/status questions such as `Which devices have low battery and stale readings?`, in addition to causal, historical and explicit verification requests. This applies **only to frozen-receipt replay eligibility**; the live agent's review triggers, source selection, MCP tools, model prompts and device actions are unchanged. Read-only timeout preservation from alpha.62 remains in place. The replay still requires successful original receipts, strict read-only validation and cloud-model consent. See [alpha.63 note](../docs/HOMEBRAIN-V2-ALPHA63-READONLY-INVENTORY-EVALUATION-20261112.md).
 
 
