@@ -220,6 +220,12 @@ class FakeModelAgent(Agent):
         self.replies=list(replies)
         self.tool_catalogs=[]
         self.seen_messages=[]
+    async def answer(self, *args, **kwargs):
+        # Preserve the original finite scripted sequence; alpha.56 has
+        # separate default-on final-claim-audit integration tests.
+        kwargs.setdefault("enable_final_claim_audit", False)
+        return await super().answer(*args, **kwargs)
+
     async def round(self,messages,tools,remaining):
         self.tool_catalogs.append([t["function"]["name"] for t in tools])
         self.seen_messages.append([dict(x) for x in messages])
