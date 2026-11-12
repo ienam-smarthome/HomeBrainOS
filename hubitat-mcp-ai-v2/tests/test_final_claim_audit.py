@@ -107,7 +107,7 @@ class ClaimAuditOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(mcp.calls), 1)
         self.assertIn("Final source-to-claim", model.seen[3][-1]["content"])
         self.assertIn("Returned-receipt scope index", model.seen[3][-1]["content"])
-        self.assertIn('"requested_row_limit"', model.seen[3][-1]["content"])
+        self.assertIn('"limit":10', model.seen[3][-1]["content"])
         self.assertIn('"deviceId":"LAB-4"', model.seen[3][-1]["content"])
 
     async def test_positive_command_issuer_survives_final_calibration(self):
