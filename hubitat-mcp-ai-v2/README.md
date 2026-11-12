@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.61 — optional private claim-delta review worksheet (V2 only).** After a frozen-receipt AI Evaluation, the phone UI now displays original MCP receipts for manual inspection and allows a human reviewer to score all three completed model answers (grounding, source coverage, causal calibration, usefulness). The reviewer can record individually anchored claim changes introduced/corrected or supported facts lost/recovered between stages, compare scores and extra time, and download a PRIVATE reviewed evaluation JSON. A separate **offline-only** validator checks review integrity and summarizes stage deltas without printing household evidence. The worksheet is unblinded and cannot automatically determine truth; the existing blinded A/B experiment remains the preferred scientific gate. No model prompt, MCP tool selection, normal Ask, device operation, V1 or diagnostic recorder changes. See [alpha.61 notes](../docs/HOMEBRAIN-V2-ALPHA61-CLAIM-DELTA-MOBILE-20261112.md).
+
+
 **Alpha.60 — preserve failed read-only monitor queries in mobile AI evaluation.** Rejected attempts to use the reserved local Hub & Device Monitor status/history interface may lack execution metadata because the argument validator rejected them before a read occurred. Phone and CLI evaluation now accept those inherently read-only attempts as *failed receipts*, preserving their errors and all successful reads, while continuing to reject uncertain native MCP and write-like failures. Normal Ask, V1, model prompts, Hubitat devices and external recorder remain unchanged. See [alpha.60 evaluation fix](../docs/HOMEBRAIN-V2-ALPHA60-FROZEN-READ-FAILURES-20261112.md).
 
 

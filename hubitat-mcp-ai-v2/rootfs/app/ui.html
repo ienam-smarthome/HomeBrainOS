@@ -227,6 +227,19 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 .eval-consent input{margin-top:5px}
 .eval-meta{font-size:12px;color:var(--muted);line-height:1.5}
 @media(max-width:650px){.eval-pair{grid-template-columns:1fr}.app-tabs{width:100%;overflow-x:auto}.app-tabs button{white-space:nowrap;padding:9px 11px}}
+
+.eval-review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0}
+.eval-review-stage{background:#101b2c;border:1px solid var(--edge);border-radius:11px;padding:12px;min-width:0}
+.eval-review-stage h3{color:var(--txt);margin-bottom:12px}
+.eval-review-stage label{display:flex;flex-direction:column;gap:5px;margin-top:10px;font-size:12px;line-height:1.5}
+.eval-review-stage select,.eval-claim-item input,.eval-claim-item select,.eval-review-case select{background:#0e1522;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:9px;max-width:100%;font-size:13px}
+.eval-claim-item{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:12px;background:#101b2c;border:1px solid var(--edge);border-radius:10px;margin:10px 0}
+.eval-claim-item label{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.eval-claim-item .review-wide{grid-column:1/-1}
+.eval-claim-item input{width:100%}
+.eval-review-case{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.eval-review-summary{white-space:pre-wrap;line-height:1.5;font-size:13px;color:var(--muted);margin:12px 0}
+@media(max-width:680px){.eval-review-grid{grid-template-columns:1fr}.eval-claim-item{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><small id="state">Checking configuration…</small><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
@@ -343,11 +356,36 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
  </div>
  <details><summary>Intermediate source-review answer</summary><pre id="evalIntermediate"></pre></details>
  <p class="eval-meta">Different wording does not prove improvement. Compare definite claims against the original successful receipts, scope limits, chronology, and reporter versus initiator before assigning human scores. Do not use this same-incident regression as a new holdout.</p>
+
+ <details><summary>Original MCP receipts · private source evidence</summary>
+  <p class="eval-meta">Use these exact original read results, source limits and failed calls to judge every claim. This view never makes a new device or model request.</p>
+  <pre id="evalOriginalReceipts">No source selected.</pre>
+ </details>
+ <div class="card" id="evalReviewCard">
+  <h3>Manual claim-delta worksheet · experimental</h3>
+  <p class="eval-meta">Human judgement only. Score each answer against the original successful receipts, not its confidence or writing style. Use causal N/A only when truly inapplicable. No additional model calls are made.</p>
+  <label class="eval-review-case">Case type
+   <select id="evalCaseRole" onchange="evaluationReviewUpdated()">
+    <option value="unspecified">Not classified</option>
+    <option value="fresh_case">New, independent question</option>
+    <option value="regression_control">Previously tested regression question</option>
+   </select>
+  </label>
+  <div id="evalScoreGrid" class="eval-review-grid" aria-label="Human grades for all three AI stages"></div>
+  <div class="row" style="margin-top:16px">
+   <h3>Documented claim changes</h3>
+   <button type="button" class="right" onclick="evaluationAddClaim()">+ Record a change</button>
+  </div>
+  <p class="eval-meta">Record unsupported claims introduced/corrected and supported facts lost/recovered between adjacent stages. Cite the original receipt or its scope. An empty record does NOT establish that no claims changed.</p>
+  <div id="evalClaimList"></div>
+  <p id="evalReviewStatus" class="eval-review-summary" role="status">Enter human scores to calculate review-stage differences.</p>
+  <button id="evalReviewDownload" type="button" onclick="evaluationDownloadReview()" disabled>Download PRIVATE scored review JSON</button>
+ </div>
 </div>
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.60";
+const UI_VERSION="2.0.0-alpha.61";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -364,6 +402,7 @@ function evaluationToggle(){
 function evaluationSetCapture(capture,source){
  evaluationCapture=capture;
  evaluationResult=null;
+ evaluationResetReview();
  byId('evalResults').hidden=true;
  byId('evalDownload').disabled=true;
  byId('evalConsent').checked=false;
@@ -413,6 +452,9 @@ async function evaluationRun(){
     result.successful_tool_receipts+' successful, '+result.failed_tool_receipts+' failed) · '+
     result.model_rounds+' model rounds · '+(result.elapsed_ms/1000).toFixed(2)+'s · no MCP calls';
   byId('evalStatus').textContent='Comparison complete. Human evidence review is still required.';
+  const original=evaluationCapture.response?.tool_calls||evaluationCapture.tool_calls||[];
+  byId('evalOriginalReceipts').textContent=JSON.stringify(original,null,2);
+  evaluationResetReview();
   byId('evalResults').hidden=false;
   byId('evalDownload').disabled=false;
  }catch(error){
@@ -421,13 +463,170 @@ async function evaluationRun(){
   evaluationBusy=false;byId('evalConsent').checked=false;evaluationToggle();
  }
 }
-function evaluationDownload(){
- if(!evaluationResult)return;
- const blob=new Blob([JSON.stringify(evaluationResult,null,2)],{type:'application/json'});
+
+const REVIEW_STAGES=[
+ ['single_answer','Initial answer'],
+ ['source_review','After source review'],
+ ['source_review_and_audit','After final audit']
+];
+const REVIEW_CRITERIA=[
+ ['factual_grounding','Factual grounding'],
+ ['source_completeness','Source completeness'],
+ ['causal_calibration','Causal calibration'],
+ ['usefulness','Usefulness']
+];
+const REVIEW_CHANGE_KINDS=[
+ ['unsupported_introduced','Unsupported claim introduced'],
+ ['unsupported_corrected','Unsupported claim corrected'],
+ ['supported_fact_lost','Supported fact lost'],
+ ['supported_fact_recovered','Supported fact recovered'],
+ ['source_scope_changed','Source/absence scope changed'],
+ ['neutral_wording','Wording only']
+];
+function evaluationResetReview(){
+ const grid=byId('evalScoreGrid');
+ grid.replaceChildren();
+ byId('evalClaimList').replaceChildren();
+ byId('evalCaseRole').value='unspecified';
+ for(const [stage,title] of REVIEW_STAGES){
+  const card=document.createElement('div');
+  card.className='eval-review-stage';
+  const h=document.createElement('h3');h.textContent=title;card.appendChild(h);
+  for(const [criterion,label] of REVIEW_CRITERIA){
+   const wrapper=document.createElement('label');wrapper.textContent=label;
+   const select=document.createElement('select');
+   select.dataset.stage=stage;select.dataset.criterion=criterion;
+   select.setAttribute('aria-label',title+' — '+label);
+   select.add(new Option('Not scored',''));
+   select.add(new Option('0 — unsupported','0'));
+   select.add(new Option('1 — partial','1'));
+   select.add(new Option('2 — supported','2'));
+   if(criterion==='causal_calibration')select.add(new Option('N/A — not applicable','na'));
+   select.addEventListener('change',evaluationReviewUpdated);
+   wrapper.appendChild(select);card.appendChild(wrapper);
+  }
+  grid.appendChild(card);
+ }
+ byId('evalReviewDownload').disabled=true;
+ byId('evalReviewStatus').textContent=
+  'Human review pending. No rating is inferred from model confidence or source count.';
+}
+function evaluationAddClaim(){
+ if(!evaluationResult||byId('evalClaimList').children.length>=32)return;
+ const card=document.createElement('div');
+ card.className='eval-claim-item';
+ const selector=(caption,options)=>{
+  const label=document.createElement('label');label.textContent=caption;
+  const field=document.createElement('select');
+  for(const [value,name] of options)field.add(new Option(name,value));
+  field.addEventListener('change',evaluationReviewUpdated);
+  label.appendChild(field);card.appendChild(label);return field;
+ };
+ selector('Stage transition',[
+  ['source_review','Initial → Source review'],
+  ['final_audit','Source review → Final audit']
+ ]);
+ selector('Human classification',REVIEW_CHANGE_KINDS);
+ const input=(caption,placeholder)=>{
+  const label=document.createElement('label');
+  label.className='review-wide';label.textContent=caption;
+  const field=document.createElement('input');
+  field.type='text';field.maxLength=500;field.placeholder=placeholder;
+  field.addEventListener('input',evaluationReviewUpdated);
+  label.appendChild(field);card.appendChild(label);return field;
+ };
+ input('Specific claim changed','Describe the factual claim before and after');
+ input('Original receipt reference','Tool name, receipt index, timestamp or source-scope field');
+ const remove=document.createElement('button');remove.type='button';
+ remove.textContent='Remove claim change';
+ remove.addEventListener('click',()=>{card.remove();evaluationReviewUpdated()});
+ card.appendChild(remove);
+ byId('evalClaimList').appendChild(card);
+ evaluationReviewUpdated();
+}
+function evaluationManualReview(){
+ if(!evaluationResult||evaluationResult.result?.stages?.length!==3)return null;
+ const stage_scores={};let complete=true;
+ for(const [stage] of REVIEW_STAGES){
+  const ratings={};
+  for(const [criterion] of REVIEW_CRITERIA){
+   const elem=Array.from(byId('evalScoreGrid').querySelectorAll('select[data-stage]'))
+     .find(s=>s.dataset.stage===stage&&s.dataset.criterion===criterion);
+   const v=elem?.value||'';
+   if(!v){complete=false;continue}
+   ratings[criterion]=v==='na'?null:Number(v);
+  }
+  stage_scores[stage]=ratings;
+ }
+ const cs=REVIEW_STAGES.map(([stage])=>stage_scores[stage].causal_calibration);
+ const causalSame=cs.every(v=>(v===null)===(cs[0]===null));
+ if(!causalSame)complete=false;
+ const claim_changes=[];
+ for(const item of byId('evalClaimList').children){
+  const selects=item.querySelectorAll('select'),inputs=item.querySelectorAll('input');
+  const claim=inputs[0]?.value.trim()||'';
+  const receipt_reference=inputs[1]?.value.trim()||'';
+  if(claim.length<5||receipt_reference.length<3)complete=false;
+  claim_changes.push({
+   transition:selects[0]?.value,kind:selects[1]?.value,
+   claim,receipt_reference
+  });
+ }
+ const review={
+  schema:'homebrain-v2-manual-claim-delta.v1',
+  reviewed_at_utc:new Date().toISOString(),
+  evidence_sha256:evaluationResult.result.evidence_sha256,
+  case_role:byId('evalCaseRole').value,
+  stage_scores,claim_changes
+ };
+ return {complete,causalSame,review};
+}
+function evaluationReviewUpdated(){
+ const outcome=evaluationManualReview();
+ byId('evalReviewDownload').disabled=!outcome?.complete;
+ if(!outcome){
+  byId('evalReviewStatus').textContent='Run the frozen comparison first.';return;
+ }
+ if(!outcome.complete){
+  byId('evalReviewStatus').textContent=outcome.causalSame
+   ? 'Complete all 12 human scores and every added claim/source reference before exporting.'
+   : 'Causal N/A must be consistent across all three stages.';return;
+ }
+ const scores=REVIEW_STAGES.map(([stage])=>
+  Object.values(outcome.review.stage_scores[stage]).filter(x=>x!==null)
+   .reduce((a,b)=>a+b,0));
+ const max=Object.values(outcome.review.stage_scores.single_answer)
+  .filter(x=>x!==null).length*2;
+ const ms=evaluationResult.result.stages[2].cumulative_elapsed_ms
+  -evaluationResult.result.stages[0].cumulative_elapsed_ms;
+ const signed=n=>(n>0?'+':'')+n;
+ byId('evalReviewStatus').textContent=
+  'Human grades — initial '+scores[0]+'/'+max+', source review '+scores[1]+'/'+max+
+  ', final audit '+scores[2]+'/'+max+
+  '. Final minus initial: '+signed(scores[2]-scores[0])+
+  ' points. Extra review time: '+(ms/1000).toFixed(2)+'s. '+
+  outcome.review.claim_changes.length+' manually recorded claim changes; '+
+  (outcome.review.claim_changes.length
+   ? 'claims require independent source verification.'
+   : 'none documented does not prove that no claims changed.');
+}
+function evaluationDownloadReview(){
+ const outcome=evaluationManualReview();
+ if(!outcome?.complete)return;
+ const reviewed={...evaluationResult,manual_review:outcome.review};
+ evaluationDownloadPrivate(reviewed,'PRIVATE-homebrain-v2-reviewed.json');
+}
+function evaluationDownloadPrivate(data,name){
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const url=URL.createObjectURL(blob),link=document.createElement('a');
- link.href=url;link.download='PRIVATE-homebrain-v2-evaluation.json';
+ link.href=url;link.download=name;
  document.body.appendChild(link);link.click();link.remove();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function evaluationDownload(){
+ if(!evaluationResult)return;
+ evaluationDownloadPrivate(evaluationResult,'PRIVATE-homebrain-v2-evaluation.json');
 }
 
 function reloadInterface(){
