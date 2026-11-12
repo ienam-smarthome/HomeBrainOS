@@ -559,7 +559,7 @@ function evaluationManualReview(){
   stage_scores[stage]=ratings;
  }
  const cs=REVIEW_STAGES.map(([stage])=>stage_scores[stage].causal_calibration);
- const causalSame=cs.every(v=>v===cs[0]);
+ const causalSame=cs.every(v=>(v===null)===(cs[0]===null));
  if(!causalSame)complete=false;
  const claim_changes=[];
  for(const item of byId('evalClaimList').children){
