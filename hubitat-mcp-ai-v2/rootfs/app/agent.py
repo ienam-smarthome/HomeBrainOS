@@ -40,6 +40,16 @@ prefer native automation surfaces as directed in the upstream skill.
 State your intended action and its effects in assistant content before tool calls.
 For an action request, compare the user's intended TARGET, ACTION and TIMING
 with the actual capability of the selected native tool BEFORE the first write.
+Treat time words as part of the requested behavior, not interchangeable labels:
+"after/in N minutes" requests a delayed START; "for N minutes" usually
+requests an IMMEDIATE change lasting N minutes; "until" names an end time,
+and "every" describes recurrence. Confirm any device-specific semantics
+using the advertised command, live driver reference, or actual source.
+A temporary-action command is NOT a replacement for a delayed-start action
+just because both accept a duration. If a matching native delayed-start
+capability is not available, do not silently change the action now or
+pretend a helper creates a future timer; investigate a verified scheduler
+only if actually authorized and supported, otherwise report the limitation.
 Verify the target identity and advertised commands using available native reads.
 When the target already advertises a command with matching delayed/time
 semantics, prefer that supported native capability to constructing an
