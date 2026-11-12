@@ -77,11 +77,16 @@ def freeze_capture(capture: Any) -> dict[str, Any]:
         if item["success"] is True and not isinstance(
                 item.get("response"), (str, dict, list)):
             raise FrozenEvaluationError("Successful source receipt content is missing")
-        # The reserved local monitor helper offers only read-only status/history.
-        # Its argument-validation failures are recorded before the agent creates
-        # operation_executed/read_only metadata. Keep those failed attempts and
-        # their original errors in the frozen evidence, not as successful reads.
-        # Do NOT generalise this exception to native or mixed-action MCP tools.
+        # Failed attempts can be safe to replay even when the MCP transport
+        # timed out before recording operation_executed. The installed native
+        # read-only API contract reserves hub_get/list/read/search for reads.
+        # Preserve the original failure and timeout as evidence, not success.
+        # Mixed-action hub_manage_* and all other tools remain excluded above.
+        contract_read_only_attempt = (
+            name.startswith(READ_TOOL_PREFIXES)
+            and item.get("read_only") is not False
+        )
+        # The local monitor's validated status/history modes are read-only.
         local_monitor_read_attempt = (
             name == "homebrain_read_device_monitor"
             and isinstance(item.get("arguments"), dict)
@@ -91,7 +96,8 @@ def freeze_capture(capture: Any) -> dict[str, Any]:
         if item["success"] is False and not (
                 item.get("operation_executed") is False
                 or item.get("result_kind") == "contract_error"
-                or local_monitor_read_attempt):
+                or local_monitor_read_attempt
+                or contract_read_only_attempt):
             raise FrozenEvaluationError(
                 "Uncertain failed operations cannot be replayed as read-only"
             )
