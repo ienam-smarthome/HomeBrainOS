@@ -30,6 +30,7 @@ from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationEr
 from mcp import MCPError, MCPClient
 from interaction import Interaction
 from conversation import ConversationEvidence
+from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
 
 
 DEFAULTS: dict[str, Any] = {
@@ -176,7 +177,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.58", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.59", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -417,6 +418,43 @@ async def ask(request: AskRequest, http_request: Request):
                         "tool_calls": [], "error": "model"}
     finally:
         app.state.interactions.pop(request_id, None)
+
+
+
+class EvaluationReplayRequest(BaseModel):
+    capture: dict
+    send_private_evidence_to_configured_model: StrictBool = False
+
+
+@app.post("/api/evaluation/replay")
+async def evaluation_replay(payload: EvaluationReplayRequest, http_request: Request):
+    """Optional private, tool-free replay. No disk writes, MCP calls or history."""
+    require_ui_request(http_request)
+    if payload.send_private_evidence_to_configured_model is not True:
+        raise HTTPException(403, "Explicit model-data transmission consent required")
+    model = app.state.model
+    if model is None or app.state.configuration_error:
+        raise HTTPException(503, "Configure the V2 model before using evaluation")
+    if (str(app.state.options["model_base_url"]).rstrip("/") == "https://ollama.com"
+            and not str(app.state.options["model_api_key"]).strip()):
+        raise HTTPException(503, "Configure the Ollama Cloud API key first")
+    try:
+        frozen = freeze_capture(payload.capture)
+    except FrozenEvaluationError as exc:
+        raise HTTPException(422, str(exc)) from None
+    # Share Ask's lock: no simultaneous normal assistant request or another
+    # expensive three-round replay. The normal Ask answer path is untouched.
+    async with app.state.ask_lock:
+        try:
+            return await replay_frozen_capture(
+                model, frozen,
+                timeout_seconds=int(app.state.options["investigation_timeout_seconds"]),
+            )
+        except FrozenEvaluationError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except RuntimeError:
+            # Provider errors may contain raw request fragments or credentials.
+            raise HTTPException(502, "Configured model replay failed; no Hubitat operation ran") from None
 
 
 @app.get("/api/diagnostics/status")
