@@ -19,6 +19,7 @@ from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
     review_kind, review_prompt,
+    FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -501,7 +502,7 @@ class Agent:
         deadline_seconds: int, before_call=None,
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
-        device_monitor=None,
+        device_monitor=None, enable_final_claim_audit: bool = True,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -572,7 +573,27 @@ class Agent:
         leaf_schema_discoveries = 0
         source_review_invoked = False
         source_review_kind = None
+        final_claim_audit_invoked = False
+        final_claim_audit_candidate = ""
+        final_claim_audit_status = "not_invoked"
         file_reads = FileReadCoverage()
+
+        def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
+            return {
+                "success": bool(answer), "prior_receipts_used": prior_receipts,
+                "answer": answer or "The model returned an empty answer.",
+                "leaf_schema_discoveries": leaf_schema_discoveries,
+                "source_review_invoked": source_review_invoked,
+                "source_review_kind": source_review_kind,
+                "final_claim_audit_invoked": final_claim_audit_invoked,
+                "final_claim_audit_status": audit_status,
+                "available_read_sources": source_catalog,
+                "file_read_coverage": file_reads.snapshot(),
+                "tool_calls": receipts,
+                "rounds": rounds,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            }
+
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -583,10 +604,16 @@ class Agent:
             # Once the extra model review starts, expose only read-only
             # tool definitions. Never widen an explicitly read-only request
             # just because the model chose to investigate further.
-            if source_review_invoked:
+            if final_claim_audit_invoked:
+                # Final claim audit is textual only. No tool definition is
+                # offered, and no tool request from this pass may execute.
+                tools = []
+            elif source_review_invoked:
                 tools = read_only_review_catalog(tools)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                if final_claim_audit_candidate:
+                    return completed_answer(final_claim_audit_candidate, "deadline_fallback")
                 return {
                     "success": False,
                     "answer": "Investigation deadline reached. Available tool receipts are listed below; no unverified conclusion was substituted.",
@@ -599,6 +626,8 @@ class Agent:
             try:
                 message = await self.round(messages, tools, remaining)
             except RuntimeError as exc:
+                if final_claim_audit_candidate:
+                    return completed_answer(final_claim_audit_candidate, "model_error_fallback")
                 return {
                     "success": False, "answer": f"Model/transport failure: {redact(str(exc))}",
                     "error": "model", "tool_calls": receipts, "rounds": rounds,
@@ -616,6 +645,10 @@ class Agent:
                 clean_message["tool_calls"] = calls
             messages.append(clean_message)
 
+            if final_claim_audit_invoked and calls:
+                # Tools were not offered; do not execute an unsolicited call.
+                return completed_answer(final_claim_audit_candidate, "tool_request_fallback")
+
             if not calls:
                 # A first completed draft is not proof of evidence sufficiency.
                 # The connected model decides whether further read-only
@@ -630,18 +663,25 @@ class Agent:
                     source_review_kind = review_kind(question)
                     messages.append({"role": "user", "content": review_prompt(source_review_kind)})
                     continue
-                return {
-                    "success": bool(text), "prior_receipts_used": prior_receipts,
-                    "answer": text or "The model returned an empty answer.",
-                    "leaf_schema_discoveries": leaf_schema_discoveries,
-                    "source_review_invoked": source_review_invoked,
-                    "source_review_kind": source_review_kind,
-                    "available_read_sources": source_catalog,
-                    "file_read_coverage": file_reads.snapshot(),
-                    "tool_calls": receipts,
-                    "rounds": rounds,
-                    "elapsed_ms": round((time.monotonic() - started) * 1000),
-                }
+                if final_claim_audit_invoked:
+                    return completed_answer(
+                        text or final_claim_audit_candidate,
+                        "completed" if text else "empty_response_fallback",
+                    )
+                if enable_source_review and enable_final_claim_audit and should_audit_completion(
+                    source_review_invoked=source_review_invoked,
+                    already_audited=final_claim_audit_invoked,
+                    remaining_seconds=deadline - time.monotonic(),
+                    has_draft=bool(text),
+                ):
+                    final_claim_audit_invoked = True
+                    final_claim_audit_candidate = text
+                    messages.append({"role": "user", "content": FINAL_CLAIM_AUDIT_PROMPT})
+                    continue
+                return completed_answer(
+                    text, "skipped_low_time" if source_review_invoked
+                    and enable_source_review else "not_invoked",
+                )
 
             for call in calls:
                 function = call.get("function", {}) if isinstance(call, dict) else {}

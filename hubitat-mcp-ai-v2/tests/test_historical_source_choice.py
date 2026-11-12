@@ -87,6 +87,12 @@ class ScriptedAgent(Agent):
         self.seen = []
         self.tool_catalogs = []
 
+    async def answer(self, *args, **kwargs):
+        # These legacy roundtrip fixtures intentionally test the pre-audit
+        # source-review contract; dedicated tests exercise the new default.
+        kwargs.setdefault("enable_final_claim_audit", False)
+        return await super().answer(*args, **kwargs)
+
     async def round(self, messages, tools, remaining):
         self.seen.append([dict(msg) for msg in messages])
         self.tool_catalogs.append([tool["function"]["name"] for tool in tools])

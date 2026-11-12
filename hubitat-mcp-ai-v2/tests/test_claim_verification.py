@@ -202,6 +202,10 @@ class VerificationRoundtripTests(unittest.IsolatedAsyncioTestCase):
                 "The separate typed status read returned paused=false. "
                 "The rendered Pause button alone did not prove that."
             ), "tool_calls": []},
+            {"content": (
+                "The verified status is paused=false from the typed status "
+                "receipt. The Pause button is not status evidence."
+            ), "tool_calls": []},
         ])
         mcp = FakeMCP()
         try:
@@ -214,7 +218,10 @@ class VerificationRoundtripTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(reply["success"])
         self.assertTrue(reply["source_review_invoked"])
         self.assertEqual(reply["source_review_kind"], "source_verification")
-        self.assertEqual(reply["rounds"], 4)
+        self.assertEqual(reply["rounds"], 5)
+        self.assertTrue(reply["final_claim_audit_invoked"])
+        self.assertEqual(reply["final_claim_audit_status"], "completed")
+        self.assertEqual(model.catalog_seen[4], [])
         self.assertEqual([name for name, _ in mcp.calls],
                          ["hub_get_app_config", "hub_get_app_status"])
         self.assertEqual(model.catalog_seen[2],
@@ -231,6 +238,9 @@ class VerificationRoundtripTests(unittest.IsolatedAsyncioTestCase):
             {"content": ("The current page has a Pause button and disabled=false; "
                          "a typed paused flag was not returned, so pause is unknown."),
              "tool_calls": []},
+            {"content": ("The paused state is unknown. The current Pause "
+                          "button and disabled=false do not verify paused."),
+             "tool_calls": []},
         ])
         mcp = FakeMCP()
         try:
@@ -241,8 +251,9 @@ class VerificationRoundtripTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
         self.assertEqual(len(mcp.calls), 1)
-        self.assertEqual(reply["rounds"], 3)
+        self.assertEqual(reply["rounds"], 4)
         self.assertTrue(reply["source_review_invoked"])
+        self.assertEqual(reply["final_claim_audit_status"], "completed")
         self.assertIn("unknown", reply["answer"])
 
 
