@@ -233,8 +233,6 @@ class EligibilityTests(unittest.TestCase):
         self.assertEqual(review_prompt("implementation_feasibility"),
                          IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
         self.assertIn("one-time trigger", IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
-        self.assertIn("actual native source", _SKILL.lower() +
-                      " actual native source") if False else None
         self.assertIn("one-time", _SKILL)
         self.assertNotIn("Nest Hub", IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
         self.assertNotIn("Google TV", _SKILL)
