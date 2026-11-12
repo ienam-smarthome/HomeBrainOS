@@ -839,11 +839,11 @@ class Agent:
                 if (enable_source_review and enable_final_claim_audit
                         and source_review_kind != "action_outcome"
                         and should_audit_completion(
-                    source_review_invoked=source_review_invoked,
-                    already_audited=final_claim_audit_invoked,
-                    remaining_seconds=deadline - time.monotonic(),
-                    has_draft=bool(text),
-                ):
+                            source_review_invoked=source_review_invoked,
+                            already_audited=final_claim_audit_invoked,
+                            remaining_seconds=deadline - time.monotonic(),
+                            has_draft=bool(text),
+                        )):
                     capture_answer_stage("pre_final_audit", text)
                     final_claim_audit_invoked = True
                     final_claim_audit_candidate = text
