@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.63 — optional frozen replay accepts general read-only inventory questions.** The mobile and CLI AI Evaluation prompts now support broad inventory/status questions such as `Which devices have low battery and stale readings?`, in addition to causal, historical and explicit verification requests. This applies **only to frozen-receipt replay eligibility**; the live agent's review triggers, source selection, MCP tools, model prompts and device actions are unchanged. Read-only timeout preservation from alpha.62 remains in place. The replay still requires successful original receipts, strict read-only validation and cloud-model consent. See [alpha.63 note](../docs/HOMEBRAIN-V2-ALPHA63-READONLY-INVENTORY-EVALUATION-20261112.md).
+
+
 **Alpha.62 — replay timed-out native read-only MCP attempts as failed evidence.** The optional browser/phone and CLI frozen evaluators now recognise failed attempts from the native contractually read-only `hub_get_*`, `hub_list_*`, `hub_read_*` and `hub_search_*` tool families, even if the MCP transport timed out before recording execution metadata. They **retain** these as failed receipts without promoting them into successful reads or proving history coverage. Unknown, mixed-action `hub_manage_*` and explicitly non-read-only attempts remain blocked. Normal Ask, model prompts, V1, devices and diagnostics recorder are unchanged. See [alpha.62 notes](../docs/HOMEBRAIN-V2-ALPHA62-READONLY-REPLAY-TIMEOUTS-20261112.md).
 
 
