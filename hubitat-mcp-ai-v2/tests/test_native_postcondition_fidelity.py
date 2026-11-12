@@ -118,7 +118,7 @@ class NativeWaitScopeTests(unittest.TestCase):
         self.assertIn("temporary-action command is NOT a replacement", _SKILL)
         self.assertIn("timedOut/non-converged", _SKILL)
         self.assertIn("DISCLOSE", ACTION_OUTCOME_REVIEW_PROMPT)
-        self.assertIn("delayed START", ACTION_OUTCOME_REVIEW_PROMPT)
+        self.assertIn("DELAYED onset", ACTION_OUTCOME_REVIEW_PROMPT)
         self.assertNotIn("Google TV", _SKILL)
         self.assertNotIn("6923", ACTION_OUTCOME_REVIEW_PROMPT)
 
