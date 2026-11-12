@@ -150,6 +150,11 @@ class FirstAnswerLabTests(unittest.TestCase):
                                 {"tool":"hub_get_device_attribute",
                                  "args":{"deviceId":"LAB-101","attribute":"switch"}})]}
                     else:
+                        if n==4:
+                            self.assertNotIn("hub_manage_devices",[
+                                t["function"]["name"] for t in doc["tools"]])
+                            self.assertIn("Action/outcome source review",
+                                          doc["messages"][-1]["content"])
                         response={"content":("Synthetic hub reports level 40 and switch on "
                                              "after an independent read; physical brightness "
                                              "not independently confirmed.")}
@@ -160,9 +165,9 @@ class FirstAnswerLabTests(unittest.TestCase):
                 try:
                     await lab.run("lab-01",agent)
                     result=lab.case("lab-01")
-                    self.assertEqual(len(calls),4)
+                    self.assertEqual(len(calls),5)
                     self.assertTrue(result["success"])
-                    self.assertEqual(result["rounds"],4)
+                    self.assertEqual(result["rounds"],5)
                     self.assertEqual(result["simulated_commands"],1)
                     self.assertEqual(result["unsafe_live_actions"],0)
                     self.assertEqual(sum(item["observed"] for item in result["coverage"]),4)
