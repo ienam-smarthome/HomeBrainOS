@@ -174,7 +174,8 @@ class NoRedirect(HTTPRedirectHandler):
 
 def ollama_chat(endpoint: str, model: str, *, timeout: int = 120,
                 temperature: float = 0, seed: int | None = None):
-    # Bypass ambient HTTP proxy variables; never relay private receipts via a proxy.\n    opener = build_opener(NoRedirect(), ProxyHandler({}))
+    # Bypass ambient HTTP proxy variables; never relay private receipts via a proxy.
+    opener = build_opener(NoRedirect(), ProxyHandler({}))
     def request_model(messages):
         payload = {"model": model, "messages": messages, "tools": [], "stream": False,
                    "options": {"temperature": temperature}}
@@ -255,8 +256,14 @@ def main() -> None:
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
     try:
-        endpoint = model_endpoint(args.endpoint, args.allow_remote_model)\n        # Even a localhost Ollama API may route -cloud models to a remote service.\n        if ('-cloud' in args.model.lower() or 'cloud/' in args.model.lower()) and not args.allow_remote_model:\n            raise ReplayError('Cloud-routed model requires explicit --allow-remote-model')
-        source = args.capture.resolve()\n        repo_root = Path(__file__).resolve().parents[2]\n        if source.is_relative_to(repo_root) or args.output.resolve().is_relative_to(repo_root):\n            raise ReplayError('Private captures and outputs must reside outside the repository')
+        endpoint = model_endpoint(args.endpoint, args.allow_remote_model)
+        # Even a localhost Ollama API may route -cloud models to a remote service.
+        if ('-cloud' in args.model.lower() or 'cloud/' in args.model.lower()) and not args.allow_remote_model:
+            raise ReplayError('Cloud-routed model requires explicit --allow-remote-model')
+        source = args.capture.resolve()
+        repo_root = Path(__file__).resolve().parents[2]
+        if source.is_relative_to(repo_root) or args.output.resolve().is_relative_to(repo_root):
+            raise ReplayError('Private captures and outputs must reside outside the repository')
         if not source.is_file() or not 0 < source.stat().st_size <= MAX_PACKET_BYTES:
             raise ReplayError("Private source file missing or oversized")
         if not isinstance(args.model, str) or not args.model.strip() or len(args.model) > 120:
