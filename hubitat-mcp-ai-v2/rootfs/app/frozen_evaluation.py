@@ -17,7 +17,7 @@ from agent import _SKILL
 from investigation_review import (
     FINAL_CLAIM_AUDIT_PROMPT,
     final_claim_receipt_scope_index,
-    review_kind,
+    frozen_review_kind,
     review_prompt,
 )
 
@@ -102,7 +102,7 @@ def freeze_capture(capture: Any) -> dict[str, Any]:
                 "Uncertain failed operations cannot be replayed as read-only"
             )
 
-    kind = review_kind(question)
+    kind = frozen_review_kind(question)
     if kind is None:
         raise FrozenEvaluationError(
             "This evaluation requires a causal, historical or verification question"

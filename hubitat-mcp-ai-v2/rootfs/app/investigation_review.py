@@ -445,6 +445,39 @@ def review_kind(question: str) -> str | None:
     return None
 
 
+
+# Frozen-receipt evaluation can inspect a wider range of *read-only* questions
+# than the live agent's optional review trigger. Keep this heuristic out of
+# review_kind(), so normal Ask does not add latency or change tool behaviour.
+_FROZEN_INVENTORY_START = re.compile(
+    r"^\s*(?:which|what|list|show|identify|find|compare)\b", re.IGNORECASE,
+)
+_FROZEN_INVENTORY_SUBJECT = re.compile(
+    r"\b(?:devices?|sensors?|rules?|apps?|automations?|attributes?|"
+    r"readings?|measurements?|statuses?|states?|health|settings?|"
+    r"events?|logs?|sources?|values?|batteries|battery|power|memory)\b",
+    re.IGNORECASE,
+)
+
+
+def frozen_review_kind(question: str) -> str | None:
+    """Extra read-only inventory eligibility only for optional frozen replay.
+
+    This determines a review prompt category, not factual correctness.
+    It never changes production review triggers or executes tools.
+    """
+    kind = review_kind(question)
+    if kind is not None:
+        return kind
+    if (not isinstance(question, str)
+            or _WRITE_INTENT_AT_START.search(question)):
+        return None
+    if (_FROZEN_INVENTORY_START.search(question)
+            and _FROZEN_INVENTORY_SUBJECT.search(question)):
+        return "source_verification"
+    return None
+
+
 def review_prompt(kind: str) -> str:
     """Choose review guidance, not a tool or a computed answer."""
     if kind == "historical_measurement":

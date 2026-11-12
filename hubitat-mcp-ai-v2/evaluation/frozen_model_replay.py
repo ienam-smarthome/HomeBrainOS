@@ -28,7 +28,7 @@ from urllib.error import HTTPError, URLError
 RUNTIME = Path(__file__).resolve().parents[1] / "rootfs" / "app"
 sys.path.insert(0, str(RUNTIME))
 from investigation_review import (  # noqa: E402
-    review_kind, review_prompt, FINAL_CLAIM_AUDIT_PROMPT,
+    frozen_review_kind, review_prompt, FINAL_CLAIM_AUDIT_PROMPT,
     final_claim_receipt_scope_index,
 )
 
@@ -108,7 +108,7 @@ def frozen_packet(raw: dict) -> dict:
     serialized = json.dumps(receipts, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if len(serialized) > MAX_CONTEXT_CHARS:
         raise ReplayError("Frozen source payload exceeds context budget; do not silently truncate evidence")
-    kind = review_kind(question)
+    kind = frozen_review_kind(question)
     if kind is None:
         raise ReplayError("This comparison requires a source-review-eligible question")
     return {"question": question, "tool_calls": receipts, "review_kind": kind,
