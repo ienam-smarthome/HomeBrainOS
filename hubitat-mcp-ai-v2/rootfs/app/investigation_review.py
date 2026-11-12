@@ -613,10 +613,10 @@ def is_causal_question(question: str) -> bool:
 # not a device/tool router, negative-answer validator, permission grant or
 # response rewrite: only the model can decide which further read matters.
 _CAPABILITY_DENIAL_DRAFT = re.compile(
-    r"\\b(?:cannot|can't|unable\\s+to|not\\s+possible|not\\s+supported|"
-    r"isn't\\s+supported|doesn't\\s+support|does\\s+not\\s+support|"
-    r"neither\\b[^.\\n]{0,90}\\b(?:direct|possible|implemented)|"
-    r"no\\s+[^.\\n]{0,80}\\b(?:capabilit(?:y|ies)|commands?|actuators?))",
+    r"\b(?:cannot|can't|unable\s+to|not\s+possible|not\s+supported|"
+    r"isn't\s+supported|doesn't\s+support|does\s+not\s+support|"
+    r"neither\b[^.\n]{0,90}\b(?:direct|possible|implemented)|"
+    r"no\s+[^.\n]{0,80}\b(?:capabilit(?:y|ies)|commands?|actuators?))",
     re.IGNORECASE,
 )
 
