@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 12 November 2026 — Alpha.68: verify alternative implementation feasibility
+
+A private alpha.67 live first answer correctly found the alternate actuator and its native command list, establishing that the requested delayed start was **not** directly advertised by that device. It nonetheless promised a viable one-time rule, without reading the current rule-writer schema, immediate/dated one-shot trigger contract, persisted delay/action or client authorization. A further filtered inventory was inaccurately described as an exhaustive check of controllers. Missing a native command does not justify a definite assertion that a new rule is feasible or required.
+
+Alpha.68 adds general source-calibration guidance for proposed alternate implementations and reuses the existing one **read-only** model-led review when the model's own draft promises to create/schedule an automation. The LLM may independently inspect live MCP tool definitions using the already available catalog helper and relevant read-only rule/app guides, but cannot create or modify rules or devices during review. A visible writer is not permission to execute; a generic rule reference is not a verified one-time trigger contract. No automatic fallback scheduler, tool routing, extra review pass or V1 change. A fictional scripted test exposes a writer schema and general delay reference but leaves one-time trigger feasibility unknown; additional tests cover absent writer, safety and low-overhead positive read answers.
+
+See [alpha.68 implementation and acceptance note](HOMEBRAIN-V2-ALPHA68-IMPLEMENTATION-FEASIBILITY-20261112.md). Exact-head CI and installed source-real model-led first-answer verification are still required. Real one-time automation creation is NOT claimed.
+
+
+
+
 ## 12 November 2026 — Alpha.67: general control-surface discovery after source-bounded denials
 
 Two private alpha.66 first answers inspected named media/speaker integrations but not potential separate controllers for the requested internet-access effect. Successful narrowly label-filtered device inventories were mistakenly treated as complete searches of all possible actuators. One answer concluded a timed action was globally impossible; the other could not identify an alternate internet-control integration. No native tool errors or writes occurred.
