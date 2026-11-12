@@ -60,6 +60,27 @@ class FrozenReplayTests(unittest.TestCase):
         with self.assertRaises(replay.ReplayError):
             replay.frozen_packet(payload)
 
+    def test_failed_reserved_monitor_read_is_preserved_not_promoted(self):
+        payload = fixture()
+        payload["tool_calls"].append({
+            "name": "homebrain_read_device_monitor",
+            "success": False,
+            "arguments": {"mode": "history", "metric": "temperature",
+                          "range": "custom", "start": "2026-11-11T20:00:00Z"},
+            "error": "Both start and end are required"
+        })
+        result = replay.frozen_packet(payload)
+        self.assertEqual(len(result["tool_calls"]), 3)
+        self.assertFalse(result["tool_calls"][-1]["success"])
+        self.assertIn("Both start and end are required", result["serialized_receipts"])
+        payload["tool_calls"][-1]["arguments"]["mode"] = "switch"
+        with self.assertRaises(replay.ReplayError):
+            replay.frozen_packet(payload)
+        payload["tool_calls"][-1]["arguments"]["mode"] = "history"
+        payload["tool_calls"][-1]["name"] = "hub_get_logs"
+        with self.assertRaises(replay.ReplayError):
+            replay.frozen_packet(payload)
+
     def test_technical_json_export_supported_without_using_prior_answers(self):
         f = fixture()
         payload = {"question": f["question"],
