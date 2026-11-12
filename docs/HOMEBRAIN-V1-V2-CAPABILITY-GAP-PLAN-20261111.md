@@ -86,3 +86,10 @@ The installed alpha.51 overview is now present. To progress from UI confirmation
 - Whether V2 multi-device comparison actually reduces errors or model latency in unseen source-real tests.
 - Whether the monitor export's timestamp/provenance semantics generalise across all optional sensor/level metrics.
 - Whether new actual failures justify a separate historian. **Not justified by the current successful monitor-API examples.**
+
+
+## 12 November 2026 — Daily-use delayed device commands (Gate C, no runtime change)
+
+For one-off relative delays, prefer a **driver-advertised timed command** through the existing native `hub_call_device_command` gateway instead of creating a disposable Rule Machine rule or a second HomeBrain scheduler. Read the exact target's `supportedCommands`, validate the live leaf schema/arguments and read back its pending-deadline state after dispatch. A returned dispatch success is **not** evidence that the future job ran or that a downstream router enforced it. Ambiguous nicknames need user resolution; timed-command spellings and driver persistence cannot be inferred from a Hubitat command-label screenshot. See [timed-device-control decision, contract and live acceptance](HOMEBRAIN-V2-TIMED-DEVICE-CONTROL-20261112.md).
+
+The accompanying synthetic contract regression exercises model-selected direct driver-command dispatch and distinct post-dispatch readback on a fictional device. It does **not** demonstrate installed permission, Gemma's first-try tool selection, actual Hubitat scheduled jobs or router enforcement. V2 runtime, V1, upstream server, driver configuration, and ongoing Gate B model evaluation remain unchanged. A live **approved** write/readback acceptance is still required before closing this daily-use gap.
