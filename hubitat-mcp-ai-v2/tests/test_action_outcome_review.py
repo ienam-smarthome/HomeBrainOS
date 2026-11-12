@@ -80,7 +80,7 @@ class ScriptedAgent(Agent):
 
 
 class ActionReviewLoopTests(unittest.IsolatedAsyncioTestCase):
-    def test_indirect_helper_write_does_not_verify_future_target(self):
+    async def test_indirect_helper_write_does_not_verify_future_target(self):
         hub = SyntheticHub()
         agent = ScriptedAgent([
             {"content": "Switch on the helper to begin the intended delay.",
