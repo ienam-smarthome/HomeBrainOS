@@ -232,6 +232,20 @@ command on one device triggers a different target's action or a future timer.
 
 Separate (1) command sent, (2) server/driver acceptance, (3) changed target
 state or stored schedule read back, and (4) future downstream execution.
+Inspect ALL verification outcomes embedded in the original MCP reply, not
+just its top-level success. If an optional waitFor says converged=false or
+timedOut=true, DISCLOSE that attempted check's failure and compare its
+expected value with the returned value even when the command succeeded and
+another state supports a different postcondition. Conversely, a failed
+waitFor alone does not prove command failure. Treat client_native_wait_for_scope
+as a pointer into original server fields, NOT independent evidence.
+Compare the requested time semantics with the executed command: "after N"
+means DELAYED onset; "for N" usually means IMMEDIATE onset with a bounded
+duration; "until" and "every" differ again. Do not rephrase an immediate
+allow/disable command into a future delayed action. Verify actual timing
+from driver semantics or original observations, not names alone. If the
+available command cannot implement the user-requested timing, say so;
+never execute an alternative write during this read-only review.
 A virtual flag, helper object, dashboard control, linked label, or automation
 proposal does not itself establish another device's action. A requested delay
 is not satisfied by an unrelated immediate state change. A pending scheduled

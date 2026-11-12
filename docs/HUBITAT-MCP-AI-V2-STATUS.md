@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 12 November 2026 — Alpha.66: temporal action intent and truthful nested verification
+
+Private alpha.65 live source evidence confirmed a native delayed action was accepted with a fresh pending deadline, but the same original MCP reply contained `waitFor.timedOut=true` against an unproven “remaining” attribute. The AI omitted this partial failure while reporting successful scheduling. A separate request for an action **after two minutes** used an immediate temporary **for two minutes** command; the returned target state showed access granted immediately, yet the answer did not report the temporal mismatch. No real follow-up action should be inferred from the assistant's earlier wording.
+
+Alpha.66 addresses both as general time/postcondition reasoning: distinguish delayed onset vs temporary duration vs end deadline vs recurrence; choose verification attributes based on documented meaning; expose native nested `waitFor` outcome as a source-bounded annotation to the model and private Technical JSON; prompt the existing read-only action outcome review to report failed optional verification even when command acceptance is supported. No automatic additional tools, retry, scheduler, rule, device-specific guard, corrective write, or change to V1. Synthetic acceptance tests cover immediate-vs-deferred mismatch and independent domain success plus wait timeout. Real installed first-answer effectiveness requires fresh verification.
+
+See [alpha.66 development note](HOMEBRAIN-V2-ALPHA66-POSTCONDITION-FIDELITY-20261112.md).
+
+
+
+
 ## 12 November 2026 — Alpha.65: source-grounded action outcomes
 
 A private alpha.64 first answer for a delayed device action selected a similarly named helper switch and got a successful `on` reply, then asserted that a timed downstream action was scheduled. A subsequent read-only investigation found no pending driver timer for the actual target and no matching known automation in bounded checks; this did not exclude every external controller. The failure is model-selected action/outcome conflation rather than a missing client scheduler.
