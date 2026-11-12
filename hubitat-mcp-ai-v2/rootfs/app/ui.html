@@ -218,11 +218,20 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 @media(max-width:720px){.overview-shell{padding:14px}.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-head{align-items:flex-start}}
 @media(max-width:410px){.overview-tile{padding:10px}.overview-tile strong{font-size:24px}.overview-head p{max-width:210px}}
 
+
+.eval-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.eval-pair pre{max-height:480px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.eval-upload{display:block;margin:12px 0;font-size:14px}
+.eval-upload input{max-width:100%;padding:7px}
+.eval-consent{display:flex;align-items:flex-start;gap:10px;line-height:1.5;margin:16px 0}
+.eval-consent input{margin-top:5px}
+.eval-meta{font-size:12px;color:var(--muted);line-height:1.5}
+@media(max-width:650px){.eval-pair{grid-template-columns:1fr}.app-tabs{width:100%;overflow-x:auto}.app-tabs button{white-space:nowrap;padding:9px 11px}}
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><small id="state">Checking configuration…</small><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
-<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
+<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
 <section id="ask" class="active">
 <div class="overview-shell" aria-label="Current hub overview">
  <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
@@ -301,17 +310,126 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 <details><summary>Captured incident and startup records</summary><pre id="incidents">No data.</pre></details>
 </div>
 </section>
+
+<section id="evaluation" aria-label="Optional AI evaluation">
+<div class="card">
+ <h2>AI Evaluation · experimental</h2>
+ <p class="muted">We previously compared V1 with V2 to measure overall capability and first-answer quality. This is a separate test: does reviewing V2's own answer with identical original MCP evidence improve factual accuracy enough to justify extra model rounds and delay?</p>
+ <p class="muted">The experiment has <strong>no Hubitat or MCP tools</strong>. It reuses frozen original receipts. It cannot check new sources, decide correctness automatically, or replace independent V1 versus V2 acceptance testing.</p>
+ <div class="row">
+  <button type="button" onclick="evaluationUseLastAsk()">Use latest Ask evidence</button>
+  <span class="eval-meta" id="evalModel">Configured model: checking…</span>
+ </div>
+ <label class="eval-upload" for="evalFile">Or select an older private Technical JSON file
+  <input id="evalFile" type="file" accept=".json,application/json" onchange="evaluationPickFile(this)">
+ </label>
+ <p id="evalSource" class="eval-meta" role="status">No original evidence selected. Run a normal read-only Ask first, or choose its PRIVATE JSON file.</p>
+ <label class="eval-consent" for="evalConsent">
+  <input type="checkbox" id="evalConsent" onchange="evaluationToggle()">
+  <span>I approve sending these <strong>private original MCP receipts</strong> to the currently configured AI model for this one comparison. The model may be hosted in the cloud and may charge for three rounds. No Hubitat commands will be executed.</span>
+ </label>
+ <div class="row">
+  <button id="evalRun" type="button" class="primary" onclick="evaluationRun()" disabled>Compare answers · 3 model rounds</button>
+  <button id="evalDownload" type="button" onclick="evaluationDownload()" disabled>Download PRIVATE results JSON</button>
+ </div>
+ <p id="evalStatus" role="status" aria-live="polite" class="eval-meta">Not started. Evidence stays in this browser session until you explicitly run a comparison.</p>
+</div>
+<div class="card" id="evalResults" hidden>
+ <h2>Frozen-evidence comparison</h2>
+ <p id="evalSummary" class="eval-meta"></p>
+ <div class="eval-pair">
+  <div><h3>Initial answer · one model round</h3><pre id="evalInitial"></pre></div>
+  <div><h3>Reviewed answer · three model rounds</h3><pre id="evalReviewed"></pre></div>
+ </div>
+ <details><summary>Intermediate source-review answer</summary><pre id="evalIntermediate"></pre></details>
+ <p class="eval-meta">Different wording does not prove improvement. Compare definite claims against the original successful receipts, scope limits, chronology, and reporter versus initiator before assigning human scores. Do not use this same-incident regression as a new holdout.</p>
+</div>
+</section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.58";
+const UI_VERSION="2.0.0-alpha.59";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
-function tab(which){if(which!=='ask'&&which!=='diagnostics')return;for(const id of ['ask','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();}
+let evaluationCapture=null,evaluationResult=null,evaluationBusy=false;
+function tab(which){if(!['ask','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
+
+function evaluationToggle(){
+ byId('evalRun').disabled=!evaluationCapture||!byId('evalConsent').checked||evaluationBusy;
+}
+function evaluationSetCapture(capture,source){
+ evaluationCapture=capture;
+ evaluationResult=null;
+ byId('evalResults').hidden=true;
+ byId('evalDownload').disabled=true;
+ byId('evalConsent').checked=false;
+ byId('evalSource').textContent=source;
+ byId('evalStatus').textContent='Evidence selected locally. Consent is required for every run.';
+ evaluationToggle();
+}
+function evaluationUseLastAsk(){
+ const previous=technicalDetails;
+ if(!previous||!Array.isArray(previous.response?.tool_calls)||!previous.response.tool_calls.length){
+  byId('evalSource').textContent='Latest Ask has no original MCP receipts to replay. Ask a read-only question first.';
+  return;
+ }
+ evaluationSetCapture(previous,
+  'Latest Ask selected: '+previous.response.tool_calls.length+' original MCP attempts · '+(previous.captured_at||'time unknown'));
+}
+async function evaluationPickFile(input){
+ const file=input.files?.[0];if(!file)return;
+ if(file.size>1024*1024){
+  byId('evalSource').textContent='File exceeds the 1 MiB private capture limit.';input.value='';return;
+ }
+ try{
+  const capture=JSON.parse(await file.text());
+  if(!capture||typeof capture!=='object'||Array.isArray(capture))throw new Error('Invalid JSON object');
+  evaluationSetCapture(capture,'Private file selected: '+file.name+' · '+Math.round(file.size/1024)+' KiB');
+ }catch(_){byId('evalSource').textContent='Unable to parse private Technical JSON file.';}
+ input.value='';
+}
+async function evaluationRun(){
+ if(!evaluationCapture||!byId('evalConsent').checked||evaluationBusy)return;
+ const current=evaluationCapture; // local snapshot; never sent without consent
+ evaluationBusy=true;evaluationToggle();
+ byId('evalStatus').textContent='Running three tool-free model rounds using frozen original receipts…';
+ try{
+  const result=await readJson('api/evaluation/replay',{
+   method:'POST',
+   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
+   body:JSON.stringify({capture:current,send_private_evidence_to_configured_model:true})
+  });
+  evaluationResult={ui_version:UI_VERSION,configured_model:configuredModel,
+    captured_at:new Date().toISOString(),result};
+  const stages=result.stages||[];
+  byId('evalInitial').textContent=stages[0]?.answer||'No initial answer';
+  byId('evalIntermediate').textContent=stages[1]?.answer||'No intermediate answer';
+  byId('evalReviewed').textContent=stages[2]?.answer||'No reviewed answer';
+  byId('evalSummary').textContent=result.original_tool_receipts+' original receipts ('+
+    result.successful_tool_receipts+' successful, '+result.failed_tool_receipts+' failed) · '+
+    result.model_rounds+' model rounds · '+(result.elapsed_ms/1000).toFixed(2)+'s · no MCP calls';
+  byId('evalStatus').textContent='Comparison complete. Human evidence review is still required.';
+  byId('evalResults').hidden=false;
+  byId('evalDownload').disabled=false;
+ }catch(error){
+  byId('evalStatus').textContent='Replay not completed: '+String(error.message||'Unknown failure');
+ }finally{
+  evaluationBusy=false;byId('evalConsent').checked=false;evaluationToggle();
+ }
+}
+function evaluationDownload(){
+ if(!evaluationResult)return;
+ const blob=new Blob([JSON.stringify(evaluationResult,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download='PRIVATE-homebrain-v2-evaluation.json';
+ document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
 }
@@ -325,6 +443,7 @@ async function loadStatus(){
   }
   byId('reloadUI').hidden=true;
   configuredModel=d.model;
+  byId('evalModel').textContent='Configured model: '+(d.model||'not configured');
   const monitor=d.device_monitor||{};
   byId('monitorSourceStatus').textContent=monitor.configured
     ? 'Hub & Device Monitor: configured · connection not tested'
