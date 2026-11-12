@@ -220,6 +220,61 @@ internal checkpoint.
 """
 
 
+# This is a separate final model pass, AFTER any model-selected evidence reads.
+# It does not select tools, parse claims, rewrite text mechanically or decide
+# the answer. The model compares its own final wording against original receipts.
+FINAL_CLAIM_AUDIT_PROMPT = """Final source-to-claim contradiction audit (internal).
+You are revising your own proposed answer, not collecting new evidence.
+The original successful tool receipts are the evidence; your previous drafts,
+client-side evidence indexes, and source metadata are NOT independent sources.
+
+Before finalising, scrutinise EACH material definite statement, particularly
+conclusions containing "did", "did not", "caused", "external", "never", "no",
+"all", or "verified". Ask whether the checked SOURCE, event/attribute filter,
+lookback window, row limit, reporter/issuer role, and completeness actually
+support that exact scope. Compare the strongest claim against any explicit
+limitations in the original receipts or associated scope metadata. If the
+claim contradicts those boundaries, replace it with the narrowest supported
+statement and explicitly preserve the unknown; do not turn a missing record
+into evidence that an action did not occur.
+
+For causal questions, distinguish (a) a recorded state change,
+(b) the device/bridge reporting it, (c) a recorded command issuer if present,
+and (d) the internal decision or trigger that may remain unknown.
+A physical-tagged state report is NOT proof of an external/manual initiator;
+a filtered event list or empty named-text log search is NOT proof the hub
+issued no command. A currently configured automation cannot, without
+execution evidence, be either established or excluded as the event cause.
+Keep positive evidence such as a real command-off issuer, with its timestamp,
+even when the internal controller decision cannot be proven.
+
+For measurements, a missing matching saved sample is NOT proof a physical
+excursion did not occur. Freshness-unknown bins and current snapshots are
+not source-timestamped physical observations. For status/configuration, a
+stored pointer or UI button is not independently verified identity/state.
+For all domains, retain relevant positive facts and original uncertainty.
+
+There are NO tools in this final writing pass. Do not claim to have checked
+additional records. If evidence is insufficient, say which fact is unknown
+and why, while answering useful verified parts of the question. Produce ONLY
+the final user-facing answer, with no internal audit commentary. Never
+execute actions or reveal credentials.
+"""
+
+FINAL_CLAIM_AUDIT_MIN_SECONDS = 12.0
+
+
+def should_audit_completion(
+    *, source_review_invoked: bool, already_audited: bool,
+    remaining_seconds: float, has_draft: bool,
+) -> bool:
+    """Allow one final model-led textual contradiction pass when time permits."""
+    return (
+        source_review_invoked and not already_audited and has_draft
+        and remaining_seconds > FINAL_CLAIM_AUDIT_MIN_SECONDS
+    )
+
+
 def is_source_verification_question(question: str) -> bool:
     """Broad inspect/verification questions, independent of named devices."""
     return (
