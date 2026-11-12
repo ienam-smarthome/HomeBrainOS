@@ -20,6 +20,27 @@ from investigation_v2.operation_discovery import discover_device_operations
 from investigation_v2.read_loop import run_read_only_investigation
 from investigation_v2.receipt_projection import project_read_receipt
 
+from datetime import datetime, timezone
+import investigation_v2.device_context as device_context_module
+
+
+@pytest.fixture(autouse=True)
+def frozen_october_2026_replay_clock(monkeypatch):
+    """Keep a synthetic October event within the fixture's 31-day lookback.
+
+    A passing historical replay must not depend on the wall-clock date.
+    Only this test module's V1 source-module clock is replaced; no runtime
+    behaviour or source history semantics change.
+    """
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+            return fixed.astimezone(tz) if tz else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(device_context_module, "datetime", FrozenDateTime)
+
+
 
 def generic_gateway(explicit_enum=None, *, write=False):
     properties = {
@@ -190,9 +211,6 @@ async def test_read_gateway_missing_is_not_assumed_from_manage_gateway():
 
 def test_only_trusted_hubitat_bst_clock_can_expand_history_window():
     from investigation_v2.device_context import _last_reported_age_hours
-    from datetime import datetime, timezone
-    if datetime.now(timezone.utc).year != 2026:
-        pytest.skip("this fixture exercises the October 2026 outage")
     case = build_case_file("Why?", [project_read_receipt(
         "hub_read_devices", {"tool": "hub_get_device", "args": {"deviceId": "7103"}},
         MCPToolResult("hub_read_devices", {}, raw={}, text="",
