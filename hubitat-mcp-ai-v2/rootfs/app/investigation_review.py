@@ -309,6 +309,56 @@ schedule or grant authorization. Do not mention the internal checkpoint.
 
 
 
+
+IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT = """Implementation-feasibility source review (internal, READ-ONLY).
+The user's requested target, operation and timing are the specification.
+A native device's lack of a direct timed command does NOT prove a new rule
+is required, feasible, authorized, or the only available option.
+
+Review the ORIGINAL successful receipts for the concrete proposed
+implementation. Distinguish each step, without treating generic guide
+descriptions, similar names, a visible top-level write tool, or an existing
+rule's unrelated settings as proof of an executable one-time workflow:
+(1) identified controller and intended effect; (2) native commands and
+actual timing; (3) alternative writer/tool exposure on THIS connection;
+(4) exact advertised schema and authoritative current server capability;
+(5) immediate/dated/one-shot trigger semantics that initiate the work
+WITHOUT needing a future chat turn or an unrelated later event;
+(6) correct persisted delay, target command arguments and safety gates;
+(7) evidence that the job is actually created and will survive this
+conversation (only possible following an authorized write and readback).
+
+Read the ACTUAL current connected tool catalog with
+homebrain_inspect_mcp_catalog when available, and consult relevant
+read-only native tool guides, already returned app/rule configurations,
+and exact live schemas as needed. A guide can describe a general API;
+it is not proof this install exposes or authorizes the writer. A gateway
+candidate is not a verified leaf schema. A write tool's presence is not
+permission to execute it. Never assume one-time Rule Machine creation
+or an immediate trigger contract is available solely because recurring
+rules and delays exist.
+
+Check whether any searches were filtered (label, category, capabilities,
+time window, count/total) and keep negative or exhaustive claims scoped
+to records actually returned. If only a *possible design* is established,
+say "a controller-owned one-time scheduler with a confirmed immediate
+trigger and delayed action would be needed" rather than "I can create
+that rule now". Separate theoretical design, currently exposed schema,
+verified authoring ability, actual created job, and eventual execution.
+If any required element remains unverified, give a useful conditional
+plan and the precise missing interface or source. Do NOT demand a new
+automation if a direct native operation, other verified controller, or
+already deployed suitable schedule meets the requested outcome.
+
+This is a READ-ONLY review. Never create, modify, delete, enable,
+trigger or test any rule/device, or retry a write. Do not claim future
+execution by this conversation. You choose any available read-only
+tools independently; do not fabricate tool calls, schemata or receipts.
+Do not mention this internal review.
+"""
+
+
+
 # This is a separate final model pass, AFTER any model-selected evidence reads.
 # It does not select tools, parse claims, rewrite text mechanically or decide
 # the answer. The model compares its own final wording against original receipts.
@@ -576,6 +626,8 @@ def review_prompt(kind: str) -> str:
         return ACTION_OUTCOME_REVIEW_PROMPT
     if kind == "capability_discovery":
         return CAPABILITY_DISCOVERY_REVIEW_PROMPT
+    if kind == "implementation_feasibility":
+        return IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT
     return SOURCE_REVIEW_PROMPT
 
 
@@ -625,6 +677,27 @@ _CAPABILITY_DENIAL_DRAFT = re.compile(
     re.IGNORECASE,
 )
 
+# A model PROPOSING a concrete new workflow is different from a model
+# merely mentioning an automation. This selects optional read-only source
+# review, not a tool, controller, permission, answer or runtime scheduler.
+_IMPLEMENTATION_PROPOSAL = re.compile(
+    r"\b(?:(?:would|will|can|could|must|should|need(?:s)?\s+to)"
+    r"[^.\n]{0,110}\b(?:create|configure|set\s+up|implement|schedule|build|"
+    r"install|write)\b[^.\n]{0,120}\b(?:rule|automation|workflow|job|"
+    r"scheduler|scheduled\s+task)\b)|"
+    r"\b(?:rule|automation|workflow|scheduler|job)\b[^.\n]{0,85}"
+    r"\b(?:required|needed|necessary|must\s+be\s+created)\b|"
+    r"\b(?:requires?|needs?)\b[^.\n]{0,90}\b(?:rule|automation|"
+    r"workflow|scheduler)\b",
+    re.IGNORECASE,
+)
+
+
+def is_implementation_feasibility_draft(draft: str) -> bool:
+    """Detect a model-proposed implementation, never infer its feasibility."""
+    return isinstance(draft, str) and bool(_IMPLEMENTATION_PROPOSAL.search(draft))
+
+
 def is_capability_denial_draft(draft: str) -> bool:
     """Review-worthy model denial, not proof that a capability is absent."""
     return isinstance(draft, str) and bool(_CAPABILITY_DENIAL_DRAFT.search(draft))
@@ -649,5 +722,6 @@ def should_review_completion(
             review_kind(question) is not None
             or has_action_receipt
             or is_capability_denial_draft(draft)
+            or is_implementation_feasibility_draft(draft)
         )
     )
