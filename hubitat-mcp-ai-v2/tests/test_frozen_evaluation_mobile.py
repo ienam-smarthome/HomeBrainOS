@@ -270,7 +270,7 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("send_private_evidence_to_configured_model:true", ui)
         self.assertIn("technicalDetails", ui)
         self.assertIn("api/evaluation/replay", ui)
-        self.assertIn('const UI_VERSION="2.0.0-alpha.65"', ui)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.66"', ui)
         self.assertIn("byId('evalConsent').checked=false", ui)
 
 
