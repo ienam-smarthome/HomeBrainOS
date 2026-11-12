@@ -221,6 +221,38 @@ internal checkpoint.
 """
 
 
+
+ACTION_OUTCOME_REVIEW_PROMPT = """Action/outcome source review (internal to this answer).
+The user's requested REAL-WORLD outcome is the specification, not the
+model's earlier plan or a similarly named device. Review the ORIGINAL native
+tool calls and responses: what exact tool was submitted, which entity/ID and
+command were affected, what the server explicitly accepted or rejected, and
+what was independently observed afterward. Do NOT assume that a successful
+command on one device triggers a different target's action or a future timer.
+
+Separate (1) command sent, (2) server/driver acceptance, (3) changed target
+state or stored schedule read back, and (4) future downstream execution.
+A virtual flag, helper object, dashboard control, linked label, or automation
+proposal does not itself establish another device's action. A requested delay
+is not satisfied by an unrelated immediate state change. A pending scheduled
+action can only be called verified if a source supports its target and deadline;
+execution at that future time remains unknown until observed. This assistant
+will NOT independently wake up in the future to issue another command.
+
+If a proportionate READ-ONLY native tool can verify the intended target,
+pending schedule, relevant dependency, or reported outcome, independently
+choose its actual tool and arguments now. Do not assume that a returned
+snapshot is fresh or that empty, filtered queries exclude every possible
+controller. A previous command or side effect must NOT be retried, undone,
+replaced by another write, or treated as authorized by this review.
+If sufficient evidence is already present, answer now. Otherwise report
+the exact action/receipt and what remains UNVERIFIED; do not promise a later
+chat-initiated action or manufacture a success confirmation. Do not mention
+this internal checkpoint.
+"""
+
+
+
 # This is a separate final model pass, AFTER any model-selected evidence reads.
 # It does not select tools, parse claims, rewrite text mechanically or decide
 # the answer. The model compares its own final wording against original receipts.
@@ -484,6 +516,8 @@ def review_prompt(kind: str) -> str:
         return MEASUREMENT_REVIEW_PROMPT
     if kind == "source_verification":
         return VERIFICATION_REVIEW_PROMPT
+    if kind == "action_outcome":
+        return ACTION_OUTCOME_REVIEW_PROMPT
     return SOURCE_REVIEW_PROMPT
 
 
@@ -519,7 +553,7 @@ def is_causal_question(question: str) -> bool:
 
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
-    remaining_seconds: float,
+    remaining_seconds: float, has_action_receipt: bool = False,
 ) -> bool:
     """Only open a model review when there is a chance to investigate safely.
 
@@ -530,5 +564,5 @@ def should_review_completion(
         not already_reviewed
         and available_tools
         and remaining_seconds > 8
-        and review_kind(question) is not None
+        and (review_kind(question) is not None or has_action_receipt)
     )

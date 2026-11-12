@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 12 November 2026 — Alpha.65: source-grounded action outcomes
+
+A private alpha.64 first answer for a delayed device action selected a similarly named helper switch and got a successful `on` reply, then asserted that a timed downstream action was scheduled. A subsequent read-only investigation found no pending driver timer for the actual target and no matching known automation in bounded checks; this did not exclude every external controller. The failure is model-selected action/outcome conflation rather than a missing client scheduler.
+
+Alpha.65 keeps the clean model-led native tool loop but extends the existing **single evidence sufficiency review** to native potentially state-changing tool results. The model sees its original action receipt and can select existing read-only tools for target/schedule verification. Its review cannot execute any write or retry; no automatic corrective action. Before writing, the skills explicitly compare requested target, outcome and timing with the actual advertised native command and reject names/flags as stand-in proof. The original tool response is not changed; bounded client metadata highlights the call without claiming a downstream effect. An additional tool-free final claim audit does not run for this targeted review, avoiding an extra step known to have sometimes degraded claim calibration. General synthetic action and non-action tests plus release CI required before merge.
+
+This is NOT a guarantee that a cloud model's first selected write will be correct. Install alpha.65 only after checks pass; validate with a new, explicitly permitted, low-risk **live first answer** that includes original tool receipts and native pending-state readback, keeping V1 and external monitoring unchanged. See [alpha.65 development note](HOMEBRAIN-V2-ALPHA65-ACTION-OUTCOME-REVIEW-20261112.md).
+
+
+
+
 ## 12 November 2026 — Alpha.64: live catalog and unavailable-tool evidence
 
 After three private model-first permission verification attempts, the latest first answer mistook three local `hub_search_tools` catalog rejections for successful empty search results and falsely claimed a different command was hidden. A best-practice guide mapped write tools to sections but did not prove the current client could execute a write. The issue is general discovery and source-to-claim calibration, not the internet-control driver.
