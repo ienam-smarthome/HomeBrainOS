@@ -18,7 +18,7 @@ from evidence_scope import model_result_with_scope
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
-    review_kind, review_prompt,
+    review_kind, review_prompt, is_capability_denial_draft,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index,
 )
@@ -51,6 +51,25 @@ capability is not available, do not silently change the action now or
 pretend a helper creates a future timer; investigate a verified scheduler
 only if actually authorized and supported, otherwise report the limitation.
 Verify the target identity and advertised commands using available native reads.
+For any requested outcome, distinguish the user's NAMED PHYSICAL TARGET from
+the INTEGRATION OR ACTUATOR that can actually produce the desired effect.
+One physical item can have separate media, power, internet-access, lighting,
+thermostat, automation or proxy device records with different capabilities.
+An identical or similar label is NOT sufficient evidence that a device owns
+every requested action, and shared identifiers are candidate correlations,
+not automatic proof of identity. Match target to controller using actual
+native inventory, relevant identity attributes, installed controls and
+verified links. If the first named device lacks the needed capability,
+do not declare the effect globally unsupported before considering other
+available records or a documented controller/automation for that target.
+A narrow labelFilter or returned subset is NOT a complete device inventory;
+read count/total/unfilteredTotal and broaden the search when relevant.
+If needed, independently choose a broad native inventory read such as the
+advertised hub_list_devices summary/context format and inspect candidate
+hub_get_device commands; do not invent tool options or conclude a match
+from an IP/label alone. If several candidates remain, ask for clarification
+instead of controlling the wrong device. If no verified controller/timer
+is found, report exactly what was checked and what remains unknown.
 When the target already advertises a command with matching delayed/time
 semantics, prefer that supported native capability to constructing an
 unrelated helper, rule or proxy operation. A name/label describing a timer,
@@ -776,6 +795,13 @@ class Agent:
               "selector enum may advertise a leaf without exposing it as "
               "a callable top-level function. A catalog entry establishes "
               "visibility, not client write permission. "
+              "A physical target may be represented by multiple Hubitat "
+              "devices whose actuator capabilities differ from the matched "
+              "media or sensor integration; a label-filtered search is not "
+              "a complete search for controllers of an intended effect. "
+              "The model should independently look for relevant alternate "
+              "control surfaces and verify physical-target identity before "
+              "claiming the effect unsupported or executing an action. "
               "Historical source choice depends on the measured "
               "quantity, requested time window, and actual source coverage, "
               "NOT on whether the user named an archive. An attribute-filtered "
@@ -920,12 +946,17 @@ class Agent:
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                     has_action_receipt=native_action_receipts_seen > 0,
+                    draft=text,
                 ):
                     capture_answer_stage("pre_source_review", text)
                     source_review_invoked = True
+                    asked_kind = review_kind(question)
                     source_review_kind = (
                         "action_outcome" if native_action_receipts_seen > 0
-                        else review_kind(question)
+                        else "capability_discovery"
+                        if is_capability_denial_draft(text)
+                        and asked_kind not in ("causal", "historical_measurement")
+                        else asked_kind
                     )
                     messages.append({"role": "user", "content": review_prompt(source_review_kind)})
                     continue
@@ -936,7 +967,9 @@ class Agent:
                         "completed" if text else "empty_response_fallback",
                     )
                 if (enable_source_review and enable_final_claim_audit
-                        and source_review_kind != "action_outcome"
+                        and source_review_kind not in (
+                            "action_outcome", "capability_discovery"
+                        )
                         and should_audit_completion(
                             source_review_invoked=source_review_invoked,
                             already_audited=final_claim_audit_invoked,
@@ -962,6 +995,8 @@ class Agent:
                 return completed_answer(
                     text, ("not_applicable_to_action_review"
                            if source_review_kind == "action_outcome"
+                           else "not_applicable_to_capability_review"
+                           if source_review_kind == "capability_discovery"
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )
