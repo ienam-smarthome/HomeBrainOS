@@ -19,6 +19,7 @@ from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
     review_kind, review_prompt, is_capability_denial_draft,
+    is_implementation_feasibility_draft,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index,
 )
@@ -70,6 +71,20 @@ hub_get_device commands; do not invent tool options or conclude a match
 from an IP/label alone. If several candidates remain, ask for clarification
 instead of controlling the wrong device. If no verified controller/timer
 is found, report exactly what was checked and what remains unknown.
+A missing direct device command is NOT proof an alternative automation is
+necessary or currently buildable. Before saying you CAN implement an action
+with a native rule, scheduler, workflow, app, or other fallback, distinguish
+a theoretical design from the tools ACTUALLY available to THIS client.
+Independently verify the live writer's schema, appropriate trigger and
+persistence contract, valid delay semantics, target command, write
+authorization constraints, and evidence that a genuinely one-time trigger
+can start NOW without a later external event. Native Rule Machine delays
+or recurring triggers alone do not establish an immediate/dated one-time
+rule-creation contract. If these cannot be verified by actual sources,
+describe the proposed design as conditional and identify the precise
+missing capability; do NOT promise creation or later self-execution.
+A filtered inventory or an empty label search must not be described as
+exhaustive inspection of a driver family or all possible controllers.
 When the target already advertises a command with matching delayed/time
 semantics, prefer that supported native capability to constructing an
 unrelated helper, rule or proxy operation. A name/label describing a timer,
@@ -953,6 +968,9 @@ class Agent:
                     asked_kind = review_kind(question)
                     source_review_kind = (
                         "action_outcome" if native_action_receipts_seen > 0
+                        else "implementation_feasibility"
+                        if is_implementation_feasibility_draft(text)
+                        and asked_kind not in ("causal", "historical_measurement")
                         else "capability_discovery"
                         if is_capability_denial_draft(text)
                         and asked_kind not in ("causal", "historical_measurement")
@@ -968,7 +986,8 @@ class Agent:
                     )
                 if (enable_source_review and enable_final_claim_audit
                         and source_review_kind not in (
-                            "action_outcome", "capability_discovery"
+                            "action_outcome", "capability_discovery",
+                            "implementation_feasibility"
                         )
                         and should_audit_completion(
                             source_review_invoked=source_review_invoked,
@@ -997,6 +1016,8 @@ class Agent:
                            if source_review_kind == "action_outcome"
                            else "not_applicable_to_capability_review"
                            if source_review_kind == "capability_discovery"
+                           else "not_applicable_to_feasibility_review"
+                           if source_review_kind == "implementation_feasibility"
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )
