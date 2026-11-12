@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 12 November 2026 — Alpha.67: general control-surface discovery after source-bounded denials
+
+Two private alpha.66 first answers inspected named media/speaker integrations but not potential separate controllers for the requested internet-access effect. Successful narrowly label-filtered device inventories were mistakenly treated as complete searches of all possible actuators. One answer concluded a timed action was globally impossible; the other could not identify an alternate internet-control integration. No native tool errors or writes occurred.
+
+Alpha.67 updates general model reasoning about **named physical entity vs requested effect vs real actuator** and the coverage limits of name-filtered inventories. It keeps the model responsible for deciding whether to broaden an actual native inventory or inspect a different controller and verifies shared identity rather than assuming a similar label/IP makes it safe to act. A drafted unsupported-capability verdict can now open one existing **read-only** source sufficiency review with alternate-controller guidance; the review cannot dispatch a new write, retrofit an automation, or silently repair anything. It adds neither a device-specific router nor a mandatory server call, fixed search sequence, separate scheduler or user-facing answer rewrite. The extra text-only final audit is not run for this review.
+
+Fictional regression cases check narrowed inventory then broadened native discovery, cross-record linkage, no-match uncertainty, no gratuitous checkpoint for positive supported reads, and rejection of write attempts during the review. **Live first-answer success remains unverified**, particularly if the model overlooks a controller before its first write or confuses network-identical devices. See [alpha.67 development note](HOMEBRAIN-V2-ALPHA67-CONTROL-SURFACE-DISCOVERY-20261112.md).
+
+
+
+
 ## 12 November 2026 — Alpha.66: temporal action intent and truthful nested verification
 
 Private alpha.65 live source evidence confirmed a native delayed action was accepted with a fresh pending deadline, but the same original MCP reply contained `waitFor.timedOut=true` against an unproven “remaining” attribute. The AI omitted this partial failure while reporting successful scheduling. A separate request for an action **after two minutes** used an immediate temporary **for two minutes** command; the returned target state showed access granted immediately, yet the answer did not report the temporal mismatch. No real follow-up action should be inferred from the assistant's earlier wording.
