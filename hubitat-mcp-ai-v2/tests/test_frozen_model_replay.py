@@ -100,6 +100,27 @@ class FrozenReplayTests(unittest.TestCase):
         with self.assertRaises(replay.ReplayError):
             replay.frozen_packet(payload)
 
+    def test_inventory_question_replay_classification_does_not_affect_live(self):
+        payload = fixture()
+        payload["question"] = (
+            "Which devices have low battery and which readings are stale? "
+            "Distinguish verified offline state from old activity timestamps."
+        )
+        payload["tool_calls"].insert(0, {
+            "name": "hub_list_devices", "success": False,
+            "arguments": {"format": "detailed"}, "error": "MCP timed out"
+        })
+        result = replay.frozen_packet(payload)
+        self.assertEqual(result["review_kind"], "source_verification")
+        self.assertFalse(result["tool_calls"][0]["success"])
+        self.assertIn("MCP timed out", result["serialized_receipts"])
+        payload["question"] = "Turn on all switches"
+        with self.assertRaises(replay.ReplayError):
+            replay.frozen_packet(payload)
+        payload["question"] = "Tell me a joke"
+        with self.assertRaises(replay.ReplayError):
+            replay.frozen_packet(payload)
+
     def test_technical_json_export_supported_without_using_prior_answers(self):
         f = fixture()
         payload = {"question": f["question"],
