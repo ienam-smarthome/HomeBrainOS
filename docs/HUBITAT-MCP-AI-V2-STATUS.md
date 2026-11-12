@@ -1,5 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 12 November 2026 — Alpha.64: live catalog and unavailable-tool evidence
+
+After three private model-first permission verification attempts, the latest first answer mistook three local `hub_search_tools` catalog rejections for successful empty search results and falsely claimed a different command was hidden. A best-practice guide mapped write tools to sections but did not prove the current client could execute a write. The issue is general discovery and source-to-claim calibration, not the internet-control driver.
+
+Alpha.64 offers a **model-selected read-only catalog inspector** over the already obtained per-request `tools/list` snapshot. It exposes actual top-level names and direct schemas or server-enumerated gateway leaf candidates, without new MCP calls. Unknown requested tools produce a scoped `unavailable_tool` local error instead of equating a failed search utility with target absence. Models may still choose an advertised gateway's existing read-only `{}` catalog path for its leaf schema. No prompt-specific routing, auto retry, additional model round, host scheduler or source-derived permission grant. Preserve user approval and server gates.
+
+See [alpha.64 development note](HOMEBRAIN-V2-ALPHA64-LIVE-CATALOG-RECOVERY-20261112.md). Fictional tests show the recovery can happen without a write; real installed Gemma first-answer correctness and effective client-write permission remain **unverified**. Next: exact-head CI, install, a fresh unrelated read-only capability-inspection question and original-receipt review.
+
+
 ## 11 November 2026 — Alpha.53 candidate: named, source-scoped home activity
 
 **User-requested UI correction:** "Switches ON" conflated plugs and lights and the overview only returned five example labels per metric. Alpha.53 returns source-scoped **Lights ON** with recognised light names, named active motion sensors, and named low-battery devices including numeric percentages. Positive light classification uses labels, device types and light-specific colour capabilities; generic switches/dimmers alone are not treated as lights. Ambiguous ON switches remain excluded, disclosed as an unclassified count, rather than creating a false full lighting total. Bounded member lists show up to 250 names per metric (every entry for a 210-device inventory), in scrollable compact cards; counts include all qualifying returned entries. Raw device IDs, unrelated inventory and tokens are not exported by the overview.
