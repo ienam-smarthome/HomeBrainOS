@@ -17,8 +17,8 @@ from investigation_review import (
 )
 
 
-def call(name, **args):
-    return {"function": {"name": name, "arguments": args}}
+def call(tool_name, **args):
+    return {"function": {"name": tool_name, "arguments": args}}
 
 
 def receipt(data):
@@ -232,7 +232,7 @@ class EligibilityTests(unittest.TestCase):
             draft="I can create a one-time rule."))
         self.assertEqual(review_prompt("implementation_feasibility"),
                          IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
-        self.assertIn("one-time trigger", IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
+        self.assertIn("immediate/dated/one-shot trigger", IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
         self.assertIn("one-time", _SKILL)
         self.assertNotIn("Nest Hub", IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT)
         self.assertNotIn("Google TV", _SKILL)
