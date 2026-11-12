@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.62 — replay timed-out native read-only MCP attempts as failed evidence.** The optional browser/phone and CLI frozen evaluators now recognise failed attempts from the native contractually read-only `hub_get_*`, `hub_list_*`, `hub_read_*` and `hub_search_*` tool families, even if the MCP transport timed out before recording execution metadata. They **retain** these as failed receipts without promoting them into successful reads or proving history coverage. Unknown, mixed-action `hub_manage_*` and explicitly non-read-only attempts remain blocked. Normal Ask, model prompts, V1, devices and diagnostics recorder are unchanged. See [alpha.62 notes](../docs/HOMEBRAIN-V2-ALPHA62-READONLY-REPLAY-TIMEOUTS-20261112.md).
+
+
 **Alpha.61 — optional private claim-delta review worksheet (V2 only).** After a frozen-receipt AI Evaluation, the phone UI now displays original MCP receipts for manual inspection and allows a human reviewer to score all three completed model answers (grounding, source coverage, causal calibration, usefulness). The reviewer can record individually anchored claim changes introduced/corrected or supported facts lost/recovered between stages, compare scores and extra time, and download a PRIVATE reviewed evaluation JSON. A separate **offline-only** validator checks review integrity and summarizes stage deltas without printing household evidence. The worksheet is unblinded and cannot automatically determine truth; the existing blinded A/B experiment remains the preferred scientific gate. No model prompt, MCP tool selection, normal Ask, device operation, V1 or diagnostic recorder changes. See [alpha.61 notes](../docs/HOMEBRAIN-V2-ALPHA61-CLAIM-DELTA-MOBILE-20261112.md).
 
 
