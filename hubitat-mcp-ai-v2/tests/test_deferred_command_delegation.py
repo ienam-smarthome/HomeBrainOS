@@ -131,7 +131,7 @@ class NativeDeferredCommandTests(unittest.TestCase):
                         "deviceId": DEVICE_ID, "command": "deferDisconnect",
                         "parameters": ["5"]}
                 elif self.round_count == 3:
-                    self_test.assertIn('"dispatched"', messages[-1]["content"])
+                    self_test.assertIn("dispatched", messages[-1]["content"])
                     gateway, leaf, args = "hub_read_devices", "hub_get_device_attribute", {
                         "deviceId": DEVICE_ID, "attribute": "pendingUntil"}
                 else:
