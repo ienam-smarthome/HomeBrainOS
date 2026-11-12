@@ -7,6 +7,7 @@ to decide whether discriminating evidence is available before it stops.
 from __future__ import annotations
 
 import re
+import json
 
 _CAUSAL_QUESTION = re.compile(
     r"\bwhy\b|\bwhat\s+(?:caused|triggered|initiated|made|explains)\b"
@@ -228,15 +229,31 @@ You are revising your own proposed answer, not collecting new evidence.
 The original successful tool receipts are the evidence; your previous drafts,
 client-side evidence indexes, and source metadata are NOT independent sources.
 
-Before finalising, scrutinise EACH material definite statement, particularly
-conclusions containing "did", "did not", "caused", "external", "never", "no",
-"all", or "verified". Ask whether the checked SOURCE, event/attribute filter,
-lookback window, row limit, reporter/issuer role, and completeness actually
-support that exact scope. Compare the strongest claim against any explicit
-limitations in the original receipts or associated scope metadata. If the
-claim contradicts those boundaries, replace it with the narrowest supported
-statement and explicitly preserve the unknown; do not turn a missing record
-into evidence that an action did not occur.
+Before finalising, scrutinise EACH material definite statement, including
+negatives ("no", "none", "did not", "not recorded", "never", "absent"),
+universal claims ("all", "every"), and causal claims ("caused",
+"initiated", "external", "verified"). For each such claim, locate the
+ORIGINAL receipt that supports it and compare the exact scope:
+entity, event/attribute filter, text pattern, lookback start/end,
+returned rows, row cap, source store, freshness and reporter/issuer role.
+If the original receipt does not cover the claim, narrow the statement.
+
+Apply a counterexample check: could the missing event/command/value exist
+outside the returned rows, within a gap or outside the filter, while
+ALL successful receipts remain unchanged? If yes, do not say the system
+recorded no such event, the action did not happen, or the history is empty.
+Instead name the queried source and scope alongside the negative finding
+(e.g. no matching rows RETURNED by a specified query), then state what
+remains unknown. A text-pattern log search with matched=0 only excludes
+matches to that pattern in that returned interval, not other app logs.
+Do not let the FINAL conclusion silently broaden the evidence scope after
+a correctly qualified explanation.
+
+An accompanying bounded receipt scope index may list call arguments,
+returned counts and source-derived limits. It is a NAVIGATION aid, not
+independent proof or a substitute for the original successful receipts.
+Read any conflicts against the original source and report uncertainty.
+Preserve positive findings, including verified issuers and direct readings.
 
 For causal questions, distinguish (a) a recorded state change,
 (b) the device/bridge reporting it, (c) a recorded command issuer if present,
@@ -260,6 +277,119 @@ and why, while answering useful verified parts of the question. Produce ONLY
 the final user-facing answer, with no internal audit commentary. Never
 execute actions or reveal credentials.
 """
+
+
+# This bounded index does not infer causation, classify claims or alter answers.
+# It only re-exposes the *already returned and redacted* request scope and
+# selected source-provided counts near the final model audit. Original receipts
+# remain the authority, including any fields not included in this index.
+_AUDIT_REQUEST_FIELDS = frozenset((
+    "tool", "args", "deviceId", "appId", "attribute", "since", "until",
+    "hoursBack", "limit", "pattern", "level", "mode", "metric", "range",
+    "start", "end", "pageName", "offset", "max_chars", "labelFilter",
+))
+_AUDIT_SOURCE_FIELDS = frozenset((
+    "source_kind", "returned_row_count", "requested_row_limit",
+    "row_limit_reached", "requested_attribute_filter",
+    "oldest_returned_event", "newest_returned_event",
+    "observed_command_row_count", "unseen_rows_or_commands_proven_absent",
+    "source_scope", "can_infer_unseen_commands_absent",
+    "can_infer_requested_window_fully_covered",
+    "can_infer_external_or_manual_initiation_from_physical_tag",
+    "parent_app_identity_independently_verified",
+    "fresh_sensor_reports_independently_verified",
+))
+_AUDIT_ORIGINAL_FIELDS = frozenset((
+    "count", "matched", "total", "attributeFilter", "sinceTimestamp",
+    "untilTimestamp", "hoursBack", "hasMore", "limit", "mode",
+))
+_AUDIT_INDEX_LIMIT = 16
+
+
+def _audit_scalars(data: object, allowed: frozenset[str]) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        key: value[:120] if isinstance(value, str) else value
+        for key, value in data.items()
+        if key in allowed and (value is None or type(value) in (str, int, float, bool))
+    }
+
+
+def _audit_request(arguments: object) -> dict:
+    """Include only ordinary read-scope arguments, never tokens or payloads."""
+    if not isinstance(arguments, dict):
+        return {}
+    scoped = _audit_scalars(arguments, _AUDIT_REQUEST_FIELDS)
+    if isinstance(arguments.get("args"), dict):
+        scoped["args"] = _audit_scalars(arguments["args"], _AUDIT_REQUEST_FIELDS)
+    return scoped
+
+
+def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
+    """Index successful original tool receipt scopes, without causal inference.
+
+    No source strings, logs, individual samples, passwords, or full returned
+    documents are copied. A malformed/oversized receipt stays unindexed.
+    """
+    rows = []
+    for position, record in enumerate(receipts[:_AUDIT_INDEX_LIMIT], start=1):
+        if not isinstance(record, dict):
+            continue
+        item: dict = {
+            "receipt_number": position,
+            "tool": str(record.get("name", ""))[:100],
+            "success": record.get("success") is True,
+            "arguments": _audit_request(record.get("arguments")),
+        }
+        if record.get("success") is not True:
+            item["read_failed"] = True
+            rows.append(item)
+            continue
+        if record.get("operation_executed") is False:
+            item["operation_executed"] = False
+        try:
+            parsed = json.loads(str(record.get("response", "")))
+        except (TypeError, ValueError):
+            rows.append(item)
+            continue
+        if isinstance(parsed, dict):
+            head = _audit_scalars(parsed.get("client_claim_evidence_headline"),
+                                  _AUDIT_SOURCE_FIELDS)
+            if head:
+                item["source_headline"] = head
+            event_scope = _audit_scalars(parsed.get("client_event_source_scope"),
+                                         _AUDIT_SOURCE_FIELDS)
+            if event_scope:
+                item["event_scope"] = event_scope
+            monitor = parsed.get("client_monitor_evidence_scope")
+            if isinstance(monitor, dict):
+                mon = _audit_scalars(monitor, _AUDIT_SOURCE_FIELDS)
+                if isinstance(monitor.get("history"), dict):
+                    mon["history"] = _audit_scalars(
+                        monitor["history"], _AUDIT_SOURCE_FIELDS)
+                if mon:
+                    item["monitor_scope"] = mon
+            original = parsed
+            content = parsed.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        try:
+                            original = json.loads(str(part.get("text", "")))
+                        except (ValueError, TypeError):
+                            pass
+                        break
+            native = _audit_scalars(original, _AUDIT_ORIGINAL_FIELDS)
+            if native:
+                item["original_returned_fields"] = native
+        rows.append(item)
+    return json.dumps({
+        "note": "Navigation index from returned receipt fields ONLY; not independent evidence. Do not infer unseen records absent. Inspect original receipts for full detail.",
+        "indexed_receipts": rows,
+        "additional_receipts_not_indexed": max(0, len(receipts) - _AUDIT_INDEX_LIMIT),
+    }, separators=(",", ":"), ensure_ascii=False)
+
 
 FINAL_CLAIM_AUDIT_MIN_SECONDS = 12.0
 
