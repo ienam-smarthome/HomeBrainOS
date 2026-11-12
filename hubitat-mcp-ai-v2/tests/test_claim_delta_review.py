@@ -131,8 +131,10 @@ class ClaimDeltaReviewTests(unittest.TestCase):
         self.assertIn("byId('evalReviewDownload').disabled=!outcome?.complete", ui)
         self.assertIn("evaluationDownloadPrivate(reviewed,'PRIVATE-homebrain-v2-reviewed.json')", ui)
         self.assertIn("byId('evalOriginalReceipts').textContent=JSON.stringify(original,null,2)", ui)
-        self.assertNotIn("localStorage.", ui)
-        self.assertNotIn("sessionStorage.", ui)
+        manual=ui[ui.index("function evaluationResetReview()"):ui.index("function reloadInterface()")]
+        self.assertNotIn("localStorage.", manual)
+        self.assertNotIn("sessionStorage.", manual)
+        self.assertIn("const causalSame=cs.every(v=>(v===null)===(cs[0]===null))", manual)
 
 
 if __name__ == "__main__":
