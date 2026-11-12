@@ -502,7 +502,7 @@ class Agent:
         deadline_seconds: int, before_call=None,
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
-        device_monitor=None,
+        device_monitor=None, enable_final_claim_audit: bool = True,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -668,7 +668,7 @@ class Agent:
                         text or final_claim_audit_candidate,
                         "completed" if text else "empty_response_fallback",
                     )
-                if enable_source_review and should_audit_completion(
+                if enable_source_review and enable_final_claim_audit and should_audit_completion(
                     source_review_invoked=source_review_invoked,
                     already_audited=final_claim_audit_invoked,
                     remaining_seconds=deadline - time.monotonic(),
