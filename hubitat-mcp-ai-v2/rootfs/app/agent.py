@@ -578,6 +578,26 @@ class Agent:
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
         file_reads = FileReadCoverage()
+        # Private first-answer telemetry: capture the model's completed prose
+        # at existing boundaries. This does not add model rounds, source reads,
+        # a validator or an answer rewrite. Drafts stay in private Technical JSON.
+        answer_stage_trace: list[dict[str, Any]] = []
+
+        def capture_answer_stage(stage: str, draft: str) -> None:
+            if not draft or len(answer_stage_trace) >= 3:
+                return
+            redacted = str(redact(draft))
+            answer_stage_trace.append({
+                "stage": stage,
+                "answer": redacted[:10000],
+                "answer_truncated": len(redacted) > 10000,
+                "after_model_round": rounds,
+                "tool_receipts_seen": len(receipts),
+                "successful_tool_receipts_seen": sum(
+                    item.get("success") is True for item in receipts),
+                "failed_tool_receipts_seen": sum(
+                    item.get("success") is False for item in receipts),
+            })
 
         def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
             return {
@@ -588,6 +608,7 @@ class Agent:
                 "source_review_kind": source_review_kind,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
+                "answer_stage_trace": answer_stage_trace,
                 "available_read_sources": source_catalog,
                 "file_read_coverage": file_reads.snapshot(),
                 "tool_calls": receipts,
@@ -660,11 +681,13 @@ class Agent:
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                 ):
+                    capture_answer_stage("pre_source_review", text)
                     source_review_invoked = True
                     source_review_kind = review_kind(question)
                     messages.append({"role": "user", "content": review_prompt(source_review_kind)})
                     continue
                 if final_claim_audit_invoked:
+                    capture_answer_stage("post_final_audit", text)
                     return completed_answer(
                         text or final_claim_audit_candidate,
                         "completed" if text else "empty_response_fallback",
@@ -675,6 +698,7 @@ class Agent:
                     remaining_seconds=deadline - time.monotonic(),
                     has_draft=bool(text),
                 ):
+                    capture_answer_stage("pre_final_audit", text)
                     final_claim_audit_invoked = True
                     final_claim_audit_candidate = text
                     # Replay only a compact source-scope navigation aid; the
@@ -688,6 +712,8 @@ class Agent:
                                    + scope_index,
                     })
                     continue
+                if source_review_invoked:
+                    capture_answer_stage("post_source_review_without_audit", text)
                 return completed_answer(
                     text, "skipped_low_time" if source_review_invoked
                     and enable_source_review else "not_invoked",
