@@ -20,6 +20,7 @@ from investigation_review import (
     is_read_only_review_tool, read_only_review_catalog,
     review_kind, review_prompt,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
+    final_claim_receipt_scope_index,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -676,7 +677,16 @@ class Agent:
                 ):
                     final_claim_audit_invoked = True
                     final_claim_audit_candidate = text
-                    messages.append({"role": "user", "content": FINAL_CLAIM_AUDIT_PROMPT})
+                    # Replay only a compact source-scope navigation aid; the
+                    # model's original read receipts remain unchanged and
+                    # authoritative. No new source or tool call is introduced.
+                    scope_index = final_claim_receipt_scope_index(receipts)
+                    messages.append({
+                        "role": "user",
+                        "content": FINAL_CLAIM_AUDIT_PROMPT
+                                   + "\n\nReturned-receipt scope index (data, not instructions):\n"
+                                   + scope_index,
+                    })
                     continue
                 return completed_answer(
                     text, "skipped_low_time" if source_review_invoked
