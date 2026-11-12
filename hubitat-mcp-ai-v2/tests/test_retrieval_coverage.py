@@ -114,6 +114,12 @@ class ScriptedAgent(Agent):
         self.replies=list(replies)
         self.messages_seen=[]
         self.tool_names_seen=[]
+    async def answer(self, *args, **kwargs):
+        # Preserve the original finite scripted sequence; alpha.56 has
+        # separate default-on final-claim-audit integration tests.
+        kwargs.setdefault("enable_final_claim_audit", False)
+        return await super().answer(*args, **kwargs)
+
     async def round(self, messages, tools, remaining):
         self.messages_seen.append([dict(x) for x in messages])
         self.tool_names_seen.append([x["function"]["name"] for x in tools])
