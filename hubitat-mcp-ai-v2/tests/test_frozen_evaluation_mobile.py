@@ -93,6 +93,7 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         p = capture()
         p["response"]["tool_calls"][1].pop("operation_executed")
         p["response"]["tool_calls"][1]["result_kind"] = "tool_result"
+        p["response"]["tool_calls"][1]["read_only"] = False
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
 
@@ -132,7 +133,36 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
         record["read_only"] = True
-        record["name"] = "hub_get_logs"
+        record["name"] = "hub_manage_rule"
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+
+    async def test_failed_native_read_timeout_is_safe_to_replay_as_failed(self):
+        p = capture()
+        failed = {"name": "hub_list_devices",
+                  "arguments": {"format": "detailed", "labelFilter": ""},
+                  "success": False, "elapsed_ms": 25000,
+                  "error": "MCP timed out",
+                  "response": '{"error":"MCP timed out"}'}
+        p["response"]["tool_calls"].insert(0, failed)
+        frozen = freeze_capture(p)
+        self.assertEqual(frozen["failed_reads"], 2)
+        self.assertIn("MCP timed out", frozen["serialized"])
+        self.assertEqual(frozen["records"][0]["success"], False)
+        model = FakeModel([{"content": "Initial incomplete inventory"},
+                           {"content": "Review: timeout is not no devices"},
+                           {"content": "Final: inventory scope limited"}])
+        result = await replay_frozen_capture(model, frozen)
+        self.assertEqual(result["mcp_calls_executed"], 0)
+        self.assertEqual(result["hubitat_writes_executed"], 0)
+        self.assertEqual(result["failed_tool_receipts"], 2)
+        self.assertEqual(len(model.calls), 3)
+
+        failed["read_only"] = False
+        with self.assertRaises(FrozenEvaluationError):
+            freeze_capture(p)
+        failed.pop("read_only")
+        failed["name"] = "hub_manage_devices"
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
 
@@ -211,7 +241,7 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("send_private_evidence_to_configured_model:true", ui)
         self.assertIn("technicalDetails", ui)
         self.assertIn("api/evaluation/replay", ui)
-        self.assertIn('const UI_VERSION="2.0.0-alpha.61"', ui)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.62"', ui)
         self.assertIn("byId('evalConsent').checked=false", ui)
 
 

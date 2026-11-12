@@ -57,6 +57,7 @@ class FrozenReplayTests(unittest.TestCase):
         payload = fixture()
         payload["tool_calls"][1].pop("operation_executed")
         payload["tool_calls"][1]["result_kind"] = "tool_result"
+        payload["tool_calls"][1]["read_only"] = False
         with self.assertRaises(replay.ReplayError):
             replay.frozen_packet(payload)
 
@@ -77,7 +78,25 @@ class FrozenReplayTests(unittest.TestCase):
         with self.assertRaises(replay.ReplayError):
             replay.frozen_packet(payload)
         payload["tool_calls"][-1]["arguments"]["mode"] = "history"
-        payload["tool_calls"][-1]["name"] = "hub_get_logs"
+        payload["tool_calls"][-1]["name"] = "hub_manage_rule"
+        with self.assertRaises(replay.ReplayError):
+            replay.frozen_packet(payload)
+
+    def test_failed_native_read_timeout_retained_without_untrusted_writes(self):
+        payload = fixture()
+        failure = {"name": "hub_list_devices",
+                   "arguments": {"format": "detailed", "labelFilter": ""},
+                   "success": False, "elapsed_ms": 25000,
+                   "error": "MCP timed out", "response": '{"error":"MCP timed out"}'}
+        payload["tool_calls"].insert(0, failure)
+        data = replay.frozen_packet(payload)
+        self.assertFalse(data["tool_calls"][0]["success"])
+        self.assertIn("MCP timed out", data["serialized_receipts"])
+        failure["read_only"] = False
+        with self.assertRaises(replay.ReplayError):
+            replay.frozen_packet(payload)
+        failure.pop("read_only")
+        failure["name"] = "hub_manage_rule"
         with self.assertRaises(replay.ReplayError):
             replay.frozen_packet(payload)
 
