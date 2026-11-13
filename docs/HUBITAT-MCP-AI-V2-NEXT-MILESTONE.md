@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 13 November 2026 — alpha.79 installed capability first-answer acceptance
+
+Alpha.78's read-only compatibility check returned server documentation and an app-type listing but did not verify a typed installed parent or dated-trigger schema; its affirmative installed-compatibility verdict exceeded the receipts. Alpha.79 generalises the existing optional source-verification checkpoint to explicit `Check whether ... Verify ...` questions and reinforces advertised-versus-installed-versus-executed evidence boundaries. Next: source-real **read-only** installed-version verification and a fresh natural capability query; check the model-selected extra reads and calibrated final answer, without native form navigation, writes, test rules or household cleanup. This diagnostic does not enter the uncoached Gate B denominator. [Note](HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md).
+
+
 ## 13 November 2026 — alpha.78 native one-off scheduling gate
 
 After alpha.77's two successful but semantically wrong VRB writes, alpha.78 refuses a recurring Visual Rule for a single-time request and supports source-verified, typed calendar-dated Rule Machine single Switch proposals, with normal independent approval. Owned one-offs may be cleaned up by an explicitly opted-in daily service; default is disabled and dry-run. Do not treat a command's `on/off` as verified physical effect without native evidence. First verify the installed Rule Machine native typed parent/schema, create a harmless one-off with explicit UI approval, measure original receipts and later execution; only then enable any deletion. Continue the six-domain Gate B after this bounded safety/compatibility acceptance. [Details](HOMEBRAIN-V2-ALPHA78-ONEOFF-NATIVE-RM-20261113.md).
