@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.75: one-off timer is not an unrelated event-driven rule
+
+Source-real alpha.74 request for a delayed TV internet block recovered the alternate native controller but did not inspect the native timing command; instead it offered a temporary rule. After a bare "yes" it created a first **inactive stored draft** (invalid empty mode trigger and seconds=120) and then revised this to an **activated** rule triggered only when mode changes to Afternoon. The screenshot proves the wrong trigger. The original device-native block timer had previously operated, but these later attempts did not schedule it.
+
+Alpha.75 retains the working alpha.65 native timed-command path, alpha.73 generic inventory recovery and alpha.74 model-led follow-through. A successful broad inventory now suffices for a one-time model-led continuation to inspect the alternative actuator, even without a later details receipt. A general authorization preflight prevents rule creation/editing from a direct one-off delay that omitted an independent event trigger or recurring automation; a bare "yes" following an ambiguous assistant proposal cannot manufacture that trigger. The native write is not sent and existing approvals are never bypassed. Explicit genuine rule requests still use the normal upstream approval/backup gates. Original rule storage versus activation and validation errors now appear separately in private Technical JSON.
+
+This is a source-coverage and action-suitability fix, not a new scheduler or a special TV/Cudy branch. **Unintended activated hub rule 4299 remains on the hub and is NOT modified by this code PR.** Pause/delete separately in Hubitat; check any already running waits. Delayed unblock remains a distinct unsupported feature. Synthetic tests are not live installed-model acceptance. [alpha.75 notes](HOMEBRAIN-V2-ALPHA75-ONE-SHOT-TIMER-20261113.md).
+
+
+
+
 ## 13 November 2026 — Alpha.74: source-grounded follow-through for native timed commands
 
 Original installed alpha.73 evidence showed the separate managed network controller and `blockInMinutes` command were correctly found, but the model stopped at an unnecessary **after-vs-for** clarification. A later imperative with eight archived receipts ended after **one round, zero current MCP calls**, printing the correct native command as text without dispatch. Neither request created a timer. Separately, native driver logs support a previous 11:55:37 scheduled two-minute block, 11:57:37 enforcement and 12:03:37 later allow; these events do **not** attribute the prior successful timer to either later no-write request.
