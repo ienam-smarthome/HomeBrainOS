@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — alpha.79 read-only installed-capability verification (candidate)
+
+A PRIVATE installed alpha.78 first answer overclaimed a one-time native automation capability after reading only server guide, application-type inventory and rule listing, without current typed installed-parent identity or exact dated-trigger field contract. The general model-led source-verification review did not run for a natural `Check whether ... Verify ...` request. Alpha.79 broadens this **explicit proof-request** eligibility and clarifies evidence levels (documented, typed installed, exact field contract, accepted, executed); no fixed tool/identity routing and no form-based read-only probing. Passing CI will not prove the installed model now finds the missing sources. [Development and safe acceptance](HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md). The alpha.78 one-off writer/cleanup and Gate B programme remain separate.
+
+
 ## 13 November 2026 — alpha.78 one-off Rule Machine compatibility and opt-in cleanup
 
 Alpha.77 source-real captures exposed a daily VRB clock trigger used for a bare one-time request and an unverified switch action polarity. Alpha.78 adds a denial-only temporal safety check, source-attested typed native Rule Machine one-off create path, and opt-in, dry-run-first owned-rule expiry cleanup. No deterministic target routing, no arbitrary tool grants or device-specific fix. The installed MCP create/typed parent capability and real hub execution still require live acceptance. See [alpha.78 engineering note](HOMEBRAIN-V2-ALPHA78-ONEOFF-NATIVE-RM-20261113.md).
