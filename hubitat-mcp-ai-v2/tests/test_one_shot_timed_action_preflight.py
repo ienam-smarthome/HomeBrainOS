@@ -4,6 +4,7 @@ All devices and effects here are FICTIONAL. No live Hubitat/router calls.
 Only the original model chooses any native command; the client prevents an
 unauthorised automation trigger, not a user-approved recurring automation.
 """
+import asyncio
 import json
 import sys
 import unittest
@@ -12,9 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from agent import Agent
 from action_intent_guard import (
-    original_one_shot_delay, unrequested_rule_write_reason,
+    native_automation_writer, automation_write_requires_confirmation,
     rule_activation_outcome,
 )
+from interaction import Interaction
+from mcp import MCPError
 from control_surface_recovery import should_follow_through_device_action
 
 
@@ -94,237 +97,187 @@ class ScriptedAgent(Agent):
         return self.script.pop(0)
 
 
-class OneShotIntentTests(unittest.TestCase):
-    def test_concrete_relative_delay_without_event(self):
-        for q in (
-            "Block Demo Screen after 2 mins",
-            "Please turn off Demo Lamp in 30 seconds",
-            "Switch off Demo Heater in 2 hours",
-            "Unblock Demo Access after 5 minutes",
-        ):
-            with self.subTest(q=q):
-                self.assertEqual(original_one_shot_delay(q, []), q)
-                self.assertIsNotNone(unrequested_rule_write_reason(
-                    q, [], "hub_set_visual_rule", {
-                        "confirm": True,
-                        "definition": {"triggers": [
-                            {"type": "systemMode", "config": {"modes": [33]}}
-                        ]},
-                    }))
-        for q in (
-            "When motion starts, block Demo Screen after 2 mins",
-            "Create a rule to block Demo Screen after 2 mins",
-            "Block Demo Screen whenever it turns on and stays on for 2 mins",
-            "Block Demo Screen after 2 mins; do not change anything",
-            "Can you block Demo Screen after 2 mins?",
-        ):
-            with self.subTest(q=q):
-                self.assertIsNone(original_one_shot_delay(q, []))
-                self.assertIsNone(unrequested_rule_write_reason(
-                    q, [], "hub_set_visual_rule", {}))
+class StructuredAuthorizationTests(unittest.TestCase):
+    def test_real_tool_or_gateway_leaf_not_prompt_controls_approval(self):
+        for writer in ("hub_set_visual_rule", "hub_set_rule",
+                       "hub_create_custom_rule", "hub_update_custom_rule",
+                       "hub_set_native_app"):
+            self.assertEqual(native_automation_writer(writer, {}), writer)
+            self.assertTrue(automation_write_requires_confirmation(
+                "hub_manage_rule_machine", {"tool": writer, "args": {}}
+            ))
+        self.assertFalse(automation_write_requires_confirmation(
+            "hub_call_device_command", {"command": "blockInMinutes"}
+        ))
+        self.assertFalse(automation_write_requires_confirmation(
+            "hub_manage_rule_machine", {"tool": "hub_list_rules", "args": {}}
+        ))
 
-    def test_simple_yes_does_not_authorize_invented_trigger(self):
-        history = [
-            {"role": "user", "content": "Block Demo Screen after 2 mins"},
-            {"role": "assistant", "content": (
-                "I can block it now, or create a rule. Which would you like?"
-            )},
-        ]
-        self.assertEqual(original_one_shot_delay("yes", history),
-                         "Block Demo Screen after 2 mins")
-        self.assertIsNotNone(unrequested_rule_write_reason(
-            "yes", history, "hub_set_visual_rule", {}))
-        self.assertIsNotNone(unrequested_rule_write_reason(
-            "yes", history, "hub_manage_rule_machine",
-            {"tool": "hub_set_visual_rule", "args": {}}))
-        self.assertIsNone(unrequested_rule_write_reason(
-            "yes", history, "hub_call_device_command",
-            {"command": "blockInMinutes"}))
-        clear_history = [
-            {"role": "user", "content": (
-                "Create a rule that blocks Demo Screen when its switch "
-                "turns on, after 2 minutes"
-            )},
-        ]
-        self.assertIsNone(unrequested_rule_write_reason(
-            "yes", clear_history, "hub_set_visual_rule", {}))
-
-    def test_native_activated_and_stored_are_different_facts(self):
-        value = rpc({
-            "success": True, "appId": 98765,
-            "storedSuccessfully": True,
+    def test_native_stored_is_not_native_activated(self):
+        status = rule_activation_outcome(rpc({
+            "success": True, "storedSuccessfully": True,
             "activatedSuccessfully": False,
-            "validationErrors": [
-                "trigger config requires non-empty mode ids",
-                "seconds cannot exceed 59",
-            ],
-        })
-        state = rule_activation_outcome(value)
-        self.assertEqual(state["stored"], True)
-        self.assertEqual(state["activated"], False)
-        self.assertEqual(len(state["validation_errors"]), 2)
-        self.assertEqual(state["app_id"], 98765)
-        self.assertIsNone(rule_activation_outcome(
-            rpc({"success": True, "command": "blockInMinutes"})))
+            "validationErrors": ["invalid trigger"]
+        }))
+        self.assertTrue(status["stored"])
+        self.assertFalse(status["activated"])
+        self.assertEqual(len(status["validation_errors"]), 1)
 
-    def test_broad_inventory_without_details_gets_one_followthrough(self):
-        kw = dict(
-            inventory_recovery_invoked=True,
-            already_prompted=False,
-            remaining_seconds=40, source_review_invoked=False,
-            has_native_write_attempt=False, available_tools={
-                "hub_list_devices", "hub_get_device",
-                "hub_call_device_command",
-            },
-        )
-        result = [{"name": "hub_list_devices",
-                   "client_inventory_coverage_recovery": True,
-                   "success": True}]
+    def test_broad_inventory_followthrough_unchanged(self):
+        kw = dict(inventory_recovery_invoked=True, already_prompted=False,
+                  remaining_seconds=40, source_review_invoked=False,
+                  has_native_write_attempt=False,
+                  available_tools={"hub_list_devices", "hub_get_device",
+                                   "hub_call_device_command"})
         self.assertTrue(should_follow_through_device_action(
-            "Block Demo Screen after 2 mins", result, **kw))
-        self.assertFalse(should_follow_through_device_action(
-            "Block Demo Screen after 2 mins", result,
-            **{**kw, "already_prompted": True}))
-        self.assertFalse(should_follow_through_device_action(
             "Block Demo Screen after 2 mins",
-            [{**result[0], "success": False}], **kw))
+            [{"name": "hub_list_devices",
+              "client_inventory_coverage_recovery": True, "success": True}],
+            **kw))
 
 
-class NativeTimerVsRuleTests(unittest.IsolatedAsyncioTestCase):
-    async def test_rule_draft_rejected_before_approval_then_native_timer(self):
+class NativeApprovalTests(unittest.IsolatedAsyncioTestCase):
+    async def wait_for_approval(self, interaction):
+        for _ in range(100):
+            if interaction.pending:
+                return interaction.pending
+            await asyncio.sleep(0.01)
+        self.fail("Expected a pending operation-specific approval")
+
+    async def test_ui_approval_required_without_confirm_for_direct_and_gateway(self):
+        for tool, args in (
+            ("hub_set_visual_rule", {"definition": {"triggers": [
+                {"type": "systemMode"}]}}),
+            ("hub_manage_rule_machine", {"tool": "hub_set_visual_rule",
+                                         "args": {"definition": {
+                                             "triggers": [{"type": "systemMode"}]
+                                         }}}),
+        ):
+            with self.subTest(tool=tool):
+                interaction = Interaction()
+                task = asyncio.create_task(interaction.before_call(
+                    tool, args, "assistant plan"
+                ))
+                approval = await self.wait_for_approval(interaction)
+                self.assertEqual(approval["approval_kind"], "automation_write")
+                self.assertEqual(approval["arguments"], args)
+                interaction.decide(approval["id"], False)
+                with self.assertRaises(MCPError):
+                    await task
+
+    async def test_numeric_spelled_and_chat_yes_cannot_dispatch_without_ui_approval(self):
+        cases = [
+            ("Block Demo Screen after 2 minutes", []),
+            ("Block Demo Screen after two minutes", []),
+            ("yes", [
+                {"role": "user",
+                 "content": "Block Demo Screen after two minutes"},
+                {"role": "assistant",
+                 "content": "Shall I create a mode-change rule instead?"}
+            ]),
+        ]
+        for question, history in cases:
+            with self.subTest(question=question):
+                hub = SyntheticMCP()
+                model = ScriptedAgent([
+                    {"tool_calls": [call(
+                        "hub_set_visual_rule", name="Unexpected Mode Rule",
+                        definition={"triggers": [
+                            {"type": "systemMode", "config": {"modes": [33]}}
+                        ]}
+                    )]},
+                    {"content": "The proposed rule was declined; no write."},
+                ])
+                interaction = Interaction()
+                task = asyncio.create_task(model.answer(
+                    question, history, hub, 90,
+                    before_call=interaction.before_call,
+                ))
+                try:
+                    pending = await self.wait_for_approval(interaction)
+                    self.assertEqual(pending["approval_kind"], "automation_write")
+                    self.assertEqual(pending["arguments"]["definition"]
+                                     ["triggers"][0]["type"], "systemMode")
+                    interaction.decide(pending["id"], False)
+                    result = await task
+                finally:
+                    await model.close()
+                self.assertEqual(hub.calls, [])
+                self.assertEqual(result["automation_confirmation_requests"], 1)
+                self.assertEqual(
+                    result["tool_calls"][0]["result_kind"],
+                    "native_automation_approval_not_completed"
+                )
+
+    async def test_approved_rule_dispatches_and_reports_native_flags(self):
+        hub = SyntheticMCP(rule_response={
+            "success": True, "storedSuccessfully": True,
+            "activatedSuccessfully": False,
+            "validationErrors": ["invalid trigger"],
+        })
+        model = ScriptedAgent([
+            {"tool_calls": [call(
+                "hub_set_visual_rule", name="Test Rule",
+                definition={"triggers": [{"type": "switch",
+                                         "config": {"switches": [999]}}]},
+            )]},
+            {"content": "Stored but not activated in source."},
+            {"content": "No rule-trigger execution is established."},
+        ])
+        interaction = Interaction()
+        task = asyncio.create_task(model.answer(
+            "Create a rule when test switch turns on", [], hub, 90,
+            before_call=interaction.before_call,
+        ))
+        try:
+            pending = await self.wait_for_approval(interaction)
+            interaction.decide(pending["id"], True)
+            result = await task
+        finally:
+            await model.close()
+        self.assertEqual([name for name, args in hub.calls],
+                         ["hub_set_visual_rule"])
+        receipt = result["tool_calls"][0]["native_rule_outcome"]
+        self.assertEqual(receipt["stored"], True)
+        self.assertEqual(receipt["activated"], False)
+
+    async def test_no_ui_callback_fails_closed(self):
         hub = SyntheticMCP()
         model = ScriptedAgent([
-            {"tool_calls": [call("hub_get_device", deviceId="BENCH-ACT-4")]},
-            {"tool_calls": [call(
-                "hub_set_visual_rule", confirm=True,
-                name="Temporary Demo Block",
-                definition={
-                    "triggers": [{"type": "systemMode",
-                                  "config": {"modes": [33]}}],
-                    "thenActions": [
-                        {"type": "wait", "config": {"minutes": 2}},
-                        {"type": "turnOff",
-                         "config": {"switches": ["BENCH-ACT-4"]}},
-                    ],
-                },
-            )]},
+            {"tool_calls": [call("hub_set_visual_rule",
+                                 definition={"triggers": []})]},
+            {"content": "Approval missing; nothing executed."},
+        ])
+        try:
+            result = await model.answer("Create a native rule", [], hub, 90)
+        finally:
+            await model.close()
+        self.assertEqual(hub.calls, [])
+        self.assertEqual(result["tool_calls"][0]["result_kind"],
+                         "native_automation_approval_not_completed")
+
+    async def test_native_device_timer_path_needs_no_rule_approval(self):
+        hub = SyntheticMCP()
+        model = ScriptedAgent([
             {"tool_calls": [call(
                 "hub_call_device_command", deviceId="BENCH-ACT-4",
                 command="blockInMinutes", parameters=["2"],
             )]},
-            {"tool_calls": [call(
-                "hub_get_device_attribute", deviceId="BENCH-ACT-4",
-                attribute="pendingTimerMinutes",
-            )]},
-            {"content": "The native source reports a two-minute timer; "
-                        "actual future blocking remains unverified."},
-            {"content": "The native timer is scheduled per original source; "
-                        "later enforcement remains unverified."},
+            {"content": "Native timer accepted; later effect not yet known."},
+            {"content": "No physical future outcome established."},
         ])
-        approvals = []
-        async def before_call(name, args, draft):
-            approvals.append(name)
+        interaction = Interaction()
         try:
             result = await model.answer(
-                "Block Demo Screen after 2 mins", [], hub, 90,
-                before_call=before_call,
+                "Block Demo Screen after two minutes", [], hub, 90,
+                before_call=interaction.before_call,
             )
         finally:
             await model.close()
-        self.assertEqual([n for n,_ in hub.calls], [
-            "hub_get_device", "hub_call_device_command",
-            "hub_get_device_attribute",
-        ])
-        self.assertEqual(approvals, [
-            "hub_get_device", "hub_call_device_command",
-            "hub_get_device_attribute",
-        ])
-        self.assertEqual(result["automation_intent_rejections"], 1)
-        guard = result["tool_calls"][1]
-        self.assertEqual(guard["result_kind"],
-                         "unrequested_automation_preflight")
-        self.assertFalse(guard["success"])
-        self.assertFalse(guard["operation_executed"])
-        self.assertIn("original user request did not specify",
-                      guard["response"])
-        self.assertEqual(result["source_review_kind"], "action_outcome")
-        self.assertIn("later enforcement", result["answer"])
-
-    async def test_yes_followup_cannot_create_ambiguous_mode_rule(self):
-        hub = SyntheticMCP()
-        model = ScriptedAgent([
-            {"tool_calls": [call(
-                "hub_set_visual_rule", name="Temporary Demo Block",
-                confirm=True, definition={
-                    "triggers": [{"type": "systemMode",
-                                  "config": {"modes": [33]}}],
-                    "thenActions": [{"type": "wait",
-                                     "config": {"minutes": 2}}],
-                },
-            )]},
-            {"content": (
-                "No rule was created; the original user did not request "
-                "a mode-change trigger."
-            )},
-        ])
-        try:
-            result = await model.answer(
-                "yes", [
-                    {"role": "user",
-                     "content": "Block Demo Screen after 2 mins"},
-                    {"role": "assistant",
-                     "content": "Create a rule or block now?"},
-                ], hub, 90,
-            )
-        finally:
-            await model.close()
-        self.assertEqual(hub.calls, [])
-        self.assertEqual(result["automation_intent_rejections"], 1)
-        self.assertEqual(result["tool_calls"][0]["result_kind"],
-                         "unrequested_automation_preflight")
-        self.assertIn("No rule was created", result["answer"])
-
-    async def test_explicit_event_rule_is_not_blocked_by_intent_guard(self):
-        hub = SyntheticMCP(rule_response={
-            "success": True, "appId": 98765,
-            "storedSuccessfully": True, "activatedSuccessfully": False,
-            "validationErrors": ["event trigger missing"],
-        })
-        model = ScriptedAgent([
-            {"tool_calls": [call(
-                "hub_set_visual_rule", name="Demo Schedule",
-                confirm=True, definition={
-                    "triggers": [{"type": "switch",
-                                  "config": {"switches": [999],
-                                             "switchEvent": "Turns on"}}],
-                    "thenActions": [{"type": "wait",
-                                     "config": {"minutes": 2}}],
-                },
-            )]},
-            {"content": "The rule was stored but native activation failed."},
-            {"content": "The source says activated=false; no rule trigger fired."},
-        ])
-        async def explicitly_approved(name, args, draft):
-            # Synthetic stand-in for a real user's mandatory approval of
-            # the sensitive native rule write; no production bypass.
-            return None
-
-        try:
-            result = await model.answer(
-                "Create a rule to block Demo Screen when its switch turns "
-                "on, after 2 mins", [], hub, 90,
-                before_call=explicitly_approved,
-            )
-        finally:
-            await model.close()
-        self.assertEqual([n for n,_ in hub.calls],
-                         ["hub_set_visual_rule"])
-        self.assertEqual(result["automation_intent_rejections"], 0)
-        receipt = result["tool_calls"][0]
-        self.assertEqual(receipt["native_rule_outcome"]["activated"], False)
-        self.assertEqual(receipt["native_rule_outcome"]["stored"], True)
-        self.assertEqual(len(receipt["native_rule_outcome"]["validation_errors"]), 1)
-        self.assertEqual(result["source_review_kind"], "action_outcome")
+        self.assertIsNone(interaction.pending)
+        self.assertEqual([n for n, args in hub.calls],
+                         ["hub_call_device_command"])
+        self.assertEqual(result["automation_confirmation_requests"], 0)
 
 
 if __name__ == "__main__":

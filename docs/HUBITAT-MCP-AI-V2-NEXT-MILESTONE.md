@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 13 November 2026 — Alpha.76: tool-structured automation approval (Gate B unchanged)
+
+The one-off rule veto no longer infers mutation authorization from free-text regex patterns. A native automation writer or selected gateway leaf requires **explicit operation-specific UI approval** before dispatch, including calls missing `confirm`. Chat "yes" is not an approval. Native device timers, tool-selected reasoning and upstream permissions remain unchanged. Source-real confirmation UI acceptance is still needed; this does not validate the model's proposed trigger. Resume the original 12 fresh read-only investigations across 6 domains after the safety release. [Architecture/safety note](HOMEBRAIN-V2-ALPHA76-STRUCTURED-AUTOMATION-APPROVAL-20261113.md).
+
+
 ## 13 November 2026 — CURRENT: Resume original first-answer Gate B after alpha.75
 
 Alpha.75's native command detour reached limited live acceptance: the model submitted one driver-advertised delayed control command with a pending deadline, a later original device log recorded the timed state transition, and a separate immediate reverse command received a same-request native response with the requested live state. This is **not** a general causal reasoning pass or independent physical verification. A field-specific timestamp discrepancy in the immediate action's final explanation remains an example of how a response may mix fresh and older attributes; it does **not** justify an incident-specific fix or rewriting the successful native command path.

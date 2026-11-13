@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.76 structured native-rule approval
+
+Alpha.75's auxiliary rule-authorisation preflight regex could recognise "after 2 minutes" but miss "after two minutes", conflicting with the tool-based authorization principle. Alpha.76 removes the question-wording veto. Instead, recognised native automation writers/selected gateway leaves always need a **separate request-scoped UI approval** of their actual proposed arguments, independent of whether the model sets `confirm`. Neither a chat "yes" nor absent UI can authorize a native rule write. The user must inspect the exact proposed trigger and actions; approval does NOT guarantee they match the original intent. Existing upstream permissions, backups, native device timers and independent monitoring are unchanged. The earlier accidentally activated Visual Rule was not altered. No live device operations were performed in this PR. [Development note](HOMEBRAIN-V2-ALPHA76-STRUCTURED-AUTOMATION-APPROVAL-20261113.md).
+
+**Next:** keep Gate B read-only source-real reasoning evaluation the primary programme after this safety change. GitHub CI and synthetic approval simulations do not establish installed model accuracy or live router behavior.
+
+
 ## 13 November 2026 — Alpha.75 source-real control acceptance; return to original model-led reasoning Gate B
 
 **Current repository release: V2 `2.0.0-alpha.75`** (merged PR #1628). A private, installed **first-answer** native delayed-control test reported a successful driver-advertised timed command and a pending deadline; subsequent separate original Hubitat logs reported the deadline fired and a resulting blocked state. A following direct immediate reverse-action request submitted one supported native command and returned source-reported allowed state at its contemporaneous attribute timestamp. These are **two useful action successes**, not evidence of independent physical router enforcement or cross-domain autonomous reasoning accuracy.
