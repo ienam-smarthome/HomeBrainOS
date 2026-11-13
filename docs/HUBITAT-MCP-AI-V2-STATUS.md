@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.69: complete explicit device actions after alternate-controller discovery
+
+A private alpha.68 first answer for an explicit immediate action correctly found the distinct network-policy actuator during read-only capability discovery but stopped with “Shall I proceed?” despite already having user action intent. It had not retrieved the actuator's actual command details or executed any device command. The optional discovery review was permanently read-only, leaving no path to finish the original permitted ordinary action. An inventory switch=off did not independently verify router enforcement.
+
+Alpha.69 preserves the **read-only discovery review** and adds one model-led **single-device command continuation** only after a clear imperative, a redundant permission question, no prior native write attempts and adequate time. The model must obtain a successful original `hub_get_device` receipt advertising the exact target ID and command; it remains responsible for physical target identity and correct effect mapping. Only `hub_call_device_command` is offered alongside reads, never rule writers or a batch. An attempted late write locks out any further writes, including after a permission failure or ambiguous response; subsequent readback is read-only. Critical/unknown capability records, read-only user requests, questions, ambiguous matches, mandatory confirmations and upstream access gates stay protected. The first native write path outside the optional review is unchanged.
+
+The work is a general answer-to-action completion improvement, not a Cudy or Nest device exception. Tests use entirely fictional integration/actuator IDs and scripted model calls; neither tool availability nor successful router enforcement in a live household is claimed. See [alpha.69 development and acceptance note](HOMEBRAIN-V2-ALPHA69-ACTION-CONTINUATION-20261113.md). Exact-head CI, post-merge CI and installed source-real first-answer checks remain necessary.
+
+
+
+
 ## 12 November 2026 — Alpha.68: verify alternative implementation feasibility
 
 A private alpha.67 live first answer correctly found the alternate actuator and its native command list, establishing that the requested delayed start was **not** directly advertised by that device. It nonetheless promised a viable one-time rule, without reading the current rule-writer schema, immediate/dated one-shot trigger contract, persisted delay/action or client authorization. A further filtered inventory was inaccurately described as an exhaustive check of controllers. Missing a native command does not justify a definite assertion that a new rule is feasible or required.

@@ -20,6 +20,8 @@ from investigation_review import (
     is_read_only_review_tool, read_only_review_catalog,
     review_kind, review_prompt, is_capability_denial_draft,
     is_implementation_feasibility_draft,
+    is_explicit_device_action_request, is_redundant_action_confirmation_draft,
+    continuation_command_advertised,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index,
 )
@@ -39,6 +41,21 @@ Client integration: Use only the connected server's live catalog and schemas.
 The bundled rule-patterns reference describes the legacy custom-rule engine;
 prefer native automation surfaces as directed in the upstream skill.
 State your intended action and its effects in assistant content before tool calls.
+A clear, direct IMPERATIVE to control one device is already the user's request
+to perform that ordinary operation. Do not finish with a redundant "Shall I
+proceed?" after finding a verified, matching controller: inspect its native
+advertised command, execute it through the allowed MCP tool in THIS request,
+then read back the relevant resulting state. Distinguish the named physical
+device from a separate integration that acts on it, and corroborate their
+identity using actual source attributes. Never use an unverified fuzzy match
+or a different device merely because its label sounds similar.
+Questions ("Can you do this?"), read-only instructions ("do not change"),
+ambiguous/multiple target matches and sensitive or destructive operations
+requiring separate approval remain subject to their original restrictions.
+Do NOT manufacture authorization: effective client write access, mandatory
+confirm=true prompts, backup requirements and refusal must be honored.
+The initial user imperative is not confirmation for any additional operation,
+rule creation, critical device control or a different target.
 For an action request, compare the user's intended TARGET, ACTION and TIMING
 with the actual capability of the selected native tool BEFORE the first write.
 Treat time words as part of the requested behavior, not interchangeable labels:
@@ -850,6 +867,9 @@ class Agent:
         source_review_invoked = False
         source_review_kind = None
         native_action_receipts_seen = 0
+        action_continuation_invoked = False
+        action_continuation_active = False
+        action_continuation_write_attempted = False
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
@@ -882,6 +902,10 @@ class Agent:
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
+                "action_continuation_invoked": action_continuation_invoked,
+                "action_continuation_write_attempted": (
+                    action_continuation_write_attempted
+                ),
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
                 "answer_stage_trace": answer_stage_trace,
@@ -893,22 +917,38 @@ class Agent:
             }
 
         while True:
-            if hasattr(mcp, "cached_leaf_schemas"):
-                tools = model_tools(catalog, mcp.cached_leaf_schemas())
-                tools.append(_CATALOG_TOOL_DEFINITION)
-                if prior_evidence and prior_reader:
-                    tools.append(_PRIOR_TOOL_DEFINITION)
-                if device_monitor is not None:
-                    tools.append(MONITOR_TOOL_DEFINITION)
-            # Once the extra model review starts, expose only read-only
-            # tool definitions. Never widen an explicitly read-only request
-            # just because the model chose to investigate further.
+            # Rebuild from the original live catalog on EVERY model round.
+            # A read-only source review must not permanently mutate the tool
+            # list; action continuation still exposes only its explicit
+            # single-device writer allowance, never a general write catalog.
+            cached_leaves = (
+                mcp.cached_leaf_schemas()
+                if hasattr(mcp, "cached_leaf_schemas") else None
+            )
+            tools = model_tools(catalog, cached_leaves)
+            tools.append(_CATALOG_TOOL_DEFINITION)
+            if prior_evidence and prior_reader:
+                tools.append(_PRIOR_TOOL_DEFINITION)
+            if device_monitor is not None:
+                tools.append(MONITOR_TOOL_DEFINITION)
+            # Source reviews are always read-only. A separately gated
+            # continuation of an original explicit device imperative can
+            # expose ONE normal single-device native command, and only
+            # before any attempted write; it cannot unlock rule writers,
+            # retries or a read-only user's request.
             if final_claim_audit_invoked:
                 # Final claim audit is textual only. No tool definition is
                 # offered, and no tool request from this pass may execute.
                 tools = []
             elif source_review_invoked:
-                tools = read_only_review_catalog(tools)
+                if action_continuation_active and not action_continuation_write_attempted:
+                    tools = [
+                        item for item in tools
+                        if is_read_only_review_tool(item["function"]["name"])
+                        or item["function"]["name"] == "hub_call_device_command"
+                    ]
+                else:
+                    tools = read_only_review_catalog(tools)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 if final_claim_audit_candidate:
@@ -972,11 +1012,67 @@ class Agent:
                         if is_implementation_feasibility_draft(text)
                         and asked_kind not in ("causal", "historical_measurement")
                         else "capability_discovery"
-                        if is_capability_denial_draft(text)
+                        if (
+                            is_capability_denial_draft(text)
+                            or (
+                                is_explicit_device_action_request(question)
+                                and is_redundant_action_confirmation_draft(text)
+                            )
+                        )
                         and asked_kind not in ("causal", "historical_measurement")
                         else asked_kind
                     )
                     messages.append({"role": "user", "content": review_prompt(source_review_kind)})
+                    continue
+                if (
+                    enable_source_review
+                    and source_review_invoked
+                    and source_review_kind == "capability_discovery"
+                    and not action_continuation_invoked
+                    and not native_action_receipts_seen
+                    and is_explicit_device_action_request(question)
+                    and is_redundant_action_confirmation_draft(text)
+                    and deadline - time.monotonic() > 8
+                    and any(
+                        item.get("function", {}).get("name") == "hub_call_device_command"
+                        for item in model_tools(catalog, mcp.cached_leaf_schemas()
+                                                if hasattr(mcp, "cached_leaf_schemas")
+                                                else {})
+                    )
+                    and all(
+                        is_read_only_review_tool(receipt.get("name", ""))
+                        for receipt in receipts
+                    )
+                ):
+                    # This is not automatic execution: the model must choose
+                    # a supported command; a same-request get_device receipt
+                    # will be checked before permitting it. The continuation
+                    # does not inherit any missing approval or grant.
+                    capture_answer_stage("pre_action_continuation", text)
+                    action_continuation_invoked = True
+                    action_continuation_active = True
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "The original user gave a direct device-action "
+                            "instruction, not merely a request for a proposal. "
+                            "Your permission question does not execute it. "
+                            "If source evidence establishes a unique physical "
+                            "target/control-surface relationship, obtain a "
+                            "fresh hub_get_device command list for the exact "
+                            "actuator and choose the correct supported native "
+                            "command. Execute at most one single-device "
+                            "hub_call_device_command, with no batch, only if "
+                            "ordinary action authorization and safety permit. "
+                            "Do not retry a failed or ambiguous write. "
+                            "Follow with proportionate read-only target-state "
+                            "verification. If identity, command semantics or "
+                            "authorization is ambiguous or sensitive, ask "
+                            "for the missing information/approval instead. "
+                            "Do not create a rule, substitute another action "
+                            "or bypass any user confirmation controls."
+                        ),
+                    })
                     continue
                 if final_claim_audit_invoked:
                     capture_answer_stage("post_final_audit", text)
@@ -1034,7 +1130,28 @@ class Agent:
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
                     if source_review_invoked and not is_read_only_review_tool(name):
-                        raise MCPError("Evidence sufficiency follow-up permits read-only tools only")
+                        if not (
+                            action_continuation_active
+                            and not action_continuation_write_attempted
+                            and name == "hub_call_device_command"
+                        ):
+                            raise MCPError(
+                                "Evidence sufficiency follow-up permits read-only "
+                                "tools only; a device-action continuation allows "
+                                "at most one original command attempt"
+                            )
+                        # Mark the attempt BEFORE native execution and
+                        # validation, preventing any automatic second write
+                        # if it fails, times out, or returns ambiguously.
+                        action_continuation_write_attempted = True
+                        if not continuation_command_advertised(receipts, args):
+                            raise MCPError(
+                                "Late device action requires a successful "
+                                "hub_get_device receipt in this request "
+                                "advertising this exact deviceId and command; "
+                                "critical/ambiguous actuators need separate "
+                                "approval. No write was sent."
+                            )
                     is_prior = name == _PRIOR_TOOL
                     is_monitor = name == MONITOR_TOOL
                     is_catalog = name == _CATALOG_TOOL
