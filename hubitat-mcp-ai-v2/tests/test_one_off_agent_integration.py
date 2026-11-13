@@ -61,8 +61,8 @@ class AgentScript(Agent):
         return self.script.pop(0)
 
 
-def call(name, **args):
-    return {"tool_calls": [{"function": {"name": name,
+def call(tool_name, **args):
+    return {"tool_calls": [{"function": {"name": tool_name,
                                         "arguments": args}}]}
 
 

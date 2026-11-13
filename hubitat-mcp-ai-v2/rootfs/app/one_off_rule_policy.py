@@ -72,6 +72,13 @@ def native_rule_call(name: str, arguments: dict[str, Any]) -> tuple[str, dict] |
     return None
 
 
+def is_native_rule_read(name: str, arguments: dict[str, Any]) -> bool:
+    """The installed hub_set_rule operation=read is non-mutating."""
+    selected = native_rule_call(name, arguments)
+    return (selected is not None and selected[0] == "hub_set_rule"
+            and selected[1].get("operation") in (None, "read"))
+
+
 def decode_mcp_payload(value: Any) -> Any:
     """Parse current original native MCP wrappers; never infer missing data."""
     for _ in range(6):
@@ -225,7 +232,9 @@ def rule_pre_dispatch_issue(
 ) -> str | None:
     """Denial-only temporal contract, never an approval credential."""
     selected = native_rule_call(name, arguments)
-    if selected is None or requested_temporal_scope(question) != "one_off":
+    if selected is None or is_native_rule_read(name, arguments):
+        return None
+    if requested_temporal_scope(question) != "one_off":
         return None
     writer, params = selected
     if writer == "hub_set_visual_rule":

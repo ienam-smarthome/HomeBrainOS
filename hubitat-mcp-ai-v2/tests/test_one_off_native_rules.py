@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from one_off_rule_policy import (
     requested_temporal_scope, rule_pre_dispatch_issue,
     validate_one_off_native_switch, verified_native_parent,
-    decode_mcp_payload,
+    decode_mcp_payload, is_native_rule_read,
 )
 from one_off_cleanup import OneOffCleanup, _named_candidate, _attested_read
 
@@ -175,6 +175,16 @@ class OneOffPolicyTests(unittest.TestCase):
         doc["args"]["name"] = "Block Test (One-time 2026-11-13 18:50)"
         self.assertIn("HB one-shot", validate_one_off_native_switch(
             doc, fresh_sources(), now=NOW))
+
+    def test_native_rule_machine_read_is_never_a_create(self):
+        read = {"tool": "hub_set_rule", "args": {
+            "operation": "read", "rule_id": 5544
+        }}
+        self.assertTrue(is_native_rule_read("hub_manage_rule_machine", read))
+        self.assertIsNone(rule_pre_dispatch_issue(
+            "Block fictional screen at 6:50pm",
+            "hub_manage_rule_machine", read, [], now=NOW
+        ))
 
     def test_mcp_wrappers_are_not_authoritative_when_failed(self):
         self.assertIsNone(decode_mcp_payload(

@@ -15,7 +15,10 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
-from one_off_rule_policy import rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text
+from one_off_rule_policy import (
+    rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
+    is_native_rule_read,
+)
 from action_proposal_review import (
     PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal,
     is_persistent_construct, has_current_native_evidence,
@@ -1125,7 +1128,9 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
-                    if source_review_invoked and not is_read_only_review_tool(name):
+                    if (source_review_invoked
+                            and not is_read_only_review_tool(name)
+                            and not is_native_rule_read(name, args)):
                         raise MCPError("Evidence sufficiency follow-up permits read-only tools only")
                     is_prior = name == _PRIOR_TOOL
                     is_monitor = name == MONITOR_TOOL
@@ -1284,15 +1289,17 @@ class Agent:
                         # never infer rule activation from MCP transport success.
                         native_rule_outcome = (
                             rule_activation_outcome(result)
-                            if name in (
-                                "hub_set_visual_rule", "hub_set_rule",
-                                "hub_create_custom_rule",
-                                "hub_update_custom_rule",
-                            )
-                            or args.get("tool") in (
-                                "hub_set_visual_rule", "hub_set_rule",
-                                "hub_create_custom_rule",
-                                "hub_update_custom_rule",
+                            if not is_native_rule_read(name, args) and (
+                                name in (
+                                    "hub_set_visual_rule", "hub_set_rule",
+                                    "hub_create_custom_rule",
+                                    "hub_update_custom_rule",
+                                )
+                                or args.get("tool") in (
+                                    "hub_set_visual_rule", "hub_set_rule",
+                                    "hub_create_custom_rule",
+                                    "hub_update_custom_rule",
+                                )
                             )
                             else None
                         )
@@ -1326,6 +1333,7 @@ class Agent:
                     native_action_result = (
                         not (is_catalog or is_prior or is_monitor)
                         and not is_tool_catalog(result)
+                        and not is_native_rule_read(name, args)
                         and not is_read_only_review_tool(name)
                         and not (isinstance(selector, str)
                                  and is_read_only_review_tool(selector))
