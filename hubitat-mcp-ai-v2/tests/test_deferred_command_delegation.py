@@ -160,6 +160,7 @@ class NativeDeferredCommandTests(unittest.TestCase):
                 result = await model.answer(
                     "Schedule Test Network Gate to disconnect after five minutes",
                     [], remote, 60, before_call=before_call,
+                    enable_action_proposal_review=False,
                     enable_source_review=False, enable_final_claim_audit=False,
                 )
                 self.assertTrue(result["success"])

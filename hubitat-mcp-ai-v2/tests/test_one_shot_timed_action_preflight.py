@@ -192,6 +192,7 @@ class NativeApprovalTests(unittest.IsolatedAsyncioTestCase):
                 task = asyncio.create_task(model.answer(
                     question, history, hub, 90,
                     before_call=interaction.before_call,
+                    enable_action_proposal_review=False,
                 ))
                 try:
                     pending = await self.wait_for_approval(interaction)
@@ -228,6 +229,7 @@ class NativeApprovalTests(unittest.IsolatedAsyncioTestCase):
         task = asyncio.create_task(model.answer(
             "Create a rule when test switch turns on", [], hub, 90,
             before_call=interaction.before_call,
+                    enable_action_proposal_review=False,
         ))
         try:
             pending = await self.wait_for_approval(interaction)
@@ -271,6 +273,7 @@ class NativeApprovalTests(unittest.IsolatedAsyncioTestCase):
             result = await model.answer(
                 "Block Demo Screen after two minutes", [], hub, 90,
                 before_call=interaction.before_call,
+                    enable_action_proposal_review=False,
             )
         finally:
             await model.close()

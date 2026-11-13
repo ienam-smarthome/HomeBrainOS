@@ -15,6 +15,10 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
+from action_proposal_review import (
+    PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal,
+    is_persistent_construct, has_current_native_evidence,
+)
 from control_surface_recovery import (
     BROAD_INVENTORY_RECOVERY_PROMPT, should_recover_inventory,
     DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
@@ -67,6 +71,11 @@ When the user DOES request a rule with a real event, preserve that
 requested trigger and consult the rule writer's validation/errors.
 Storage without activation is not successful rule execution; even an
 activated rule does not show its trigger fired or deadline started.
+A stored-but-inactive native rule is an EXISTING persistent draft. If
+correcting a definition, read that app and edit it using the supported
+native identity/revision contract rather than creating same-named
+replacement rules that leave extra inactive drafts. Do not retry an
+uncertain write whose real storage status has not been established.
 A name/label describing a timer,
 automation or outcome is NOT evidence of executable wiring or persistence.
 If the selected write only changes a helper object or another device, do not
@@ -646,6 +655,7 @@ class Agent:
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
         device_monitor=None, enable_final_claim_audit: bool = True,
+        enable_action_proposal_review: bool = True,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -737,6 +747,9 @@ class Agent:
         inventory_recovery_invoked = False
         inventory_recovery_status = "not_invoked"
         action_follow_through_invoked = False
+        prewrite_model_review_invoked = False
+        prewrite_unsent_proposals: list[dict[str, Any]] = []
+        prewrite_no_fresh_evidence_rejections = 0
         automation_confirmation_requests = 0
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
@@ -773,6 +786,9 @@ class Agent:
                 "inventory_recovery_invoked": inventory_recovery_invoked,
                 "inventory_recovery_status": inventory_recovery_status,
                 "action_follow_through_invoked": action_follow_through_invoked,
+                "prewrite_model_review_invoked": prewrite_model_review_invoked,
+                "prewrite_unsent_proposals": prewrite_unsent_proposals,
+                "prewrite_no_fresh_evidence_rejections": prewrite_no_fresh_evidence_rejections,
                 "automation_confirmation_requests": automation_confirmation_requests,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
@@ -831,6 +847,54 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
+            # A native action proposal has not executed merely because a
+            # model emitted a tool-call draft. Before the first mutating tool
+            # in a live UI request, give the SAME model one bounded chance to
+            # reconcile its target, physical effect and timing with current
+            # source receipts. No tool is preselected or automatically called.
+            # No orphaned assistant tool_calls are placed in model history.
+            if (enable_action_proposal_review and calls and before_call is not None
+                    and not source_review_invoked
+                    and not prewrite_model_review_invoked
+                    and deadline - time.monotonic() > 12):
+                proposed_writes = []
+                for proposed in calls:
+                    if not isinstance(proposed, dict):
+                        continue
+                    selected = proposed.get("function") or {}
+                    selected_name = str(selected.get("name") or "")
+                    selected_args = arguments_of(proposed)
+                    if is_native_action_proposal(selected_name, selected_args, catalog):
+                        proposed_writes.append({
+                            "name": selected_name,
+                            "arguments": redact(selected_args),
+                        })
+                if proposed_writes:
+                    prewrite_model_review_invoked = True
+                    # Store only sanitised UNEXECUTED proposals in private
+                    # Technical JSON; they never become native tool receipts.
+                    prewrite_unsent_proposals = proposed_writes[:6]
+                    # Never save an unsent draft as a completed assistant action.
+                    # Only the explicitly unexecuted proposal is shown.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            PREWRITE_PROPOSAL_PROMPT
+                            + "\n\nProposed but NOT executed native operation(s):\n"
+                            + json.dumps(proposed_writes, ensure_ascii=False)[:6000]
+                            + "\n\nCurrent in-request native source reads: "
+                            + json.dumps([
+                                {"name": row.get("name"),
+                                 "arguments": row.get("arguments")}
+                                for row in receipts
+                                if row.get("success") is True
+                                and is_read_only_review_tool(row.get("name", ""))
+                                and str(row.get("name", "")).startswith("hub_")
+                            ], ensure_ascii=False)[:2500]
+                        ),
+                    })
+                    continue
+
             clean_message: dict = {"role": "assistant", "content": text}
             if calls:
                 clean_message["tool_calls"] = calls
@@ -1034,6 +1098,7 @@ class Agent:
                 leaf_def = None  # For error receipts; never authorizes execution.
                 automation_approval_required = False
                 approval_completed = False
+                missing_current_read = False
                 try:
                     if deadline - time.monotonic() <= 0:
                         raise MCPError("Request deadline reached before this operation")
@@ -1082,6 +1147,25 @@ class Agent:
                             mcp.validate_leaf_arguments(
                                 leaf_def, args.get("args", {})
                             )
+                    # A persistent automation/helper must not be created
+                    # solely from an old chat or an unsent plan. This is a
+                    # minimal current-request evidence floor, not a model
+                    # substitute for matching the real target/effect/timing.
+                    if (enable_action_proposal_review
+                            and prewrite_model_review_invoked
+                            and is_persistent_construct(name, args)
+                            and not has_current_native_evidence(receipts)):
+                        prewrite_no_fresh_evidence_rejections += 1
+                        missing_current_read = True
+                        raise MCPError(
+                            "Persistent automation/helper NOT submitted: no "
+                            "successful current-request native domain read. "
+                            "Read relevant live target/controller capabilities "
+                            "before considering a persistent write; old "
+                            "conversation receipts or a rule guide are not "
+                            "current state. Native one-shot commands are "
+                            "unaffected."
+                        )
                     # The selected native writer/leaf, never raw prompt words,
                     # establishes the need for a separate UI approval.
                     automation_approval_required = (
@@ -1245,6 +1329,18 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if missing_current_read:
+                        record["result_kind"] = "persistent_write_missing_current_evidence"
+                        record["operation_executed"] = False
+                        error_payload.update({
+                            "result_kind": "persistent_write_missing_current_evidence",
+                            "operation_executed": False,
+                            "recovery": (
+                                "Choose live native device/controller reads "
+                                "before creating a persistent automation/helper. "
+                                "An old chat or skill guide is not live state."
+                            ),
+                        })
                     if automation_approval_required and not approval_completed:
                         record["result_kind"] = "native_automation_approval_not_completed"
                         record["operation_executed"] = False

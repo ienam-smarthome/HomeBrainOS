@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 13 November 2026 — alpha.77 bounded action-routing experiment, Gate B preserved
+
+New live evidence exposed a generic failure of goal/actuator/temporal alignment: a matched integration's `off` command was treated as a different physical effect, a new helper and persistent rule substituted for a one-off action, and an outcome review came after the writes. Alpha.77 introduces one model-owned pre-dispatch reconsideration of its proposed native action, plus a fresh domain-source floor before persistent construction. It does NOT route any named device to a fixed ID, force one engine, or automatically author a rule. An actual recurring event trigger is not a one-time rule merely because its first event is intentionally generated. A one-off native timer should be preferred if advertised and source-supported; a genuinely one-time rule remains an option if the live native contract supports the trigger and lifecycle. No real-device validation yet. [Alpha.77 note](HOMEBRAIN-V2-ALPHA77-MODEL-LED-PREDISPATCH-20261113.md).
+
+**Next:** measure the installed, fresh, uncoached first answer and exact original MCP receipts on the ordinary one-off request, verifying selected actuator, requested effect, pending deadline and explicit unknown future execution. Then return to 12 new read-only investigations across six domains; do not claim synthetic success is production answer quality.
+
+
 ## 13 November 2026 — Alpha.76: tool-structured automation approval (Gate B unchanged)
 
 The one-off rule veto no longer infers mutation authorization from free-text regex patterns. A native automation writer or selected gateway leaf requires **explicit operation-specific UI approval** before dispatch, including calls missing `confirm`. Chat "yes" is not an approval. Native device timers, tool-selected reasoning and upstream permissions remain unchanged. Source-real confirmation UI acceptance is still needed; this does not validate the model's proposed trigger. Resume the original 12 fresh read-only investigations across 6 domains after the safety release. [Architecture/safety note](HOMEBRAIN-V2-ALPHA76-STRUCTURED-AUTOMATION-APPROVAL-20261113.md).

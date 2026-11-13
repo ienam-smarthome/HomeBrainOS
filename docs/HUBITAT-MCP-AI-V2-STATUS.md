@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — alpha.77 model-led source alignment BEFORE the first write
+
+Alpha.76 correctly required separate persistent-rule UI confirmation but could still let a model choose a similarly named integration with the wrong real-world effect, or create durable helper/rules based only on old conversation. Alpha.77 gives the connected model a **single bounded reconsideration of its UNEXECUTED proposed native action** before dispatch. The checkpoint compares target, physical effect, timing, available current receipts, and one-off vs repeatable rule semantics. It does not choose a tool or command and may prompt the model to retrieve wider native inventory itself. The model's discarded proposed tool is not represented as a successful MCP receipt. After that checkpoint, persistent rule/helper creation without any successful current native domain read is locally rejected before user approval or native dispatch. Normal upstream confirmation and backup gates remain. Correct native device timers are still available; no new scheduler is installed. Source-real installed success is NOT established by CI. [Alpha.77 engineering note](HOMEBRAIN-V2-ALPHA77-MODEL-LED-PREDISPATCH-20261113.md).
+
+**Original roadmap retained:** First-answer evidence quality across fresh unrelated read-only domains remains the next broader acceptance milestone. No V1 or independent monitor change.
+
+
 ## 13 November 2026 — Alpha.76 structured native-rule approval
 
 Alpha.75's auxiliary rule-authorisation preflight regex could recognise "after 2 minutes" but miss "after two minutes", conflicting with the tool-based authorization principle. Alpha.76 removes the question-wording veto. Instead, recognised native automation writers/selected gateway leaves always need a **separate request-scoped UI approval** of their actual proposed arguments, independent of whether the model sets `confirm`. Neither a chat "yes" nor absent UI can authorize a native rule write. The user must inspect the exact proposed trigger and actions; approval does NOT guarantee they match the original intent. Existing upstream permissions, backups, native device timers and independent monitoring are unchanged. The earlier accidentally activated Visual Rule was not altered. No live device operations were performed in this PR. [Development note](HOMEBRAIN-V2-ALPHA76-STRUCTURED-AUTOMATION-APPROVAL-20261113.md).
