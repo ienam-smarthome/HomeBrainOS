@@ -51,7 +51,7 @@ def _named_candidate(row: dict, now: datetime, grace: int) -> tuple[str, str, st
     declared = row.get("appType") or row.get("type")
     if declared:
         typed = declared.get("name") if isinstance(declared, dict) else str(declared)
-        if typed != "Rule Machine":
+        if typed not in ("Rule Machine", "Rule-5.1"):
             return None
     try:
         local = datetime.strptime(

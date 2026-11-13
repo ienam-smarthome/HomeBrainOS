@@ -184,13 +184,15 @@ class OneOffPolicyTests(unittest.TestCase):
 
 
 class CleanupMCP:
-    def __init__(self, rules=None, *, bad_read=False, fail_delete=False):
+    def __init__(self, rules=None, *, bad_read=False, fail_delete=False,
+                 bad_app=False):
         self.rules = rules if rules is not None else [{
             "appId": "5544", "name": LABEL,
-            "type": "Rule Machine",
+            "type": "Rule-5.1",
         }]
         self.bad_read = bad_read
         self.fail_delete = fail_delete
+        self.bad_app = bad_app
         self.calls = []
 
     async def call(self, name, args):
@@ -199,18 +201,39 @@ class CleanupMCP:
             return {"content": [{"type": "text",
                        "text": json.dumps({"success": True,
                                            "rules": self.rules})}]}
+        if name == "hub_get_app_config":
+            data = {"app": {
+                "id": 5544, "label": LABEL if not self.bad_app
+                else "An unrelated rule",
+                "appType": {"namespace": "hubitat", "name": "Rule-5.1"},
+                "parentAppId": 169,
+            }}
+            return {"content": [{"type": "text",
+                                "text": json.dumps(data)}]}
         if name == "hub_manage_native_rules_and_apps":
             if args["tool"] == "hub_set_rule":
                 doc = {
-                    "appId": 5544,
-                    "name": LABEL,
-                    "appType": {"namespace": "hubitat",
-                                "name": "Rule Machine"},
-                    "settings": {
-                        "tCapab1": "Certain Time (and optional date)",
-                        "date1": True if not self.bad_read else False,
-                        "atDate1": "2026-11-13",
-                    },
+                    "rule_id": 5544,
+                    "settings": [
+                        {"name": "tCapab1", "type": "enum",
+                         "value": "Certain Time (and optional date)"},
+                        {"name": "date1", "type": "bool",
+                         "value": not self.bad_read},
+                        {"name": "atDate1", "type": "date",
+                         "value": "2026-11-13"},
+                        {"name": "time1", "type": "enum",
+                         "value": "A specific time"},
+                        {"name": "atTime1", "type": "time",
+                         "value": "2026-11-13T18:50:00.000+0000"},
+                        {"name": "actType.1", "type": "enum",
+                         "value": "switchActs"},
+                        {"name": "actSubType.1", "type": "enum",
+                         "value": "getOnOffSwitch"},
+                        {"name": "onOffSwitch.1", "type": "capability.switch",
+                         "value": ["8899"]},
+                        {"name": "onOff.1", "type": "bool",
+                         "value": False},
+                    ],
                 }
                 return {"content": [{"type": "text",
                                     "text": json.dumps(doc)}]}
@@ -220,7 +243,6 @@ class CleanupMCP:
                 return {"content": [{"type": "text",
                                     "text": json.dumps({"success": True})}]}
         raise AssertionError((name, args))
-
 
 class CleanupTests(unittest.IsolatedAsyncioTestCase):
     async def test_dry_run_attests_and_never_deletes(self):
@@ -264,6 +286,7 @@ class CleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([name for name, _ in hub.calls], [
             "hub_read_rules",
             "hub_manage_native_rules_and_apps",
+            "hub_get_app_config",
             "hub_manage_native_rules_and_apps",
         ])
         last = hub.calls[-1][1]
@@ -291,6 +314,22 @@ class CleanupTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["deleted"], [])
             self.assertEqual([name for name, _ in after.calls],
                              ["hub_read_rules"])
+
+    async def test_installed_child_mismatch_never_deletes(self):
+        hub = CleanupMCP(bad_app=True)
+        cleaner = OneOffCleanup(hub, enabled=True, dry_run=False)
+        result = await cleaner.run_once(now=NOW + timedelta(hours=1))
+        self.assertEqual(result["confirmed"], 0)
+        self.assertEqual(result["deleted"], [])
+        self.assertFalse(any(args.get("tool") == "hub_delete_native_app"
+                             for _, args in hub.calls))
+
+    async def test_disabled_cleanup_makes_no_mcp_calls(self):
+        hub = CleanupMCP()
+        cleaner = OneOffCleanup(hub, enabled=False, dry_run=False)
+        result = await cleaner.run_once(now=NOW + timedelta(hours=1))
+        self.assertEqual(hub.calls, [])
+        self.assertIn("disabled", result["errors"][0])
 
     async def test_future_and_grace_protected(self):
         now = datetime(2026, 11, 13, 18, 55,
