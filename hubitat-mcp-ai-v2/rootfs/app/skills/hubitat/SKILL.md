@@ -60,31 +60,6 @@ MCP can create and delete virtual devices (switches, sensors, buttons, dimmers, 
 
 ## Automation Rules
 
-### Source-bounded feasibility before promising an automation
-
-When a requested device action lacks a native command with the exact required
-timing or target effect, an alternative automation is a **hypothesis**, not
-proof a rule can be created by this MCP connection. Before saying a new
-rule/workflow is *required* or *ready to create*, inspect the current
-connected tool catalog and the relevant read-only native tool or app
-documentation. Establish whether the current client actually exposes a
-compatible writer, its exact input contract, a trigger that starts at the
-required instant without depending on an unrelated future event, valid
-single-run or dated trigger semantics, a supported delay and target command,
-and any permissions/confirmation requirements. Distinguish a general
-rule engine that supports delays from a verified one-time job authoring
-surface. An ordinary recurring trigger, example JSON or configured
-pointer is not a verified immediate one-shot trigger. If an essential
-piece is unknown, clearly report a conditional design and the missing
-contract instead of offering to create an unverified rule. No speculative
-helper switch, no promise that the chat will return in the future, and
-no write to test feasibility when the user requests inspection only.
-Use the model-selected read-only native guide or
-`homebrain_inspect_mcp_catalog` to check current exposure; neither
-catalog visibility nor a guide alone proves effective authorization.
-Do not interpret filtered rule/device inventories as exhaustive; cite the
-returned source scope.
-
 Prefer the **native** rule engines for new automations: Visual Rules Builder (`hub_set_visual_rule` — one clean JSON write) and Rule Machine (`hub_set_rule` — the full authoring surface), both in the `hub_manage_rule_machine` gateway. The MCP-native custom rule engine (`hub_*_custom_rule` tools, via the `hub_manage_custom_rules` / `hub_read_rules` gateways) is **legacy**: still supported, but don't reach for it first. See `hub_get_tool_guide(section='rules')` for the custom-rule reference and `section='set_rule_reference'` / `section='visual_rule_reference'` for the native surfaces.
 
 ### Other classic apps (Room Lighting, Button Controllers, Groups, Notifier, ...)

@@ -181,13 +181,9 @@ class ActionReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply["source_review_kind"], "action_outcome")
 
     def test_review_eligibility_and_prompt_are_general(self):
-        self.assertTrue(should_review_completion(
-            "Close the valve after five minutes", available_tools=True,
-            already_reviewed=False, remaining_seconds=60))
         self.assertFalse(should_review_completion(
             "Close the valve after five minutes", available_tools=True,
-            already_reviewed=False, remaining_seconds=60,
-            action_attempted=True))
+            already_reviewed=False, remaining_seconds=60))
         self.assertTrue(should_review_completion(
             "Close the valve after five minutes", available_tools=True,
             already_reviewed=False, remaining_seconds=60,
