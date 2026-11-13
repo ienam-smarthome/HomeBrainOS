@@ -14,6 +14,9 @@ import httpx
 
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
+from control_surface_recovery import (
+    BROAD_INVENTORY_RECOVERY_PROMPT, should_recover_inventory,
+)
 from evidence_scope import model_result_with_scope
 from investigation_review import (
     should_review_completion,
@@ -710,6 +713,8 @@ class Agent:
         source_review_invoked = False
         source_review_kind = None
         native_action_receipts_seen = 0
+        inventory_recovery_invoked = False
+        inventory_recovery_status = "not_invoked"
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
@@ -742,6 +747,8 @@ class Agent:
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
+                "inventory_recovery_invoked": inventory_recovery_invoked,
+                "inventory_recovery_status": inventory_recovery_status,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
                 "answer_stage_trace": answer_stage_trace,
@@ -809,10 +816,104 @@ class Agent:
                 return completed_answer(final_claim_audit_candidate, "tool_request_fallback")
 
             if not calls:
+                # Generic coverage recovery: a filtered inventory alone
+                # cannot establish that no other integration controls the
+                # requested physical effect. Make ONE unfiltered native
+                # READ-ONLY inventory query before accepting a no-action
+                # draft. This provides source context, never a selected
+                # target, command, permission or automatic write.
+                if enable_source_review and should_recover_inventory(
+                    question, receipts,
+                    available_tools=native_catalog_names,
+                    already_recovered=inventory_recovery_invoked,
+                    remaining_seconds=deadline - time.monotonic(),
+                    source_review_invoked=source_review_invoked,
+                    has_native_write_attempt=(
+                        native_action_receipts_seen > 0
+                        or any(
+                            rec.get("name") not in (
+                                _CATALOG_TOOL, _PRIOR_TOOL, MONITOR_TOOL
+                            )
+                            and not is_read_only_review_tool(
+                                rec.get("name", "")
+                            )
+                            for rec in receipts
+                        )
+                    ),
+                ):
+                    inventory_recovery_invoked = True
+                    capture_answer_stage("pre_inventory_recovery", text)
+                    read_started = time.monotonic()
+                    # The native format='context' gives a compact,
+                    # unfiltered device index rather than up to hundreds of
+                    # verbose state records; it never chooses a target.
+                    read_arguments = {"format": "context"}
+                    try:
+                        raw = await asyncio.wait_for(
+                            mcp.call("hub_list_devices", read_arguments),
+                            timeout=min(8.0, max(
+                                0.1, deadline - time.monotonic()
+                            )),
+                        )
+                        read_error = bool(raw.get("isError"))
+                        payload = compact_tool_result(
+                            self.present_native_result(raw, read_arguments)
+                        )
+                        record = {
+                            "name": "hub_list_devices",
+                            "arguments": read_arguments,
+                            "success": not read_error,
+                            "elapsed_ms": round(
+                                (time.monotonic() - read_started) * 1000
+                            ),
+                            "result_kind": "tool_result",
+                            "read_only": True,
+                            "operation_executed": True,
+                            "client_inventory_coverage_recovery": True,
+                            "response": payload,
+                            "response_characters": len(payload),
+                        }
+                        if read_error:
+                            record["error"] = "Native MCP tool reported isError"
+                            inventory_recovery_status = "source_error"
+                        else:
+                            inventory_recovery_status = "source_returned"
+                    except (MCPError, ValueError, asyncio.TimeoutError) as exc:
+                        inventory_recovery_status = "source_error"
+                        payload = json.dumps({
+                            "error": str(redact(str(exc)))[:240],
+                            "note": (
+                                "Broad inventory source read failed. This "
+                                "does not prove a separate actuator absent."
+                            ),
+                        })
+                        record = {
+                            "name": "hub_list_devices",
+                            "arguments": read_arguments,
+                            "success": False,
+                            "elapsed_ms": round(
+                                (time.monotonic() - read_started) * 1000
+                            ),
+                            "result_kind": "tool_result",
+                            "read_only": True,
+                            "client_inventory_coverage_recovery": True,
+                            "error": "Broad inventory source read failed",
+                            "response": payload,
+                        }
+                    receipts.append(record)
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            BROAD_INVENTORY_RECOVERY_PROMPT
+                            + "\n\nOriginal native MCP inventory response "
+                              "(read-only, not an action):\n" + payload
+                        ),
+                    })
+                    continue
                 # A first completed draft is not proof of evidence sufficiency.
                 # The connected model decides whether further read-only
-                # sources are useful; no native tool is selected or invoked
-                # automatically, and no fixed tool sequence is required.
+                # sources are useful; no native command is selected or invoked
+                # automatically by this recovery.
                 if enable_source_review and should_review_completion(
                     question, available_tools=any(
                         item["function"]["name"] != _CATALOG_TOOL

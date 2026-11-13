@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.73: recover alternate controllers after narrow inventory lookup
+
+The restored alpha.72 live first answer for a natural delayed block stopped after retrieving only the target's media integration, then incorrectly declared the network block unavailable. The previous *separate* alpha.65 successful Google TV delayed block is not evidence that the Nest Hub controller was reliably discovered. The correct problem is incomplete source coverage: label-filtered inventory queries can miss related actuators whose labels, driver capabilities and functional role differ from the media record.
+
+Alpha.73 retains the alpha.65/72 native `blockInMinutes` execution semantics, model-led device selection, and original read-only action/outcome review, with **no** alpha.66–71 action-continuation/receipt rewrites. It adds a single source-real, read-only fallback after a clear device-control imperative stalls **without a native write** following only filtered inventory coverage: the client requests `hub_list_devices(format="context")` with no filters, records the original receipt and provides it as untrusted data for the *model* to choose and verify the correct controller/command. This does not add a device-name patch, automatic write, alternate scheduler, Rule Machine fallback, destructive command or retry. Read-only requests/questions and prior attempted writes are excluded. See [alpha.73 development note](HOMEBRAIN-V2-ALPHA73-CONTROL-SURFACE-INVENTORY-20261113.md).
+
+**Delayed unblock remains a separate unimplemented feature** pending an actual native/Rule Machine writer contract; an immediate temporary allow cannot be called an unblock that begins later. Installed cloud-model first-answer and eventual real network enforcement remain unverified until new live receipts.
+
+
+
+
 ## 13 November 2026 — Alpha.72: restore alpha.65 working delayed blocking
 
 **Current runtime:** Reverted to **alpha.65** (`81a81df`) with only packaging labels updated to `2.0.0-alpha.72`. The previously source-real validated Google TV `blockInMinutes(2)` scheduled block and subsequent policy block are the selected historical working baseline. Experimental alpha.66–71 discovery, implementation-feasibility, action-continuation and action-receipt code and associated synthetic tests have been removed. Historical notes for those versions are retained as an archive; their described functionality is **not** present in the restored runtime.
