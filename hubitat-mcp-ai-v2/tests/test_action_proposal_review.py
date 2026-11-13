@@ -119,6 +119,12 @@ class NativeProposalContractTests(unittest.TestCase):
             "hub_set_visual_rule", {"definition": {}}, []))
         self.assertFalse(is_native_action_proposal(
             "hub_get_device", {"deviceId": 42}, []))
+        self.assertFalse(is_native_action_proposal(
+            "hub_manage_rule_machine", {
+                "tool": "hub_set_rule", "args": {
+                    "operation": "read", "rule_id": 123
+                },
+            }, []))
         self.assertTrue(is_persistent_construct(
             "hub_manage_virtual_device", {"action": "create"}))
         self.assertFalse(is_persistent_construct(

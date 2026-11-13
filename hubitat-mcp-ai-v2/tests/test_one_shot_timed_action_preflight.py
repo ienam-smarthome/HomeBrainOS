@@ -102,10 +102,23 @@ class StructuredAuthorizationTests(unittest.TestCase):
         for writer in ("hub_set_visual_rule", "hub_set_rule",
                        "hub_create_custom_rule", "hub_update_custom_rule",
                        "hub_set_native_app"):
-            self.assertEqual(native_automation_writer(writer, {}), writer)
+            writer_args = {"operation": "create", "args": {
+                "parent_id": 169, "name": "Synthetic", "changes": []
+            }} if writer == "hub_set_rule" else {}
+            self.assertEqual(native_automation_writer(writer, writer_args), writer)
             self.assertTrue(automation_write_requires_confirmation(
-                "hub_manage_rule_machine", {"tool": writer, "args": {}}
+                "hub_manage_rule_machine",
+                {"tool": writer, "args": writer_args}
             ))
+        self.assertFalse(automation_write_requires_confirmation(
+            "hub_set_rule", {"operation": "read", "rule_id": 123}
+        ))
+        self.assertFalse(automation_write_requires_confirmation(
+            "hub_manage_rule_machine",
+            {"tool": "hub_set_rule", "args": {
+                "operation": "read", "rule_id": 123
+            }}
+        ))
         self.assertFalse(automation_write_requires_confirmation(
             "hub_call_device_command", {"command": "blockInMinutes"}
         ))
