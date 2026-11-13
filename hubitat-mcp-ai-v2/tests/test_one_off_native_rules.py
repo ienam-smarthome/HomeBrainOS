@@ -278,6 +278,19 @@ class CleanupMCP:
         raise AssertionError((name, args))
 
 class CleanupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_public_status_never_leaks_rule_labels_or_ids(self):
+        cleaner = OneOffCleanup(CleanupMCP(), enabled=True, dry_run=True)
+        cleaner.last_result = {
+            "checked_at": "2026-11-13T07:00:00+00:00",
+            "scanned": 2, "eligible": 1, "confirmed": 1,
+            "would_delete": [{"name": "Sensitive private rule", "appId": "5544"}],
+            "deleted": [], "skipped": [], "errors": [], "dry_run": True,
+        }
+        payload = cleaner.status()
+        self.assertEqual(payload["last_result"]["would_delete_count"], 1)
+        self.assertNotIn("Sensitive private rule", json.dumps(payload))
+        self.assertNotIn("5544", json.dumps(payload))
+
     async def test_dry_run_attests_and_never_deletes(self):
         hub = CleanupMCP()
         cleaner = OneOffCleanup(

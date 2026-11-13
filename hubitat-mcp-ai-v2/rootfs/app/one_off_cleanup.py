@@ -189,6 +189,22 @@ class OneOffCleanup:
         tmp.replace(self.state_file)
 
     def status(self):
+        # /api/status is not an authenticated rule inventory endpoint.
+        # Expose counts, never household rule names or native app IDs.
+        last = self.last_result
+        summary = None
+        if isinstance(last, dict):
+            summary = {
+                "checked_at": last.get("checked_at"),
+                "scanned": last.get("scanned", 0),
+                "eligible": last.get("eligible", 0),
+                "confirmed": last.get("confirmed", 0),
+                "would_delete_count": len(last.get("would_delete", [])),
+                "deleted_count": len(last.get("deleted", [])),
+                "skipped_count": len(last.get("skipped", [])),
+                "error_count": len(last.get("errors", [])),
+                "dry_run": last.get("dry_run", True),
+            }
         return {
             "enabled": self.enabled,
             "dry_run": self.dry_run,
@@ -196,7 +212,7 @@ class OneOffCleanup:
             "timezone": str(self.zone),
             "grace_minutes": self.grace,
             "last_day": self.last_day,
-            "last_result": self.last_result,
+            "last_result": summary,
             "task_active": bool(self.task and not self.task.done()),
             "uncertain_deletions_held": len(self.uncertain_ids),
         }
