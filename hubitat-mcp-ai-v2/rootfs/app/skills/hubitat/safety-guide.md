@@ -9,26 +9,6 @@ Safety protocols and pre-flight checklists for Hubitat MCP Server operations.
 1. **Exact match = proceed**: If the user says "Kitchen Light" and a device named "Kitchen Light" exists, use it.
 2. **Fuzzy match = ask first**: If no exact match, present similar options and wait for confirmation.
 3. **Failure = report**: If a tool fails, tell the user. Never silently use an alternative device.
-4. **Different control surfaces**: A physical device may be represented by a media
-   integration and a separately labelled actuator for the requested effect.
-   A source-corroborated match (e.g. same physical/network identity in two
-   actual device records plus an advertised controller command) is not
-   inherently an ambiguous fuzzy device match. Do NOT rely only on a shared
-   word, guessed IP, room or similarly named virtual helper. When identity is
-   ambiguous or multiple controllers could act, ask which target is intended.
-5. **Direct ordinary command = execute, subject to gates**: An imperative
-   instruction to perform an ordinary verified device action is the request
-   itself; don't ask an unnecessary extra "shall I proceed?" after resolving
-   its controller. Inspect the exact actuator's live supported commands and
-   current state, issue the user-requested operation only when safely matched,
-   and verify with relevant native readback. A *capability question* or a
-   "do not change anything" request is not permission to write.
-6. **Explicit approval still applies**: Critical/ambiguous device matches,
-   server-denied operations and `confirm=true` preflight actions are not
-   covered by this no-redundant-confirmation guidance. The assistant must
-   never interpret discovery, catalog visibility or an older confirmation
-   as a new approval; let the existing per-call approval UI and upstream
-   token/permission checks enforce their own gates.
 
 ### Why This Matters
 

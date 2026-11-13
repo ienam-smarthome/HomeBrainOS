@@ -232,20 +232,6 @@ command on one device triggers a different target's action or a future timer.
 
 Separate (1) command sent, (2) server/driver acceptance, (3) changed target
 state or stored schedule read back, and (4) future downstream execution.
-Inspect ALL verification outcomes embedded in the original MCP reply, not
-just its top-level success. If an optional waitFor says converged=false or
-timedOut=true, DISCLOSE that attempted check's failure and compare its
-expected value with the returned value even when the command succeeded and
-another state supports a different postcondition. Conversely, a failed
-waitFor alone does not prove command failure. Treat client_native_wait_for_scope
-as a pointer into original server fields, NOT independent evidence.
-Compare the requested time semantics with the executed command: "after N"
-means DELAYED onset; "for N" usually means IMMEDIATE onset with a bounded
-duration; "until" and "every" differ again. Do not rephrase an immediate
-allow/disable command into a future delayed action. Verify actual timing
-from driver semantics or original observations, not names alone. If the
-available command cannot implement the user-requested timing, say so;
-never execute an alternative write during this read-only review.
 A virtual flag, helper object, dashboard control, linked label, or automation
 proposal does not itself establish another device's action. A requested delay
 is not satisfied by an unrelated immediate state change. A pending scheduled
@@ -263,144 +249,6 @@ If sufficient evidence is already present, answer now. Otherwise report
 the exact action/receipt and what remains UNVERIFIED; do not promise a later
 chat-initiated action or manufacture a success confirmation. Do not mention
 this internal checkpoint.
-"""
-
-
-
-
-
-ACTION_GOAL_REVIEW_PROMPT = """Action-goal evidence sufficiency checkpoint (internal, READ-ONLY).
-
-The original user's imperative specifies an intended physical effect and
-target. You have NOT supplied an original device-action attempt for this
-request. Your previous draft is not proof that the action is done, blocked
-or genuinely ambiguous. Before ending with clarification, a proposal or a
-negative capability claim, compare the original goal with the ORIGINAL
-successful MCP receipts: Did you identify the actuator that causes the
-requested effect, not merely the first name-matched integration? Is the
-physical target/controller relationship supported, and have you inspected
-the actual actuator's advertised commands and state? A labelFilter match
-may return only part of the device inventory; absence of one command on a
-media, monitoring, sensor or virtual device does not exclude a separate
-control integration. The same physical item may have distinct functional
-records. Device "online" and "unmuted" do not prove permission or access
-for unrelated physical effects.
-
-If available native READ-ONLY tools could materially resolve missing
-controller identity, operation semantics, active state or permissions,
-independently choose the relevant reads now. Do not follow a hard-coded
-tool sequence, invent aliases, assume that related labels or network
-identifiers by themselves prove the same target, or pretend a different
-control surface can execute the original requested effect. Distinguish
-an immediate operation from a deferred or temporary one. If several
-physical targets or control paths are still plausible, ask about the
-specific genuine ambiguity; if necessary evidence or write capability
-cannot be verified, give a source-bounded limitation.
-
-This review is READ-ONLY. Do not call a writer, modify a device, create
-a rule, send a command or claim to have performed the action. A separate
-bounded native device-action continuation may be offered by the client
-only for a clear imperative and only with current source evidence,
-verified target identity, safe ordinary operation and all upstream
-authorization gates. A user request for investigation only, a question,
-explicit read-only instruction or a sensitive action does not grant
-write permission. Do not tell the user to confirm the same unambiguous
-ordinary command merely because you discovered an alternative verified
-control surface; but do not hide actual ambiguity or a mandatory user
-approval requirement.
-
-Assess what evidence is still needed; decide yourself whether and where
-to read, and answer faithfully if resolution is impossible from permitted
-sources. Do not mention this checkpoint in your user-facing answer.
-"""
-
-CAPABILITY_DISCOVERY_REVIEW_PROMPT = """Capability/control-surface source review (internal).
-The user's desired EFFECT, named physical target, and timing are separate
-questions from which Hubitat device/integration implements the effect.
-Review the original returned tool receipts before declaring an operation
-unsupported or requiring an automation. Did you inspect just a media,
-sensor, thermostat, virtual helper, or app endpoint rather than the
-controller of the requested effect? Different device records may represent
-the SAME physical target while exposing different controls. Do not equate
-the absence of one capability on one matched record with the absence of a
-separate actuator or rule. An on/off command for media or power is NOT
-evidence of internet, water, heating or other unrelated effect.
-
-Consider the REAL scope of earlier inventory queries. A labelFilter,
-roomFilter, capabilityFilter, returned subset or count below unfilteredTotal
-is NOT a complete inventory of action controllers. If a broader inventory
-read, cross-integration device relationship, alternate control name, or
-recorded prior source could resolve the mismatch, independently choose
-proportionate READ-ONLY tools from the actual available catalog. Prefer
-the already-offered native list/get/read tools and inspect the advertised
-commands of any candidate. Shared network ID, IP, hardware label, location
-or other identifier is only a candidate relationship: verify that the
-controller really targets the intended physical entity before any write.
-Do not conclude a direct operation exists merely from a similar label,
-or infer that a model guessed the correct controller.
-
-Check the timing and operation semantics against each ACTUAL candidate
-command. A delayed start is distinct from an immediate temporary state.
-If another controller exists but cannot provide the requested timing,
-state precisely which part is supported and what is unverified. If you
-cannot identify a matching controller, describe the search scope and
-remaining unknowns rather than claiming no controller exists anywhere.
-
-This review is strictly READ-ONLY. Do not dispatch a first or corrective
-write, create a rule or proxy, auto-select another device without identity
-evidence, retry or change permissions. The model chooses tools and the
-final source-bounded conclusion; this checkpoint does not itself search,
-schedule or grant authorization. Do not mention the internal checkpoint.
-"""
-
-
-
-
-IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT = """Implementation-feasibility source review (internal, READ-ONLY).
-The user's requested target, operation and timing are the specification.
-A native device's lack of a direct timed command does NOT prove a new rule
-is required, feasible, authorized, or the only available option.
-
-Review the ORIGINAL successful receipts for the concrete proposed
-implementation. Distinguish each step, without treating generic guide
-descriptions, similar names, a visible top-level write tool, or an existing
-rule's unrelated settings as proof of an executable one-time workflow:
-(1) identified controller and intended effect; (2) native commands and
-actual timing; (3) alternative writer/tool exposure on THIS connection;
-(4) exact advertised schema and authoritative current server capability;
-(5) immediate/dated/one-shot trigger semantics that initiate the work
-WITHOUT needing a future chat turn or an unrelated later event;
-(6) correct persisted delay, target command arguments and safety gates;
-(7) evidence that the job is actually created and will survive this
-conversation (only possible following an authorized write and readback).
-
-Read the ACTUAL current connected tool catalog with
-homebrain_inspect_mcp_catalog when available, and consult relevant
-read-only native tool guides, already returned app/rule configurations,
-and exact live schemas as needed. A guide can describe a general API;
-it is not proof this install exposes or authorizes the writer. A gateway
-candidate is not a verified leaf schema. A write tool's presence is not
-permission to execute it. Never assume one-time Rule Machine creation
-or an immediate trigger contract is available solely because recurring
-rules and delays exist.
-
-Check whether any searches were filtered (label, category, capabilities,
-time window, count/total) and keep negative or exhaustive claims scoped
-to records actually returned. If only a *possible design* is established,
-say "a controller-owned one-time scheduler with a confirmed immediate
-trigger and delayed action would be needed" rather than "I can create
-that rule now". Separate theoretical design, currently exposed schema,
-verified authoring ability, actual created job, and eventual execution.
-If any required element remains unverified, give a useful conditional
-plan and the precise missing interface or source. Do NOT demand a new
-automation if a direct native operation, other verified controller, or
-already deployed suitable schedule meets the requested outcome.
-
-This is a READ-ONLY review. Never create, modify, delete, enable,
-trigger or test any rule/device, or retry a write. Do not claim future
-execution by this conversation. You choose any available read-only
-tools independently; do not fabricate tool calls, schemata or receipts.
-Do not mention this internal review.
 """
 
 
@@ -670,12 +518,6 @@ def review_prompt(kind: str) -> str:
         return VERIFICATION_REVIEW_PROMPT
     if kind == "action_outcome":
         return ACTION_OUTCOME_REVIEW_PROMPT
-    if kind == "capability_discovery":
-        return CAPABILITY_DISCOVERY_REVIEW_PROMPT
-    if kind == "action_goal":
-        return ACTION_GOAL_REVIEW_PROMPT
-    if kind == "implementation_feasibility":
-        return IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT
     return SOURCE_REVIEW_PROMPT
 
 
@@ -709,192 +551,18 @@ def is_causal_question(question: str) -> bool:
     return isinstance(question, str) and bool(_CAUSAL_QUESTION.search(question))
 
 
-# Review eligibility checks only the model's OWN completed draft. This is
-# not a device/tool router, negative-answer validator, permission grant or
-# response rewrite: only the model can decide which further read matters.
-_CAPABILITY_DENIAL_DRAFT = re.compile(
-    r"\b(?:(?:cannot|can't|unable\s+to)\s+"
-    r"(?:(?:currently|directly|reliably|safely)\s+)?(?:be\s+)?"
-    r"(?:implement|perform|execute|do|control|operate|schedule|trigger|"
-    r"start|stop|enable|disable|use|unblock|block|switch|set|send|call|"
-    r"provide|turn|create)\w*|"
-    r"not\s+possible|not\s+supported|isn't\s+supported|"
-    r"doesn't\s+support|does\s+not\s+support|"
-    r"neither\b[^.\n]{0,90}\b(?:direct|possible|implemented)|"
-    r"no\s+[^.\n]{0,80}\b(?:capabilit(?:y|ies)|commands?|actuators?))",
-    re.IGNORECASE,
-)
-
-# A model PROPOSING a concrete new workflow is different from a model
-# merely mentioning an automation. This selects optional read-only source
-# review, not a tool, controller, permission, answer or runtime scheduler.
-_IMPLEMENTATION_PROPOSAL = re.compile(
-    r"\b(?:(?:would|will|can|could|must|should|need(?:s)?\s+to)"
-    r"[^.\n]{0,110}\b(?:create|configure|set\s+up|implement|schedule|build|"
-    r"install|write)\b[^.\n]{0,120}\b(?:rule|automation|workflow|job|"
-    r"scheduler|scheduled\s+task)\b)|"
-    r"\b(?:rule|automation|workflow|scheduler|job)\b[^.\n]{0,85}"
-    r"\b(?:required|needed|necessary|must\s+be\s+created)\b|"
-    r"\b(?:requires?|needs?)\b[^.\n]{0,90}\b(?:rule|automation|"
-    r"workflow|scheduler)\b",
-    re.IGNORECASE,
-)
-
-
-def is_implementation_feasibility_draft(draft: str) -> bool:
-    """Detect a model-proposed implementation, never infer its feasibility."""
-    return isinstance(draft, str) and bool(_IMPLEMENTATION_PROPOSAL.search(draft))
-
-
-def is_capability_denial_draft(draft: str) -> bool:
-    """Review-worthy model denial, not proof that a capability is absent."""
-    return isinstance(draft, str) and bool(_CAPABILITY_DENIAL_DRAFT.search(draft))
-
-
-# A direct command is the user's ordinary permission to attempt that
-# requested action subject to upstream permissions and safety requirements.
-# It is NOT consent for a different target, a derived action, or a destructive
-# operation requiring a separate confirm=true approval.
-_IMPERATIVE_DEVICE_ACTION = re.compile(
-    r"^\s*(?:please\s+)?(?:turn|switch|set|adjust|change|enable|disable|"
-    r"start|stop|pause|play|mute|unmute|block|unblock|allow|deny|"
-    r"open|close|lock|unlock|arm|disarm|dim|brighten|raise|lower|"
-    r"increase|decrease|activate|deactivate|cancel)\b",
-    re.IGNORECASE,
-)
-_EXPLICIT_READ_ONLY_ACTION_LIMIT = re.compile(
-    r"\b(?:do\s+not|don't|never|without)\s+"
-    r"(?:\w+\s+){0,4}(?:change|modify|execute|run|act|create|write|"
-    r"control|send|trigger|turn|switch|block|unblock|apply|"
-    r"touch|alter|make\s+changes?)\b|"
-    r"\b(?:read[- ]only|dry[- ]run|simulation\s+only|"
-    r"do\s+nothing|no\s+changes)\b|"
-    r"\bwithout\s+(?:making\s+)?(?:any\s+)?changes?\b",
-    re.IGNORECASE,
-)
-_REDUNDANT_ACTION_CONFIRMATION = re.compile(
-    r"\b(?:shall\s+i\s+(?:proceed|do\s+(?:it|this)|"
-    r"send|execute|turn|switch|unblock|block)|"
-    r"should\s+i\s+(?:proceed|execute|turn|switch)|"
-    r"would\s+you\s+like\s+me\s+to\s+(?:proceed|do|"
-    r"execute|turn|switch|enable|disable|block|unblock)|"
-    r"may\s+i\s+proceed|"
-    r"can\s+i\s+proceed)\b",
-    re.IGNORECASE,
-)
-
-
-def is_explicit_device_action_request(question: str) -> bool:
-    """Conservative positive imperative with no embedded read-only clause.
-
-    This does not prove target identity or authorize any particular tool.
-    Questions ('Can you ...?') and investigations are intentionally excluded.
-    """
-    return (
-        isinstance(question, str)
-        and bool(_IMPERATIVE_DEVICE_ACTION.search(question))
-        and not bool(_EXPLICIT_READ_ONLY_ACTION_LIMIT.search(question))
-    )
-
-
-def is_redundant_action_confirmation_draft(draft: str) -> bool:
-    """A model's unexecuted permission prompt, not proof the action is safe."""
-    return isinstance(draft, str) and bool(
-        _REDUNDANT_ACTION_CONFIRMATION.search(draft)
-    )
-
-
-def _native_device_detail(receipt: dict) -> dict | None:
-    """Original successful hub_get_device data, never an inferred snapshot."""
-    if not isinstance(receipt, dict):
-        return None
-    if receipt.get("success") is not True or receipt.get("name") != "hub_get_device":
-        return None
-    try:
-        parsed = json.loads(receipt.get("response", ""))
-    except (TypeError, ValueError):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    if isinstance(parsed.get("content"), list):
-        for part in parsed["content"]:
-            if isinstance(part, dict) and part.get("type") == "text":
-                try:
-                    native = json.loads(part.get("text", ""))
-                except (TypeError, ValueError):
-                    continue
-                if isinstance(native, dict):
-                    return native
-    return parsed
-
-
-def continuation_command_advertised(receipts: list[dict], args: dict) -> bool:
-    """Require an in-request device-detail command receipt before late write.
-
-    Only the original exact target device ID and advertised command name are
-    compared. This is NOT identity proof between two different integrations.
-    The model still must corroborate that mapping, and the upstream server
-    independently validates the command, permissions and arguments.
-    """
-    if not isinstance(args, dict) or args.get("commands") is not None:
-        return False
-    device_id = args.get("deviceId")
-    command = args.get("command")
-    if not isinstance(device_id, (int, str)) or not isinstance(command, str):
-        return False
-    if not command.strip():
-        return False
-    for receipt in reversed(receipts):
-        detail = _native_device_detail(receipt)
-        if detail is None or str(detail.get("id")) != str(device_id):
-            continue
-        commands = detail.get("commands")
-        if isinstance(commands, list) and any(
-            isinstance(item, dict) and item.get("name") == command
-            for item in commands
-        ):
-            # A high-consequence actuator still needs explicit approval;
-            # a late discovery must never opportunistically unlock a door,
-            # disarm a security system or operate a garage/valve.
-            capabilities = set(
-                str(c) for c in detail.get("capabilities", [])
-            ) if isinstance(detail.get("capabilities"), list) else set()
-            if not capabilities or capabilities.intersection({
-                "Lock", "GarageDoorControl", "SecurityKeypad",
-                "SecuritySystem", "Valve",
-            }):
-                return False
-            return True
-    return False
-
-
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
-    draft: str = "", action_attempted: bool = False,
 ) -> bool:
-    """One optional model-led review when a claim may need better sources.
+    """Only open a model review when there is a chance to investigate safely.
 
-    A short deadline leaves the original answer intact. This helper never
-    selects or executes an MCP tool, turns a denial into permission, or
-    forces an additional data read.
+    A short deadline leaves the original model response intact rather than
+    risking a second model timeout. No MCP call is made by this helper.
     """
     return (
         not already_reviewed
         and available_tools
         and remaining_seconds > 8
-        and (
-            review_kind(question) is not None
-            or has_action_receipt
-            or is_capability_denial_draft(draft)
-            or is_implementation_feasibility_draft(draft)
-            # The original action goal is the specification: when NO
-            # write was attempted, the assistant's phrasing (including a
-            # generic "please clarify") must not suppress safe discovery.
-            or (
-                is_explicit_device_action_request(question)
-                and not has_action_receipt
-                and not action_attempted
-            )
-        )
+        and (review_kind(question) is not None or has_action_receipt)
     )

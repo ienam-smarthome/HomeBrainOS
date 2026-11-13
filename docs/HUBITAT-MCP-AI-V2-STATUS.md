@@ -1,5 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.72: restore alpha.65 working delayed blocking
+
+**Current runtime:** Reverted to **alpha.65** (`81a81df`) with only packaging labels updated to `2.0.0-alpha.72`. The previously source-real validated Google TV `blockInMinutes(2)` scheduled block and subsequent policy block are the selected historical working baseline. Experimental alpha.66–71 discovery, implementation-feasibility, action-continuation and action-receipt code and associated synthetic tests have been removed. Historical notes for those versions are retained as an archive; their described functionality is **not** present in the restored runtime.
+
+The known separate **delayed unblock** limitation remains. `allowForMinutes` is an immediate allow with finite duration, not an allow that starts after a future delay. No Rule Machine one-time writer, alternative scheduling approach, persistent helper or automatic device write has been added. Code CI and installed live acceptance are distinct. See [alpha.72 rollback/verification plan](HOMEBRAIN-V2-ALPHA72-RESTORE-ALPHA65-20261113.md).
+
+
+
+
 ## 13 November 2026 — Alpha.71: pre-dispatch error recovery without double-write or false success
 
 The original alpha.70 installed first-answer capture discovered the correct alternate actuator and its native immediate command. Two command tool attempts then failed **locally** (both 0 ms) because the first lacked a fresh post-continuation `hub_get_device` receipt, while the second encountered the premature one-attempt lock. Hubitat was never called for the action, yet the model replied that the target was unblocked. That is a client action-state and final-grounding defect, not proof the router or Hubitat rejected the command.
