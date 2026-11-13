@@ -18,6 +18,11 @@ Alpha.76 replaces the alpha.75 prompt-regex automation veto with a structured ch
 Alpha.77 adds one bounded *model-led pre-dispatch reconsideration* of the first native write in live Ask, with the proposal explicitly unexecuted. The model must check target identity, effect and timing against current original MCP sources and may discover other native control surfaces or a genuine one-off rule when supported. The client never maps a device, issues an alternate command or creates a scheduler. Persistent rule/helper creation after the checkpoint requires a fresh current-request native domain read and usual independent UI approval. A saved inactive native rule is an existing draft; avoid same-name duplicate creation. Recognise a recurring switch event plus wait as repeatable unless one-off semantics are independently established. Do not overstate CI as installed source-real quality.
 
 ## Standing mandate — do not change direction between chats
+## v2 one-off Rule Machine correction (13 Nov 2026, alpha.78)
+
+Keep the model responsible for selecting tools. Never interpret a repeatable Visual Rule timeOfDay as a one-off request. Use current native parent/target evidence, a dated typed Rule Machine trigger, exactly one verified Switch action and the precise `HB one-shot |` name contract for eligible one-offs. Do not infer a device's physical effect from its label. Keep independent UI confirmation and upstream backup/permission gates. Only an explicitly enabled, separately dry-run-disabled cleanup may soft-delete uniquely owned, date-attested expired rules. Do not claim installed creation, real-world outcome or cleanup verification from CI.
+
+
 
 **New user direction (6 Nov 2026):** Do not keep adding per-question fixes or require the user to continually train the assistant. Build the autonomous evidence-first architecture in [docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md](docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md): model-selected evidence requirements, verified read-only execution, source-aware continuation, grounded synthesis, and evaluated improvement on unseen questions. Remove arbitrary soft limits on read-only inquiry, **not** operational deadlines, write permissions, user confirmation, privacy or resource safeguards. Phase 1 is only the first increment, not proof of general autonomy.
 

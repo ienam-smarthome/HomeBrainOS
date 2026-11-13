@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 13 November 2026 — alpha.78 native one-off scheduling gate
+
+After alpha.77's two successful but semantically wrong VRB writes, alpha.78 refuses a recurring Visual Rule for a single-time request and supports source-verified, typed calendar-dated Rule Machine single Switch proposals, with normal independent approval. Owned one-offs may be cleaned up by an explicitly opted-in daily service; default is disabled and dry-run. Do not treat a command's `on/off` as verified physical effect without native evidence. First verify the installed Rule Machine native typed parent/schema, create a harmless one-off with explicit UI approval, measure original receipts and later execution; only then enable any deletion. Continue the six-domain Gate B after this bounded safety/compatibility acceptance. [Details](HOMEBRAIN-V2-ALPHA78-ONEOFF-NATIVE-RM-20261113.md).
+
+
 ## 13 November 2026 — alpha.77 bounded action-routing experiment, Gate B preserved
 
 New live evidence exposed a generic failure of goal/actuator/temporal alignment: a matched integration's `off` command was treated as a different physical effect, a new helper and persistent rule substituted for a one-off action, and an outcome review came after the writes. Alpha.77 introduces one model-owned pre-dispatch reconsideration of its proposed native action, plus a fresh domain-source floor before persistent construction. It does NOT route any named device to a fixed ID, force one engine, or automatically author a rule. An actual recurring event trigger is not a one-time rule merely because its first event is intentionally generated. A one-off native timer should be preferred if advertised and source-supported; a genuinely one-time rule remains an option if the live native contract supports the trigger and lifecycle. No real-device validation yet. [Alpha.77 note](HOMEBRAIN-V2-ALPHA77-MODEL-LED-PREDISPATCH-20261113.md).

@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.78 — one-off native Rule Machine safety and opt-in expiry cleanup.** A bare single clock-time request no longer silently creates a daily Visual Rule; the model may author a date-attested native Rule Machine single Switch action using current source-verified parent/target evidence, normal independent approval, and the installed native contract. The restored owned-rule cleanup is **disabled and dry-run by default**; no existing Hubitat rules are modified on upgrade. See [alpha.78 details](../docs/HOMEBRAIN-V2-ALPHA78-ONEOFF-NATIVE-RM-20261113.md).
+
+
 **Alpha.77 — model-led pre-dispatch source/intent review for native actions.** Two private source-real action captures showed that a similarly named control interface could be mistaken for the device implementing the requested physical effect, and that a later read-only outcome check cannot undo an already-created helper or recurring rule. The first **proposed but unexecuted** native write now gets one bounded model-led reconsideration of the user's target, real-world effect and one-off timing. The model—not a fixed map or orchestrator—can choose more native reads, an advertised device-owned timer, a verified truly one-time native rule, or explain missing evidence. Persistent automation/helper creation after that review needs at least one successful fresh native domain read and retains separate UI approval. An inactive stored rule is an existing draft, not a reason to create a same-named duplicate. This adds no device-specific route, hardcoded command, new scheduler or live hub cleanup. [Alpha.77 development note](../docs/HOMEBRAIN-V2-ALPHA77-MODEL-LED-PREDISPATCH-20261113.md).
 
 
